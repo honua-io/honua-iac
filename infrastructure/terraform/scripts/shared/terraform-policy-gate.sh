@@ -53,19 +53,24 @@ run_tflint() {
 }
 
 run_checkov() {
+  # Scope policy gates to repository-managed Terraform only.
+  # External modules can introduce findings outside our ownership and should
+  # be validated in their upstream source.
+  local checkov_args=(--download-external-modules false --compact)
+
   if command -v checkov >/dev/null 2>&1; then
     log_info "Running checkov"
-    checkov -d "$ROOT/modules" --download-external-modules true --compact
-    checkov -d "$ROOT/examples" --download-external-modules true --compact
+    checkov -d "$ROOT/modules" "${checkov_args[@]}"
+    checkov -d "$ROOT/examples" "${checkov_args[@]}"
     return
   fi
 
   if command -v docker >/dev/null 2>&1; then
     log_info "Running checkov via docker"
     docker run --rm -v "$PWD:/workspace" -w /workspace bridgecrew/checkov:latest \
-      checkov -d "$ROOT/modules" --download-external-modules true --compact
+      checkov -d "$ROOT/modules" "${checkov_args[@]}"
     docker run --rm -v "$PWD:/workspace" -w /workspace bridgecrew/checkov:latest \
-      checkov -d "$ROOT/examples" --download-external-modules true --compact
+      checkov -d "$ROOT/examples" "${checkov_args[@]}"
     return
   fi
 
