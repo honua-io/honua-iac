@@ -177,6 +177,13 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install ripgrep
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
+
       - name: Install checkov
         shell: bash
         run: |
