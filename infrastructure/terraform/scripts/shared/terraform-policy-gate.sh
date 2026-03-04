@@ -132,9 +132,9 @@ assert_regex_absent() {
   local label="$3"
 
   if command -v rg >/dev/null 2>&1; then
-    rg -n "$pattern" "$scope" -S >/tmp/policy-match.txt 2>&1
+    rg -n "$pattern" "$scope" -S >/tmp/policy-match.txt 2>&1 || true
   else
-    grep -REn "$pattern" "$scope" >/tmp/policy-match.txt 2>&1
+    grep -REn "$pattern" "$scope" >/tmp/policy-match.txt 2>&1 || true
   fi
 
   if [[ -s /tmp/policy-match.txt ]]; then
