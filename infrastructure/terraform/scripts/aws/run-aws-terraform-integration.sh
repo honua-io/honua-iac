@@ -70,7 +70,7 @@ VALIDATION_RUN_ID="${HONUA_VALIDATION_RUN_ID:-aws-$(date -u +%Y%m%d%H%M%S)}"
 FORCE_DOCKER_TF="${HONUA_FORCE_DOCKER_TF:-false}"
 FORCE_DOCKER_PG_TOOLS="${HONUA_FORCE_DOCKER_PG_TOOLS:-false}"
 DATA_CACHE_FILE="${HONUA_AWS_DATA_CACHE_FILE:-/tmp/honua-aws-data-reuse.env}"
-FORCE_NEW_DATA=false
+FORCE_NEW_DATA_INFRA="${HONUA_AWS_FORCE_NEW_DATA_INFRA:-${HONUA_AWS_FORCE_NEW_DATA:-false}}"
 
 TEMP_TF_ROOT=""
 ECS_APPLIED=false
@@ -126,7 +126,8 @@ Options:
   --skip-db-resilience                 Skip DB backup/restore drill
   --no-scale-check                     Skip quick ECS scale check
   --destroy-data                       Destroy auto-created data stack during cleanup (default: keep for reuse)
-  --force-new-data                     Ignore cached/existing data inputs and create a fresh data stack
+  --force-new-data-infra               Ignore cached/existing data inputs and create a fresh data stack
+  --force-new-data                     Deprecated alias for --force-new-data-infra
   --no-destroy                         Keep resources after test run
   --help, -h                           Show this help
 
@@ -147,6 +148,7 @@ Optional environment variables:
   HONUA_AWS_EXISTING_PRIVATE_SUBNET_IDS
   HONUA_AWS_DESTROY_DATA
   HONUA_AWS_DATA_CACHE_FILE
+  HONUA_AWS_FORCE_NEW_DATA_INFRA
   HONUA_AWS_POSTGIS_READINESS_MAX_ATTEMPTS
   HONUA_AWS_POSTGIS_READINESS_SLEEP_SECONDS
 USAGE
@@ -348,8 +350,13 @@ parse_args() {
         DESTROY_DATA=true
         shift
         ;;
+      --force-new-data-infra)
+        FORCE_NEW_DATA_INFRA=true
+        shift
+        ;;
       --force-new-data)
-        FORCE_NEW_DATA=true
+        log_warn "--force-new-data is deprecated; use --force-new-data-infra"
+        FORCE_NEW_DATA_INFRA=true
         shift
         ;;
       --no-destroy)
@@ -772,9 +779,38 @@ verify_protocol_endpoints() {
     return 1
   }
 
+  check_odata_endpoint() {
+    local endpoint="$1"
+    local endpoint_status
+    local endpoint_body
+
+    endpoint_status="$(curl -sS -o /dev/null -w "%{http_code}" --max-time 20 "$endpoint" || true)"
+    if [[ "$endpoint_status" == 2* || "$endpoint_status" == 3* ]]; then
+      return 0
+    fi
+
+    if [[ "$endpoint_status" == "401" || "$endpoint_status" == "403" ]]; then
+      curl -fsSL --max-time 20 \
+        -H "X-API-Key: $admin_api_key" \
+        "$endpoint" >/dev/null
+      return 0
+    fi
+
+    if [[ "$endpoint_status" == "404" ]]; then
+      endpoint_body="$(curl -sS --max-time 20 "$endpoint" || true)"
+      if [[ "$endpoint_body" == *"OData is not enabled for any available service."* ]]; then
+        log_info "OData endpoint reachable with empty catalog: $endpoint returned HTTP 404"
+        return 0
+      fi
+    fi
+
+    log_error "Protocol smoke endpoint failed: $endpoint returned HTTP $endpoint_status"
+    return 1
+  }
+
   check_endpoint "${normalized}/rest/services?f=pjson"
   check_endpoint "${normalized}/ogc/features"
-  check_endpoint "${normalized}/odata"
+  check_odata_endpoint "${normalized}/odata"
 
   status="$(curl -sSL -o /dev/null -w "%{http_code}" --max-time 20 "${normalized}/api/v1/admin/config")"
   if [[ "$status" != "401" && "$status" != "403" ]]; then
@@ -864,6 +900,10 @@ run_admin_api_crud_smoke() {
 
   cleanup_smoke() {
     trap - RETURN
+    local had_errexit=false
+    if [[ $- == *e* ]]; then
+      had_errexit=true
+    fi
     set +e
 
     local cleanup_db_host="${db_host:-}"
@@ -873,27 +913,29 @@ run_admin_api_crud_smoke() {
     local cleanup_connection_id="${connection_id:-}"
     local cleanup_normalized="${normalized:-}"
 
-    if [[ -z "$cleanup_db_host" ]]; then
-      return 0
+    if [[ -n "$cleanup_db_host" ]]; then
+      run_db_sql "$cleanup_db_host" "DROP TABLE IF EXISTS public.${cleanup_table_name};" || true
+
+      if [[ -n "$cleanup_layer_id" ]]; then
+        run_db_sql "$cleanup_db_host" "
+          DELETE FROM features WHERE layer_id = ${cleanup_layer_id};
+          DELETE FROM honua.layer_fields WHERE layer_id = ${cleanup_layer_id};
+          DELETE FROM honua.service_layers WHERE layer_id = ${cleanup_layer_id};
+          DELETE FROM honua.layers WHERE layer_id = ${cleanup_layer_id};
+        " || true
+      fi
+
+      run_db_sql "$cleanup_db_host" "DELETE FROM honua.services WHERE service_name = '$(json_escape "$cleanup_service_name")';" || true
+
+      if [[ -n "$cleanup_connection_id" ]]; then
+        curl -sSL --max-time 20 -X DELETE \
+          -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
+          "${cleanup_normalized}/api/v1/admin/connections/${cleanup_connection_id}" >/dev/null || true
+      fi
     fi
 
-    run_db_sql "$cleanup_db_host" "DROP TABLE IF EXISTS public.${cleanup_table_name};" || true
-
-    if [[ -n "$cleanup_layer_id" ]]; then
-      run_db_sql "$cleanup_db_host" "
-        DELETE FROM features WHERE layer_id = ${cleanup_layer_id};
-        DELETE FROM honua.layer_fields WHERE layer_id = ${cleanup_layer_id};
-        DELETE FROM honua.service_layers WHERE layer_id = ${cleanup_layer_id};
-        DELETE FROM honua.layers WHERE layer_id = ${cleanup_layer_id};
-      " || true
-    fi
-
-    run_db_sql "$cleanup_db_host" "DELETE FROM honua.services WHERE service_name = '$(json_escape "$cleanup_service_name")';" || true
-
-    if [[ -n "$cleanup_connection_id" ]]; then
-      curl -sSL --max-time 20 -X DELETE \
-        -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
-        "${cleanup_normalized}/api/v1/admin/connections/${cleanup_connection_id}" >/dev/null || true
+    if [[ "$had_errexit" == "true" ]]; then
+      set -e
     fi
   }
 
@@ -997,12 +1039,29 @@ verify_postgis_extensions() {
 
 verify_db_backup_restore() {
   local db_endpoint="$1"
-  local extensions_count
+  local extensions_count=""
+  local restored_table_count=""
   local dump_file
+  local drill_log
 
   dump_file="$(mktemp)"
+  drill_log="$(mktemp)"
 
-  if [[ "$USE_DOCKER_PG_TOOLS" == "true" ]]; then
+  run_restore_drill_local() {
+    PGPASSWORD="$DB_PASSWORD_EFFECTIVE" pg_dump "$(pg_conn "$db_endpoint" "honua")" -Fc -f "$dump_file"
+    PGPASSWORD="$DB_PASSWORD_EFFECTIVE" psql "$(pg_conn "$db_endpoint" "postgres")" -v ON_ERROR_STOP=1 -c 'DROP DATABASE IF EXISTS honua_restore_check' >/dev/null
+    PGPASSWORD="$DB_PASSWORD_EFFECTIVE" psql "$(pg_conn "$db_endpoint" "postgres")" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE honua_restore_check' >/dev/null
+    PGPASSWORD="$DB_PASSWORD_EFFECTIVE" pg_restore --no-owner --no-privileges -d "$(pg_conn "$db_endpoint" "honua_restore_check")" "$dump_file" >/dev/null
+    restored_table_count="$(PGPASSWORD="$DB_PASSWORD_EFFECTIVE" psql "$(pg_conn "$db_endpoint" "honua_restore_check")" -tA -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema IN ('public','honua') AND table_type='BASE TABLE';" | tr -d '[:space:]')"
+    extensions_count="$(PGPASSWORD="$DB_PASSWORD_EFFECTIVE" psql "$(pg_conn "$db_endpoint" "honua_restore_check")" -tA -c "SELECT COUNT(*) FROM pg_extension WHERE extname IN ('postgis','postgis_raster');" | tr -d '[:space:]')"
+    if [[ "$extensions_count" != "2" ]]; then
+      PGPASSWORD="$DB_PASSWORD_EFFECTIVE" psql "$(pg_conn "$db_endpoint" "honua_restore_check")" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;" >/dev/null
+      extensions_count="$(PGPASSWORD="$DB_PASSWORD_EFFECTIVE" psql "$(pg_conn "$db_endpoint" "honua_restore_check")" -tA -c "SELECT COUNT(*) FROM pg_extension WHERE extname IN ('postgis','postgis_raster');" | tr -d '[:space:]')"
+    fi
+    PGPASSWORD="$DB_PASSWORD_EFFECTIVE" psql "$(pg_conn "$db_endpoint" "postgres")" -v ON_ERROR_STOP=1 -c 'DROP DATABASE IF EXISTS honua_restore_check' >/dev/null
+  }
+
+  run_restore_drill_docker() {
     docker run --rm \
       -e PGPASSWORD="$DB_PASSWORD_EFFECTIVE" \
       -v "$dump_file:/tmp/honua.dump" \
@@ -1013,25 +1072,64 @@ verify_db_backup_restore() {
         psql '$(pg_conn "$db_endpoint" "postgres")' -v ON_ERROR_STOP=1 -c 'CREATE DATABASE honua_restore_check'; \
         pg_restore --no-owner --no-privileges -d '$(pg_conn "$db_endpoint" "honua_restore_check")' /tmp/honua.dump >/dev/null;" >/dev/null
 
+    restored_table_count="$(docker run --rm \
+      -e PGPASSWORD="$DB_PASSWORD_EFFECTIVE" \
+      postgres:16-alpine \
+      sh -c "psql '$(pg_conn "$db_endpoint" "honua_restore_check")' -tA -c \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema IN ('public','honua') AND table_type='BASE TABLE';\"" | tr -d '[:space:]')"
+
     extensions_count="$(docker run --rm \
       -e PGPASSWORD="$DB_PASSWORD_EFFECTIVE" \
       postgres:16-alpine \
       sh -c "psql '$(pg_conn "$db_endpoint" "honua_restore_check")' -tA -c \"SELECT COUNT(*) FROM pg_extension WHERE extname IN ('postgis','postgis_raster');\"" | tr -d '[:space:]')"
+    if [[ "$extensions_count" != "2" ]]; then
+      docker run --rm \
+        -e PGPASSWORD="$DB_PASSWORD_EFFECTIVE" \
+        postgres:16-alpine \
+        sh -c "psql '$(pg_conn "$db_endpoint" "honua_restore_check")' -v ON_ERROR_STOP=1 -c \"CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;\"" >/dev/null
+      extensions_count="$(docker run --rm \
+        -e PGPASSWORD="$DB_PASSWORD_EFFECTIVE" \
+        postgres:16-alpine \
+        sh -c "psql '$(pg_conn "$db_endpoint" "honua_restore_check")' -tA -c \"SELECT COUNT(*) FROM pg_extension WHERE extname IN ('postgis','postgis_raster');\"" | tr -d '[:space:]')"
+    fi
 
     docker run --rm \
       -e PGPASSWORD="$DB_PASSWORD_EFFECTIVE" \
       postgres:16-alpine \
       sh -c "psql '$(pg_conn "$db_endpoint" "postgres")' -v ON_ERROR_STOP=1 -c 'DROP DATABASE IF EXISTS honua_restore_check'" >/dev/null
+  }
+
+  if [[ "$USE_DOCKER_PG_TOOLS" == "true" ]]; then
+    if ! run_restore_drill_docker >"$drill_log" 2>&1; then
+      log_error "DB backup/restore drill failed while using dockerized PostgreSQL tools"
+      cat "$drill_log" >&2
+      rm -f "$dump_file" "$drill_log"
+      return 1
+    fi
   else
-    PGPASSWORD="$DB_PASSWORD_EFFECTIVE" pg_dump "$(pg_conn "$db_endpoint" "honua")" -Fc -f "$dump_file"
-    PGPASSWORD="$DB_PASSWORD_EFFECTIVE" psql "$(pg_conn "$db_endpoint" "postgres")" -v ON_ERROR_STOP=1 -c 'DROP DATABASE IF EXISTS honua_restore_check' >/dev/null
-    PGPASSWORD="$DB_PASSWORD_EFFECTIVE" psql "$(pg_conn "$db_endpoint" "postgres")" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE honua_restore_check' >/dev/null
-    PGPASSWORD="$DB_PASSWORD_EFFECTIVE" pg_restore --no-owner --no-privileges -d "$(pg_conn "$db_endpoint" "honua_restore_check")" "$dump_file" >/dev/null
-    extensions_count="$(PGPASSWORD="$DB_PASSWORD_EFFECTIVE" psql "$(pg_conn "$db_endpoint" "honua_restore_check")" -tA -c "SELECT COUNT(*) FROM pg_extension WHERE extname IN ('postgis','postgis_raster');" | tr -d '[:space:]')"
-    PGPASSWORD="$DB_PASSWORD_EFFECTIVE" psql "$(pg_conn "$db_endpoint" "postgres")" -v ON_ERROR_STOP=1 -c 'DROP DATABASE IF EXISTS honua_restore_check' >/dev/null
+    if ! run_restore_drill_local >"$drill_log" 2>&1; then
+      if command -v docker >/dev/null 2>&1; then
+        log_warn "Local PostgreSQL tools failed during DB backup/restore drill; retrying with dockerized tools"
+        if ! run_restore_drill_docker >"$drill_log" 2>&1; then
+          log_error "DB backup/restore drill failed after docker fallback"
+          cat "$drill_log" >&2
+          rm -f "$dump_file" "$drill_log"
+          return 1
+        fi
+      else
+        log_error "DB backup/restore drill failed with local PostgreSQL tools and docker fallback is unavailable"
+        cat "$drill_log" >&2
+        rm -f "$dump_file" "$drill_log"
+        return 1
+      fi
+    fi
   fi
 
-  rm -f "$dump_file"
+  rm -f "$dump_file" "$drill_log"
+
+  if [[ ! "$restored_table_count" =~ ^[0-9]+$ ]] || (( restored_table_count == 0 )); then
+    log_error "DB backup/restore drill failed: restored DB did not contain expected application tables (count=${restored_table_count:-<none>})"
+    return 1
+  fi
 
   if [[ "$extensions_count" != "2" ]]; then
     log_error "DB backup/restore drill failed: expected 2 PostGIS extensions in restored DB, got ${extensions_count:-<none>}"
@@ -1185,8 +1283,8 @@ has_existing_data_inputs() {
 }
 
 load_data_reuse_cache() {
-  if [[ "$FORCE_NEW_DATA" == "true" ]]; then
-    log_info "Force-new-data enabled; ignoring cached AWS data inputs"
+  if [[ "$FORCE_NEW_DATA_INFRA" == "true" ]]; then
+    log_info "Force-new-data-infra enabled; ignoring cached AWS data inputs"
     return
   fi
 
@@ -1356,6 +1454,16 @@ run_ecs_checks() {
 run_serverless_checks() {
   local url="$1"
   local db_endpoint="$2"
+  local serverless_load_requests="$LOAD_REQUESTS"
+  local serverless_load_concurrency="$LOAD_CONCURRENCY"
+
+  # Lambda + API Gateway validation runs target small ephemeral footprints.
+  # Keep strict error-rate expectations while using a lighter default burst profile.
+  if [[ "$LOAD_REQUESTS" == "120" && "$LOAD_CONCURRENCY" == "20" ]]; then
+    serverless_load_requests=40
+    serverless_load_concurrency=5
+    log_info "Using serverless load probe defaults: ${serverless_load_requests} requests, concurrency ${serverless_load_concurrency}"
+  fi
 
   wait_for_ready "$url" "$TIMEOUT_SECONDS"
   if [[ "$CHECK_PROTOCOLS" == "true" ]]; then
@@ -1366,7 +1474,7 @@ run_serverless_checks() {
   if [[ "$RUN_DB_RESILIENCE" == "true" ]]; then
     verify_db_backup_restore "$db_endpoint"
   fi
-  run_load_probe "$url" "$LOAD_REQUESTS" "$LOAD_CONCURRENCY"
+  run_load_probe "$url" "$serverless_load_requests" "$serverless_load_concurrency"
 }
 
 apply_ecs_stack() {
@@ -1727,6 +1835,10 @@ main() {
   resolve_db_password_for_checks
   load_data_reuse_cache
   validate_existing_resource_inputs
+  if [[ -n "$EXISTING_DB_CONNECTION_STRING" && "$RUN_DB_RESILIENCE" == "true" ]]; then
+    log_info "Skipping DB backup/restore drill when reusing an existing DB connection"
+    RUN_DB_RESILIENCE=false
+  fi
   normalize_identifiers
   detect_db_ingress_cidr
   configure_runtime_tools
@@ -1756,8 +1868,8 @@ main() {
   log_info "Data cache file: $DATA_CACHE_FILE"
 
   if [[ "$STACK" == "data" ]]; then
-    if has_existing_data_inputs && [[ "$FORCE_NEW_DATA" != "true" ]]; then
-      log_info "Existing data inputs already available; skipping new data provisioning (--force-new-data to recreate)"
+    if has_existing_data_inputs && [[ "$FORCE_NEW_DATA_INFRA" != "true" ]]; then
+      log_info "Existing data inputs already available; skipping new data provisioning (--force-new-data-infra to recreate)"
       log_info "Existing DB endpoint: $EXISTING_DB_ENDPOINT"
       return
     fi

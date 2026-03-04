@@ -560,6 +560,7 @@ run_k8s_checks() {
   fi
 
   HONUA_K8S_IMAGE="$K8S_IMAGE" \
+    HONUA_USE_AOT="$USE_AOT" \
     KUBECONFIG="$TEMP_KUBECONFIG_DIR/config" \
     "$SCRIPT_DIR/../k8s/run-k8s-terraform-integration.sh" "${args[@]}"
 }

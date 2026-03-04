@@ -68,11 +68,16 @@ locals {
     ConnectionStrings__redis = local.redis_connection
   } : {}
   lambda_environment = merge({
-    HONUA_SECRET_CONNECTION_STRING_ARN = aws_secretsmanager_secret.connection_string.arn
-    HONUA_SECRET_ADMIN_PASSWORD_ARN    = aws_secretsmanager_secret.admin_password.arn
-    HONUA_SERVE_ADMIN_UI               = var.serve_admin_ui ? "true" : "false"
-    HONUA_ADMIN_UI                     = var.serve_admin_ui ? "true" : "false"
-    HONUA_OBSERVABILITY                = "true"
+    ConnectionStrings__DefaultConnection      = local.db_connection_string
+    HONUA_ADMIN_PASSWORD                      = var.admin_password
+    Security__ConnectionEncryption__MasterKey = var.admin_password
+    HONUA_SKIP_MIGRATIONS                     = var.skip_migrations ? "true" : "false"
+    HostValidation__AllowedHosts__0           = "*.execute-api.${data.aws_region.current.name}.amazonaws.com"
+    HONUA_SECRET_CONNECTION_STRING_ARN        = aws_secretsmanager_secret.connection_string.arn
+    HONUA_SECRET_ADMIN_PASSWORD_ARN           = aws_secretsmanager_secret.admin_password.arn
+    HONUA_SERVE_ADMIN_UI                      = var.serve_admin_ui ? "true" : "false"
+    HONUA_ADMIN_UI                            = var.serve_admin_ui ? "true" : "false"
+    HONUA_OBSERVABILITY                       = "true"
   }, var.additional_env, local.redis_settings)
 }
 
@@ -129,6 +134,17 @@ resource "aws_security_group" "lambda" {
       to_port     = 5432
       protocol    = "tcp"
       cidr_blocks = ["0.0.0.0/0"]
+    }
+  }
+
+  dynamic "egress" {
+    for_each = local.redis_enabled ? [1] : []
+    content {
+      description = "Redis access"
+      from_port   = var.redis_port
+      to_port     = var.redis_port
+      protocol    = "tcp"
+      cidr_blocks = [local.vpc_cidr_block]
     }
   }
 

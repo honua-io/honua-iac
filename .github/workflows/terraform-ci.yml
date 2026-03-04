@@ -1,0 +1,141 @@
+name: Terraform CI
+
+on:
+  pull_request:
+    paths:
+      - 'infrastructure/terraform/**'
+      - 'scripts/run-aws-terraform-integration.sh'
+      - 'scripts/run-azure-terraform-integration.sh'
+      - 'scripts/run-aks-terraform-integration.sh'
+      - 'scripts/run-eks-terraform-integration.sh'
+      - 'scripts/run-k8s-terraform-integration.sh'
+      - 'scripts/run-terraform-drift-detection.sh'
+      - 'scripts/terraform-policy-gate.sh'
+      - 'scripts/tf-secrets.local.example.sh'
+      - 'docs/devops/terraform-validation.md'
+      - 'docs/devops/examples/**'
+      - '.github/workflows/terraform-ci.yml'
+      - '.github/workflows/terraform-manual-validation.yml'
+  push:
+    branches:
+      - trunk
+    paths:
+      - 'infrastructure/terraform/**'
+      - 'scripts/run-aws-terraform-integration.sh'
+      - 'scripts/run-azure-terraform-integration.sh'
+      - 'scripts/run-aks-terraform-integration.sh'
+      - 'scripts/run-eks-terraform-integration.sh'
+      - 'scripts/run-k8s-terraform-integration.sh'
+      - 'scripts/run-terraform-drift-detection.sh'
+      - 'scripts/terraform-policy-gate.sh'
+      - 'scripts/tf-secrets.local.example.sh'
+      - 'docs/devops/terraform-validation.md'
+      - 'docs/devops/examples/**'
+      - '.github/workflows/terraform-ci.yml'
+      - '.github/workflows/terraform-manual-validation.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TF_IN_AUTOMATION: true
+
+jobs:
+  static-validate:
+    name: Static Terraform Validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform fmt check
+        run: |
+          terraform fmt -check -recursive infrastructure/terraform
+          terraform fmt -check -recursive docs/devops/examples
+
+      - name: Terraform init/validate (selected roots)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          roots=(
+            "infrastructure/terraform/bootstrap/azure-aca"
+            "infrastructure/terraform/bootstrap/azure-functions"
+            "infrastructure/terraform/bootstrap/azure-aks"
+            "infrastructure/terraform/bootstrap/aws-ecs"
+            "infrastructure/terraform/bootstrap/aws-serverless"
+            "infrastructure/terraform/bootstrap/aws-eks"
+            "infrastructure/terraform/examples/azure"
+            "infrastructure/terraform/examples/azure-data"
+            "infrastructure/terraform/examples/azure-functions"
+            "infrastructure/terraform/examples/aws"
+            "infrastructure/terraform/examples/aws-serverless"
+            "infrastructure/terraform/examples/azure-aks"
+            "infrastructure/terraform/examples/aws-eks"
+            "infrastructure/terraform/examples/observability"
+            "infrastructure/terraform/modules/azure-aca"
+            "infrastructure/terraform/modules/azure-data"
+            "infrastructure/terraform/modules/azure-functions"
+            "infrastructure/terraform/modules/aws-ecs"
+            "infrastructure/terraform/modules/aws-serverless"
+            "infrastructure/terraform/modules/azure-aks"
+            "infrastructure/terraform/modules/aws-eks"
+            "infrastructure/terraform/modules/observability-stack"
+            "docs/devops/examples"
+          )
+
+          for root in "${roots[@]}"; do
+            echo "::group::terraform init ($root)"
+            terraform -chdir="$root" init -backend=false -input=false -no-color
+            echo "::endgroup::"
+
+            echo "::group::terraform validate ($root)"
+            terraform -chdir="$root" validate -no-color
+            echo "::endgroup::"
+          done
+
+  policy-gates:
+    name: Terraform Policy Gates
+    needs: static-validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Setup tflint
+        uses: terraform-linters/setup-tflint@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install checkov
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install checkov
+
+      - name: Install tfsec
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
+          tfsec --version
+
+      - name: Run Terraform policy gate script
+        shell: bash
+        run: ./infrastructure/terraform/scripts/shared/terraform-policy-gate.sh

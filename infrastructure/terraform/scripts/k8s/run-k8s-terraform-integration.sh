@@ -607,6 +607,10 @@ run_admin_api_crud_smoke() {
 
   cleanup_smoke() {
     trap - RETURN
+    local had_errexit=false
+    if [[ $- == *e* ]]; then
+      had_errexit=true
+    fi
     set +e
 
     local cleanup_table_name="${table_name:-}"
@@ -615,7 +619,9 @@ run_admin_api_crud_smoke() {
     local cleanup_connection_id="${connection_id:-}"
     local cleanup_base="${base:-}"
 
-    run_db_sql_k8s "DROP TABLE IF EXISTS public.${cleanup_table_name};" || true
+    if [[ -n "$cleanup_table_name" ]]; then
+      run_db_sql_k8s "DROP TABLE IF EXISTS public.${cleanup_table_name};" || true
+    fi
 
     if [[ -n "$cleanup_layer_id" ]]; then
       run_db_sql_k8s "
@@ -626,12 +632,18 @@ run_admin_api_crud_smoke() {
       " || true
     fi
 
-    run_db_sql_k8s "DELETE FROM honua.services WHERE service_name = '$(json_escape "$cleanup_service_name")';" || true
+    if [[ -n "$cleanup_service_name" ]]; then
+      run_db_sql_k8s "DELETE FROM honua.services WHERE service_name = '$(json_escape "$cleanup_service_name")';" || true
+    fi
 
-    if [[ -n "$cleanup_connection_id" ]]; then
+    if [[ -n "$cleanup_connection_id" && -n "$cleanup_base" ]]; then
       curl -sS --max-time 20 "${curl_args[@]}" -X DELETE \
         -H "X-API-Key: $admin_api_key" \
         "${cleanup_base}/api/v1/admin/connections/${cleanup_connection_id}" >/dev/null || true
+    fi
+
+    if [[ "$had_errexit" == "true" ]]; then
+      set -e
     fi
   }
 

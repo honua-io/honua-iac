@@ -533,6 +533,7 @@ run_k8s_checks() {
   fi
 
   HONUA_K8S_IMAGE="$K8S_IMAGE" \
+    HONUA_USE_AOT="$USE_AOT" \
     KUBECONFIG="$TEMP_KUBECONFIG_PATH" \
     "$SCRIPT_DIR/../k8s/run-k8s-terraform-integration.sh" "${args[@]}"
 }
@@ -555,12 +556,13 @@ verify_no_leaks() {
   local -a stale_arns=()
   local arn
 
-  for i in {1..10}; do
+  for i in {1..20}; do
     count="$(aws resourcegroupstaggingapi get-resources --tag-filters Key=ValidationRunId,Values="$VALIDATION_RUN_ID" --query 'length(ResourceTagMappingList)' --output text 2>/dev/null || echo 0)"
     if [[ "$count" == "0" || "$count" == "None" ]]; then
       log_info "Leak janitor check passed (no tagged resources remain)"
       return 0
     fi
+    log_info "Leak janitor waiting for tagged resources to clear (attempt $i/20, count=$count)"
     sleep 15
   done
 
@@ -578,22 +580,55 @@ verify_no_leaks() {
     local resource_path
     local cluster_name
     local nodegroup_name
+    local states
+    local status
+    local key_state
 
     case "$resource_arn" in
       arn:aws:ec2:*:*:instance/*)
         id="${resource_arn##*/}"
-        exists="$(aws ec2 describe-instances --instance-ids "$id" --query 'length(Reservations[].Instances[])' --output text 2>/dev/null || echo 0)"
-        [[ "$exists" != "0" && "$exists" != "None" ]]
+        states="$(aws ec2 describe-instances --instance-ids "$id" --query 'Reservations[].Instances[].State.Name' --output text 2>/dev/null || true)"
+        [[ -z "$states" || "$states" == "None" ]] && return 1
+        for status in $states; do
+          case "$status" in
+            terminated|shutting-down)
+              ;;
+            *)
+              return 0
+              ;;
+          esac
+        done
+        return 1
         ;;
       arn:aws:ec2:*:*:volume/*)
         id="${resource_arn##*/}"
-        exists="$(aws ec2 describe-volumes --volume-ids "$id" --query 'length(Volumes)' --output text 2>/dev/null || echo 0)"
-        [[ "$exists" != "0" && "$exists" != "None" ]]
+        states="$(aws ec2 describe-volumes --volume-ids "$id" --query 'Volumes[].State' --output text 2>/dev/null || true)"
+        [[ -z "$states" || "$states" == "None" ]] && return 1
+        for status in $states; do
+          case "$status" in
+            deleting|deleted)
+              ;;
+            *)
+              return 0
+              ;;
+          esac
+        done
+        return 1
         ;;
       arn:aws:ec2:*:*:natgateway/*)
         id="${resource_arn##*/}"
-        exists="$(aws ec2 describe-nat-gateways --nat-gateway-ids "$id" --query 'length(NatGateways)' --output text 2>/dev/null || echo 0)"
-        [[ "$exists" != "0" && "$exists" != "None" ]]
+        states="$(aws ec2 describe-nat-gateways --nat-gateway-ids "$id" --query 'NatGateways[].State' --output text 2>/dev/null || true)"
+        [[ -z "$states" || "$states" == "None" ]] && return 1
+        for status in $states; do
+          case "$status" in
+            deleting|deleted)
+              ;;
+            *)
+              return 0
+              ;;
+          esac
+        done
+        return 1
         ;;
       arn:aws:ec2:*:*:subnet/*)
         id="${resource_arn##*/}"
@@ -630,6 +665,18 @@ verify_no_leaks() {
         exists="$(aws ec2 describe-addresses --allocation-ids "$id" --query 'length(Addresses)' --output text 2>/dev/null || echo 0)"
         [[ "$exists" != "0" && "$exists" != "None" ]]
         ;;
+      arn:aws:kms:*:*:key/*)
+        key_state="$(aws kms describe-key --key-id "$resource_arn" --query 'KeyMetadata.KeyState' --output text 2>/dev/null || true)"
+        [[ -z "$key_state" || "$key_state" == "None" || "$key_state" == "NotFoundException" ]] && return 1
+        case "$key_state" in
+          PendingDeletion|PendingReplicaDeletion)
+            return 1
+            ;;
+          *)
+            return 0
+            ;;
+        esac
+        ;;
       arn:aws:elasticloadbalancing:*:*:loadbalancer/*)
         exists="$(aws elbv2 describe-load-balancers --load-balancer-arns "$resource_arn" --query 'length(LoadBalancers)' --output text 2>/dev/null || echo 0)"
         [[ "$exists" != "0" && "$exists" != "None" ]]
@@ -640,12 +687,16 @@ verify_no_leaks() {
         ;;
       arn:aws:eks:*:*:cluster/*)
         id="${resource_arn##*/}"
-        aws eks describe-cluster --name "$id" >/dev/null 2>&1
+        status="$(aws eks describe-cluster --name "$id" --query 'cluster.status' --output text 2>/dev/null || true)"
+        [[ -z "$status" || "$status" == "None" || "$status" == "DELETING" ]] && return 1
+        return 0
         ;;
       arn:aws:eks:*:*:nodegroup/*)
         resource_path="${resource_arn##*:}"
         IFS='/' read -r _ cluster_name nodegroup_name _ <<< "$resource_path"
-        aws eks describe-nodegroup --cluster-name "$cluster_name" --nodegroup-name "$nodegroup_name" >/dev/null 2>&1
+        status="$(aws eks describe-nodegroup --cluster-name "$cluster_name" --nodegroup-name "$nodegroup_name" --query 'nodegroup.status' --output text 2>/dev/null || true)"
+        [[ -z "$status" || "$status" == "None" || "$status" == "DELETING" ]] && return 1
+        return 0
         ;;
       *)
         log_warn "Leak janitor cannot verify ARN type: $resource_arn (treating as existing)"
