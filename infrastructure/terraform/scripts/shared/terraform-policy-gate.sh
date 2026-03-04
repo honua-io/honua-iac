@@ -173,8 +173,8 @@ assert_regex_present() {
 run_custom_policy_checks() {
   log_info "Running custom policy checks"
 
-  assert_regex_absent 'actions\\s*=\\s*\\[\\s*"\\*"\\s*\\]' "$ROOT" "least-privilege-actions"
-  assert_regex_absent 'Action"\\s*:\\s*"\\*"' "$ROOT" "least-privilege-actions-json"
+  assert_regex_absent 'actions[[:space:]]*=[[:space:]]*\[[[:space:]]*"\*"[[:space:]]*\]' "$ROOT" "least-privilege-actions"
+  assert_regex_absent 'Action"[[:space:]]*:[[:space:]]*"\*"' "$ROOT" "least-privilege-actions-json"
 
   local tag_files=(
     "$ROOT/modules/aws-ecs/variables.tf"
@@ -199,13 +199,13 @@ run_custom_policy_checks() {
     assert_regex_present 'variable "tags"' "$file" "mandatory-tags-variable"
   done
 
-  assert_regex_present 'storage_encrypted\\s*=\\s*true' "$ROOT/modules/aws-ecs/main.tf" "aws-ecs-rds-encryption"
-  assert_regex_present 'storage_encrypted\\s*=\\s*true' "$ROOT/modules/aws-serverless/main.tf" "aws-serverless-rds-encryption"
-  assert_regex_present 'transit_encryption_enabled\\s*=\\s*true' "$ROOT/modules/aws-ecs/main.tf" "aws-ecs-redis-transit-encryption"
-  assert_regex_present 'transit_encryption_enabled\\s*=\\s*true' "$ROOT/modules/aws-serverless/main.tf" "aws-serverless-redis-transit-encryption"
-  assert_regex_present 'minimum_tls_version\\s*=\\s*"1\\.2"' "$ROOT/modules/azure-aca/main.tf" "azure-aca-redis-tls12"
-  assert_regex_present 'minimum_tls_version\\s*=\\s*"1\\.2"' "$ROOT/modules/azure-data/main.tf" "azure-data-redis-tls12"
-  assert_regex_present 'minimum_tls_version\\s*=\\s*"1\\.2"' "$ROOT/modules/azure-functions/main.tf" "azure-functions-redis-tls12"
+  assert_regex_present 'storage_encrypted[[:space:]]*=[[:space:]]*true' "$ROOT/modules/aws-ecs/main.tf" "aws-ecs-rds-encryption"
+  assert_regex_present 'storage_encrypted[[:space:]]*=[[:space:]]*true' "$ROOT/modules/aws-serverless/main.tf" "aws-serverless-rds-encryption"
+  assert_regex_present 'transit_encryption_enabled[[:space:]]*=[[:space:]]*true' "$ROOT/modules/aws-ecs/main.tf" "aws-ecs-redis-transit-encryption"
+  assert_regex_present 'transit_encryption_enabled[[:space:]]*=[[:space:]]*true' "$ROOT/modules/aws-serverless/main.tf" "aws-serverless-redis-transit-encryption"
+  assert_regex_present 'minimum_tls_version[[:space:]]*=[[:space:]]*"1\.2"' "$ROOT/modules/azure-aca/main.tf" "azure-aca-redis-tls12"
+  assert_regex_present 'minimum_tls_version[[:space:]]*=[[:space:]]*"1\.2"' "$ROOT/modules/azure-data/main.tf" "azure-data-redis-tls12"
+  assert_regex_present 'minimum_tls_version[[:space:]]*=[[:space:]]*"1\.2"' "$ROOT/modules/azure-functions/main.tf" "azure-functions-redis-tls12"
 }
 
 main() {
