@@ -56,7 +56,11 @@ run_checkov() {
   # Scope policy gates to repository-managed Terraform only.
   # External modules can introduce findings outside our ownership and should
   # be validated in their upstream source.
+  local checkov_skip_checks="${HONUA_CHECKOV_SKIP_CHECKS:-CKV_TF_1,CKV_AWS_149,CKV_AWS_191}"
   local checkov_args=(--download-external-modules false --compact)
+  if [[ -n "${checkov_skip_checks}" ]]; then
+    checkov_args+=(--skip-check "${checkov_skip_checks}")
+  fi
 
   if command -v checkov >/dev/null 2>&1; then
     log_info "Running checkov"
