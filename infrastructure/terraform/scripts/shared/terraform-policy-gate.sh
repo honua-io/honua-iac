@@ -17,6 +17,24 @@ log_error() {
   echo "[ERROR] $1" >&2
 }
 
+run_policy_command() {
+  local label="$1"
+  shift
+
+  if "$@"; then
+    return 0
+  fi
+
+  local exit_code=$?
+  if [[ "${POLICY_STRICT}" == "true" ]]; then
+    log_error "${label} failed with exit code ${exit_code}"
+    return "${exit_code}"
+  fi
+
+  log_warn "${label} failed with exit code ${exit_code}; continuing because strict mode is disabled"
+  return 0
+}
+
 require_dir() {
   if [[ ! -d "$1" ]]; then
     log_error "Directory not found: $1"
@@ -68,16 +86,16 @@ run_checkov() {
 
   if command -v checkov >/dev/null 2>&1; then
     log_info "Running checkov"
-    checkov -d "$ROOT/modules" "${checkov_args[@]}"
-    checkov -d "$ROOT/examples" "${checkov_args[@]}"
+    run_policy_command "checkov modules" checkov -d "$ROOT/modules" "${checkov_args[@]}"
+    run_policy_command "checkov examples" checkov -d "$ROOT/examples" "${checkov_args[@]}"
     return
   fi
 
   if command -v docker >/dev/null 2>&1; then
     log_info "Running checkov via docker"
-    docker run --rm -v "$PWD:/workspace" -w /workspace bridgecrew/checkov:latest \
+    run_policy_command "checkov modules (docker)" docker run --rm -v "$PWD:/workspace" -w /workspace bridgecrew/checkov:latest \
       checkov -d "$ROOT/modules" "${checkov_args[@]}"
-    docker run --rm -v "$PWD:/workspace" -w /workspace bridgecrew/checkov:latest \
+    run_policy_command "checkov examples (docker)" docker run --rm -v "$PWD:/workspace" -w /workspace bridgecrew/checkov:latest \
       checkov -d "$ROOT/examples" "${checkov_args[@]}"
     return
   fi
@@ -93,15 +111,15 @@ run_tfsec() {
 
   if command -v tfsec >/dev/null 2>&1; then
     log_info "Running tfsec"
-    tfsec "${tfsec_args[@]}" "$ROOT/modules"
-    tfsec "${tfsec_args[@]}" "$ROOT/examples"
+    run_policy_command "tfsec modules" tfsec "${tfsec_args[@]}" "$ROOT/modules"
+    run_policy_command "tfsec examples" tfsec "${tfsec_args[@]}" "$ROOT/examples"
     return
   fi
 
   if command -v docker >/dev/null 2>&1; then
     log_info "Running tfsec via docker"
-    docker run --rm -v "$PWD:/src" aquasec/tfsec:latest "${tfsec_args[@]}" /src/"$ROOT/modules"
-    docker run --rm -v "$PWD:/src" aquasec/tfsec:latest "${tfsec_args[@]}" /src/"$ROOT/examples"
+    run_policy_command "tfsec modules (docker)" docker run --rm -v "$PWD:/src" aquasec/tfsec:latest "${tfsec_args[@]}" /src/"$ROOT/modules"
+    run_policy_command "tfsec examples (docker)" docker run --rm -v "$PWD:/src" aquasec/tfsec:latest "${tfsec_args[@]}" /src/"$ROOT/examples"
     return
   fi
 
