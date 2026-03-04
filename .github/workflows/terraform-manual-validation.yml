@@ -404,6 +404,8 @@ jobs:
 
             if [[ "${{ inputs.no_destroy }}" == "true" ]]; then
               args+=(--no-destroy)
+            elif [[ "${{ inputs.deployment_profile }}" == "ephemeral" ]]; then
+              args+=(--destroy-data)
             fi
 
             if [[ "$HONUA_SKIP_SCALE_CHECK" == "true" ]]; then
@@ -666,6 +668,8 @@ jobs:
 
             if [[ "${{ inputs.no_destroy }}" == "true" ]]; then
               args+=(--no-destroy)
+            elif [[ "${{ inputs.deployment_profile }}" == "ephemeral" ]]; then
+              args+=(--destroy-data)
             fi
 
             if [[ "$HONUA_SKIP_SCALE_CHECK" == "true" ]]; then
