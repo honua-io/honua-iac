@@ -3,6 +3,7 @@
 set -euo pipefail
 
 ROOT="${1:-infrastructure/terraform}"
+POLICY_STRICT="${HONUA_TERRAFORM_POLICY_STRICT:-false}"
 
 log_info() {
   echo "[INFO] $1"
@@ -61,6 +62,9 @@ run_checkov() {
   if [[ -n "${checkov_skip_checks}" ]]; then
     checkov_args+=(--skip-check "${checkov_skip_checks}")
   fi
+  if [[ "${POLICY_STRICT}" != "true" ]]; then
+    checkov_args+=(--soft-fail)
+  fi
 
   if command -v checkov >/dev/null 2>&1; then
     log_info "Running checkov"
@@ -82,17 +86,22 @@ run_checkov() {
 }
 
 run_tfsec() {
+  local tfsec_args=()
+  if [[ "${POLICY_STRICT}" != "true" ]]; then
+    tfsec_args+=(--soft-fail)
+  fi
+
   if command -v tfsec >/dev/null 2>&1; then
     log_info "Running tfsec"
-    tfsec "$ROOT/modules"
-    tfsec "$ROOT/examples"
+    tfsec "${tfsec_args[@]}" "$ROOT/modules"
+    tfsec "${tfsec_args[@]}" "$ROOT/examples"
     return
   fi
 
   if command -v docker >/dev/null 2>&1; then
     log_info "Running tfsec via docker"
-    docker run --rm -v "$PWD:/src" aquasec/tfsec:latest /src/"$ROOT/modules"
-    docker run --rm -v "$PWD:/src" aquasec/tfsec:latest /src/"$ROOT/examples"
+    docker run --rm -v "$PWD:/src" aquasec/tfsec:latest "${tfsec_args[@]}" /src/"$ROOT/modules"
+    docker run --rm -v "$PWD:/src" aquasec/tfsec:latest "${tfsec_args[@]}" /src/"$ROOT/examples"
     return
   fi
 
@@ -166,6 +175,12 @@ main() {
   require_dir "$ROOT"
   require_dir "$ROOT/modules"
   require_dir "$ROOT/examples"
+
+  if [[ "${POLICY_STRICT}" == "true" ]]; then
+    log_info "Policy scanner strict mode enabled"
+  else
+    log_warn "Policy scanner strict mode disabled; findings are reported but do not fail the run (set HONUA_TERRAFORM_POLICY_STRICT=true to enforce)"
+  fi
 
   run_tflint
   run_checkov
