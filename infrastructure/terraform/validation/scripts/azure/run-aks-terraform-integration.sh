@@ -22,13 +22,11 @@ if [[ -z "$REPO_ROOT" ]]; then
   exit 1
 fi
 
-REGION="${AWS_REGION_OVERRIDE:-us-east-1}"
-ENVIRONMENT="${EKS_TF_ENVIRONMENT:-it}"
-NAME_PREFIX_BASE="${EKS_TF_NAME_PREFIX_BASE:-hnu$(date -u +%m%d%H%M)}"
-NODE_INSTANCE_TYPE="${EKS_NODE_INSTANCE_TYPE:-t3.small}"
-NODE_MIN_SIZE="${EKS_NODE_MIN_SIZE:-1}"
-NODE_MAX_SIZE="${EKS_NODE_MAX_SIZE:-3}"
-NODE_DESIRED_SIZE="${EKS_NODE_DESIRED_SIZE:-2}"
+LOCATION="${AZURE_LOCATION:-westus}"
+ENVIRONMENT="${AKS_TF_ENVIRONMENT:-it}"
+NAME_PREFIX_BASE="${AKS_TF_NAME_PREFIX_BASE:-hnu$(date -u +%m%d%H%M)}"
+NODE_COUNT="${AKS_NODE_COUNT:-2}"
+NODE_VM_SIZE="${AKS_NODE_VM_SIZE:-Standard_D2s_v3}"
 DEFAULT_HONUA_IMAGE="ghcr.io/honua-io/honua-server:latest"
 DEFAULT_HONUA_AOT_IMAGE="ghcr.io/honua-io/honua-server:latest-aot"
 USE_AOT="${HONUA_USE_AOT:-false}"
@@ -47,35 +45,37 @@ MAX_RUN_COST_USD="${HONUA_MAX_RUN_COST_USD:-0}"
 READY_SLO_SECONDS="${HONUA_READY_SLO_SECONDS:-600}"
 MAX_LOAD_ERROR_RATE_PERCENT="${HONUA_MAX_LOAD_ERROR_RATE_PERCENT:-0}"
 TF_IMAGE="${HONUA_TERRAFORM_IMAGE:-hashicorp/terraform:1.8.5}"
+AZ_CLI_IMAGE="${HONUA_AZ_CLI_IMAGE:-mcr.microsoft.com/azure-cli:2.65.0}"
 PLAN_ARTIFACT_DIR="${HONUA_TF_PLAN_ARTIFACT_DIR:-}"
 ALLOW_DESTROY_PLAN="${HONUA_ALLOW_DESTROY_PLAN:-false}"
 TTL_HOURS="${HONUA_TTL_HOURS:-8}"
-VALIDATION_RUN_ID="${HONUA_VALIDATION_RUN_ID:-eks-$(date -u +%Y%m%d%H%M%S)}"
+VALIDATION_RUN_ID="${HONUA_VALIDATION_RUN_ID:-aks-$(date -u +%Y%m%d%H%M%S)}"
 
 TEMP_TF_ROOT=""
-TEMP_KUBECONFIG_PATH=""
+TEMP_KUBECONFIG_DIR=""
 CLUSTER_APPLIED=false
 
 NAME_PREFIX=""
+RESOURCE_GROUP_NAME=""
 CLUSTER_NAME=""
 EXPIRES_AT_UTC=""
 USE_DOCKER_TF=false
+USE_DOCKER_AZ_CLI=false
+AZ_SESSION_INITIALIZED=false
 
 usage() {
   cat <<USAGE
-Run EKS Terraform integration checks and execute Kubernetes validation against the provisioned cluster.
+Run AKS Terraform integration checks and execute Kubernetes validation against the provisioned cluster.
 
 Usage:
-  ./infrastructure/terraform/scripts/aws/run-eks-terraform-integration.sh [options]
+  ./infrastructure/terraform/validation/scripts/azure/run-aks-terraform-integration.sh [options]
 
 Options:
-  --region <aws-region>                AWS region (default: us-east-1)
+  --location <azure-region>            Azure region (default: westus)
   --environment <name>                 Environment suffix (default: it)
   --name-prefix-base <prefix>          Base prefix for generated resource names
-  --node-instance-type <type>          EKS node instance type (default: t3.small)
-  --node-min-size <n>                  EKS node group min size (default: 1)
-  --node-max-size <n>                  EKS node group max size (default: 3)
-  --node-desired-size <n>              EKS node group desired size (default: 2)
+  --node-count <n>                     AKS node count (default: 2)
+  --node-vm-size <sku>                 AKS node VM size (default: Standard_D2s_v3)
   --aot                                Use latest-aot when image is default
   --image <repo:tag>                   Honua image for Kubernetes checks
   --previous-image <repo:tag>          Previous image used for upgrade/rollback checks
@@ -85,7 +85,7 @@ Options:
   --skip-observability                 Skip Terraform observability module checks
   --skip-db-resilience                 Skip DB backup/restore drill
   --skip-helm-static-validation        Skip helm lint/template/kubeconform checks
-  --skip-quota-preflight               Skip AWS quota preflight checks
+  --skip-quota-preflight               Skip Azure quota preflight checks
   --max-run-cost-usd <n>               Max allowed estimated run cost (0 disables cap)
   --max-ready-seconds <n>              Ready SLO threshold (default: 600)
   --max-load-error-rate <percent>      Max allowed load error rate (default: 0)
@@ -93,12 +93,14 @@ Options:
   --allow-destroy-plan                 Allow plans containing resource destroys
   --ttl-hours <n>                      TTL tag value for provisioned resources (default: 8)
   --no-scale-check                     Skip quick scale checks
-  --no-destroy                         Keep EKS cluster/resources after test run
+  --no-destroy                         Keep AKS cluster/resources after test run
   --help, -h                           Show this help
 
 Required environment variables:
-  AWS_ACCESS_KEY_ID
-  AWS_SECRET_ACCESS_KEY
+  ARM_CLIENT_ID
+  ARM_CLIENT_SECRET
+  ARM_TENANT_ID
+  ARM_SUBSCRIPTION_ID
   HONUA_ADMIN_PASSWORD
 USAGE
 }
@@ -145,8 +147,8 @@ require_env() {
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --region)
-        REGION="$2"
+      --location)
+        LOCATION="$2"
         shift 2
         ;;
       --environment)
@@ -157,20 +159,12 @@ parse_args() {
         NAME_PREFIX_BASE="$2"
         shift 2
         ;;
-      --node-instance-type)
-        NODE_INSTANCE_TYPE="$2"
+      --node-count)
+        NODE_COUNT="$2"
         shift 2
         ;;
-      --node-min-size)
-        NODE_MIN_SIZE="$2"
-        shift 2
-        ;;
-      --node-max-size)
-        NODE_MAX_SIZE="$2"
-        shift 2
-        ;;
-      --node-desired-size)
-        NODE_DESIRED_SIZE="$2"
+      --node-vm-size)
+        NODE_VM_SIZE="$2"
         shift 2
         ;;
       --aot)
@@ -267,13 +261,14 @@ normalize_identifiers() {
     exit 1
   fi
 
-  NAME_PREFIX_BASE="${NAME_PREFIX_BASE:0:8}"
-  NAME_PREFIX="${NAME_PREFIX_BASE}ek"
+  NAME_PREFIX_BASE="${NAME_PREFIX_BASE:0:10}"
+  NAME_PREFIX="${NAME_PREFIX_BASE}ak"
+  NAME_PREFIX="${NAME_PREFIX:0:20}"
 }
 
 prepare_workspace() {
   TEMP_TF_ROOT="$(mktemp -d)"
-  TEMP_KUBECONFIG_PATH="$(mktemp)"
+  TEMP_KUBECONFIG_DIR="$(mktemp -d)"
   cp -R "$REPO_ROOT/infrastructure/terraform" "$TEMP_TF_ROOT/terraform"
 }
 
@@ -285,24 +280,29 @@ configure_runtime_tools() {
     USE_DOCKER_TF=true
   fi
 
+  if command -v az >/dev/null 2>&1; then
+    USE_DOCKER_AZ_CLI=false
+  else
+    require_command docker
+    USE_DOCKER_AZ_CLI=true
+  fi
+
   log_info "Terraform executor: $([[ "$USE_DOCKER_TF" == "true" ]] && echo docker || echo local)"
+  log_info "Azure CLI executor: $([[ "$USE_DOCKER_AZ_CLI" == "true" ]] && echo docker || echo local)"
 }
 
 run_tf() {
   if [[ "$USE_DOCKER_TF" == "true" ]]; then
     docker run --rm \
-      -e AWS_ACCESS_KEY_ID \
-      -e AWS_SECRET_ACCESS_KEY \
-      -e AWS_SESSION_TOKEN \
-      -e AWS_REGION \
-      -e AWS_DEFAULT_REGION \
-      -e TF_VAR_region \
+      -e ARM_CLIENT_ID \
+      -e ARM_CLIENT_SECRET \
+      -e ARM_TENANT_ID \
+      -e ARM_SUBSCRIPTION_ID \
+      -e TF_VAR_location \
       -e TF_VAR_environment \
       -e TF_VAR_name_prefix \
-      -e TF_VAR_node_instance_types \
-      -e TF_VAR_node_min_size \
-      -e TF_VAR_node_max_size \
-      -e TF_VAR_node_desired_size \
+      -e TF_VAR_node_count \
+      -e TF_VAR_node_vm_size \
       -e TF_VAR_tags \
       -e TF_IN_AUTOMATION=true \
       -v "$TEMP_TF_ROOT/terraform:/workspace" \
@@ -317,18 +317,39 @@ run_tf() {
   )
 }
 
+run_az() {
+  if [[ "$USE_DOCKER_AZ_CLI" == "true" ]]; then
+    docker run --rm \
+      -e ARM_CLIENT_ID \
+      -e ARM_CLIENT_SECRET \
+      -e ARM_TENANT_ID \
+      -e ARM_SUBSCRIPTION_ID \
+      -e AZURE_CORE_ONLY_SHOW_ERRORS=true \
+      -v "$TEMP_KUBECONFIG_DIR:$TEMP_KUBECONFIG_DIR" \
+      "$AZ_CLI_IMAGE" \
+      sh -c 'set -e; az config set extension.use_dynamic_install=yes_without_prompt >/dev/null; az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID" >/dev/null; az account set -s "$ARM_SUBSCRIPTION_ID"; az "$@"' \
+      sh "$@"
+    return
+  fi
+
+  if [[ "$AZ_SESSION_INITIALIZED" != "true" ]]; then
+    AZURE_CORE_ONLY_SHOW_ERRORS=true az config set extension.use_dynamic_install=yes_without_prompt >/dev/null
+    AZURE_CORE_ONLY_SHOW_ERRORS=true az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID" >/dev/null
+    AZURE_CORE_ONLY_SHOW_ERRORS=true az account set -s "$ARM_SUBSCRIPTION_ID"
+    AZ_SESSION_INITIALIZED=true
+  fi
+
+  AZURE_CORE_ONLY_SHOW_ERRORS=true az "$@"
+}
+
 set_tf_vars() {
   EXPIRES_AT_UTC="$(date -u -d "+${TTL_HOURS} hours" +%Y-%m-%dT%H:%M:%SZ)"
 
-  export AWS_REGION="$REGION"
-  export AWS_DEFAULT_REGION="$REGION"
-  export TF_VAR_region="$REGION"
+  export TF_VAR_location="$LOCATION"
   export TF_VAR_environment="$ENVIRONMENT"
   export TF_VAR_name_prefix="$NAME_PREFIX"
-  export TF_VAR_node_instance_types="[\"$NODE_INSTANCE_TYPE\"]"
-  export TF_VAR_node_min_size="$NODE_MIN_SIZE"
-  export TF_VAR_node_max_size="$NODE_MAX_SIZE"
-  export TF_VAR_node_desired_size="$NODE_DESIRED_SIZE"
+  export TF_VAR_node_count="$NODE_COUNT"
+  export TF_VAR_node_vm_size="$NODE_VM_SIZE"
   export TF_VAR_tags="{\"ValidationRunId\":\"$VALIDATION_RUN_ID\",\"TTLHours\":\"$TTL_HOURS\",\"ExpiresAtUTC\":\"$EXPIRES_AT_UTC\",\"Owner\":\"terraform-validation\"}"
 }
 
@@ -417,7 +438,7 @@ assert_idempotent_plan() {
 }
 
 estimate_run_cost() {
-  awk -v n="$NODE_DESIRED_SIZE" 'BEGIN { printf "%.2f", n * 35.0 }'
+  awk -v n="$NODE_COUNT" 'BEGIN { printf "%.2f", n * 25.0 }'
 }
 
 assert_cost_guardrail() {
@@ -438,51 +459,57 @@ assert_cost_guardrail() {
 }
 
 run_quota_preflight() {
-  local quota
-  local vcpu_per_node
+  local vm_vcpu
+  local cores
+  local current
+  local limit
   local required
 
   if [[ "$RUN_QUOTA_PREFLIGHT" != "true" ]]; then
     return
   fi
 
-  quota="$(aws service-quotas get-service-quota --service-code ec2 --quota-code L-1216C47A --query 'Quota.Value' --output text 2>/dev/null || echo '')"
-  vcpu_per_node="$(aws ec2 describe-instance-types --instance-types "$NODE_INSTANCE_TYPE" --query 'InstanceTypes[0].VCpuInfo.DefaultVCpus' --output text 2>/dev/null || echo '')"
-
-  if [[ -z "$vcpu_per_node" || "$vcpu_per_node" == "None" ]]; then
-    vcpu_per_node=2
+  vm_vcpu="$(run_az vm list-skus -l "$LOCATION" --resource-type virtualMachines --query "[?name=='$NODE_VM_SIZE'].capabilities[?name=='vCPUs'].value | [0]" -o tsv 2>/dev/null || echo '')"
+  if [[ -z "$vm_vcpu" || "$vm_vcpu" == "[]" ]]; then
+    vm_vcpu=2
   fi
 
-  required=$(( NODE_DESIRED_SIZE * vcpu_per_node ))
+  cores="$(run_az vm list-usage -l "$LOCATION" --query "[?name.value=='cores'] | [0]" -o json)"
+  current="$(echo "$cores" | sed -n 's/.*"currentValue":\([0-9][0-9]*\).*/\1/p')"
+  limit="$(echo "$cores" | sed -n 's/.*"limit":\([0-9][0-9]*\).*/\1/p')"
 
-  if [[ -n "$quota" && "$quota" != "None" ]] && awk -v q="$quota" -v r="$required" 'BEGIN { exit !(r > q) }'; then
-    log_error "EKS quota preflight failed: required vCPU $required exceeds EC2 regional quota $quota"
+  required=$(( NODE_COUNT * vm_vcpu ))
+  if [[ -n "$current" && -n "$limit" ]] && (( current + required > limit )); then
+    log_error "AKS quota preflight failed: cores usage $current/$limit, estimated required +$required"
     exit 1
   fi
 
-  log_info "EKS quota preflight passed (EC2 regional vCPU quota=${quota:-unknown}, required=$required)"
+  log_info "AKS quota preflight passed (cores current=${current:-unknown}, limit=${limit:-unknown}, required=+$required)"
 }
 
 apply_cluster() {
   set_tf_vars
 
-  run_tf -chdir=examples/aws-eks init -input=false -no-color
-  plan_apply "examples/aws-eks" "eks.tfplan" "eks"
+  run_tf -chdir=examples/azure-aks init -input=false -no-color
+  plan_apply "examples/azure-aks" "aks.tfplan" "aks"
 
   CLUSTER_APPLIED=true
-  CLUSTER_NAME="$(run_tf -chdir=examples/aws-eks output -raw cluster_name)"
+
+  RESOURCE_GROUP_NAME="$(run_tf -chdir=examples/azure-aks output -raw resource_group_name)"
+  CLUSTER_NAME="$(run_tf -chdir=examples/azure-aks output -raw cluster_name)"
 
   if [[ "$CHECK_IDEMPOTENCY" == "true" ]]; then
-    assert_idempotent_plan "examples/aws-eks"
+    assert_idempotent_plan "examples/azure-aks"
   fi
 }
 
 fetch_kubeconfig() {
-  aws eks update-kubeconfig \
+  local kubeconfig_path="$TEMP_KUBECONFIG_DIR/config"
+  run_az aks get-credentials \
+    --resource-group "$RESOURCE_GROUP_NAME" \
     --name "$CLUSTER_NAME" \
-    --region "$REGION" \
-    --kubeconfig "$TEMP_KUBECONFIG_PATH" \
-    --alias "$CLUSTER_NAME" >/dev/null
+    --file "$kubeconfig_path" \
+    --overwrite-existing
 }
 
 run_k8s_checks() {
@@ -491,7 +518,7 @@ run_k8s_checks() {
     --cluster-mode external
     --access-mode port-forward
     --cluster-name "$CLUSTER_NAME"
-    --kubeconfig "$TEMP_KUBECONFIG_PATH"
+    --kubeconfig "$TEMP_KUBECONFIG_DIR/config"
     --max-ready-seconds "$READY_SLO_SECONDS"
     --max-load-error-rate "$MAX_LOAD_ERROR_RATE_PERCENT"
   )
@@ -522,7 +549,7 @@ run_k8s_checks() {
 
   if [[ "$RUN_UPGRADE_ROLLBACK" == "true" ]]; then
     if [[ -z "$K8S_PREVIOUS_IMAGE" || "$K8S_PREVIOUS_IMAGE" == "$K8S_IMAGE" ]]; then
-      log_error "EKS upgrade/rollback requires --previous-image different from --image"
+      log_error "AKS upgrade/rollback requires --previous-image different from --image"
       return 1
     fi
     args+=(--upgrade-rollback --previous-image "$K8S_PREVIOUS_IMAGE")
@@ -534,7 +561,7 @@ run_k8s_checks() {
 
   HONUA_K8S_IMAGE="$K8S_IMAGE" \
     HONUA_USE_AOT="$USE_AOT" \
-    KUBECONFIG="$TEMP_KUBECONFIG_PATH" \
+    KUBECONFIG="$TEMP_KUBECONFIG_DIR/config" \
     "$SCRIPT_DIR/../k8s/run-k8s-terraform-integration.sh" "${args[@]}"
 }
 
@@ -543,192 +570,26 @@ destroy_cluster() {
     return
   fi
 
-  log_info "Destroying EKS integration cluster"
+  log_info "Destroying AKS integration cluster"
   set_tf_vars
-  run_tf -chdir=examples/aws-eks destroy -input=false -auto-approve -no-color || log_warn "EKS destroy encountered errors"
+  run_tf -chdir=examples/azure-aks destroy -input=false -auto-approve -no-color || log_warn "AKS destroy encountered errors"
 }
 
 verify_no_leaks() {
   local count
   local i
-  local -a arns=()
-  local -a existing_arns=()
-  local -a stale_arns=()
-  local arn
 
-  for i in {1..20}; do
-    count="$(aws resourcegroupstaggingapi get-resources --tag-filters Key=ValidationRunId,Values="$VALIDATION_RUN_ID" --query 'length(ResourceTagMappingList)' --output text 2>/dev/null || echo 0)"
-    if [[ "$count" == "0" || "$count" == "None" ]]; then
+  for i in {1..10}; do
+    count="$(run_az resource list --tag ValidationRunId="$VALIDATION_RUN_ID" --query "length(@)" -o tsv || echo 0)"
+    if [[ "$count" == "0" ]]; then
       log_info "Leak janitor check passed (no tagged resources remain)"
       return 0
     fi
-    log_info "Leak janitor waiting for tagged resources to clear (attempt $i/20, count=$count)"
     sleep 15
   done
 
-  mapfile -t arns < <(
-    aws resourcegroupstaggingapi get-resources \
-      --tag-filters Key=ValidationRunId,Values="$VALIDATION_RUN_ID" \
-      --query 'ResourceTagMappingList[].ResourceARN' \
-      --output text 2>/dev/null | tr '\t' '\n' | sed '/^$/d'
-  )
-
-  resource_arn_exists() {
-    local resource_arn="$1"
-    local id
-    local exists
-    local resource_path
-    local cluster_name
-    local nodegroup_name
-    local states
-    local status
-    local key_state
-
-    case "$resource_arn" in
-      arn:aws:ec2:*:*:instance/*)
-        id="${resource_arn##*/}"
-        states="$(aws ec2 describe-instances --instance-ids "$id" --query 'Reservations[].Instances[].State.Name' --output text 2>/dev/null || true)"
-        [[ -z "$states" || "$states" == "None" ]] && return 1
-        for status in $states; do
-          case "$status" in
-            terminated|shutting-down)
-              ;;
-            *)
-              return 0
-              ;;
-          esac
-        done
-        return 1
-        ;;
-      arn:aws:ec2:*:*:volume/*)
-        id="${resource_arn##*/}"
-        states="$(aws ec2 describe-volumes --volume-ids "$id" --query 'Volumes[].State' --output text 2>/dev/null || true)"
-        [[ -z "$states" || "$states" == "None" ]] && return 1
-        for status in $states; do
-          case "$status" in
-            deleting|deleted)
-              ;;
-            *)
-              return 0
-              ;;
-          esac
-        done
-        return 1
-        ;;
-      arn:aws:ec2:*:*:natgateway/*)
-        id="${resource_arn##*/}"
-        states="$(aws ec2 describe-nat-gateways --nat-gateway-ids "$id" --query 'NatGateways[].State' --output text 2>/dev/null || true)"
-        [[ -z "$states" || "$states" == "None" ]] && return 1
-        for status in $states; do
-          case "$status" in
-            deleting|deleted)
-              ;;
-            *)
-              return 0
-              ;;
-          esac
-        done
-        return 1
-        ;;
-      arn:aws:ec2:*:*:subnet/*)
-        id="${resource_arn##*/}"
-        exists="$(aws ec2 describe-subnets --subnet-ids "$id" --query 'length(Subnets)' --output text 2>/dev/null || echo 0)"
-        [[ "$exists" != "0" && "$exists" != "None" ]]
-        ;;
-      arn:aws:ec2:*:*:vpc/*)
-        id="${resource_arn##*/}"
-        exists="$(aws ec2 describe-vpcs --vpc-ids "$id" --query 'length(Vpcs)' --output text 2>/dev/null || echo 0)"
-        [[ "$exists" != "0" && "$exists" != "None" ]]
-        ;;
-      arn:aws:ec2:*:*:security-group/*)
-        id="${resource_arn##*/}"
-        exists="$(aws ec2 describe-security-groups --group-ids "$id" --query 'length(SecurityGroups)' --output text 2>/dev/null || echo 0)"
-        [[ "$exists" != "0" && "$exists" != "None" ]]
-        ;;
-      arn:aws:ec2:*:*:network-interface/*)
-        id="${resource_arn##*/}"
-        exists="$(aws ec2 describe-network-interfaces --network-interface-ids "$id" --query 'length(NetworkInterfaces)' --output text 2>/dev/null || echo 0)"
-        [[ "$exists" != "0" && "$exists" != "None" ]]
-        ;;
-      arn:aws:ec2:*:*:route-table/*)
-        id="${resource_arn##*/}"
-        exists="$(aws ec2 describe-route-tables --route-table-ids "$id" --query 'length(RouteTables)' --output text 2>/dev/null || echo 0)"
-        [[ "$exists" != "0" && "$exists" != "None" ]]
-        ;;
-      arn:aws:ec2:*:*:internet-gateway/*)
-        id="${resource_arn##*/}"
-        exists="$(aws ec2 describe-internet-gateways --internet-gateway-ids "$id" --query 'length(InternetGateways)' --output text 2>/dev/null || echo 0)"
-        [[ "$exists" != "0" && "$exists" != "None" ]]
-        ;;
-      arn:aws:ec2:*:*:eip-allocation/*)
-        id="${resource_arn##*/}"
-        exists="$(aws ec2 describe-addresses --allocation-ids "$id" --query 'length(Addresses)' --output text 2>/dev/null || echo 0)"
-        [[ "$exists" != "0" && "$exists" != "None" ]]
-        ;;
-      arn:aws:kms:*:*:key/*)
-        key_state="$(aws kms describe-key --key-id "$resource_arn" --query 'KeyMetadata.KeyState' --output text 2>/dev/null || true)"
-        [[ -z "$key_state" || "$key_state" == "None" || "$key_state" == "NotFoundException" ]] && return 1
-        case "$key_state" in
-          PendingDeletion|PendingReplicaDeletion)
-            return 1
-            ;;
-          *)
-            return 0
-            ;;
-        esac
-        ;;
-      arn:aws:elasticloadbalancing:*:*:loadbalancer/*)
-        exists="$(aws elbv2 describe-load-balancers --load-balancer-arns "$resource_arn" --query 'length(LoadBalancers)' --output text 2>/dev/null || echo 0)"
-        [[ "$exists" != "0" && "$exists" != "None" ]]
-        ;;
-      arn:aws:elasticloadbalancing:*:*:targetgroup/*)
-        exists="$(aws elbv2 describe-target-groups --target-group-arns "$resource_arn" --query 'length(TargetGroups)' --output text 2>/dev/null || echo 0)"
-        [[ "$exists" != "0" && "$exists" != "None" ]]
-        ;;
-      arn:aws:eks:*:*:cluster/*)
-        id="${resource_arn##*/}"
-        status="$(aws eks describe-cluster --name "$id" --query 'cluster.status' --output text 2>/dev/null || true)"
-        [[ -z "$status" || "$status" == "None" || "$status" == "DELETING" ]] && return 1
-        return 0
-        ;;
-      arn:aws:eks:*:*:nodegroup/*)
-        resource_path="${resource_arn##*:}"
-        IFS='/' read -r _ cluster_name nodegroup_name _ <<< "$resource_path"
-        status="$(aws eks describe-nodegroup --cluster-name "$cluster_name" --nodegroup-name "$nodegroup_name" --query 'nodegroup.status' --output text 2>/dev/null || true)"
-        [[ -z "$status" || "$status" == "None" || "$status" == "DELETING" ]] && return 1
-        return 0
-        ;;
-      *)
-        log_warn "Leak janitor cannot verify ARN type: $resource_arn (treating as existing)"
-        return 0
-        ;;
-    esac
-  }
-
-  if (( ${#arns[@]} == 0 )); then
-    log_error "Leak janitor check failed: tagged resources remain but no ARNs were returned"
-    return 1
-  fi
-
-  for arn in "${arns[@]}"; do
-    if resource_arn_exists "$arn"; then
-      existing_arns+=("$arn")
-    else
-      stale_arns+=("$arn")
-    fi
-  done
-
-  if (( ${#existing_arns[@]} == 0 )); then
-    log_warn "Leak janitor found only stale tag-index entries; no live resources remain"
-    return 0
-  fi
-
   log_error "Leak janitor check failed: resources tagged ValidationRunId=$VALIDATION_RUN_ID still exist"
-  printf '%s\n' "${existing_arns[@]}" | sed 's/^/[ERROR] live resource: /'
-  if (( ${#stale_arns[@]} > 0 )); then
-    printf '%s\n' "${stale_arns[@]}" | sed 's/^/[WARN] stale tag-index entry: /'
-  fi
-  aws resourcegroupstaggingapi get-resources --tag-filters Key=ValidationRunId,Values="$VALIDATION_RUN_ID" --output json || true
+  run_az resource list --tag ValidationRunId="$VALIDATION_RUN_ID" -o table || true
   return 1
 }
 
@@ -739,18 +600,18 @@ cleanup() {
     destroy_cluster
     verify_no_leaks || exit_code=1
   else
-    log_warn "Auto-destroy disabled; EKS resources were left running"
+    log_warn "Auto-destroy disabled; AKS resources were left running"
   fi
 
   if [[ -n "$TEMP_TF_ROOT" && -d "$TEMP_TF_ROOT" ]]; then
     rm -rf "$TEMP_TF_ROOT" || true
   fi
-  if [[ -n "$TEMP_KUBECONFIG_PATH" && -f "$TEMP_KUBECONFIG_PATH" ]]; then
-    rm -f "$TEMP_KUBECONFIG_PATH" || true
+  if [[ -n "$TEMP_KUBECONFIG_DIR" && -d "$TEMP_KUBECONFIG_DIR" ]]; then
+    rm -rf "$TEMP_KUBECONFIG_DIR" || true
   fi
 
   if [[ "$exit_code" -ne 0 ]]; then
-    log_error "EKS Terraform integration run failed"
+    log_error "AKS Terraform integration run failed"
   fi
 
   exit "$exit_code"
@@ -760,17 +621,15 @@ main() {
   parse_args "$@"
   apply_aot_mode
 
-  require_command aws
   require_command kubectl
   require_command helm
   require_command curl
   require_env \
-    AWS_ACCESS_KEY_ID \
-    AWS_SECRET_ACCESS_KEY \
+    ARM_CLIENT_ID \
+    ARM_CLIENT_SECRET \
+    ARM_TENANT_ID \
+    ARM_SUBSCRIPTION_ID \
     HONUA_ADMIN_PASSWORD
-
-  export AWS_REGION="$REGION"
-  export AWS_DEFAULT_REGION="$REGION"
 
   configure_runtime_tools
   normalize_identifiers
@@ -780,13 +639,13 @@ main() {
 
   trap cleanup EXIT
 
-  log_info "Starting EKS Terraform integration"
+  log_info "Starting AKS Terraform integration"
   log_info "Validation run ID: $VALIDATION_RUN_ID"
-  log_info "Region: $REGION"
+  log_info "Location: $LOCATION"
   log_info "Environment: $ENVIRONMENT"
   log_info "Name prefix: $NAME_PREFIX"
-  log_info "Node type: $NODE_INSTANCE_TYPE"
-  log_info "Node sizes: min=$NODE_MIN_SIZE desired=$NODE_DESIRED_SIZE max=$NODE_MAX_SIZE"
+  log_info "Node count: $NODE_COUNT"
+  log_info "Node VM size: $NODE_VM_SIZE"
   log_info "AOT mode: $USE_AOT"
   log_info "K8S image: $K8S_IMAGE"
   log_info "Ready SLO seconds: $READY_SLO_SECONDS"
@@ -796,7 +655,7 @@ main() {
   fetch_kubeconfig
   run_k8s_checks
 
-  log_info "EKS Terraform integration checks completed successfully"
+  log_info "AKS Terraform integration checks completed successfully"
 }
 
 main "$@"

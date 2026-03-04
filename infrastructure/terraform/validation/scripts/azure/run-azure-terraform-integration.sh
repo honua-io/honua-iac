@@ -102,7 +102,7 @@ usage() {
 Run live Terraform integration tests for Azure ACA and Azure Functions.
 
 Usage:
-  ./infrastructure/terraform/scripts/azure/run-azure-terraform-integration.sh [options]
+  ./infrastructure/terraform/validation/scripts/azure/run-azure-terraform-integration.sh [options]
 
 When existing DB/Redis settings are not provided, the script provisions 'examples/azure-data'
 first and then feeds those outputs into ACA/Functions validation applies.

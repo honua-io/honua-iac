@@ -12,7 +12,7 @@ usage() {
 Run Terraform drift detection (plan -detailed-exitcode) against one or more roots.
 
 Usage:
-  ./infrastructure/terraform/scripts/shared/run-terraform-drift-detection.sh --root <path> [--root <path> ...] [options]
+  ./infrastructure/terraform/validation/scripts/shared/run-terraform-drift-detection.sh --root <path> [--root <path> ...] [options]
 
 Options:
   --root <path>               Terraform root (can be specified multiple times)

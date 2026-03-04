@@ -11,12 +11,12 @@ Validation is executed manually when Terraform changes are ready to verify. Ther
 The workflow and scripts cover:
 
 - Static validation: `terraform fmt`, `terraform init -backend=false`, `terraform validate`
-- Policy/security gates: `tflint`, `checkov`, `tfsec`, and custom guard checks in `infrastructure/terraform/scripts/shared/terraform-policy-gate.sh`
+- Policy/security gates: `tflint`, `checkov`, `tfsec`, and custom guard checks in `infrastructure/terraform/validation/scripts/shared/terraform-policy-gate.sh`
 - Azure live integration: `examples/azure-data` bootstrap (Postgres + Redis) by default, then ACA + Functions using those existing connections; includes Redis wiring, PostGIS + raster checks, protocol/admin smoke checks, admin CRUD/query smoke (`create connection -> publish layer -> query`), idempotency, quick scale check, DB resilience drill, plan artifacts, compute auto-destroy, and reusable data-stack retention by default
 - AWS live integration: `examples/aws-data` bootstrap (RDS + Redis) by default, then ECS + serverless using those existing connections/VPC; includes Redis wiring, PostGIS + raster checks, protocol/admin smoke checks, admin CRUD/query smoke (`create connection -> publish layer -> query`), idempotency, quick scale check, DB resilience drill, plan artifacts, and compute auto-destroy with reusable data-stack retention
 - Kubernetes live integration: k3d + Helm + observability Terraform module, Helm static validation (`lint` + `template` + `kubeconform`), PostGIS + raster checks, protocol/admin smoke checks, admin CRUD/query smoke (`create connection -> publish layer -> query`), idempotency, quick scale check, and optional DB resilience drill
 - Managed Kubernetes integration: AKS and EKS Terraform cluster provisioning, then Kubernetes validation flow, then auto-destroy + leak check
-- Drift detection: `terraform plan -detailed-exitcode` via `infrastructure/terraform/scripts/shared/run-terraform-drift-detection.sh`
+- Drift detection: `terraform plan -detailed-exitcode` via `infrastructure/terraform/validation/scripts/shared/run-terraform-drift-detection.sh`
 
 ## Manual GitHub Actions workflow
 
@@ -147,35 +147,35 @@ Local script entry points:
 
 ```bash
 # Default flow provisions/reuses examples/azure-data, then runs compute stack validation.
-./infrastructure/terraform/scripts/azure/run-azure-terraform-integration.sh --stack both
-./infrastructure/terraform/scripts/azure/run-azure-terraform-integration.sh --stack both --force-new-data-infra
-./infrastructure/terraform/scripts/azure/run-azure-terraform-integration.sh --stack both --destroy-data
-./infrastructure/terraform/scripts/azure/run-azure-terraform-integration.sh --stack both --aot
-./infrastructure/terraform/scripts/azure/run-azure-terraform-integration.sh \
+./infrastructure/terraform/validation/scripts/azure/run-azure-terraform-integration.sh --stack both
+./infrastructure/terraform/validation/scripts/azure/run-azure-terraform-integration.sh --stack both --force-new-data-infra
+./infrastructure/terraform/validation/scripts/azure/run-azure-terraform-integration.sh --stack both --destroy-data
+./infrastructure/terraform/validation/scripts/azure/run-azure-terraform-integration.sh --stack both --aot
+./infrastructure/terraform/validation/scripts/azure/run-azure-terraform-integration.sh \
   --stack aca \
   --existing-db-fqdn mypg.postgres.database.azure.com \
   --existing-db-connection "Host=mypg.postgres.database.azure.com;Port=5432;Database=honua;Username=honua;Password=***;SSL Mode=Require;Trust Server Certificate=false" \
   --existing-redis-connection "myredis.redis.cache.windows.net:6380,password=***,ssl=True,abortConnect=False"
 ./scripts/run-azure-terraform-integration.sh --stack both
-./infrastructure/terraform/scripts/aws/run-aws-terraform-integration.sh --stack both
-./infrastructure/terraform/scripts/aws/run-aws-terraform-integration.sh --stack data --no-destroy
-./infrastructure/terraform/scripts/aws/run-aws-terraform-integration.sh --stack ecs --aot
-./infrastructure/terraform/scripts/aws/run-aws-terraform-integration.sh --stack serverless --serverless-image "<account>.dkr.ecr.<region>.amazonaws.com/honua-server:latest-lambda-aot"
+./infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh --stack both
+./infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh --stack data --no-destroy
+./infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh --stack ecs --aot
+./infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh --stack serverless --serverless-image "<account>.dkr.ecr.<region>.amazonaws.com/honua-server:latest-lambda-aot"
 ./scripts/run-aws-terraform-integration.sh --stack serverless
-./infrastructure/terraform/scripts/aws/run-aws-terraform-integration.sh \
+./infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh \
   --stack ecs \
   --existing-db-endpoint mydb.xxxxxxxxxxxx.us-east-1.rds.amazonaws.com \
   --existing-db-connection "Host=mydb.xxxxxxxxxxxx.us-east-1.rds.amazonaws.com;Port=5432;Database=honua;Username=honua;Password=***;SSL Mode=Require;Trust Server Certificate=false" \
   --existing-redis-connection "mycache.xxxxxx.use1.cache.amazonaws.com:6379,password=***,ssl=true"
-./infrastructure/terraform/scripts/k8s/run-k8s-terraform-integration.sh
-./infrastructure/terraform/scripts/k8s/run-k8s-terraform-integration.sh --aot
-./infrastructure/terraform/scripts/azure/run-aks-terraform-integration.sh
-./infrastructure/terraform/scripts/aws/run-eks-terraform-integration.sh
+./infrastructure/terraform/validation/scripts/k8s/run-k8s-terraform-integration.sh
+./infrastructure/terraform/validation/scripts/k8s/run-k8s-terraform-integration.sh --aot
+./infrastructure/terraform/validation/scripts/azure/run-aks-terraform-integration.sh
+./infrastructure/terraform/validation/scripts/aws/run-eks-terraform-integration.sh
 ./scripts/run-aks-terraform-integration.sh
 ./scripts/run-eks-terraform-integration.sh
 ./scripts/run-k8s-terraform-integration.sh
-./infrastructure/terraform/scripts/shared/terraform-policy-gate.sh
-./infrastructure/terraform/scripts/shared/run-terraform-drift-detection.sh --root infrastructure/terraform/examples/azure
+./infrastructure/terraform/validation/scripts/shared/terraform-policy-gate.sh
+./infrastructure/terraform/validation/scripts/shared/run-terraform-drift-detection.sh --root infrastructure/terraform/examples/azure
 ```
 
 ## Notes
@@ -189,9 +189,9 @@ Local script entry points:
   - `infrastructure/terraform/bootstrap/aws-serverless`
   - `infrastructure/terraform/bootstrap/aws-eks`
 - Use one database admin secret: `HONUA_DB_PASSWORD` (not separate per cloud).
-- Azure script behavior: when existing Azure data inputs are not provided, `infrastructure/terraform/scripts/azure/run-azure-terraform-integration.sh` applies `infrastructure/terraform/examples/azure-data`, saves outputs to `/tmp/honua-azure-data-reuse.env` (or `HONUA_AZURE_DATA_CACHE_FILE`), and reuses them in subsequent runs.
+- Azure script behavior: when existing Azure data inputs are not provided, `infrastructure/terraform/validation/scripts/azure/run-azure-terraform-integration.sh` applies `infrastructure/terraform/examples/azure-data`, saves outputs to `/tmp/honua-azure-data-reuse.env` (or `HONUA_AZURE_DATA_CACHE_FILE`), and reuses them in subsequent runs.
 - AKS script defaults target `westus` with node VM size `Standard_D2s_v3` (override with `--location` / `--node-vm-size` if needed).
-- AWS script behavior: when existing AWS data inputs are not provided, `infrastructure/terraform/scripts/aws/run-aws-terraform-integration.sh` applies `infrastructure/terraform/examples/aws-data`, saves outputs to `/tmp/honua-aws-data-reuse.env` (or `HONUA_AWS_DATA_CACHE_FILE`), and reuses them in subsequent runs.
+- AWS script behavior: when existing AWS data inputs are not provided, `infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh` applies `infrastructure/terraform/examples/aws-data`, saves outputs to `/tmp/honua-aws-data-reuse.env` (or `HONUA_AWS_DATA_CACHE_FILE`), and reuses them in subsequent runs.
 - Current known issue (February 28, 2026): generic web tags (`latest`, `latest-aot`) crash on Azure Functions custom container startup (container exit code `139`). Use Functions-targeted tags (`*-functions-aot` preferred, `*-functions` debug fallback).
 - Registry strategy: web runtime tags (`latest`, `latest-aot`, versioned base tags) are published to GHCR/Docker Hub, while serverless platform tags (`*-lambda`, `*-lambda-aot`, `*-functions`, `*-functions-aot`) are published by CI directly to cloud registries (ECR/ACR).
 - `.terraform` directories are already ignored in `.gitignore`.

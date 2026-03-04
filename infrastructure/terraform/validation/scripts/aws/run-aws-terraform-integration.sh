@@ -92,7 +92,7 @@ usage() {
 Run live Terraform integration tests for AWS data, ECS, and AWS serverless.
 
 Usage:
-  ./infrastructure/terraform/scripts/aws/run-aws-terraform-integration.sh [options]
+  ./infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh [options]
 
 Options:
   --stack <data|ecs|serverless|both>   Stack to test (default: both)

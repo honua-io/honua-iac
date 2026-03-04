@@ -84,7 +84,7 @@ usage() {
 Run live Kubernetes integration tests for Honua Helm deployment and observability Terraform module.
 
 Usage:
-  ./infrastructure/terraform/scripts/k8s/run-k8s-terraform-integration.sh [options]
+  ./infrastructure/terraform/validation/scripts/k8s/run-k8s-terraform-integration.sh [options]
 
 Options:
   --cluster-name <name>                Cluster name (k3d name or managed cluster label)

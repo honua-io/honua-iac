@@ -145,4 +145,4 @@ jobs:
 
       - name: Run Terraform policy gate script
         shell: bash
-        run: ./infrastructure/terraform/scripts/shared/terraform-policy-gate.sh
+        run: ./infrastructure/terraform/validation/scripts/shared/terraform-policy-gate.sh
