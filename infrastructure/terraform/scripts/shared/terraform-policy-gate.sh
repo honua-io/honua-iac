@@ -131,7 +131,13 @@ assert_regex_absent() {
   local scope="$2"
   local label="$3"
 
-  if rg -n "$pattern" "$scope" -S >/tmp/policy-match.txt 2>&1; then
+  if command -v rg >/dev/null 2>&1; then
+    rg -n "$pattern" "$scope" -S >/tmp/policy-match.txt 2>&1
+  else
+    grep -REn "$pattern" "$scope" >/tmp/policy-match.txt 2>&1
+  fi
+
+  if [[ -s /tmp/policy-match.txt ]]; then
     log_error "Policy check failed ($label): disallowed pattern found"
     cat /tmp/policy-match.txt
     rm -f /tmp/policy-match.txt
@@ -145,10 +151,23 @@ assert_regex_present() {
   local file="$2"
   local label="$3"
 
-  if ! rg -q "$pattern" "$file" -S; then
-    log_error "Policy check failed ($label): expected pattern not found in $file"
+  if command -v rg >/dev/null 2>&1; then
+    if rg -q "$pattern" "$file" -S; then
+      return 0
+    fi
+  else
+    if grep -Eq "$pattern" "$file"; then
+      return 0
+    fi
+  fi
+
+  if [[ ! -f "$file" ]]; then
+    log_error "Policy check failed ($label): file not found: $file"
     exit 1
   fi
+
+  log_error "Policy check failed ($label): expected pattern not found in $file"
+  exit 1
 }
 
 run_custom_policy_checks() {
