@@ -14,6 +14,7 @@ module "aks" {
   node_os_disk_size_gb = var.node_os_disk_size_gb
   kubernetes_version   = var.kubernetes_version
   sku_tier             = var.sku_tier
+  authorized_ip_ranges = var.authorized_ip_ranges
 }
 
 output "resource_group_name" {

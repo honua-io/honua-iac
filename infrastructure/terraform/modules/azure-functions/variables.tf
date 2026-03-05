@@ -110,7 +110,7 @@ variable "db_version" {
 variable "db_public_network_access" {
   description = "Enable public network access to the PostgreSQL server."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "db_firewall_start_ip" {
@@ -183,7 +183,7 @@ variable "redis_enable_non_ssl_port" {
 variable "redis_public_network_access_enabled" {
   description = "Enable public network access for Azure Cache for Redis."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "redis_subnet_id" {
@@ -250,7 +250,7 @@ variable "serve_admin_ui" {
 variable "key_vault_public_network_access_enabled" {
   description = "Whether Key Vault is accessible from public networks."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "db_backup_retention_days" {

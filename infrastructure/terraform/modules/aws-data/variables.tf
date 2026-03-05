@@ -92,7 +92,7 @@ variable "db_engine_version" {
 variable "db_publicly_accessible" {
   description = "Whether the RDS instance is publicly accessible."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "db_additional_ingress_cidrs" {

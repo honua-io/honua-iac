@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.5"
+  required_version = ">= 1.5, < 2.0"
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
@@ -23,7 +23,7 @@ data "azurerm_subscription" "current" {}
 data "azurerm_client_config" "current" {}
 
 locals {
-  scope = var.scope != "" ? var.scope : data.azurerm_subscription.current.id
+  scope = var.scope
 }
 
 resource "azuread_application" "terraform" {
@@ -36,7 +36,7 @@ resource "azuread_service_principal" "terraform" {
 
 resource "azuread_service_principal_password" "terraform" {
   service_principal_id = azuread_service_principal.terraform.object_id
-  end_date_relative    = "8760h"
+  end_date_relative    = "${var.service_principal_secret_duration_hours}h"
 }
 
 resource "azurerm_role_definition" "terraform" {

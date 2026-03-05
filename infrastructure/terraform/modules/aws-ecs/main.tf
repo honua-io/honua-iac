@@ -87,6 +87,20 @@ check "nat_gateway_required" {
   }
 }
 
+check "http_ingress_requires_https" {
+  assert {
+    condition     = local.use_https || length(local.http_ingress_cidrs) == 0
+    error_message = "HTTP ingress requires HTTPS to be configured (set alb_certificate_arn or domain_name/route53_zone_id)."
+  }
+}
+
+check "public_ingress_requires_https" {
+  assert {
+    condition     = !contains(concat(local.http_ingress_cidrs, local.https_ingress_cidrs), "0.0.0.0/0") || local.use_https
+    error_message = "Public ingress (0.0.0.0/0) requires HTTPS to be configured."
+  }
+}
+
 resource "aws_security_group" "alb" {
   #checkov:skip=CKV2_AWS_5: Security group is attached to the ALB.
   #checkov:skip=CKV_AWS_260: HTTP ingress is optional and disabled by default.
@@ -574,7 +588,22 @@ data "aws_iam_policy_document" "kms" {
   #checkov:skip=CKV_AWS_356: Root access is required for KMS administration.
   #checkov:skip=CKV_AWS_109: Root access is required for KMS administration.
   statement {
-    actions   = ["kms:*"]
+    actions = [
+      "kms:CancelKeyDeletion",
+      "kms:Create*",
+      "kms:DeleteAlias",
+      "kms:Describe*",
+      "kms:Disable*",
+      "kms:Enable*",
+      "kms:Get*",
+      "kms:List*",
+      "kms:Put*",
+      "kms:RevokeGrant",
+      "kms:ScheduleKeyDeletion",
+      "kms:TagResource",
+      "kms:UntagResource",
+      "kms:Update*"
+    ]
     resources = ["*"]
     principals {
       type        = "AWS"

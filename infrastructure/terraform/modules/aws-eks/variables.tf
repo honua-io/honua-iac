@@ -67,11 +67,23 @@ variable "node_desired_size" {
 variable "cluster_endpoint_public_access" {
   description = "Whether the EKS API server endpoint is publicly accessible."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "cluster_endpoint_public_access_cidrs" {
   description = "CIDR blocks allowed to access the EKS public endpoint."
   type        = list(string)
-  default     = ["0.0.0.0/0"]
+  default     = []
+}
+
+variable "enable_cluster_creator_admin_permissions" {
+  description = "Whether the identity creating the cluster should be automatically granted admin permissions."
+  type        = bool
+  default     = false
+}
+
+variable "cluster_addon_versions" {
+  description = "Optional explicit EKS addon versions keyed by addon name (coredns, kube-proxy, vpc-cni)."
+  type        = map(string)
+  default     = {}
 }

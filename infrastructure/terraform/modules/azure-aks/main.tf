@@ -50,12 +50,6 @@ resource "azurerm_kubernetes_cluster" "this" {
     authorized_ip_ranges = var.authorized_ip_ranges
   }
 
-  lifecycle {
-    # Azure/provider reports this computed API server flag after apply, which causes
-    # perpetual no-op drift in idempotency checks.
-    ignore_changes = [api_server_access_profile]
-  }
-
   network_profile {
     network_plugin    = var.network_plugin
     network_policy    = var.network_policy

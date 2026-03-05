@@ -85,11 +85,11 @@ resource "aws_security_group" "rds" {
   }
 
   egress {
-    description = "Outbound HTTPS"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    description = "Outbound within VPC"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = [module.vpc.vpc_cidr_block]
   }
 
   tags = local.tags

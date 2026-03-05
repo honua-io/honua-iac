@@ -212,7 +212,7 @@ variable "allow_public_ingress_cidrs" {
 variable "allow_https_ingress_cidrs" {
   description = "CIDRs allowed to reach the ALB over HTTPS."
   type        = list(string)
-  default     = ["0.0.0.0/0"]
+  default     = []
 }
 
 variable "allow_http_ingress_cidrs" {

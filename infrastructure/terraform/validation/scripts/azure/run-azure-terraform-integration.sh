@@ -1441,9 +1441,29 @@ detect_db_firewall_ips() {
     return
   fi
 
-  DB_FIREWALL_START_IP="0.0.0.0"
-  DB_FIREWALL_END_IP="255.255.255.255"
-  log_warn "No DB firewall range provided; using open DB firewall range for this ephemeral validation run"
+  local detected_ip
+  detected_ip="$(detect_public_ipv4 || true)"
+  if [[ -z "$detected_ip" ]]; then
+    log_error "No DB firewall range provided and public IPv4 detection failed. Set HONUA_AZURE_DB_FIREWALL_START_IP and HONUA_AZURE_DB_FIREWALL_END_IP explicitly."
+    exit 1
+  fi
+
+  DB_FIREWALL_START_IP="$detected_ip"
+  DB_FIREWALL_END_IP="$detected_ip"
+  log_info "No DB firewall range provided; using detected runner egress IP ${detected_ip}/32"
+}
+
+detect_public_ipv4() {
+  local candidate=""
+  local endpoint
+  for endpoint in "https://api.ipify.org" "https://ifconfig.me/ip"; do
+    candidate="$(curl -fsS --max-time 10 "$endpoint" 2>/dev/null || true)"
+    if [[ "$candidate" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  return 1
 }
 
 set_common_tf_vars() {

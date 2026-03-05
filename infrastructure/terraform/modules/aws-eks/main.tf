@@ -11,6 +11,13 @@ locals {
   }, var.tags)
 }
 
+check "public_endpoint_cidrs_required" {
+  assert {
+    condition     = (!var.cluster_endpoint_public_access) || length(var.cluster_endpoint_public_access_cidrs) > 0
+    error_message = "cluster_endpoint_public_access_cidrs must be set when cluster_endpoint_public_access is true."
+  }
+}
+
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "~> 5.0"
@@ -59,7 +66,7 @@ module "eks" {
   cluster_endpoint_public_access           = var.cluster_endpoint_public_access
   cluster_endpoint_public_access_cidrs     = var.cluster_endpoint_public_access_cidrs
   cluster_endpoint_private_access          = true
-  enable_cluster_creator_admin_permissions = true
+  enable_cluster_creator_admin_permissions = var.enable_cluster_creator_admin_permissions
 
   cluster_encryption_config = {
     provider_key_arn = aws_kms_key.eks.arn
@@ -68,13 +75,13 @@ module "eks" {
 
   cluster_addons = {
     coredns = {
-      most_recent = true
+      addon_version = lookup(var.cluster_addon_versions, "coredns", null)
     }
     kube-proxy = {
-      most_recent = true
+      addon_version = lookup(var.cluster_addon_versions, "kube-proxy", null)
     }
     vpc-cni = {
-      most_recent = true
+      addon_version = lookup(var.cluster_addon_versions, "vpc-cni", null)
     }
   }
 

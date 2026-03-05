@@ -11,13 +11,17 @@ variable "role_name" {
 }
 
 variable "scope" {
-  description = "The scope for the role assignment. Defaults to current subscription. Recommended: set to a specific resource group ID."
+  description = "The scope for the role assignment. Use a specific resource group ID."
   type        = string
-  default     = ""
 
   validation {
-    condition     = var.scope == "" || can(regex("^/subscriptions/", var.scope))
-    error_message = "scope must be empty (for subscription) or a valid Azure resource scope starting with /subscriptions/."
+    condition     = can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+$", var.scope))
+    error_message = "scope must be a resource group scope like /subscriptions/<id>/resourceGroups/<name>."
   }
 }
 
+variable "service_principal_secret_duration_hours" {
+  type        = number
+  description = "Lifetime in hours for the bootstrap service principal secret."
+  default     = 720
+}

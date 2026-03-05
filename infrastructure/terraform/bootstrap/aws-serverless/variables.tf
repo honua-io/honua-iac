@@ -25,7 +25,7 @@ variable "user_name" {
 variable "create_access_key" {
   type        = bool
   description = "Whether to create an access key for the IAM user."
-  default     = true
+  default     = false
 }
 
 variable "tags" {

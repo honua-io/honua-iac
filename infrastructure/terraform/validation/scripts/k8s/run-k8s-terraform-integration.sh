@@ -323,22 +323,19 @@ resolve_k8s_helper_dir() {
 }
 
 resolve_secret_values() {
-  local default_admin_password="HonuaK8sValidationAdminPassword2026!"
-  local default_master_key="HonuaK8sValidationMasterKey-2026-0123456789"
-
   K8S_ADMIN_PASSWORD="${HONUA_ADMIN_PASSWORD:-}"
   if [[ -z "$K8S_ADMIN_PASSWORD" ]]; then
-    K8S_ADMIN_PASSWORD="$default_admin_password"
-    log_warn "HONUA_ADMIN_PASSWORD not set; using generated validation default"
+    log_error "HONUA_ADMIN_PASSWORD must be set for validation runs."
+    exit 1
   elif (( ${#K8S_ADMIN_PASSWORD} < 12 )); then
-    log_warn "HONUA_ADMIN_PASSWORD shorter than 12 characters; using generated validation default"
-    K8S_ADMIN_PASSWORD="$default_admin_password"
+    log_error "HONUA_ADMIN_PASSWORD must be at least 12 characters."
+    exit 1
   fi
 
   K8S_MASTER_KEY="${SECURITY_MASTER_KEY:-$K8S_ADMIN_PASSWORD}"
   if (( ${#K8S_MASTER_KEY} < 32 )); then
-    log_warn "SECURITY_MASTER_KEY shorter than 32 characters; using generated validation default"
-    K8S_MASTER_KEY="$default_master_key"
+    log_error "SECURITY_MASTER_KEY (or HONUA_ADMIN_PASSWORD fallback) must be at least 32 characters."
+    exit 1
   fi
 }
 

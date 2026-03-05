@@ -51,3 +51,9 @@ variable "sku_tier" {
   type        = string
   default     = "Free"
 }
+
+variable "authorized_ip_ranges" {
+  description = "CIDR ranges allowed to access the AKS API endpoint."
+  type        = list(string)
+  default     = ["203.0.113.10/32"]
+}

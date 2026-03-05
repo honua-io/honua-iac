@@ -68,16 +68,13 @@ locals {
     ConnectionStrings__redis = local.redis_connection
   } : {}
   lambda_environment = merge({
-    ConnectionStrings__DefaultConnection      = local.db_connection_string
-    HONUA_ADMIN_PASSWORD                      = var.admin_password
-    Security__ConnectionEncryption__MasterKey = var.admin_password
-    HONUA_SKIP_MIGRATIONS                     = var.skip_migrations ? "true" : "false"
-    HostValidation__AllowedHosts__0           = "*.execute-api.${data.aws_region.current.name}.amazonaws.com"
-    HONUA_SECRET_CONNECTION_STRING_ARN        = aws_secretsmanager_secret.connection_string.arn
-    HONUA_SECRET_ADMIN_PASSWORD_ARN           = aws_secretsmanager_secret.admin_password.arn
-    HONUA_SERVE_ADMIN_UI                      = var.serve_admin_ui ? "true" : "false"
-    HONUA_ADMIN_UI                            = var.serve_admin_ui ? "true" : "false"
-    HONUA_OBSERVABILITY                       = "true"
+    HONUA_SKIP_MIGRATIONS              = var.skip_migrations ? "true" : "false"
+    HostValidation__AllowedHosts__0    = "*.execute-api.${data.aws_region.current.name}.amazonaws.com"
+    HONUA_SECRET_CONNECTION_STRING_ARN = aws_secretsmanager_secret.connection_string.arn
+    HONUA_SECRET_ADMIN_PASSWORD_ARN    = aws_secretsmanager_secret.admin_password.arn
+    HONUA_SERVE_ADMIN_UI               = var.serve_admin_ui ? "true" : "false"
+    HONUA_ADMIN_UI                     = var.serve_admin_ui ? "true" : "false"
+    HONUA_OBSERVABILITY                = "true"
   }, var.additional_env, local.redis_settings)
 }
 
