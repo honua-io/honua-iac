@@ -21,11 +21,13 @@ run_policy_command() {
   local label="$1"
   shift
 
+  local exit_code
   if "$@"; then
     return 0
+  else
+    exit_code=$?
   fi
 
-  local exit_code=$?
   if [[ "${POLICY_STRICT}" == "true" ]]; then
     log_error "${label} failed with exit code ${exit_code}"
     return "${exit_code}"
@@ -63,12 +65,17 @@ run_tflint() {
   for root in "${roots[@]}"; do
     [[ -d "$root" ]] || continue
     log_info "tflint: $root"
-    (
+    run_policy_command "tflint ($root)" run_tflint_in_dir "$root"
+  done
+}
+
+run_tflint_in_dir() {
+  local root="$1"
+  (
       cd "$root"
       tflint --init >/dev/null
       tflint
-    )
-  done
+  )
 }
 
 run_checkov() {
@@ -206,6 +213,21 @@ run_custom_policy_checks() {
   assert_regex_present 'minimum_tls_version[[:space:]]*=[[:space:]]*"1\.2"' "$ROOT/modules/azure-aca/main.tf" "azure-aca-redis-tls12"
   assert_regex_present 'minimum_tls_version[[:space:]]*=[[:space:]]*"1\.2"' "$ROOT/modules/azure-data/main.tf" "azure-data-redis-tls12"
   assert_regex_present 'minimum_tls_version[[:space:]]*=[[:space:]]*"1\.2"' "$ROOT/modules/azure-functions/main.tf" "azure-functions-redis-tls12"
+
+  assert_regex_absent '^[[:space:]]*source[[:space:]]+"\$DATA_CACHE_FILE"' "$ROOT/validation/scripts/aws/run-aws-terraform-integration.sh" "aws-cache-source-execution"
+  assert_regex_absent '^[[:space:]]*source[[:space:]]+"\$DATA_CACHE_FILE"' "$ROOT/validation/scripts/azure/run-azure-terraform-integration.sh" "azure-cache-source-execution"
+  assert_regex_present 'DATA_CACHE_FORMAT="v2-base64"' "$ROOT/validation/scripts/aws/run-aws-terraform-integration.sh" "aws-cache-format-marker"
+  assert_regex_present 'DATA_CACHE_FORMAT="v2-base64"' "$ROOT/validation/scripts/azure/run-azure-terraform-integration.sh" "azure-cache-format-marker"
+
+  assert_regex_absent 'ConnectionStrings__redis[[:space:]]*=[[:space:]]*local\.redis_connection' "$ROOT/modules/aws-serverless/main.tf" "aws-serverless-redis-plaintext-env"
+  assert_regex_present 'HONUA_SECRET_REDIS_CONNECTION_ARN' "$ROOT/modules/aws-serverless/main.tf" "aws-serverless-redis-secret-env"
+
+  assert_regex_absent 'ConnectionStrings__redis[[:space:]]*=[[:space:]]*local\.redis_connection' "$ROOT/modules/azure-functions/main.tf" "azure-functions-redis-plaintext-env"
+  assert_regex_present 'azurerm_key_vault_secret" "redis_connection"' "$ROOT/modules/azure-functions/main.tf" "azure-functions-redis-secret-resource"
+  assert_regex_present 'ConnectionStrings__redis[[:space:]]*=[[:space:]]*"@Microsoft\.KeyVault\(SecretUri=\$\{azurerm_key_vault_secret\.redis_connection\[0\]\.versionless_id\}\)"' "$ROOT/modules/azure-functions/main.tf" "azure-functions-redis-keyvault-reference"
+
+  assert_regex_absent 'kubernetes[[:space:]]*=[[:space:]]*\{' "$ROOT/examples/observability/main.tf" "helm-provider-kubernetes-attribute"
+  assert_regex_present '^[[:space:]]*kubernetes[[:space:]]*\{' "$ROOT/examples/observability/main.tf" "helm-provider-kubernetes-block"
 }
 
 main() {

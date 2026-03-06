@@ -64,8 +64,8 @@ locals {
   db_ssl               = var.db_require_ssl ? ";SSL Mode=Require;Trust Server Certificate=false" : ""
   db_endpoint          = local.db_use_existing ? var.existing_db_endpoint : module.rds[0].db_instance_address
   db_connection_string = local.db_use_existing ? var.existing_db_connection_string : "Host=${local.db_endpoint};Port=5432;Database=${var.db_name};Username=${var.db_username};Password=${local.db_password}${local.db_ssl}"
-  redis_settings = local.redis_connection != "" ? {
-    ConnectionStrings__redis = local.redis_connection
+  redis_secret_environment = local.redis_connection != "" ? {
+    HONUA_SECRET_REDIS_CONNECTION_ARN = aws_secretsmanager_secret.redis_connection[0].arn
   } : {}
   lambda_environment = merge({
     HONUA_SKIP_MIGRATIONS              = var.skip_migrations ? "true" : "false"
@@ -75,7 +75,7 @@ locals {
     HONUA_SERVE_ADMIN_UI               = var.serve_admin_ui ? "true" : "false"
     HONUA_ADMIN_UI                     = var.serve_admin_ui ? "true" : "false"
     HONUA_OBSERVABILITY                = "true"
-  }, var.additional_env, local.redis_settings)
+  }, var.additional_env, local.redis_secret_environment)
 }
 
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
@@ -317,10 +317,11 @@ resource "aws_iam_policy" "lambda_secrets" {
         Action = [
           "secretsmanager:GetSecretValue"
         ]
-        Resource = [
+        Resource = compact([
           aws_secretsmanager_secret.connection_string.arn,
-          aws_secretsmanager_secret.admin_password.arn
-        ]
+          aws_secretsmanager_secret.admin_password.arn,
+          local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null
+        ])
       }
     ]
   })
@@ -352,6 +353,19 @@ resource "aws_secretsmanager_secret" "admin_password" {
 resource "aws_secretsmanager_secret_version" "admin_password" {
   secret_id     = aws_secretsmanager_secret.admin_password.id
   secret_string = var.admin_password
+}
+
+resource "aws_secretsmanager_secret" "redis_connection" {
+  count       = local.redis_enabled ? 1 : 0
+  name        = "${local.name}/redis-connection"
+  description = "Redis connection string for Honua."
+  tags        = local.tags
+}
+
+resource "aws_secretsmanager_secret_version" "redis_connection" {
+  count         = local.redis_enabled ? 1 : 0
+  secret_id     = aws_secretsmanager_secret.redis_connection[0].id
+  secret_string = local.redis_connection
 }
 
 resource "aws_cloudwatch_log_group" "lambda" {
@@ -389,7 +403,8 @@ resource "aws_lambda_function" "this" {
   depends_on = [
     aws_cloudwatch_log_group.lambda,
     aws_secretsmanager_secret_version.connection_string,
-    aws_secretsmanager_secret_version.admin_password
+    aws_secretsmanager_secret_version.admin_password,
+    aws_secretsmanager_secret_version.redis_connection
   ]
 
   tags = local.tags

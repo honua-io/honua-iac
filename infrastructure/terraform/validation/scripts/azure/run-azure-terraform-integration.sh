@@ -77,6 +77,7 @@ DATA_REDIS_FAMILY="${HONUA_AZURE_DATA_REDIS_FAMILY:-C}"
 DATA_REDIS_CAPACITY="${HONUA_AZURE_DATA_REDIS_CAPACITY:-0}"
 DATA_REDIS_PUBLIC_NETWORK_ACCESS_ENABLED="${HONUA_AZURE_DATA_REDIS_PUBLIC_NETWORK_ACCESS_ENABLED:-true}"
 DATA_CACHE_FILE="${HONUA_AZURE_DATA_CACHE_FILE:-/tmp/honua-azure-data-reuse.env}"
+DATA_CACHE_FORMAT="v2-base64"
 FORCE_NEW_DATA_INFRA="${HONUA_AZURE_FORCE_NEW_DATA_INFRA:-${HONUA_AZURE_FORCE_NEW_DATA:-false}}"
 
 TEMP_TF_ROOT=""
@@ -1313,7 +1314,46 @@ has_existing_data_inputs() {
     -n "$EXISTING_REDIS_CONNECTION_STRING" ]]
 }
 
+cache_file_is_safe_to_read() {
+  if [[ ! -f "$DATA_CACHE_FILE" ]]; then
+    return 1
+  fi
+
+  if [[ -L "$DATA_CACHE_FILE" ]]; then
+    log_warn "Ignoring Azure data cache file symlink: $DATA_CACHE_FILE"
+    return 1
+  fi
+
+  if [[ ! -r "$DATA_CACHE_FILE" ]]; then
+    log_warn "Ignoring unreadable Azure data cache file: $DATA_CACHE_FILE"
+    return 1
+  fi
+
+  return 0
+}
+
+cache_encode_value() {
+  printf '%s' "$1" | base64 | tr -d '\n'
+}
+
+cache_decode_into_var() {
+  local key="$1"
+  local encoded_value="$2"
+  local decoded_value
+
+  if ! decoded_value="$(printf '%s' "$encoded_value" | base64 --decode 2>/dev/null)"; then
+    return 1
+  fi
+
+  printf -v "$key" '%s' "$decoded_value"
+}
+
 load_data_reuse_cache() {
+  local line
+  local key
+  local value
+  local format_seen
+
   if [[ "$FORCE_NEW_DATA_INFRA" == "true" ]]; then
     log_info "Force-new-data-infra enabled; ignoring cached Azure data inputs"
     return
@@ -1323,12 +1363,46 @@ load_data_reuse_cache() {
     return
   fi
 
-  if [[ ! -f "$DATA_CACHE_FILE" ]]; then
+  if ! cache_file_is_safe_to_read; then
     return
   fi
 
-  # shellcheck disable=SC1090
-  source "$DATA_CACHE_FILE"
+  format_seen=false
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+
+    if [[ "$line" != *=* ]]; then
+      log_warn "Malformed Azure data cache file (missing '='): $DATA_CACHE_FILE"
+      return
+    fi
+
+    key="${line%%=*}"
+    value="${line#*=}"
+
+    case "$key" in
+      HONUA_CACHE_FORMAT)
+        if [[ "$value" != "$DATA_CACHE_FORMAT" ]]; then
+          log_warn "Unsupported Azure data cache format in $DATA_CACHE_FILE (expected $DATA_CACHE_FORMAT)"
+          return
+        fi
+        format_seen=true
+        ;;
+      EXISTING_DB_FQDN|EXISTING_DB_CONNECTION_STRING|EXISTING_REDIS_CONNECTION_STRING)
+        if ! cache_decode_into_var "$key" "$value"; then
+          log_warn "Failed decoding Azure data cache key '$key' in $DATA_CACHE_FILE"
+          return
+        fi
+        ;;
+      *)
+        log_warn "Ignoring unexpected Azure data cache key '$key' in $DATA_CACHE_FILE"
+        ;;
+    esac
+  done < "$DATA_CACHE_FILE"
+
+  if [[ "$format_seen" != "true" ]]; then
+    log_warn "Azure data cache file missing format marker; ignoring cache: $DATA_CACHE_FILE"
+    return
+  fi
 
   if has_existing_data_inputs; then
     log_info "Loaded Azure data reuse inputs from $DATA_CACHE_FILE"
@@ -1344,12 +1418,13 @@ persist_data_reuse_cache() {
   cache_dir="$(dirname "$DATA_CACHE_FILE")"
   mkdir -p "$cache_dir"
 
-  tmp_file="$(mktemp)"
+  tmp_file="$(mktemp "$cache_dir/honua-azure-data-cache.XXXXXX")"
   chmod 600 "$tmp_file"
   cat > "$tmp_file" <<EOF
-EXISTING_DB_FQDN=$(printf '%q' "$EXISTING_DB_FQDN")
-EXISTING_DB_CONNECTION_STRING=$(printf '%q' "$EXISTING_DB_CONNECTION_STRING")
-EXISTING_REDIS_CONNECTION_STRING=$(printf '%q' "$EXISTING_REDIS_CONNECTION_STRING")
+HONUA_CACHE_FORMAT=$DATA_CACHE_FORMAT
+EXISTING_DB_FQDN=$(cache_encode_value "$EXISTING_DB_FQDN")
+EXISTING_DB_CONNECTION_STRING=$(cache_encode_value "$EXISTING_DB_CONNECTION_STRING")
+EXISTING_REDIS_CONNECTION_STRING=$(cache_encode_value "$EXISTING_REDIS_CONNECTION_STRING")
 EOF
   mv "$tmp_file" "$DATA_CACHE_FILE"
 

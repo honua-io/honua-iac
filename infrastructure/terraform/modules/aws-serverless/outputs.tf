@@ -20,3 +20,8 @@ output "redis_connection_string" {
   value     = local.redis_connection
   sensitive = true
 }
+
+output "redis_connection_secret_arn" {
+  value     = local.redis_connection != "" ? aws_secretsmanager_secret.redis_connection[0].arn : null
+  sensitive = true
+}

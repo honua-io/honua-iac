@@ -70,6 +70,7 @@ VALIDATION_RUN_ID="${HONUA_VALIDATION_RUN_ID:-aws-$(date -u +%Y%m%d%H%M%S)}"
 FORCE_DOCKER_TF="${HONUA_FORCE_DOCKER_TF:-false}"
 FORCE_DOCKER_PG_TOOLS="${HONUA_FORCE_DOCKER_PG_TOOLS:-false}"
 DATA_CACHE_FILE="${HONUA_AWS_DATA_CACHE_FILE:-/tmp/honua-aws-data-reuse.env}"
+DATA_CACHE_FORMAT="v2-base64"
 FORCE_NEW_DATA_INFRA="${HONUA_AWS_FORCE_NEW_DATA_INFRA:-${HONUA_AWS_FORCE_NEW_DATA:-false}}"
 
 TEMP_TF_ROOT=""
@@ -1282,7 +1283,46 @@ has_existing_data_inputs() {
     -n "$EXISTING_PRIVATE_SUBNET_IDS" ]]
 }
 
+cache_file_is_safe_to_read() {
+  if [[ ! -f "$DATA_CACHE_FILE" ]]; then
+    return 1
+  fi
+
+  if [[ -L "$DATA_CACHE_FILE" ]]; then
+    log_warn "Ignoring AWS data cache file symlink: $DATA_CACHE_FILE"
+    return 1
+  fi
+
+  if [[ ! -r "$DATA_CACHE_FILE" ]]; then
+    log_warn "Ignoring unreadable AWS data cache file: $DATA_CACHE_FILE"
+    return 1
+  fi
+
+  return 0
+}
+
+cache_encode_value() {
+  printf '%s' "$1" | base64 | tr -d '\n'
+}
+
+cache_decode_into_var() {
+  local key="$1"
+  local encoded_value="$2"
+  local decoded_value
+
+  if ! decoded_value="$(printf '%s' "$encoded_value" | base64 --decode 2>/dev/null)"; then
+    return 1
+  fi
+
+  printf -v "$key" '%s' "$decoded_value"
+}
+
 load_data_reuse_cache() {
+  local line
+  local key
+  local value
+  local format_seen
+
   if [[ "$FORCE_NEW_DATA_INFRA" == "true" ]]; then
     log_info "Force-new-data-infra enabled; ignoring cached AWS data inputs"
     return
@@ -1292,12 +1332,46 @@ load_data_reuse_cache() {
     return
   fi
 
-  if [[ ! -f "$DATA_CACHE_FILE" ]]; then
+  if ! cache_file_is_safe_to_read; then
     return
   fi
 
-  # shellcheck disable=SC1090
-  source "$DATA_CACHE_FILE"
+  format_seen=false
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+
+    if [[ "$line" != *=* ]]; then
+      log_warn "Malformed AWS data cache file (missing '='): $DATA_CACHE_FILE"
+      return
+    fi
+
+    key="${line%%=*}"
+    value="${line#*=}"
+
+    case "$key" in
+      HONUA_CACHE_FORMAT)
+        if [[ "$value" != "$DATA_CACHE_FORMAT" ]]; then
+          log_warn "Unsupported AWS data cache format in $DATA_CACHE_FILE (expected $DATA_CACHE_FORMAT)"
+          return
+        fi
+        format_seen=true
+        ;;
+      EXISTING_DB_ENDPOINT|EXISTING_DB_CONNECTION_STRING|EXISTING_REDIS_CONNECTION_STRING|EXISTING_VPC_ID|EXISTING_VPC_CIDR|EXISTING_PUBLIC_SUBNET_IDS|EXISTING_PRIVATE_SUBNET_IDS)
+        if ! cache_decode_into_var "$key" "$value"; then
+          log_warn "Failed decoding AWS data cache key '$key' in $DATA_CACHE_FILE"
+          return
+        fi
+        ;;
+      *)
+        log_warn "Ignoring unexpected AWS data cache key '$key' in $DATA_CACHE_FILE"
+        ;;
+    esac
+  done < "$DATA_CACHE_FILE"
+
+  if [[ "$format_seen" != "true" ]]; then
+    log_warn "AWS data cache file missing format marker; ignoring cache: $DATA_CACHE_FILE"
+    return
+  fi
 
   if has_existing_data_inputs; then
     log_info "Loaded AWS data reuse inputs from $DATA_CACHE_FILE"
@@ -1313,16 +1387,17 @@ persist_data_reuse_cache() {
   cache_dir="$(dirname "$DATA_CACHE_FILE")"
   mkdir -p "$cache_dir"
 
-  tmp_file="$(mktemp)"
+  tmp_file="$(mktemp "$cache_dir/honua-aws-data-cache.XXXXXX")"
   chmod 600 "$tmp_file"
   cat > "$tmp_file" <<EOF
-EXISTING_DB_ENDPOINT=$(printf '%q' "$EXISTING_DB_ENDPOINT")
-EXISTING_DB_CONNECTION_STRING=$(printf '%q' "$EXISTING_DB_CONNECTION_STRING")
-EXISTING_REDIS_CONNECTION_STRING=$(printf '%q' "$EXISTING_REDIS_CONNECTION_STRING")
-EXISTING_VPC_ID=$(printf '%q' "$EXISTING_VPC_ID")
-EXISTING_VPC_CIDR=$(printf '%q' "$EXISTING_VPC_CIDR")
-EXISTING_PUBLIC_SUBNET_IDS=$(printf '%q' "$EXISTING_PUBLIC_SUBNET_IDS")
-EXISTING_PRIVATE_SUBNET_IDS=$(printf '%q' "$EXISTING_PRIVATE_SUBNET_IDS")
+HONUA_CACHE_FORMAT=$DATA_CACHE_FORMAT
+EXISTING_DB_ENDPOINT=$(cache_encode_value "$EXISTING_DB_ENDPOINT")
+EXISTING_DB_CONNECTION_STRING=$(cache_encode_value "$EXISTING_DB_CONNECTION_STRING")
+EXISTING_REDIS_CONNECTION_STRING=$(cache_encode_value "$EXISTING_REDIS_CONNECTION_STRING")
+EXISTING_VPC_ID=$(cache_encode_value "$EXISTING_VPC_ID")
+EXISTING_VPC_CIDR=$(cache_encode_value "$EXISTING_VPC_CIDR")
+EXISTING_PUBLIC_SUBNET_IDS=$(cache_encode_value "$EXISTING_PUBLIC_SUBNET_IDS")
+EXISTING_PRIVATE_SUBNET_IDS=$(cache_encode_value "$EXISTING_PRIVATE_SUBNET_IDS")
 EOF
   mv "$tmp_file" "$DATA_CACHE_FILE"
 

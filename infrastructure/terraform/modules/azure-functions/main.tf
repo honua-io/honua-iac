@@ -211,6 +211,15 @@ resource "azurerm_key_vault_secret" "admin_password" {
   depends_on = [azurerm_key_vault_access_policy.terraform]
 }
 
+resource "azurerm_key_vault_secret" "redis_connection" {
+  count        = local.redis_enabled ? 1 : 0
+  name         = "redis-connection"
+  value        = local.redis_connection
+  key_vault_id = azurerm_key_vault.this.id
+
+  depends_on = [azurerm_key_vault_access_policy.terraform]
+}
+
 locals {
   base_app_settings = {
     FUNCTIONS_WORKER_RUNTIME                  = var.functions_worker_runtime
@@ -226,8 +235,8 @@ locals {
     HONUA_OBSERVABILITY                       = "true"
     HONUA_SKIP_MIGRATIONS                     = var.skip_migrations ? "true" : "false"
   }
-  redis_settings = local.redis_connection != "" ? {
-    ConnectionStrings__redis = local.redis_connection
+  redis_secret_settings = local.redis_connection != "" ? {
+    ConnectionStrings__redis = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.redis_connection[0].versionless_id})"
   } : {}
   registry_settings = var.registry_server != "" ? {
     DOCKER_REGISTRY_SERVER_URL      = var.registry_server
@@ -238,7 +247,7 @@ locals {
     APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.this[0].connection_string
     APPINSIGHTS_INSTRUMENTATIONKEY        = azurerm_application_insights.this[0].instrumentation_key
   } : {}
-  app_settings = merge(local.base_app_settings, local.redis_settings, local.registry_settings, local.app_insights_settings, var.additional_env)
+  app_settings = merge(local.base_app_settings, local.redis_secret_settings, local.registry_settings, local.app_insights_settings, var.additional_env)
 
   image_parts         = split("/", var.image)
   image_registry      = local.image_parts[0]

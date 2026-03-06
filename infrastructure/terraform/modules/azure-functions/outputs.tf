@@ -20,3 +20,8 @@ output "redis_connection_string" {
   value     = local.redis_connection
   sensitive = true
 }
+
+output "redis_connection_secret_id" {
+  value     = local.redis_connection != "" ? azurerm_key_vault_secret.redis_connection[0].id : null
+  sensitive = true
+}
