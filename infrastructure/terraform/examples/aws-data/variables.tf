@@ -24,9 +24,9 @@ variable "db_password" {
 }
 
 variable "db_publicly_accessible" {
-  description = "Expose RDS publicly for integration testing."
+  description = "Expose RDS publicly when validation runners need direct reachability."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "db_additional_ingress_cidrs" {
@@ -36,9 +36,9 @@ variable "db_additional_ingress_cidrs" {
 }
 
 variable "enable_postgis" {
-  description = "Enable PostGIS and PostGIS Raster during apply."
+  description = "Enable PostGIS and PostGIS Raster during apply when the runner has psql and database reachability."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "postgis_readiness_max_attempts" {

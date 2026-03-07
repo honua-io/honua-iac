@@ -23,9 +23,8 @@ variable "tags" {
 }
 
 variable "image" {
-  description = "Container image. AOT builds (latest-aot, vX.Y.Z-aot) are recommended for faster startup and lower memory."
+  description = "Container image. Pin to an immutable release tag or digest; AOT builds are recommended for faster startup and lower memory."
   type        = string
-  default     = "ghcr.io/honua-io/honua-server:latest"
 }
 
 variable "container_cpu" {

@@ -16,8 +16,13 @@ module "aks" {
   name_prefix = "honua"
   environment = "it"
   location    = "westus"
+  authorized_ip_ranges = [
+    "198.51.100.10/32",
+  ]
 }
 ```
+
+Leave `authorized_ip_ranges` empty only when you intentionally want a public AKS API endpoint. For persistent environments, set trusted operator CIDRs explicitly.
 
 ## Outputs
 

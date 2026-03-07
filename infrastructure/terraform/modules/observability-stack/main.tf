@@ -1,6 +1,6 @@
 locals {
-  default_alert_rules_file = "${path.module}/../../../../docker/prometheus/alerts.yml"
-  default_dashboard_file   = "${path.module}/../../../../docker/grafana/dashboards/honua-overview.json"
+  default_alert_rules_file = "${path.module}/assets/alerts.yml"
+  default_dashboard_file   = "${path.module}/assets/honua-overview.json"
   alert_rules_file         = var.alert_rules_file != "" ? var.alert_rules_file : local.default_alert_rules_file
   honua_dashboard_file     = var.honua_dashboard_file != "" ? var.honua_dashboard_file : local.default_dashboard_file
   alert_rules              = yamldecode(file(local.alert_rules_file))

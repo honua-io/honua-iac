@@ -10,7 +10,7 @@ module "honua" {
 
   environment    = "dev"
   location       = "eastus"
-  image          = "myregistry.azurecr.io/honua-server:latest-aot"
+  image          = "myregistry.azurecr.io/honua-server:v1.2.3-aot"
   admin_password = var.honua_admin_password
   enable_postgis = true  # Required — Honua needs PostGIS + PostGIS Raster
 
@@ -68,7 +68,7 @@ module "honua" {
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `image` | `ghcr.io/.../latest-aot` | Container image. Prefer AOT tags (`latest-aot`, `vX.Y.Z-aot`). Functions-specific AOT tags can be used when published. |
+| `image` | Required | Container image. Pin to an immutable release tag or digest. Prefer AOT builds; use JIT images only for debug fallback. |
 | `plan_sku_name` | `EP1` | Premium (`EP1`–`EP3`) or Consumption (`Y1`). Premium recommended. |
 | `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster on database. **Set to true.** |
 | `skip_migrations` | true | Skip auto-migrations. Run them out-of-band for serverless. |
@@ -90,7 +90,7 @@ See `variables.tf` for the complete list.
 
 ## Cold starts
 
-Use AOT images (`vX.Y.Z-aot`, `latest-aot`) for runtime performance. Use JIT tags only for debug fallback.
+Use AOT images such as `vX.Y.Z-aot` for runtime performance. Use JIT images only for debug fallback.
 
 ## Private container registry
 

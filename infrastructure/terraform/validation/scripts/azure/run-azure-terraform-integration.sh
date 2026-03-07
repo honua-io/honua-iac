@@ -32,8 +32,8 @@ DEFAULT_HONUA_FUNCTIONS_AOT_IMAGE="${HONUA_DEFAULT_FUNCTIONS_AOT_IMAGE:-ghcr.io/
 DEFAULT_HONUA_FUNCTIONS_IMAGE="${HONUA_DEFAULT_FUNCTIONS_IMAGE:-$DEFAULT_HONUA_FUNCTIONS_AOT_IMAGE}"
 USE_AOT="${HONUA_USE_AOT:-false}"
 FUNCTIONS_AOT_AUTOSWITCH="${HONUA_AZURE_FUNCTIONS_AOT_AUTOSWITCH:-true}"
-ACA_IMAGE="${HONUA_ACA_IMAGE:-$DEFAULT_HONUA_IMAGE}"
-FUNCTIONS_IMAGE="${HONUA_FUNCTIONS_IMAGE:-$DEFAULT_HONUA_FUNCTIONS_IMAGE}"
+ACA_IMAGE="${HONUA_ACA_IMAGE:-}"
+FUNCTIONS_IMAGE="${HONUA_FUNCTIONS_IMAGE:-}"
 ACA_PREVIOUS_IMAGE="${HONUA_ACA_PREVIOUS_IMAGE:-}"
 FUNCTIONS_PREVIOUS_IMAGE="${HONUA_FUNCTIONS_PREVIOUS_IMAGE:-}"
 FUNCTIONS_PLAN_SKU="${HONUA_FUNCTIONS_PLAN_SKU:-EP1}"
@@ -155,6 +155,8 @@ Required environment variables:
   ARM_SUBSCRIPTION_ID
   HONUA_ADMIN_PASSWORD (at least 32 chars)
   HONUA_DB_PASSWORD
+  HONUA_ACA_IMAGE (when --stack aca|both)
+  HONUA_FUNCTIONS_IMAGE (when --stack functions|both)
 
 Optional environment variables:
   HONUA_AZURE_DESTROY_DATA
@@ -191,6 +193,32 @@ require_env() {
       exit 1
     fi
   done
+}
+
+validate_requested_images() {
+  if [[ "$STACK" == "aca" || "$STACK" == "both" ]]; then
+    if [[ -z "$ACA_IMAGE" ]]; then
+      log_error "ACA image is required. Set HONUA_ACA_IMAGE or pass --aca-image."
+      exit 1
+    fi
+
+    if [[ "$RUN_UPGRADE_ROLLBACK" == "true" && -z "$ACA_PREVIOUS_IMAGE" ]]; then
+      log_error "ACA upgrade/rollback requires HONUA_ACA_PREVIOUS_IMAGE or --aca-previous-image."
+      exit 1
+    fi
+  fi
+
+  if [[ "$STACK" == "functions" || "$STACK" == "both" ]]; then
+    if [[ -z "$FUNCTIONS_IMAGE" ]]; then
+      log_error "Functions image is required. Set HONUA_FUNCTIONS_IMAGE or pass --functions-image."
+      exit 1
+    fi
+
+    if [[ "$RUN_UPGRADE_ROLLBACK" == "true" && -z "$FUNCTIONS_PREVIOUS_IMAGE" ]]; then
+      log_error "Functions upgrade/rollback requires HONUA_FUNCTIONS_PREVIOUS_IMAGE or --functions-previous-image."
+      exit 1
+    fi
+  fi
 }
 
 extract_connection_string_password() {
@@ -1979,6 +2007,7 @@ cleanup() {
 main() {
   parse_args "$@"
   apply_aot_mode
+  validate_requested_images
   require_command curl
   require_env \
     ARM_CLIENT_ID \

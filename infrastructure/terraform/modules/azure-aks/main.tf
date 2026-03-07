@@ -46,8 +46,12 @@ resource "azurerm_kubernetes_cluster" "this" {
   role_based_access_control_enabled = true
   local_account_disabled            = var.local_account_disabled
 
-  api_server_access_profile {
-    authorized_ip_ranges = var.authorized_ip_ranges
+  dynamic "api_server_access_profile" {
+    for_each = length(var.authorized_ip_ranges) > 0 ? [1] : []
+
+    content {
+      authorized_ip_ranges = var.authorized_ip_ranges
+    }
   }
 
   network_profile {

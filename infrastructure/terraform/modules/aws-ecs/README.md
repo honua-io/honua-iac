@@ -9,7 +9,7 @@ module "honua" {
   source = "../../modules/aws-ecs"
 
   environment    = "dev"
-  image          = "ghcr.io/honua-io/honua-server:latest-aot"
+  image          = "ghcr.io/honua-io/honua-server:v1.2.3-aot"
   admin_password = var.honua_admin_password
   enable_postgis = true  # Required — Honua needs PostGIS + PostGIS Raster
 
@@ -21,6 +21,8 @@ module "honua" {
 ```
 
 > **PostGIS + PostGIS Raster are required.** Set `enable_postgis = true` to enable both extensions on the RDS instance via a local-exec provisioner. This requires `psql` on the machine running `terraform apply` and network access to the RDS endpoint. If you cannot run local-exec, enable both extensions manually after apply. For controlled temporary access from CI/local runners, use `db_additional_ingress_cidrs`.
+>
+> If you do not set `allow_http_ingress_cidrs` or `allow_https_ingress_cidrs`, the ALB listener defaults to VPC-only ingress using the active VPC CIDR. Set explicit CIDRs before exposing the service more broadly.
 
 ## Production example
 
@@ -105,7 +107,7 @@ route53_zone_id = "Z1234567890ABC"
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `image` | `ghcr.io/.../latest-aot` | Container image. AOT recommended. Pin to `vX.Y.Z-aot` for production. |
+| `image` | Required | Container image. Pin to an immutable release tag or digest. AOT builds are recommended. |
 | `container_cpu` | 512 | Fargate CPU units (256/512/1024/2048/4096). |
 | `container_memory` | 1024 | Fargate memory in MiB. |
 | `desired_count` | 1 | Number of tasks. Use 2+ for production. |
@@ -117,6 +119,7 @@ route53_zone_id = "Z1234567890ABC"
 | `db_require_ssl` | true | Append SSL requirements to the connection string. |
 | `redis_enabled` | true | Provision ElastiCache Redis. |
 | `redis_connection_string` | `""` | Reuse an existing Redis connection string instead of provisioning ElastiCache. |
+| `redis_connection_cidrs` | `[]` | Trusted CIDRs for Redis egress when `redis_connection_string` points to an existing endpoint. |
 | `redis_node_type` | `cache.t3.micro` | ElastiCache node type. |
 | `alb_certificate_arn` | `""` | ACM certificate ARN. Falls back to HTTP if empty. |
 | `waf_web_acl_arn` | `""` | WAFv2 Web ACL ARN for the ALB. |

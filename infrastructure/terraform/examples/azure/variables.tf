@@ -43,9 +43,8 @@ variable "existing_db_connection_string" {
 }
 
 variable "honua_image" {
-  description = "Container image to deploy."
+  description = "Container image to deploy. Pin to an immutable release tag or digest."
   type        = string
-  default     = "ghcr.io/honua-io/honua-server:latest"
 }
 
 variable "enable_postgis" {

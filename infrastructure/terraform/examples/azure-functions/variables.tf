@@ -43,9 +43,8 @@ variable "existing_db_connection_string" {
 }
 
 variable "honua_image" {
-  description = "Container image (Functions-compatible). Prefer AOT tags (`*-aot`); use JIT tags only for debug fallback."
+  description = "Container image (Functions-compatible). Pin to an immutable release tag or digest. Prefer AOT builds; use JIT images only for debug fallback."
   type        = string
-  default     = "ghcr.io/honua-io/honua-server:latest-aot"
 }
 
 variable "plan_sku_name" {

@@ -107,9 +107,8 @@ variable "assign_public_ip" {
 }
 
 variable "image" {
-  description = "Container image. AOT builds (latest-aot, vX.Y.Z-aot) are recommended for faster startup and lower memory."
+  description = "Container image. Pin to an immutable release tag or digest; AOT builds are recommended for faster startup and lower memory."
   type        = string
-  default     = "ghcr.io/honua-io/honua-server:latest"
 }
 
 variable "admin_password" {
@@ -304,6 +303,12 @@ variable "redis_connection_string" {
   type        = string
   default     = ""
   sensitive   = true
+}
+
+variable "redis_connection_cidrs" {
+  description = "Trusted CIDR ranges allowed for Redis egress when reusing an existing Redis endpoint."
+  type        = list(string)
+  default     = []
 }
 
 variable "redis_auth_token" {

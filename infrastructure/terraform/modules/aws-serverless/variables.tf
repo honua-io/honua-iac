@@ -228,6 +228,12 @@ variable "redis_connection_string" {
   sensitive   = true
 }
 
+variable "redis_connection_cidrs" {
+  description = "Trusted CIDR ranges allowed for Redis egress when reusing an existing Redis endpoint."
+  type        = list(string)
+  default     = []
+}
+
 variable "redis_auth_token" {
   description = "Redis auth token (used when creating Redis). Leave empty to auto-generate."
   type        = string

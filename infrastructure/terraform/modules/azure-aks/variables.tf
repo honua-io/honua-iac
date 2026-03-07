@@ -58,14 +58,9 @@ variable "sku_tier" {
 }
 
 variable "authorized_ip_ranges" {
-  description = "CIDR ranges authorized to access the AKS API server."
+  description = "CIDR ranges authorized to access the AKS API server. Leave empty to allow public access until you set trusted operator CIDRs."
   type        = list(string)
-  default     = ["203.0.113.10/32"]
-
-  validation {
-    condition     = length(var.authorized_ip_ranges) > 0
-    error_message = "authorized_ip_ranges must include at least one trusted CIDR."
-  }
+  default     = []
 }
 
 variable "local_account_disabled" {

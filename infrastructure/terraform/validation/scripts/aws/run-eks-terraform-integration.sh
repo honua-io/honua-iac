@@ -32,7 +32,7 @@ NODE_DESIRED_SIZE="${EKS_NODE_DESIRED_SIZE:-2}"
 DEFAULT_HONUA_IMAGE="ghcr.io/honua-io/honua-server:latest"
 DEFAULT_HONUA_AOT_IMAGE="ghcr.io/honua-io/honua-server:latest-aot"
 USE_AOT="${HONUA_USE_AOT:-false}"
-K8S_IMAGE="${HONUA_K8S_IMAGE:-$DEFAULT_HONUA_IMAGE}"
+K8S_IMAGE="${HONUA_K8S_IMAGE:-}"
 K8S_PREVIOUS_IMAGE="${HONUA_K8S_PREVIOUS_IMAGE:-}"
 AUTO_DESTROY=true
 CHECK_IDEMPOTENCY=true
@@ -100,6 +100,7 @@ Required environment variables:
   AWS_ACCESS_KEY_ID
   AWS_SECRET_ACCESS_KEY
   HONUA_ADMIN_PASSWORD
+  HONUA_K8S_IMAGE
 USAGE
 }
 
@@ -140,6 +141,18 @@ require_env() {
       exit 1
     fi
   done
+}
+
+validate_requested_images() {
+  if [[ -z "$K8S_IMAGE" ]]; then
+    log_error "Kubernetes image is required. Set HONUA_K8S_IMAGE or pass --image."
+    exit 1
+  fi
+
+  if [[ "$RUN_UPGRADE_ROLLBACK" == "true" && -z "$K8S_PREVIOUS_IMAGE" ]]; then
+    log_error "Upgrade/rollback requires HONUA_K8S_PREVIOUS_IMAGE or --previous-image."
+    exit 1
+  fi
 }
 
 parse_args() {
@@ -759,6 +772,7 @@ cleanup() {
 main() {
   parse_args "$@"
   apply_aot_mode
+  validate_requested_images
 
   require_command aws
   require_command kubectl

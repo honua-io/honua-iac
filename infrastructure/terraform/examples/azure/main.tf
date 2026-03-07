@@ -29,10 +29,9 @@ module "honua" {
   tags                            = var.tags
 
   additional_env = {
-    HONUA_SERVE_ADMIN_UI    = "true"
-    HONUA_ADMIN_UI          = "true"
-    HostValidation__Enabled = "false"
-    AllowedHosts            = "*"
+    HONUA_SERVE_ADMIN_UI            = "true"
+    HONUA_ADMIN_UI                  = "true"
+    HostValidation__AllowedHosts__0 = "*.azurecontainerapps.io"
   }
 }
 

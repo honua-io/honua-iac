@@ -37,7 +37,7 @@ INGRESS_HOSTNAME="${K8S_TF_INGRESS_HOSTNAME:-honua.local}"
 DEFAULT_HONUA_IMAGE="ghcr.io/honua-io/honua-server:latest"
 DEFAULT_HONUA_AOT_IMAGE="ghcr.io/honua-io/honua-server:latest-aot"
 USE_AOT="${HONUA_USE_AOT:-false}"
-HONUA_IMAGE="${HONUA_K8S_IMAGE:-$DEFAULT_HONUA_IMAGE}"
+HONUA_IMAGE="${HONUA_K8S_IMAGE:-}"
 PREVIOUS_IMAGE="${HONUA_K8S_PREVIOUS_IMAGE:-}"
 AUTO_DESTROY=true
 QUICK_SCALE=true
@@ -117,6 +117,9 @@ Options:
   --help, -h                           Show this help
 
 Optional environment variables:
+  HONUA_K8S_IMAGE                      Honua image for Helm deployment
+  HONUA_K8S_PREVIOUS_IMAGE             Previous image for upgrade/rollback validation
+  HONUA_KUBECONFORM_IMAGE              Kubeconform image override for Helm manifest validation
   HONUA_ADMIN_PASSWORD                 Admin password for Helm chart secret
   SECURITY_MASTER_KEY                  Master key for app startup
 USAGE
@@ -141,6 +144,18 @@ apply_aot_mode() {
 
   if [[ "$HONUA_IMAGE" == "$DEFAULT_HONUA_IMAGE" ]]; then
     HONUA_IMAGE="$DEFAULT_HONUA_AOT_IMAGE"
+  fi
+}
+
+validate_requested_images() {
+  if [[ -z "$HONUA_IMAGE" ]]; then
+    log_error "Kubernetes image is required. Set HONUA_K8S_IMAGE or pass --image."
+    exit 1
+  fi
+
+  if [[ "$RUN_UPGRADE_ROLLBACK" == "true" && -z "$PREVIOUS_IMAGE" ]]; then
+    log_error "Upgrade/rollback requires HONUA_K8S_PREVIOUS_IMAGE or --previous-image."
+    exit 1
   fi
 }
 
@@ -766,7 +781,7 @@ run_helm_static_validation() {
   fi
 
   chart_path="$REPO_ROOT/infrastructure/helm/honua"
-  kubeconform_image="${HONUA_KUBECONFORM_IMAGE:-ghcr.io/yannh/kubeconform:latest}"
+  kubeconform_image="${HONUA_KUBECONFORM_IMAGE:-ghcr.io/yannh/kubeconform:v0.7.0}"
 
   ingress_class="traefik"
   if [[ "$CLUSTER_MODE" != "k3d" ]]; then
@@ -1083,6 +1098,7 @@ cleanup() {
 main() {
   parse_args "$@"
   apply_aot_mode
+  validate_requested_images
 
   require_command docker
   require_command kubectl

@@ -23,9 +23,8 @@ variable "tags" {
 }
 
 variable "image" {
-  description = "Container image. Prefer AOT tags (latest-aot, vX.Y.Z-aot). Functions-specific AOT tags can be used when published. JIT tags are debug fallback."
+  description = "Container image. Pin to an immutable release tag or digest. Prefer AOT builds; use JIT images only for debug fallback."
   type        = string
-  default     = "ghcr.io/honua-io/honua-server:latest-aot"
 }
 
 variable "container_port" {

@@ -54,15 +54,15 @@ variable "db_backup_retention_days" {
 }
 
 variable "db_public_network_access" {
-  description = "Enable public network access to PostgreSQL for validation runs."
+  description = "Enable public network access to PostgreSQL when validation runners need direct reachability."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "enable_postgis" {
-  description = "Enable PostGIS and PostGIS Raster during apply."
+  description = "Enable PostGIS and PostGIS Raster during apply when the runner has database reachability."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "redis_enabled" {
@@ -90,9 +90,9 @@ variable "redis_capacity" {
 }
 
 variable "redis_public_network_access_enabled" {
-  description = "Enable Redis public network access for validation runs."
+  description = "Enable Redis public network access when validation runners need direct reachability."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "key_vault_default_action" {

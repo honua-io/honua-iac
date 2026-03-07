@@ -114,6 +114,12 @@ variable "redis_connection_string" {
   default     = ""
 }
 
+variable "redis_connection_cidrs" {
+  description = "Trusted CIDR ranges allowed for Redis egress when reusing an existing Redis endpoint."
+  type        = list(string)
+  default     = []
+}
+
 variable "skip_migrations" {
   description = "Skip migrations on Lambda startup."
   type        = bool

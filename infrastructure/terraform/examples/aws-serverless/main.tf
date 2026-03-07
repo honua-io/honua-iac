@@ -23,6 +23,7 @@ module "honua" {
   postgis_readiness_sleep_seconds = var.postgis_readiness_sleep_seconds
   redis_enabled                   = var.redis_enabled
   redis_connection_string         = var.redis_connection_string
+  redis_connection_cidrs          = var.redis_connection_cidrs
   skip_migrations                 = var.skip_migrations
   tags                            = var.tags
 

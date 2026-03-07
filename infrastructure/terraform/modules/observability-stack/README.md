@@ -10,8 +10,8 @@ base platform can run without self-hosted observability components.
 - Prometheus Helm release (`prometheus-community/prometheus`)
 - Grafana Helm release (`grafana/grafana`)
 - Configurable Honua scrape job (`honua_metrics_path` + optional `honua_metrics_format`)
-- Alert rules loaded from `docker/prometheus/alerts.yml`
-- Honua dashboard provisioning from `docker/grafana/dashboards/honua-overview.json`
+- Alert rules loaded from `assets/alerts.yml`
+- Honua dashboard provisioning from `assets/honua-overview.json`
 - Grafana admin credentials in a Kubernetes secret
 
 ## Usage
@@ -29,8 +29,8 @@ module "observability" {
 }
 ```
 
-Defaults for `alert_rules_file` and `honua_dashboard_file` are resolved relative to
-the module path, so callers do not need to match a specific root-module folder depth.
+Defaults for `alert_rules_file` and `honua_dashboard_file` are bundled with this
+module under `assets/`, so callers do not need a matching monorepo checkout.
 
 Honua exposes native Prometheus text metrics at `/metrics` by default. Keep `honua_metrics_path` at `/metrics` unless you override `Observability:Prometheus:Path` in the server configuration.
 
@@ -44,6 +44,6 @@ Honua exposes native Prometheus text metrics at `/metrics` by default. Keep `hon
 
 ## Operational notes
 
-- Keep alert rules in `docker/prometheus/alerts.yml` and update runbooks in `docs/devops/runbooks/`.
+- Keep alert rules in `assets/alerts.yml` and update runbooks in `docs/devops/runbooks/`.
 - For managed-cloud monitoring, prefer `docs/alerting/` and forward OTLP to managed Prometheus.
 - Treat this module as optional for environments that require in-cluster dashboards.

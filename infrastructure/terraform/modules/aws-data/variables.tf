@@ -114,9 +114,9 @@ variable "db_require_ssl" {
 }
 
 variable "enable_postgis" {
-  description = "Attempt to enable PostGIS and PostGIS Raster via local-exec."
+  description = "Attempt to enable PostGIS and PostGIS Raster via local-exec. Opt in only when the apply environment has psql and network reachability to RDS."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "postgis_readiness_max_attempts" {

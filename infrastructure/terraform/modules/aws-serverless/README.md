@@ -82,6 +82,7 @@ module "honua" {
 | `db_multi_az` | false | Enable Multi-AZ failover. |
 | `redis_enabled` | true | Provision ElastiCache Redis. |
 | `redis_connection_string` | `""` | Reuse an existing Redis connection string instead of provisioning ElastiCache. |
+| `redis_connection_cidrs` | `[]` | Trusted CIDRs for Redis egress when `redis_connection_string` points to an existing endpoint. |
 | `enable_nat_gateway` | true | NAT gateways for outbound access. Required for OIDC. |
 
 See `variables.tf` for the complete list.

@@ -31,7 +31,7 @@ DEFAULT_HONUA_AOT_IMAGE="ghcr.io/honua-io/honua-server:latest-aot"
 DEFAULT_LAMBDA_TAG_SUFFIX="-lambda"
 DEFAULT_LAMBDA_AOT_TAG_SUFFIX="-lambda-aot"
 USE_AOT="${HONUA_USE_AOT:-false}"
-ECS_IMAGE="${HONUA_AWS_ECS_IMAGE:-$DEFAULT_HONUA_IMAGE}"
+ECS_IMAGE="${HONUA_AWS_ECS_IMAGE:-}"
 SERVERLESS_IMAGE="${HONUA_AWS_SERVERLESS_IMAGE:-}"
 ECS_PREVIOUS_IMAGE="${HONUA_AWS_ECS_PREVIOUS_IMAGE:-}"
 SERVERLESS_PREVIOUS_IMAGE="${HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE:-}"
@@ -137,6 +137,8 @@ Required environment variables:
   AWS_SECRET_ACCESS_KEY
   HONUA_ADMIN_PASSWORD (at least 32 chars)
   HONUA_DB_PASSWORD
+  HONUA_AWS_ECS_IMAGE (when --stack ecs|both)
+  HONUA_AWS_SERVERLESS_IMAGE (when --stack serverless|both)
 
 Optional environment variables:
   AWS_SESSION_TOKEN
@@ -182,6 +184,32 @@ require_env() {
       exit 1
     fi
   done
+}
+
+validate_requested_images() {
+  if [[ "$STACK" == "ecs" || "$STACK" == "both" ]]; then
+    if [[ -z "$ECS_IMAGE" ]]; then
+      log_error "ECS image is required. Set HONUA_AWS_ECS_IMAGE or pass --ecs-image."
+      exit 1
+    fi
+
+    if [[ "$RUN_UPGRADE_ROLLBACK" == "true" && -z "$ECS_PREVIOUS_IMAGE" ]]; then
+      log_error "ECS upgrade/rollback requires HONUA_AWS_ECS_PREVIOUS_IMAGE or --ecs-previous-image."
+      exit 1
+    fi
+  fi
+
+  if [[ "$STACK" == "serverless" || "$STACK" == "both" ]]; then
+    if [[ -z "$SERVERLESS_IMAGE" ]]; then
+      log_error "Serverless image is required. Set HONUA_AWS_SERVERLESS_IMAGE or pass --serverless-image."
+      exit 1
+    fi
+
+    if [[ "$RUN_UPGRADE_ROLLBACK" == "true" && -z "$SERVERLESS_PREVIOUS_IMAGE" ]]; then
+      log_error "Serverless upgrade/rollback requires HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE or --serverless-previous-image."
+      exit 1
+    fi
+  fi
 }
 
 extract_connection_string_password() {
@@ -1896,6 +1924,7 @@ cleanup() {
 main() {
   parse_args "$@"
   apply_aot_mode
+  validate_requested_images
   require_command curl
   require_env \
     AWS_ACCESS_KEY_ID \

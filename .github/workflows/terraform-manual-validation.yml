@@ -29,7 +29,7 @@ on:
         description: "Run live plan/apply/smoke/destroy tests"
         required: true
         type: boolean
-        default: true
+        default: false
       run_k8s:
         description: "Run local Kubernetes validation (k3d + Helm + observability)"
         required: true
@@ -133,6 +133,7 @@ jobs:
             "infrastructure/terraform/examples/azure-functions"
             "infrastructure/terraform/examples/aws"
             "infrastructure/terraform/examples/aws-serverless"
+            "infrastructure/terraform/examples/aws-data"
             "infrastructure/terraform/examples/azure-aks"
             "infrastructure/terraform/examples/aws-eks"
             "infrastructure/terraform/examples/observability"
@@ -141,6 +142,7 @@ jobs:
             "infrastructure/terraform/modules/azure-functions"
             "infrastructure/terraform/modules/aws-ecs"
             "infrastructure/terraform/modules/aws-serverless"
+            "infrastructure/terraform/modules/aws-data"
             "infrastructure/terraform/modules/azure-aks"
             "infrastructure/terraform/modules/aws-eks"
             "infrastructure/terraform/modules/observability-stack"
@@ -189,13 +191,13 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          python -m pip install checkov
+          python -m pip install checkov==3.2.497
 
       - name: Install tfsec
         shell: bash
         run: |
           set -euo pipefail
-          curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
+          curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/b692c20b68c0121346b7b34e81d6b1867ca8e1a8/scripts/install_linux.sh | bash
           tfsec --version
 
       - name: Run Terraform policy gate script
@@ -249,6 +251,20 @@ jobs:
             fi
           done
 
+          if [[ "$AZURE_VALIDATION_STACK" == "aca" || "$AZURE_VALIDATION_STACK" == "both" ]]; then
+            [[ -n "${HONUA_ACA_IMAGE:-}" ]] || { echo "Missing required secret for Azure live validation: HONUA_ACA_IMAGE"; exit 1; }
+            if [[ "$HONUA_RUN_UPGRADE_ROLLBACK" == "true" ]]; then
+              [[ -n "${HONUA_ACA_PREVIOUS_IMAGE:-}" ]] || { echo "Missing required secret for Azure live validation: HONUA_ACA_PREVIOUS_IMAGE"; exit 1; }
+            fi
+          fi
+
+          if [[ "$AZURE_VALIDATION_STACK" == "functions" || "$AZURE_VALIDATION_STACK" == "both" ]]; then
+            [[ -n "${HONUA_FUNCTIONS_IMAGE:-}" ]] || { echo "Missing required secret for Azure live validation: HONUA_FUNCTIONS_IMAGE"; exit 1; }
+            if [[ "$HONUA_RUN_UPGRADE_ROLLBACK" == "true" ]]; then
+              [[ -n "${HONUA_FUNCTIONS_PREVIOUS_IMAGE:-}" ]] || { echo "Missing required secret for Azure live validation: HONUA_FUNCTIONS_PREVIOUS_IMAGE"; exit 1; }
+            fi
+          fi
+
       - name: Enforce persistent apply confirmation
         shell: bash
         run: |
@@ -283,16 +299,29 @@ jobs:
               return 0
             fi
             echo "Destroying Azure bootstrap identity for stack '$stack'"
-            ARM_CLIENT_ID="$BOOTSTRAP_ARM_CLIENT_ID" \
-            ARM_CLIENT_SECRET="$BOOTSTRAP_ARM_CLIENT_SECRET" \
-            ARM_TENANT_ID="$BOOTSTRAP_ARM_TENANT_ID" \
-            ARM_SUBSCRIPTION_ID="$BOOTSTRAP_ARM_SUBSCRIPTION_ID" \
-            terraform -chdir="$dir" destroy -input=false -auto-approve -no-color || echo "Warning: failed to destroy Azure bootstrap '$stack'"
+            if ! ARM_CLIENT_ID="$BOOTSTRAP_ARM_CLIENT_ID" \
+              ARM_CLIENT_SECRET="$BOOTSTRAP_ARM_CLIENT_SECRET" \
+              ARM_TENANT_ID="$BOOTSTRAP_ARM_TENANT_ID" \
+              ARM_SUBSCRIPTION_ID="$BOOTSTRAP_ARM_SUBSCRIPTION_ID" \
+              terraform -chdir="$dir" destroy -input=false -auto-approve -no-color; then
+              echo "Failed to destroy Azure bootstrap '$stack'" >&2
+              return 1
+            fi
           }
 
           cleanup_bootstrap() {
-            cleanup_bootstrap_stack "aca"
-            cleanup_bootstrap_stack "functions"
+            local exit_code=$?
+            local cleanup_failed=0
+
+            cleanup_bootstrap_stack "aca" || cleanup_failed=1
+            cleanup_bootstrap_stack "functions" || cleanup_failed=1
+
+            if [[ "$cleanup_failed" -ne 0 && "$exit_code" -eq 0 ]]; then
+              echo "Azure bootstrap cleanup failed" >&2
+              exit_code=1
+            fi
+
+            exit "$exit_code"
           }
           trap cleanup_bootstrap EXIT
 
@@ -521,6 +550,20 @@ jobs:
             fi
           done
 
+          if [[ "$AWS_VALIDATION_STACK" == "ecs" || "$AWS_VALIDATION_STACK" == "both" ]]; then
+            [[ -n "${HONUA_AWS_ECS_IMAGE:-}" ]] || { echo "Missing required secret for AWS live validation: HONUA_AWS_ECS_IMAGE"; exit 1; }
+            if [[ "$HONUA_RUN_UPGRADE_ROLLBACK" == "true" ]]; then
+              [[ -n "${HONUA_AWS_ECS_PREVIOUS_IMAGE:-}" ]] || { echo "Missing required secret for AWS live validation: HONUA_AWS_ECS_PREVIOUS_IMAGE"; exit 1; }
+            fi
+          fi
+
+          if [[ "$AWS_VALIDATION_STACK" == "serverless" || "$AWS_VALIDATION_STACK" == "both" ]]; then
+            [[ -n "${HONUA_AWS_SERVERLESS_IMAGE:-}" ]] || { echo "Missing required secret for AWS live validation: HONUA_AWS_SERVERLESS_IMAGE"; exit 1; }
+            if [[ "$HONUA_RUN_UPGRADE_ROLLBACK" == "true" ]]; then
+              [[ -n "${HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE:-}" ]] || { echo "Missing required secret for AWS live validation: HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE"; exit 1; }
+            fi
+          fi
+
       - name: Enforce persistent apply confirmation
         shell: bash
         run: |
@@ -555,15 +598,28 @@ jobs:
               return 0
             fi
             echo "Destroying AWS bootstrap identity for stack '$stack'"
-            AWS_ACCESS_KEY_ID="$BOOTSTRAP_AWS_ACCESS_KEY_ID" \
-            AWS_SECRET_ACCESS_KEY="$BOOTSTRAP_AWS_SECRET_ACCESS_KEY" \
-            AWS_SESSION_TOKEN="$BOOTSTRAP_AWS_SESSION_TOKEN" \
-            terraform -chdir="$dir" destroy -input=false -auto-approve -no-color || echo "Warning: failed to destroy AWS bootstrap '$stack'"
+            if ! AWS_ACCESS_KEY_ID="$BOOTSTRAP_AWS_ACCESS_KEY_ID" \
+              AWS_SECRET_ACCESS_KEY="$BOOTSTRAP_AWS_SECRET_ACCESS_KEY" \
+              AWS_SESSION_TOKEN="$BOOTSTRAP_AWS_SESSION_TOKEN" \
+              terraform -chdir="$dir" destroy -input=false -auto-approve -no-color; then
+              echo "Failed to destroy AWS bootstrap '$stack'" >&2
+              return 1
+            fi
           }
 
           cleanup_bootstrap() {
-            cleanup_bootstrap_stack "ecs"
-            cleanup_bootstrap_stack "serverless"
+            local exit_code=$?
+            local cleanup_failed=0
+
+            cleanup_bootstrap_stack "ecs" || cleanup_failed=1
+            cleanup_bootstrap_stack "serverless" || cleanup_failed=1
+
+            if [[ "$cleanup_failed" -ne 0 && "$exit_code" -eq 0 ]]; then
+              echo "AWS bootstrap cleanup failed" >&2
+              exit_code=1
+            fi
+
+            exit "$exit_code"
           }
           trap cleanup_bootstrap EXIT
 
@@ -758,8 +814,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsSL https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+          curl -fsSL https://raw.githubusercontent.com/k3d-io/k3d/b481dca24e34145edcdd14de72ebe4f56ec8e8bc/install.sh | bash
           k3d version
+
+      - name: Validate required secrets (Kubernetes)
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            HONUA_ADMIN_PASSWORD
+            HONUA_K8S_IMAGE
+          )
+
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required secret for Kubernetes live validation: $name"
+              exit 1
+            fi
+          done
+
+          if [[ "$HONUA_RUN_UPGRADE_ROLLBACK" == "true" && -z "${HONUA_K8S_PREVIOUS_IMAGE:-}" ]]; then
+            echo "Missing required secret for Kubernetes live validation: HONUA_K8S_PREVIOUS_IMAGE"
+            exit 1
+          fi
 
       - name: Enforce persistent apply confirmation
         shell: bash
@@ -868,6 +945,12 @@ jobs:
             fi
           done
 
+          [[ -n "${HONUA_K8S_IMAGE:-}" ]] || { echo "Missing required secret for AKS live validation: HONUA_K8S_IMAGE"; exit 1; }
+          if [[ "$HONUA_RUN_UPGRADE_ROLLBACK" == "true" && -z "${HONUA_K8S_PREVIOUS_IMAGE:-}" ]]; then
+            echo "Missing required secret for AKS live validation: HONUA_K8S_PREVIOUS_IMAGE"
+            exit 1
+          fi
+
       - name: Enforce persistent apply confirmation
         shell: bash
         run: |
@@ -887,15 +970,22 @@ jobs:
           mkdir -p "$bootstrap_dir" "$plan_dir"
 
           cleanup_bootstrap() {
+            local exit_code=$?
+
             if [[ ! -f "$bootstrap_dir/terraform.tfstate" ]]; then
-              return 0
+              exit "$exit_code"
             fi
             echo "Destroying AKS bootstrap identity"
-            ARM_CLIENT_ID="$BOOTSTRAP_ARM_CLIENT_ID" \
-            ARM_CLIENT_SECRET="$BOOTSTRAP_ARM_CLIENT_SECRET" \
-            ARM_TENANT_ID="$BOOTSTRAP_ARM_TENANT_ID" \
-            ARM_SUBSCRIPTION_ID="$BOOTSTRAP_ARM_SUBSCRIPTION_ID" \
-            terraform -chdir="$bootstrap_dir" destroy -input=false -auto-approve -no-color || echo "Warning: failed to destroy AKS bootstrap identity"
+            if ! ARM_CLIENT_ID="$BOOTSTRAP_ARM_CLIENT_ID" \
+              ARM_CLIENT_SECRET="$BOOTSTRAP_ARM_CLIENT_SECRET" \
+              ARM_TENANT_ID="$BOOTSTRAP_ARM_TENANT_ID" \
+              ARM_SUBSCRIPTION_ID="$BOOTSTRAP_ARM_SUBSCRIPTION_ID" \
+              terraform -chdir="$bootstrap_dir" destroy -input=false -auto-approve -no-color; then
+              echo "Failed to destroy AKS bootstrap identity" >&2
+              exit 1
+            fi
+
+            exit "$exit_code"
           }
           trap cleanup_bootstrap EXIT
 
@@ -1039,6 +1129,12 @@ jobs:
             fi
           done
 
+          [[ -n "${HONUA_K8S_IMAGE:-}" ]] || { echo "Missing required secret for EKS live validation: HONUA_K8S_IMAGE"; exit 1; }
+          if [[ "$HONUA_RUN_UPGRADE_ROLLBACK" == "true" && -z "${HONUA_K8S_PREVIOUS_IMAGE:-}" ]]; then
+            echo "Missing required secret for EKS live validation: HONUA_K8S_PREVIOUS_IMAGE"
+            exit 1
+          fi
+
       - name: Enforce persistent apply confirmation
         shell: bash
         run: |
@@ -1058,14 +1154,21 @@ jobs:
           mkdir -p "$bootstrap_dir" "$plan_dir"
 
           cleanup_bootstrap() {
+            local exit_code=$?
+
             if [[ ! -f "$bootstrap_dir/terraform.tfstate" ]]; then
-              return 0
+              exit "$exit_code"
             fi
             echo "Destroying EKS bootstrap identity"
-            AWS_ACCESS_KEY_ID="$BOOTSTRAP_AWS_ACCESS_KEY_ID" \
-            AWS_SECRET_ACCESS_KEY="$BOOTSTRAP_AWS_SECRET_ACCESS_KEY" \
-            AWS_SESSION_TOKEN="$BOOTSTRAP_AWS_SESSION_TOKEN" \
-            terraform -chdir="$bootstrap_dir" destroy -input=false -auto-approve -no-color || echo "Warning: failed to destroy EKS bootstrap identity"
+            if ! AWS_ACCESS_KEY_ID="$BOOTSTRAP_AWS_ACCESS_KEY_ID" \
+              AWS_SECRET_ACCESS_KEY="$BOOTSTRAP_AWS_SECRET_ACCESS_KEY" \
+              AWS_SESSION_TOKEN="$BOOTSTRAP_AWS_SESSION_TOKEN" \
+              terraform -chdir="$bootstrap_dir" destroy -input=false -auto-approve -no-color; then
+              echo "Failed to destroy EKS bootstrap identity" >&2
+              exit 1
+            fi
+
+            exit "$exit_code"
           }
           trap cleanup_bootstrap EXIT
 

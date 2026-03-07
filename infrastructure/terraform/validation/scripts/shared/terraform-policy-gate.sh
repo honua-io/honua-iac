@@ -82,6 +82,7 @@ run_checkov() {
   # Scope policy gates to repository-managed Terraform only.
   # External modules can introduce findings outside our ownership and should
   # be validated in their upstream source.
+  local checkov_image="${HONUA_CHECKOV_IMAGE:-bridgecrew/checkov:3.2.497}"
   local checkov_skip_checks="${HONUA_CHECKOV_SKIP_CHECKS:-CKV_TF_1,CKV_AWS_149,CKV_AWS_191}"
   local checkov_args=(--download-external-modules false --compact)
   if [[ -n "${checkov_skip_checks}" ]]; then
@@ -100,9 +101,9 @@ run_checkov() {
 
   if command -v docker >/dev/null 2>&1; then
     log_info "Running checkov via docker"
-    run_policy_command "checkov modules (docker)" docker run --rm -v "$PWD:/workspace" -w /workspace bridgecrew/checkov:latest \
+    run_policy_command "checkov modules (docker)" docker run --rm -v "$PWD:/workspace" -w /workspace "$checkov_image" \
       checkov -d "$ROOT/modules" "${checkov_args[@]}"
-    run_policy_command "checkov examples (docker)" docker run --rm -v "$PWD:/workspace" -w /workspace bridgecrew/checkov:latest \
+    run_policy_command "checkov examples (docker)" docker run --rm -v "$PWD:/workspace" -w /workspace "$checkov_image" \
       checkov -d "$ROOT/examples" "${checkov_args[@]}"
     return
   fi
@@ -111,6 +112,7 @@ run_checkov() {
 }
 
 run_tfsec() {
+  local tfsec_image="${HONUA_TFSEC_IMAGE:-aquasec/tfsec:v1.28}"
   local tfsec_args=()
   if [[ "${POLICY_STRICT}" != "true" ]]; then
     tfsec_args+=(--soft-fail)
@@ -125,8 +127,8 @@ run_tfsec() {
 
   if command -v docker >/dev/null 2>&1; then
     log_info "Running tfsec via docker"
-    run_policy_command "tfsec modules (docker)" docker run --rm -v "$PWD:/src" aquasec/tfsec:latest "${tfsec_args[@]}" /src/"$ROOT/modules"
-    run_policy_command "tfsec examples (docker)" docker run --rm -v "$PWD:/src" aquasec/tfsec:latest "${tfsec_args[@]}" /src/"$ROOT/examples"
+    run_policy_command "tfsec modules (docker)" docker run --rm -v "$PWD:/src" "$tfsec_image" "${tfsec_args[@]}" /src/"$ROOT/modules"
+    run_policy_command "tfsec examples (docker)" docker run --rm -v "$PWD:/src" "$tfsec_image" "${tfsec_args[@]}" /src/"$ROOT/examples"
     return
   fi
 

@@ -67,9 +67,8 @@ variable "existing_db_connection_string" {
 }
 
 variable "honua_image" {
-  description = "Container image to deploy to ECS."
+  description = "Container image to deploy to ECS. Pin to an immutable release tag or digest."
   type        = string
-  default     = "ghcr.io/honua-io/honua-server:latest"
 }
 
 variable "db_publicly_accessible" {
@@ -113,6 +112,12 @@ variable "redis_connection_string" {
   type        = string
   sensitive   = true
   default     = ""
+}
+
+variable "redis_connection_cidrs" {
+  description = "Trusted CIDR ranges allowed for Redis egress when reusing an existing Redis endpoint."
+  type        = list(string)
+  default     = []
 }
 
 variable "desired_count" {

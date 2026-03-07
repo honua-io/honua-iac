@@ -10,7 +10,7 @@ module "honua" {
 
   environment    = "dev"
   location       = "eastus"
-  image          = "ghcr.io/honua-io/honua-server:latest"
+  image          = "ghcr.io/honua-io/honua-server:v1.2.3-aot"
   admin_password = var.honua_admin_password
   enable_postgis = true  # Required — Honua needs PostGIS + PostGIS Raster
 
@@ -82,7 +82,7 @@ module "honua" {
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `image` | `ghcr.io/.../latest` | Container image. AOT recommended. Pin to `vX.Y.Z-aot` for production. |
+| `image` | Required | Container image. Pin to an immutable release tag or digest. AOT builds are recommended. |
 | `container_cpu` | 0.5 | CPU cores (0.25, 0.5, 1.0, 2.0, 4.0). |
 | `container_memory` | `"1Gi"` | Memory with `Gi` suffix (for example `1Gi`, `1.5Gi`). |
 | `min_replicas` / `max_replicas` | 1 / 5 | Scaling range. Use min 2 for production. |

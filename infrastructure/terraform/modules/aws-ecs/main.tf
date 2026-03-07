@@ -15,22 +15,28 @@ locals {
     Environment = var.environment
     ManagedBy   = "terraform"
   }, var.tags)
-  use_existing_vpc    = var.existing_vpc_id != ""
-  vpc_id              = local.use_existing_vpc ? var.existing_vpc_id : module.vpc[0].vpc_id
-  vpc_cidr_block      = local.use_existing_vpc ? var.existing_vpc_cidr : module.vpc[0].vpc_cidr_block
-  public_subnets      = local.use_existing_vpc ? var.existing_public_subnet_ids : module.vpc[0].public_subnets
-  private_subnets     = local.use_existing_vpc ? var.existing_private_subnet_ids : module.vpc[0].private_subnets
-  db_use_existing     = var.existing_db_endpoint != "" && var.existing_db_connection_string != ""
-  use_managed_cert    = var.domain_name != "" && var.route53_zone_id != ""
-  use_https           = var.alb_certificate_arn != "" || local.use_managed_cert
-  https_ingress_cidrs = length(var.allow_public_ingress_cidrs) > 0 ? var.allow_public_ingress_cidrs : var.allow_https_ingress_cidrs
-  http_ingress_base   = length(var.allow_http_ingress_cidrs) > 0 ? var.allow_http_ingress_cidrs : local.https_ingress_cidrs
-  http_ingress_cidrs  = local.use_https ? (var.alb_enable_http_redirect ? local.http_ingress_base : []) : local.http_ingress_base
-  redis_enabled       = var.redis_enabled || var.redis_connection_string != ""
-  redis_create        = var.redis_enabled && var.redis_connection_string == ""
-  redis_auth_token    = var.redis_auth_token != "" ? var.redis_auth_token : (local.redis_create ? random_password.redis_auth[0].result : "")
-  redis_connection    = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true" : "")
-  db_subnet_ids       = var.db_publicly_accessible ? local.public_subnets : local.private_subnets
+  use_existing_vpc      = var.existing_vpc_id != ""
+  vpc_id                = local.use_existing_vpc ? var.existing_vpc_id : module.vpc[0].vpc_id
+  vpc_cidr_block        = local.use_existing_vpc ? var.existing_vpc_cidr : module.vpc[0].vpc_cidr_block
+  public_subnets        = local.use_existing_vpc ? var.existing_public_subnet_ids : module.vpc[0].public_subnets
+  private_subnets       = local.use_existing_vpc ? var.existing_private_subnet_ids : module.vpc[0].private_subnets
+  db_use_existing       = var.existing_db_endpoint != "" && var.existing_db_connection_string != ""
+  use_managed_cert      = var.domain_name != "" && var.route53_zone_id != ""
+  use_https             = var.alb_certificate_arn != "" || local.use_managed_cert
+  default_ingress_cidrs = [local.vpc_cidr_block]
+  https_ingress_cidrs = length(var.allow_public_ingress_cidrs) > 0 ? var.allow_public_ingress_cidrs : (
+    length(var.allow_https_ingress_cidrs) > 0 ? var.allow_https_ingress_cidrs : (local.use_https ? local.default_ingress_cidrs : [])
+  )
+  http_ingress_base = length(var.allow_http_ingress_cidrs) > 0 ? var.allow_http_ingress_cidrs : (
+    length(local.https_ingress_cidrs) > 0 ? local.https_ingress_cidrs : (!local.use_https ? local.default_ingress_cidrs : [])
+  )
+  http_ingress_cidrs = local.use_https ? (var.alb_enable_http_redirect ? local.http_ingress_base : []) : local.http_ingress_base
+  redis_enabled      = var.redis_enabled || var.redis_connection_string != ""
+  redis_create       = var.redis_enabled && var.redis_connection_string == ""
+  redis_auth_token   = var.redis_auth_token != "" ? var.redis_auth_token : (local.redis_create ? random_password.redis_auth[0].result : "")
+  redis_connection   = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true" : "")
+  redis_egress_cidrs = local.redis_create ? [local.vpc_cidr_block] : var.redis_connection_cidrs
+  db_subnet_ids      = var.db_publicly_accessible ? local.public_subnets : local.private_subnets
 }
 
 check "existing_db_inputs" {
@@ -50,6 +56,13 @@ check "existing_vpc_inputs" {
       (var.existing_vpc_id != "" && var.existing_vpc_cidr != "" && length(var.existing_public_subnet_ids) > 0 && length(var.existing_private_subnet_ids) > 0)
     )
     error_message = "existing_vpc_id, existing_vpc_cidr, existing_public_subnet_ids, and existing_private_subnet_ids must be set together."
+  }
+}
+
+check "existing_redis_inputs" {
+  assert {
+    condition     = var.redis_connection_string == "" || length(var.redis_connection_cidrs) > 0
+    error_message = "redis_connection_cidrs must include at least one trusted CIDR when redis_connection_string is set."
   }
 }
 
@@ -179,7 +192,7 @@ resource "aws_security_group" "ecs" {
       from_port   = var.redis_port
       to_port     = var.redis_port
       protocol    = "tcp"
-      cidr_blocks = [local.vpc_cidr_block]
+      cidr_blocks = local.redis_egress_cidrs
     }
   }
 
