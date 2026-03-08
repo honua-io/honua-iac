@@ -49,7 +49,9 @@ module "vpc" {
   tags = local.tags
 }
 
+#checkov:skip=CKV2_AWS_64: The default AWS KMS key policy is sufficient for this module's EKS secret encryption key.
 resource "aws_kms_key" "eks" {
+  #checkov:skip=CKV2_AWS_64: The default AWS KMS key policy is sufficient for this module's EKS secret encryption key.
   description             = "EKS secret encryption key for ${local.name}"
   deletion_window_in_days = 7
   enable_key_rotation     = true

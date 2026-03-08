@@ -12,6 +12,8 @@ module "honua" {
   existing_public_subnet_ids      = var.existing_public_subnet_ids
   existing_private_subnet_ids     = var.existing_private_subnet_ids
   image                           = var.honua_image_uri
+  lambda_alias_name               = var.lambda_alias_name
+  lambda_alias_version            = var.lambda_alias_version
   admin_password                  = var.honua_admin_password
   db_password                     = var.db_password
   existing_db_endpoint            = var.existing_db_endpoint
@@ -37,8 +39,72 @@ output "honua_url" {
   value = module.honua.api_endpoint
 }
 
+output "environment" {
+  value = module.honua.environment
+}
+
+output "aws_region" {
+  value = module.honua.aws_region
+}
+
 output "lambda_function_name" {
   value = module.honua.lambda_function_name
+}
+
+output "lambda_function_arn" {
+  value = module.honua.lambda_function_arn
+}
+
+output "lambda_function_version" {
+  value = module.honua.lambda_function_version
+}
+
+output "lambda_alias_name" {
+  value = module.honua.lambda_alias_name
+}
+
+output "lambda_alias_arn" {
+  value = module.honua.lambda_alias_arn
+}
+
+output "lambda_alias_invoke_arn" {
+  value = module.honua.lambda_alias_invoke_arn
+}
+
+output "lambda_alias_function_version" {
+  value = module.honua.lambda_alias_function_version
+}
+
+output "control_plane_target_kind" {
+  value = module.honua.control_plane_target_kind
+}
+
+output "control_plane_backend_name" {
+  value = module.honua.control_plane_backend_name
+}
+
+output "control_plane_target_id" {
+  value = module.honua.control_plane_target_id
+}
+
+output "control_plane_target_name" {
+  value = module.honua.control_plane_target_name
+}
+
+output "control_plane_target_resource_id" {
+  value = module.honua.control_plane_target_resource_id
+}
+
+output "control_plane_telemetry_policy" {
+  value = module.honua.control_plane_telemetry_policy
+}
+
+output "control_plane_current_revision" {
+  value = module.honua.control_plane_current_revision
+}
+
+output "control_plane_desired_revision" {
+  value = module.honua.control_plane_desired_revision
 }
 
 output "db_endpoint" {

@@ -39,8 +39,48 @@ output "honua_url" {
   value = module.honua.container_app_fqdn
 }
 
+output "environment" {
+  value = module.honua.environment
+}
+
 output "container_app_name" {
   value = module.honua.container_app_name
+}
+
+output "container_app_id" {
+  value = module.honua.container_app_id
+}
+
+output "container_app_environment_id" {
+  value = module.honua.container_app_environment_id
+}
+
+output "control_plane_target_kind" {
+  value = module.honua.control_plane_target_kind
+}
+
+output "control_plane_backend_name" {
+  value = module.honua.control_plane_backend_name
+}
+
+output "control_plane_target_id" {
+  value = module.honua.control_plane_target_id
+}
+
+output "control_plane_target_name" {
+  value = module.honua.control_plane_target_name
+}
+
+output "control_plane_target_resource_id" {
+  value = module.honua.control_plane_target_resource_id
+}
+
+output "control_plane_target_resource_group" {
+  value = module.honua.control_plane_target_resource_group
+}
+
+output "control_plane_telemetry_policy" {
+  value = module.honua.control_plane_telemetry_policy
 }
 
 output "database_fqdn" {
@@ -49,5 +89,5 @@ output "database_fqdn" {
 }
 
 output "resource_group_name" {
-  value = "${var.name_prefix}-${var.environment}-rg"
+  value = module.honua.resource_group_name
 }

@@ -60,7 +60,9 @@ locals {
   db_subnet_ids = var.db_publicly_accessible ? module.vpc.public_subnets : module.vpc.private_subnets
 }
 
+#checkov:skip=CKV2_AWS_5: Security group is attached through the RDS module inputs below.
 resource "aws_security_group" "rds" {
+  #checkov:skip=CKV2_AWS_5: Security group is attached through the RDS module inputs below.
   name_prefix = "${local.name}-rds-"
   description = "RDS security group"
   vpc_id      = module.vpc.vpc_id
@@ -95,7 +97,9 @@ resource "aws_security_group" "rds" {
   tags = local.tags
 }
 
+#checkov:skip=CKV2_AWS_5: Security group is attached through the replication group below.
 resource "aws_security_group" "redis" {
+  #checkov:skip=CKV2_AWS_5: Security group is attached through the replication group below.
   count       = var.redis_enabled ? 1 : 0
   name_prefix = "${local.name}-redis-"
   description = "Redis security group"
@@ -120,7 +124,9 @@ resource "aws_elasticache_subnet_group" "redis" {
   tags        = local.tags
 }
 
+#checkov:skip=CKV2_AWS_50: Single-node Redis is allowed for smaller environments; Multi-AZ activates when cluster count is increased.
 resource "aws_elasticache_replication_group" "redis" {
+  #checkov:skip=CKV2_AWS_50: Single-node Redis is allowed for smaller environments; Multi-AZ activates when cluster count is increased.
   count                      = var.redis_enabled ? 1 : 0
   replication_group_id       = "${local.name}-redis"
   description                = "Honua Redis data stack"

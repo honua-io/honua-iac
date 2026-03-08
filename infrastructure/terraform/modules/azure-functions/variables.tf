@@ -27,6 +27,24 @@ variable "image" {
   type        = string
 }
 
+variable "deployment_slot_enabled" {
+  description = "Provision a staging deployment slot for slot-based rollout workflows."
+  type        = bool
+  default     = false
+}
+
+variable "deployment_slot_name" {
+  description = "Name of the optional staging deployment slot."
+  type        = string
+  default     = "staging"
+}
+
+variable "deployment_slot_image" {
+  description = "Optional image for the staging deployment slot. Defaults to the primary image when empty."
+  type        = string
+  default     = ""
+}
+
 variable "container_port" {
   description = "Container port exposed by Honua Server."
   type        = number

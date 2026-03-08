@@ -3,6 +3,11 @@ output "cluster_name" {
   value       = module.eks.cluster_name
 }
 
+output "environment" {
+  description = "Deployment environment label used for control-plane target IDs."
+  value       = var.environment
+}
+
 output "cluster_arn" {
   description = "EKS cluster ARN."
   value       = module.eks.cluster_arn
@@ -41,4 +46,24 @@ output "cluster_security_group_id" {
 output "node_security_group_id" {
   description = "Security group ID attached to EKS managed node groups."
   value       = module.eks.node_security_group_id
+}
+
+output "control_plane_target_kind" {
+  description = "Honua control-plane deploy target kind for this cluster."
+  value       = "Kubernetes"
+}
+
+output "control_plane_backend_name" {
+  description = "Honua control-plane deploy backend name for Kubernetes GitOps."
+  value       = "honua-gitops-kubernetes"
+}
+
+output "control_plane_telemetry_policy" {
+  description = "Default Honua telemetry policy for Kubernetes deploy health evaluation."
+  value       = "kubernetes-honua-http"
+}
+
+output "honua_metrics_target" {
+  description = "Default Honua workload name hint used by the standard Helm deployment."
+  value       = "honua"
 }

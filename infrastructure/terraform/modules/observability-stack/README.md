@@ -37,6 +37,8 @@ Honua exposes native Prometheus text metrics at `/metrics` by default. Keep `hon
 ## Outputs
 
 - `prometheus_url`
+- `honua_prometheus_job_name`
+- `honua_prometheus_selector`
 - `grafana_url`
 - `grafana_admin_secret_name`
 - `grafana_admin_secret_keys`

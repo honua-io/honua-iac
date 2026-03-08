@@ -66,6 +66,12 @@ module "honua" {
   enable_container_insights  = true
   alb_access_logs_enabled    = true
 
+  # Optional ALB canary path
+  canary_enabled           = true
+  canary_image             = "ghcr.io/honua-io/honua-server:v1.2.4-aot"
+  canary_desired_count     = 1
+  canary_weight_percentage = 0
+
   # Security
   waf_web_acl_arn = var.waf_acl_arn  # Optional WAFv2
 
@@ -103,6 +109,39 @@ domain_name     = "gis.example.com"
 route53_zone_id = "Z1234567890ABC"
 ```
 
+## ALB canary rollout
+
+The module can provision an optional canary ECS service and ALB target group. This is intended for weighted rollouts on AWS without moving rollout logic into Honua itself.
+
+```hcl
+canary_enabled           = true
+canary_image             = "ghcr.io/honua-io/honua-server:v1.2.4-aot"
+canary_desired_count     = 1
+canary_weight_percentage = 0
+```
+
+Recommended rollout sequence:
+
+1. Apply with `canary_enabled = true` and `canary_weight_percentage = 0`.
+2. Verify the canary directly through the ALB header route:
+   `curl -H "X-Honua-Canary: always" https://<alb-url>/healthz/ready`
+3. Increase `canary_weight_percentage` gradually in later applies.
+4. Set `canary_weight_percentage = 0` again before tearing down the canary service.
+
+When canary is enabled, the module also creates a header-based listener rule so operators can route requests directly to the canary target group without changing the default traffic split.
+
+### Control-plane telemetry hints
+
+The module does not provision Prometheus itself, but it exports recommended Honua control-plane metadata so rollback gates can be wired consistently:
+
+- `control_plane_target_kind = "AwsEcs"`
+- `control_plane_backend_name = "honua-gitops-aws-ecs"`
+- `control_plane_telemetry_policy = "aws-alb-canary"` when canary is enabled, otherwise `honua-http`
+- `control_plane_telemetry_prometheus_job = "honua"`
+- `control_plane_telemetry_prometheus_canary_job = "honua-canary"` when canary is enabled
+
+If your Prometheus scrape config uses different job names, override the corresponding `telemetry.prometheus.*` target parameters in Honua.
+
 ## Key variables
 
 | Variable | Default | Description |
@@ -111,6 +150,12 @@ route53_zone_id = "Z1234567890ABC"
 | `container_cpu` | 512 | Fargate CPU units (256/512/1024/2048/4096). |
 | `container_memory` | 1024 | Fargate memory in MiB. |
 | `desired_count` | 1 | Number of tasks. Use 2+ for production. |
+| `canary_enabled` | false | Provision a secondary ECS service and ALB target group for canary rollouts. |
+| `canary_image` | `""` | Optional image override for the canary service. Reuses `image` when empty. |
+| `canary_desired_count` | 1 | Number of tasks in the canary ECS service. |
+| `canary_weight_percentage` | 0 | Percentage of default ALB traffic routed to the canary target group. |
+| `canary_header_name` | `X-Honua-Canary` | Header name that forces ALB routing to the canary target group. |
+| `canary_header_value` | `always` | Header value that forces ALB routing to the canary target group. |
 | `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster on RDS. **Set to true.** |
 | `existing_db_endpoint` | `""` | Reuse an existing PostgreSQL endpoint (must be paired with `existing_db_connection_string`). |
 | `existing_db_connection_string` | `""` | Reuse an existing PostgreSQL connection string (skips RDS provisioning and PostGIS local-exec). |
@@ -131,7 +176,7 @@ See `variables.tf` for the complete list.
 
 ## Outputs
 
-See `outputs.tf` for ALB URL, RDS endpoint, secrets ARNs, and connection strings.
+See `outputs.tf` for ALB URL, ECS service names, canary routing headers, control-plane telemetry hints, RDS endpoint, secrets ARNs, and connection strings.
 
 ## After apply
 

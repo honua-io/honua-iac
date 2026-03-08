@@ -36,6 +36,9 @@ ACA_IMAGE="${HONUA_ACA_IMAGE:-}"
 FUNCTIONS_IMAGE="${HONUA_FUNCTIONS_IMAGE:-}"
 ACA_PREVIOUS_IMAGE="${HONUA_ACA_PREVIOUS_IMAGE:-}"
 FUNCTIONS_PREVIOUS_IMAGE="${HONUA_FUNCTIONS_PREVIOUS_IMAGE:-}"
+FUNCTIONS_DEPLOYMENT_SLOT_ENABLED="${HONUA_AZURE_FUNCTIONS_DEPLOYMENT_SLOT_ENABLED:-false}"
+FUNCTIONS_DEPLOYMENT_SLOT_NAME="${HONUA_AZURE_FUNCTIONS_DEPLOYMENT_SLOT_NAME:-staging}"
+FUNCTIONS_DEPLOYMENT_SLOT_IMAGE="${HONUA_AZURE_FUNCTIONS_DEPLOYMENT_SLOT_IMAGE:-}"
 FUNCTIONS_PLAN_SKU="${HONUA_FUNCTIONS_PLAN_SKU:-EP1}"
 FUNCTIONS_SKIP_MIGRATIONS="${HONUA_AZURE_FUNCTIONS_SKIP_MIGRATIONS:-false}"
 AUTO_DESTROY=true
@@ -161,8 +164,12 @@ Required environment variables:
 Optional environment variables:
   HONUA_AZURE_DESTROY_DATA
   HONUA_AZURE_DATA_CACHE_FILE
+  HONUA_AZURE_FUNCTIONS_DEPLOYMENT_SLOT_ENABLED
+  HONUA_AZURE_FUNCTIONS_DEPLOYMENT_SLOT_NAME
+  HONUA_AZURE_FUNCTIONS_DEPLOYMENT_SLOT_IMAGE
   HONUA_AZURE_FUNCTIONS_SKIP_MIGRATIONS
   HONUA_AZURE_FORCE_NEW_DATA_INFRA
+  HONUA_PLATFORM_VALIDATION_SCRIPT
 USAGE
 }
 
@@ -177,6 +184,8 @@ log_warn() {
 log_error() {
   echo "[ERROR] $1" >&2
 }
+
+source "$SCRIPT_DIR/../shared/platform-post-apply-validation.sh"
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -1613,6 +1622,9 @@ set_functions_tf_vars() {
   set_common_tf_vars
   export TF_VAR_name_prefix="$FUNCTIONS_NAME_PREFIX"
   export TF_VAR_honua_image="$FUNCTIONS_IMAGE"
+  export TF_VAR_deployment_slot_enabled="$FUNCTIONS_DEPLOYMENT_SLOT_ENABLED"
+  export TF_VAR_deployment_slot_name="$FUNCTIONS_DEPLOYMENT_SLOT_NAME"
+  export TF_VAR_deployment_slot_image="$FUNCTIONS_DEPLOYMENT_SLOT_IMAGE"
   export TF_VAR_plan_sku_name="$FUNCTIONS_PLAN_SKU"
   export TF_VAR_skip_migrations="$FUNCTIONS_SKIP_MIGRATIONS"
 
@@ -1740,6 +1752,7 @@ apply_aca_stack() {
   local db_fqdn
   local resource_group
   local app_name
+  local tf_output_json
 
   log_info "Applying Azure ACA stack"
   set_aca_tf_vars
@@ -1819,6 +1832,19 @@ apply_aca_stack() {
     assert_idempotent_plan "examples/azure"
   fi
 
+  tf_output_json="$(mktemp "${TMPDIR:-/tmp}/honua-azure-aca-outputs.XXXXXX.json")"
+  run_tf -chdir=examples/azure output -json > "$tf_output_json"
+
+  HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON="$tf_output_json" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_HOST="$db_fqdn" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_PORT="5432" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_NAME="honua" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_USERNAME="honua" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_PASSWORD="$DB_PASSWORD_EFFECTIVE" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_SSL_MODE="Require" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_SSL_REQUIRED="true" \
+  run_honua_platform_post_apply_validation "$url" "azure-container-apps"
+
   log_info "ACA stack checks passed"
   log_info "ACA URL: $(run_tf -chdir=examples/azure output -raw honua_url)"
 }
@@ -1827,6 +1853,9 @@ apply_functions_stack() {
   local url
   local db_fqdn
   local resource_group
+  local tf_output_json
+  local previous_live_revision
+  local desired_revision
 
   log_info "Applying Azure Functions stack"
   set_functions_tf_vars
@@ -1841,31 +1870,34 @@ apply_functions_stack() {
       return 1
     fi
 
+    export TF_VAR_deployment_slot_enabled="true"
+    export TF_VAR_deployment_slot_name="$FUNCTIONS_DEPLOYMENT_SLOT_NAME"
+
     export TF_VAR_honua_image="$FUNCTIONS_PREVIOUS_IMAGE"
+    export TF_VAR_deployment_slot_image="$FUNCTIONS_PREVIOUS_IMAGE"
     plan_apply "examples/azure-functions" "functions-prev.tfplan" "functions-previous"
     url="$(run_tf -chdir=examples/azure-functions output -raw honua_url)"
     db_fqdn="$(run_tf -chdir=examples/azure-functions output -raw db_fqdn)"
     resource_group="$(run_tf -chdir=examples/azure-functions output -raw resource_group_name)"
     run_functions_checks "$url" "$db_fqdn" "$resource_group"
+    previous_live_revision="$(run_tf -chdir=examples/azure-functions output -raw control_plane_current_revision)"
+    if [[ -z "$previous_live_revision" || "$previous_live_revision" == "null" ]]; then
+      log_error "Functions validation requires control_plane_current_revision once the deployment slot is enabled"
+      return 1
+    fi
 
-    export TF_VAR_honua_image="$FUNCTIONS_IMAGE"
-    plan_apply "examples/azure-functions" "functions-upgrade.tfplan" "functions-upgrade"
+    export TF_VAR_honua_image="$FUNCTIONS_PREVIOUS_IMAGE"
+    export TF_VAR_deployment_slot_image="$FUNCTIONS_IMAGE"
+    plan_apply "examples/azure-functions" "functions-stage-current.tfplan" "functions-stage-current"
     url="$(run_tf -chdir=examples/azure-functions output -raw honua_url)"
     db_fqdn="$(run_tf -chdir=examples/azure-functions output -raw db_fqdn)"
     resource_group="$(run_tf -chdir=examples/azure-functions output -raw resource_group_name)"
-    run_functions_checks "$url" "$db_fqdn" "$resource_group"
-
-    export TF_VAR_honua_image="$FUNCTIONS_PREVIOUS_IMAGE"
-    plan_apply "examples/azure-functions" "functions-rollback.tfplan" "functions-rollback"
-    run_functions_checks "$url" "$db_fqdn" "$resource_group"
-
-    if [[ "$AUTO_DESTROY" != "true" ]]; then
-      export TF_VAR_honua_image="$FUNCTIONS_IMAGE"
-      plan_apply "examples/azure-functions" "functions-restore-current.tfplan" "functions-restore-current"
-      run_functions_checks "$url" "$db_fqdn" "$resource_group"
+    desired_revision="$(run_tf -chdir=examples/azure-functions output -raw control_plane_desired_revision)"
+    if [[ -z "$desired_revision" || "$desired_revision" == "null" ]]; then
+      log_error "Functions validation requires control_plane_desired_revision once the deployment slot is enabled"
+      return 1
     fi
-
-    export TF_VAR_honua_image="$FUNCTIONS_IMAGE"
+    run_functions_checks "$url" "$db_fqdn" "$resource_group"
   else
     plan_apply "examples/azure-functions" "functions.tfplan" "functions"
 
@@ -1878,6 +1910,36 @@ apply_functions_stack() {
 
   if [[ "$CHECK_IDEMPOTENCY" == "true" ]]; then
     assert_idempotent_plan "examples/azure-functions"
+  fi
+
+  tf_output_json="$(mktemp "${TMPDIR:-/tmp}/honua-azure-functions-outputs.XXXXXX.json")"
+  run_tf -chdir=examples/azure-functions output -json > "$tf_output_json"
+
+  HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON="$tf_output_json" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_HOST="$db_fqdn" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_PORT="5432" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_NAME="honua" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_USERNAME="honua" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_PASSWORD="$DB_PASSWORD_EFFECTIVE" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_SSL_MODE="Require" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_SSL_REQUIRED="true" \
+  HONUA_PLATFORM_VALIDATION_DEPLOY_CURRENT_REVISION="${previous_live_revision:-}" \
+  HONUA_PLATFORM_VALIDATION_DEPLOY_DESIRED_REVISION="${desired_revision:-}" \
+  HONUA_PLATFORM_VALIDATION_EXECUTE_DEPLOY_OPERATION="$([[ "$RUN_UPGRADE_ROLLBACK" == "true" ]] && printf 'true' || printf 'false')" \
+  HONUA_PLATFORM_VALIDATION_VERIFY_DEPLOY_ROLLBACK="$([[ "$RUN_UPGRADE_ROLLBACK" == "true" ]] && printf 'true' || printf 'false')" \
+  HONUA_PLATFORM_VALIDATION_DEPLOY_TIMEOUT_SECONDS="240" \
+  run_honua_platform_post_apply_validation "$url" "azure-functions"
+
+  if [[ "$RUN_UPGRADE_ROLLBACK" == "true" ]]; then
+    export TF_VAR_honua_image="$FUNCTIONS_IMAGE"
+    export TF_VAR_deployment_slot_enabled="true"
+    export TF_VAR_deployment_slot_name="$FUNCTIONS_DEPLOYMENT_SLOT_NAME"
+    export TF_VAR_deployment_slot_image="$FUNCTIONS_IMAGE"
+    plan_apply "examples/azure-functions" "functions-reconcile-current.tfplan" "functions-reconcile-current"
+    url="$(run_tf -chdir=examples/azure-functions output -raw honua_url)"
+    db_fqdn="$(run_tf -chdir=examples/azure-functions output -raw db_fqdn)"
+    resource_group="$(run_tf -chdir=examples/azure-functions output -raw resource_group_name)"
+    run_functions_checks "$url" "$db_fqdn" "$resource_group"
   fi
 
   log_info "Functions stack checks passed"

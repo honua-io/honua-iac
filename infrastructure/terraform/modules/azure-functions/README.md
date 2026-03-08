@@ -69,6 +69,9 @@ module "honua" {
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `image` | Required | Container image. Pin to an immutable release tag or digest. Prefer AOT builds; use JIT images only for debug fallback. |
+| `deployment_slot_enabled` | false | Provision a staging slot for slot-based rollout workflows. |
+| `deployment_slot_name` | `staging` | Name of the optional staging slot. |
+| `deployment_slot_image` | `""` | Optional container image for the staging slot. Defaults to `image` when empty. |
 | `plan_sku_name` | `EP1` | Premium (`EP1`–`EP3`) or Consumption (`Y1`). Premium recommended. |
 | `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster on database. **Set to true.** |
 | `skip_migrations` | true | Skip auto-migrations. Run them out-of-band for serverless. |
@@ -104,4 +107,22 @@ registry_password = var.acr_password
 
 ## Outputs
 
-See `outputs.tf` for the Function App URL, database connection string, and Redis endpoint.
+See `outputs.tf` for the Function App URL, database connection string, and Redis endpoint. The module also emits Honua control-plane handoff metadata:
+
+- `environment`
+- `function_app_name`
+- `function_app_id`
+- `control_plane_target_kind = "AzureFunctions"`
+- `control_plane_backend_name = "honua-gitops-azure-functions"`
+- `control_plane_target_id`
+- `control_plane_target_name` and `control_plane_target_resource_id`
+- `control_plane_target_resource_group`
+- `control_plane_telemetry_policy = "honua-http"`
+- `control_plane_current_revision = "production"` when `deployment_slot_enabled = true`
+- `control_plane_desired_revision = <slot-name>` when `deployment_slot_enabled = true`
+- `control_plane_current_image` and `control_plane_desired_image` for provider-side slot observation
+- `control_plane_slot_name` plus `function_app_slot_name` / `function_app_slot_id` when `deployment_slot_enabled = true`
+
+## Slot-based rollouts
+
+Set `deployment_slot_enabled = true` to provision a staging slot that can hold the next Honua image separately from production. This module does not perform slot swaps itself. Instead, it emits the slot metadata the Honua control plane or future GitOps controller can use to plan and observe a slot-based rollout.

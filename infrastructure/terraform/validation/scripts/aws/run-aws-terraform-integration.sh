@@ -35,6 +35,12 @@ ECS_IMAGE="${HONUA_AWS_ECS_IMAGE:-}"
 SERVERLESS_IMAGE="${HONUA_AWS_SERVERLESS_IMAGE:-}"
 ECS_PREVIOUS_IMAGE="${HONUA_AWS_ECS_PREVIOUS_IMAGE:-}"
 SERVERLESS_PREVIOUS_IMAGE="${HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE:-}"
+ECS_CANARY_ENABLED="${HONUA_AWS_ECS_CANARY_ENABLED:-false}"
+ECS_CANARY_IMAGE="${HONUA_AWS_ECS_CANARY_IMAGE:-}"
+ECS_CANARY_DESIRED_COUNT="${HONUA_AWS_ECS_CANARY_DESIRED_COUNT:-1}"
+ECS_CANARY_WEIGHT_PERCENTAGE="${HONUA_AWS_ECS_CANARY_WEIGHT_PERCENTAGE:-0}"
+ECS_CANARY_HEADER_NAME="${HONUA_AWS_ECS_CANARY_HEADER_NAME:-X-Honua-Canary}"
+ECS_CANARY_HEADER_VALUE="${HONUA_AWS_ECS_CANARY_HEADER_VALUE:-always}"
 AUTO_DESTROY=true
 DESTROY_DATA="${HONUA_AWS_DESTROY_DATA:-false}"
 QUICK_SCALE=true
@@ -102,6 +108,12 @@ Options:
   --name-prefix-base <prefix>          Base prefix for generated resource names
   --aot                                Use latest-aot for ECS; map serverless tag '*-lambda' -> '*-lambda-aot' when provided (JIT is debug fallback)
   --ecs-image <image>                  ECS container image
+  --ecs-canary-enabled                 Enable the optional ECS ALB canary service
+  --ecs-canary-image <image>           Optional canary ECS image (defaults to --ecs-image)
+  --ecs-canary-desired-count <n>       Desired task count for the ECS canary service (default: 1)
+  --ecs-canary-weight <percent>        Default ALB traffic percentage routed to canary (default: 0)
+  --ecs-canary-header-name <name>      Header name used to route requests directly to canary
+  --ecs-canary-header-value <value>    Header value used to route requests directly to canary
   --serverless-image <ecr-uri>         Lambda container image URI (ECR)
   --ecs-previous-image <image>         Previous ECS image for upgrade/rollback validation
   --serverless-previous-image <image>  Previous serverless image for upgrade/rollback validation
@@ -138,6 +150,12 @@ Required environment variables:
   HONUA_ADMIN_PASSWORD (at least 32 chars)
   HONUA_DB_PASSWORD
   HONUA_AWS_ECS_IMAGE (when --stack ecs|both)
+  HONUA_AWS_ECS_CANARY_ENABLED
+  HONUA_AWS_ECS_CANARY_IMAGE
+  HONUA_AWS_ECS_CANARY_DESIRED_COUNT
+  HONUA_AWS_ECS_CANARY_WEIGHT_PERCENTAGE
+  HONUA_AWS_ECS_CANARY_HEADER_NAME
+  HONUA_AWS_ECS_CANARY_HEADER_VALUE
   HONUA_AWS_SERVERLESS_IMAGE (when --stack serverless|both)
 
 Optional environment variables:
@@ -154,6 +172,7 @@ Optional environment variables:
   HONUA_AWS_FORCE_NEW_DATA_INFRA
   HONUA_AWS_POSTGIS_READINESS_MAX_ATTEMPTS
   HONUA_AWS_POSTGIS_READINESS_SLEEP_SECONDS
+  HONUA_PLATFORM_VALIDATION_SCRIPT
 USAGE
 }
 
@@ -168,6 +187,8 @@ log_warn() {
 log_error() {
   echo "[ERROR] $1" >&2
 }
+
+source "$SCRIPT_DIR/../shared/platform-post-apply-validation.sh"
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -209,6 +230,33 @@ validate_requested_images() {
       log_error "Serverless upgrade/rollback requires HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE or --serverless-previous-image."
       exit 1
     fi
+  fi
+}
+
+validate_ecs_canary_inputs() {
+  if [[ "$ECS_CANARY_ENABLED" != "true" && "$ECS_CANARY_ENABLED" != "false" ]]; then
+    log_error "ECS canary flag must be true or false"
+    exit 1
+  fi
+
+  if ! [[ "$ECS_CANARY_DESIRED_COUNT" =~ ^[0-9]+$ ]] || (( ECS_CANARY_DESIRED_COUNT < 1 )); then
+    log_error "ECS canary desired count must be an integer >= 1"
+    exit 1
+  fi
+
+  if ! [[ "$ECS_CANARY_WEIGHT_PERCENTAGE" =~ ^[0-9]+$ ]] || (( ECS_CANARY_WEIGHT_PERCENTAGE < 0 || ECS_CANARY_WEIGHT_PERCENTAGE > 100 )); then
+    log_error "ECS canary weight must be an integer between 0 and 100"
+    exit 1
+  fi
+
+  if [[ "$ECS_CANARY_ENABLED" != "true" && "$ECS_CANARY_WEIGHT_PERCENTAGE" != "0" ]]; then
+    log_error "ECS canary weight must be 0 unless --ecs-canary-enabled is set"
+    exit 1
+  fi
+
+  if [[ -z "$ECS_CANARY_HEADER_NAME" || -z "$ECS_CANARY_HEADER_VALUE" ]]; then
+    log_error "ECS canary header name and value must both be non-empty"
+    exit 1
   fi
 }
 
@@ -277,6 +325,30 @@ parse_args() {
         ;;
       --ecs-image)
         ECS_IMAGE="$2"
+        shift 2
+        ;;
+      --ecs-canary-enabled)
+        ECS_CANARY_ENABLED=true
+        shift
+        ;;
+      --ecs-canary-image)
+        ECS_CANARY_IMAGE="$2"
+        shift 2
+        ;;
+      --ecs-canary-desired-count)
+        ECS_CANARY_DESIRED_COUNT="$2"
+        shift 2
+        ;;
+      --ecs-canary-weight)
+        ECS_CANARY_WEIGHT_PERCENTAGE="$2"
+        shift 2
+        ;;
+      --ecs-canary-header-name)
+        ECS_CANARY_HEADER_NAME="$2"
+        shift 2
+        ;;
+      --ecs-canary-header-value)
+        ECS_CANARY_HEADER_VALUE="$2"
         shift 2
         ;;
       --serverless-image)
@@ -543,6 +615,12 @@ run_tf() {
       -e TF_VAR_db_publicly_accessible \
       -e TF_VAR_db_additional_ingress_cidrs \
       -e TF_VAR_desired_count \
+      -e TF_VAR_canary_enabled \
+      -e TF_VAR_canary_image \
+      -e TF_VAR_canary_desired_count \
+      -e TF_VAR_canary_weight_percentage \
+      -e TF_VAR_canary_header_name \
+      -e TF_VAR_canary_header_value \
       -e TF_VAR_skip_migrations \
       -e TF_VAR_tags \
       -e TF_IN_AUTOMATION=true \
@@ -1473,6 +1551,12 @@ set_ecs_tf_vars() {
   export TF_VAR_name_prefix="$ECS_NAME_PREFIX"
   export TF_VAR_honua_image="$ECS_IMAGE"
   export TF_VAR_desired_count="$ECS_DESIRED_COUNT"
+  export TF_VAR_canary_enabled="$ECS_CANARY_ENABLED"
+  export TF_VAR_canary_image="$ECS_CANARY_IMAGE"
+  export TF_VAR_canary_desired_count="$ECS_CANARY_DESIRED_COUNT"
+  export TF_VAR_canary_weight_percentage="$ECS_CANARY_WEIGHT_PERCENTAGE"
+  export TF_VAR_canary_header_name="$ECS_CANARY_HEADER_NAME"
+  export TF_VAR_canary_header_value="$ECS_CANARY_HEADER_VALUE"
 
   unset TF_VAR_honua_image_uri
   unset TF_VAR_skip_migrations
@@ -1486,6 +1570,13 @@ set_serverless_tf_vars() {
 
   unset TF_VAR_honua_image
   unset TF_VAR_desired_count
+  unset TF_VAR_canary_enabled
+  unset TF_VAR_canary_image
+  unset TF_VAR_canary_desired_count
+  unset TF_VAR_canary_weight_percentage
+  unset TF_VAR_canary_header_name
+  unset TF_VAR_canary_header_value
+  unset TF_VAR_lambda_alias_version
 }
 
 set_data_tf_vars() {
@@ -1505,6 +1596,12 @@ set_data_tf_vars() {
   unset TF_VAR_honua_image_uri
   unset TF_VAR_desired_count
   unset TF_VAR_skip_migrations
+  unset TF_VAR_canary_enabled
+  unset TF_VAR_canary_image
+  unset TF_VAR_canary_desired_count
+  unset TF_VAR_canary_weight_percentage
+  unset TF_VAR_canary_header_name
+  unset TF_VAR_canary_header_value
 }
 
 apply_data_stack() {
@@ -1554,6 +1651,44 @@ run_ecs_checks() {
   run_load_probe "$url" "$LOAD_REQUESTS" "$LOAD_CONCURRENCY"
 }
 
+verify_ecs_canary_route() {
+  local url="$1"
+  local cluster_name="$2"
+  local normalized
+  local canary_enabled
+  local canary_service_name
+  local canary_header_name
+  local canary_header_value
+
+  canary_enabled="$(run_tf -chdir=examples/aws output -raw canary_enabled)"
+  if [[ "$canary_enabled" != "true" ]]; then
+    return 0
+  fi
+
+  canary_service_name="$(run_tf -chdir=examples/aws output -raw canary_ecs_service_name)"
+  canary_header_name="$(run_tf -chdir=examples/aws output -raw canary_verification_header_name)"
+  canary_header_value="$(run_tf -chdir=examples/aws output -raw canary_verification_header_value)"
+
+  if [[ -z "$canary_service_name" || "$canary_service_name" == "null" ]]; then
+    log_error "Canary validation failed: canary service name output was empty"
+    return 1
+  fi
+
+  if [[ -z "$canary_header_name" || "$canary_header_name" == "null" || -z "$canary_header_value" || "$canary_header_value" == "null" ]]; then
+    log_error "Canary validation failed: canary verification header output was empty"
+    return 1
+  fi
+
+  wait_for_ecs_running_count "$cluster_name" "$canary_service_name" "$ECS_CANARY_DESIRED_COUNT" 900
+
+  normalized="$(normalize_base_url "$url")"
+  curl -fsSL --max-time 20 \
+    -H "${canary_header_name}: ${canary_header_value}" \
+    "${normalized}/healthz/ready" >/dev/null
+
+  log_info "Verified ECS ALB canary route via header '${canary_header_name}: ${canary_header_value}'"
+}
+
 run_serverless_checks() {
   local url="$1"
   local db_endpoint="$2"
@@ -1586,6 +1721,7 @@ apply_ecs_stack() {
   local redis_endpoint
   local cluster_name
   local service_name
+  local tf_output_json
 
   log_info "Applying AWS ECS stack"
   set_ecs_tf_vars
@@ -1619,12 +1755,14 @@ apply_ecs_stack() {
     fi
 
     run_ecs_checks "$url" "$db_endpoint"
+    verify_ecs_canary_route "$url" "$cluster_name"
 
     export TF_VAR_honua_image="$ECS_IMAGE"
     plan_apply "examples/aws" "ecs-upgrade.tfplan" "ecs-upgrade"
     url="$(run_tf -chdir=examples/aws output -raw honua_url)"
     db_endpoint="$(run_tf -chdir=examples/aws output -raw db_endpoint)"
     run_ecs_checks "$url" "$db_endpoint"
+    verify_ecs_canary_route "$url" "$cluster_name"
 
     if [[ "$QUICK_SCALE" == "true" ]]; then
       log_info "Running quick ECS scale validation by raising desired_count to $ECS_SCALE_TARGET_DESIRED_COUNT"
@@ -1641,11 +1779,13 @@ apply_ecs_stack() {
     export TF_VAR_honua_image="$ECS_PREVIOUS_IMAGE"
     plan_apply "examples/aws" "ecs-rollback.tfplan" "ecs-rollback"
     run_ecs_checks "$url" "$db_endpoint"
+    verify_ecs_canary_route "$url" "$cluster_name"
 
     if [[ "$AUTO_DESTROY" != "true" ]]; then
       export TF_VAR_honua_image="$ECS_IMAGE"
       plan_apply "examples/aws" "ecs-restore-current.tfplan" "ecs-restore-current"
       run_ecs_checks "$url" "$db_endpoint"
+      verify_ecs_canary_route "$url" "$cluster_name"
     fi
 
     export TF_VAR_honua_image="$ECS_IMAGE"
@@ -1668,6 +1808,7 @@ apply_ecs_stack() {
     fi
 
     run_ecs_checks "$url" "$db_endpoint"
+    verify_ecs_canary_route "$url" "$cluster_name"
 
     if [[ "$QUICK_SCALE" == "true" ]]; then
       log_info "Running quick ECS scale validation by raising desired_count to $ECS_SCALE_TARGET_DESIRED_COUNT"
@@ -1688,6 +1829,19 @@ apply_ecs_stack() {
     assert_idempotent_plan "examples/aws"
   fi
 
+  tf_output_json="$(mktemp "${TMPDIR:-/tmp}/honua-aws-ecs-outputs.XXXXXX.json")"
+  run_tf -chdir=examples/aws output -json > "$tf_output_json"
+
+  HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON="$tf_output_json" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_HOST="$db_endpoint" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_PORT="5432" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_NAME="honua" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_USERNAME="honua" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_PASSWORD="$DB_PASSWORD_EFFECTIVE" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_SSL_MODE="Require" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_SSL_REQUIRED="true" \
+  run_honua_platform_post_apply_validation "$url" "aws-ecs"
+
   log_info "ECS stack checks passed"
   log_info "ECS URL: $(run_tf -chdir=examples/aws output -raw honua_url)"
 }
@@ -1696,6 +1850,9 @@ apply_serverless_stack() {
   local url
   local db_endpoint
   local redis_connection
+  local tf_output_json
+  local previous_live_revision
+  local desired_revision
 
   if [[ -z "$SERVERLESS_IMAGE" ]]; then
     log_error "Serverless image is required. Set HONUA_AWS_SERVERLESS_IMAGE or pass --serverless-image"
@@ -1728,24 +1885,23 @@ apply_serverless_stack() {
     fi
 
     run_serverless_checks "$url" "$db_endpoint"
-
-    export TF_VAR_honua_image_uri="$SERVERLESS_IMAGE"
-    plan_apply "examples/aws-serverless" "serverless-upgrade.tfplan" "serverless-upgrade"
-    url="$(run_tf -chdir=examples/aws-serverless output -raw honua_url)"
-    db_endpoint="$(run_tf -chdir=examples/aws-serverless output -raw db_endpoint)"
-    run_serverless_checks "$url" "$db_endpoint"
-
-    export TF_VAR_honua_image_uri="$SERVERLESS_PREVIOUS_IMAGE"
-    plan_apply "examples/aws-serverless" "serverless-rollback.tfplan" "serverless-rollback"
-    run_serverless_checks "$url" "$db_endpoint"
-
-    if [[ "$AUTO_DESTROY" != "true" ]]; then
-      export TF_VAR_honua_image_uri="$SERVERLESS_IMAGE"
-      plan_apply "examples/aws-serverless" "serverless-restore-current.tfplan" "serverless-restore-current"
-      run_serverless_checks "$url" "$db_endpoint"
+    previous_live_revision="$(run_tf -chdir=examples/aws-serverless output -raw control_plane_current_revision)"
+    if [[ -z "$previous_live_revision" || "$previous_live_revision" == "null" ]]; then
+      log_error "Serverless validation requires a stable Lambda alias revision before publishing the new version"
+      return 1
     fi
 
     export TF_VAR_honua_image_uri="$SERVERLESS_IMAGE"
+    export TF_VAR_lambda_alias_version="$previous_live_revision"
+    plan_apply "examples/aws-serverless" "serverless-stage-current.tfplan" "serverless-stage-current"
+    url="$(run_tf -chdir=examples/aws-serverless output -raw honua_url)"
+    db_endpoint="$(run_tf -chdir=examples/aws-serverless output -raw db_endpoint)"
+    desired_revision="$(run_tf -chdir=examples/aws-serverless output -raw control_plane_desired_revision)"
+    if [[ -z "$desired_revision" || "$desired_revision" == "null" || "$desired_revision" == "$previous_live_revision" ]]; then
+      log_error "Serverless validation requires a newly published Lambda version that differs from the stable alias revision"
+      return 1
+    fi
+    run_serverless_checks "$url" "$db_endpoint"
   else
     plan_apply "examples/aws-serverless" "serverless.tfplan" "serverless"
 
@@ -1763,6 +1919,33 @@ apply_serverless_stack() {
 
   if [[ "$CHECK_IDEMPOTENCY" == "true" ]]; then
     assert_idempotent_plan "examples/aws-serverless"
+  fi
+
+  tf_output_json="$(mktemp "${TMPDIR:-/tmp}/honua-aws-serverless-outputs.XXXXXX.json")"
+  run_tf -chdir=examples/aws-serverless output -json > "$tf_output_json"
+
+  HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON="$tf_output_json" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_HOST="$db_endpoint" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_PORT="5432" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_NAME="honua" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_USERNAME="honua" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_PASSWORD="$DB_PASSWORD_EFFECTIVE" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_SSL_MODE="Require" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_SSL_REQUIRED="true" \
+  HONUA_PLATFORM_VALIDATION_DEPLOY_CURRENT_REVISION="${previous_live_revision:-}" \
+  HONUA_PLATFORM_VALIDATION_DEPLOY_DESIRED_REVISION="${desired_revision:-}" \
+  HONUA_PLATFORM_VALIDATION_EXECUTE_DEPLOY_OPERATION="$([[ "$RUN_UPGRADE_ROLLBACK" == "true" ]] && printf 'true' || printf 'false')" \
+  HONUA_PLATFORM_VALIDATION_VERIFY_DEPLOY_ROLLBACK="$([[ "$RUN_UPGRADE_ROLLBACK" == "true" ]] && printf 'true' || printf 'false')" \
+  HONUA_PLATFORM_VALIDATION_DEPLOY_TIMEOUT_SECONDS="240" \
+  run_honua_platform_post_apply_validation "$url" "aws-lambda"
+
+  if [[ "$RUN_UPGRADE_ROLLBACK" == "true" ]]; then
+    unset TF_VAR_lambda_alias_version
+    export TF_VAR_honua_image_uri="$SERVERLESS_IMAGE"
+    plan_apply "examples/aws-serverless" "serverless-reconcile-current.tfplan" "serverless-reconcile-current"
+    url="$(run_tf -chdir=examples/aws-serverless output -raw honua_url)"
+    db_endpoint="$(run_tf -chdir=examples/aws-serverless output -raw db_endpoint)"
+    run_serverless_checks "$url" "$db_endpoint"
   fi
 
   log_info "Serverless stack checks passed"
@@ -1925,6 +2108,7 @@ main() {
   parse_args "$@"
   apply_aot_mode
   validate_requested_images
+  validate_ecs_canary_inputs
   require_command curl
   require_env \
     AWS_ACCESS_KEY_ID \

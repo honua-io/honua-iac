@@ -126,16 +126,40 @@ variable "desired_count" {
   default     = 1
 }
 
+variable "canary_enabled" {
+  description = "Provision the optional ALB canary ECS service."
+  type        = bool
+  default     = false
+}
+
+variable "canary_image" {
+  description = "Optional canary image override."
+  type        = string
+  default     = ""
+}
+
+variable "canary_desired_count" {
+  description = "Desired number of ECS tasks in the canary service."
+  type        = number
+  default     = 1
+}
+
+variable "canary_weight_percentage" {
+  description = "Percentage of default ALB traffic routed to the canary target group."
+  type        = number
+  default     = 0
+}
+
 variable "alb_deletion_protection" {
   description = "Enable ALB deletion protection."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "alb_access_logs_enabled" {
   description = "Enable ALB access logs."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "alb_access_logs_force_destroy" {

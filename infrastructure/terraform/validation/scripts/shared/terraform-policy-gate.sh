@@ -102,9 +102,9 @@ run_checkov() {
   if command -v docker >/dev/null 2>&1; then
     log_info "Running checkov via docker"
     run_policy_command "checkov modules (docker)" docker run --rm -v "$PWD:/workspace" -w /workspace "$checkov_image" \
-      checkov -d "$ROOT/modules" "${checkov_args[@]}"
+      -d "$ROOT/modules" "${checkov_args[@]}"
     run_policy_command "checkov examples (docker)" docker run --rm -v "$PWD:/workspace" -w /workspace "$checkov_image" \
-      checkov -d "$ROOT/examples" "${checkov_args[@]}"
+      -d "$ROOT/examples" "${checkov_args[@]}"
     return
   fi
 
@@ -112,8 +112,15 @@ run_checkov() {
 }
 
 run_tfsec() {
+  local tfsec_enabled="${HONUA_TERRAFORM_ENABLE_TFSEC:-false}"
   local tfsec_image="${HONUA_TFSEC_IMAGE:-aquasec/tfsec:v1.28}"
   local tfsec_args=()
+
+  if [[ "${tfsec_enabled}" != "true" ]]; then
+    log_warn "tfsec is disabled by default because it cannot parse Terraform check blocks in this repository; enable with HONUA_TERRAFORM_ENABLE_TFSEC=true"
+    return
+  fi
+
   if [[ "${POLICY_STRICT}" != "true" ]]; then
     tfsec_args+=(--soft-fail)
   fi

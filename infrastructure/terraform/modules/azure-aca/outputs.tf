@@ -1,6 +1,61 @@
+output "environment" {
+  description = "Deployment environment label used for control-plane target IDs."
+  value       = var.environment
+}
+
 output "container_app_name" {
   description = "Container App name."
   value       = azurerm_container_app.this.name
+}
+
+output "container_app_id" {
+  description = "Container App resource ID."
+  value       = azurerm_container_app.this.id
+}
+
+output "container_app_environment_id" {
+  description = "Container Apps environment resource ID."
+  value       = azurerm_container_app_environment.this.id
+}
+
+output "resource_group_name" {
+  description = "Resource group name."
+  value       = azurerm_resource_group.this.name
+}
+
+output "control_plane_target_kind" {
+  description = "Honua control-plane deploy target kind for Azure Container Apps."
+  value       = "AzureContainerApps"
+}
+
+output "control_plane_backend_name" {
+  description = "Honua control-plane deploy backend name for Azure Container Apps GitOps."
+  value       = "honua-gitops-azure-container-apps"
+}
+
+output "control_plane_target_id" {
+  description = "Stable target id for Honua control-plane deploy operations."
+  value       = azurerm_container_app.this.name
+}
+
+output "control_plane_target_name" {
+  description = "Primary workload name used by the Honua deploy target."
+  value       = azurerm_container_app.this.name
+}
+
+output "control_plane_target_resource_id" {
+  description = "Stable Azure resource ID for the Honua deploy target."
+  value       = azurerm_container_app.this.id
+}
+
+output "control_plane_target_resource_group" {
+  description = "Stable Azure resource group for the Honua deploy target."
+  value       = azurerm_resource_group.this.name
+}
+
+output "control_plane_telemetry_policy" {
+  description = "Default Honua telemetry policy for Azure Container Apps deploy health evaluation."
+  value       = "honua-http"
 }
 
 output "container_app_fqdn" {

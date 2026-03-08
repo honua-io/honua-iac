@@ -122,6 +122,7 @@ Optional environment variables:
   HONUA_KUBECONFORM_IMAGE              Kubeconform image override for Helm manifest validation
   HONUA_ADMIN_PASSWORD                 Admin password for Helm chart secret
   SECURITY_MASTER_KEY                  Master key for app startup
+  HONUA_PLATFORM_VALIDATION_SCRIPT     Optional path to honua-server/scripts/run-cloud-post-apply-validation.sh
 USAGE
 }
 
@@ -136,6 +137,8 @@ log_warn() {
 log_error() {
   echo "[ERROR] $1" >&2
 }
+
+source "$SCRIPT_DIR/../shared/platform-post-apply-validation.sh"
 
 apply_aot_mode() {
   if [[ "$USE_AOT" != "true" ]]; then
@@ -1154,6 +1157,15 @@ main() {
   if [[ "$RUN_OBSERVABILITY" == "true" ]]; then
     apply_observability_stack
   fi
+
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_HOST="honua-postgis" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_PORT="5432" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_NAME="honua" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_USERNAME="honua" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_PASSWORD="honua" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_SSL_MODE="Disable" \
+  HONUA_PLATFORM_VALIDATION_PUBLISH_DB_SSL_REQUIRED="false" \
+  run_honua_platform_post_apply_validation "$(http_base_url)" "kubernetes"
 
   log_info "Kubernetes integration checks completed successfully"
 }

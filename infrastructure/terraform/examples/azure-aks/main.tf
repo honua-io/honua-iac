@@ -21,10 +21,30 @@ output "resource_group_name" {
   value = module.aks.resource_group_name
 }
 
+output "environment" {
+  value = module.aks.environment
+}
+
 output "cluster_name" {
   value = module.aks.cluster_name
 }
 
 output "cluster_id" {
   value = module.aks.cluster_id
+}
+
+output "control_plane_target_kind" {
+  value = module.aks.control_plane_target_kind
+}
+
+output "control_plane_backend_name" {
+  value = module.aks.control_plane_backend_name
+}
+
+output "control_plane_telemetry_policy" {
+  value = module.aks.control_plane_telemetry_policy
+}
+
+output "honua_metrics_target" {
+  value = module.aks.honua_metrics_target
 }
