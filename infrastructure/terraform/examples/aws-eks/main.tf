@@ -22,6 +22,10 @@ output "cluster_name" {
   value = module.eks.cluster_name
 }
 
+output "environment" {
+  value = module.eks.environment
+}
+
 output "cluster_arn" {
   value = module.eks.cluster_arn
 }
@@ -32,4 +36,20 @@ output "cluster_endpoint" {
 
 output "vpc_id" {
   value = module.eks.vpc_id
+}
+
+output "control_plane_target_kind" {
+  value = module.eks.control_plane_target_kind
+}
+
+output "control_plane_backend_name" {
+  value = module.eks.control_plane_backend_name
+}
+
+output "control_plane_telemetry_policy" {
+  value = module.eks.control_plane_telemetry_policy
+}
+
+output "honua_metrics_target" {
+  value = module.eks.honua_metrics_target
 }

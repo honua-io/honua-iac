@@ -16,6 +16,7 @@ The workflow and scripts cover:
 - AWS live integration: `examples/aws-data` bootstrap (RDS + Redis) by default, then ECS + serverless using those existing connections/VPC; includes Redis wiring, PostGIS + raster checks, protocol/admin smoke checks, admin CRUD/query smoke (`create connection -> publish layer -> query`), idempotency, quick scale check, DB resilience drill, plan artifacts, and compute auto-destroy with reusable data-stack retention
 - Kubernetes live integration: k3d + Helm + observability Terraform module, Helm static validation (`lint` + `template` + `kubeconform`), PostGIS + raster checks, protocol/admin smoke checks, admin CRUD/query smoke (`create connection -> publish layer -> query`), idempotency, quick scale check, and optional DB resilience drill
 - Managed Kubernetes integration: AKS and EKS Terraform cluster provisioning, then Kubernetes validation flow, then auto-destroy + leak check
+- Cross-repo platform validation: Azure, AWS, AKS, and EKS live jobs also check out `honua-server` and run its post-apply platform suite against the deployed environment before cleanup; this exercises deploy preflight, migration observability, admin OpenAPI, and optional cloud-staged import checks against real cloud infrastructure
 - Drift detection: `terraform plan -detailed-exitcode` via `infrastructure/terraform/validation/scripts/shared/run-terraform-drift-detection.sh`
 
 ## Manual GitHub Actions workflow
@@ -64,6 +65,7 @@ Optional image override secrets:
 - Azure rollback images: `HONUA_ACA_PREVIOUS_IMAGE`, `HONUA_FUNCTIONS_PREVIOUS_IMAGE`
 - AWS app images: `HONUA_AWS_ECS_IMAGE`, `HONUA_AWS_SERVERLESS_IMAGE` (ECR URI, `*-lambda-aot` recommended; `*-lambda` is debug fallback)
 - AWS rollback images: `HONUA_AWS_ECS_PREVIOUS_IMAGE`, `HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE`
+- AWS ECS canary image: `HONUA_AWS_ECS_CANARY_IMAGE` (optional; falls back to `HONUA_AWS_ECS_IMAGE` when unset)
 - Kubernetes app images: `HONUA_K8S_IMAGE`, `HONUA_K8S_PREVIOUS_IMAGE`
 
 ## Local credentials setup (set-creds script)
@@ -98,6 +100,9 @@ az account show
 - Optional behavior toggles:
   - `HONUA_USE_AOT` (`true|false`; switches default images to `latest-aot` in validation scripts)
   - `HONUA_AZURE_FUNCTIONS_AOT_AUTOSWITCH` (`true|false`; defaults to `true` for AOT-first Functions image selection)
+  - `HONUA_AZURE_FUNCTIONS_DEPLOYMENT_SLOT_ENABLED` (`true|false`; provisions a staging slot so the control-plane handoff includes slot rollout metadata)
+  - `HONUA_AZURE_FUNCTIONS_DEPLOYMENT_SLOT_NAME` (defaults to `staging`)
+  - `HONUA_AZURE_FUNCTIONS_DEPLOYMENT_SLOT_IMAGE` (optional explicit staging-slot image; defaults to the primary Functions image)
   - `HONUA_RUN_UPGRADE_ROLLBACK`
   - `HONUA_SKIP_DB_RESILIENCE`
   - `HONUA_SKIP_QUOTA_PREFLIGHT`
@@ -115,6 +120,11 @@ az account show
   - `HONUA_AWS_EXISTING_DB_ENDPOINT`
   - `HONUA_AWS_EXISTING_DB_CONNECTION_STRING`
   - `HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING`
+  - `HONUA_AWS_ECS_CANARY_ENABLED`
+  - `HONUA_AWS_ECS_CANARY_DESIRED_COUNT`
+  - `HONUA_AWS_ECS_CANARY_WEIGHT_PERCENTAGE`
+  - `HONUA_AWS_ECS_CANARY_HEADER_NAME`
+  - `HONUA_AWS_ECS_CANARY_HEADER_VALUE`
   - `HONUA_AWS_EXISTING_VPC_ID`
   - `HONUA_AWS_EXISTING_VPC_CIDR`
   - `HONUA_AWS_EXISTING_PUBLIC_SUBNET_IDS`
@@ -160,6 +170,11 @@ Local script entry points:
 ./infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh --stack both
 ./infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh --stack data --no-destroy
 ./infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh --stack ecs --aot
+./infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh \
+  --stack ecs \
+  --ecs-canary-enabled \
+  --ecs-canary-image "<account>.dkr.ecr.<region>.amazonaws.com/honua-server:canary-aot" \
+  --ecs-canary-weight 0
 ./infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh --stack serverless --serverless-image "<account>.dkr.ecr.<region>.amazonaws.com/honua-server:latest-lambda-aot"
 ./scripts/run-aws-terraform-integration.sh --stack serverless
 ./infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh \
@@ -192,7 +207,10 @@ Local script entry points:
 - Azure script behavior: when existing Azure data inputs are not provided, `infrastructure/terraform/validation/scripts/azure/run-azure-terraform-integration.sh` applies `infrastructure/terraform/examples/azure-data`, saves outputs to `/tmp/honua-azure-data-reuse.env` (or `HONUA_AZURE_DATA_CACHE_FILE`), and reuses them in subsequent runs.
 - AKS script defaults target `westus` with node VM size `Standard_D2s_v3` (override with `--location` / `--node-vm-size` if needed).
 - AWS script behavior: when existing AWS data inputs are not provided, `infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh` applies `infrastructure/terraform/examples/aws-data`, saves outputs to `/tmp/honua-aws-data-reuse.env` (or `HONUA_AWS_DATA_CACHE_FILE`), and reuses them in subsequent runs.
+- AWS ECS canary validation is opt-in. When `HONUA_AWS_ECS_CANARY_ENABLED=true`, the live script provisions the secondary ECS service with `0%` default traffic unless you explicitly set a non-zero `HONUA_AWS_ECS_CANARY_WEIGHT_PERCENTAGE`, waits for the canary tasks to become healthy, and verifies the ALB header route before continuing. Recommended rollout shape is still two-step: create canary at `0%`, verify, then raise weight in a later run.
+- Azure Functions upgrade/rollback validation is now slot-based when `HONUA_RUN_UPGRADE_ROLLBACK=true`: the live script keeps production on the previous image, stages the candidate image in the configured deployment slot, exercises promote/rollback/restore through the Honua admin API, then reconciles Terraform back to the current image baseline.
 - Current known issue (February 28, 2026): generic web tags (`latest`, `latest-aot`) crash on Azure Functions custom container startup (container exit code `139`). Use Functions-targeted tags (`*-functions-aot` preferred, `*-functions` debug fallback).
 - Registry strategy: web runtime tags (`latest`, `latest-aot`, versioned base tags) are published to GHCR/Docker Hub, while serverless platform tags (`*-lambda`, `*-lambda-aot`, `*-functions`, `*-functions-aot`) are published by CI directly to cloud registries (ECR/ACR).
 - `.terraform` directories are already ignored in `.gitignore`.
 - Live scripts auto-destroy compute resources by default unless `--no-destroy` / `no_destroy=true` is set. For both clouds, local script runs retain the data stack by default for reuse and only tear it down when `--destroy-data` (or `HONUA_AZURE_DESTROY_DATA=true` / `HONUA_AWS_DESTROY_DATA=true`) is set. GitHub manual validation now passes `--destroy-data` automatically for `deployment_profile=ephemeral` when `no_destroy=false`.
+- To run the cross-repo platform suite locally after apply, point the live validation scripts at the `honua-server` runner: `export HONUA_PLATFORM_VALIDATION_SCRIPT=/path/to/honua-server/scripts/run-cloud-post-apply-validation.sh`.

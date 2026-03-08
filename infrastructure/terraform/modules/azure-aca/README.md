@@ -116,7 +116,18 @@ registry_password = var.acr_password
 
 ## Outputs
 
-See `outputs.tf` for the Container App FQDN, Key Vault secret IDs, and database connection string.
+See `outputs.tf` for the Container App FQDN, Key Vault secret IDs, and database connection string. The module also emits Honua control-plane handoff metadata:
+
+- `environment`
+- `container_app_name`
+- `container_app_id`
+- `container_app_environment_id`
+- `control_plane_target_kind = "AzureContainerApps"`
+- `control_plane_backend_name = "honua-gitops-azure-container-apps"`
+- `control_plane_target_id`
+- `control_plane_target_name` and `control_plane_target_resource_id`
+- `control_plane_target_resource_group`
+- `control_plane_telemetry_policy = "honua-http"`
 
 ## After apply
 

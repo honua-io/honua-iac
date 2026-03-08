@@ -103,6 +103,23 @@ variable "lambda_reserved_concurrent_executions" {
   default     = null
 }
 
+variable "lambda_alias_name" {
+  description = "Stable Lambda alias used for API Gateway traffic and control-plane rollouts."
+  type        = string
+  default     = "live"
+}
+
+variable "lambda_alias_version" {
+  description = "Published Lambda version to pin the stable alias to. Leave null to follow the current published version from this apply."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.lambda_alias_version == null || (trimspace(var.lambda_alias_version) != "" && trimspace(var.lambda_alias_version) != "$LATEST")
+    error_message = "lambda_alias_version must be null or a published Lambda version number, never an empty string or $LATEST."
+  }
+}
+
 variable "admin_password" {
   description = "Admin API password for Honua (required in non-dev)."
   type        = string

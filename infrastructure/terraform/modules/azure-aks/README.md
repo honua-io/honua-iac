@@ -26,7 +26,12 @@ Leave `authorized_ip_ranges` empty only when you intentionally want a public AKS
 
 ## Outputs
 
+- `environment`
 - `resource_group_name`
 - `cluster_name`
 - `cluster_id`
 - `kube_config_raw` (sensitive)
+- `control_plane_target_kind = "Kubernetes"`
+- `control_plane_backend_name = "honua-gitops-kubernetes"`
+- `control_plane_telemetry_policy = "kubernetes-honua-http"`
+- `honua_metrics_target = "honua"` for the standard Helm release naming convention

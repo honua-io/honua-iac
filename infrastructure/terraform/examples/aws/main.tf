@@ -25,6 +25,10 @@ module "honua" {
   redis_connection_string         = var.redis_connection_string
   redis_connection_cidrs          = var.redis_connection_cidrs
   desired_count                   = var.desired_count
+  canary_enabled                  = var.canary_enabled
+  canary_image                    = var.canary_image
+  canary_desired_count            = var.canary_desired_count
+  canary_weight_percentage        = var.canary_weight_percentage
   alb_deletion_protection         = var.alb_deletion_protection
   alb_access_logs_enabled         = var.alb_access_logs_enabled
   alb_access_logs_force_destroy   = var.alb_access_logs_force_destroy
@@ -50,6 +54,38 @@ output "ecs_cluster_name" {
 
 output "ecs_service_name" {
   value = module.honua.ecs_service_name
+}
+
+output "canary_ecs_service_name" {
+  value = module.honua.canary_ecs_service_name
+}
+
+output "canary_verification_header_name" {
+  value = module.honua.canary_verification_header_name
+}
+
+output "canary_verification_header_value" {
+  value = module.honua.canary_verification_header_value
+}
+
+output "control_plane_target_kind" {
+  value = module.honua.control_plane_target_kind
+}
+
+output "control_plane_backend_name" {
+  value = module.honua.control_plane_backend_name
+}
+
+output "control_plane_telemetry_policy" {
+  value = module.honua.control_plane_telemetry_policy
+}
+
+output "control_plane_telemetry_prometheus_job" {
+  value = module.honua.control_plane_telemetry_prometheus_job
+}
+
+output "control_plane_telemetry_prometheus_canary_job" {
+  value = module.honua.control_plane_telemetry_prometheus_canary_job
 }
 
 output "db_endpoint" {

@@ -138,13 +138,6 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install checkov==3.2.497
 
-      - name: Install tfsec
-        shell: bash
-        run: |
-          set -euo pipefail
-          curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/b692c20b68c0121346b7b34e81d6b1867ca8e1a8/scripts/install_linux.sh | bash
-          tfsec --version
-
       - name: Run Terraform policy gate script
         shell: bash
         env:

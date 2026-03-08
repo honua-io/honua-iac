@@ -69,7 +69,7 @@ variable "redis_connection_string" {
 variable "redis_sku_name" {
   description = "Redis SKU for new cache creation."
   type        = string
-  default     = "Basic"
+  default     = "Standard"
 }
 
 variable "redis_family" {
@@ -81,13 +81,13 @@ variable "redis_family" {
 variable "redis_capacity" {
   description = "Redis capacity for new cache creation."
   type        = number
-  default     = 0
+  default     = 1
 }
 
 variable "db_geo_redundant_backup_enabled" {
   description = "Enable geo-redundant backups for PostgreSQL."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "db_backup_retention_days" {

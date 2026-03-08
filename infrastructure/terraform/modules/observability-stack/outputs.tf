@@ -13,6 +13,16 @@ output "prometheus_url" {
   value       = "http://${var.prometheus_release_name}-server.${var.namespace}.svc.cluster.local"
 }
 
+output "honua_prometheus_job_name" {
+  description = "Prometheus job name used for the Honua scrape target."
+  value       = local.honua_scrape_config.job_name
+}
+
+output "honua_prometheus_selector" {
+  description = "PromQL selector fragment for the Honua scrape target."
+  value       = "job=\"${local.honua_scrape_config.job_name}\""
+}
+
 output "grafana_url" {
   description = "URL for accessing the Grafana dashboard."
   value       = var.grafana_ingress_enabled && var.grafana_ingress_host != "" ? "${var.grafana_ingress_tls_secret != "" ? "https" : "http"}://${var.grafana_ingress_host}" : "kubectl port-forward svc/grafana 3000:80 -n ${var.namespace}"

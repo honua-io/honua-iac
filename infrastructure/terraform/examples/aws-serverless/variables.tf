@@ -71,6 +71,18 @@ variable "honua_image_uri" {
   type        = string
 }
 
+variable "lambda_alias_name" {
+  description = "Stable Lambda alias used by API Gateway."
+  type        = string
+  default     = "live"
+}
+
+variable "lambda_alias_version" {
+  description = "Optional published Lambda version to pin the stable alias to."
+  type        = string
+  default     = null
+}
+
 variable "db_publicly_accessible" {
   description = "Expose RDS publicly for integration testing."
   type        = bool

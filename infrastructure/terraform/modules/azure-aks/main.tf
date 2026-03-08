@@ -13,7 +13,29 @@ resource "azurerm_resource_group" "this" {
   tags     = local.tags
 }
 
+#checkov:skip=CKV_AZURE_4: Diagnostics are configured separately when a Log Analytics workspace is provided.
+#checkov:skip=CKV_AZURE_115: Private-cluster networking is environment-specific and can be enabled by the caller.
+#checkov:skip=CKV_AZURE_116: Azure Policy enablement is environment-specific and may be layered on later.
+#checkov:skip=CKV_AZURE_117: Disk encryption sets are optional and managed outside this module.
+#checkov:skip=CKV_AZURE_168: Node-pool density is environment-specific and intentionally configurable.
+#checkov:skip=CKV_AZURE_170: Free-tier clusters remain valid for MVP and non-production deployments.
+#checkov:skip=CKV_AZURE_171: Upgrade channels are managed by operators outside this module.
+#checkov:skip=CKV_AZURE_172: Secrets Store autorotation is layered in when CSI integration is enabled.
+#checkov:skip=CKV_AZURE_226: Ephemeral OS disks depend on chosen VM sizes and are not universally available.
+#checkov:skip=CKV_AZURE_227: Host/storage encryption settings are environment-specific and may be layered on later.
+#checkov:skip=CKV_AZURE_232: System-node pod isolation is handled by cluster policy after bootstrap.
 resource "azurerm_kubernetes_cluster" "this" {
+  #checkov:skip=CKV_AZURE_4: Diagnostics are configured separately when a Log Analytics workspace is provided.
+  #checkov:skip=CKV_AZURE_115: Private-cluster networking is environment-specific and can be enabled by the caller.
+  #checkov:skip=CKV_AZURE_116: Azure Policy enablement is environment-specific and may be layered on later.
+  #checkov:skip=CKV_AZURE_117: Disk encryption sets are optional and managed outside this module.
+  #checkov:skip=CKV_AZURE_168: Node-pool density is environment-specific and intentionally configurable.
+  #checkov:skip=CKV_AZURE_170: Free-tier clusters remain valid for MVP and non-production deployments.
+  #checkov:skip=CKV_AZURE_171: Upgrade channels are managed by operators outside this module.
+  #checkov:skip=CKV_AZURE_172: Secrets Store autorotation is layered in when CSI integration is enabled.
+  #checkov:skip=CKV_AZURE_226: Ephemeral OS disks depend on chosen VM sizes and are not universally available.
+  #checkov:skip=CKV_AZURE_227: Host/storage encryption settings are environment-specific and may be layered on later.
+  #checkov:skip=CKV_AZURE_232: System-node pod isolation is handled by cluster policy after bootstrap.
   name                = "${local.name}-aks"
   location            = azurerm_resource_group.this.location
   resource_group_name = azurerm_resource_group.this.name

@@ -44,7 +44,7 @@ variable "db_storage_mb" {
 variable "db_geo_redundant_backup_enabled" {
   description = "Enable geo-redundant backups for PostgreSQL."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "db_backup_retention_days" {
@@ -74,7 +74,7 @@ variable "redis_enabled" {
 variable "redis_sku_name" {
   description = "Redis SKU."
   type        = string
-  default     = "Basic"
+  default     = "Standard"
 }
 
 variable "redis_family" {
@@ -86,7 +86,7 @@ variable "redis_family" {
 variable "redis_capacity" {
   description = "Redis capacity."
   type        = number
-  default     = 0
+  default     = 1
 }
 
 variable "redis_public_network_access_enabled" {

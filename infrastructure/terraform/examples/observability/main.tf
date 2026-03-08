@@ -22,6 +22,14 @@ output "prometheus_url" {
   value = module.observability.prometheus_url
 }
 
+output "honua_prometheus_job_name" {
+  value = module.observability.honua_prometheus_job_name
+}
+
+output "honua_prometheus_selector" {
+  value = module.observability.honua_prometheus_selector
+}
+
 output "grafana_url" {
   value = module.observability.grafana_url
 }

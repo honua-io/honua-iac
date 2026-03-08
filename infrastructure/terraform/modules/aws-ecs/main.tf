@@ -30,13 +30,63 @@ locals {
   http_ingress_base = length(var.allow_http_ingress_cidrs) > 0 ? var.allow_http_ingress_cidrs : (
     length(local.https_ingress_cidrs) > 0 ? local.https_ingress_cidrs : (!local.use_https ? local.default_ingress_cidrs : [])
   )
-  http_ingress_cidrs = local.use_https ? (var.alb_enable_http_redirect ? local.http_ingress_base : []) : local.http_ingress_base
-  redis_enabled      = var.redis_enabled || var.redis_connection_string != ""
-  redis_create       = var.redis_enabled && var.redis_connection_string == ""
-  redis_auth_token   = var.redis_auth_token != "" ? var.redis_auth_token : (local.redis_create ? random_password.redis_auth[0].result : "")
-  redis_connection   = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true" : "")
-  redis_egress_cidrs = local.redis_create ? [local.vpc_cidr_block] : var.redis_connection_cidrs
-  db_subnet_ids      = var.db_publicly_accessible ? local.public_subnets : local.private_subnets
+  http_ingress_cidrs     = local.use_https ? (var.alb_enable_http_redirect ? local.http_ingress_base : []) : local.http_ingress_base
+  redis_enabled          = var.redis_enabled || var.redis_connection_string != ""
+  redis_create           = var.redis_enabled && var.redis_connection_string == ""
+  redis_auth_token       = var.redis_auth_token != "" ? var.redis_auth_token : (local.redis_create ? random_password.redis_auth[0].result : "")
+  redis_connection       = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true" : "")
+  redis_egress_cidrs     = local.redis_create ? [local.vpc_cidr_block] : var.redis_connection_cidrs
+  db_subnet_ids          = var.db_publicly_accessible ? local.public_subnets : local.private_subnets
+  canary_enabled         = var.canary_enabled
+  canary_weight          = local.canary_enabled ? var.canary_weight_percentage : 0
+  primary_weight         = local.canary_enabled ? 100 - local.canary_weight : 100
+  effective_canary_image = trimspace(var.canary_image) != "" ? var.canary_image : var.image
+  primary_container_environment = [
+    for key, value in var.additional_env : {
+      name  = key
+      value = value
+    }
+  ]
+  canary_container_environment = [
+    for key, value in merge(var.additional_env, var.canary_additional_env) : {
+      name  = key
+      value = value
+    }
+  ]
+  container_secrets = concat([
+    {
+      name      = "ConnectionStrings__DefaultConnection"
+      valueFrom = aws_secretsmanager_secret.db_connection.arn
+    },
+    {
+      name      = "HONUA_ADMIN_PASSWORD"
+      valueFrom = aws_secretsmanager_secret.admin_password.arn
+    },
+    {
+      name      = "Security__ConnectionEncryption__MasterKey"
+      valueFrom = aws_secretsmanager_secret.admin_password.arn
+    }
+    ], local.redis_enabled ? [
+    {
+      name      = "ConnectionStrings__redis"
+      valueFrom = aws_secretsmanager_secret.redis_connection[0].arn
+    }
+  ] : [])
+  container_log_configuration = {
+    logDriver = "awslogs"
+    options = {
+      awslogs-group         = aws_cloudwatch_log_group.this.name
+      awslogs-region        = data.aws_region.current.id
+      awslogs-stream-prefix = "honua"
+    }
+  }
+  container_health_check = {
+    command     = ["CMD-SHELL", "curl -f http://localhost:8080/healthz/ready || exit 1"]
+    interval    = 30
+    timeout     = 5
+    retries     = 3
+    startPeriod = 60
+  }
 }
 
 check "existing_db_inputs" {
@@ -63,6 +113,20 @@ check "existing_redis_inputs" {
   assert {
     condition     = var.redis_connection_string == "" || length(var.redis_connection_cidrs) > 0
     error_message = "redis_connection_cidrs must include at least one trusted CIDR when redis_connection_string is set."
+  }
+}
+
+check "canary_weight_requires_canary" {
+  assert {
+    condition     = local.canary_enabled || var.canary_weight_percentage == 0
+    error_message = "canary_weight_percentage must be 0 unless canary_enabled is true."
+  }
+}
+
+check "canary_desired_count_when_enabled" {
+  assert {
+    condition     = !local.canary_enabled || var.canary_desired_count >= 1
+    error_message = "canary_desired_count must be at least 1 when canary_enabled is true."
   }
 }
 
@@ -270,7 +334,9 @@ resource "aws_elasticache_subnet_group" "redis" {
   tags        = local.tags
 }
 
+#checkov:skip=CKV2_AWS_50: Single-node Redis is allowed for smaller environments; Multi-AZ activates when cluster count is increased.
 resource "aws_elasticache_replication_group" "redis" {
+  #checkov:skip=CKV2_AWS_50: Single-node Redis is allowed for smaller environments; Multi-AZ activates when cluster count is increased.
   count                      = local.redis_create ? 1 : 0
   replication_group_id       = "${local.name}-redis"
   description                = "Honua Redis"
@@ -463,6 +529,30 @@ resource "aws_lb_target_group" "this" {
   tags = local.tags
 }
 
+#checkov:skip=CKV_AWS_378: Target group uses HTTP for in-VPC traffic, matching the primary service target group.
+resource "aws_lb_target_group" "canary" {
+  #checkov:skip=CKV_AWS_378: Target group uses HTTP for in-VPC traffic, matching the primary service target group.
+  count       = local.canary_enabled ? 1 : 0
+  name        = substr("${local.name}-canary-tg", 0, 32)
+  port        = var.container_port
+  protocol    = "HTTP"
+  vpc_id      = local.vpc_id
+  target_type = "ip"
+
+  health_check {
+    path                = var.health_check_path
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+    matcher             = "200-399"
+  }
+
+  tags = merge(local.tags, {
+    DeploymentSlot = "canary"
+  })
+}
+
 resource "aws_lb_listener" "https" {
   count             = local.use_https ? 1 : 0
   load_balancer_arn = aws_lb.this.arn
@@ -471,9 +561,31 @@ resource "aws_lb_listener" "https" {
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
   certificate_arn   = local.certificate_arn
 
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.this.arn
+  dynamic "default_action" {
+    for_each = local.canary_enabled ? [1] : []
+    content {
+      type = "forward"
+
+      forward {
+        target_group {
+          arn    = aws_lb_target_group.this.arn
+          weight = local.primary_weight
+        }
+
+        target_group {
+          arn    = aws_lb_target_group.canary[0].arn
+          weight = local.canary_weight
+        }
+      }
+    }
+  }
+
+  dynamic "default_action" {
+    for_each = local.canary_enabled ? [] : [1]
+    content {
+      type             = "forward"
+      target_group_arn = aws_lb_target_group.this.arn
+    }
   }
 }
 
@@ -504,9 +616,67 @@ resource "aws_lb_listener" "http" {
   port              = 80
   protocol          = "HTTP"
 
-  default_action {
+  dynamic "default_action" {
+    for_each = local.canary_enabled ? [1] : []
+    content {
+      type = "forward"
+
+      forward {
+        target_group {
+          arn    = aws_lb_target_group.this.arn
+          weight = local.primary_weight
+        }
+
+        target_group {
+          arn    = aws_lb_target_group.canary[0].arn
+          weight = local.canary_weight
+        }
+      }
+    }
+  }
+
+  dynamic "default_action" {
+    for_each = local.canary_enabled ? [] : [1]
+    content {
+      type             = "forward"
+      target_group_arn = aws_lb_target_group.this.arn
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "https_canary" {
+  count        = local.canary_enabled && local.use_https ? 1 : 0
+  listener_arn = aws_lb_listener.https[0].arn
+  priority     = var.canary_listener_rule_priority
+
+  action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.this.arn
+    target_group_arn = aws_lb_target_group.canary[0].arn
+  }
+
+  condition {
+    http_header {
+      http_header_name = var.canary_header_name
+      values           = [var.canary_header_value]
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "http_canary" {
+  count        = local.canary_enabled && !local.use_https && length(local.http_ingress_cidrs) > 0 ? 1 : 0
+  listener_arn = aws_lb_listener.http[0].arn
+  priority     = var.canary_listener_rule_priority
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.canary[0].arn
+  }
+
+  condition {
+    http_header {
+      http_header_name = var.canary_header_name
+      values           = [var.canary_header_value]
+    }
   }
 }
 
@@ -778,46 +948,10 @@ resource "aws_ecs_task_definition" "this" {
           protocol      = "tcp"
         }
       ]
-      environment = [
-        for key, value in var.additional_env : {
-          name  = key
-          value = value
-        }
-      ]
-      secrets = concat([
-        {
-          name      = "ConnectionStrings__DefaultConnection"
-          valueFrom = aws_secretsmanager_secret.db_connection.arn
-        },
-        {
-          name      = "HONUA_ADMIN_PASSWORD"
-          valueFrom = aws_secretsmanager_secret.admin_password.arn
-        },
-        {
-          name      = "Security__ConnectionEncryption__MasterKey"
-          valueFrom = aws_secretsmanager_secret.admin_password.arn
-        }
-        ], local.redis_enabled ? [
-        {
-          name      = "ConnectionStrings__redis"
-          valueFrom = aws_secretsmanager_secret.redis_connection[0].arn
-        }
-      ] : [])
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          awslogs-group         = aws_cloudwatch_log_group.this.name
-          awslogs-region        = data.aws_region.current.id
-          awslogs-stream-prefix = "honua"
-        }
-      }
-      healthCheck = {
-        command     = ["CMD-SHELL", "curl -f http://localhost:8080/healthz/ready || exit 1"]
-        interval    = 30
-        timeout     = 5
-        retries     = 3
-        startPeriod = 60
-      }
+      environment      = local.primary_container_environment
+      secrets          = local.container_secrets
+      logConfiguration = local.container_log_configuration
+      healthCheck      = local.container_health_check
     }
   ])
 
@@ -828,6 +962,46 @@ resource "aws_ecs_task_definition" "this" {
   ]
 
   tags = local.tags
+}
+
+resource "aws_ecs_task_definition" "canary" {
+  count                    = local.canary_enabled ? 1 : 0
+  family                   = "${local.name}-canary-task"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = var.container_cpu
+  memory                   = var.container_memory
+  execution_role_arn       = aws_iam_role.task_execution.arn
+  task_role_arn            = aws_iam_role.task.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "honua"
+      image     = local.effective_canary_image
+      essential = true
+      portMappings = [
+        {
+          containerPort = var.container_port
+          hostPort      = var.container_port
+          protocol      = "tcp"
+        }
+      ]
+      environment      = local.canary_container_environment
+      secrets          = local.container_secrets
+      logConfiguration = local.container_log_configuration
+      healthCheck      = local.container_health_check
+    }
+  ])
+
+  depends_on = [
+    aws_secretsmanager_secret_version.db_connection,
+    aws_secretsmanager_secret_version.admin_password,
+    aws_secretsmanager_secret_version.redis_connection
+  ]
+
+  tags = merge(local.tags, {
+    DeploymentSlot = "canary"
+  })
 }
 
 resource "aws_ecs_service" "this" {
@@ -857,6 +1031,38 @@ resource "aws_ecs_service" "this" {
   depends_on = [aws_lb_listener.https, aws_lb_listener.http, aws_lb_listener.http_redirect]
 
   tags = local.tags
+}
+
+resource "aws_ecs_service" "canary" {
+  count           = local.canary_enabled ? 1 : 0
+  name            = "${local.name}-canary-service"
+  cluster         = aws_ecs_cluster.this.id
+  task_definition = aws_ecs_task_definition.canary[0].arn
+  desired_count   = var.canary_desired_count
+  launch_type     = "FARGATE"
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  network_configuration {
+    subnets          = local.private_subnets
+    security_groups  = [aws_security_group.ecs.id]
+    assign_public_ip = var.assign_public_ip
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.canary[0].arn
+    container_name   = "honua"
+    container_port   = var.container_port
+  }
+
+  depends_on = [aws_lb_listener.https, aws_lb_listener.http, aws_lb_listener.http_redirect]
+
+  tags = merge(local.tags, {
+    DeploymentSlot = "canary"
+  })
 }
 
 resource "aws_appautoscaling_target" "ecs" {

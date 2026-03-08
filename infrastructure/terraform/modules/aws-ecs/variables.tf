@@ -298,6 +298,74 @@ variable "additional_env" {
   default     = {}
 }
 
+variable "canary_enabled" {
+  description = "Provision a secondary ECS service and ALB target group for canary rollouts."
+  type        = bool
+  default     = false
+}
+
+variable "canary_image" {
+  description = "Optional image for the canary ECS service. Leave empty to reuse image."
+  type        = string
+  default     = ""
+}
+
+variable "canary_desired_count" {
+  description = "Desired number of tasks for the canary ECS service when canary_enabled is true."
+  type        = number
+  default     = 1
+}
+
+variable "canary_weight_percentage" {
+  description = "Percentage of default ALB traffic routed to the canary target group."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.canary_weight_percentage >= 0 && var.canary_weight_percentage <= 100
+    error_message = "canary_weight_percentage must be between 0 and 100."
+  }
+}
+
+variable "canary_additional_env" {
+  description = "Additional environment variables merged into the canary ECS task definition."
+  type        = map(string)
+  default     = {}
+}
+
+variable "canary_header_name" {
+  description = "HTTP header name used to force ALB routing to the canary service."
+  type        = string
+  default     = "X-Honua-Canary"
+
+  validation {
+    condition     = trimspace(var.canary_header_name) != ""
+    error_message = "canary_header_name must not be empty."
+  }
+}
+
+variable "canary_header_value" {
+  description = "HTTP header value used to force ALB routing to the canary service."
+  type        = string
+  default     = "always"
+
+  validation {
+    condition     = trimspace(var.canary_header_value) != ""
+    error_message = "canary_header_value must not be empty."
+  }
+}
+
+variable "canary_listener_rule_priority" {
+  description = "ALB listener rule priority for forced canary header routing."
+  type        = number
+  default     = 50
+
+  validation {
+    condition     = var.canary_listener_rule_priority >= 1 && var.canary_listener_rule_priority <= 50000
+    error_message = "canary_listener_rule_priority must be between 1 and 50000."
+  }
+}
+
 variable "redis_connection_string" {
   description = "Redis connection string for multi-node mode. Leave empty to create Redis."
   type        = string

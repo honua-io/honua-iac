@@ -47,6 +47,24 @@ variable "honua_image" {
   type        = string
 }
 
+variable "deployment_slot_enabled" {
+  description = "Provision a staging deployment slot for slot-based rollout workflows."
+  type        = bool
+  default     = false
+}
+
+variable "deployment_slot_name" {
+  description = "Name of the optional staging deployment slot."
+  type        = string
+  default     = "staging"
+}
+
+variable "deployment_slot_image" {
+  description = "Optional container image for the staging slot. Defaults to honua_image when empty."
+  type        = string
+  default     = ""
+}
+
 variable "plan_sku_name" {
   description = "Function App plan SKU (EP* for Premium, Y1 for Consumption)."
   type        = string
@@ -75,7 +93,7 @@ variable "redis_connection_string" {
 variable "redis_sku_name" {
   description = "Redis SKU for new cache creation."
   type        = string
-  default     = "Basic"
+  default     = "Standard"
 }
 
 variable "redis_family" {
@@ -87,13 +105,13 @@ variable "redis_family" {
 variable "redis_capacity" {
   description = "Redis capacity for new cache creation."
   type        = number
-  default     = 0
+  default     = 1
 }
 
 variable "db_geo_redundant_backup_enabled" {
   description = "Enable geo-redundant backups for PostgreSQL."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "db_backup_retention_days" {

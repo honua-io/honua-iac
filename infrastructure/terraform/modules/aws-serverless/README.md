@@ -74,6 +74,8 @@ module "honua" {
 | `lambda_memory_size` | 1024 | Lambda memory in MB (128–10240). |
 | `lambda_timeout_seconds` | 30 | Keep at or below 30 (API Gateway limit). |
 | `lambda_architectures` | `["x86_64"]` | `x86_64` or `arm64`. |
+| `lambda_alias_name` | `live` | Stable alias used for API Gateway traffic and control-plane rollback. |
+| `lambda_alias_version` | `null` | Optional published version to pin the stable alias to; defaults to the version published by the current apply. |
 | `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster on RDS. **Set to true.** |
 | `existing_db_endpoint` | `""` | Reuse an existing PostgreSQL endpoint (must be paired with `existing_db_connection_string`). |
 | `existing_db_connection_string` | `""` | Reuse an existing PostgreSQL connection string (skips RDS provisioning and PostGIS local-exec). |
@@ -87,6 +89,16 @@ module "honua" {
 
 See `variables.tf` for the complete list.
 
+## Alias semantics
+
+The module publishes immutable Lambda versions and keeps API Gateway bound to a stable alias. By default the alias follows the version published by the current apply. Set `lambda_alias_version` when you need to pin or move the alias intentionally, for example when an external control plane is promoting or rolling back a published version.
+
+The module does not invent canary or previous-version state. It exposes the stable alias revision and the current published revision so a control-plane backend can observe the current state, capture the prior stable version, and move the alias honestly.
+
+The deployed Honua app also self-registers its `AwsLambda` deploy target through environment-based `ControlPlane__...` settings, so the admin API can plan and observe Lambda rollouts without a separate sidecar config file.
+
+If you want staged Lambda rollout instead of direct alias cutover, add a deploy-target parameter such as `lambda.canary_weight_percentage=10` and a valid `telemetry.connection` in the Honua control-plane configuration. The Lambda backend only promotes or rolls back the alias after telemetry settles.
+
 ## Constraints
 
 - **API Gateway timeout**: HTTP API has a 30-second max integration timeout. Keep `lambda_timeout_seconds` in sync.
@@ -95,4 +107,21 @@ See `variables.tf` for the complete list.
 
 ## Outputs
 
-See `outputs.tf` for the API endpoint URL, RDS connection string, and secrets.
+See `outputs.tf` for the API endpoint URL, RDS connection string, and secrets. The module also emits Honua control-plane handoff metadata:
+
+- `environment`
+- `aws_region`
+- `lambda_function_name`
+- `lambda_function_arn`
+- `lambda_function_version`
+- `lambda_alias_name`
+- `lambda_alias_arn`
+- `lambda_alias_invoke_arn`
+- `lambda_alias_function_version`
+- `control_plane_target_kind = "AwsLambda"`
+- `control_plane_backend_name = "honua-gitops-aws-lambda"`
+- `control_plane_target_id`
+- `control_plane_target_name` and `control_plane_target_resource_id`
+- `control_plane_current_revision`
+- `control_plane_desired_revision`
+- `control_plane_telemetry_policy = "honua-http"`
