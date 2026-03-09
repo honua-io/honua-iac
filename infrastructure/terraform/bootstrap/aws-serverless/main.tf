@@ -101,6 +101,7 @@ data "aws_iam_policy_document" "terraform" {
       "kms:GenerateDataKey*",
       "kms:GetKeyPolicy",
       "kms:GetKeyRotationStatus",
+      "kms:ListResourceTags",
       "kms:PutKeyPolicy",
       "kms:ScheduleKeyDeletion",
       "kms:TagResource",
