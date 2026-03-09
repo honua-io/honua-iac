@@ -23,7 +23,7 @@ data "azurerm_subscription" "current" {}
 data "azurerm_client_config" "current" {}
 
 locals {
-  scope = var.scope
+  scope = var.scope != "" ? var.scope : data.azurerm_subscription.current.id
 }
 
 resource "azuread_application" "terraform" {
