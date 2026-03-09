@@ -238,7 +238,7 @@ jobs:
       HONUA_ACA_PREVIOUS_IMAGE: ${{ vars.HONUA_ACA_PREVIOUS_IMAGE || '' }}
       HONUA_FUNCTIONS_IMAGE: ${{ vars.HONUA_FUNCTIONS_IMAGE || '' }}
       HONUA_FUNCTIONS_PREVIOUS_IMAGE: ${{ vars.HONUA_FUNCTIONS_PREVIOUS_IMAGE || '' }}
-      HONUA_AZURE_DATA_CACHE_FILE: ${{ runner.temp }}/cache/azure-data-reuse.env
+      HONUA_AZURE_DATA_CACHE_FILE: ${{ github.workspace }}/.gha-cache/azure-data-reuse.env
       HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/run-cloud-post-apply-validation.sh
       HONUA_PLATFORM_VALIDATION_IMPORT_TABLE_PREFIX: ${{ inputs.deployment_profile == 'ephemeral' && inputs.no_destroy == false && format('cloud{0}{1}', github.run_id, github.run_attempt) || '' }}
     steps:
@@ -263,7 +263,7 @@ jobs:
         if: ${{ inputs.reuse_data_stack && inputs.run_live }}
         uses: actions/cache/restore@v4
         with:
-          path: ${{ runner.temp }}/cache/azure-data-reuse.env
+          path: ${{ github.workspace }}/.gha-cache/azure-data-reuse.env
           key: terraform-manual-validation-azure-data-${{ github.ref_name }}-${{ env.AZURE_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             terraform-manual-validation-azure-data-${{ github.ref_name }}-${{ env.AZURE_VALIDATION_REGION }}-
@@ -549,7 +549,7 @@ jobs:
         if: ${{ always() && inputs.reuse_data_stack && inputs.run_live }}
         uses: actions/cache/save@v4
         with:
-          path: ${{ runner.temp }}/cache/azure-data-reuse.env
+          path: ${{ github.workspace }}/.gha-cache/azure-data-reuse.env
           key: terraform-manual-validation-azure-data-${{ github.ref_name }}-${{ env.AZURE_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
 
   aws-live:
@@ -570,7 +570,7 @@ jobs:
       HONUA_AWS_ECS_CANARY_IMAGE: ${{ vars.HONUA_AWS_ECS_CANARY_IMAGE || '' }}
       HONUA_AWS_SERVERLESS_IMAGE: ${{ vars.HONUA_AWS_SERVERLESS_IMAGE || '' }}
       HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE: ${{ vars.HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE || '' }}
-      HONUA_AWS_DATA_CACHE_FILE: ${{ runner.temp }}/cache/aws-data-reuse.env
+      HONUA_AWS_DATA_CACHE_FILE: ${{ github.workspace }}/.gha-cache/aws-data-reuse.env
       HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/run-cloud-post-apply-validation.sh
       HONUA_PLATFORM_VALIDATION_IMPORT_TABLE_PREFIX: ${{ inputs.deployment_profile == 'ephemeral' && inputs.no_destroy == false && format('cloud{0}{1}', github.run_id, github.run_attempt) || '' }}
     steps:
@@ -595,7 +595,7 @@ jobs:
         if: ${{ inputs.reuse_data_stack && inputs.run_live }}
         uses: actions/cache/restore@v4
         with:
-          path: ${{ runner.temp }}/cache/aws-data-reuse.env
+          path: ${{ github.workspace }}/.gha-cache/aws-data-reuse.env
           key: terraform-manual-validation-aws-data-${{ github.ref_name }}-${{ env.AWS_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             terraform-manual-validation-aws-data-${{ github.ref_name }}-${{ env.AWS_VALIDATION_REGION }}-
@@ -873,7 +873,7 @@ jobs:
         if: ${{ always() && inputs.reuse_data_stack && inputs.run_live }}
         uses: actions/cache/save@v4
         with:
-          path: ${{ runner.temp }}/cache/aws-data-reuse.env
+          path: ${{ github.workspace }}/.gha-cache/aws-data-reuse.env
           key: terraform-manual-validation-aws-data-${{ github.ref_name }}-${{ env.AWS_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
 
   k8s-live:
