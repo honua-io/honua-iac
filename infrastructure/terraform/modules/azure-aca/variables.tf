@@ -286,6 +286,18 @@ variable "scaling_concurrent_requests" {
   default     = "50"
 }
 
+variable "startup_probe_initial_delay_seconds" {
+  description = "Initial delay before ACA startup probes begin, to leave room for cold boot and migrations."
+  type        = number
+  default     = 20
+}
+
+variable "startup_probe_failure_threshold" {
+  description = "ACA startup probe failure threshold. Higher values prevent long first-start sequences from being killed prematurely."
+  type        = number
+  default     = 30
+}
+
 variable "db_backup_retention_days" {
   description = "Backup retention period in days for PostgreSQL."
   type        = number

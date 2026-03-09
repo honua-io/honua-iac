@@ -52,7 +52,7 @@ RUN_QUOTA_PREFLIGHT=true
 TIMEOUT_SECONDS="${HONUA_AZURE_TEST_TIMEOUT_SECONDS:-900}"
 LOAD_REQUESTS="${HONUA_AZURE_LOAD_REQUESTS:-120}"
 LOAD_CONCURRENCY="${HONUA_AZURE_LOAD_CONCURRENCY:-20}"
-ACA_MIN_REPLICAS="${HONUA_AZURE_ACA_MIN_REPLICAS:-0}"
+ACA_MIN_REPLICAS="${HONUA_AZURE_ACA_MIN_REPLICAS:-1}"
 ACA_MAX_REPLICAS="${HONUA_AZURE_ACA_MAX_REPLICAS:-3}"
 ACA_SCALE_TARGET_MIN_REPLICAS="${HONUA_AZURE_ACA_SCALE_TARGET_MIN_REPLICAS:-2}"
 READY_SLO_SECONDS="${HONUA_READY_SLO_SECONDS:-600}"
@@ -95,6 +95,7 @@ FUNCTIONS_NAME_PREFIX=""
 DATA_RESOURCE_GROUP=""
 EXPIRES_AT_UTC=""
 DB_PASSWORD_EFFECTIVE=""
+ACA_DB_FIREWALL_RULES=()
 USE_DOCKER_TF=false
 USE_DOCKER_AZ_CLI=false
 USE_DOCKER_PG_TOOLS=false
@@ -719,6 +720,97 @@ wait_for_ready() {
     fi
 
     sleep 10
+  done
+}
+
+ensure_aca_db_firewall_access() {
+  local resource_group="$1"
+  local app_name="$2"
+  local db_fqdn="$3"
+  local server_name
+  local outbound_ips
+  local index=0
+  local rule_name
+
+  if [[ "$DATA_APPLIED" != "true" || -z "$DATA_RESOURCE_GROUP" || -z "$resource_group" || -z "$app_name" || -z "$db_fqdn" ]]; then
+    return 0
+  fi
+
+  if [[ "$db_fqdn" != *.postgres.database.azure.com ]]; then
+    return 0
+  fi
+
+  server_name="${db_fqdn%%.*}"
+  outbound_ips="$(run_az containerapp show \
+    --resource-group "$resource_group" \
+    --name "$app_name" \
+    --query "properties.outboundIpAddresses[]" \
+    -o tsv || true)"
+
+  if [[ -z "$outbound_ips" ]]; then
+    log_warn "ACA outbound IP discovery returned no values for $resource_group/$app_name"
+    return 0
+  fi
+
+  while IFS= read -r ip; do
+    if [[ -z "$ip" ]]; then
+      continue
+    fi
+
+    rule_name="aca-validation-egress-$index"
+    log_info "Allowing ACA outbound IP $ip to reach PostgreSQL server $server_name"
+    run_az postgres flexible-server firewall-rule create \
+      --resource-group "$DATA_RESOURCE_GROUP" \
+      --name "$server_name" \
+      --rule-name "$rule_name" \
+      --start-ip-address "$ip" \
+      --end-ip-address "$ip" >/dev/null
+
+    ACA_DB_FIREWALL_RULES+=("$server_name:$rule_name")
+    index=$((index + 1))
+  done <<< "$outbound_ips"
+}
+
+diagnose_aca_failure() {
+  local resource_group="$1"
+  local app_name="$2"
+
+  if [[ -z "$resource_group" || -z "$app_name" ]]; then
+    return 0
+  fi
+
+  log_warn "ACA readiness failed; dumping revision state for ${resource_group}/${app_name}"
+  run_az containerapp revision list \
+    --resource-group "$resource_group" \
+    --name "$app_name" \
+    --query "[].{name:name,state:properties.runningState,details:properties.runningStateDetails,health:properties.healthState,replicas:properties.replicas}" \
+    -o table || true
+
+  run_az containerapp replica list \
+    --resource-group "$resource_group" \
+    --name "$app_name" \
+    --query "[].{name:name,state:properties.runningStateDetails,ready:properties.containers[0].ready,restarts:properties.containers[0].restartCount}" \
+    -o table || true
+}
+
+clear_aca_db_firewall_access() {
+  local entry
+  local server_name
+  local rule_name
+
+  if [[ "${#ACA_DB_FIREWALL_RULES[@]}" -eq 0 || -z "$DATA_RESOURCE_GROUP" ]]; then
+    return 0
+  fi
+
+  for entry in "${ACA_DB_FIREWALL_RULES[@]}"; do
+    server_name="${entry%%:*}"
+    rule_name="${entry#*:}"
+
+    run_az postgres flexible-server firewall-rule delete \
+      --resource-group "$DATA_RESOURCE_GROUP" \
+      --name "$server_name" \
+      --rule-name "$rule_name" \
+      --yes >/dev/null || true
   done
 }
 
@@ -1705,13 +1797,18 @@ run_aca_checks() {
   local url="$1"
   local db_fqdn="$2"
   local resource_group="$3"
+  local app_name="$4"
   local redis_resource_group="$resource_group"
 
   if [[ "$DATA_APPLIED" == "true" && -n "$DATA_RESOURCE_GROUP" ]]; then
     redis_resource_group="$DATA_RESOURCE_GROUP"
   fi
 
-  wait_for_ready "$url" "$TIMEOUT_SECONDS"
+  ensure_aca_db_firewall_access "$resource_group" "$app_name" "$db_fqdn"
+  if ! wait_for_ready "$url" "$TIMEOUT_SECONDS"; then
+    diagnose_aca_failure "$resource_group" "$app_name"
+    return 1
+  fi
   if [[ "$CHECK_PROTOCOLS" == "true" ]]; then
     verify_protocol_endpoints "$url"
     run_admin_api_crud_smoke "$url" "$db_fqdn"
@@ -1772,7 +1869,8 @@ apply_aca_stack() {
     url="$(run_tf -chdir=examples/azure output -raw honua_url)"
     db_fqdn="$(run_tf -chdir=examples/azure output -raw database_fqdn)"
     resource_group="$(run_tf -chdir=examples/azure output -raw resource_group_name)"
-    run_aca_checks "$url" "$db_fqdn" "$resource_group"
+    app_name="$(run_tf -chdir=examples/azure output -raw container_app_name)"
+    run_aca_checks "$url" "$db_fqdn" "$resource_group" "$app_name"
 
     export TF_VAR_honua_image="$ACA_IMAGE"
     plan_apply "examples/azure" "aca-upgrade.tfplan" "aca-upgrade"
@@ -1780,7 +1878,7 @@ apply_aca_stack() {
     db_fqdn="$(run_tf -chdir=examples/azure output -raw database_fqdn)"
     resource_group="$(run_tf -chdir=examples/azure output -raw resource_group_name)"
     app_name="$(run_tf -chdir=examples/azure output -raw container_app_name)"
-    run_aca_checks "$url" "$db_fqdn" "$resource_group"
+    run_aca_checks "$url" "$db_fqdn" "$resource_group" "$app_name"
 
     if [[ "$QUICK_SCALE" == "true" ]]; then
       log_info "Running quick ACA scale validation by raising min replicas to $ACA_SCALE_TARGET_MIN_REPLICAS"
@@ -1796,12 +1894,12 @@ apply_aca_stack() {
 
     export TF_VAR_honua_image="$ACA_PREVIOUS_IMAGE"
     plan_apply "examples/azure" "aca-rollback.tfplan" "aca-rollback"
-    run_aca_checks "$url" "$db_fqdn" "$resource_group"
+    run_aca_checks "$url" "$db_fqdn" "$resource_group" "$app_name"
 
     if [[ "$AUTO_DESTROY" != "true" ]]; then
       export TF_VAR_honua_image="$ACA_IMAGE"
       plan_apply "examples/azure" "aca-restore-current.tfplan" "aca-restore-current"
-      run_aca_checks "$url" "$db_fqdn" "$resource_group"
+      run_aca_checks "$url" "$db_fqdn" "$resource_group" "$app_name"
     fi
 
     export TF_VAR_honua_image="$ACA_IMAGE"
@@ -1813,7 +1911,7 @@ apply_aca_stack() {
     resource_group="$(run_tf -chdir=examples/azure output -raw resource_group_name)"
     app_name="$(run_tf -chdir=examples/azure output -raw container_app_name)"
 
-    run_aca_checks "$url" "$db_fqdn" "$resource_group"
+    run_aca_checks "$url" "$db_fqdn" "$resource_group" "$app_name"
 
     if [[ "$QUICK_SCALE" == "true" ]]; then
       log_info "Running quick ACA scale validation by raising min replicas to $ACA_SCALE_TARGET_MIN_REPLICAS"
@@ -2035,6 +2133,7 @@ cleanup() {
   if [[ "$AUTO_DESTROY" == "true" ]]; then
     destroy_functions_stack
     destroy_aca_stack
+    clear_aca_db_firewall_access
     if [[ "$DESTROY_DATA" == "true" ]]; then
       destroy_data_stack
     elif [[ "$DATA_APPLIED" == "true" ]]; then

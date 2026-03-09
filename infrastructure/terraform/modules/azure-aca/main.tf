@@ -335,9 +335,10 @@ resource "azurerm_container_app" "this" {
         path      = "/healthz/ready"
         port      = var.container_port
 
+        initial_delay           = var.startup_probe_initial_delay_seconds
         interval_seconds        = 10
         timeout                 = 5
-        failure_count_threshold = 10
+        failure_count_threshold = var.startup_probe_failure_threshold
       }
     }
   }
