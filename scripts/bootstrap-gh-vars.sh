@@ -30,7 +30,7 @@ Options:
                                     Default: honua-io/honua-terraform
   --source-repo <owner/repo>        Repo to read registry publish vars from
                                     Default: honua-io/honua-server
-  --generic-image <ref>             Base public image used for k8s and registry fallbacks
+  --generic-image <ref>             Base public image used for k8s and ACA fallback
                                     Default: ghcr.io/honua-io/honua-server:latest-aot
   --aws-ecs-image <ref>             Explicit ECS image override
   --aws-serverless-image <ref>      Explicit Lambda image override
@@ -41,7 +41,7 @@ Options:
   --ecr-repository <name>           ECR repository override
   --acr-login-server <host>         ACR login server override
   --acr-repository <name>           ACR repository override
-  --use-jit                         Use latest/latest-lambda/latest-functions tags
+  --use-jit                         Use latest-ecs/latest-lambda/latest-functions tags
   --no-stack-sync                   Do not update validation stack selection vars
   --dry-run                         Print values without writing GitHub variables
   -h, --help                        Show this help
@@ -50,16 +50,16 @@ Notes:
   - Secrets remain in GitHub Secrets. This helper only manages repo variables.
   - ECS/Lambda images are derived from the honua-server ECR publish lane when AWS
     credentials are available in the current shell.
-  - AWS cloud defaults now assume Arm runtimes: ECS resolves to the generic
-    `latest-aot` image family and Lambda resolves to the `*-lambda-aot` image
+  - AWS cloud defaults now assume Arm runtimes: ECS resolves to the `*-ecs-aot`
+    image family and Lambda resolves to the `*-lambda-aot` image
     family, both targeting arm64 by default.
   - ACA/Functions images are derived from ACR when ACR is configured in the
     source repo.
   - Azure Container Apps and Azure Functions should use amd64 cloud images.
     AKS should use the generic multi-arch image family so Arm node pools can
     pull arm64 variants automatically.
-  - GHCR is kept as the generic/k8s fallback and as a temporary fallback for
-    cloud targets when their cloud-native registry lane is not configured yet.
+  - GHCR is kept as the generic/k8s fallback and as a temporary ACA fallback
+    when the Azure cloud-native registry lane is not configured yet.
 EOF
 }
 
@@ -119,7 +119,7 @@ resolve_generic_image() {
 }
 
 resolve_aws_ecs_image() {
-  local ecs_tag="latest-aot"
+  local ecs_tag="latest-ecs-aot"
   local account_id=""
 
   if [[ -n "$AWS_ECS_IMAGE" ]]; then
@@ -127,7 +127,7 @@ resolve_aws_ecs_image() {
   fi
 
   if [[ "$USE_AOT" != "true" ]]; then
-    ecs_tag="latest"
+    ecs_tag="latest-ecs"
   fi
 
   if [[ -z "$ECR_REGION" ]]; then
@@ -152,11 +152,16 @@ resolve_aws_ecs_image() {
         return 0
       fi
 
-      log_warn "ECR image tag '$ecs_tag' was not found in ${account_id}.dkr.ecr.${ECR_REGION}.amazonaws.com/${ECR_REPOSITORY}; falling back to generic image."
+      log_warn "ECR image tag '$ecs_tag' was not found in ${account_id}.dkr.ecr.${ECR_REGION}.amazonaws.com/${ECR_REPOSITORY}; leaving HONUA_AWS_ECS_IMAGE unset."
+      return 0
     fi
   fi
 
-  AWS_ECS_IMAGE="$GENERIC_IMAGE"
+  if [[ -n "$ECR_REGION" ]]; then
+    log_warn "AWS credentials are not available in the current shell; leaving HONUA_AWS_ECS_IMAGE unset."
+  else
+    log_warn "AWS_ECR_REGION is not configured in $SOURCE_REPO; leaving HONUA_AWS_ECS_IMAGE unset."
+  fi
 }
 
 resolve_aws_serverless_image() {

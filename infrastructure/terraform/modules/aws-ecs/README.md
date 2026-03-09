@@ -9,7 +9,7 @@ module "honua" {
   source = "../../modules/aws-ecs"
 
   environment    = "dev"
-  image          = "ghcr.io/honua-io/honua-server:v1.2.3-aot"
+  image          = "123456789012.dkr.ecr.us-west-2.amazonaws.com/honua-server:v1.2.3-ecs-aot"
   admin_password = var.honua_admin_password
   enable_postgis = true  # Required — Honua needs PostGIS + PostGIS Raster
 
@@ -34,7 +34,7 @@ module "honua" {
   name_prefix = "honua"
 
   # Container
-  image            = "ghcr.io/honua-io/honua-server:v1.2.3-aot"  # Pin to a release AOT tag
+  image            = "123456789012.dkr.ecr.us-west-2.amazonaws.com/honua-server:v1.2.3-ecs-aot"  # Pin to a release ECS AOT tag in ECR
   container_cpu    = 1024   # 1 vCPU
   container_memory = 2048   # 2 GB
   desired_count    = 2      # Minimum 2 for HA
@@ -68,7 +68,7 @@ module "honua" {
 
   # Optional ALB canary path
   canary_enabled           = true
-  canary_image             = "ghcr.io/honua-io/honua-server:v1.2.4-aot"
+  canary_image             = "123456789012.dkr.ecr.us-west-2.amazonaws.com/honua-server:v1.2.4-ecs-aot"
   canary_desired_count     = 1
   canary_weight_percentage = 0
 
