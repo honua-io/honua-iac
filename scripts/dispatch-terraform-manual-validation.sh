@@ -208,11 +208,20 @@ load_repo_variables() {
   gh variable list --repo "$REPO" --json name,value --jq '.[] | [.name, .value] | @tsv'
 }
 
+load_repo_secret_names() {
+  gh secret list --repo "$REPO" | awk 'NR>1 {print $1}'
+}
+
 repo_var_value() {
   local name="$1"
   local line=""
   line="$(printf '%s\n' "$REPO_VARIABLES" | awk -F '\t' -v key="$name" '$1 == key { print $2; exit }')"
   printf '%s\n' "$line"
+}
+
+repo_secret_exists() {
+  local name="$1"
+  printf '%s\n' "$REPO_SECRET_NAMES" | awk -v key="$name" '$1 == key { found=1 } END { exit(found ? 0 : 1) }'
 }
 
 report_reuse_status() {
@@ -227,27 +236,26 @@ report_reuse_status() {
 
   case "$cloud" in
     azure)
-      for name in \
-        HONUA_AZURE_EXISTING_DB_FQDN \
-        HONUA_AZURE_EXISTING_DB_CONNECTION_STRING \
-        HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING; do
-        if [[ -z "$(repo_var_value "$name")" ]]; then
-          missing+=("$name")
-        fi
-      done
+      if [[ -z "$(repo_var_value "HONUA_AZURE_EXISTING_DB_FQDN")" ]]; then
+        missing+=("HONUA_AZURE_EXISTING_DB_FQDN")
+      fi
+      if ! repo_secret_exists "HONUA_AZURE_EXISTING_DB_CONNECTION_STRING"; then
+        missing+=("HONUA_AZURE_EXISTING_DB_CONNECTION_STRING")
+      fi
+      if ! repo_secret_exists "HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING"; then
+        missing+=("HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING")
+      fi
 
       if [[ "${#missing[@]}" -eq 0 ]]; then
-        log_info "Azure CI data reuse is configured via repo vars; PostGIS/Redis should be reused."
+        log_info "Azure CI data reuse is configured via repo var + secrets; PostGIS/Redis should be reused."
       else
         log_warn "Azure repo-var reuse is not configured. The workflow will fall back to the persisted GitHub Actions cache if a prior reusable Azure data run exists; otherwise this run will reprovision PostGIS/Redis."
-        printf '  missing vars: %s\n' "${missing[*]}"
+        printf '  missing entries: %s\n' "${missing[*]}"
       fi
       ;;
     aws)
       for name in \
         HONUA_AWS_EXISTING_DB_ENDPOINT \
-        HONUA_AWS_EXISTING_DB_CONNECTION_STRING \
-        HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING \
         HONUA_AWS_EXISTING_VPC_ID \
         HONUA_AWS_EXISTING_VPC_CIDR \
         HONUA_AWS_EXISTING_PUBLIC_SUBNET_IDS \
@@ -256,12 +264,18 @@ report_reuse_status() {
           missing+=("$name")
         fi
       done
+      if ! repo_secret_exists "HONUA_AWS_EXISTING_DB_CONNECTION_STRING"; then
+        missing+=("HONUA_AWS_EXISTING_DB_CONNECTION_STRING")
+      fi
+      if ! repo_secret_exists "HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING"; then
+        missing+=("HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING")
+      fi
 
       if [[ "${#missing[@]}" -eq 0 ]]; then
-        log_info "AWS CI data reuse is configured via repo vars; PostGIS/Redis/VPC should be reused."
+        log_info "AWS CI data reuse is configured via repo vars + secrets; PostGIS/Redis/VPC should be reused."
       else
         log_warn "AWS repo-var reuse is not configured. The workflow will fall back to the persisted GitHub Actions cache if a prior reusable AWS data run exists; otherwise this run will reprovision VPC/PostGIS/Redis."
-        printf '  missing vars: %s\n' "${missing[*]}"
+        printf '  missing entries: %s\n' "${missing[*]}"
       fi
       ;;
   esac
@@ -293,6 +307,7 @@ main() {
   parse_args "$@"
 
   REPO_VARIABLES="$(load_repo_variables)"
+  REPO_SECRET_NAMES="$(load_repo_secret_names)"
 
   case "$CLOUD" in
     both)
