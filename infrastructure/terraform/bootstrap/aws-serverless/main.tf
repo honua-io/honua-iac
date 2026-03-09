@@ -168,6 +168,7 @@ data "aws_iam_policy_document" "terraform" {
       "iam:CreatePolicy",
       "iam:DeletePolicy",
       "iam:GetPolicy",
+      "iam:GetPolicyVersion",
       "iam:ListPolicyVersions",
       "iam:CreatePolicyVersion",
       "iam:DeletePolicyVersion",

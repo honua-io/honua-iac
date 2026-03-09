@@ -767,12 +767,13 @@ ensure_aca_db_firewall_access() {
   local resource_group="$1"
   local app_name="$2"
   local db_fqdn="$3"
+  local postgres_resource_group=""
   local server_name
   local outbound_ips
   local index=0
   local rule_name
 
-  if [[ "$DATA_APPLIED" != "true" || -z "$DATA_RESOURCE_GROUP" || -z "$resource_group" || -z "$app_name" || -z "$db_fqdn" ]]; then
+  if [[ -z "$resource_group" || -z "$app_name" || -z "$db_fqdn" ]]; then
     return 0
   fi
 
@@ -781,6 +782,20 @@ ensure_aca_db_firewall_access() {
   fi
 
   server_name="${db_fqdn%%.*}"
+  postgres_resource_group="$DATA_RESOURCE_GROUP"
+  if [[ -z "$postgres_resource_group" ]]; then
+    postgres_resource_group="$(run_az resource list \
+      --name "$server_name" \
+      --resource-type "Microsoft.DBforPostgreSQL/flexibleServers" \
+      --query "[0].resourceGroup" \
+      -o tsv || true)"
+  fi
+
+  if [[ -z "$postgres_resource_group" ]]; then
+    log_warn "Could not determine PostgreSQL resource group for $server_name; skipping ACA DB firewall access"
+    return 0
+  fi
+
   outbound_ips="$(run_az containerapp show \
     --resource-group "$resource_group" \
     --name "$app_name" \
@@ -800,13 +815,13 @@ ensure_aca_db_firewall_access() {
     rule_name="aca-validation-egress-$index"
     log_info "Allowing ACA outbound IP $ip to reach PostgreSQL server $server_name"
     run_az postgres flexible-server firewall-rule create \
-      --resource-group "$DATA_RESOURCE_GROUP" \
+      --resource-group "$postgres_resource_group" \
       --name "$server_name" \
       --rule-name "$rule_name" \
       --start-ip-address "$ip" \
       --end-ip-address "$ip" >/dev/null
 
-    ACA_DB_FIREWALL_RULES+=("$server_name:$rule_name")
+    ACA_DB_FIREWALL_RULES+=("${postgres_resource_group}|${server_name}|${rule_name}")
     index=$((index + 1))
   done <<< "$outbound_ips"
 }
@@ -835,19 +850,22 @@ diagnose_aca_failure() {
 
 clear_aca_db_firewall_access() {
   local entry
+  local resource_group
   local server_name
   local rule_name
 
-  if [[ "${#ACA_DB_FIREWALL_RULES[@]}" -eq 0 || -z "$DATA_RESOURCE_GROUP" ]]; then
+  if [[ "${#ACA_DB_FIREWALL_RULES[@]}" -eq 0 ]]; then
     return 0
   fi
 
   for entry in "${ACA_DB_FIREWALL_RULES[@]}"; do
-    server_name="${entry%%:*}"
-    rule_name="${entry#*:}"
+    resource_group="${entry%%|*}"
+    entry="${entry#*|}"
+    server_name="${entry%%|*}"
+    rule_name="${entry##*|}"
 
     run_az postgres flexible-server firewall-rule delete \
-      --resource-group "$DATA_RESOURCE_GROUP" \
+      --resource-group "$resource_group" \
       --name "$server_name" \
       --rule-name "$rule_name" \
       --yes >/dev/null || true
