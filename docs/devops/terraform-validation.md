@@ -80,7 +80,7 @@ scripts/bootstrap-gh-vars.sh
 
 Default behavior:
 
-- `HONUA_AWS_ECS_IMAGE` prefers the `honua-server` ECR publish lane (`latest-aot`) and only falls back to GHCR when ECR is not configured or not reachable from the current shell.
+- `HONUA_AWS_ECS_IMAGE` is derived from the `honua-server` ECR publish lane (`latest-ecs-aot`) and is intentionally left unset when the ECR ECS lane is not reachable.
 - `HONUA_AWS_SERVERLESS_IMAGE` is derived from the `honua-server` ECR publish lane (`latest-lambda-aot`) when AWS credentials are available.
 - `HONUA_ACA_IMAGE` and `HONUA_FUNCTIONS_IMAGE` prefer ACR when `ACR_LOGIN_SERVER` is configured in `honua-server`.
 - `HONUA_K8S_IMAGE` continues to use the public GHCR `latest-aot` image by default.
@@ -91,7 +91,7 @@ Recommended tag shapes:
 - Azure Container Apps: generic image tag in ACR (`latest-aot` preferred, `latest` debug fallback); ACA runs `amd64`
 - Azure Functions: ACR URI with `*-functions-aot` preferred; `*-functions` is the debug fallback; Functions custom containers are treated as `amd64`
 - AKS: generic multi-arch image tag (`latest-aot` preferred, `latest` debug fallback); Arm node pools should pull the `arm64` variant automatically
-- AWS ECS: generic image tag in ECR (`latest-aot` preferred, `latest` debug fallback); ECS validation defaults to `ARM64`
+- AWS ECS: ECR URI with `*-ecs-aot` preferred; `*-ecs` is the debug fallback; ECS validation defaults to `ARM64`
 - AWS Lambda: ECR URI with `*-lambda-aot` preferred; `*-lambda` is the debug fallback; Lambda validation defaults to `arm64`
 
 For local runs, prefer explicit script flags instead of exporting image refs as secrets:
@@ -284,7 +284,7 @@ Local script entry points:
 - AWS ECS canary validation is opt-in. When `HONUA_AWS_ECS_CANARY_ENABLED=true`, the live script provisions the secondary ECS service with `0%` default traffic unless you explicitly set a non-zero `HONUA_AWS_ECS_CANARY_WEIGHT_PERCENTAGE`, waits for the canary tasks to become healthy, and verifies the ALB header route before continuing. Recommended rollout shape is still two-step: create canary at `0%`, verify, then raise weight in a later run.
 - Azure Functions upgrade/rollback validation is now slot-based when `HONUA_RUN_UPGRADE_ROLLBACK=true`: the live script keeps production on the previous image, stages the candidate image in the configured deployment slot, exercises promote/rollback/restore through the Honua admin API, then reconciles Terraform back to the current image baseline.
 - Current known issue (February 28, 2026): generic web tags (`latest`, `latest-aot`) crash on Azure Functions custom container startup (container exit code `139`). Use Functions-targeted tags (`*-functions-aot` preferred, `*-functions` debug fallback).
-- Registry strategy: web runtime tags (`latest`, `latest-aot`, versioned base tags) are published to GHCR/Docker Hub, while serverless platform tags (`*-lambda`, `*-lambda-aot`, `*-functions`, `*-functions-aot`) are published by CI directly to cloud registries (ECR/ACR).
+- Registry strategy: web runtime tags (`latest`, `latest-aot`, versioned base tags) are published to GHCR/Docker Hub, while cloud-targeted platform tags (`*-ecs`, `*-ecs-aot`, `*-lambda`, `*-lambda-aot`, `*-functions`, `*-functions-aot`) are published by CI directly to cloud registries (ECR/ACR).
 - `.terraform` directories are already ignored in `.gitignore`.
 - Live scripts auto-destroy compute resources by default unless `--no-destroy` / `no_destroy=true` is set. For both clouds, local script runs retain the data stack by default for reuse and only tear it down when `--destroy-data` (or `HONUA_AZURE_DESTROY_DATA=true` / `HONUA_AWS_DESTROY_DATA=true`) is set. GitHub manual validation now passes `--destroy-data` automatically for `deployment_profile=ephemeral` when `no_destroy=false`.
 - To run the cross-repo platform suite locally after apply, point the live validation scripts at the `honua-server` runner: `export HONUA_PLATFORM_VALIDATION_SCRIPT=/path/to/honua-server/scripts/run-cloud-post-apply-validation.sh`.

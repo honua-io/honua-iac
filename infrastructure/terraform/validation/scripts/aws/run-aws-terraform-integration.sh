@@ -28,6 +28,8 @@ ENVIRONMENT="${AWS_TF_ENVIRONMENT:-it}"
 NAME_PREFIX_BASE="${AWS_TF_NAME_PREFIX_BASE:-h$(date -u +%m%d%H%M)$((RANDOM % 10))}"
 DEFAULT_HONUA_IMAGE="ghcr.io/honua-io/honua-server:latest"
 DEFAULT_HONUA_AOT_IMAGE="ghcr.io/honua-io/honua-server:latest-aot"
+DEFAULT_ECS_TAG_SUFFIX="-ecs"
+DEFAULT_ECS_AOT_TAG_SUFFIX="-ecs-aot"
 DEFAULT_LAMBDA_TAG_SUFFIX="-lambda"
 DEFAULT_LAMBDA_AOT_TAG_SUFFIX="-lambda-aot"
 USE_AOT="${HONUA_USE_AOT:-false}"
@@ -107,7 +109,7 @@ Options:
   --region <aws-region>                AWS region (default: us-east-1)
   --environment <name>                 Environment suffix in names (default: it)
   --name-prefix-base <prefix>          Base prefix for generated resource names
-  --aot                                Use latest-aot for ECS; map serverless tag '*-lambda' -> '*-lambda-aot' when provided (JIT is debug fallback)
+  --aot                                Map ECS tag '*-ecs' -> '*-ecs-aot' and serverless tag '*-lambda' -> '*-lambda-aot' when provided (JIT is debug fallback)
   --ecs-image <image>                  ECS container image
   --ecs-canary-enabled                 Enable the optional ECS ALB canary service
   --ecs-canary-image <image>           Optional canary ECS image (defaults to --ecs-image)
@@ -494,7 +496,13 @@ apply_aot_mode() {
     return
   fi
 
-  if [[ "$ECS_IMAGE" == "$DEFAULT_HONUA_IMAGE" ]]; then
+  if [[ -n "$ECS_IMAGE" && "$ECS_IMAGE" == *:* ]]; then
+    local ecs_tag
+    ecs_tag="${ECS_IMAGE##*:}"
+    if [[ "$ecs_tag" == *"$DEFAULT_ECS_TAG_SUFFIX" && "$ecs_tag" != *"$DEFAULT_ECS_AOT_TAG_SUFFIX" ]]; then
+      ECS_IMAGE="${ECS_IMAGE%:*}:${ecs_tag}-aot"
+    fi
+  elif [[ "$ECS_IMAGE" == "$DEFAULT_HONUA_IMAGE" ]]; then
     ECS_IMAGE="$DEFAULT_HONUA_AOT_IMAGE"
   fi
 
