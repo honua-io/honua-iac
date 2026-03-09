@@ -166,8 +166,8 @@ check "nat_gateway_required" {
 
 check "http_ingress_requires_https" {
   assert {
-    condition     = local.use_https || length(local.http_ingress_cidrs) == 0
-    error_message = "HTTP ingress requires HTTPS to be configured (set alb_certificate_arn or domain_name/route53_zone_id)."
+    condition     = local.use_https || !contains(local.http_ingress_cidrs, "0.0.0.0/0")
+    error_message = "Public HTTP ingress over 0.0.0.0/0 requires HTTPS to be configured (set alb_certificate_arn or domain_name/route53_zone_id)."
   }
 }
 
@@ -771,22 +771,7 @@ data "aws_iam_policy_document" "kms" {
   #checkov:skip=CKV_AWS_356: Root access is required for KMS administration.
   #checkov:skip=CKV_AWS_109: Root access is required for KMS administration.
   statement {
-    actions = [
-      "kms:CancelKeyDeletion",
-      "kms:Create*",
-      "kms:DeleteAlias",
-      "kms:Describe*",
-      "kms:Disable*",
-      "kms:Enable*",
-      "kms:Get*",
-      "kms:List*",
-      "kms:Put*",
-      "kms:RevokeGrant",
-      "kms:ScheduleKeyDeletion",
-      "kms:TagResource",
-      "kms:UntagResource",
-      "kms:Update*"
-    ]
+    actions   = ["kms:*"]
     resources = ["*"]
     principals {
       type        = "AWS"
@@ -800,7 +785,17 @@ data "aws_iam_policy_document" "kms" {
     resources = ["*"]
     principals {
       type        = "Service"
-      identifiers = ["logs.${data.aws_region.current.name}.amazonaws.com"]
+      identifiers = ["logs.${data.aws_region.current.id}.amazonaws.com"]
+    }
+  }
+
+  statement {
+    sid       = "AllowSecretsManagerUse"
+    actions   = ["kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:DescribeKey", "kms:CreateGrant"]
+    resources = ["*"]
+    principals {
+      type        = "Service"
+      identifiers = ["secretsmanager.${data.aws_region.current.id}.amazonaws.com"]
     }
   }
 
@@ -936,6 +931,11 @@ resource "aws_ecs_task_definition" "this" {
   execution_role_arn       = aws_iam_role.task_execution.arn
   task_role_arn            = aws_iam_role.task.arn
 
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = upper(var.task_cpu_architecture)
+  }
+
   container_definitions = jsonencode([
     {
       name      = "honua"
@@ -973,6 +973,11 @@ resource "aws_ecs_task_definition" "canary" {
   memory                   = var.container_memory
   execution_role_arn       = aws_iam_role.task_execution.arn
   task_role_arn            = aws_iam_role.task.arn
+
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = upper(var.task_cpu_architecture)
+  }
 
   container_definitions = jsonencode([
     {
