@@ -145,7 +145,15 @@ data "aws_iam_policy_document" "terraform" {
       "wafv2:ListWebACLs",
       "wafv2:TagResource",
       "wafv2:UntagResource",
-      "wafv2:UpdateWebACL"
+      "wafv2:UpdateWebACL",
+      "application-autoscaling:DeleteScalingPolicy",
+      "application-autoscaling:DeregisterScalableTarget",
+      "application-autoscaling:Describe*",
+      "application-autoscaling:ListTagsForResource",
+      "application-autoscaling:PutScalingPolicy",
+      "application-autoscaling:RegisterScalableTarget",
+      "application-autoscaling:TagResource",
+      "application-autoscaling:UntagResource"
     ]
     resources = ["*"]
 
@@ -174,6 +182,7 @@ data "aws_iam_policy_document" "terraform" {
       "iam:CreatePolicy",
       "iam:DeletePolicy",
       "iam:GetPolicy",
+      "iam:GetPolicyVersion",
       "iam:ListPolicyVersions",
       "iam:CreatePolicyVersion",
       "iam:DeletePolicyVersion",
