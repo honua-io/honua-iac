@@ -229,6 +229,18 @@ gh workflow run terraform-manual-validation.yml \
   -f allow_destroy_plan=false
 ```
 
+Separate AWS and Azure dispatches on the same ref:
+
+```bash
+./scripts/dispatch-terraform-manual-validation.sh --cloud both --ref trunk
+```
+
+Single combined run (legacy behavior):
+
+```bash
+./scripts/dispatch-terraform-manual-validation.sh --cloud both --single-run --ref trunk
+```
+
 Local script entry points:
 
 ```bash
@@ -293,4 +305,6 @@ Local script entry points:
 - Registry strategy: web runtime tags (`latest`, `latest-aot`, versioned base tags) are published to GHCR/Docker Hub, while cloud-targeted platform tags (`*-ecs`, `*-ecs-aot`, `*-lambda`, `*-lambda-aot`, `*-functions`, `*-functions-aot`) are published by CI directly to cloud registries (ECR/ACR).
 - `.terraform` directories are already ignored in `.gitignore`.
 - Live scripts auto-destroy compute resources by default unless `--no-destroy` / `no_destroy=true` is set. Azure still retains the data stack by default for reuse and only tears it down when `--destroy-data` (or `HONUA_AZURE_DESTROY_DATA=true`) is set. AWS now does the opposite: it destroys auto-created data by default, and only keeps/reuses it when `--keep-data` / `HONUA_AWS_KEEP_DATA=true` is set. GitHub manual validation still passes `--destroy-data` automatically for `deployment_profile=ephemeral` when `no_destroy=false`.
+- GitHub-hosted runners do not preserve `/tmp` between runs. In CI, true data-stack reuse requires repository variables such as `HONUA_AZURE_EXISTING_DB_FQDN` / `HONUA_AZURE_EXISTING_DB_CONNECTION_STRING` / `HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING` for Azure and `HONUA_AWS_EXISTING_DB_ENDPOINT` / `HONUA_AWS_EXISTING_DB_CONNECTION_STRING` / `HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING` / `HONUA_AWS_EXISTING_VPC_*` for AWS. Without those vars, separate workflow runs will reprovision PostGIS/Redis even if the live scripts support local cache reuse.
+- The manual validation workflow concurrency key now includes `inputs.cloud`, so separate `cloud=aws` and `cloud=azure` dispatches can run concurrently on the same ref without blocking each other.
 - To run the cross-repo platform suite locally after apply, point the live validation scripts at the `honua-server` runner: `export HONUA_PLATFORM_VALIDATION_SCRIPT=/path/to/honua-server/scripts/run-cloud-post-apply-validation.sh`.

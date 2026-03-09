@@ -65,7 +65,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: terraform-manual-validation-${{ github.ref }}
+  group: terraform-manual-validation-${{ github.ref }}-${{ inputs.cloud }}-${{ inputs.deployment_profile }}
   cancel-in-progress: false
 
 env:
