@@ -133,6 +133,7 @@ data "aws_iam_policy_document" "terraform" {
       "iam:PutRolePolicy",
       "iam:DeleteRolePolicy",
       "iam:GetRolePolicy",
+      "iam:ListAttachedRolePolicies",
       "iam:ListRolePolicies",
       "iam:CreatePolicy",
       "iam:DeletePolicy",
