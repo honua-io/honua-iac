@@ -692,6 +692,7 @@ jobs:
             AWS_SESSION_TOKEN="$BOOTSTRAP_AWS_SESSION_TOKEN" \
             terraform -chdir="$target_dir" apply -input=false -auto-approve -no-color \
               -var "aws_region=${AWS_VALIDATION_REGION}" \
+              -var "create_access_key=true" \
               -var "user_name=${user_name}"
           }
 
@@ -956,8 +957,8 @@ jobs:
       BOOTSTRAP_ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
       BOOTSTRAP_ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
       HONUA_ADMIN_PASSWORD: ${{ secrets.HONUA_ADMIN_PASSWORD }}
-      HONUA_K8S_IMAGE: ${{ secrets.HONUA_K8S_IMAGE }}
-      HONUA_K8S_PREVIOUS_IMAGE: ${{ secrets.HONUA_K8S_PREVIOUS_IMAGE }}
+      HONUA_K8S_IMAGE: ${{ vars.HONUA_K8S_IMAGE || '' }}
+      HONUA_K8S_PREVIOUS_IMAGE: ${{ vars.HONUA_K8S_PREVIOUS_IMAGE || '' }}
       HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/run-cloud-post-apply-validation.sh
     steps:
       - name: Checkout
@@ -1154,8 +1155,8 @@ jobs:
       BOOTSTRAP_AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       BOOTSTRAP_AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
       HONUA_ADMIN_PASSWORD: ${{ secrets.HONUA_ADMIN_PASSWORD }}
-      HONUA_K8S_IMAGE: ${{ secrets.HONUA_K8S_IMAGE }}
-      HONUA_K8S_PREVIOUS_IMAGE: ${{ secrets.HONUA_K8S_PREVIOUS_IMAGE }}
+      HONUA_K8S_IMAGE: ${{ vars.HONUA_K8S_IMAGE || '' }}
+      HONUA_K8S_PREVIOUS_IMAGE: ${{ vars.HONUA_K8S_PREVIOUS_IMAGE || '' }}
       HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/run-cloud-post-apply-validation.sh
     steps:
       - name: Checkout
@@ -1253,6 +1254,7 @@ jobs:
           AWS_SESSION_TOKEN="$BOOTSTRAP_AWS_SESSION_TOKEN" \
           terraform -chdir="$bootstrap_dir" apply -input=false -auto-approve -no-color \
             -var "aws_region=${AWS_VALIDATION_REGION}" \
+            -var "create_access_key=true" \
             -var "user_name=honua-tf-eks-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
           EKS_AWS_ACCESS_KEY_ID="$(terraform -chdir="$bootstrap_dir" output -raw access_key_id)"
