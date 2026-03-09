@@ -49,6 +49,8 @@ data "aws_iam_policy_document" "terraform" {
       "ec2:DisassociateRouteTable",
       "ec2:Modify*",
       "ec2:ReleaseAddress",
+      "ec2:RevokeSecurityGroupEgress",
+      "ec2:RevokeSecurityGroupIngress",
       "eks:AssociateAccessPolicy",
       "eks:Create*",
       "eks:Delete*",
