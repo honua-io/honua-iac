@@ -228,10 +228,10 @@ jobs:
       BOOTSTRAP_ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
       HONUA_ADMIN_PASSWORD: ${{ secrets.HONUA_ADMIN_PASSWORD }}
       HONUA_DB_PASSWORD: ${{ secrets.HONUA_DB_PASSWORD }}
-      HONUA_ACA_IMAGE: ${{ secrets.HONUA_ACA_IMAGE }}
-      HONUA_ACA_PREVIOUS_IMAGE: ${{ secrets.HONUA_ACA_PREVIOUS_IMAGE }}
-      HONUA_FUNCTIONS_IMAGE: ${{ secrets.HONUA_FUNCTIONS_IMAGE }}
-      HONUA_FUNCTIONS_PREVIOUS_IMAGE: ${{ secrets.HONUA_FUNCTIONS_PREVIOUS_IMAGE }}
+      HONUA_ACA_IMAGE: ${{ vars.HONUA_ACA_IMAGE || '' }}
+      HONUA_ACA_PREVIOUS_IMAGE: ${{ vars.HONUA_ACA_PREVIOUS_IMAGE || '' }}
+      HONUA_FUNCTIONS_IMAGE: ${{ vars.HONUA_FUNCTIONS_IMAGE || '' }}
+      HONUA_FUNCTIONS_PREVIOUS_IMAGE: ${{ vars.HONUA_FUNCTIONS_PREVIOUS_IMAGE || '' }}
       HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/run-cloud-post-apply-validation.sh
       HONUA_PLATFORM_VALIDATION_IMPORT_TABLE_PREFIX: ${{ inputs.deployment_profile == 'ephemeral' && inputs.no_destroy == false && format('cloud{0}{1}', github.run_id, github.run_attempt) || '' }}
     steps:
@@ -252,7 +252,7 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Validate required secrets (Azure)
+      - name: Validate required credentials (Azure)
         shell: bash
         run: |
           set -euo pipefail
@@ -273,16 +273,16 @@ jobs:
           done
 
           if [[ "$AZURE_VALIDATION_STACK" == "aca" || "$AZURE_VALIDATION_STACK" == "both" ]]; then
-            [[ -n "${HONUA_ACA_IMAGE:-}" ]] || { echo "Missing required secret for Azure live validation: HONUA_ACA_IMAGE"; exit 1; }
+            [[ -n "${HONUA_ACA_IMAGE:-}" ]] || { echo "Missing required Azure image configuration: HONUA_ACA_IMAGE"; exit 1; }
             if [[ "$HONUA_RUN_UPGRADE_ROLLBACK" == "true" ]]; then
-              [[ -n "${HONUA_ACA_PREVIOUS_IMAGE:-}" ]] || { echo "Missing required secret for Azure live validation: HONUA_ACA_PREVIOUS_IMAGE"; exit 1; }
+              [[ -n "${HONUA_ACA_PREVIOUS_IMAGE:-}" ]] || { echo "Missing required Azure image configuration: HONUA_ACA_PREVIOUS_IMAGE"; exit 1; }
             fi
           fi
 
           if [[ "$AZURE_VALIDATION_STACK" == "functions" || "$AZURE_VALIDATION_STACK" == "both" ]]; then
-            [[ -n "${HONUA_FUNCTIONS_IMAGE:-}" ]] || { echo "Missing required secret for Azure live validation: HONUA_FUNCTIONS_IMAGE"; exit 1; }
+            [[ -n "${HONUA_FUNCTIONS_IMAGE:-}" ]] || { echo "Missing required Azure image configuration: HONUA_FUNCTIONS_IMAGE"; exit 1; }
             if [[ "$HONUA_RUN_UPGRADE_ROLLBACK" == "true" ]]; then
-              [[ -n "${HONUA_FUNCTIONS_PREVIOUS_IMAGE:-}" ]] || { echo "Missing required secret for Azure live validation: HONUA_FUNCTIONS_PREVIOUS_IMAGE"; exit 1; }
+              [[ -n "${HONUA_FUNCTIONS_PREVIOUS_IMAGE:-}" ]] || { echo "Missing required Azure image configuration: HONUA_FUNCTIONS_PREVIOUS_IMAGE"; exit 1; }
             fi
           fi
 
@@ -542,11 +542,11 @@ jobs:
       BOOTSTRAP_AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
       HONUA_ADMIN_PASSWORD: ${{ secrets.HONUA_ADMIN_PASSWORD }}
       HONUA_DB_PASSWORD: ${{ secrets.HONUA_DB_PASSWORD }}
-      HONUA_AWS_ECS_IMAGE: ${{ secrets.HONUA_AWS_ECS_IMAGE }}
-      HONUA_AWS_ECS_PREVIOUS_IMAGE: ${{ secrets.HONUA_AWS_ECS_PREVIOUS_IMAGE }}
-      HONUA_AWS_ECS_CANARY_IMAGE: ${{ secrets.HONUA_AWS_ECS_CANARY_IMAGE }}
-      HONUA_AWS_SERVERLESS_IMAGE: ${{ secrets.HONUA_AWS_SERVERLESS_IMAGE }}
-      HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE: ${{ secrets.HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE }}
+      HONUA_AWS_ECS_IMAGE: ${{ vars.HONUA_AWS_ECS_IMAGE || '' }}
+      HONUA_AWS_ECS_PREVIOUS_IMAGE: ${{ vars.HONUA_AWS_ECS_PREVIOUS_IMAGE || '' }}
+      HONUA_AWS_ECS_CANARY_IMAGE: ${{ vars.HONUA_AWS_ECS_CANARY_IMAGE || '' }}
+      HONUA_AWS_SERVERLESS_IMAGE: ${{ vars.HONUA_AWS_SERVERLESS_IMAGE || '' }}
+      HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE: ${{ vars.HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE || '' }}
       HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/run-cloud-post-apply-validation.sh
       HONUA_PLATFORM_VALIDATION_IMPORT_TABLE_PREFIX: ${{ inputs.deployment_profile == 'ephemeral' && inputs.no_destroy == false && format('cloud{0}{1}', github.run_id, github.run_attempt) || '' }}
     steps:
@@ -567,7 +567,7 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Validate required secrets (AWS)
+      - name: Validate required credentials (AWS)
         shell: bash
         run: |
           set -euo pipefail
@@ -586,16 +586,16 @@ jobs:
           done
 
           if [[ "$AWS_VALIDATION_STACK" == "ecs" || "$AWS_VALIDATION_STACK" == "both" ]]; then
-            [[ -n "${HONUA_AWS_ECS_IMAGE:-}" ]] || { echo "Missing required secret for AWS live validation: HONUA_AWS_ECS_IMAGE"; exit 1; }
+            [[ -n "${HONUA_AWS_ECS_IMAGE:-}" ]] || { echo "Missing required AWS image configuration: HONUA_AWS_ECS_IMAGE"; exit 1; }
             if [[ "$HONUA_RUN_UPGRADE_ROLLBACK" == "true" ]]; then
-              [[ -n "${HONUA_AWS_ECS_PREVIOUS_IMAGE:-}" ]] || { echo "Missing required secret for AWS live validation: HONUA_AWS_ECS_PREVIOUS_IMAGE"; exit 1; }
+              [[ -n "${HONUA_AWS_ECS_PREVIOUS_IMAGE:-}" ]] || { echo "Missing required AWS image configuration: HONUA_AWS_ECS_PREVIOUS_IMAGE"; exit 1; }
             fi
           fi
 
           if [[ "$AWS_VALIDATION_STACK" == "serverless" || "$AWS_VALIDATION_STACK" == "both" ]]; then
-            [[ -n "${HONUA_AWS_SERVERLESS_IMAGE:-}" ]] || { echo "Missing required secret for AWS live validation: HONUA_AWS_SERVERLESS_IMAGE"; exit 1; }
+            [[ -n "${HONUA_AWS_SERVERLESS_IMAGE:-}" ]] || { echo "Missing required AWS image configuration: HONUA_AWS_SERVERLESS_IMAGE"; exit 1; }
             if [[ "$HONUA_RUN_UPGRADE_ROLLBACK" == "true" ]]; then
-              [[ -n "${HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE:-}" ]] || { echo "Missing required secret for AWS live validation: HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE"; exit 1; }
+              [[ -n "${HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE:-}" ]] || { echo "Missing required AWS image configuration: HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE"; exit 1; }
             fi
           fi
 
@@ -839,8 +839,8 @@ jobs:
     timeout-minutes: 120
     environment: ${{ inputs.deployment_profile == 'persistent' && 'terraform-live-approval' || 'terraform-ephemeral' }}
     env:
-      HONUA_K8S_IMAGE: ${{ secrets.HONUA_K8S_IMAGE }}
-      HONUA_K8S_PREVIOUS_IMAGE: ${{ secrets.HONUA_K8S_PREVIOUS_IMAGE }}
+      HONUA_K8S_IMAGE: ${{ vars.HONUA_K8S_IMAGE || '' }}
+      HONUA_K8S_PREVIOUS_IMAGE: ${{ vars.HONUA_K8S_PREVIOUS_IMAGE || '' }}
       HONUA_ADMIN_PASSWORD: ${{ secrets.HONUA_ADMIN_PASSWORD }}
     steps:
       - name: Checkout
@@ -862,7 +862,7 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/k3d-io/k3d/b481dca24e34145edcdd14de72ebe4f56ec8e8bc/install.sh | bash
           k3d version
 
-      - name: Validate required secrets (Kubernetes)
+      - name: Validate required credentials (Kubernetes)
         shell: bash
         run: |
           set -euo pipefail
@@ -873,13 +873,13 @@ jobs:
 
           for name in "${required[@]}"; do
             if [[ -z "${!name:-}" ]]; then
-              echo "Missing required secret for Kubernetes live validation: $name"
+              echo "Missing required Kubernetes configuration: $name"
               exit 1
             fi
           done
 
           if [[ "$HONUA_RUN_UPGRADE_ROLLBACK" == "true" && -z "${HONUA_K8S_PREVIOUS_IMAGE:-}" ]]; then
-            echo "Missing required secret for Kubernetes live validation: HONUA_K8S_PREVIOUS_IMAGE"
+            echo "Missing required Kubernetes configuration: HONUA_K8S_PREVIOUS_IMAGE"
             exit 1
           fi
 

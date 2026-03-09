@@ -58,6 +58,7 @@ READY_SLO_SECONDS="${HONUA_READY_SLO_SECONDS:-600}"
 MAX_LOAD_ERROR_RATE_PERCENT="${HONUA_MAX_LOAD_ERROR_RATE_PERCENT:-0}"
 MAX_RUN_COST_USD="${HONUA_MAX_RUN_COST_USD:-0}"
 DB_INGRESS_CIDR="${HONUA_AWS_DB_INGRESS_CIDR:-}"
+HTTP_INGRESS_CIDR="${HONUA_AWS_HTTP_INGRESS_CIDR:-}"
 EXISTING_DB_ENDPOINT="${HONUA_AWS_EXISTING_DB_ENDPOINT:-}"
 EXISTING_DB_CONNECTION_STRING="${HONUA_AWS_EXISTING_DB_CONNECTION_STRING:-}"
 EXISTING_REDIS_CONNECTION_STRING="${HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING:-}"
@@ -119,6 +120,7 @@ Options:
   --serverless-previous-image <image>  Previous serverless image for upgrade/rollback validation
   --upgrade-rollback                   Enable upgrade/rollback validation sequence
   --db-ingress-cidr <cidr>             CIDR allowed to reach RDS for PostGIS enablement
+  --http-ingress-cidr <cidr>           CIDR allowed to reach the ECS ALB over HTTP during validation
   --existing-db-endpoint <endpoint>    Reuse existing PostgreSQL endpoint
   --existing-db-connection <string>    Reuse existing PostgreSQL connection string
   --existing-redis-connection <str>    Reuse existing Redis connection string
@@ -163,6 +165,7 @@ Optional environment variables:
   HONUA_AWS_EXISTING_DB_ENDPOINT
   HONUA_AWS_EXISTING_DB_CONNECTION_STRING
   HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING
+  HONUA_AWS_HTTP_INGRESS_CIDR
   HONUA_AWS_EXISTING_VPC_ID
   HONUA_AWS_EXISTING_VPC_CIDR
   HONUA_AWS_EXISTING_PUBLIC_SUBNET_IDS
@@ -371,6 +374,10 @@ parse_args() {
         DB_INGRESS_CIDR="$2"
         shift 2
         ;;
+      --http-ingress-cidr)
+        HTTP_INGRESS_CIDR="$2"
+        shift 2
+        ;;
       --existing-db-endpoint)
         EXISTING_DB_ENDPOINT="$2"
         shift 2
@@ -534,6 +541,26 @@ detect_db_ingress_cidr() {
   fi
 
   DB_INGRESS_CIDR="${ip}/32"
+}
+
+detect_http_ingress_cidr() {
+  if [[ -n "$HTTP_INGRESS_CIDR" ]]; then
+    return
+  fi
+
+  local ip
+  if [[ -n "$DB_INGRESS_CIDR" ]]; then
+    ip="${DB_INGRESS_CIDR%/32}"
+  else
+    ip="$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')"
+  fi
+
+  if [[ -z "$ip" ]]; then
+    log_error "Failed to detect public IP for HTTP ingress"
+    exit 1
+  fi
+
+  HTTP_INGRESS_CIDR="${ip}/32"
 }
 
 build_tf_image_if_needed() {
@@ -1537,7 +1564,13 @@ set_common_tf_vars() {
   export TF_VAR_postgis_readiness_sleep_seconds="$POSTGIS_READINESS_SLEEP_SECONDS"
   export TF_VAR_redis_enabled="true"
   export TF_VAR_redis_connection_string="$EXISTING_REDIS_CONNECTION_STRING"
+  if [[ -n "$EXISTING_REDIS_CONNECTION_STRING" && -n "$EXISTING_VPC_CIDR" ]]; then
+    export TF_VAR_redis_connection_cidrs="[\"$EXISTING_VPC_CIDR\"]"
+  else
+    export TF_VAR_redis_connection_cidrs="[]"
+  fi
   export TF_VAR_db_publicly_accessible="true"
+  export TF_VAR_allow_http_ingress_cidrs="[\"$HTTP_INGRESS_CIDR\"]"
   if [[ -n "$EXISTING_DB_CONNECTION_STRING" ]]; then
     export TF_VAR_db_additional_ingress_cidrs="[]"
   else
@@ -2129,6 +2162,7 @@ main() {
   fi
   normalize_identifiers
   detect_db_ingress_cidr
+  detect_http_ingress_cidr
   configure_runtime_tools
   assert_cost_guardrail
   run_quota_preflight

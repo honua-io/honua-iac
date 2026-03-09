@@ -71,6 +71,12 @@ variable "honua_image" {
   type        = string
 }
 
+variable "task_cpu_architecture" {
+  description = "Fargate CPU architecture for validation. ARM64 is the default."
+  type        = string
+  default     = "ARM64"
+}
+
 variable "db_publicly_accessible" {
   description = "Expose RDS publicly for integration testing."
   type        = bool
@@ -172,6 +178,12 @@ variable "alb_certificate_arn" {
   description = "ACM certificate ARN for the ALB HTTPS listener."
   type        = string
   default     = ""
+}
+
+variable "allow_http_ingress_cidrs" {
+  description = "CIDRs allowed to reach the ALB over HTTP during validation."
+  type        = list(string)
+  default     = []
 }
 
 variable "waf_web_acl_arn" {

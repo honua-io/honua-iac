@@ -43,6 +43,10 @@ locals {
       enabled = false
     }
     server = {
+      global = {
+        scrape_interval     = var.scrape_interval
+        evaluation_interval = var.evaluation_interval
+      }
       persistentVolume = {
         enabled = var.prometheus_persistence_enabled
         size    = var.prometheus_persistence_size
@@ -60,16 +64,10 @@ locals {
         }
       }
     }
+    extraScrapeConfigs = yamlencode([
+      local.honua_scrape_config
+    ])
     serverFiles = {
-      "prometheus.yml" = {
-        global = {
-          scrape_interval     = var.scrape_interval
-          evaluation_interval = var.evaluation_interval
-        }
-        scrape_configs = [
-          local.honua_scrape_config
-        ]
-      }
       "alerting_rules.yml" = local.alert_rules
     }
   }

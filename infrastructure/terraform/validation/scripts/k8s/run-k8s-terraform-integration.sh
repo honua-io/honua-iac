@@ -53,6 +53,7 @@ LOAD_CONCURRENCY="${HONUA_K8S_LOAD_CONCURRENCY:-20}"
 SCALE_TARGET_REPLICAS="${HONUA_K8S_SCALE_TARGET_REPLICAS:-2}"
 READY_SLO_SECONDS="${HONUA_READY_SLO_SECONDS:-600}"
 MAX_LOAD_ERROR_RATE_PERCENT="${HONUA_MAX_LOAD_ERROR_RATE_PERCENT:-0}"
+HELM_CHART_PATH="${HONUA_HELM_CHART_PATH:-}"
 
 TEMP_WORK_ROOT=""
 TEMP_REPO_ROOT=""
@@ -136,6 +137,30 @@ log_warn() {
 
 log_error() {
   echo "[ERROR] $1" >&2
+}
+
+resolve_helm_chart_path() {
+  local candidate
+  local -a candidates=()
+
+  if [[ -n "$HELM_CHART_PATH" ]]; then
+    candidates+=("$HELM_CHART_PATH")
+  fi
+
+  candidates+=(
+    "$REPO_ROOT/infrastructure/helm/honua"
+    "$(dirname "$REPO_ROOT")/honua-server/infrastructure/helm/honua"
+  )
+
+  for candidate in "${candidates[@]}"; do
+    if [[ -f "$candidate/Chart.yaml" ]]; then
+      HELM_CHART_PATH="$candidate"
+      return 0
+    fi
+  done
+
+  log_error "Could not resolve Helm chart path. Set HONUA_HELM_CHART_PATH or check out honua-server next to honua-terraform."
+  return 1
 }
 
 source "$SCRIPT_DIR/../shared/platform-post-apply-validation.sh"
@@ -447,6 +472,8 @@ run_load_probe() {
 }
 
 start_port_forward() {
+  local attempt
+
   if [[ "$ACCESS_MODE" != "port-forward" ]]; then
     return
   fi
@@ -458,6 +485,28 @@ start_port_forward() {
   PORT_FORWARD_PID=$!
 
   log_info "Started port-forward pid=$PORT_FORWARD_PID on localhost:$FORWARD_PORT -> svc/${HONUA_SERVICE_NAME}:80"
+
+  for attempt in $(seq 1 30); do
+    if ! kill -0 "$PORT_FORWARD_PID" >/dev/null 2>&1; then
+      log_error "Port-forward process exited before becoming ready"
+      if [[ -s "$PORT_FORWARD_LOG" ]]; then
+        cat "$PORT_FORWARD_LOG" >&2
+      fi
+      return 1
+    fi
+
+    if grep -q "Forwarding from 127.0.0.1:${FORWARD_PORT}" "$PORT_FORWARD_LOG" 2>/dev/null; then
+      return 0
+    fi
+
+    sleep 1
+  done
+
+  log_error "Timed out waiting for port-forward on localhost:$FORWARD_PORT"
+  if [[ -s "$PORT_FORWARD_LOG" ]]; then
+    cat "$PORT_FORWARD_LOG" >&2
+  fi
+  return 1
 }
 
 stop_port_forward() {
@@ -539,9 +588,39 @@ verify_protocol_endpoints() {
     return 1
   }
 
+  check_odata_endpoint() {
+    local endpoint="$1"
+    local endpoint_status
+    local endpoint_body
+
+    endpoint_status="$(curl -sS -o /dev/null -w "%{http_code}" --max-time 20 "${curl_args[@]}" "$endpoint" || true)"
+    if [[ "$endpoint_status" == 2* || "$endpoint_status" == 3* ]]; then
+      return 0
+    fi
+
+    if [[ "$endpoint_status" == "401" || "$endpoint_status" == "403" ]]; then
+      curl -fsS --max-time 20 "${curl_args[@]}" \
+        -H "X-API-Key: $admin_api_key" \
+        "$endpoint" >/dev/null
+      return 0
+    fi
+
+    if [[ "$endpoint_status" == "404" ]]; then
+      endpoint_body="$(curl -sS --max-time 20 "${curl_args[@]}" "$endpoint" || true)"
+      if [[ "$endpoint_body" == *"OData is not enabled for any available service."* ||
+            "$endpoint_body" == *"No OData-enabled services found"* ]]; then
+        log_info "OData endpoint reachable with empty catalog: $endpoint returned HTTP 404"
+        return 0
+      fi
+    fi
+
+    log_error "Protocol smoke endpoint failed: $endpoint returned HTTP $endpoint_status"
+    return 1
+  }
+
   check_endpoint "${base}/rest/services?f=pjson"
   check_endpoint "${base}/ogc/features"
-  check_endpoint "${base}/odata"
+  check_odata_endpoint "${base}/odata"
 
   status="$(curl -sS -o /dev/null -w "%{http_code}" --max-time 20 "${curl_args[@]}" "${base}/api/v1/admin/config")"
   if [[ "$status" != "401" && "$status" != "403" ]]; then
@@ -778,12 +857,13 @@ run_helm_static_validation() {
   local rendered
   local ingress_class
   local kubeconform_image
+  local kubeconform_command
 
   if [[ "$HELM_STATIC_VALIDATE" != "true" ]]; then
     return
   fi
 
-  chart_path="$REPO_ROOT/infrastructure/helm/honua"
+  chart_path="$HELM_CHART_PATH"
   kubeconform_image="${HONUA_KUBECONFORM_IMAGE:-ghcr.io/yannh/kubeconform:v0.7.0}"
 
   ingress_class="traefik"
@@ -822,19 +902,37 @@ run_helm_static_validation() {
     --set image.repository="$HONUA_IMAGE_REPOSITORY" \
     --set image.tag="$HONUA_IMAGE_TAG" > "$rendered"
 
-  docker run --rm -i "$kubeconform_image" -strict -summary -ignore-missing-schemas < "$rendered" >/dev/null
+  if command -v kubeconform >/dev/null 2>&1; then
+    kubeconform_command=(kubeconform -strict -summary -ignore-missing-schemas)
+    "${kubeconform_command[@]}" < "$rendered" >/dev/null
+  else
+    docker run --rm -i "$kubeconform_image" -strict -summary -ignore-missing-schemas < "$rendered" >/dev/null
+  fi
   rm -f "$rendered"
 
   log_info "Helm static validation passed (lint + kubeconform)"
 }
 
 prepare_tf_workspace() {
+  local docker_source
+
   TEMP_WORK_ROOT="$(mktemp -d)"
   TEMP_REPO_ROOT="$TEMP_WORK_ROOT/honua-server"
 
   mkdir -p "$TEMP_REPO_ROOT/infrastructure"
   cp -R "$REPO_ROOT/infrastructure/terraform" "$TEMP_REPO_ROOT/infrastructure/terraform"
-  cp -R "$REPO_ROOT/docker" "$TEMP_REPO_ROOT/docker"
+
+  docker_source="$REPO_ROOT/docker"
+  if [[ ! -d "$docker_source" ]]; then
+    docker_source="$(dirname "$REPO_ROOT")/honua-server/docker"
+  fi
+
+  if [[ ! -d "$docker_source" ]]; then
+    log_error "Could not resolve docker asset path. Check out honua-server next to honua-terraform."
+    return 1
+  fi
+
+  cp -R "$docker_source" "$TEMP_REPO_ROOT/docker"
 }
 
 create_cluster() {
@@ -855,6 +953,7 @@ create_cluster() {
   K3D_HTTP_PORT="$HTTP_PORT" \
   K3D_HTTPS_PORT="$HTTPS_PORT" \
   K3D_API_PORT="$API_PORT" \
+  K3D_NO_LB="$([[ "$ACCESS_MODE" == "port-forward" ]] && echo true || echo false)" \
     "$K8S_HELPER_DIR/k3d-up.sh"
 
   kubectl config use-context "k3d-${CLUSTER_NAME}" >/dev/null
@@ -873,6 +972,7 @@ deploy_honua_release() {
 
   NAMESPACE="$NAMESPACE" \
     RELEASE_NAME="$RELEASE_NAME" \
+    CHART_PATH="$HELM_CHART_PATH" \
     INGRESS_CLASS="$ingress_class" \
     INGRESS_HOSTNAME="$INGRESS_HOSTNAME" \
     LOCAL_HTTP_PORT="$HTTP_PORT" \
@@ -1016,8 +1116,8 @@ apply_observability_stack() {
 
   OBS_APPLIED=true
 
-  kubectl -n "$OBS_NAMESPACE" wait --for=condition=Ready pod -l app.kubernetes.io/instance=prometheus --timeout="${TIMEOUT_SECONDS}s"
-  kubectl -n "$OBS_NAMESPACE" wait --for=condition=Ready pod -l app.kubernetes.io/instance=grafana --timeout="${TIMEOUT_SECONDS}s"
+  kubectl -n "$OBS_NAMESPACE" wait --for=condition=Ready pod -l app.kubernetes.io/instance=honua-prometheus --timeout="${TIMEOUT_SECONDS}s"
+  kubectl -n "$OBS_NAMESPACE" wait --for=condition=Ready pod -l app.kubernetes.io/instance=honua-grafana --timeout="${TIMEOUT_SECONDS}s"
   kubectl -n "$OBS_NAMESPACE" get configmap honua-overview-dashboard >/dev/null
 
   if [[ "$CHECK_IDEMPOTENCY" == "true" ]]; then
@@ -1115,6 +1215,7 @@ main() {
 
   export KUBECONFIG="$KUBECONFIG_PATH"
 
+  resolve_helm_chart_path
   resolve_k8s_helper_dir
   resolve_secret_values
 

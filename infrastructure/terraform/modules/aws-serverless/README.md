@@ -73,7 +73,7 @@ module "honua" {
 | `image` | *(required)* | ECR image URI. Must implement Lambda Runtime API. |
 | `lambda_memory_size` | 1024 | Lambda memory in MB (128–10240). |
 | `lambda_timeout_seconds` | 30 | Keep at or below 30 (API Gateway limit). |
-| `lambda_architectures` | `["x86_64"]` | `x86_64` or `arm64`. |
+| `lambda_architectures` | `["arm64"]` | `arm64` by default; override to `x86_64` only when you explicitly need it. |
 | `lambda_alias_name` | `live` | Stable alias used for API Gateway traffic and control-plane rollback. |
 | `lambda_alias_version` | `null` | Optional published version to pin the stable alias to; defaults to the version published by the current apply. |
 | `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster on RDS. **Set to true.** |

@@ -111,6 +111,17 @@ variable "image" {
   type        = string
 }
 
+variable "task_cpu_architecture" {
+  description = "ECS/Fargate CPU architecture. Honua defaults to ARM64 for Graviton-friendly AWS deployments."
+  type        = string
+  default     = "ARM64"
+
+  validation {
+    condition     = contains(["ARM64", "X86_64"], upper(var.task_cpu_architecture))
+    error_message = "task_cpu_architecture must be ARM64 or X86_64."
+  }
+}
+
 variable "admin_password" {
   description = "Admin API password for Honua (required in non-dev)."
   type        = string

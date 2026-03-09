@@ -12,6 +12,7 @@ module "honua" {
   existing_public_subnet_ids      = var.existing_public_subnet_ids
   existing_private_subnet_ids     = var.existing_private_subnet_ids
   image                           = var.honua_image_uri
+  lambda_architectures            = var.lambda_architectures
   lambda_alias_name               = var.lambda_alias_name
   lambda_alias_version            = var.lambda_alias_version
   admin_password                  = var.honua_admin_password

@@ -57,16 +57,48 @@ AWS live / EKS:
 - `AWS_ACCESS_KEY_ID`
 - `AWS_SECRET_ACCESS_KEY`
 - `AWS_SESSION_TOKEN` (optional)
-- `HONUA_AWS_SERVERLESS_IMAGE` (required when `HONUA_AWS_VALIDATION_STACK` includes `serverless`; default stack is `both`)
 
-Optional image override secrets:
+## Image configuration
 
-- Azure app images: `HONUA_ACA_IMAGE`, `HONUA_FUNCTIONS_IMAGE` (ACR URI with `*-functions-aot` recommended; `*-functions` is debug fallback)
+Image refs are configuration, not secrets.
+
+For GitHub Actions, set them as repository variables:
+
+- Azure app images: `HONUA_ACA_IMAGE`, `HONUA_FUNCTIONS_IMAGE`
 - Azure rollback images: `HONUA_ACA_PREVIOUS_IMAGE`, `HONUA_FUNCTIONS_PREVIOUS_IMAGE`
-- AWS app images: `HONUA_AWS_ECS_IMAGE`, `HONUA_AWS_SERVERLESS_IMAGE` (ECR URI, `*-lambda-aot` recommended; `*-lambda` is debug fallback)
+- AWS app images: `HONUA_AWS_ECS_IMAGE`, `HONUA_AWS_SERVERLESS_IMAGE`
 - AWS rollback images: `HONUA_AWS_ECS_PREVIOUS_IMAGE`, `HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE`
-- AWS ECS canary image: `HONUA_AWS_ECS_CANARY_IMAGE` (optional; falls back to `HONUA_AWS_ECS_IMAGE` when unset)
+- AWS ECS canary image: `HONUA_AWS_ECS_CANARY_IMAGE`
 - Kubernetes app images: `HONUA_K8S_IMAGE`, `HONUA_K8S_PREVIOUS_IMAGE`
+
+The repo helper can seed the current validation variables for you:
+
+```bash
+source <(scripts/tf-pass-secrets.sh export --scope publish)
+scripts/bootstrap-gh-vars.sh
+```
+
+Default behavior:
+
+- `HONUA_AWS_ECS_IMAGE` prefers the `honua-server` ECR publish lane (`latest-aot`) and only falls back to GHCR when ECR is not configured or not reachable from the current shell.
+- `HONUA_AWS_SERVERLESS_IMAGE` is derived from the `honua-server` ECR publish lane (`latest-lambda-aot`) when AWS credentials are available.
+- `HONUA_ACA_IMAGE` and `HONUA_FUNCTIONS_IMAGE` prefer ACR when `ACR_LOGIN_SERVER` is configured in `honua-server`.
+- `HONUA_K8S_IMAGE` continues to use the public GHCR `latest-aot` image by default.
+- Validation stack vars are auto-synced to the image coverage that actually exists. For example, if only ACA is available on Azure, the helper sets `HONUA_AZURE_VALIDATION_STACK=aca` so the live workflow stops requiring Functions prematurely.
+
+Recommended tag shapes:
+
+- Azure Container Apps: generic image tag in ACR (`latest-aot` preferred, `latest` debug fallback); ACA runs `amd64`
+- Azure Functions: ACR URI with `*-functions-aot` preferred; `*-functions` is the debug fallback; Functions custom containers are treated as `amd64`
+- AKS: generic multi-arch image tag (`latest-aot` preferred, `latest` debug fallback); Arm node pools should pull the `arm64` variant automatically
+- AWS ECS: generic image tag in ECR (`latest-aot` preferred, `latest` debug fallback); ECS validation defaults to `ARM64`
+- AWS Lambda: ECR URI with `*-lambda-aot` preferred; `*-lambda` is the debug fallback; Lambda validation defaults to `arm64`
+
+For local runs, prefer explicit script flags instead of exporting image refs as secrets:
+
+- Azure: `--aca-image`, `--functions-image`, `--aca-previous-image`, `--functions-previous-image`
+- AWS: `--ecs-image`, `--serverless-image`, `--ecs-previous-image`, `--serverless-previous-image`, `--ecs-canary-image`
+- Kubernetes: set `HONUA_K8S_IMAGE` / `HONUA_K8S_PREVIOUS_IMAGE` in the shell only when you actually run the k8s path
 
 ## Local credentials setup (set-creds script)
 
@@ -77,6 +109,38 @@ cp scripts/tf-secrets.local.example.sh scripts/tf-secrets.local.sh
 chmod 600 scripts/tf-secrets.local.sh
 # edit scripts/tf-secrets.local.sh with real values
 source scripts/tf-secrets.local.sh
+```
+
+If you want local credentials to persist across branch switches without keeping a working file around, store only the real secrets in `pass` and load them on demand:
+
+```bash
+scripts/tf-pass-secrets.sh import --env-file scripts/tf-secrets.local.sh --force
+source <(scripts/tf-pass-secrets.sh export)
+```
+
+To push the same pass-backed credentials into GitHub Actions secrets:
+
+```bash
+scripts/tf-pass-secrets.sh sync-gh --repo honua-io/honua-terraform
+scripts/tf-pass-secrets.sh sync-gh --scope publish --repo honua-io/honua-server
+```
+
+`sync-gh --scope publish --repo honua-io/honua-server` now pushes only AWS and Azure cloud credentials. Registry identity is derived at runtime:
+
+- ECR: from AWS credentials + `AWS_ECR_REGION`
+- ACR: from Azure ARM credentials + repo variable `ACR_LOGIN_SERVER`
+
+Then bootstrap the repo variables separately:
+
+```bash
+scripts/bootstrap-gh-vars.sh
+```
+
+Recommended default pass prefix is `honua/terraform/<ENV_VAR_NAME>`. Inspect the expected key mapping with:
+
+```bash
+scripts/tf-pass-secrets.sh paths
+scripts/tf-pass-secrets.sh paths --scope publish
 ```
 
 Quick auth checks before live runs:
@@ -92,6 +156,16 @@ az account show
   - `HONUA_AZURE_VALIDATION_REGION`, `HONUA_AWS_VALIDATION_REGION`
   - `HONUA_AZURE_VALIDATION_STACK` (`aca|functions|both`)
   - `HONUA_AWS_VALIDATION_STACK` (`ecs|serverless|both`)
+- Image refs:
+  - `HONUA_ACA_IMAGE`, `HONUA_FUNCTIONS_IMAGE`
+  - `HONUA_ACA_PREVIOUS_IMAGE`, `HONUA_FUNCTIONS_PREVIOUS_IMAGE`
+  - `HONUA_AWS_ECS_IMAGE`, `HONUA_AWS_SERVERLESS_IMAGE`
+  - `HONUA_AWS_ECS_PREVIOUS_IMAGE`, `HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE`
+  - `HONUA_AWS_ECS_CANARY_IMAGE`
+  - `HONUA_K8S_IMAGE`, `HONUA_K8S_PREVIOUS_IMAGE`
+- Registry publish config:
+  - `AWS_ECR_REGION`, `AWS_ECR_REPOSITORY`
+  - `ACR_LOGIN_SERVER`, `ACR_REPOSITORY`
 - Cost/SLO:
   - `HONUA_MAX_RUN_COST_USD`
   - `HONUA_READY_SLO_SECONDS`

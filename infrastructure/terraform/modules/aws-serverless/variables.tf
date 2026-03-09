@@ -94,7 +94,7 @@ variable "lambda_ephemeral_storage_mb" {
 variable "lambda_architectures" {
   description = "Lambda architectures (x86_64 or arm64)."
   type        = list(string)
-  default     = ["x86_64"]
+  default     = ["arm64"]
 }
 
 variable "lambda_reserved_concurrent_executions" {

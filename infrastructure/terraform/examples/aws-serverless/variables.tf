@@ -71,6 +71,12 @@ variable "honua_image_uri" {
   type        = string
 }
 
+variable "lambda_architectures" {
+  description = "Lambda architectures for validation. arm64 is the default."
+  type        = list(string)
+  default     = ["arm64"]
+}
+
 variable "lambda_alias_name" {
   description = "Stable Lambda alias used by API Gateway."
   type        = string

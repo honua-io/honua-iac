@@ -12,6 +12,7 @@ module "honua" {
   existing_public_subnet_ids      = var.existing_public_subnet_ids
   existing_private_subnet_ids     = var.existing_private_subnet_ids
   image                           = var.honua_image
+  task_cpu_architecture           = var.task_cpu_architecture
   admin_password                  = var.honua_admin_password
   db_password                     = var.db_password
   existing_db_endpoint            = var.existing_db_endpoint
@@ -33,14 +34,14 @@ module "honua" {
   alb_access_logs_enabled         = var.alb_access_logs_enabled
   alb_access_logs_force_destroy   = var.alb_access_logs_force_destroy
   alb_certificate_arn             = var.alb_certificate_arn
+  allow_http_ingress_cidrs        = var.allow_http_ingress_cidrs
   waf_web_acl_arn                 = var.waf_web_acl_arn
   tags                            = var.tags
 
   additional_env = {
     HONUA_SERVE_ADMIN_UI    = "true"
     HONUA_ADMIN_UI          = "true"
-    HostValidation__Enabled = "true"
-    AllowedHosts            = "honua.example.local"
+    HostValidation__Enabled = "false"
   }
 }
 
@@ -54,6 +55,10 @@ output "ecs_cluster_name" {
 
 output "ecs_service_name" {
   value = module.honua.ecs_service_name
+}
+
+output "canary_enabled" {
+  value = module.honua.canary_enabled
 }
 
 output "canary_ecs_service_name" {
