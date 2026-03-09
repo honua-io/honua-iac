@@ -191,6 +191,7 @@ az account show
   - `HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING`
   - `HONUA_AZURE_DATA_CACHE_FILE` (defaults to `/tmp/honua-azure-data-reuse.env`)
   - `HONUA_AZURE_DESTROY_DATA` (`true|false`, default `false`)
+  - `HONUA_AZURE_LOGIN_MAX_ATTEMPTS` / `HONUA_AZURE_LOGIN_RETRY_SECONDS` (bootstrap SP propagation retry budget)
   - `HONUA_AWS_EXISTING_DB_ENDPOINT`
   - `HONUA_AWS_EXISTING_DB_CONNECTION_STRING`
   - `HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING`
@@ -203,8 +204,9 @@ az account show
   - `HONUA_AWS_EXISTING_VPC_CIDR`
   - `HONUA_AWS_EXISTING_PUBLIC_SUBNET_IDS`
   - `HONUA_AWS_EXISTING_PRIVATE_SUBNET_IDS`
+  - `HONUA_AWS_KEEP_DATA` (`true|false`, default `false`; opt-in local/CI data reuse)
   - `HONUA_AWS_DATA_CACHE_FILE` (defaults to `/tmp/honua-aws-data-reuse.env`)
-  - `HONUA_AWS_DESTROY_DATA` (`true|false`, default `false`)
+  - `HONUA_AWS_DESTROY_DATA` (`true|false`, default `true`)
 - Drift:
   - `HONUA_DRIFT_ROOTS`
   - `HONUA_DRIFT_VAR_FILES`
@@ -243,6 +245,7 @@ Local script entry points:
 ./scripts/run-azure-terraform-integration.sh --stack both
 ./infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh --stack both
 ./infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh --stack data --no-destroy
+./infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh --stack both --keep-data
 ./infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh --stack ecs --aot
 ./infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh \
   --stack ecs \
@@ -279,13 +282,15 @@ Local script entry points:
   - `infrastructure/terraform/bootstrap/aws-eks`
 - Use one database admin secret: `HONUA_DB_PASSWORD` (not separate per cloud).
 - Azure script behavior: when existing Azure data inputs are not provided, `infrastructure/terraform/validation/scripts/azure/run-azure-terraform-integration.sh` applies `infrastructure/terraform/examples/azure-data`, saves outputs to `/tmp/honua-azure-data-reuse.env` (or `HONUA_AZURE_DATA_CACHE_FILE`), reuses them in subsequent runs, and opens the PostgreSQL firewall to the ACA outbound IPs before readiness checks.
+- Azure bootstrap validation now retries `az login` / `az account set` after creating the least-privilege service principal so Azure AD and subscription role assignment propagation does not fail fast on a fresh identity.
 - Azure ACA validation defaults `min_replicas=1` and a wider startup probe budget so cold boot plus migrations can complete before ACA marks the revision unhealthy.
 - AKS script defaults target `westus` with node VM size `Standard_D2s_v3` (override with `--location` / `--node-vm-size` if needed).
-- AWS script behavior: when existing AWS data inputs are not provided, `infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh` applies `infrastructure/terraform/examples/aws-data`, saves outputs to `/tmp/honua-aws-data-reuse.env` (or `HONUA_AWS_DATA_CACHE_FILE`), and reuses them in subsequent runs.
+- AWS script behavior: when existing AWS data inputs are not provided, `infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh` applies `infrastructure/terraform/examples/aws-data`. By default it now destroys that auto-created data stack on cleanup. Reuse is explicit: set `--keep-data` or `HONUA_AWS_KEEP_DATA=true` to save outputs to `/tmp/honua-aws-data-reuse.env` (or `HONUA_AWS_DATA_CACHE_FILE`) and reuse them in subsequent runs.
+- AWS ECS validation forces `alb_deletion_protection=false` and `alb_access_logs_enabled=false` so ephemeral runs do not strand ALBs and log buckets during teardown.
 - AWS ECS canary validation is opt-in. When `HONUA_AWS_ECS_CANARY_ENABLED=true`, the live script provisions the secondary ECS service with `0%` default traffic unless you explicitly set a non-zero `HONUA_AWS_ECS_CANARY_WEIGHT_PERCENTAGE`, waits for the canary tasks to become healthy, and verifies the ALB header route before continuing. Recommended rollout shape is still two-step: create canary at `0%`, verify, then raise weight in a later run.
 - Azure Functions upgrade/rollback validation is now slot-based when `HONUA_RUN_UPGRADE_ROLLBACK=true`: the live script keeps production on the previous image, stages the candidate image in the configured deployment slot, exercises promote/rollback/restore through the Honua admin API, then reconciles Terraform back to the current image baseline.
 - Current known issue (February 28, 2026): generic web tags (`latest`, `latest-aot`) crash on Azure Functions custom container startup (container exit code `139`). Use Functions-targeted tags (`*-functions-aot` preferred, `*-functions` debug fallback).
 - Registry strategy: web runtime tags (`latest`, `latest-aot`, versioned base tags) are published to GHCR/Docker Hub, while cloud-targeted platform tags (`*-ecs`, `*-ecs-aot`, `*-lambda`, `*-lambda-aot`, `*-functions`, `*-functions-aot`) are published by CI directly to cloud registries (ECR/ACR).
 - `.terraform` directories are already ignored in `.gitignore`.
-- Live scripts auto-destroy compute resources by default unless `--no-destroy` / `no_destroy=true` is set. For both clouds, local script runs retain the data stack by default for reuse and only tear it down when `--destroy-data` (or `HONUA_AZURE_DESTROY_DATA=true` / `HONUA_AWS_DESTROY_DATA=true`) is set. GitHub manual validation now passes `--destroy-data` automatically for `deployment_profile=ephemeral` when `no_destroy=false`.
+- Live scripts auto-destroy compute resources by default unless `--no-destroy` / `no_destroy=true` is set. Azure still retains the data stack by default for reuse and only tears it down when `--destroy-data` (or `HONUA_AZURE_DESTROY_DATA=true`) is set. AWS now does the opposite: it destroys auto-created data by default, and only keeps/reuses it when `--keep-data` / `HONUA_AWS_KEEP_DATA=true` is set. GitHub manual validation still passes `--destroy-data` automatically for `deployment_profile=ephemeral` when `no_destroy=false`.
 - To run the cross-repo platform suite locally after apply, point the live validation scripts at the `honua-server` runner: `export HONUA_PLATFORM_VALIDATION_SCRIPT=/path/to/honua-server/scripts/run-cloud-post-apply-validation.sh`.

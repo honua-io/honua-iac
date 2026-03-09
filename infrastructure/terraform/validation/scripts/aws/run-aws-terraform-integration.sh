@@ -44,7 +44,9 @@ ECS_CANARY_WEIGHT_PERCENTAGE="${HONUA_AWS_ECS_CANARY_WEIGHT_PERCENTAGE:-0}"
 ECS_CANARY_HEADER_NAME="${HONUA_AWS_ECS_CANARY_HEADER_NAME:-X-Honua-Canary}"
 ECS_CANARY_HEADER_VALUE="${HONUA_AWS_ECS_CANARY_HEADER_VALUE:-always}"
 AUTO_DESTROY=true
-DESTROY_DATA="${HONUA_AWS_DESTROY_DATA:-false}"
+DESTROY_DATA="${HONUA_AWS_DESTROY_DATA:-}"
+DESTROY_DATA_MODE_EXPLICIT=false
+KEEP_DATA="${HONUA_AWS_KEEP_DATA:-false}"
 QUICK_SCALE=true
 CHECK_IDEMPOTENCY=true
 CHECK_PROTOCOLS=true
@@ -142,7 +144,8 @@ Options:
   --skip-protocol-checks               Skip REST/OGC/OData/admin auth + admin CRUD/query smoke checks
   --skip-db-resilience                 Skip DB backup/restore drill
   --no-scale-check                     Skip quick ECS scale check
-  --destroy-data                       Destroy auto-created data stack during cleanup (default: keep for reuse)
+  --destroy-data                       Destroy auto-created data stack during cleanup (default)
+  --keep-data                          Keep auto-created data stack for reuse and enable local cache reuse
   --force-new-data-infra               Ignore cached/existing data inputs and create a fresh data stack
   --force-new-data                     Deprecated alias for --force-new-data-infra
   --no-destroy                         Keep resources after test run
@@ -172,6 +175,7 @@ Optional environment variables:
   HONUA_AWS_EXISTING_VPC_CIDR
   HONUA_AWS_EXISTING_PUBLIC_SUBNET_IDS
   HONUA_AWS_EXISTING_PRIVATE_SUBNET_IDS
+  HONUA_AWS_KEEP_DATA
   HONUA_AWS_DESTROY_DATA
   HONUA_AWS_DATA_CACHE_FILE
   HONUA_AWS_FORCE_NEW_DATA_INFRA
@@ -303,6 +307,39 @@ validate_admin_password() {
     log_error "Reason: this value is used for both HONUA_ADMIN_PASSWORD and Security__ConnectionEncryption__MasterKey in Terraform app modules."
     exit 1
   fi
+}
+
+validate_boolean_value() {
+  local name="$1"
+  local value="$2"
+
+  if [[ "$value" != "true" && "$value" != "false" ]]; then
+    log_error "$name must be true or false"
+    exit 1
+  fi
+}
+
+resolve_data_retention_mode() {
+  validate_boolean_value "HONUA_AWS_KEEP_DATA" "$KEEP_DATA"
+
+  if [[ -n "$DESTROY_DATA" ]]; then
+    validate_boolean_value "HONUA_AWS_DESTROY_DATA" "$DESTROY_DATA"
+  fi
+
+  if [[ "$DESTROY_DATA_MODE_EXPLICIT" == "true" ]]; then
+    return
+  fi
+
+  if [[ "$KEEP_DATA" == "true" ]]; then
+    DESTROY_DATA=false
+    return
+  fi
+
+  if [[ -n "$DESTROY_DATA" ]]; then
+    return
+  fi
+
+  DESTROY_DATA=true
 }
 
 parse_args() {
@@ -458,6 +495,12 @@ parse_args() {
         ;;
       --destroy-data)
         DESTROY_DATA=true
+        DESTROY_DATA_MODE_EXPLICIT=true
+        shift
+        ;;
+      --keep-data)
+        DESTROY_DATA=false
+        DESTROY_DATA_MODE_EXPLICIT=true
         shift
         ;;
       --force-new-data-infra)
@@ -1469,6 +1512,10 @@ load_data_reuse_cache() {
     return
   fi
 
+  if [[ "$DESTROY_DATA" == "true" ]]; then
+    return
+  fi
+
   if has_existing_data_inputs; then
     return
   fi
@@ -1522,6 +1569,10 @@ load_data_reuse_cache() {
 }
 
 persist_data_reuse_cache() {
+  if [[ "$DESTROY_DATA" == "true" ]]; then
+    return
+  fi
+
   local cache_dir
   local tmp_file
 
@@ -1592,6 +1643,9 @@ set_ecs_tf_vars() {
   export TF_VAR_name_prefix="$ECS_NAME_PREFIX"
   export TF_VAR_honua_image="$ECS_IMAGE"
   export TF_VAR_desired_count="$ECS_DESIRED_COUNT"
+  export TF_VAR_alb_deletion_protection="false"
+  export TF_VAR_alb_access_logs_enabled="false"
+  export TF_VAR_alb_access_logs_force_destroy="true"
   export TF_VAR_canary_enabled="$ECS_CANARY_ENABLED"
   export TF_VAR_canary_image="$ECS_CANARY_IMAGE"
   export TF_VAR_canary_desired_count="$ECS_CANARY_DESIRED_COUNT"
@@ -2123,7 +2177,7 @@ cleanup() {
     if [[ "$DESTROY_DATA" == "true" ]]; then
       destroy_data_stack
     elif [[ "$DATA_APPLIED" == "true" && "$DATA_CREATED" == "true" ]]; then
-      log_warn "Keeping AWS data stack for reuse (set --destroy-data to tear it down)"
+      log_warn "Keeping AWS data stack for reuse (explicit keep-data mode enabled)"
       skip_leak_check=true
     fi
 
@@ -2161,6 +2215,7 @@ main() {
   export AWS_DEFAULT_REGION="$REGION"
 
   validate_admin_password
+  resolve_data_retention_mode
   resolve_db_password_for_checks
   load_data_reuse_cache
   validate_existing_resource_inputs
