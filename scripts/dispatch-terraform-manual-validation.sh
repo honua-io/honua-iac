@@ -16,6 +16,7 @@ RUN_K8S="false"
 RUN_AKS="false"
 RUN_EKS="false"
 RUN_DRIFT="false"
+REUSE_DATA_STACK="true"
 NO_DESTROY="false"
 ALLOW_DESTROY_PLAN="false"
 SEPARATE_CLOUD_RUNS="true"
@@ -39,6 +40,7 @@ Options:
   --run-aks <true|false>           Run AKS validation job (default: false)
   --run-eks <true|false>           Run EKS validation job (default: false)
   --run-drift <true|false>         Run drift detection job (default: false)
+  --reuse-data-stack <true|false>  Reuse shared PostGIS/Redis data stacks across runs (default: true)
   --no-destroy <true|false>        Keep compute resources after validation (default: false)
   --allow-destroy-plan <true|false>
                                    Allow apply when plan includes destroys (default: false)
@@ -144,6 +146,10 @@ parse_args() {
         RUN_DRIFT="$2"
         shift 2
         ;;
+      --reuse-data-stack)
+        REUSE_DATA_STACK="$2"
+        shift 2
+        ;;
       --no-destroy)
         NO_DESTROY="$2"
         shift 2
@@ -193,6 +199,7 @@ parse_args() {
   validate_boolean "--run-aks" "$RUN_AKS"
   validate_boolean "--run-eks" "$RUN_EKS"
   validate_boolean "--run-drift" "$RUN_DRIFT"
+  validate_boolean "--reuse-data-stack" "$REUSE_DATA_STACK"
   validate_boolean "--no-destroy" "$NO_DESTROY"
   validate_boolean "--allow-destroy-plan" "$ALLOW_DESTROY_PLAN"
 }
@@ -213,6 +220,11 @@ report_reuse_status() {
   local missing=()
   local name=""
 
+  if [[ "$REUSE_DATA_STACK" != "true" ]]; then
+    log_warn "Data-stack reuse is disabled for this dispatch."
+    return
+  fi
+
   case "$cloud" in
     azure)
       for name in \
@@ -227,7 +239,7 @@ report_reuse_status() {
       if [[ "${#missing[@]}" -eq 0 ]]; then
         log_info "Azure CI data reuse is configured via repo vars; PostGIS/Redis should be reused."
       else
-        log_warn "Azure CI data reuse is not configured; this run will reprovision PostGIS/Redis."
+        log_warn "Azure repo-var reuse is not configured. The workflow will fall back to the persisted GitHub Actions cache if a prior reusable Azure data run exists; otherwise this run will reprovision PostGIS/Redis."
         printf '  missing vars: %s\n' "${missing[*]}"
       fi
       ;;
@@ -248,7 +260,7 @@ report_reuse_status() {
       if [[ "${#missing[@]}" -eq 0 ]]; then
         log_info "AWS CI data reuse is configured via repo vars; PostGIS/Redis/VPC should be reused."
       else
-        log_warn "AWS CI data reuse is not configured; this run will reprovision VPC/PostGIS/Redis."
+        log_warn "AWS repo-var reuse is not configured. The workflow will fall back to the persisted GitHub Actions cache if a prior reusable AWS data run exists; otherwise this run will reprovision VPC/PostGIS/Redis."
         printf '  missing vars: %s\n' "${missing[*]}"
       fi
       ;;
@@ -270,6 +282,7 @@ dispatch_run() {
     -f "run_aks=$RUN_AKS" \
     -f "run_eks=$RUN_EKS" \
     -f "run_drift=$RUN_DRIFT" \
+    -f "reuse_data_stack=$REUSE_DATA_STACK" \
     -f "no_destroy=$NO_DESTROY" \
     -f "allow_destroy_plan=$ALLOW_DESTROY_PLAN"
 }
