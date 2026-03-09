@@ -30,6 +30,11 @@ on:
         required: true
         type: boolean
         default: false
+      reuse_data_stack:
+        description: "Reuse shared PostGIS/Redis data stacks across workflow runs when possible"
+        required: true
+        type: boolean
+        default: true
       run_k8s:
         description: "Run local Kubernetes validation (k3d + Helm + observability)"
         required: true
@@ -233,6 +238,7 @@ jobs:
       HONUA_ACA_PREVIOUS_IMAGE: ${{ vars.HONUA_ACA_PREVIOUS_IMAGE || '' }}
       HONUA_FUNCTIONS_IMAGE: ${{ vars.HONUA_FUNCTIONS_IMAGE || '' }}
       HONUA_FUNCTIONS_PREVIOUS_IMAGE: ${{ vars.HONUA_FUNCTIONS_PREVIOUS_IMAGE || '' }}
+      HONUA_AZURE_DATA_CACHE_FILE: ${{ runner.temp }}/cache/azure-data-reuse.env
       HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/run-cloud-post-apply-validation.sh
       HONUA_PLATFORM_VALIDATION_IMPORT_TABLE_PREFIX: ${{ inputs.deployment_profile == 'ephemeral' && inputs.no_destroy == false && format('cloud{0}{1}', github.run_id, github.run_attempt) || '' }}
     steps:
@@ -252,6 +258,15 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+
+      - name: Restore Azure data reuse cache
+        if: ${{ inputs.reuse_data_stack && inputs.run_live }}
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/cache/azure-data-reuse.env
+          key: terraform-manual-validation-azure-data-${{ github.ref_name }}-${{ env.AZURE_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            terraform-manual-validation-azure-data-${{ github.ref_name }}-${{ env.AZURE_VALIDATION_REGION }}-
 
       - name: Validate required credentials (Azure)
         shell: bash
@@ -457,7 +472,7 @@ jobs:
 
             if [[ "${{ inputs.no_destroy }}" == "true" ]]; then
               args+=(--no-destroy)
-            elif [[ "${{ inputs.deployment_profile }}" == "ephemeral" ]]; then
+            elif [[ "${{ inputs.deployment_profile }}" == "ephemeral" && "${{ inputs.reuse_data_stack }}" != "true" ]]; then
               args+=(--destroy-data)
             fi
 
@@ -530,6 +545,13 @@ jobs:
           path: ${{ runner.temp }}/plans/azure
           if-no-files-found: ignore
 
+      - name: Save Azure data reuse cache
+        if: ${{ always() && inputs.reuse_data_stack && inputs.run_live }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/cache/azure-data-reuse.env
+          key: terraform-manual-validation-azure-data-${{ github.ref_name }}-${{ env.AZURE_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
+
   aws-live:
     name: AWS Live Validation
     needs: policy-gates
@@ -548,6 +570,7 @@ jobs:
       HONUA_AWS_ECS_CANARY_IMAGE: ${{ vars.HONUA_AWS_ECS_CANARY_IMAGE || '' }}
       HONUA_AWS_SERVERLESS_IMAGE: ${{ vars.HONUA_AWS_SERVERLESS_IMAGE || '' }}
       HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE: ${{ vars.HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE || '' }}
+      HONUA_AWS_DATA_CACHE_FILE: ${{ runner.temp }}/cache/aws-data-reuse.env
       HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/run-cloud-post-apply-validation.sh
       HONUA_PLATFORM_VALIDATION_IMPORT_TABLE_PREFIX: ${{ inputs.deployment_profile == 'ephemeral' && inputs.no_destroy == false && format('cloud{0}{1}', github.run_id, github.run_attempt) || '' }}
     steps:
@@ -567,6 +590,15 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+
+      - name: Restore AWS data reuse cache
+        if: ${{ inputs.reuse_data_stack && inputs.run_live }}
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/cache/aws-data-reuse.env
+          key: terraform-manual-validation-aws-data-${{ github.ref_name }}-${{ env.AWS_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            terraform-manual-validation-aws-data-${{ github.ref_name }}-${{ env.AWS_VALIDATION_REGION }}-
 
       - name: Validate required credentials (AWS)
         shell: bash
@@ -774,7 +806,11 @@ jobs:
             if [[ "${{ inputs.no_destroy }}" == "true" ]]; then
               args+=(--no-destroy)
             elif [[ "${{ inputs.deployment_profile }}" == "ephemeral" ]]; then
-              args+=(--destroy-data)
+              if [[ "${{ inputs.reuse_data_stack }}" == "true" ]]; then
+                args+=(--keep-data)
+              else
+                args+=(--destroy-data)
+              fi
             fi
 
             if [[ "$HONUA_SKIP_SCALE_CHECK" == "true" ]]; then
@@ -832,6 +868,13 @@ jobs:
           name: aws-plan-artifacts-${{ github.run_id }}
           path: ${{ runner.temp }}/plans/aws
           if-no-files-found: ignore
+
+      - name: Save AWS data reuse cache
+        if: ${{ always() && inputs.reuse_data_stack && inputs.run_live }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/cache/aws-data-reuse.env
+          key: terraform-manual-validation-aws-data-${{ github.ref_name }}-${{ env.AWS_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
 
   k8s-live:
     name: Kubernetes Live Validation

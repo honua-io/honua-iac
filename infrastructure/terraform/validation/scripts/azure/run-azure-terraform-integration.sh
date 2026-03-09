@@ -2177,13 +2177,17 @@ cleanup() {
     if [[ "$DESTROY_DATA" == "true" ]]; then
       destroy_data_stack
     elif [[ "$DATA_APPLIED" == "true" ]]; then
-      if [[ "$exit_code" -eq 0 && "$DATA_CREATED" == "true" ]]; then
-        log_warn "Keeping Azure data stack for reuse (set --destroy-data to tear it down)"
+      if [[ "$DATA_CREATED" == "true" ]]; then
+        if [[ "$exit_code" -eq 0 ]]; then
+          log_warn "Keeping Azure data stack for reuse (set --destroy-data to tear it down)"
+        else
+          log_warn "Azure compute validation failed after the data stack was created; keeping the Azure data stack for reuse because destroy-data is disabled"
+        fi
         keep_data_stack=true
         skip_leak_check=true
       else
-        log_warn "Azure run did not complete cleanly; destroying data stack to avoid partial/stale state"
-        destroy_data_stack
+        log_warn "Azure run reused an existing data stack; leaving it in place"
+        skip_leak_check=true
       fi
     fi
     janitor_delete_resource_groups "$keep_data_stack"
