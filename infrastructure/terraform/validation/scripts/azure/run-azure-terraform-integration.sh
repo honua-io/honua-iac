@@ -923,7 +923,7 @@ verify_protocol_endpoints() {
         endpoint_status="$authorized_status"
       fi
 
-      if [[ "$endpoint" == *"/odata" && "$endpoint_status" == "404" ]] && grep -qi "No OData-enabled services found" "$response_file"; then
+      if [[ "$endpoint" == *"/odata" && "$endpoint_status" == "404" ]] && grep -Eqi "No OData-enabled services found|OData is not enabled for any available service" "$response_file"; then
         rm -f "$response_file"
         return 0
       fi
@@ -1810,8 +1810,8 @@ run_aca_checks() {
     return 1
   fi
   if [[ "$CHECK_PROTOCOLS" == "true" ]]; then
-    verify_protocol_endpoints "$url"
     run_admin_api_crud_smoke "$url" "$db_fqdn"
+    verify_protocol_endpoints "$url"
   fi
   verify_redis_exists "$redis_resource_group"
   verify_postgis_extensions "$db_fqdn"
@@ -1833,8 +1833,8 @@ run_functions_checks() {
 
   wait_for_ready "$url" "$TIMEOUT_SECONDS"
   if [[ "$CHECK_PROTOCOLS" == "true" ]]; then
-    verify_protocol_endpoints "$url"
     run_admin_api_crud_smoke "$url" "$db_fqdn"
+    verify_protocol_endpoints "$url"
   fi
   verify_redis_exists "$redis_resource_group"
   verify_postgis_extensions "$db_fqdn"
