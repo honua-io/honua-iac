@@ -101,6 +101,8 @@ USE_DOCKER_AZ_CLI=false
 USE_DOCKER_PG_TOOLS=false
 AZ_SESSION_INITIALIZED=false
 AZ_CONFIG_DIR_DEFAULT="${HONUA_AZURE_CONFIG_DIR:-/tmp/azcfg-honua}"
+AZ_LOGIN_MAX_ATTEMPTS="${HONUA_AZURE_LOGIN_MAX_ATTEMPTS:-18}"
+AZ_LOGIN_RETRY_SECONDS="${HONUA_AZURE_LOGIN_RETRY_SECONDS:-10}"
 
 usage() {
   cat <<USAGE
@@ -170,6 +172,8 @@ Optional environment variables:
   HONUA_AZURE_FUNCTIONS_DEPLOYMENT_SLOT_IMAGE
   HONUA_AZURE_FUNCTIONS_SKIP_MIGRATIONS
   HONUA_AZURE_FORCE_NEW_DATA_INFRA
+  HONUA_AZURE_LOGIN_MAX_ATTEMPTS
+  HONUA_AZURE_LOGIN_RETRY_SECONDS
   HONUA_PLATFORM_VALIDATION_SCRIPT
 USAGE
 }
@@ -582,17 +586,53 @@ run_az() {
       -e ARM_CLIENT_SECRET \
       -e ARM_TENANT_ID \
       -e ARM_SUBSCRIPTION_ID \
+      -e AZ_LOGIN_MAX_ATTEMPTS \
+      -e AZ_LOGIN_RETRY_SECONDS \
       -e AZURE_CORE_ONLY_SHOW_ERRORS=true \
       "$AZ_CLI_IMAGE" \
-      sh -c 'set -e; az config set extension.use_dynamic_install=yes_without_prompt >/dev/null; az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID" >/dev/null; az account set -s "$ARM_SUBSCRIPTION_ID"; az "$@"' \
+      sh -c '
+        set -e
+        az config set extension.use_dynamic_install=yes_without_prompt >/dev/null
+        for attempt in $(seq 1 "$AZ_LOGIN_MAX_ATTEMPTS"); do
+          if az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID" >/dev/null 2>&1 && \
+             az account set -s "$ARM_SUBSCRIPTION_ID" >/dev/null 2>&1 && \
+             az account show --query id -o tsv >/dev/null 2>&1; then
+            az "$@"
+            exit 0
+          fi
+          sleep "$AZ_LOGIN_RETRY_SECONDS"
+        done
+        echo "[ERROR] Azure CLI login retry budget exhausted for service principal" >&2
+        exit 1
+      ' \
       sh "$@"
     return
   fi
 
   if [[ "$AZ_SESSION_INITIALIZED" != "true" ]]; then
     AZURE_CORE_ONLY_SHOW_ERRORS=true az config set extension.use_dynamic_install=yes_without_prompt >/dev/null
-    AZURE_CORE_ONLY_SHOW_ERRORS=true az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID" >/dev/null
-    AZURE_CORE_ONLY_SHOW_ERRORS=true az account set -s "$ARM_SUBSCRIPTION_ID"
+    local attempt
+    local login_succeeded=false
+
+    for attempt in $(seq 1 "$AZ_LOGIN_MAX_ATTEMPTS"); do
+      if AZURE_CORE_ONLY_SHOW_ERRORS=true az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" --tenant "$ARM_TENANT_ID" >/dev/null 2>&1 && \
+         AZURE_CORE_ONLY_SHOW_ERRORS=true az account set -s "$ARM_SUBSCRIPTION_ID" >/dev/null 2>&1 && \
+         AZURE_CORE_ONLY_SHOW_ERRORS=true az account show --query id -o tsv >/dev/null 2>&1; then
+        login_succeeded=true
+        break
+      fi
+
+      if (( attempt < AZ_LOGIN_MAX_ATTEMPTS )); then
+        log_warn "Azure CLI login/subscription assignment not ready yet; retrying in ${AZ_LOGIN_RETRY_SECONDS}s (attempt ${attempt}/${AZ_LOGIN_MAX_ATTEMPTS})"
+        sleep "$AZ_LOGIN_RETRY_SECONDS"
+      fi
+    done
+
+    if [[ "$login_succeeded" != "true" ]]; then
+      log_error "Azure CLI login retry budget exhausted for service principal/subscription assignment"
+      exit 1
+    fi
+
     AZ_SESSION_INITIALIZED=true
   fi
 
