@@ -81,7 +81,7 @@ scripts/bootstrap-gh-vars.sh
 Default behavior:
 
 - `HONUA_AWS_ECS_IMAGE` is derived from the `honua-server` ECR publish lane (`latest-ecs-aot`) and is intentionally left unset when the ECR ECS lane is not reachable.
-- `HONUA_AWS_SERVERLESS_IMAGE` is derived from the `honua-server` ECR publish lane (`latest-lambda-aot`) when AWS credentials are available.
+- `HONUA_AWS_SERVERLESS_IMAGE` is derived from the `honua-server` ECR publish lane (`latest-lambda-aot-arm64`) when AWS credentials are available.
 - `HONUA_ACA_IMAGE` and `HONUA_FUNCTIONS_IMAGE` prefer ACR when `ACR_LOGIN_SERVER` is configured in `honua-server`.
 - `HONUA_K8S_IMAGE` continues to use the public GHCR `latest-aot` image by default.
 - Validation stack vars are auto-synced to the image coverage that actually exists. For example, if only ACA is available on Azure, the helper sets `HONUA_AZURE_VALIDATION_STACK=aca` so the live workflow stops requiring Functions prematurely.
@@ -92,7 +92,7 @@ Recommended tag shapes:
 - Azure Functions: ACR URI with `*-functions-aot` preferred; `*-functions` is the debug fallback; Functions custom containers are treated as `amd64`
 - AKS: generic multi-arch image tag (`latest-aot` preferred, `latest` debug fallback); Arm node pools should pull the `arm64` variant automatically
 - AWS ECS: ECR URI with `*-ecs-aot` preferred; `*-ecs` is the debug fallback; ECS validation defaults to `ARM64`
-- AWS Lambda: ECR URI with `*-lambda-aot` preferred; `*-lambda` is the debug fallback; Lambda validation defaults to `arm64`
+- AWS Lambda: ECR URI with concrete `*-lambda-aot-arm64` preferred; `*-lambda-arm64` is the debug fallback; Lambda validation defaults to `arm64`
 
 For local runs, prefer explicit script flags instead of exporting image refs as secrets:
 
@@ -265,7 +265,7 @@ Local script entry points:
   --ecs-canary-enabled \
   --ecs-canary-image "<account>.dkr.ecr.<region>.amazonaws.com/honua-server:canary-aot" \
   --ecs-canary-weight 0
-./infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh --stack serverless --serverless-image "<account>.dkr.ecr.<region>.amazonaws.com/honua-server:latest-lambda-aot"
+./infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh --stack serverless --serverless-image "<account>.dkr.ecr.<region>.amazonaws.com/honua-server:latest-lambda-aot-arm64"
 ./scripts/run-aws-terraform-integration.sh --stack serverless
 ./infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh \
   --stack ecs \
