@@ -83,6 +83,7 @@ FORCE_DOCKER_PG_TOOLS="${HONUA_FORCE_DOCKER_PG_TOOLS:-false}"
 DATA_CACHE_FILE="${HONUA_AWS_DATA_CACHE_FILE:-/tmp/honua-aws-data-reuse.env}"
 DATA_CACHE_FORMAT="v2-base64"
 FORCE_NEW_DATA_INFRA="${HONUA_AWS_FORCE_NEW_DATA_INFRA:-${HONUA_AWS_FORCE_NEW_DATA:-false}}"
+AUTO_REPAIR_VPC_EGRESS="${HONUA_AWS_AUTO_REPAIR_VPC_EGRESS:-true}"
 
 TEMP_TF_ROOT=""
 ECS_APPLIED=false
@@ -179,6 +180,7 @@ Optional environment variables:
   HONUA_AWS_DESTROY_DATA
   HONUA_AWS_DATA_CACHE_FILE
   HONUA_AWS_FORCE_NEW_DATA_INFRA
+  HONUA_AWS_AUTO_REPAIR_VPC_EGRESS
   HONUA_AWS_POSTGIS_READINESS_MAX_ATTEMPTS
   HONUA_AWS_POSTGIS_READINESS_SLEEP_SECONDS
   HONUA_PLATFORM_VALIDATION_SCRIPT
@@ -1467,6 +1469,197 @@ has_existing_data_inputs() {
     -n "$EXISTING_PRIVATE_SUBNET_IDS" ]]
 }
 
+json_array_items() {
+  local raw="$1"
+  local csv
+  local item
+
+  csv="$(printf '%s' "$raw" | tr -d '[]"[:space:]')"
+  [[ -z "$csv" ]] && return 0
+
+  IFS=',' read -r -a _json_array_items <<< "$csv"
+  for item in "${_json_array_items[@]}"; do
+    [[ -n "$item" ]] && printf '%s\n' "$item"
+  done
+}
+
+route_table_id_for_subnet() {
+  local subnet_id="$1"
+  run_aws ec2 describe-route-tables \
+    --filters "Name=association.subnet-id,Values=$subnet_id" \
+    --query 'RouteTables[0].RouteTableId' \
+    --output text 2>/dev/null || true
+}
+
+route_table_default_route_target() {
+  local route_table_id="$1"
+  run_aws ec2 describe-route-tables \
+    --route-table-ids "$route_table_id" \
+    --query 'RouteTables[0].Routes[?DestinationCidrBlock==`0.0.0.0/0`][0].[NatGatewayId,GatewayId,TransitGatewayId,InstanceId,NetworkInterfaceId]' \
+    --output text 2>/dev/null || true
+}
+
+subnet_has_igw_default_route() {
+  local subnet_id="$1"
+  local gateway_id
+
+  gateway_id="$(run_aws ec2 describe-route-tables \
+    --filters "Name=association.subnet-id,Values=$subnet_id" \
+    --query 'RouteTables[0].Routes[?DestinationCidrBlock==`0.0.0.0/0`].GatewayId | [0]' \
+    --output text 2>/dev/null || true)"
+
+  [[ "$gateway_id" == igw-* ]]
+}
+
+select_reuse_public_nat_subnet() {
+  local subnet_id
+
+  while IFS= read -r subnet_id; do
+    [[ -z "$subnet_id" ]] && continue
+    if subnet_has_igw_default_route "$subnet_id"; then
+      printf '%s' "$subnet_id"
+      return 0
+    fi
+  done < <(json_array_items "$EXISTING_PUBLIC_SUBNET_IDS")
+
+  return 1
+}
+
+find_existing_reuse_nat_gateway() {
+  run_aws ec2 describe-nat-gateways \
+    --filter "Name=vpc-id,Values=$EXISTING_VPC_ID" "Name=state,Values=available,pending" \
+    --query 'NatGateways[0].NatGatewayId' \
+    --output text 2>/dev/null || true
+}
+
+wait_for_nat_gateway_available() {
+  local nat_gateway_id="$1"
+  local nat_state=""
+  local attempt
+
+  for attempt in $(seq 1 60); do
+    nat_state="$(run_aws ec2 describe-nat-gateways \
+      --nat-gateway-ids "$nat_gateway_id" \
+      --query 'NatGateways[0].State' \
+      --output text 2>/dev/null || true)"
+
+    case "$nat_state" in
+      available)
+        return 0
+        ;;
+      failed|deleted|deleting)
+        log_error "NAT gateway $nat_gateway_id entered terminal state '$nat_state'"
+        return 1
+        ;;
+    esac
+
+    sleep 10
+  done
+
+  log_error "Timed out waiting for NAT gateway $nat_gateway_id to become available"
+  return 1
+}
+
+create_reuse_nat_gateway() {
+  local public_subnet_id="$1"
+  local eip_allocation_id=""
+  local nat_gateway_id=""
+
+  eip_allocation_id="$(run_aws ec2 allocate-address --domain vpc --query 'AllocationId' --output text)"
+  run_aws ec2 create-tags \
+    --resources "$eip_allocation_id" \
+    --tags \
+      "Key=Name,Value=${NAME_PREFIX_BASE}-${ENVIRONMENT}-reuse-nat-eip" \
+      "Key=Owner,Value=terraform-validation" \
+      "Key=ValidationRunId,Value=$VALIDATION_RUN_ID" >/dev/null
+
+  nat_gateway_id="$(run_aws ec2 create-nat-gateway \
+    --subnet-id "$public_subnet_id" \
+    --allocation-id "$eip_allocation_id" \
+    --query 'NatGateway.NatGatewayId' \
+    --output text)"
+
+  run_aws ec2 create-tags \
+    --resources "$nat_gateway_id" \
+    --tags \
+      "Key=Name,Value=${NAME_PREFIX_BASE}-${ENVIRONMENT}-reuse-nat" \
+      "Key=Owner,Value=terraform-validation" \
+      "Key=ValidationRunId,Value=$VALIDATION_RUN_ID" >/dev/null
+
+  wait_for_nat_gateway_available "$nat_gateway_id"
+  printf '%s' "$nat_gateway_id"
+}
+
+ensure_existing_vpc_private_egress() {
+  local public_nat_subnet=""
+  local nat_gateway_id=""
+  local private_subnet_id=""
+  local route_table_id=""
+  local default_route_target=""
+  local updated_route_tables=0
+  declare -A route_tables_needing_nat=()
+
+  validate_boolean_value "HONUA_AWS_AUTO_REPAIR_VPC_EGRESS" "$AUTO_REPAIR_VPC_EGRESS"
+
+  if [[ "$AUTO_REPAIR_VPC_EGRESS" != "true" ]]; then
+    return 0
+  fi
+
+  if ! has_existing_data_inputs; then
+    return 0
+  fi
+
+  while IFS= read -r private_subnet_id; do
+    [[ -z "$private_subnet_id" ]] && continue
+
+    route_table_id="$(route_table_id_for_subnet "$private_subnet_id")"
+    if [[ -z "$route_table_id" || "$route_table_id" == "None" ]]; then
+      log_error "Could not resolve route table for reused private subnet $private_subnet_id"
+      return 1
+    fi
+
+    default_route_target="$(route_table_default_route_target "$route_table_id")"
+    if [[ -z "$default_route_target" || "$default_route_target" == "None" ]]; then
+      route_tables_needing_nat["$route_table_id"]=1
+    fi
+  done < <(json_array_items "$EXISTING_PRIVATE_SUBNET_IDS")
+
+  if (( ${#route_tables_needing_nat[@]} == 0 )); then
+    return 0
+  fi
+
+  log_warn "Reused AWS private subnets in $EXISTING_VPC_ID lack outbound egress; repairing VPC for runtime access"
+
+  nat_gateway_id="$(find_existing_reuse_nat_gateway)"
+  if [[ -z "$nat_gateway_id" || "$nat_gateway_id" == "None" ]]; then
+    if ! public_nat_subnet="$(select_reuse_public_nat_subnet)"; then
+      log_error "Could not find a reused public subnet with an internet gateway route in $EXISTING_VPC_ID"
+      return 1
+    fi
+
+    nat_gateway_id="$(create_reuse_nat_gateway "$public_nat_subnet")"
+    log_info "Provisioned reuse NAT gateway $nat_gateway_id in public subnet $public_nat_subnet"
+  else
+    wait_for_nat_gateway_available "$nat_gateway_id"
+    log_info "Reusing existing NAT gateway $nat_gateway_id for $EXISTING_VPC_ID"
+  fi
+
+  for route_table_id in "${!route_tables_needing_nat[@]}"; do
+    if ! run_aws ec2 create-route \
+      --route-table-id "$route_table_id" \
+      --destination-cidr-block 0.0.0.0/0 \
+      --nat-gateway-id "$nat_gateway_id" >/dev/null 2>&1; then
+      run_aws ec2 replace-route \
+        --route-table-id "$route_table_id" \
+        --destination-cidr-block 0.0.0.0/0 \
+        --nat-gateway-id "$nat_gateway_id" >/dev/null
+    fi
+    updated_route_tables=$((updated_route_tables + 1))
+  done
+
+  log_info "Ensured outbound egress for $updated_route_tables reused private route table(s) via NAT gateway $nat_gateway_id"
+}
+
 cache_file_is_safe_to_read() {
   if [[ ! -f "$DATA_CACHE_FILE" ]]; then
     return 1
@@ -1639,6 +1832,7 @@ set_common_tf_vars() {
 }
 
 set_ecs_tf_vars() {
+  ensure_existing_vpc_private_egress
   set_common_tf_vars
   export TF_VAR_name_prefix="$ECS_NAME_PREFIX"
   export TF_VAR_honua_image="$ECS_IMAGE"
@@ -1658,6 +1852,7 @@ set_ecs_tf_vars() {
 }
 
 set_serverless_tf_vars() {
+  ensure_existing_vpc_private_egress
   set_common_tf_vars
   export TF_VAR_name_prefix="$SERVERLESS_NAME_PREFIX"
   export TF_VAR_honua_image_uri="$SERVERLESS_IMAGE"
