@@ -45,6 +45,7 @@ data "aws_iam_policy_document" "terraform" {
       "ec2:Create*",
       "ec2:Delete*",
       "ec2:Describe*",
+      "ec2:DisassociateAddress",
       "ec2:DetachInternetGateway",
       "ec2:DisassociateRouteTable",
       "ec2:Modify*",
@@ -164,6 +165,7 @@ data "aws_iam_policy_document" "terraform" {
       "iam:CreateInstanceProfile",
       "iam:DeleteInstanceProfile",
       "iam:GetInstanceProfile",
+      "iam:ListInstanceProfilesForRole",
       "iam:AddRoleToInstanceProfile",
       "iam:RemoveRoleFromInstanceProfile",
       "iam:CreateServiceLinkedRole"
