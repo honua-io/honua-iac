@@ -399,12 +399,26 @@ resolve_acr_credentials_from_image() {
   fi
 
   log_info "Resolving ACR credentials for ${REGISTRY_SERVER}"
-  run_az acr update --name "$registry_name" --admin-enabled true >/dev/null
+  local attempt
+  local credentials_resolved=false
 
-  REGISTRY_USERNAME="$(run_az acr credential show --name "$registry_name" --query username -o tsv)"
-  REGISTRY_PASSWORD="$(run_az acr credential show --name "$registry_name" --query 'passwords[0].value' -o tsv)"
+  for attempt in $(seq 1 "$AZ_LOGIN_MAX_ATTEMPTS"); do
+    if run_az acr update --name "$registry_name" --admin-enabled true >/dev/null 2>&1; then
+      REGISTRY_USERNAME="$(run_az acr credential show --name "$registry_name" --query username -o tsv 2>/dev/null || true)"
+      REGISTRY_PASSWORD="$(run_az acr credential show --name "$registry_name" --query 'passwords[0].value' -o tsv 2>/dev/null || true)"
+      if [[ -n "$REGISTRY_USERNAME" && -n "$REGISTRY_PASSWORD" ]]; then
+        credentials_resolved=true
+        break
+      fi
+    fi
 
-  if [[ -z "$REGISTRY_USERNAME" || -z "$REGISTRY_PASSWORD" ]]; then
+    if (( attempt < AZ_LOGIN_MAX_ATTEMPTS )); then
+      log_warn "ACR credentials not ready yet for ${REGISTRY_SERVER}; retrying in ${AZ_LOGIN_RETRY_SECONDS}s (attempt ${attempt}/${AZ_LOGIN_MAX_ATTEMPTS})"
+      sleep "$AZ_LOGIN_RETRY_SECONDS"
+    fi
+  done
+
+  if [[ "$credentials_resolved" != "true" ]]; then
     log_error "Could not resolve ACR credentials for ${REGISTRY_SERVER}"
     exit 1
   fi
