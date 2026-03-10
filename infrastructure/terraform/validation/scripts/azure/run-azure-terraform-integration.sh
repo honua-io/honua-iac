@@ -328,6 +328,137 @@ normalize_existing_db_connection_string() {
   printf '%s' "$normalized"
 }
 
+normalize_existing_redis_connection_string() {
+  local normalized="$1"
+
+  normalized="$(printf '%s' "$normalized" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+
+  case "$normalized" in
+    ConnectionStrings__Redis=*)
+      normalized="${normalized#ConnectionStrings__Redis=}"
+      ;;
+    Redis=*)
+      normalized="${normalized#Redis=}"
+      ;;
+  esac
+
+  if [[ "$normalized" == \"*\" && "$normalized" == *\" ]]; then
+    normalized="${normalized:1:${#normalized}-2}"
+  fi
+
+  if [[ "$normalized" == \'*\' && "$normalized" == *\' ]]; then
+    normalized="${normalized:1:${#normalized}-2}"
+  fi
+
+  printf '%s' "$normalized"
+}
+
+infer_existing_redis_name_from_db_fqdn() {
+  local db_host="$1"
+  local base_name="${db_host%%.*}"
+
+  if [[ "$base_name" == *-pg ]]; then
+    base_name="${base_name%-pg}"
+  fi
+
+  if [[ -z "$base_name" ]]; then
+    return 1
+  fi
+
+  printf '%s-redis' "$base_name"
+}
+
+infer_existing_redis_resource_group_from_db_fqdn() {
+  local db_host="$1"
+  local base_name="${db_host%%.*}"
+
+  if [[ "$base_name" == *-pg ]]; then
+    base_name="${base_name%-pg}"
+  fi
+
+  if [[ -z "$base_name" ]]; then
+    return 1
+  fi
+
+  printf '%s-data-rg' "$base_name"
+}
+
+rebuild_existing_redis_connection_string_from_azure() {
+  local redis_name="$1"
+  local redis_resource_group="$2"
+  local redis_host=""
+  local redis_ssl_port=""
+  local redis_primary_key=""
+
+  redis_host="$(run_az redis show \
+    --resource-group "$redis_resource_group" \
+    --name "$redis_name" \
+    --query hostName \
+    -o tsv 2>/dev/null || true)"
+
+  redis_ssl_port="$(run_az redis show \
+    --resource-group "$redis_resource_group" \
+    --name "$redis_name" \
+    --query sslPort \
+    -o tsv 2>/dev/null || true)"
+
+  redis_primary_key="$(run_az redis list-keys \
+    --resource-group "$redis_resource_group" \
+    --name "$redis_name" \
+    --query primaryKey \
+    -o tsv 2>/dev/null || true)"
+
+  if [[ -z "$redis_host" || "$redis_host" == "None" || "$redis_host" == "null" ]]; then
+    return 1
+  fi
+
+  if [[ -z "$redis_ssl_port" || "$redis_ssl_port" == "None" || "$redis_ssl_port" == "null" ]]; then
+    redis_ssl_port="6380"
+  fi
+
+  if [[ -z "$redis_primary_key" || "$redis_primary_key" == "None" || "$redis_primary_key" == "null" ]]; then
+    return 1
+  fi
+
+  printf '%s' "${redis_host}:${redis_ssl_port},password=${redis_primary_key},ssl=True,abortConnect=False"
+}
+
+ensure_existing_redis_connection_string_shape() {
+  local normalized=""
+  local redis_name=""
+  local redis_resource_group=""
+  local rebuilt=""
+
+  if [[ -z "$EXISTING_REDIS_CONNECTION_STRING" ]]; then
+    return 0
+  fi
+
+  normalized="$(normalize_existing_redis_connection_string "$EXISTING_REDIS_CONNECTION_STRING")"
+
+  if [[ "$normalized" != "$EXISTING_REDIS_CONNECTION_STRING" ]]; then
+    log_info "Normalized reused Azure Redis connection string before Terraform apply"
+    EXISTING_REDIS_CONNECTION_STRING="$normalized"
+  fi
+
+  if [[ "$EXISTING_REDIS_CONNECTION_STRING" == *","* && "$EXISTING_REDIS_CONNECTION_STRING" == *"password="* && "$EXISTING_REDIS_CONNECTION_STRING" != -* ]]; then
+    return 0
+  fi
+
+  if [[ -n "$EXISTING_DB_FQDN" ]]; then
+    if redis_name="$(infer_existing_redis_name_from_db_fqdn "$EXISTING_DB_FQDN")" && \
+       redis_resource_group="$(infer_existing_redis_resource_group_from_db_fqdn "$EXISTING_DB_FQDN")" && \
+       rebuilt="$(rebuild_existing_redis_connection_string_from_azure "$redis_name" "$redis_resource_group")" && \
+       [[ -n "$rebuilt" ]]; then
+      log_warn "Reused Azure Redis connection string was not valid; rebuilding from existing Azure Redis cache metadata"
+      EXISTING_REDIS_CONNECTION_STRING="$rebuilt"
+      return 0
+    fi
+  fi
+
+  log_error "Reused Azure Redis connection string is invalid and could not be rebuilt from Azure metadata"
+  exit 1
+}
+
 ensure_existing_db_connection_string_shape() {
   local normalized=""
 
@@ -1831,6 +1962,7 @@ detect_public_ipv4() {
 
 set_common_tf_vars() {
   ensure_existing_db_connection_string_shape
+  ensure_existing_redis_connection_string_shape
 
   # Azure Managed Identity tag reads normalize this value to MM/DD/YYYY HH:MM:SS.
   # Use that format up-front to keep idempotency checks stable across services.
