@@ -141,6 +141,7 @@ data "aws_iam_policy_document" "terraform" {
       "s3:PutObject",
       "ecr:BatchGetImage",
       "ecr:CreateRepository",
+      "ecr:DeleteRepositoryPolicy",
       "ecr:DeleteRepository",
       "ecr:Describe*",
       "ecr:GetAuthorizationToken",

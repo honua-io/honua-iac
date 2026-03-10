@@ -289,16 +289,24 @@ parse_args() {
 }
 
 normalize_identifiers() {
+  local validation_suffix
+
   ENVIRONMENT="$(echo "$ENVIRONMENT" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-')"
   NAME_PREFIX_BASE="$(echo "$NAME_PREFIX_BASE" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')"
+  validation_suffix="$(echo "$VALIDATION_RUN_ID" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')"
 
   if [[ -z "$ENVIRONMENT" || -z "$NAME_PREFIX_BASE" ]]; then
     log_error "Environment/name prefix became empty after normalization"
     exit 1
   fi
 
-  NAME_PREFIX_BASE="${NAME_PREFIX_BASE:0:8}"
-  NAME_PREFIX="${NAME_PREFIX_BASE}ek"
+  if [[ -z "$validation_suffix" ]]; then
+    validation_suffix="$(date -u +%S)"
+  fi
+
+  validation_suffix="${validation_suffix: -2}"
+  NAME_PREFIX_BASE="${NAME_PREFIX_BASE:0:10}"
+  NAME_PREFIX="${NAME_PREFIX_BASE}ek${validation_suffix}"
 }
 
 prepare_workspace() {
