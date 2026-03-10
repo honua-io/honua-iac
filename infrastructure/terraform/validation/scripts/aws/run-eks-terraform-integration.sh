@@ -364,6 +364,7 @@ set_tf_vars() {
   export TF_VAR_node_desired_size="$NODE_DESIRED_SIZE"
   export TF_VAR_cluster_endpoint_public_access="true"
   export TF_VAR_cluster_endpoint_public_access_cidrs="[\"$CLUSTER_ENDPOINT_PUBLIC_ACCESS_CIDR\"]"
+  export TF_VAR_enable_cluster_creator_admin_permissions="true"
   export TF_VAR_tags="{\"ValidationRunId\":\"$VALIDATION_RUN_ID\",\"TTLHours\":\"$TTL_HOURS\",\"ExpiresAtUTC\":\"$EXPIRES_AT_UTC\",\"Owner\":\"terraform-validation\"}"
 }
 

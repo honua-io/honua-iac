@@ -87,3 +87,9 @@ variable "cluster_endpoint_public_access_cidrs" {
   type        = list(string)
   default     = []
 }
+
+variable "enable_cluster_creator_admin_permissions" {
+  description = "Whether the identity creating the EKS cluster should receive admin permissions."
+  type        = bool
+  default     = false
+}

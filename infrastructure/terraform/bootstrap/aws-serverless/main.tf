@@ -145,6 +145,7 @@ data "aws_iam_policy_document" "terraform" {
       "ecr:Describe*",
       "ecr:GetAuthorizationToken",
       "ecr:GetDownloadUrlForLayer",
+      "ecr:GetRepositoryPolicy",
       "ecr:List*",
       "ecr:PutImage",
       "ecr:SetRepositoryPolicy",
