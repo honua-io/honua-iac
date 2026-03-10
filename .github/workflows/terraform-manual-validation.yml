@@ -560,8 +560,22 @@ jobs:
           path: ${{ runner.temp }}/plans/azure
           if-no-files-found: ignore
 
-      - name: Save Azure data reuse cache
+      - name: Detect Azure data reuse cache file
         if: ${{ always() && inputs.reuse_data_stack && inputs.run_live }}
+        id: azure-data-cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          cache_file="${{ github.workspace }}/.gha-cache/azure-data-reuse.env"
+          if [[ -f "$cache_file" ]]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Azure data reuse cache file not present; skipping save."
+          fi
+
+      - name: Save Azure data reuse cache
+        if: ${{ always() && inputs.reuse_data_stack && inputs.run_live && steps.azure-data-cache.outputs.exists == 'true' }}
         uses: actions/cache/save@v4
         with:
           path: ${{ github.workspace }}/.gha-cache/azure-data-reuse.env
@@ -884,8 +898,22 @@ jobs:
           path: ${{ runner.temp }}/plans/aws
           if-no-files-found: ignore
 
-      - name: Save AWS data reuse cache
+      - name: Detect AWS data reuse cache file
         if: ${{ always() && inputs.reuse_data_stack && inputs.run_live }}
+        id: aws-data-cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          cache_file="${{ github.workspace }}/.gha-cache/aws-data-reuse.env"
+          if [[ -f "$cache_file" ]]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "AWS data reuse cache file not present; skipping save."
+          fi
+
+      - name: Save AWS data reuse cache
+        if: ${{ always() && inputs.reuse_data_stack && inputs.run_live && steps.aws-data-cache.outputs.exists == 'true' }}
         uses: actions/cache/save@v4
         with:
           path: ${{ github.workspace }}/.gha-cache/aws-data-reuse.env
