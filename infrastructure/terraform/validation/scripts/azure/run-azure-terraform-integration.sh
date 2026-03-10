@@ -1015,14 +1015,7 @@ ensure_aca_db_firewall_access() {
   fi
 
   server_name="${db_fqdn%%.*}"
-  postgres_resource_group="$DATA_RESOURCE_GROUP"
-  if [[ -z "$postgres_resource_group" ]]; then
-    postgres_resource_group="$(run_az resource list \
-      --name "$server_name" \
-      --resource-type "Microsoft.DBforPostgreSQL/flexibleServers" \
-      --query "[0].resourceGroup" \
-      -o tsv || true)"
-  fi
+  postgres_resource_group="$(resolve_postgres_resource_group "$server_name")"
 
   if [[ -z "$postgres_resource_group" ]]; then
     log_warn "Could not determine PostgreSQL resource group for $server_name; skipping ACA DB firewall access"
@@ -1120,14 +1113,7 @@ ensure_existing_db_firewall_access() {
   fi
 
   server_name="${EXISTING_DB_FQDN%%.*}"
-  postgres_resource_group="$DATA_RESOURCE_GROUP"
-  if [[ -z "$postgres_resource_group" ]]; then
-    postgres_resource_group="$(run_az resource list \
-      --name "$server_name" \
-      --resource-type "Microsoft.DBforPostgreSQL/flexibleServers" \
-      --query "[0].resourceGroup" \
-      -o tsv || true)"
-  fi
+  postgres_resource_group="$(resolve_postgres_resource_group "$server_name")"
 
   if [[ -z "$postgres_resource_group" ]]; then
     log_warn "Could not determine PostgreSQL resource group for reused DB $server_name; skipping runner DB firewall access"
@@ -1146,6 +1132,34 @@ ensure_existing_db_firewall_access() {
     --end-ip-address "$DB_FIREWALL_END_IP" >/dev/null
 
   EXISTING_DB_FIREWALL_RULES+=("${postgres_resource_group}|${server_name}|${rule_name}")
+}
+
+resolve_postgres_resource_group() {
+  local server_name="$1"
+  local resolved=""
+
+  if [[ -z "$server_name" ]]; then
+    return 0
+  fi
+
+  resolved="$(run_az resource list \
+    --name "$server_name" \
+    --resource-type "Microsoft.DBforPostgreSQL/flexibleServers" \
+    --query "[0].resourceGroup" \
+    -o tsv || true)"
+
+  if [[ -n "$resolved" ]]; then
+    printf '%s\n' "$resolved"
+    return 0
+  fi
+
+  if [[ -n "$DATA_RESOURCE_GROUP" ]] && run_az postgres flexible-server show \
+    --resource-group "$DATA_RESOURCE_GROUP" \
+    --name "$server_name" \
+    --query "name" \
+    -o tsv >/dev/null 2>&1; then
+    printf '%s\n' "$DATA_RESOURCE_GROUP"
+  fi
 }
 
 clear_existing_db_firewall_access() {
