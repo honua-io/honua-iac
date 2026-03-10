@@ -17,6 +17,8 @@ module "eks" {
   node_min_size         = var.node_min_size
   node_max_size         = var.node_max_size
   node_desired_size     = var.node_desired_size
+  cluster_endpoint_public_access       = var.cluster_endpoint_public_access
+  cluster_endpoint_public_access_cidrs = var.cluster_endpoint_public_access_cidrs
 }
 
 output "cluster_name" {

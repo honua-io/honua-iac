@@ -21,6 +21,9 @@ locals {
   db_use_existing    = var.existing_db_endpoint != "" && var.existing_db_connection_string != ""
   redis_enabled      = var.redis_enabled || var.redis_connection_string != ""
   redis_create       = var.redis_enabled && var.redis_connection_string == ""
+  image_ref          = split("@", var.image)[0]
+  image_repo_path    = join("/", slice(split("/", local.image_ref), 1, length(split("/", local.image_ref))))
+  image_repo_name    = split(":", local.image_repo_path)[0]
   redis_auth_token   = var.redis_auth_token != "" ? var.redis_auth_token : (local.redis_create ? random_password.redis_auth[0].result : "")
   redis_connection   = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true" : "")
   redis_egress_cidrs = local.redis_create ? [local.vpc_cidr_block] : var.redis_connection_cidrs
@@ -316,6 +319,40 @@ data "aws_iam_policy_document" "lambda_assume" {
   }
 }
 
+data "aws_ecr_repository" "image" {
+  name = local.image_repo_name
+}
+
+data "aws_iam_policy_document" "lambda_ecr_access" {
+  statement {
+    sid    = "AllowLambdaImageRetrieval"
+    effect = "Allow"
+
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+
+    actions = [
+      "ecr:BatchGetImage",
+      "ecr:GetDownloadUrlForLayer"
+    ]
+
+    condition {
+      test     = "StringLike"
+      variable = "aws:sourceArn"
+      values = [
+        "arn:aws:lambda:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:function:*"
+      ]
+    }
+  }
+}
+
+resource "aws_ecr_repository_policy" "lambda_image_access" {
+  repository = data.aws_ecr_repository.image.name
+  policy     = data.aws_iam_policy_document.lambda_ecr_access.json
+}
+
 resource "aws_iam_role" "lambda" {
   name_prefix        = "${local.name}-lambda-"
   assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
@@ -443,6 +480,7 @@ resource "aws_lambda_function" "this" {
   }
 
   depends_on = [
+    aws_ecr_repository_policy.lambda_image_access,
     aws_cloudwatch_log_group.lambda,
     aws_secretsmanager_secret_version.connection_string,
     aws_secretsmanager_secret_version.admin_password,

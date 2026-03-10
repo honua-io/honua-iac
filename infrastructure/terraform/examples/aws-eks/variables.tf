@@ -75,3 +75,15 @@ variable "node_desired_size" {
   type        = number
   default     = 2
 }
+
+variable "cluster_endpoint_public_access" {
+  description = "Whether the EKS API server endpoint is publicly accessible."
+  type        = bool
+  default     = false
+}
+
+variable "cluster_endpoint_public_access_cidrs" {
+  description = "CIDR blocks allowed to access the EKS public endpoint."
+  type        = list(string)
+  default     = []
+}

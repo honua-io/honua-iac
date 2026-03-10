@@ -47,6 +47,7 @@ HELM_STATIC_VALIDATE=true
 MAX_RUN_COST_USD="${HONUA_MAX_RUN_COST_USD:-0}"
 READY_SLO_SECONDS="${HONUA_READY_SLO_SECONDS:-600}"
 MAX_LOAD_ERROR_RATE_PERCENT="${HONUA_MAX_LOAD_ERROR_RATE_PERCENT:-0}"
+CLUSTER_ENDPOINT_PUBLIC_ACCESS_CIDR="${EKS_CLUSTER_ENDPOINT_PUBLIC_ACCESS_CIDR:-}"
 TF_IMAGE="${HONUA_TERRAFORM_IMAGE:-hashicorp/terraform:1.8.5}"
 PLAN_ARTIFACT_DIR="${HONUA_TF_PLAN_ARTIFACT_DIR:-}"
 ALLOW_DESTROY_PLAN="${HONUA_ALLOW_DESTROY_PLAN:-false}"
@@ -154,6 +155,21 @@ validate_requested_images() {
     log_error "Upgrade/rollback requires HONUA_K8S_PREVIOUS_IMAGE or --previous-image."
     exit 1
   fi
+}
+
+detect_cluster_endpoint_public_access_cidr() {
+  if [[ -n "$CLUSTER_ENDPOINT_PUBLIC_ACCESS_CIDR" ]]; then
+    return
+  fi
+
+  local ip
+  ip="$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')"
+  if [[ -z "$ip" ]]; then
+    log_error "Failed to detect public IP for EKS API endpoint access"
+    exit 1
+  fi
+
+  CLUSTER_ENDPOINT_PUBLIC_ACCESS_CIDR="${ip}/32"
 }
 
 parse_args() {
@@ -333,6 +349,7 @@ run_tf() {
 }
 
 set_tf_vars() {
+  detect_cluster_endpoint_public_access_cidr
   EXPIRES_AT_UTC="$(date -u -d "+${TTL_HOURS} hours" +%Y-%m-%dT%H:%M:%SZ)"
 
   export AWS_REGION="$REGION"
@@ -345,6 +362,8 @@ set_tf_vars() {
   export TF_VAR_node_min_size="$NODE_MIN_SIZE"
   export TF_VAR_node_max_size="$NODE_MAX_SIZE"
   export TF_VAR_node_desired_size="$NODE_DESIRED_SIZE"
+  export TF_VAR_cluster_endpoint_public_access="true"
+  export TF_VAR_cluster_endpoint_public_access_cidrs="[\"$CLUSTER_ENDPOINT_PUBLIC_ACCESS_CIDR\"]"
   export TF_VAR_tags="{\"ValidationRunId\":\"$VALIDATION_RUN_ID\",\"TTLHours\":\"$TTL_HOURS\",\"ExpiresAtUTC\":\"$EXPIRES_AT_UTC\",\"Owner\":\"terraform-validation\"}"
 }
 
