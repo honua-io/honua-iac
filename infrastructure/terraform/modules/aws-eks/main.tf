@@ -97,7 +97,7 @@ module "eks" {
     default = {
       name           = "default"
       instance_types = var.node_instance_types
-      ami_type       = "AL2023_x86_64_STANDARD"
+      ami_type       = upper(var.node_cpu_architecture) == "ARM64" ? "AL2023_ARM_64_STANDARD" : "AL2023_x86_64_STANDARD"
       disk_size      = 50
       min_size       = var.node_min_size
       max_size       = var.node_max_size

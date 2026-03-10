@@ -46,6 +46,17 @@ variable "node_instance_types" {
   default     = ["t3.medium"]
 }
 
+variable "node_cpu_architecture" {
+  description = "CPU architecture for the managed node group. Use ARM64 for Graviton nodes or X86_64 for Intel/AMD nodes."
+  type        = string
+  default     = "X86_64"
+
+  validation {
+    condition     = contains(["ARM64", "X86_64"], upper(var.node_cpu_architecture))
+    error_message = "node_cpu_architecture must be ARM64 or X86_64."
+  }
+}
+
 variable "node_min_size" {
   description = "Minimum node group size."
   type        = number

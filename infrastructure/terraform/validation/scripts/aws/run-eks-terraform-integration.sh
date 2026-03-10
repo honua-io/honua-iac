@@ -25,7 +25,8 @@ fi
 REGION="${AWS_REGION_OVERRIDE:-us-east-1}"
 ENVIRONMENT="${EKS_TF_ENVIRONMENT:-it}"
 NAME_PREFIX_BASE="${EKS_TF_NAME_PREFIX_BASE:-hnu$(date -u +%m%d%H%M)}"
-NODE_INSTANCE_TYPE="${EKS_NODE_INSTANCE_TYPE:-t3.small}"
+NODE_INSTANCE_TYPE="${EKS_NODE_INSTANCE_TYPE:-t4g.small}"
+NODE_CPU_ARCHITECTURE="${EKS_NODE_CPU_ARCHITECTURE:-ARM64}"
 NODE_MIN_SIZE="${EKS_NODE_MIN_SIZE:-1}"
 NODE_MAX_SIZE="${EKS_NODE_MAX_SIZE:-3}"
 NODE_DESIRED_SIZE="${EKS_NODE_DESIRED_SIZE:-2}"
@@ -72,7 +73,7 @@ Options:
   --region <aws-region>                AWS region (default: us-east-1)
   --environment <name>                 Environment suffix (default: it)
   --name-prefix-base <prefix>          Base prefix for generated resource names
-  --node-instance-type <type>          EKS node instance type (default: t3.small)
+  --node-instance-type <type>          EKS node instance type (default: t4g.small)
   --node-min-size <n>                  EKS node group min size (default: 1)
   --node-max-size <n>                  EKS node group max size (default: 3)
   --node-desired-size <n>              EKS node group desired size (default: 2)
@@ -313,6 +314,7 @@ run_tf() {
       -e TF_VAR_environment \
       -e TF_VAR_name_prefix \
       -e TF_VAR_node_instance_types \
+      -e TF_VAR_node_cpu_architecture \
       -e TF_VAR_node_min_size \
       -e TF_VAR_node_max_size \
       -e TF_VAR_node_desired_size \
@@ -339,6 +341,7 @@ set_tf_vars() {
   export TF_VAR_environment="$ENVIRONMENT"
   export TF_VAR_name_prefix="$NAME_PREFIX"
   export TF_VAR_node_instance_types="[\"$NODE_INSTANCE_TYPE\"]"
+  export TF_VAR_node_cpu_architecture="$NODE_CPU_ARCHITECTURE"
   export TF_VAR_node_min_size="$NODE_MIN_SIZE"
   export TF_VAR_node_max_size="$NODE_MAX_SIZE"
   export TF_VAR_node_desired_size="$NODE_DESIRED_SIZE"
