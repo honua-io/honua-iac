@@ -187,7 +187,7 @@ log_info() {
 }
 
 log_warn() {
-  echo "[WARN] $1"
+  echo "[WARN] $1" >&2
 }
 
 log_error() {
