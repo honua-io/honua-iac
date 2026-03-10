@@ -149,6 +149,7 @@ resolve_helm_chart_path() {
 
   candidates+=(
     "$REPO_ROOT/infrastructure/helm/honua"
+    "$REPO_ROOT/honua-server/infrastructure/helm/honua"
     "$(dirname "$REPO_ROOT")/honua-server/infrastructure/helm/honua"
   )
 
@@ -159,7 +160,7 @@ resolve_helm_chart_path() {
     fi
   done
 
-  log_error "Could not resolve Helm chart path. Set HONUA_HELM_CHART_PATH or check out honua-server next to honua-terraform."
+  log_error "Could not resolve Helm chart path. Set HONUA_HELM_CHART_PATH or check out honua-server inside or next to honua-terraform."
   return 1
 }
 
@@ -924,11 +925,15 @@ prepare_tf_workspace() {
 
   docker_source="$REPO_ROOT/docker"
   if [[ ! -d "$docker_source" ]]; then
+    docker_source="$REPO_ROOT/honua-server/docker"
+  fi
+
+  if [[ ! -d "$docker_source" ]]; then
     docker_source="$(dirname "$REPO_ROOT")/honua-server/docker"
   fi
 
   if [[ ! -d "$docker_source" ]]; then
-    log_error "Could not resolve docker asset path. Check out honua-server next to honua-terraform."
+    log_error "Could not resolve docker asset path. Check out honua-server inside or next to honua-terraform."
     return 1
   fi
 
