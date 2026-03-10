@@ -272,7 +272,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: '10.0.200'
 
       - name: Restore Azure data reuse cache
         if: ${{ inputs.reuse_data_stack && inputs.run_live }}
@@ -618,7 +618,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: '10.0.200'
 
       - name: Restore AWS data reuse cache
         if: ${{ inputs.reuse_data_stack && inputs.run_live }}
@@ -1063,7 +1063,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: '10.0.200'
 
       - name: Setup kubectl
         uses: azure/setup-kubectl@v4
@@ -1261,7 +1261,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: '10.0.200'
 
       - name: Setup kubectl
         uses: azure/setup-kubectl@v4
