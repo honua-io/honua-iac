@@ -66,7 +66,13 @@ variable "authorized_ip_ranges" {
 variable "local_account_disabled" {
   description = "Disable local Kubernetes accounts. Requires Azure AD integration when enabled."
   type        = bool
-  default     = false
+  default     = true
+}
+
+variable "admin_group_object_ids" {
+  description = "Optional Azure AD group object IDs granted AKS admin access when managed Azure AD is enabled."
+  type        = list(string)
+  default     = []
 }
 
 variable "auto_scaling_enabled" {

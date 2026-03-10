@@ -7,6 +7,8 @@ locals {
   }, var.tags)
 }
 
+data "azurerm_client_config" "current" {}
+
 resource "azurerm_resource_group" "this" {
   name     = "${local.name}-aks-rg"
   location = var.location
@@ -67,6 +69,12 @@ resource "azurerm_kubernetes_cluster" "this" {
 
   role_based_access_control_enabled = true
   local_account_disabled            = var.local_account_disabled
+
+  azure_active_directory_role_based_access_control {
+    tenant_id              = data.azurerm_client_config.current.tenant_id
+    azure_rbac_enabled     = true
+    admin_group_object_ids = var.admin_group_object_ids
+  }
 
   dynamic "api_server_access_profile" {
     for_each = length(var.authorized_ip_ranges) > 0 ? [1] : []
