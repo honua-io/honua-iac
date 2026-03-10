@@ -1586,10 +1586,42 @@ json_array_items() {
 
 route_table_id_for_subnet() {
   local subnet_id="$1"
-  run_aws ec2 describe-route-tables \
-    --filters "Name=association.subnet-id,Values=$subnet_id" \
-    --query 'RouteTables[0].RouteTableId' \
-    --output text 2>/dev/null || true
+  local route_table_id=""
+  local subnet_vpc_id=""
+  local attempt
+
+  for attempt in $(seq 1 3); do
+    route_table_id="$(run_aws ec2 describe-route-tables \
+      --filters "Name=association.subnet-id,Values=$subnet_id" \
+      --query 'RouteTables[0].RouteTableId' \
+      --output text 2>/dev/null || true)"
+
+    if [[ -n "$route_table_id" && "$route_table_id" != "None" && "$route_table_id" != "null" ]]; then
+      printf '%s' "$route_table_id"
+      return 0
+    fi
+
+    subnet_vpc_id="$(run_aws ec2 describe-subnets \
+      --subnet-ids "$subnet_id" \
+      --query 'Subnets[0].VpcId' \
+      --output text 2>/dev/null || true)"
+
+    if [[ -n "$subnet_vpc_id" && "$subnet_vpc_id" != "None" && "$subnet_vpc_id" != "null" ]]; then
+      route_table_id="$(run_aws ec2 describe-route-tables \
+        --filters "Name=vpc-id,Values=$subnet_vpc_id" "Name=association.main,Values=true" \
+        --query 'RouteTables[0].RouteTableId' \
+        --output text 2>/dev/null || true)"
+
+      if [[ -n "$route_table_id" && "$route_table_id" != "None" && "$route_table_id" != "null" ]]; then
+        printf '%s' "$route_table_id"
+        return 0
+      fi
+    fi
+
+    sleep 2
+  done
+
+  return 1
 }
 
 route_table_default_route_target() {
@@ -1603,9 +1635,15 @@ route_table_default_route_target() {
 subnet_has_igw_default_route() {
   local subnet_id="$1"
   local gateway_id
+  local route_table_id
+
+  route_table_id="$(route_table_id_for_subnet "$subnet_id")"
+  if [[ -z "$route_table_id" || "$route_table_id" == "None" || "$route_table_id" == "null" ]]; then
+    return 1
+  fi
 
   gateway_id="$(run_aws ec2 describe-route-tables \
-    --filters "Name=association.subnet-id,Values=$subnet_id" \
+    --route-table-ids "$route_table_id" \
     --query 'RouteTables[0].Routes[?DestinationCidrBlock==`0.0.0.0/0`].GatewayId | [0]' \
     --output text 2>/dev/null || true)"
 
