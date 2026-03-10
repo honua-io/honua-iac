@@ -96,6 +96,7 @@ DATA_RESOURCE_GROUP=""
 EXPIRES_AT_UTC=""
 DB_PASSWORD_EFFECTIVE=""
 ACA_DB_FIREWALL_RULES=()
+EXISTING_DB_FIREWALL_RULES=()
 USE_DOCKER_TF=false
 USE_DOCKER_AZ_CLI=false
 USE_DOCKER_PG_TOOLS=false
@@ -1104,6 +1105,73 @@ clear_aca_db_firewall_access() {
   done
 }
 
+ensure_existing_db_firewall_access() {
+  local postgres_resource_group=""
+  local server_name=""
+  local rule_name=""
+  local sanitized_run_id=""
+
+  if [[ -z "$EXISTING_DB_FQDN" || -z "$DB_FIREWALL_START_IP" || -z "$DB_FIREWALL_END_IP" ]]; then
+    return 0
+  fi
+
+  if [[ "$EXISTING_DB_FQDN" != *.postgres.database.azure.com ]]; then
+    return 0
+  fi
+
+  server_name="${EXISTING_DB_FQDN%%.*}"
+  postgres_resource_group="$DATA_RESOURCE_GROUP"
+  if [[ -z "$postgres_resource_group" ]]; then
+    postgres_resource_group="$(run_az resource list \
+      --name "$server_name" \
+      --resource-type "Microsoft.DBforPostgreSQL/flexibleServers" \
+      --query "[0].resourceGroup" \
+      -o tsv || true)"
+  fi
+
+  if [[ -z "$postgres_resource_group" ]]; then
+    log_warn "Could not determine PostgreSQL resource group for reused DB $server_name; skipping runner DB firewall access"
+    return 0
+  fi
+
+  sanitized_run_id="$(printf '%s' "$VALIDATION_RUN_ID" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-')"
+  rule_name="runner-${sanitized_run_id:0:52}"
+
+  log_info "Allowing runner firewall range $DB_FIREWALL_START_IP - $DB_FIREWALL_END_IP to reach PostgreSQL server $server_name"
+  run_az postgres flexible-server firewall-rule create \
+    --resource-group "$postgres_resource_group" \
+    --name "$server_name" \
+    --rule-name "$rule_name" \
+    --start-ip-address "$DB_FIREWALL_START_IP" \
+    --end-ip-address "$DB_FIREWALL_END_IP" >/dev/null
+
+  EXISTING_DB_FIREWALL_RULES+=("${postgres_resource_group}|${server_name}|${rule_name}")
+}
+
+clear_existing_db_firewall_access() {
+  local entry
+  local resource_group
+  local server_name
+  local rule_name
+
+  if [[ "${#EXISTING_DB_FIREWALL_RULES[@]}" -eq 0 ]]; then
+    return 0
+  fi
+
+  for entry in "${EXISTING_DB_FIREWALL_RULES[@]}"; do
+    resource_group="${entry%%|*}"
+    entry="${entry#*|}"
+    server_name="${entry%%|*}"
+    rule_name="${entry##*|}"
+
+    run_az postgres flexible-server firewall-rule delete \
+      --resource-group "$resource_group" \
+      --name "$server_name" \
+      --rule-name "$rule_name" \
+      --yes >/dev/null || true
+  done
+}
+
 run_load_probe() {
   local base_url="$1"
   local requests="$2"
@@ -1913,13 +1981,6 @@ run_quota_preflight() {
 }
 
 detect_db_firewall_ips() {
-  if [[ -n "$EXISTING_DB_CONNECTION_STRING" ]]; then
-    DB_FIREWALL_START_IP=""
-    DB_FIREWALL_END_IP=""
-    log_info "Using existing DB connection string; skipping DB firewall configuration"
-    return
-  fi
-
   if [[ -n "$DB_FIREWALL_START_IP" && -z "$DB_FIREWALL_END_IP" ]]; then
     log_error "HONUA_AZURE_DB_FIREWALL_END_IP must be set when HONUA_AZURE_DB_FIREWALL_START_IP is provided"
     exit 1
@@ -2423,6 +2484,8 @@ cleanup() {
   local keep_data_stack=false
   local skip_leak_check=false
 
+  clear_existing_db_firewall_access
+
   if [[ "$AUTO_DESTROY" == "true" ]]; then
     destroy_functions_stack
     destroy_aca_stack
@@ -2481,6 +2544,8 @@ main() {
   normalize_identifiers
   validate_existing_resource_inputs
   configure_data_stack_mode
+  ensure_existing_db_connection_string_shape
+  ensure_existing_redis_connection_string_shape
   resolve_db_password_for_checks
   configure_runtime_tools
   assert_cost_guardrail
@@ -2489,6 +2554,7 @@ main() {
   prepare_tf_workspace
 
   trap cleanup EXIT
+  ensure_existing_db_firewall_access
 
   log_info "Starting Azure Terraform integration test"
   log_info "Validation run ID: $VALIDATION_RUN_ID"
