@@ -99,6 +99,7 @@ DB_PASSWORD_EFFECTIVE=""
 USE_DOCKER_TF=false
 USE_DOCKER_AWS_CLI=false
 USE_DOCKER_PG_TOOLS=false
+declare -a EXISTING_DB_RUNNER_INGRESS_GROUP_IDS=()
 
 usage() {
   cat <<USAGE
@@ -707,12 +708,6 @@ normalize_identifiers() {
 }
 
 detect_db_ingress_cidr() {
-  if [[ -n "$EXISTING_DB_CONNECTION_STRING" ]]; then
-    DB_INGRESS_CIDR=""
-    log_info "Using existing DB connection string; skipping DB ingress CIDR detection"
-    return
-  fi
-
   if [[ -n "$DB_INGRESS_CIDR" ]]; then
     return
   fi
@@ -860,6 +855,84 @@ run_aws() {
   fi
 
   AWS_PAGER="" aws --region "$REGION" "$@"
+}
+
+existing_db_security_group_ids() {
+  local group_ids
+
+  group_ids="$(run_aws rds describe-db-instances \
+    --query "DBInstances[?Endpoint.Address=='${EXISTING_DB_ENDPOINT}'].VpcSecurityGroups[].VpcSecurityGroupId" \
+    --output text)"
+
+  if [[ -z "$group_ids" || "$group_ids" == "None" ]]; then
+    log_error "Could not resolve RDS security groups for reused DB endpoint $EXISTING_DB_ENDPOINT"
+    return 1
+  fi
+
+  printf '%s\n' "$group_ids" | tr '\t' '\n' | sed '/^$/d'
+}
+
+security_group_allows_db_cidr() {
+  local group_id="$1"
+  local cidr="$2"
+  local cidrs
+
+  cidrs="$(run_aws ec2 describe-security-groups \
+    --group-ids "$group_id" \
+    --query "SecurityGroups[0].IpPermissions[?IpProtocol=='tcp' && FromPort==\`5432\` && ToPort==\`5432\`].IpRanges[].CidrIp" \
+    --output text)"
+
+  if [[ -z "$cidrs" || "$cidrs" == "None" ]]; then
+    return 1
+  fi
+
+  printf '%s\n' "$cidrs" | tr '\t' '\n' | grep -Fxq "$cidr"
+}
+
+authorize_existing_db_runner_ingress() {
+  local group_id=""
+
+  if ! has_existing_data_inputs; then
+    return 0
+  fi
+
+  if [[ -z "$DB_INGRESS_CIDR" ]]; then
+    log_error "Runner DB ingress CIDR was empty while reusing AWS data"
+    return 1
+  fi
+
+  while IFS= read -r group_id; do
+    [[ -z "$group_id" ]] && continue
+
+    if security_group_allows_db_cidr "$group_id" "$DB_INGRESS_CIDR"; then
+      log_info "Reused RDS security group $group_id already allows $DB_INGRESS_CIDR"
+      continue
+    fi
+
+    run_aws ec2 authorize-security-group-ingress \
+      --group-id "$group_id" \
+      --ip-permissions "[{\"IpProtocol\":\"tcp\",\"FromPort\":5432,\"ToPort\":5432,\"IpRanges\":[{\"CidrIp\":\"$DB_INGRESS_CIDR\",\"Description\":\"Honua validation runner ${VALIDATION_RUN_ID}\"}]}]" >/dev/null
+    EXISTING_DB_RUNNER_INGRESS_GROUP_IDS+=("$group_id")
+    log_info "Authorized temporary RDS ingress from $DB_INGRESS_CIDR on security group $group_id"
+  done < <(existing_db_security_group_ids)
+}
+
+revoke_existing_db_runner_ingress() {
+  local group_id=""
+
+  if [[ "${#EXISTING_DB_RUNNER_INGRESS_GROUP_IDS[@]}" -eq 0 ]]; then
+    return 0
+  fi
+
+  for group_id in "${EXISTING_DB_RUNNER_INGRESS_GROUP_IDS[@]}"; do
+    if ! run_aws ec2 revoke-security-group-ingress \
+      --group-id "$group_id" \
+      --ip-permissions "[{\"IpProtocol\":\"tcp\",\"FromPort\":5432,\"ToPort\":5432,\"IpRanges\":[{\"CidrIp\":\"$DB_INGRESS_CIDR\"}]}]" >/dev/null 2>&1; then
+      log_warn "Failed to revoke temporary RDS ingress from $DB_INGRESS_CIDR on security group $group_id"
+      return 1
+    fi
+    log_info "Revoked temporary RDS ingress from $DB_INGRESS_CIDR on security group $group_id"
+  done
 }
 
 pg_conn() {
@@ -2538,6 +2611,8 @@ cleanup() {
   local exit_code="$?"
   local skip_leak_check=false
 
+  revoke_existing_db_runner_ingress || exit_code=1
+
   if [[ "$AUTO_DESTROY" == "true" ]]; then
     destroy_serverless_stack
     destroy_ecs_stack
@@ -2600,6 +2675,7 @@ main() {
   prepare_tf_workspace
 
   trap cleanup EXIT
+  authorize_existing_db_runner_ingress
 
   log_info "Starting AWS Terraform integration test"
   log_info "Validation run ID: $VALIDATION_RUN_ID"
