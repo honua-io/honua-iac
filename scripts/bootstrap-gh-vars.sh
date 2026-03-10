@@ -14,6 +14,8 @@ AWS_SERVERLESS_IMAGE=""
 ACA_IMAGE=""
 FUNCTIONS_IMAGE=""
 K8S_IMAGE=""
+AKS_IMAGE=""
+EKS_IMAGE=""
 
 ECR_REGION=""
 ECR_REPOSITORY=""
@@ -37,6 +39,8 @@ Options:
   --aca-image <ref>                 Explicit ACA image override
   --functions-image <ref>           Explicit Azure Functions image override
   --k8s-image <ref>                 Explicit k8s image override
+  --aks-image <ref>                 Explicit AKS image override
+  --eks-image <ref>                 Explicit EKS image override
   --ecr-region <region>             ECR region override
   --ecr-repository <name>           ECR repository override
   --acr-login-server <host>         ACR login server override
@@ -58,6 +62,8 @@ Notes:
   - Azure Container Apps and Azure Functions should use amd64 cloud images.
     AKS should use the generic multi-arch image family so Arm node pools can
     pull arm64 variants automatically.
+  - AKS and EKS can be pinned independently when cloud-native registry lanes
+    are configured; otherwise they fall back to the shared generic image.
   - GHCR is kept as the generic/k8s fallback and as a temporary ACA fallback
     when the Azure cloud-native registry lane is not configured yet.
 EOF
@@ -277,6 +283,87 @@ resolve_azure_functions_image() {
   FUNCTIONS_IMAGE="${ACR_LOGIN_SERVER}/${ACR_REPOSITORY}:${functions_tag}"
 }
 
+resolve_azure_aks_image() {
+  local aks_tag="latest-aot"
+
+  if [[ -n "$AKS_IMAGE" ]]; then
+    return 0
+  fi
+
+  if [[ "$USE_AOT" != "true" ]]; then
+    aks_tag="latest"
+  fi
+
+  if [[ -z "$ACR_LOGIN_SERVER" ]]; then
+    ACR_LOGIN_SERVER="$(get_source_var ACR_LOGIN_SERVER)"
+  fi
+
+  if [[ -z "$ACR_REPOSITORY" ]]; then
+    ACR_REPOSITORY="$(get_source_var ACR_REPOSITORY)"
+  fi
+
+  if [[ -z "$ACR_REPOSITORY" ]]; then
+    ACR_REPOSITORY="honua-server"
+  fi
+
+  if [[ -n "$ACR_LOGIN_SERVER" ]]; then
+    AKS_IMAGE="${ACR_LOGIN_SERVER}/${ACR_REPOSITORY}:${aks_tag}"
+    return 0
+  fi
+
+  log_warn "ACR_LOGIN_SERVER is not configured in $SOURCE_REPO; falling back to generic AKS image."
+  AKS_IMAGE="$K8S_IMAGE"
+}
+
+resolve_aws_eks_image() {
+  local eks_tag="latest-aot"
+  local account_id=""
+
+  if [[ -n "$EKS_IMAGE" ]]; then
+    return 0
+  fi
+
+  if [[ "$USE_AOT" != "true" ]]; then
+    eks_tag="latest"
+  fi
+
+  if [[ -z "$ECR_REGION" ]]; then
+    ECR_REGION="$(get_source_var AWS_ECR_REGION)"
+  fi
+
+  if [[ -z "$ECR_REPOSITORY" ]]; then
+    ECR_REPOSITORY="$(get_source_var AWS_ECR_REPOSITORY)"
+  fi
+
+  if [[ -z "$ECR_REPOSITORY" ]]; then
+    ECR_REPOSITORY="honua-server"
+  fi
+
+  if [[ -n "$ECR_REGION" ]] && command -v aws >/dev/null 2>&1; then
+    if account_id="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)"; then
+      if aws ecr describe-images \
+        --region "$ECR_REGION" \
+        --repository-name "$ECR_REPOSITORY" \
+        --image-ids imageTag="$eks_tag" >/dev/null 2>&1; then
+        EKS_IMAGE="${account_id}.dkr.ecr.${ECR_REGION}.amazonaws.com/${ECR_REPOSITORY}:${eks_tag}"
+        return 0
+      fi
+
+      log_warn "ECR image tag '$eks_tag' was not found in ${account_id}.dkr.ecr.${ECR_REGION}.amazonaws.com/${ECR_REPOSITORY}; falling back to generic EKS image."
+      EKS_IMAGE="$K8S_IMAGE"
+      return 0
+    fi
+  fi
+
+  if [[ -n "$ECR_REGION" ]]; then
+    log_warn "AWS credentials are not available in the current shell; falling back to generic EKS image."
+  else
+    log_warn "AWS_ECR_REGION is not configured in $SOURCE_REPO; falling back to generic EKS image."
+  fi
+
+  EKS_IMAGE="$K8S_IMAGE"
+}
+
 set_variable() {
   local key="$1"
   local value="$2"
@@ -376,6 +463,14 @@ main() {
         K8S_IMAGE="${2:-}"
         shift 2
         ;;
+      --aks-image)
+        AKS_IMAGE="${2:-}"
+        shift 2
+        ;;
+      --eks-image)
+        EKS_IMAGE="${2:-}"
+        shift 2
+        ;;
       --ecr-region)
         ECR_REGION="${2:-}"
         shift 2
@@ -423,10 +518,14 @@ main() {
   resolve_aws_serverless_image
   resolve_azure_aca_image
   resolve_azure_functions_image
+  resolve_azure_aks_image
+  resolve_aws_eks_image
 
   set_variable "HONUA_AWS_ECS_IMAGE" "$AWS_ECS_IMAGE"
   set_variable "HONUA_ACA_IMAGE" "$ACA_IMAGE"
   set_variable "HONUA_K8S_IMAGE" "$K8S_IMAGE"
+  set_variable "HONUA_AKS_IMAGE" "$AKS_IMAGE"
+  set_variable "HONUA_EKS_IMAGE" "$EKS_IMAGE"
 
   if [[ -n "$AWS_SERVERLESS_IMAGE" ]]; then
     set_variable "HONUA_AWS_SERVERLESS_IMAGE" "$AWS_SERVERLESS_IMAGE"
