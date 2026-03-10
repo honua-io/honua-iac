@@ -390,6 +390,36 @@ ensure_existing_db_connection_string_shape() {
   fi
 }
 
+ensure_existing_redis_connection_string_shape() {
+  local normalized=""
+
+  if [[ -z "$EXISTING_REDIS_CONNECTION_STRING" ]]; then
+    return 0
+  fi
+
+  normalized="$(printf '%s' "$EXISTING_REDIS_CONNECTION_STRING" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+
+  if [[ "$normalized" == \"*\" && "$normalized" == *\" ]]; then
+    normalized="${normalized:1:${#normalized}-2}"
+  fi
+
+  if [[ "$normalized" == \'*\' && "$normalized" == *\' ]]; then
+    normalized="${normalized:1:${#normalized}-2}"
+  fi
+
+  if [[ "$normalized" != "$EXISTING_REDIS_CONNECTION_STRING" ]]; then
+    log_info "Normalized reused AWS Redis connection string before Terraform apply"
+    EXISTING_REDIS_CONNECTION_STRING="$normalized"
+  fi
+
+  if [[ "$EXISTING_REDIS_CONNECTION_STRING" == *","* && "$EXISTING_REDIS_CONNECTION_STRING" == *"password="* && "$EXISTING_REDIS_CONNECTION_STRING" != -* ]]; then
+    return 0
+  fi
+
+  log_error "Reused AWS Redis connection string is invalid. Expected '<host>:6379,password=...,ssl=true'."
+  exit 1
+}
+
 resolve_db_password_for_checks() {
   DB_PASSWORD_EFFECTIVE="$HONUA_DB_PASSWORD"
 
@@ -1939,6 +1969,7 @@ set_common_tf_vars() {
   EXPIRES_AT_UTC="$(date -u -d "+${TTL_HOURS} hours" +%Y-%m-%dT%H:%M:%SZ)"
 
   ensure_existing_db_connection_string_shape
+  ensure_existing_redis_connection_string_shape
 
   export AWS_REGION="$REGION"
   export AWS_DEFAULT_REGION="$REGION"
