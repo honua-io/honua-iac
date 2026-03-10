@@ -48,6 +48,7 @@ data "aws_iam_policy_document" "terraform" {
       "ec2:DetachInternetGateway",
       "ec2:DisassociateRouteTable",
       "ec2:Modify*",
+      "ec2:RunInstances",
       "ec2:ReplaceRoute",
       "ec2:ReleaseAddress",
       "ec2:RevokeSecurityGroupEgress",

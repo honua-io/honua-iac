@@ -47,6 +47,25 @@ variable "honua_image" {
   type        = string
 }
 
+variable "registry_server" {
+  description = "Optional registry server used to authenticate private image pulls."
+  type        = string
+  default     = ""
+}
+
+variable "registry_username" {
+  description = "Optional registry username used to authenticate private image pulls."
+  type        = string
+  default     = ""
+}
+
+variable "registry_password" {
+  description = "Optional registry password used to authenticate private image pulls."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "deployment_slot_enabled" {
   description = "Provision a staging deployment slot for slot-based rollout workflows."
   type        = bool

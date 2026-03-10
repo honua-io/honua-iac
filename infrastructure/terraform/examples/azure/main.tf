@@ -26,6 +26,9 @@ module "honua" {
   min_replicas                    = var.min_replicas
   max_replicas                    = var.max_replicas
   key_vault_default_action        = var.key_vault_default_action
+  registry_server                 = var.registry_server
+  registry_username               = var.registry_username
+  registry_password               = var.registry_password
   tags                            = var.tags
 
   additional_env = {

@@ -27,6 +27,9 @@ module "honua" {
   redis_sku_name                  = var.redis_sku_name
   redis_family                    = var.redis_family
   redis_capacity                  = var.redis_capacity
+  registry_server                 = var.registry_server
+  registry_username               = var.registry_username
+  registry_password               = var.registry_password
   skip_migrations                 = var.skip_migrations
   tags                            = var.tags
 

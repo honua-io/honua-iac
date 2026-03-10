@@ -69,6 +69,9 @@ DB_FIREWALL_END_IP="${HONUA_AZURE_DB_FIREWALL_END_IP:-}"
 EXISTING_DB_FQDN="${HONUA_AZURE_EXISTING_DB_FQDN:-}"
 EXISTING_DB_CONNECTION_STRING="${HONUA_AZURE_EXISTING_DB_CONNECTION_STRING:-}"
 EXISTING_REDIS_CONNECTION_STRING="${HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING:-}"
+REGISTRY_SERVER="${HONUA_AZURE_REGISTRY_SERVER:-}"
+REGISTRY_USERNAME="${HONUA_AZURE_REGISTRY_USERNAME:-}"
+REGISTRY_PASSWORD="${HONUA_AZURE_REGISTRY_PASSWORD:-}"
 AUTO_PROVISION_DATA_STACK=true
 DATA_DB_SKU_NAME="${HONUA_AZURE_DATA_DB_SKU_NAME:-B_Standard_B1ms}"
 DATA_DB_STORAGE_MB="${HONUA_AZURE_DATA_DB_STORAGE_MB:-32768}"
@@ -352,6 +355,59 @@ normalize_existing_redis_connection_string() {
   fi
 
   printf '%s' "$normalized"
+}
+
+extract_registry_server_from_image() {
+  local image_ref="$1"
+  local first_segment=""
+
+  first_segment="${image_ref%%/*}"
+  if [[ "$first_segment" == "$image_ref" ]]; then
+    return 1
+  fi
+
+  case "$first_segment" in
+    *.*|*:*|localhost)
+      printf '%s' "$first_segment"
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
+resolve_acr_credentials_from_image() {
+  local image_ref="$1"
+  local registry_name=""
+
+  if [[ -n "$REGISTRY_SERVER" && -n "$REGISTRY_USERNAME" && -n "$REGISTRY_PASSWORD" ]]; then
+    return 0
+  fi
+
+  if ! REGISTRY_SERVER="$(extract_registry_server_from_image "$image_ref")"; then
+    return 0
+  fi
+
+  if [[ ! "$REGISTRY_SERVER" =~ \.azurecr\.io$ ]]; then
+    return 0
+  fi
+
+  registry_name="${REGISTRY_SERVER%%.*}"
+  if [[ -z "$registry_name" ]]; then
+    log_error "Could not derive Azure Container Registry name from image: $image_ref"
+    exit 1
+  fi
+
+  log_info "Resolving ACR credentials for ${REGISTRY_SERVER}"
+  run_az acr update --name "$registry_name" --admin-enabled true >/dev/null
+
+  REGISTRY_USERNAME="$(run_az acr credential show --name "$registry_name" --query username -o tsv)"
+  REGISTRY_PASSWORD="$(run_az acr credential show --name "$registry_name" --query 'passwords[0].value' -o tsv)"
+
+  if [[ -z "$REGISTRY_USERNAME" || -z "$REGISTRY_PASSWORD" ]]; then
+    log_error "Could not resolve ACR credentials for ${REGISTRY_SERVER}"
+    exit 1
+  fi
 }
 
 infer_existing_redis_name_from_db_fqdn() {
@@ -793,6 +849,9 @@ run_tf() {
       -e TF_VAR_existing_db_connection_string \
       -e TF_VAR_db_firewall_start_ip \
       -e TF_VAR_db_firewall_end_ip \
+      -e TF_VAR_registry_server \
+      -e TF_VAR_registry_username \
+      -e TF_VAR_registry_password \
       -e TF_VAR_min_replicas \
       -e TF_VAR_max_replicas \
       -e TF_VAR_key_vault_default_action \
@@ -2059,11 +2118,15 @@ set_common_tf_vars() {
 
 set_aca_tf_vars() {
   set_common_tf_vars
+  resolve_acr_credentials_from_image "$ACA_IMAGE"
   export TF_VAR_name_prefix="$ACA_NAME_PREFIX"
   export TF_VAR_honua_image="$ACA_IMAGE"
   export TF_VAR_min_replicas="$ACA_MIN_REPLICAS"
   export TF_VAR_max_replicas="$ACA_MAX_REPLICAS"
   export TF_VAR_key_vault_default_action="Allow"
+  export TF_VAR_registry_server="$REGISTRY_SERVER"
+  export TF_VAR_registry_username="$REGISTRY_USERNAME"
+  export TF_VAR_registry_password="$REGISTRY_PASSWORD"
 
   unset TF_VAR_plan_sku_name
   unset TF_VAR_skip_migrations
@@ -2080,6 +2143,7 @@ set_aca_tf_vars() {
 
 set_functions_tf_vars() {
   set_common_tf_vars
+  resolve_acr_credentials_from_image "$FUNCTIONS_IMAGE"
   export TF_VAR_name_prefix="$FUNCTIONS_NAME_PREFIX"
   export TF_VAR_honua_image="$FUNCTIONS_IMAGE"
   export TF_VAR_deployment_slot_enabled="$FUNCTIONS_DEPLOYMENT_SLOT_ENABLED"
@@ -2087,6 +2151,9 @@ set_functions_tf_vars() {
   export TF_VAR_deployment_slot_image="$FUNCTIONS_DEPLOYMENT_SLOT_IMAGE"
   export TF_VAR_plan_sku_name="$FUNCTIONS_PLAN_SKU"
   export TF_VAR_skip_migrations="$FUNCTIONS_SKIP_MIGRATIONS"
+  export TF_VAR_registry_server="$REGISTRY_SERVER"
+  export TF_VAR_registry_username="$REGISTRY_USERNAME"
+  export TF_VAR_registry_password="$REGISTRY_PASSWORD"
 
   unset TF_VAR_min_replicas
   unset TF_VAR_max_replicas
