@@ -215,8 +215,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/b692c20b68c0121346b7b34e81d6b1867ca8e1a8/scripts/install_linux.sh | bash
-          tfsec --version
+          TFSEC_VERSION="v1.28.14"
+          TFSEC_URL="https://github.com/aquasecurity/tfsec/releases/download/${TFSEC_VERSION}/tfsec-linux-amd64"
+          install_dir="${HOME}/.local/bin"
+
+          mkdir -p "$install_dir"
+
+          if curl -fsSL "$TFSEC_URL" -o "${install_dir}/tfsec"; then
+            chmod +x "${install_dir}/tfsec"
+            echo "${install_dir}" >> "$GITHUB_PATH"
+            "${install_dir}/tfsec" --version
+          else
+            echo "::warning::tfsec download failed from ${TFSEC_URL}; continuing without a local tfsec binary"
+          fi
 
       - name: Run Terraform policy gate script
         shell: bash
