@@ -253,6 +253,107 @@ extract_connection_string_password() {
   return 1
 }
 
+convert_pg_uri_to_connection_string() {
+  local connection_uri="$1"
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    return 1
+  fi
+
+  python3 - "$connection_uri" <<'PY'
+import sys
+from urllib.parse import parse_qs, unquote, urlparse
+
+uri = sys.argv[1]
+parsed = urlparse(uri)
+if parsed.scheme not in {"postgres", "postgresql"}:
+    sys.exit(1)
+
+host = parsed.hostname or ""
+user = unquote(parsed.username or "")
+password = unquote(parsed.password or "")
+database = (parsed.path or "/").lstrip("/") or "honua"
+port = parsed.port or 5432
+query = parse_qs(parsed.query, keep_blank_values=True)
+ssl_mode = (query.get("sslmode") or query.get("ssl_mode") or ["Require"])[0]
+trust_server_certificate = (
+    query.get("trust server certificate")
+    or query.get("trust_server_certificate")
+    or ["false"]
+)[0]
+
+parts = [
+    f"Host={host}",
+    f"Port={port}",
+    f"Database={database}",
+    f"Username={user}",
+]
+if password:
+    parts.append(f"Password={password}")
+parts.append(f"SSL Mode={ssl_mode}")
+parts.append(f"Trust Server Certificate={trust_server_certificate}")
+print(";".join(parts))
+PY
+}
+
+normalize_existing_db_connection_string() {
+  local normalized="$1"
+  local converted=""
+
+  normalized="$(printf '%s' "$normalized" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+
+  case "$normalized" in
+    ConnectionStrings__DefaultConnection=*)
+      normalized="${normalized#ConnectionStrings__DefaultConnection=}"
+      ;;
+    DefaultConnection=*)
+      normalized="${normalized#DefaultConnection=}"
+      ;;
+  esac
+
+  if [[ "$normalized" == \"*\" && "$normalized" == *\" ]]; then
+    normalized="${normalized:1:${#normalized}-2}"
+  fi
+
+  if [[ "$normalized" == \'*\' && "$normalized" == *\' ]]; then
+    normalized="${normalized:1:${#normalized}-2}"
+  fi
+
+  if [[ "$normalized" =~ ^postgres(ql)?:// ]]; then
+    if converted="$(convert_pg_uri_to_connection_string "$normalized" 2>/dev/null)" && [[ -n "$converted" ]]; then
+      normalized="$converted"
+    fi
+  fi
+
+  printf '%s' "$normalized"
+}
+
+ensure_existing_db_connection_string_shape() {
+  local normalized=""
+
+  if [[ -z "$EXISTING_DB_CONNECTION_STRING" ]]; then
+    return 0
+  fi
+
+  normalized="$(normalize_existing_db_connection_string "$EXISTING_DB_CONNECTION_STRING")"
+
+  if [[ "$normalized" != "$EXISTING_DB_CONNECTION_STRING" ]]; then
+    log_info "Normalized reused Azure DB connection string before Terraform apply"
+    EXISTING_DB_CONNECTION_STRING="$normalized"
+  fi
+
+  if [[ "$EXISTING_DB_CONNECTION_STRING" != *=* ]]; then
+    if [[ -n "$EXISTING_DB_FQDN" ]]; then
+      log_warn "Reused Azure DB connection string was not ADO.NET-shaped; rebuilding from existing DB FQDN and validation defaults"
+      EXISTING_DB_CONNECTION_STRING="Host=${EXISTING_DB_FQDN};Port=5432;Database=honua;Username=honua;Password=${HONUA_DB_PASSWORD};SSL Mode=Require;Trust Server Certificate=false"
+      return 0
+    fi
+
+    log_error "Reused Azure DB connection string is not a valid ADO.NET connection string and no existing DB FQDN fallback is available"
+    exit 1
+  fi
+}
+
 resolve_db_password_for_checks() {
   DB_PASSWORD_EFFECTIVE="$HONUA_DB_PASSWORD"
 
@@ -1729,6 +1830,8 @@ detect_public_ipv4() {
 }
 
 set_common_tf_vars() {
+  ensure_existing_db_connection_string_shape
+
   # Azure Managed Identity tag reads normalize this value to MM/DD/YYYY HH:MM:SS.
   # Use that format up-front to keep idempotency checks stable across services.
   EXPIRES_AT_UTC="$(date -u -d "+${TTL_HOURS} hours" +%m/%d/%Y\ %H:%M:%S)"
