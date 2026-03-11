@@ -78,13 +78,15 @@ locals {
   lambda_function_name = "${local.name}-honua"
   lambda_target_id     = "${local.lambda_function_name}-${var.lambda_alias_name}"
   redis_secret_environment = local.redis_connection != "" ? {
-    HONUA_SECRET_REDIS_CONNECTION_ARN = aws_secretsmanager_secret.redis_connection[0].arn
+    ConnectionStrings__redis       = "env:HONUA_RUNTIME_REDIS_CONNECTION"
+    HONUA_RUNTIME_REDIS_CONNECTION = local.redis_connection
   } : {}
   lambda_environment = merge({
     HONUA_SKIP_MIGRATIONS                                       = var.skip_migrations ? "true" : "false"
     HostValidation__AllowedHosts__0                             = "*.execute-api.${data.aws_region.current.name}.amazonaws.com"
-    HONUA_SECRET_CONNECTION_STRING_ARN                          = aws_secretsmanager_secret.connection_string.arn
-    HONUA_SECRET_ADMIN_PASSWORD_ARN                             = aws_secretsmanager_secret.admin_password.arn
+    ConnectionStrings__DefaultConnection                        = "aws:secretsmanager:${aws_secretsmanager_secret.connection_string.arn}"
+    HONUA_ADMIN_PASSWORD                                        = "aws:secretsmanager:${aws_secretsmanager_secret.admin_password.arn}"
+    Security__ConnectionEncryption__MasterKey                   = "aws:secretsmanager:${aws_secretsmanager_secret.admin_password.arn}"
     HONUA_SERVE_ADMIN_UI                                        = var.serve_admin_ui ? "true" : "false"
     HONUA_ADMIN_UI                                              = var.serve_admin_ui ? "true" : "false"
     HONUA_OBSERVABILITY                                         = "true"

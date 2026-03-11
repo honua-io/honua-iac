@@ -4,12 +4,20 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="${NAMESPACE:-honua}"
 MANIFEST_PATH="${MANIFEST_PATH:-${SCRIPT_DIR}/postgis.yaml}"
+POSTGIS_ROLLOUT_TIMEOUT_SECONDS="${POSTGIS_ROLLOUT_TIMEOUT_SECONDS:-300}"
 
 command -v kubectl >/dev/null 2>&1 || { echo "kubectl is required"; exit 1; }
 
 kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n "${NAMESPACE}" apply -f "${MANIFEST_PATH}"
-kubectl -n "${NAMESPACE}" rollout status deployment/honua-postgis --timeout=120s
+if ! kubectl -n "${NAMESPACE}" rollout status deployment/honua-postgis --timeout="${POSTGIS_ROLLOUT_TIMEOUT_SECONDS}s"; then
+  echo "PostGIS rollout did not complete within ${POSTGIS_ROLLOUT_TIMEOUT_SECONDS}s in namespace '${NAMESPACE}'" >&2
+  kubectl -n "${NAMESPACE}" get pods -l app=honua-postgis -o wide || true
+  kubectl -n "${NAMESPACE}" describe deployment/honua-postgis || true
+  kubectl -n "${NAMESPACE}" describe pods -l app=honua-postgis || true
+  kubectl -n "${NAMESPACE}" logs deployment/honua-postgis --tail=200 || true
+  exit 1
+fi
 
 wait_for_query_ready() {
   local max_attempts="${POSTGIS_READY_MAX_ATTEMPTS:-60}"
