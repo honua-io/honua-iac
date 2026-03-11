@@ -22,6 +22,8 @@ INGRESS_CLASS=traefik \
 ./helm-install.sh
 ```
 
+`postgis-up.sh` defaults `POSTGIS_IMAGE` to `imresamu/postgis:17-3.5-bookworm`, which is available for both `amd64` and `arm64`. Override it with `POSTGIS_IMAGE=<repo:tag>` if you need a different PostGIS image.
+
 If you only need ingress testing, you can skip migrations:
 
 ```bash
@@ -46,6 +48,7 @@ HONUA_SKIP_MIGRATIONS=true INGRESS_CLASS=traefik ./helm-install.sh
 - `DEFAULT_CONNECTION_STRING` (use when `POSTGRESQL_ENABLED=false`)
 - `POSTGRES_IMAGE_REPOSITORY`, `POSTGRES_IMAGE_TAG`, `POSTGRES_IMAGE_DIGEST`
 - `POSTGIS_ROLLOUT_TIMEOUT_SECONDS` (default: `300`)
+- `POSTGIS_IMAGE` (default: `imresamu/postgis:17-3.5-bookworm`)
 - `HONUA_IMAGE_REPOSITORY`, `HONUA_IMAGE_TAG`, `HONUA_IMAGE_PULL_POLICY`
 - `HONUA_SKIP_MIGRATIONS` (`true`/`false`)
 - `SECURITY_MASTER_KEY`

@@ -5,11 +5,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="${NAMESPACE:-honua}"
 MANIFEST_PATH="${MANIFEST_PATH:-${SCRIPT_DIR}/postgis.yaml}"
 POSTGIS_ROLLOUT_TIMEOUT_SECONDS="${POSTGIS_ROLLOUT_TIMEOUT_SECONDS:-300}"
+POSTGIS_IMAGE="${POSTGIS_IMAGE:-imresamu/postgis:17-3.5-bookworm}"
 
 command -v kubectl >/dev/null 2>&1 || { echo "kubectl is required"; exit 1; }
 
 kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
-kubectl -n "${NAMESPACE}" apply -f "${MANIFEST_PATH}"
+sed "s|postgis/postgis:17-3.5|${POSTGIS_IMAGE}|g" "${MANIFEST_PATH}" | kubectl -n "${NAMESPACE}" apply -f -
 if ! kubectl -n "${NAMESPACE}" rollout status deployment/honua-postgis --timeout="${POSTGIS_ROLLOUT_TIMEOUT_SECONDS}s"; then
   echo "PostGIS rollout did not complete within ${POSTGIS_ROLLOUT_TIMEOUT_SECONDS}s in namespace '${NAMESPACE}'" >&2
   kubectl -n "${NAMESPACE}" get pods -l app=honua-postgis -o wide || true
