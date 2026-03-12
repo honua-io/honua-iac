@@ -22,7 +22,7 @@ if [[ -z "$REPO_ROOT" ]]; then
   exit 1
 fi
 
-REGION="${AWS_REGION_OVERRIDE:-us-east-1}"
+REGION="${AWS_REGION_OVERRIDE:-${AWS_VALIDATION_REGION:-us-west-2}}"
 ENVIRONMENT="${EKS_TF_ENVIRONMENT:-it}"
 NAME_PREFIX_BASE="${EKS_TF_NAME_PREFIX_BASE:-hnu$(date -u +%m%d%H%M)}"
 NODE_INSTANCE_TYPE="${EKS_NODE_INSTANCE_TYPE:-t4g.small}"
@@ -71,7 +71,7 @@ Usage:
   ./infrastructure/terraform/validation/scripts/aws/run-eks-terraform-integration.sh [options]
 
 Options:
-  --region <aws-region>                AWS region (default: us-east-1)
+  --region <aws-region>                AWS region (default: AWS_VALIDATION_REGION or us-west-2)
   --environment <name>                 Environment suffix (default: it)
   --name-prefix-base <prefix>          Base prefix for generated resource names
   --node-instance-type <type>          EKS node instance type (default: t4g.small)
