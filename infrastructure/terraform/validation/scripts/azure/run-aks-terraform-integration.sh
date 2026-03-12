@@ -52,6 +52,7 @@ TTL_HOURS="${HONUA_TTL_HOURS:-8}"
 VALIDATION_RUN_ID="${HONUA_VALIDATION_RUN_ID:-aks-$(date -u +%Y%m%d%H%M%S)}"
 AZ_LOGIN_MAX_ATTEMPTS="${HONUA_AZURE_LOGIN_MAX_ATTEMPTS:-18}"
 AZ_LOGIN_RETRY_SECONDS="${HONUA_AZURE_LOGIN_RETRY_SECONDS:-10}"
+LOCAL_BIN_DIR="${HOME}/.local/bin"
 
 TEMP_TF_ROOT=""
 TEMP_KUBECONFIG_DIR=""
@@ -304,6 +305,30 @@ configure_runtime_tools() {
 
   log_info "Terraform executor: $([[ "$USE_DOCKER_TF" == "true" ]] && echo docker || echo local)"
   log_info "Azure CLI executor: $([[ "$USE_DOCKER_AZ_CLI" == "true" ]] && echo docker || echo local)"
+}
+
+ensure_kubelogin() {
+  export PATH="$LOCAL_BIN_DIR:$PATH"
+
+  if command -v kubelogin >/dev/null 2>&1; then
+    return
+  fi
+
+  if [[ "$USE_DOCKER_AZ_CLI" == "true" ]]; then
+    log_error "kubelogin is required for AAD-enabled AKS clusters and cannot be installed when Azure CLI is running only via Docker. Install local Azure CLI or preinstall kubelogin."
+    exit 1
+  fi
+
+  mkdir -p "$LOCAL_BIN_DIR"
+  log_info "Installing kubelogin via Azure CLI into $LOCAL_BIN_DIR"
+  AZURE_CORE_ONLY_SHOW_ERRORS=true az aks install-cli \
+    --install-location "$(command -v kubectl)" \
+    --kubelogin-install-location "$LOCAL_BIN_DIR/kubelogin" >/dev/null
+
+  if ! command -v kubelogin >/dev/null 2>&1; then
+    log_error "kubelogin installation did not produce an executable on PATH"
+    exit 1
+  fi
 }
 
 run_tf() {
@@ -684,6 +709,7 @@ main() {
     HONUA_ADMIN_PASSWORD
 
   configure_runtime_tools
+  ensure_kubelogin
   normalize_identifiers
   assert_cost_guardrail
   run_quota_preflight

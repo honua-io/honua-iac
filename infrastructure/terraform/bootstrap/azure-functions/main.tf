@@ -62,7 +62,10 @@ resource "azurerm_role_definition" "terraform" {
       "Microsoft.DBforPostgreSQL/flexibleServers/configurations/*",
       "Microsoft.Cache/Redis/*",
       "Microsoft.Insights/components/*",
-      "Microsoft.OperationalInsights/workspaces/*"
+      "Microsoft.OperationalInsights/workspaces/*",
+      "Microsoft.Authorization/roleAssignments/write",
+      "Microsoft.Authorization/roleAssignments/read",
+      "Microsoft.Authorization/roleAssignments/delete"
     ]
     not_actions = []
   }

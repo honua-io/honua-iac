@@ -127,6 +127,12 @@ variable "redis_capacity" {
   default     = 1
 }
 
+variable "key_vault_public_network_access_enabled" {
+  description = "Whether the Functions Key Vault allows public network access."
+  type        = bool
+  default     = false
+}
+
 variable "db_geo_redundant_backup_enabled" {
   description = "Enable geo-redundant backups for PostgreSQL."
   type        = bool

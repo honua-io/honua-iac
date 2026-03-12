@@ -2165,6 +2165,7 @@ set_functions_tf_vars() {
   export TF_VAR_deployment_slot_image="$FUNCTIONS_DEPLOYMENT_SLOT_IMAGE"
   export TF_VAR_plan_sku_name="$FUNCTIONS_PLAN_SKU"
   export TF_VAR_skip_migrations="$FUNCTIONS_SKIP_MIGRATIONS"
+  export TF_VAR_key_vault_public_network_access_enabled="true"
   export TF_VAR_registry_server="$REGISTRY_SERVER"
   export TF_VAR_registry_username="$REGISTRY_USERNAME"
   export TF_VAR_registry_password="$REGISTRY_PASSWORD"

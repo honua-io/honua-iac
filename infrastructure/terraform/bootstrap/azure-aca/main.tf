@@ -51,6 +51,7 @@ resource "azurerm_role_definition" "terraform" {
       "Microsoft.ContainerRegistry/registries/write",
       "Microsoft.ContainerRegistry/registries/listCredentials/action",
       "Microsoft.ManagedIdentity/userAssignedIdentities/*",
+      "Microsoft.KeyVault/locations/deletedVaults/read",
       "Microsoft.KeyVault/vaults/*",
       "Microsoft.KeyVault/vaults/secrets/*",
       "Microsoft.DBforPostgreSQL/flexibleServers/*",
