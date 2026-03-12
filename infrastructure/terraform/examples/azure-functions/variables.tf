@@ -133,6 +133,12 @@ variable "key_vault_public_network_access_enabled" {
   default     = false
 }
 
+variable "storage_network_default_action" {
+  description = "Storage account network default action."
+  type        = string
+  default     = "Deny"
+}
+
 variable "db_geo_redundant_backup_enabled" {
   description = "Enable geo-redundant backups for PostgreSQL."
   type        = bool

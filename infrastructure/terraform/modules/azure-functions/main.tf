@@ -67,7 +67,7 @@ resource "azurerm_storage_account" "this" {
   tags                     = local.tags
 
   network_rules {
-    default_action = "Deny"
+    default_action = var.storage_network_default_action
     bypass         = ["AzureServices"]
   }
 

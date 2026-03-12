@@ -586,6 +586,8 @@ fetch_kubeconfig() {
     --name "$CLUSTER_NAME" \
     --file "$kubeconfig_path" \
     --overwrite-existing
+
+  KUBECONFIG="$kubeconfig_path" kubelogin convert-kubeconfig -l azurecli >/dev/null
 }
 
 run_k8s_checks() {

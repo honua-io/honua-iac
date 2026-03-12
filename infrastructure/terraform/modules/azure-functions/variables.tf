@@ -258,6 +258,17 @@ variable "storage_account_replication_type" {
   default     = "LRS"
 }
 
+variable "storage_network_default_action" {
+  description = "Storage account network default action."
+  type        = string
+  default     = "Deny"
+
+  validation {
+    condition     = contains(["Allow", "Deny"], var.storage_network_default_action)
+    error_message = "storage_network_default_action must be either Allow or Deny."
+  }
+}
+
 variable "serve_admin_ui" {
   description = "Enable the Honua admin UI."
   type        = bool

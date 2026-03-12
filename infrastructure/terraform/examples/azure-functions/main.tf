@@ -28,6 +28,7 @@ module "honua" {
   redis_family                            = var.redis_family
   redis_capacity                          = var.redis_capacity
   key_vault_public_network_access_enabled = var.key_vault_public_network_access_enabled
+  storage_network_default_action          = var.storage_network_default_action
   registry_server                         = var.registry_server
   registry_username                       = var.registry_username
   registry_password                       = var.registry_password
