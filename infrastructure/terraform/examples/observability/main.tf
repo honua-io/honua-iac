@@ -11,8 +11,12 @@ provider "helm" {
 module "observability" {
   source = "../../modules/observability-stack"
 
-  namespace            = var.namespace
-  honua_metrics_target = var.honua_metrics_target
+  namespace                      = var.namespace
+  honua_metrics_target           = var.honua_metrics_target
+  alertmanager_enabled           = var.alertmanager_enabled
+  prometheus_persistence_enabled = var.prometheus_persistence_enabled
+  grafana_persistence_enabled    = var.grafana_persistence_enabled
+  helm_timeout_seconds           = var.helm_timeout_seconds
 
   grafana_ingress_enabled = var.grafana_ingress_host != ""
   grafana_ingress_host    = var.grafana_ingress_host

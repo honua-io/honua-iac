@@ -75,6 +75,12 @@ variable "honua_dashboard_file" {
   default     = ""
 }
 
+variable "alertmanager_enabled" {
+  description = "Enable Alertmanager as part of the Prometheus chart."
+  type        = bool
+  default     = true
+}
+
 variable "prometheus_persistence_enabled" {
   description = "Enable Prometheus persistence."
   type        = bool

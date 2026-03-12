@@ -24,7 +24,7 @@ locals {
 
   prometheus_values = {
     alertmanager = {
-      enabled = true
+      enabled = var.alertmanager_enabled
       resources = {
         requests = {
           cpu    = "50m"

@@ -20,3 +20,27 @@ variable "grafana_ingress_host" {
   type        = string
   default     = ""
 }
+
+variable "alertmanager_enabled" {
+  description = "Enable Alertmanager in the Prometheus chart."
+  type        = bool
+  default     = true
+}
+
+variable "prometheus_persistence_enabled" {
+  description = "Enable Prometheus persistence."
+  type        = bool
+  default     = true
+}
+
+variable "grafana_persistence_enabled" {
+  description = "Enable Grafana persistence."
+  type        = bool
+  default     = true
+}
+
+variable "helm_timeout_seconds" {
+  description = "Timeout in seconds for Helm release install/upgrade operations."
+  type        = number
+  default     = 900
+}

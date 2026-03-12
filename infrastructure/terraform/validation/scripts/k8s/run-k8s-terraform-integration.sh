@@ -1112,8 +1112,10 @@ apply_observability_stack() {
   export TF_VAR_namespace="$OBS_NAMESPACE"
   export TF_VAR_honua_metrics_target="${HONUA_SERVICE_NAME}.${NAMESPACE}.svc.cluster.local:80"
   export TF_VAR_grafana_ingress_host=""
+  export TF_VAR_alertmanager_enabled=false
   export TF_VAR_prometheus_persistence_enabled=false
   export TF_VAR_grafana_persistence_enabled=false
+  export TF_VAR_helm_timeout_seconds="$TIMEOUT_SECONDS"
 
   terraform -chdir="$root" init -input=false -no-color
   terraform -chdir="$root" plan -input=false -no-color -out=observability.tfplan
@@ -1145,8 +1147,10 @@ destroy_observability_stack() {
   export TF_VAR_namespace="$OBS_NAMESPACE"
   export TF_VAR_honua_metrics_target="${HONUA_SERVICE_NAME}.${NAMESPACE}.svc.cluster.local:80"
   export TF_VAR_grafana_ingress_host=""
+  export TF_VAR_alertmanager_enabled=false
   export TF_VAR_prometheus_persistence_enabled=false
   export TF_VAR_grafana_persistence_enabled=false
+  export TF_VAR_helm_timeout_seconds="$TIMEOUT_SECONDS"
   terraform -chdir="$root" destroy -input=false -auto-approve -no-color || log_warn "Observability destroy encountered errors"
 }
 
