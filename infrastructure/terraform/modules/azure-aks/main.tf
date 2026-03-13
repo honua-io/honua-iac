@@ -93,6 +93,14 @@ resource "azurerm_kubernetes_cluster" "this" {
   tags = local.tags
 }
 
+resource "azurerm_role_assignment" "current_principal_cluster_admin" {
+  count = var.grant_current_principal_cluster_admin ? 1 : 0
+
+  scope                = azurerm_kubernetes_cluster.this.id
+  role_definition_name = "Azure Kubernetes Service RBAC Cluster Admin"
+  principal_id         = data.azurerm_client_config.current.object_id
+}
+
 resource "azurerm_monitor_diagnostic_setting" "aks" {
   count                      = var.log_analytics_workspace_id != "" ? 1 : 0
   name                       = "${local.name}-aks-diagnostics"

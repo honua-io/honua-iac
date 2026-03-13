@@ -57,3 +57,9 @@ variable "authorized_ip_ranges" {
   type        = list(string)
   default     = []
 }
+
+variable "grant_current_principal_cluster_admin" {
+  description = "Grant the current Terraform principal Azure Kubernetes Service RBAC Cluster Admin on the cluster."
+  type        = bool
+  default     = false
+}

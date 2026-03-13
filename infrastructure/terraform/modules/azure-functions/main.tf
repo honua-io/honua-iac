@@ -262,8 +262,8 @@ locals {
   base_app_settings = {
     FUNCTIONS_WORKER_RUNTIME                  = var.functions_worker_runtime
     FUNCTIONS_CUSTOMHANDLER_PORT              = tostring(var.container_port)
-    WEBSITES_PORT                             = tostring(var.container_port)
     WEBSITES_ENABLE_APP_SERVICE_STORAGE       = "false"
+    AzureWebJobsScriptRoot                    = "/home/site/wwwroot"
     AzureWebJobsStorage                       = azurerm_storage_account.this.primary_connection_string
     ConnectionStrings__DefaultConnection      = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.connection_string.versionless_id})"
     HONUA_ADMIN_PASSWORD                      = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.admin_password.versionless_id})"

@@ -426,6 +426,7 @@ set_tf_vars() {
   export TF_VAR_name_prefix="$NAME_PREFIX"
   export TF_VAR_node_count="$NODE_COUNT"
   export TF_VAR_node_vm_size="$NODE_VM_SIZE"
+  export TF_VAR_grant_current_principal_cluster_admin="true"
   export TF_VAR_tags="{\"ValidationRunId\":\"$VALIDATION_RUN_ID\",\"TTLHours\":\"$TTL_HOURS\",\"ExpiresAtUTC\":\"$EXPIRES_AT_UTC\",\"Owner\":\"terraform-validation\"}"
 }
 
@@ -590,6 +591,29 @@ fetch_kubeconfig() {
   KUBECONFIG="$kubeconfig_path" kubelogin convert-kubeconfig -l azurecli >/dev/null
 }
 
+wait_for_cluster_access() {
+  local kubeconfig_path="$TEMP_KUBECONFIG_DIR/config"
+  local attempt
+  local max_attempts=24
+  local retry_seconds=10
+
+  for attempt in $(seq 1 "$max_attempts"); do
+    if KUBECONFIG="$kubeconfig_path" kubectl get namespace kube-system >/dev/null 2>&1; then
+      log_info "AKS cluster RBAC access is ready"
+      return 0
+    fi
+
+    if (( attempt < max_attempts )); then
+      log_warn "AKS cluster RBAC access not ready yet; retrying in ${retry_seconds}s (attempt ${attempt}/${max_attempts})"
+      sleep "$retry_seconds"
+    fi
+  done
+
+  log_error "Timed out waiting for AKS cluster RBAC access"
+  KUBECONFIG="$kubeconfig_path" kubectl auth can-i get namespaces --all-namespaces || true
+  return 1
+}
+
 run_k8s_checks() {
   local args
   args=(
@@ -733,6 +757,7 @@ main() {
 
   apply_cluster
   fetch_kubeconfig
+  wait_for_cluster_access
   run_k8s_checks
 
   log_info "AKS Terraform integration checks completed successfully"
