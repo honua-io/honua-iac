@@ -53,6 +53,7 @@ VALIDATION_RUN_ID="${HONUA_VALIDATION_RUN_ID:-aks-$(date -u +%Y%m%d%H%M%S)}"
 AZ_LOGIN_MAX_ATTEMPTS="${HONUA_AZURE_LOGIN_MAX_ATTEMPTS:-18}"
 AZ_LOGIN_RETRY_SECONDS="${HONUA_AZURE_LOGIN_RETRY_SECONDS:-10}"
 LOCAL_BIN_DIR="${HOME}/.local/bin"
+KUBELOGIN_VERSION="${HONUA_KUBELOGIN_VERSION:-v0.1.8}"
 
 TEMP_TF_ROOT=""
 TEMP_KUBECONFIG_DIR=""
@@ -320,10 +321,50 @@ ensure_kubelogin() {
   fi
 
   mkdir -p "$LOCAL_BIN_DIR"
-  log_info "Installing kubelogin via Azure CLI into $LOCAL_BIN_DIR"
-  AZURE_CORE_ONLY_SHOW_ERRORS=true az aks install-cli \
-    --install-location "$(command -v kubectl)" \
-    --kubelogin-install-location "$LOCAL_BIN_DIR/kubelogin" >/dev/null
+  local arch
+  local download_url
+  local archive_path
+
+  case "$(uname -m)" in
+    x86_64|amd64)
+      arch="amd64"
+      ;;
+    aarch64|arm64)
+      arch="arm64"
+      ;;
+    *)
+      log_error "Unsupported kubelogin architecture: $(uname -m)"
+      exit 1
+      ;;
+  esac
+
+  archive_path="$(mktemp "${TMPDIR:-/tmp}/kubelogin.XXXXXX.zip")"
+  download_url="https://github.com/Azure/kubelogin/releases/download/${KUBELOGIN_VERSION}/kubelogin-linux-${arch}.zip"
+
+  log_info "Installing kubelogin ${KUBELOGIN_VERSION} into $LOCAL_BIN_DIR"
+  curl -fsSL "$download_url" -o "$archive_path"
+  python3 - "$archive_path" "$LOCAL_BIN_DIR" <<'PY'
+import pathlib
+import sys
+import zipfile
+
+archive = pathlib.Path(sys.argv[1])
+destination = pathlib.Path(sys.argv[2])
+
+with zipfile.ZipFile(archive) as zf:
+    for member in zf.infolist():
+        if member.is_dir():
+            continue
+        if pathlib.Path(member.filename).name != "kubelogin":
+            continue
+        target = destination / "kubelogin"
+        target.write_bytes(zf.read(member))
+        target.chmod(0o755)
+        break
+    else:
+        raise SystemExit("kubelogin binary not found in archive")
+PY
+  rm -f "$archive_path"
 
   if ! command -v kubelogin >/dev/null 2>&1; then
     log_error "kubelogin installation did not produce an executable on PATH"
