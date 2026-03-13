@@ -53,7 +53,7 @@ VALIDATION_RUN_ID="${HONUA_VALIDATION_RUN_ID:-aks-$(date -u +%Y%m%d%H%M%S)}"
 AZ_LOGIN_MAX_ATTEMPTS="${HONUA_AZURE_LOGIN_MAX_ATTEMPTS:-18}"
 AZ_LOGIN_RETRY_SECONDS="${HONUA_AZURE_LOGIN_RETRY_SECONDS:-10}"
 LOCAL_BIN_DIR="${HOME}/.local/bin"
-KUBELOGIN_VERSION="${HONUA_KUBELOGIN_VERSION:-v0.1.8}"
+KUBELOGIN_VERSION="${HONUA_KUBELOGIN_VERSION:-v0.2.16}"
 
 TEMP_TF_ROOT=""
 TEMP_KUBECONFIG_DIR=""
@@ -342,7 +342,11 @@ ensure_kubelogin() {
   download_url="https://github.com/Azure/kubelogin/releases/download/${KUBELOGIN_VERSION}/kubelogin-linux-${arch}.zip"
 
   log_info "Installing kubelogin ${KUBELOGIN_VERSION} into $LOCAL_BIN_DIR"
-  curl -fsSL "$download_url" -o "$archive_path"
+  if ! curl -fsSL "$download_url" -o "$archive_path"; then
+    local fallback_url="https://github.com/Azure/kubelogin/releases/download/${KUBELOGIN_VERSION}/kubelogin.zip"
+    log_warn "Architecture-specific kubelogin archive was unavailable; falling back to ${fallback_url}"
+    curl -fsSL "$fallback_url" -o "$archive_path"
+  fi
   python3 - "$archive_path" "$LOCAL_BIN_DIR" <<'PY'
 import pathlib
 import sys
