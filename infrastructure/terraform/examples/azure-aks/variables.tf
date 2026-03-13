@@ -7,7 +7,7 @@ variable "name_prefix" {
 variable "environment" {
   description = "Environment suffix."
   type        = string
-  default     = "it"
+  default     = "dev"
 }
 
 variable "location" {
@@ -17,7 +17,7 @@ variable "location" {
 }
 
 variable "tags" {
-  description = "Additional tags."
+  description = "Additional tags to apply."
   type        = map(string)
   default     = {}
 }
@@ -35,13 +35,13 @@ variable "node_vm_size" {
 }
 
 variable "node_os_disk_size_gb" {
-  description = "Node OS disk size in GB."
+  description = "OS disk size for AKS nodes."
   type        = number
   default     = 64
 }
 
 variable "kubernetes_version" {
-  description = "Optional AKS version override."
+  description = "Optional AKS Kubernetes version."
   type        = string
   default     = ""
 }
@@ -53,13 +53,19 @@ variable "sku_tier" {
 }
 
 variable "authorized_ip_ranges" {
-  description = "CIDR ranges allowed to access the AKS API endpoint. Leave empty to keep the endpoint public until you set trusted CIDRs."
+  description = "Authorized API server CIDR ranges."
   type        = list(string)
   default     = []
 }
 
 variable "grant_current_principal_cluster_admin" {
-  description = "Grant the current Terraform principal Azure Kubernetes Service RBAC Cluster Admin on the cluster."
+  description = "Grant the current Terraform principal AKS cluster admin rights."
   type        = bool
   default     = false
+}
+
+variable "acr_resource_id" {
+  description = "Optional ACR resource ID to grant AcrPull to the AKS kubelet identity."
+  type        = string
+  default     = ""
 }

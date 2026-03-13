@@ -54,6 +54,11 @@ AZ_LOGIN_MAX_ATTEMPTS="${HONUA_AZURE_LOGIN_MAX_ATTEMPTS:-18}"
 AZ_LOGIN_RETRY_SECONDS="${HONUA_AZURE_LOGIN_RETRY_SECONDS:-10}"
 LOCAL_BIN_DIR="${HOME}/.local/bin"
 KUBELOGIN_VERSION="${HONUA_KUBELOGIN_VERSION:-v0.2.16}"
+REGISTRY_SERVER="${HONUA_AZURE_REGISTRY_SERVER:-}"
+REGISTRY_USERNAME="${HONUA_AZURE_REGISTRY_USERNAME:-}"
+REGISTRY_PASSWORD="${HONUA_AZURE_REGISTRY_PASSWORD:-}"
+IMAGE_PULL_SECRET_NAME="${HONUA_K8S_IMAGE_PULL_SECRET_NAME:-honua-registry}"
+ACR_RESOURCE_ID=""
 
 TEMP_TF_ROOT=""
 TEMP_KUBECONFIG_DIR=""
@@ -159,6 +164,74 @@ validate_requested_images() {
     log_error "Upgrade/rollback requires HONUA_K8S_PREVIOUS_IMAGE or --previous-image."
     exit 1
   fi
+}
+
+extract_registry_server_from_image() {
+  local image_ref="$1"
+  local first_segment=""
+
+  first_segment="${image_ref%%/*}"
+  if [[ "$first_segment" == "$image_ref" ]]; then
+    return 1
+  fi
+
+  case "$first_segment" in
+    *.*|*:*|localhost)
+      printf '%s' "$first_segment"
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
+resolve_acr_credentials_from_image() {
+  local image_ref="$1"
+  local registry_name=""
+
+  if [[ -n "$REGISTRY_SERVER" && -n "$REGISTRY_USERNAME" && -n "$REGISTRY_PASSWORD" ]]; then
+    return 0
+  fi
+
+  if ! REGISTRY_SERVER="$(extract_registry_server_from_image "$image_ref")"; then
+    return 0
+  fi
+
+  if [[ ! "$REGISTRY_SERVER" =~ \.azurecr\.io$ ]]; then
+    return 0
+  fi
+
+  registry_name="${REGISTRY_SERVER%%.*}"
+  if [[ -z "$registry_name" ]]; then
+    log_error "Could not derive Azure Container Registry name from image: $image_ref"
+    exit 1
+  fi
+
+  log_info "Resolving ACR credentials for ${REGISTRY_SERVER}"
+  run_az acr update --name "$registry_name" --admin-enabled true >/dev/null
+  REGISTRY_USERNAME="$(run_az acr credential show --name "$registry_name" --query username -o tsv)"
+  REGISTRY_PASSWORD="$(run_az acr credential show --name "$registry_name" --query 'passwords[0].value' -o tsv)"
+}
+
+resolve_acr_resource_id() {
+  local image_ref="$1"
+  local registry_server=""
+  local registry_name=""
+
+  if ! registry_server="$(extract_registry_server_from_image "$image_ref")"; then
+    return 0
+  fi
+
+  if [[ ! "$registry_server" =~ \.azurecr\.io$ ]]; then
+    return 0
+  fi
+
+  registry_name="${registry_server%%.*}"
+  if [[ -z "$registry_name" ]]; then
+    return 0
+  fi
+
+  run_az acr show --name "$registry_name" --query id -o tsv
 }
 
 parse_args() {
@@ -472,6 +545,7 @@ set_tf_vars() {
   export TF_VAR_node_count="$NODE_COUNT"
   export TF_VAR_node_vm_size="$NODE_VM_SIZE"
   export TF_VAR_grant_current_principal_cluster_admin="true"
+  export TF_VAR_acr_resource_id="$ACR_RESOURCE_ID"
   export TF_VAR_tags="{\"ValidationRunId\":\"$VALIDATION_RUN_ID\",\"TTLHours\":\"$TTL_HOURS\",\"ExpiresAtUTC\":\"$EXPIRES_AT_UTC\",\"Owner\":\"terraform-validation\"}"
 }
 
@@ -708,6 +782,10 @@ run_k8s_checks() {
 
   HONUA_K8S_IMAGE="$K8S_IMAGE" \
     HONUA_USE_AOT="$USE_AOT" \
+    HONUA_IMAGE_PULL_SECRET_NAME="$IMAGE_PULL_SECRET_NAME" \
+    HONUA_IMAGE_PULL_SECRET_SERVER="$REGISTRY_SERVER" \
+    HONUA_IMAGE_PULL_SECRET_USERNAME="$REGISTRY_USERNAME" \
+    HONUA_IMAGE_PULL_SECRET_PASSWORD="$REGISTRY_PASSWORD" \
     KUBECONFIG="$TEMP_KUBECONFIG_DIR/config" \
     "$SCRIPT_DIR/../k8s/run-k8s-terraform-integration.sh" "${args[@]}"
 }
@@ -781,6 +859,8 @@ main() {
 
   configure_runtime_tools
   ensure_kubelogin
+  resolve_acr_credentials_from_image "$K8S_IMAGE"
+  ACR_RESOURCE_ID="$(resolve_acr_resource_id "$K8S_IMAGE")"
   normalize_identifiers
   assert_cost_guardrail
   run_quota_preflight

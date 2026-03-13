@@ -68,6 +68,10 @@ HONUA_IMAGE_REPOSITORY=""
 HONUA_IMAGE_TAG=""
 PREVIOUS_IMAGE_REPOSITORY=""
 PREVIOUS_IMAGE_TAG=""
+HONUA_IMAGE_PULL_SECRET_NAME="${HONUA_IMAGE_PULL_SECRET_NAME:-}"
+HONUA_IMAGE_PULL_SECRET_SERVER="${HONUA_IMAGE_PULL_SECRET_SERVER:-}"
+HONUA_IMAGE_PULL_SECRET_USERNAME="${HONUA_IMAGE_PULL_SECRET_USERNAME:-}"
+HONUA_IMAGE_PULL_SECRET_PASSWORD="${HONUA_IMAGE_PULL_SECRET_PASSWORD:-}"
 HONUA_DEPLOYMENT_NAME=""
 HONUA_SERVICE_NAME=""
 K8S_HELPER_DIR=""
@@ -859,6 +863,7 @@ run_helm_static_validation() {
   local ingress_class
   local kubeconform_image
   local kubeconform_command
+  local -a pull_secret_args=()
 
   if [[ "$HELM_STATIC_VALIDATE" != "true" ]]; then
     return
@@ -874,6 +879,10 @@ run_helm_static_validation() {
 
   rendered="$(mktemp)"
 
+  if [[ -n "$HONUA_IMAGE_PULL_SECRET_NAME" ]]; then
+    pull_secret_args+=(--set image.pullSecrets[0].name="$HONUA_IMAGE_PULL_SECRET_NAME")
+  fi
+
   helm dependency update "$chart_path" >/dev/null
 
   helm lint "$chart_path" \
@@ -887,7 +896,8 @@ run_helm_static_validation() {
     --set secret.env.HONUA_ADMIN_PASSWORD="$K8S_ADMIN_PASSWORD" \
     --set-string secret.env.Security__ConnectionEncryption__MasterKey="$K8S_MASTER_KEY" \
     --set image.repository="$HONUA_IMAGE_REPOSITORY" \
-    --set image.tag="$HONUA_IMAGE_TAG" >/dev/null
+    --set image.tag="$HONUA_IMAGE_TAG" \
+    "${pull_secret_args[@]}" >/dev/null
 
   helm template "$RELEASE_NAME" "$chart_path" \
     --namespace "$NAMESPACE" \
@@ -901,7 +911,8 @@ run_helm_static_validation() {
     --set secret.env.HONUA_ADMIN_PASSWORD="$K8S_ADMIN_PASSWORD" \
     --set-string secret.env.Security__ConnectionEncryption__MasterKey="$K8S_MASTER_KEY" \
     --set image.repository="$HONUA_IMAGE_REPOSITORY" \
-    --set image.tag="$HONUA_IMAGE_TAG" > "$rendered"
+    --set image.tag="$HONUA_IMAGE_TAG" \
+    "${pull_secret_args[@]}" > "$rendered"
 
   if command -v kubeconform >/dev/null 2>&1; then
     kubeconform_command=(kubeconform -strict -summary -ignore-missing-schemas)
@@ -912,6 +923,23 @@ run_helm_static_validation() {
   rm -f "$rendered"
 
   log_info "Helm static validation passed (lint + kubeconform)"
+}
+
+ensure_image_pull_secret() {
+  if [[ -z "$HONUA_IMAGE_PULL_SECRET_NAME" ]]; then
+    return 0
+  fi
+
+  if [[ -z "$HONUA_IMAGE_PULL_SECRET_SERVER" || -z "$HONUA_IMAGE_PULL_SECRET_USERNAME" || -z "$HONUA_IMAGE_PULL_SECRET_PASSWORD" ]]; then
+    log_error "Image pull secret '$HONUA_IMAGE_PULL_SECRET_NAME' is configured, but registry credentials are incomplete"
+    return 1
+  fi
+
+  kubectl -n "$NAMESPACE" create secret docker-registry "$HONUA_IMAGE_PULL_SECRET_NAME" \
+    --docker-server="$HONUA_IMAGE_PULL_SECRET_SERVER" \
+    --docker-username="$HONUA_IMAGE_PULL_SECRET_USERNAME" \
+    --docker-password="$HONUA_IMAGE_PULL_SECRET_PASSWORD" \
+    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 }
 
 prepare_tf_workspace() {
@@ -975,6 +1003,8 @@ deploy_honua_release() {
     ingress_class="nginx"
   fi
 
+  ensure_image_pull_secret
+
   NAMESPACE="$NAMESPACE" \
     RELEASE_NAME="$RELEASE_NAME" \
     CHART_PATH="$HELM_CHART_PATH" \
@@ -987,6 +1017,7 @@ deploy_honua_release() {
   SECURITY_MASTER_KEY="$K8S_MASTER_KEY" \
   HONUA_IMAGE_REPOSITORY="$image_repository" \
   HONUA_IMAGE_TAG="$image_tag" \
+  HONUA_IMAGE_PULL_SECRET_NAME="$HONUA_IMAGE_PULL_SECRET_NAME" \
     "$K8S_HELPER_DIR/helm-install.sh"
 
   HONUA_APPLIED=true

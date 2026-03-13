@@ -16,6 +16,7 @@ module "aks" {
   sku_tier                              = var.sku_tier
   authorized_ip_ranges                  = var.authorized_ip_ranges
   grant_current_principal_cluster_admin = var.grant_current_principal_cluster_admin
+  acr_resource_id                       = var.acr_resource_id
 }
 
 output "resource_group_name" {

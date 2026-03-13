@@ -126,3 +126,9 @@ variable "log_analytics_workspace_id" {
   type        = string
   default     = ""
 }
+
+variable "acr_resource_id" {
+  description = "Optional Azure Container Registry resource ID to grant AcrPull to the AKS kubelet identity."
+  type        = string
+  default     = ""
+}

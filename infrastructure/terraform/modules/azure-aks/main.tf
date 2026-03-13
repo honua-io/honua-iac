@@ -101,6 +101,14 @@ resource "azurerm_role_assignment" "current_principal_cluster_admin" {
   principal_id         = data.azurerm_client_config.current.object_id
 }
 
+resource "azurerm_role_assignment" "kubelet_acr_pull" {
+  count = var.acr_resource_id != "" ? 1 : 0
+
+  scope                = var.acr_resource_id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_kubernetes_cluster.this.kubelet_identity[0].object_id
+}
+
 resource "azurerm_monitor_diagnostic_setting" "aks" {
   count                      = var.log_analytics_workspace_id != "" ? 1 : 0
   name                       = "${local.name}-aks-diagnostics"
