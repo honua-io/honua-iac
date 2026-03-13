@@ -58,7 +58,7 @@ REGISTRY_SERVER="${HONUA_AZURE_REGISTRY_SERVER:-}"
 REGISTRY_USERNAME="${HONUA_AZURE_REGISTRY_USERNAME:-}"
 REGISTRY_PASSWORD="${HONUA_AZURE_REGISTRY_PASSWORD:-}"
 IMAGE_PULL_SECRET_NAME="${HONUA_K8S_IMAGE_PULL_SECRET_NAME:-honua-registry}"
-ACR_RESOURCE_ID=""
+ACR_RESOURCE_ID="${HONUA_AZURE_REGISTRY_RESOURCE_ID:-}"
 
 TEMP_TF_ROOT=""
 TEMP_KUBECONFIG_DIR=""
@@ -188,6 +188,7 @@ extract_registry_server_from_image() {
 resolve_acr_credentials_from_image() {
   local image_ref="$1"
   local registry_name=""
+  local registry_subscription_id=""
 
   if [[ -n "$REGISTRY_SERVER" && -n "$REGISTRY_USERNAME" && -n "$REGISTRY_PASSWORD" ]]; then
     return 0
@@ -207,16 +208,33 @@ resolve_acr_credentials_from_image() {
     exit 1
   fi
 
+  if [[ -z "$ACR_RESOURCE_ID" ]]; then
+    ACR_RESOURCE_ID="$(resolve_acr_resource_id "$image_ref")"
+  fi
+
+  if [[ -n "$ACR_RESOURCE_ID" ]]; then
+    registry_subscription_id="$(awk -F/ '{for (i = 1; i < NF; i++) if ($i == "subscriptions") { print $(i + 1); exit }}' <<<"$ACR_RESOURCE_ID")"
+  fi
+
   log_info "Resolving ACR credentials for ${REGISTRY_SERVER}"
-  run_az acr update --name "$registry_name" --admin-enabled true >/dev/null
-  REGISTRY_USERNAME="$(run_az acr credential show --name "$registry_name" --query username -o tsv)"
-  REGISTRY_PASSWORD="$(run_az acr credential show --name "$registry_name" --query 'passwords[0].value' -o tsv)"
+  if [[ -n "$registry_subscription_id" ]]; then
+    run_az acr update --subscription "$registry_subscription_id" --name "$registry_name" --admin-enabled true >/dev/null
+    REGISTRY_USERNAME="$(run_az acr credential show --subscription "$registry_subscription_id" --name "$registry_name" --query username -o tsv)"
+    REGISTRY_PASSWORD="$(run_az acr credential show --subscription "$registry_subscription_id" --name "$registry_name" --query 'passwords[0].value' -o tsv)"
+  else
+    run_az acr update --name "$registry_name" --admin-enabled true >/dev/null
+    REGISTRY_USERNAME="$(run_az acr credential show --name "$registry_name" --query username -o tsv)"
+    REGISTRY_PASSWORD="$(run_az acr credential show --name "$registry_name" --query 'passwords[0].value' -o tsv)"
+  fi
 }
 
 resolve_acr_resource_id() {
   local image_ref="$1"
   local registry_server=""
   local registry_name=""
+  local subscriptions
+  local subscription_id
+  local resource_id
 
   if ! registry_server="$(extract_registry_server_from_image "$image_ref")"; then
     return 0
@@ -231,7 +249,16 @@ resolve_acr_resource_id() {
     return 0
   fi
 
-  run_az acr show --name "$registry_name" --query id -o tsv
+  subscriptions="$(run_az account list --query '[].id' -o tsv 2>/dev/null || true)"
+  for subscription_id in $subscriptions; do
+    resource_id="$(run_az acr show --subscription "$subscription_id" --name "$registry_name" --query id -o tsv 2>/dev/null || true)"
+    if [[ -n "$resource_id" ]]; then
+      printf '%s' "$resource_id"
+      return 0
+    fi
+  done
+
+  return 0
 }
 
 parse_args() {
