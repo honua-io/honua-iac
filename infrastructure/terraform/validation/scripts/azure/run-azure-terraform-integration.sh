@@ -943,7 +943,13 @@ run_az() {
     return
   fi
 
-  if [[ "$AZ_SESSION_INITIALIZED" != "true" ]]; then
+  ensure_local_az_session() {
+    if [[ "$AZ_SESSION_INITIALIZED" == "true" ]] && \
+       AZURE_CORE_ONLY_SHOW_ERRORS=true az account show --query id -o tsv >/dev/null 2>&1; then
+      return 0
+    fi
+
+    AZ_SESSION_INITIALIZED=false
     AZURE_CORE_ONLY_SHOW_ERRORS=true az config set extension.use_dynamic_install=yes_without_prompt >/dev/null
     local attempt
     local login_succeeded=false
@@ -968,8 +974,9 @@ run_az() {
     fi
 
     AZ_SESSION_INITIALIZED=true
-  fi
+  }
 
+  ensure_local_az_session
   AZURE_CORE_ONLY_SHOW_ERRORS=true az "$@"
 }
 
