@@ -27,6 +27,67 @@ platform_validation_log() {
   esac
 }
 
+platform_validation_contract_default() {
+  local platform="${1:-}"
+  local capability="${2:-}"
+
+  case "${platform}:${capability}" in
+    azure-functions:deploy-plan|azure-functions:mutation)
+      printf 'false\n'
+      ;;
+    azure-container-apps:deploy-plan|azure-container-apps:mutation)
+      printf 'false\n'
+      ;;
+    kubernetes:deploy-plan)
+      printf 'false\n'
+      ;;
+  esac
+}
+
+platform_validation_contract_value() {
+  local platform="${1:-}"
+  local capability="${2:-}"
+  local explicit_value="${3:-}"
+  local default_value=""
+
+  if [[ -n "$explicit_value" ]]; then
+    printf '%s\n' "$explicit_value"
+    return 0
+  fi
+
+  default_value="$(platform_validation_contract_default "$platform" "$capability")"
+  if [[ -n "$default_value" ]]; then
+    printf '%s\n' "$default_value"
+  fi
+}
+
+export_platform_validation_contract() {
+  local platform="${1:-}"
+  local deploy_plan_support=""
+  local mutation_support=""
+
+  deploy_plan_support="$(
+    platform_validation_contract_value \
+      "$platform" \
+      "deploy-plan" \
+      "${HONUA_PLATFORM_VALIDATION_EXPECT_DEPLOY_PLAN_SUPPORT:-}"
+  )"
+  mutation_support="$(
+    platform_validation_contract_value \
+      "$platform" \
+      "mutation" \
+      "${HONUA_PLATFORM_VALIDATION_EXPECT_MUTATION_SUPPORT:-}"
+  )"
+
+  if [[ -n "$deploy_plan_support" ]]; then
+    export HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT="$deploy_plan_support"
+  fi
+
+  if [[ -n "$mutation_support" ]]; then
+    export HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT="$mutation_support"
+  fi
+}
+
 resolve_platform_validation_root() {
   local runner_path="$1"
   local runner_dir
@@ -200,21 +261,7 @@ run_honua_platform_post_apply_validation() {
       export HONUA_CLOUD_TEST_PLATFORM="$effective_platform"
     fi
 
-    case "$effective_platform" in
-      azure-functions|azure-container-apps)
-        export HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT="${HONUA_PLATFORM_VALIDATION_EXPECT_DEPLOY_PLAN_SUPPORT:-false}"
-        export HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT="${HONUA_PLATFORM_VALIDATION_EXPECT_MUTATION_SUPPORT:-false}"
-        ;;
-      *)
-        if [[ -n "${HONUA_PLATFORM_VALIDATION_EXPECT_DEPLOY_PLAN_SUPPORT:-}" ]]; then
-          export HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT="$HONUA_PLATFORM_VALIDATION_EXPECT_DEPLOY_PLAN_SUPPORT"
-        fi
-
-        if [[ -n "${HONUA_PLATFORM_VALIDATION_EXPECT_MUTATION_SUPPORT:-}" ]]; then
-          export HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT="$HONUA_PLATFORM_VALIDATION_EXPECT_MUTATION_SUPPORT"
-        fi
-        ;;
-    esac
+    export_platform_validation_contract "$effective_platform"
 
     render_control_plane_config_from_terraform "$validation_root"
 

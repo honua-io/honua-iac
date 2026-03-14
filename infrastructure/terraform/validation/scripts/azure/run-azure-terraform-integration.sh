@@ -946,6 +946,55 @@ run_az() {
   AZURE_CORE_ONLY_SHOW_ERRORS=true az "$@"
 }
 
+create_postgres_firewall_rule_with_retry() {
+  local resource_group="$1"
+  local server_name="$2"
+  local rule_name="$3"
+  local start_ip="$4"
+  local end_ip="$5"
+  local rule_context="$6"
+  local max_attempts="${HONUA_AZURE_FIREWALL_RULE_MAX_ATTEMPTS:-6}"
+  local retry_seconds="${HONUA_AZURE_FIREWALL_RULE_RETRY_SECONDS:-10}"
+  local attempt
+  local output=""
+  local flattened_output=""
+
+  for attempt in $(seq 1 "$max_attempts"); do
+    if output="$(
+      run_az postgres flexible-server firewall-rule create \
+        --resource-group "$resource_group" \
+        --name "$server_name" \
+        --rule-name "$rule_name" \
+        --start-ip-address "$start_ip" \
+        --end-ip-address "$end_ip" \
+        -o none 2>&1
+    )"; then
+      return 0
+    fi
+
+    if run_az postgres flexible-server firewall-rule show \
+      --resource-group "$resource_group" \
+      --name "$server_name" \
+      --rule-name "$rule_name" \
+      --query "name" \
+      -o tsv >/dev/null 2>&1; then
+      log_warn "Firewall rule '$rule_name' for ${rule_context} is already present after a failed create attempt; continuing"
+      return 0
+    fi
+
+    flattened_output="$(printf '%s' "$output" | tr '\n' ' ' | sed 's/[[:space:]]\\+/ /g')"
+    if (( attempt < max_attempts )); then
+      log_warn "Retrying PostgreSQL firewall rule '$rule_name' for ${rule_context} in ${retry_seconds}s (attempt ${attempt}/${max_attempts}): ${flattened_output}"
+      sleep "$retry_seconds"
+      continue
+    fi
+
+    log_error "Failed to create PostgreSQL firewall rule '$rule_name' for ${rule_context} after ${max_attempts} attempts"
+    printf '%s\n' "$output" >&2
+    return 1
+  done
+}
+
 pg_conn() {
   local db_host="$1"
   local db_name="$2"
@@ -1114,12 +1163,13 @@ ensure_aca_db_firewall_access() {
 
     rule_name="aca-validation-egress-$index"
     log_info "Allowing ACA outbound IP $ip to reach PostgreSQL server $server_name"
-    run_az postgres flexible-server firewall-rule create \
-      --resource-group "$postgres_resource_group" \
-      --name "$server_name" \
-      --rule-name "$rule_name" \
-      --start-ip-address "$ip" \
-      --end-ip-address "$ip" >/dev/null
+    create_postgres_firewall_rule_with_retry \
+      "$postgres_resource_group" \
+      "$server_name" \
+      "$rule_name" \
+      "$ip" \
+      "$ip" \
+      "ACA outbound IP $ip"
 
     ACA_DB_FIREWALL_RULES+=("${postgres_resource_group}|${server_name}|${rule_name}")
     index=$((index + 1))
@@ -1181,12 +1231,13 @@ ensure_functions_db_firewall_access() {
 
     rule_name="functions-validation-egress-$index"
     log_info "Allowing Functions outbound IP $ip to reach PostgreSQL server $server_name"
-    run_az postgres flexible-server firewall-rule create \
-      --resource-group "$postgres_resource_group" \
-      --name "$server_name" \
-      --rule-name "$rule_name" \
-      --start-ip-address "$ip" \
-      --end-ip-address "$ip" >/dev/null
+    create_postgres_firewall_rule_with_retry \
+      "$postgres_resource_group" \
+      "$server_name" \
+      "$rule_name" \
+      "$ip" \
+      "$ip" \
+      "Functions outbound IP $ip"
 
     FUNCTIONS_DB_FIREWALL_RULES+=("${postgres_resource_group}|${server_name}|${rule_name}")
     index=$((index + 1))
@@ -1289,12 +1340,13 @@ ensure_existing_db_firewall_access() {
   rule_name="runner-${sanitized_run_id:0:52}"
 
   log_info "Allowing runner firewall range $DB_FIREWALL_START_IP - $DB_FIREWALL_END_IP to reach PostgreSQL server $server_name"
-  run_az postgres flexible-server firewall-rule create \
-    --resource-group "$postgres_resource_group" \
-    --name "$server_name" \
-    --rule-name "$rule_name" \
-    --start-ip-address "$DB_FIREWALL_START_IP" \
-    --end-ip-address "$DB_FIREWALL_END_IP" >/dev/null
+  create_postgres_firewall_rule_with_retry \
+    "$postgres_resource_group" \
+    "$server_name" \
+    "$rule_name" \
+    "$DB_FIREWALL_START_IP" \
+    "$DB_FIREWALL_END_IP" \
+    "runner firewall range ${DB_FIREWALL_START_IP}-${DB_FIREWALL_END_IP}"
 
   EXISTING_DB_FIREWALL_RULES+=("${postgres_resource_group}|${server_name}|${rule_name}")
 }
@@ -2517,8 +2569,6 @@ apply_aca_stack() {
   HONUA_PLATFORM_VALIDATION_PUBLISH_DB_PASSWORD="$DB_PASSWORD_EFFECTIVE" \
   HONUA_PLATFORM_VALIDATION_PUBLISH_DB_SSL_MODE="Require" \
   HONUA_PLATFORM_VALIDATION_PUBLISH_DB_SSL_REQUIRED="true" \
-  HONUA_PLATFORM_VALIDATION_EXPECT_DEPLOY_PLAN_SUPPORT="false" \
-  HONUA_PLATFORM_VALIDATION_EXPECT_MUTATION_SUPPORT="false" \
   run_honua_platform_post_apply_validation "$url" "azure-container-apps"
 
   log_info "ACA stack checks passed"
@@ -2605,8 +2655,6 @@ apply_functions_stack() {
   HONUA_PLATFORM_VALIDATION_PUBLISH_DB_SSL_REQUIRED="true" \
   HONUA_PLATFORM_VALIDATION_DEPLOY_CURRENT_REVISION="${previous_live_revision:-}" \
   HONUA_PLATFORM_VALIDATION_DEPLOY_DESIRED_REVISION="${desired_revision:-}" \
-  HONUA_PLATFORM_VALIDATION_EXPECT_DEPLOY_PLAN_SUPPORT="false" \
-  HONUA_PLATFORM_VALIDATION_EXPECT_MUTATION_SUPPORT="false" \
   HONUA_PLATFORM_VALIDATION_EXECUTE_DEPLOY_OPERATION="$([[ "$RUN_UPGRADE_ROLLBACK" == "true" ]] && printf 'true' || printf 'false')" \
   HONUA_PLATFORM_VALIDATION_VERIFY_DEPLOY_ROLLBACK="$([[ "$RUN_UPGRADE_ROLLBACK" == "true" ]] && printf 'true' || printf 'false')" \
   HONUA_PLATFORM_VALIDATION_DEPLOY_TIMEOUT_SECONDS="240" \
