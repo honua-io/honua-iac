@@ -201,7 +201,7 @@ run_honua_platform_post_apply_validation() {
     fi
 
     case "$effective_platform" in
-      azure-functions)
+      azure-functions|azure-container-apps)
         export HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT="${HONUA_PLATFORM_VALIDATION_EXPECT_DEPLOY_PLAN_SUPPORT:-false}"
         export HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT="${HONUA_PLATFORM_VALIDATION_EXPECT_MUTATION_SUPPORT:-false}"
         ;;

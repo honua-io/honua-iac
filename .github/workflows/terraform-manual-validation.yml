@@ -253,6 +253,8 @@ jobs:
       HONUA_ACA_PREVIOUS_IMAGE: ${{ vars.HONUA_ACA_PREVIOUS_IMAGE || '' }}
       HONUA_FUNCTIONS_IMAGE: ${{ vars.HONUA_FUNCTIONS_IMAGE || '' }}
       HONUA_FUNCTIONS_PREVIOUS_IMAGE: ${{ vars.HONUA_FUNCTIONS_PREVIOUS_IMAGE || '' }}
+      HONUA_AZURE_REGISTRY_USERNAME: ${{ secrets.HONUA_AZURE_REGISTRY_USERNAME || '' }}
+      HONUA_AZURE_REGISTRY_PASSWORD: ${{ secrets.HONUA_AZURE_REGISTRY_PASSWORD || '' }}
       HONUA_AZURE_DATA_CACHE_FILE: ${{ github.workspace }}/.gha-cache/azure-data-reuse.env
       HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/run-cloud-post-apply-validation.sh
       HONUA_PLATFORM_VALIDATION_IMPORT_TABLE_PREFIX: ${{ inputs.deployment_profile == 'ephemeral' && inputs.no_destroy == false && format('cloud{0}{1}', github.run_id, github.run_attempt) || '' }}
@@ -1047,6 +1049,8 @@ jobs:
       HONUA_K8S_IMAGE: ${{ vars.HONUA_AKS_IMAGE || vars.HONUA_K8S_IMAGE || '' }}
       HONUA_K8S_PREVIOUS_IMAGE: ${{ vars.HONUA_K8S_PREVIOUS_IMAGE || '' }}
       HONUA_AZURE_REGISTRY_RESOURCE_ID: ${{ vars.HONUA_AZURE_REGISTRY_RESOURCE_ID || '' }}
+      HONUA_AZURE_REGISTRY_USERNAME: ${{ secrets.HONUA_AZURE_REGISTRY_USERNAME || '' }}
+      HONUA_AZURE_REGISTRY_PASSWORD: ${{ secrets.HONUA_AZURE_REGISTRY_PASSWORD || '' }}
       HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/run-cloud-post-apply-validation.sh
     steps:
       - name: Checkout
