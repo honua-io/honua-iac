@@ -21,6 +21,7 @@ ECR_REGION=""
 ECR_REPOSITORY=""
 ACR_LOGIN_SERVER=""
 ACR_REPOSITORY=""
+AZURE_REGISTRY_RESOURCE_ID=""
 
 usage() {
   cat <<'EOF'
@@ -315,6 +316,31 @@ resolve_azure_aks_image() {
   AKS_IMAGE="$K8S_IMAGE"
 }
 
+resolve_azure_registry_resource_id() {
+  local registry_name=""
+
+  if [[ -n "$AZURE_REGISTRY_RESOURCE_ID" ]]; then
+    return 0
+  fi
+
+  if [[ -z "$ACR_LOGIN_SERVER" ]]; then
+    ACR_LOGIN_SERVER="$(get_source_var ACR_LOGIN_SERVER)"
+  fi
+
+  if [[ -z "$ACR_LOGIN_SERVER" ]]; then
+    return 0
+  fi
+
+  registry_name="${ACR_LOGIN_SERVER%%.*}"
+  if [[ -z "$registry_name" ]]; then
+    return 0
+  fi
+
+  if command -v az >/dev/null 2>&1; then
+    AZURE_REGISTRY_RESOURCE_ID="$(az acr show --name "$registry_name" --query id -o tsv 2>/dev/null || true)"
+  fi
+}
+
 resolve_aws_eks_image() {
   local eks_tag="latest-aot"
   local account_id=""
@@ -519,6 +545,7 @@ main() {
   resolve_azure_aca_image
   resolve_azure_functions_image
   resolve_azure_aks_image
+  resolve_azure_registry_resource_id
   resolve_aws_eks_image
 
   set_variable "HONUA_AWS_ECS_IMAGE" "$AWS_ECS_IMAGE"
@@ -526,6 +553,12 @@ main() {
   set_variable "HONUA_K8S_IMAGE" "$K8S_IMAGE"
   set_variable "HONUA_AKS_IMAGE" "$AKS_IMAGE"
   set_variable "HONUA_EKS_IMAGE" "$EKS_IMAGE"
+
+  if [[ -n "$AZURE_REGISTRY_RESOURCE_ID" ]]; then
+    set_variable "HONUA_AZURE_REGISTRY_RESOURCE_ID" "$AZURE_REGISTRY_RESOURCE_ID"
+  else
+    clear_variable "HONUA_AZURE_REGISTRY_RESOURCE_ID"
+  fi
 
   if [[ -n "$AWS_SERVERLESS_IMAGE" ]]; then
     set_variable "HONUA_AWS_SERVERLESS_IMAGE" "$AWS_SERVERLESS_IMAGE"

@@ -1046,6 +1046,7 @@ jobs:
       HONUA_ADMIN_PASSWORD: ${{ secrets.HONUA_ADMIN_PASSWORD }}
       HONUA_K8S_IMAGE: ${{ vars.HONUA_AKS_IMAGE || vars.HONUA_K8S_IMAGE || '' }}
       HONUA_K8S_PREVIOUS_IMAGE: ${{ vars.HONUA_K8S_PREVIOUS_IMAGE || '' }}
+      HONUA_AZURE_REGISTRY_RESOURCE_ID: ${{ vars.HONUA_AZURE_REGISTRY_RESOURCE_ID || '' }}
       HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/run-cloud-post-apply-validation.sh
     steps:
       - name: Checkout

@@ -99,6 +99,7 @@ DATA_RESOURCE_GROUP=""
 EXPIRES_AT_UTC=""
 DB_PASSWORD_EFFECTIVE=""
 ACA_DB_FIREWALL_RULES=()
+FUNCTIONS_DB_FIREWALL_RULES=()
 EXISTING_DB_FIREWALL_RULES=()
 USE_DOCKER_TF=false
 USE_DOCKER_AZ_CLI=false
@@ -1125,6 +1126,73 @@ ensure_aca_db_firewall_access() {
   done <<< "$outbound_ips"
 }
 
+ensure_functions_db_firewall_access() {
+  local resource_group="$1"
+  local app_name="$2"
+  local db_fqdn="$3"
+  local postgres_resource_group=""
+  local server_name
+  local outbound_ips=""
+  local index=0
+  local rule_name
+  local ip
+
+  if [[ -z "$resource_group" || -z "$app_name" || -z "$db_fqdn" ]]; then
+    return 0
+  fi
+
+  if [[ "$db_fqdn" != *.postgres.database.azure.com ]]; then
+    return 0
+  fi
+
+  server_name="${db_fqdn%%.*}"
+  postgres_resource_group="$(resolve_postgres_resource_group "$server_name")"
+
+  if [[ -z "$postgres_resource_group" ]]; then
+    log_warn "Could not determine PostgreSQL resource group for $server_name; skipping Functions DB firewall access"
+    return 0
+  fi
+
+  outbound_ips="$(
+    {
+      run_az functionapp show \
+        --resource-group "$resource_group" \
+        --name "$app_name" \
+        --query "outboundIpAddresses" \
+        -o tsv || true
+      printf '\n'
+      run_az functionapp show \
+        --resource-group "$resource_group" \
+        --name "$app_name" \
+        --query "possibleOutboundIpAddresses" \
+        -o tsv || true
+    } | tr ',;' '\n' | awk 'NF && !seen[$0]++'
+  )"
+
+  if [[ -z "$outbound_ips" ]]; then
+    log_warn "Functions outbound IP discovery returned no values for $resource_group/$app_name"
+    return 0
+  fi
+
+  while IFS= read -r ip; do
+    if [[ -z "$ip" ]]; then
+      continue
+    fi
+
+    rule_name="functions-validation-egress-$index"
+    log_info "Allowing Functions outbound IP $ip to reach PostgreSQL server $server_name"
+    run_az postgres flexible-server firewall-rule create \
+      --resource-group "$postgres_resource_group" \
+      --name "$server_name" \
+      --rule-name "$rule_name" \
+      --start-ip-address "$ip" \
+      --end-ip-address "$ip" >/dev/null
+
+    FUNCTIONS_DB_FIREWALL_RULES+=("${postgres_resource_group}|${server_name}|${rule_name}")
+    index=$((index + 1))
+  done <<< "$outbound_ips"
+}
+
 diagnose_aca_failure() {
   local resource_group="$1"
   local app_name="$2"
@@ -1158,6 +1226,30 @@ clear_aca_db_firewall_access() {
   fi
 
   for entry in "${ACA_DB_FIREWALL_RULES[@]}"; do
+    resource_group="${entry%%|*}"
+    entry="${entry#*|}"
+    server_name="${entry%%|*}"
+    rule_name="${entry##*|}"
+
+    run_az postgres flexible-server firewall-rule delete \
+      --resource-group "$resource_group" \
+      --name "$server_name" \
+      --rule-name "$rule_name" \
+      --yes >/dev/null || true
+  done
+}
+
+clear_functions_db_firewall_access() {
+  local entry
+  local resource_group
+  local server_name
+  local rule_name
+
+  if [[ "${#FUNCTIONS_DB_FIREWALL_RULES[@]}" -eq 0 ]]; then
+    return 0
+  fi
+
+  for entry in "${FUNCTIONS_DB_FIREWALL_RULES[@]}"; do
     resource_group="${entry%%|*}"
     entry="${entry#*|}"
     server_name="${entry%%|*}"
@@ -2276,12 +2368,14 @@ run_functions_checks() {
   local url="$1"
   local db_fqdn="$2"
   local resource_group="$3"
+  local app_name="$4"
   local redis_resource_group="$resource_group"
 
   if [[ "$DATA_APPLIED" == "true" && -n "$DATA_RESOURCE_GROUP" ]]; then
     redis_resource_group="$DATA_RESOURCE_GROUP"
   fi
 
+  ensure_functions_db_firewall_access "$resource_group" "$app_name" "$db_fqdn"
   wait_for_ready "$url" "$TIMEOUT_SECONDS"
   if [[ "$CHECK_PROTOCOLS" == "true" ]]; then
     run_admin_api_crud_smoke "$url" "$db_fqdn"
@@ -2402,6 +2496,7 @@ apply_functions_stack() {
   local url
   local db_fqdn
   local resource_group
+  local app_name
   local tf_output_json
   local previous_live_revision
   local desired_revision
@@ -2428,7 +2523,8 @@ apply_functions_stack() {
     url="$(run_tf -chdir=examples/azure-functions output -raw honua_url)"
     db_fqdn="$(run_tf -chdir=examples/azure-functions output -raw db_fqdn)"
     resource_group="$(run_tf -chdir=examples/azure-functions output -raw resource_group_name)"
-    run_functions_checks "$url" "$db_fqdn" "$resource_group"
+    app_name="$(run_tf -chdir=examples/azure-functions output -raw function_app_name)"
+    run_functions_checks "$url" "$db_fqdn" "$resource_group" "$app_name"
     previous_live_revision="$(run_tf -chdir=examples/azure-functions output -raw control_plane_current_revision)"
     if [[ -z "$previous_live_revision" || "$previous_live_revision" == "null" ]]; then
       log_error "Functions validation requires control_plane_current_revision once the deployment slot is enabled"
@@ -2441,20 +2537,22 @@ apply_functions_stack() {
     url="$(run_tf -chdir=examples/azure-functions output -raw honua_url)"
     db_fqdn="$(run_tf -chdir=examples/azure-functions output -raw db_fqdn)"
     resource_group="$(run_tf -chdir=examples/azure-functions output -raw resource_group_name)"
+    app_name="$(run_tf -chdir=examples/azure-functions output -raw function_app_name)"
     desired_revision="$(run_tf -chdir=examples/azure-functions output -raw control_plane_desired_revision)"
     if [[ -z "$desired_revision" || "$desired_revision" == "null" ]]; then
       log_error "Functions validation requires control_plane_desired_revision once the deployment slot is enabled"
       return 1
     fi
-    run_functions_checks "$url" "$db_fqdn" "$resource_group"
+    run_functions_checks "$url" "$db_fqdn" "$resource_group" "$app_name"
   else
     plan_apply "examples/azure-functions" "functions.tfplan" "functions"
 
     url="$(run_tf -chdir=examples/azure-functions output -raw honua_url)"
     db_fqdn="$(run_tf -chdir=examples/azure-functions output -raw db_fqdn)"
     resource_group="$(run_tf -chdir=examples/azure-functions output -raw resource_group_name)"
+    app_name="$(run_tf -chdir=examples/azure-functions output -raw function_app_name)"
 
-    run_functions_checks "$url" "$db_fqdn" "$resource_group"
+    run_functions_checks "$url" "$db_fqdn" "$resource_group" "$app_name"
   fi
 
   if [[ "$CHECK_IDEMPOTENCY" == "true" ]]; then
@@ -2488,7 +2586,8 @@ apply_functions_stack() {
     url="$(run_tf -chdir=examples/azure-functions output -raw honua_url)"
     db_fqdn="$(run_tf -chdir=examples/azure-functions output -raw db_fqdn)"
     resource_group="$(run_tf -chdir=examples/azure-functions output -raw resource_group_name)"
-    run_functions_checks "$url" "$db_fqdn" "$resource_group"
+    app_name="$(run_tf -chdir=examples/azure-functions output -raw function_app_name)"
+    run_functions_checks "$url" "$db_fqdn" "$resource_group" "$app_name"
   fi
 
   log_info "Functions stack checks passed"
@@ -2586,6 +2685,7 @@ cleanup() {
   if [[ "$AUTO_DESTROY" == "true" ]]; then
     destroy_functions_stack
     destroy_aca_stack
+    clear_functions_db_firewall_access
     clear_aca_db_firewall_access
     if [[ "$DESTROY_DATA" == "true" ]]; then
       destroy_data_stack
