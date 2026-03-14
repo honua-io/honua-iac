@@ -2062,6 +2062,51 @@ validate_existing_resource_inputs() {
   fi
 }
 
+validate_existing_data_stack_availability() {
+  local server_name=""
+  local redis_name=""
+  local redis_resource_group=""
+
+  if ! has_existing_data_inputs; then
+    return 0
+  fi
+
+  if [[ -z "$EXISTING_DB_RESOURCE_GROUP" && -n "$EXISTING_DB_FQDN" ]]; then
+    EXISTING_DB_RESOURCE_GROUP="$(infer_existing_postgres_resource_group_from_db_fqdn "$EXISTING_DB_FQDN" 2>/dev/null || true)"
+  fi
+
+  if [[ -n "$EXISTING_DB_RESOURCE_GROUP" ]]; then
+    server_name="${EXISTING_DB_FQDN%%.*}"
+    if run_az postgres flexible-server show \
+      --resource-group "$EXISTING_DB_RESOURCE_GROUP" \
+      --name "$server_name" \
+      --query "name" \
+      -o tsv >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+
+  if [[ -n "$EXISTING_DB_FQDN" ]] && \
+     redis_name="$(infer_existing_redis_name_from_db_fqdn "$EXISTING_DB_FQDN" 2>/dev/null || true)" && \
+     redis_resource_group="$(infer_existing_redis_resource_group_from_db_fqdn "$EXISTING_DB_FQDN" 2>/dev/null || true)" && \
+     [[ -n "$redis_name" ]] && [[ -n "$redis_resource_group" ]] && \
+     run_az redis show \
+       --resource-group "$redis_resource_group" \
+       --name "$redis_name" \
+       --query "name" \
+       -o tsv >/dev/null 2>&1; then
+    log_warn "Configured reused Azure DB stack is stale, but the paired Redis cache still exists; forcing a fresh Azure data stack seed"
+  else
+    log_warn "Configured reused Azure data stack is stale or no longer accessible; forcing a fresh Azure data stack seed"
+  fi
+
+  EXISTING_DB_FQDN=""
+  EXISTING_DB_RESOURCE_GROUP=""
+  EXISTING_DB_CONNECTION_STRING=""
+  EXISTING_REDIS_CONNECTION_STRING=""
+  AUTO_PROVISION_DATA_STACK=true
+}
+
 has_existing_data_inputs() {
   [[ -n "$EXISTING_DB_FQDN" &&
     -n "$EXISTING_DB_CONNECTION_STRING" &&
@@ -2256,8 +2301,10 @@ cleanup_expired_validation_resource_groups() {
   local resource_group
   local expires_at
   local expires_epoch
+  local pinned_reuse_group=""
 
   now_epoch="$(date -u +%s)"
+  pinned_reuse_group="$EXISTING_DB_RESOURCE_GROUP"
 
   while IFS=$'\t' read -r resource_group expires_at; do
     [[ -n "$resource_group" && -n "$expires_at" ]] || continue
@@ -2268,6 +2315,10 @@ cleanup_expired_validation_resource_groups() {
     fi
 
     if [[ -n "$DATA_RESOURCE_GROUP" && "$resource_group" == "$DATA_RESOURCE_GROUP" ]]; then
+      continue
+    fi
+
+    if [[ -n "$pinned_reuse_group" && "$resource_group" == "$pinned_reuse_group" ]]; then
       continue
     fi
 
@@ -2863,6 +2914,7 @@ main() {
   normalize_identifiers
   validate_existing_resource_inputs
   configure_data_stack_mode
+  validate_existing_data_stack_availability
   ensure_existing_db_connection_string_shape
   ensure_existing_redis_connection_string_shape
   resolve_db_password_for_checks
