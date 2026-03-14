@@ -67,6 +67,7 @@ VALIDATION_RUN_ID="${HONUA_VALIDATION_RUN_ID:-az-$(date -u +%Y%m%d%H%M%S)}"
 DB_FIREWALL_START_IP="${HONUA_AZURE_DB_FIREWALL_START_IP:-}"
 DB_FIREWALL_END_IP="${HONUA_AZURE_DB_FIREWALL_END_IP:-}"
 EXISTING_DB_FQDN="${HONUA_AZURE_EXISTING_DB_FQDN:-}"
+EXISTING_DB_RESOURCE_GROUP="${HONUA_AZURE_EXISTING_DB_RESOURCE_GROUP:-}"
 EXISTING_DB_CONNECTION_STRING="${HONUA_AZURE_EXISTING_DB_CONNECTION_STRING:-}"
 EXISTING_REDIS_CONNECTION_STRING="${HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING:-}"
 REGISTRY_SERVER="${HONUA_AZURE_REGISTRY_SERVER:-}"
@@ -455,6 +456,21 @@ infer_existing_redis_resource_group_from_db_fqdn() {
   printf '%s-data-rg' "$base_name"
 }
 
+infer_existing_postgres_resource_group_from_db_fqdn() {
+  local db_host="$1"
+  local base_name="${db_host%%.*}"
+
+  if [[ "$base_name" == *-pg ]]; then
+    base_name="${base_name%-pg}"
+  fi
+
+  if [[ -z "$base_name" ]]; then
+    return 1
+  fi
+
+  printf '%s-data-rg' "$base_name"
+}
+
 rebuild_existing_redis_connection_string_from_azure() {
   local redis_name="$1"
   local redis_resource_group="$2"
@@ -517,6 +533,13 @@ ensure_existing_redis_connection_string_shape() {
   fi
 
   if [[ -n "$EXISTING_DB_FQDN" ]]; then
+    if [[ -z "$EXISTING_DB_RESOURCE_GROUP" ]]; then
+      EXISTING_DB_RESOURCE_GROUP="$(infer_existing_postgres_resource_group_from_db_fqdn "$EXISTING_DB_FQDN" 2>/dev/null || true)"
+      if [[ -n "$EXISTING_DB_RESOURCE_GROUP" ]]; then
+        log_info "Inferred existing DB resource group: $EXISTING_DB_RESOURCE_GROUP"
+      fi
+    fi
+
     if redis_name="$(infer_existing_redis_name_from_db_fqdn "$EXISTING_DB_FQDN")" && \
        redis_resource_group="$(infer_existing_redis_resource_group_from_db_fqdn "$EXISTING_DB_FQDN")" && \
        rebuilt="$(rebuild_existing_redis_connection_string_from_azure "$redis_name" "$redis_resource_group")" && \
@@ -711,6 +734,10 @@ parse_args() {
         ;;
       --existing-db-fqdn)
         EXISTING_DB_FQDN="$2"
+        shift 2
+        ;;
+      --existing-db-resource-group)
+        EXISTING_DB_RESOURCE_GROUP="$2"
         shift 2
         ;;
       --existing-db-connection)
@@ -1367,6 +1394,15 @@ resolve_postgres_resource_group() {
 
   if [[ -n "$resolved" ]]; then
     printf '%s\n' "$resolved"
+    return 0
+  fi
+
+  if [[ -n "$EXISTING_DB_RESOURCE_GROUP" ]] && run_az postgres flexible-server show \
+    --resource-group "$EXISTING_DB_RESOURCE_GROUP" \
+    --name "$server_name" \
+    --query "name" \
+    -o tsv >/dev/null 2>&1; then
+    printf '%s\n' "$EXISTING_DB_RESOURCE_GROUP"
     return 0
   fi
 
@@ -2105,7 +2141,7 @@ load_data_reuse_cache() {
         fi
         format_seen=true
         ;;
-      EXISTING_DB_FQDN|EXISTING_DB_CONNECTION_STRING|EXISTING_REDIS_CONNECTION_STRING)
+      EXISTING_DB_FQDN|EXISTING_DB_RESOURCE_GROUP|EXISTING_DB_CONNECTION_STRING|EXISTING_REDIS_CONNECTION_STRING)
         if ! cache_decode_into_var "$key" "$value"; then
           log_warn "Failed decoding Azure data cache key '$key' in $DATA_CACHE_FILE"
           return
@@ -2141,6 +2177,7 @@ persist_data_reuse_cache() {
   cat > "$tmp_file" <<EOF
 HONUA_CACHE_FORMAT=$DATA_CACHE_FORMAT
 EXISTING_DB_FQDN=$(cache_encode_value "$EXISTING_DB_FQDN")
+EXISTING_DB_RESOURCE_GROUP=$(cache_encode_value "$EXISTING_DB_RESOURCE_GROUP")
 EXISTING_DB_CONNECTION_STRING=$(cache_encode_value "$EXISTING_DB_CONNECTION_STRING")
 EXISTING_REDIS_CONNECTION_STRING=$(cache_encode_value "$EXISTING_REDIS_CONNECTION_STRING")
 EOF
@@ -2159,6 +2196,7 @@ clear_data_reuse_cache() {
 configure_data_stack_mode() {
   if [[ "$FORCE_NEW_DATA_INFRA" == "true" ]]; then
     EXISTING_DB_FQDN=""
+    EXISTING_DB_RESOURCE_GROUP=""
     EXISTING_DB_CONNECTION_STRING=""
     EXISTING_REDIS_CONNECTION_STRING=""
     AUTO_PROVISION_DATA_STACK=true
@@ -2399,6 +2437,7 @@ apply_data_stack() {
   EXISTING_DB_CONNECTION_STRING="$(run_tf -chdir=examples/azure-data output -raw db_connection_string)"
   EXISTING_REDIS_CONNECTION_STRING="$(run_tf -chdir=examples/azure-data output -raw redis_connection_string)"
   DATA_RESOURCE_GROUP="$(run_tf -chdir=examples/azure-data output -raw resource_group_name)"
+  EXISTING_DB_RESOURCE_GROUP="$DATA_RESOURCE_GROUP"
 
   if [[ -z "$EXISTING_DB_FQDN" || -z "$EXISTING_DB_CONNECTION_STRING" ]]; then
     log_error "Azure data stack output validation failed: db_fqdn/db_connection_string must be non-empty"
@@ -2857,6 +2896,9 @@ main() {
   log_info "Data cache file: $DATA_CACHE_FILE"
   if [[ -n "$EXISTING_DB_FQDN" ]]; then
     log_info "Reusing existing DB FQDN: $EXISTING_DB_FQDN"
+  fi
+  if [[ -n "$EXISTING_DB_RESOURCE_GROUP" ]]; then
+    log_info "Reusing existing DB resource group: $EXISTING_DB_RESOURCE_GROUP"
   fi
   if [[ -n "$EXISTING_REDIS_CONNECTION_STRING" ]]; then
     log_info "Reusing existing Redis connection string"
