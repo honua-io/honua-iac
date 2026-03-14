@@ -200,6 +200,22 @@ run_honua_platform_post_apply_validation() {
       export HONUA_CLOUD_TEST_PLATFORM="$effective_platform"
     fi
 
+    case "$effective_platform" in
+      azure-functions)
+        export HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT="${HONUA_PLATFORM_VALIDATION_EXPECT_DEPLOY_PLAN_SUPPORT:-false}"
+        export HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT="${HONUA_PLATFORM_VALIDATION_EXPECT_MUTATION_SUPPORT:-false}"
+        ;;
+      *)
+        if [[ -n "${HONUA_PLATFORM_VALIDATION_EXPECT_DEPLOY_PLAN_SUPPORT:-}" ]]; then
+          export HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT="$HONUA_PLATFORM_VALIDATION_EXPECT_DEPLOY_PLAN_SUPPORT"
+        fi
+
+        if [[ -n "${HONUA_PLATFORM_VALIDATION_EXPECT_MUTATION_SUPPORT:-}" ]]; then
+          export HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT="$HONUA_PLATFORM_VALIDATION_EXPECT_MUTATION_SUPPORT"
+        fi
+        ;;
+    esac
+
     render_control_plane_config_from_terraform "$validation_root"
 
     if [[ -n "${HONUA_PLATFORM_VALIDATION_DEPLOY_TARGET_ID:-}" ]]; then

@@ -942,6 +942,64 @@ ensure_image_pull_secret() {
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 }
 
+honua_selector() {
+  printf 'app.kubernetes.io/instance=%s,app.kubernetes.io/name=honua' "$RELEASE_NAME"
+}
+
+dump_honua_rollout_diagnostics() {
+  local selector
+  local pod
+  local pods
+
+  selector="$(honua_selector)"
+
+  log_warn "Dumping Honua rollout diagnostics for namespace '${NAMESPACE}'"
+  kubectl -n "$NAMESPACE" get deployment "$HONUA_DEPLOYMENT_NAME" -o wide || true
+  kubectl -n "$NAMESPACE" describe deployment "$HONUA_DEPLOYMENT_NAME" || true
+  kubectl -n "$NAMESPACE" get pods -l "$selector" -o wide || true
+  kubectl -n "$NAMESPACE" describe pods -l "$selector" || true
+
+  pods="$(kubectl -n "$NAMESPACE" get pods -l "$selector" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)"
+  for pod in $pods; do
+    log_warn "Recent logs for pod ${pod}"
+    kubectl -n "$NAMESPACE" logs "$pod" --all-containers --tail=200 || true
+    kubectl -n "$NAMESPACE" logs "$pod" --all-containers --tail=200 --previous || true
+  done
+
+  kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp | tail -n 50 || true
+}
+
+honua_rollout_has_image_pull_failure() {
+  local pod_describe
+
+  pod_describe="$(kubectl -n "$NAMESPACE" describe pods -l "$(honua_selector)" 2>/dev/null || true)"
+  grep -Eqi 'ErrImagePull|ImagePullBackOff|Failed to pull image|pull access denied|authentication required|unauthorized' <<<"$pod_describe"
+}
+
+wait_for_honua_rollout() {
+  local image_repository="$1"
+
+  if kubectl -n "$NAMESPACE" rollout status "deployment/${HONUA_DEPLOYMENT_NAME}" --timeout="${TIMEOUT_SECONDS}s"; then
+    return 0
+  fi
+
+  dump_honua_rollout_diagnostics
+
+  if [[ -z "$HONUA_IMAGE_PULL_SECRET_NAME" && "$image_repository" == *.azurecr.io/* ]] && honua_rollout_has_image_pull_failure; then
+    log_warn "Detected Azure Container Registry pull failures while relying on managed AcrPull; waiting for role propagation and retrying once"
+    sleep 90
+    kubectl -n "$NAMESPACE" delete pod -l "$(honua_selector)" --ignore-not-found=true --wait=false >/dev/null 2>&1 || true
+
+    if kubectl -n "$NAMESPACE" rollout status "deployment/${HONUA_DEPLOYMENT_NAME}" --timeout="${TIMEOUT_SECONDS}s"; then
+      return 0
+    fi
+
+    dump_honua_rollout_diagnostics
+  fi
+
+  return 1
+}
+
 prepare_tf_workspace() {
   local docker_source
 
@@ -1030,7 +1088,7 @@ deploy_honua_release() {
     return 1
   fi
 
-  kubectl -n "$NAMESPACE" rollout status "deployment/${HONUA_DEPLOYMENT_NAME}" --timeout="${TIMEOUT_SECONDS}s"
+  wait_for_honua_rollout "$image_repository"
   RELEASE_NAME="$RELEASE_NAME" NAMESPACE="$NAMESPACE" "$K8S_HELPER_DIR/helm-test.sh"
   start_port_forward
 
