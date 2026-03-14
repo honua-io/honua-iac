@@ -239,6 +239,9 @@ report_reuse_status() {
       if [[ -z "$(repo_var_value "HONUA_AZURE_EXISTING_DB_FQDN")" ]]; then
         missing+=("HONUA_AZURE_EXISTING_DB_FQDN")
       fi
+      if [[ -z "$(repo_var_value "HONUA_AZURE_EXISTING_DB_RESOURCE_GROUP")" ]]; then
+        missing+=("HONUA_AZURE_EXISTING_DB_RESOURCE_GROUP")
+      fi
       if ! repo_secret_exists "HONUA_AZURE_EXISTING_DB_CONNECTION_STRING"; then
         missing+=("HONUA_AZURE_EXISTING_DB_CONNECTION_STRING")
       fi
