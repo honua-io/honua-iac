@@ -2139,6 +2139,8 @@ run_quota_preflight() {
     return
   fi
 
+  cleanup_expired_validation_resource_groups
+
   usage_json="$(run_az vm list-usage -l "$LOCATION" --query "[?name.value=='cores'] | [0]" -o json)"
   current="$(echo "$usage_json" | sed -n 's/.*"currentValue":\([0-9][0-9]*\).*/\1/p')"
   limit="$(echo "$usage_json" | sed -n 's/.*"limit":\([0-9][0-9]*\).*/\1/p')"
@@ -2157,6 +2159,35 @@ run_quota_preflight() {
   fi
 
   log_info "Azure quota preflight passed (cores current=${current:-unknown}, limit=${limit:-unknown}, required=+$required)"
+}
+
+cleanup_expired_validation_resource_groups() {
+  local now_epoch
+  local resource_group
+  local expires_at
+  local expires_epoch
+
+  now_epoch="$(date -u +%s)"
+
+  while IFS=$'\t' read -r resource_group expires_at; do
+    [[ -n "$resource_group" && -n "$expires_at" ]] || continue
+
+    expires_epoch="$(date -u -d "$expires_at" +%s 2>/dev/null || echo 0)"
+    if (( expires_epoch == 0 || expires_epoch >= now_epoch )); then
+      continue
+    fi
+
+    if [[ -n "$DATA_RESOURCE_GROUP" && "$resource_group" == "$DATA_RESOURCE_GROUP" ]]; then
+      continue
+    fi
+
+    log_warn "Deleting expired Azure validation resource group $resource_group (ExpiresAtUTC=$expires_at)"
+    run_az group delete --name "$resource_group" --yes --no-wait || log_warn "Failed to submit delete for expired group $resource_group"
+  done < <(
+    run_az group list \
+      --query "[?tags.Owner=='terraform-validation' && location=='${LOCATION}'].[name,tags.ExpiresAtUTC]" \
+      -o tsv
+  )
 }
 
 detect_db_firewall_ips() {

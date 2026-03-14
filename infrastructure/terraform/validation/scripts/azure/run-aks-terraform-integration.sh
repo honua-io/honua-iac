@@ -201,6 +201,11 @@ resolve_acr_credentials_from_image() {
     return 0
   fi
 
+  if [[ -n "$REGISTRY_USERNAME" && -n "$REGISTRY_PASSWORD" ]]; then
+    log_info "Using explicit registry credentials for ${REGISTRY_SERVER}"
+    return 0
+  fi
+
   registry_name="${REGISTRY_SERVER%%.*}"
   if [[ -z "$registry_name" ]]; then
     log_error "Could not derive Azure Container Registry name from image: $image_ref"
