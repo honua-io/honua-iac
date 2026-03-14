@@ -188,7 +188,6 @@ extract_registry_server_from_image() {
 resolve_acr_credentials_from_image() {
   local image_ref="$1"
   local registry_name=""
-  local registry_subscription_id=""
 
   if [[ -n "$REGISTRY_SERVER" && -n "$REGISTRY_USERNAME" && -n "$REGISTRY_PASSWORD" ]]; then
     return 0
@@ -213,19 +212,15 @@ resolve_acr_credentials_from_image() {
   fi
 
   if [[ -n "$ACR_RESOURCE_ID" ]]; then
-    registry_subscription_id="$(awk -F/ '{for (i = 1; i < NF; i++) if ($i == "subscriptions") { print $(i + 1); exit }}' <<<"$ACR_RESOURCE_ID")"
+    log_info "Using kubelet AcrPull access for ${REGISTRY_SERVER} (${ACR_RESOURCE_ID}); skipping registry secret provisioning"
+    IMAGE_PULL_SECRET_NAME=""
+    return 0
   fi
 
   log_info "Resolving ACR credentials for ${REGISTRY_SERVER}"
-  if [[ -n "$registry_subscription_id" ]]; then
-    run_az acr update --subscription "$registry_subscription_id" --name "$registry_name" --admin-enabled true >/dev/null
-    REGISTRY_USERNAME="$(run_az acr credential show --subscription "$registry_subscription_id" --name "$registry_name" --query username -o tsv)"
-    REGISTRY_PASSWORD="$(run_az acr credential show --subscription "$registry_subscription_id" --name "$registry_name" --query 'passwords[0].value' -o tsv)"
-  else
-    run_az acr update --name "$registry_name" --admin-enabled true >/dev/null
-    REGISTRY_USERNAME="$(run_az acr credential show --name "$registry_name" --query username -o tsv)"
-    REGISTRY_PASSWORD="$(run_az acr credential show --name "$registry_name" --query 'passwords[0].value' -o tsv)"
-  fi
+  run_az acr update --name "$registry_name" --admin-enabled true >/dev/null
+  REGISTRY_USERNAME="$(run_az acr credential show --name "$registry_name" --query username -o tsv)"
+  REGISTRY_PASSWORD="$(run_az acr credential show --name "$registry_name" --query 'passwords[0].value' -o tsv)"
 }
 
 resolve_acr_resource_id() {
