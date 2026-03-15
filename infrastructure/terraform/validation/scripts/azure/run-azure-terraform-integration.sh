@@ -1220,6 +1220,9 @@ ensure_functions_db_firewall_access() {
   local index=0
   local rule_name
   local ip
+  local max_attempts="${HONUA_AZURE_FUNCTIONAPP_LOOKUP_MAX_ATTEMPTS:-12}"
+  local retry_seconds="${HONUA_AZURE_FUNCTIONAPP_LOOKUP_RETRY_SECONDS:-10}"
+  local attempt
 
   if [[ -z "$resource_group" || -z "$app_name" || -z "$db_fqdn" ]]; then
     return 0
@@ -1237,21 +1240,32 @@ ensure_functions_db_firewall_access() {
     return 0
   fi
 
-  outbound_ips="$(
-    {
-      run_az functionapp show \
-        --resource-group "$resource_group" \
-        --name "$app_name" \
-        --query "outboundIpAddresses" \
-        -o tsv || true
-      printf '\n'
-      run_az functionapp show \
-        --resource-group "$resource_group" \
-        --name "$app_name" \
-        --query "possibleOutboundIpAddresses" \
-        -o tsv || true
-    } | tr ',;' '\n' | awk 'NF && !seen[$0]++'
-  )"
+  for attempt in $(seq 1 "$max_attempts"); do
+    outbound_ips="$(
+      {
+        run_az functionapp show \
+          --resource-group "$resource_group" \
+          --name "$app_name" \
+          --query "outboundIpAddresses" \
+          -o tsv 2>/dev/null || true
+        printf '\n'
+        run_az functionapp show \
+          --resource-group "$resource_group" \
+          --name "$app_name" \
+          --query "possibleOutboundIpAddresses" \
+          -o tsv 2>/dev/null || true
+      } | tr ',;' '\n' | awk 'NF && !seen[$0]++'
+    )"
+
+    if [[ -n "$outbound_ips" ]]; then
+      break
+    fi
+
+    if (( attempt < max_attempts )); then
+      log_warn "Functions outbound IP discovery not ready yet for ${resource_group}/${app_name}; retrying in ${retry_seconds}s (attempt ${attempt}/${max_attempts})"
+      sleep "$retry_seconds"
+    fi
+  done
 
   if [[ -z "$outbound_ips" ]]; then
     log_warn "Functions outbound IP discovery returned no values for $resource_group/$app_name"

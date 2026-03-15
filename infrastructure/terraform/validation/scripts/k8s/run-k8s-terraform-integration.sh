@@ -1364,6 +1364,7 @@ main() {
   HONUA_PLATFORM_VALIDATION_PUBLISH_DB_PASSWORD="honua" \
   HONUA_PLATFORM_VALIDATION_PUBLISH_DB_SSL_MODE="Disable" \
   HONUA_PLATFORM_VALIDATION_PUBLISH_DB_SSL_REQUIRED="false" \
+  VERIFICATION_TIMEOUT="$TIMEOUT_SECONDS" \
   run_honua_platform_post_apply_validation "$(http_base_url)" "kubernetes"
 
   log_info "Kubernetes integration checks completed successfully"
