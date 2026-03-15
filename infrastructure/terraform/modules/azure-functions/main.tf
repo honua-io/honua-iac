@@ -263,18 +263,20 @@ resource "azurerm_key_vault_secret" "redis_connection" {
 
 locals {
   base_app_settings = {
-    FUNCTIONS_WORKER_RUNTIME                                    = var.functions_worker_runtime
-    FUNCTIONS_CUSTOMHANDLER_PORT                                = tostring(var.container_port)
-    WEBSITES_ENABLE_APP_SERVICE_STORAGE                         = "false"
-    AzureWebJobsScriptRoot                                      = "/home/site/wwwroot"
-    AzureWebJobsStorage                                         = azurerm_storage_account.this.primary_connection_string
-    ConnectionStrings__DefaultConnection                        = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.connection_string.versionless_id})"
-    HONUA_ADMIN_PASSWORD                                        = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.admin_password.versionless_id})"
-    Security__ConnectionEncryption__MasterKey                   = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.admin_password.versionless_id})"
-    HONUA_SERVE_ADMIN_UI                                        = var.serve_admin_ui ? "true" : "false"
-    HONUA_ADMIN_UI                                              = var.serve_admin_ui ? "true" : "false"
-    HONUA_OBSERVABILITY                                         = "true"
-    HONUA_SKIP_MIGRATIONS                                       = var.skip_migrations ? "true" : "false"
+    FUNCTIONS_WORKER_RUNTIME                  = var.functions_worker_runtime
+    FUNCTIONS_CUSTOMHANDLER_PORT              = tostring(var.container_port)
+    WEBSITES_ENABLE_APP_SERVICE_STORAGE       = "false"
+    AzureWebJobsScriptRoot                    = "/home/site/wwwroot"
+    AzureWebJobsStorage                       = azurerm_storage_account.this.primary_connection_string
+    ConnectionStrings__DefaultConnection      = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.connection_string.versionless_id})"
+    HONUA_ADMIN_PASSWORD                      = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.admin_password.versionless_id})"
+    Security__ConnectionEncryption__MasterKey = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.admin_password.versionless_id})"
+    HONUA_SERVE_ADMIN_UI                      = var.serve_admin_ui ? "true" : "false"
+    HONUA_ADMIN_UI                            = var.serve_admin_ui ? "true" : "false"
+    HONUA_OBSERVABILITY                       = "true"
+    HONUA_SKIP_MIGRATIONS                     = var.skip_migrations ? "true" : "false"
+  }
+  control_plane_app_settings = var.deployment_slot_enabled ? {
     ControlPlane__DeployTargets__0__TargetId                    = local.control_plane_target_id
     ControlPlane__DeployTargets__0__TargetKind                  = "AzureFunctions"
     ControlPlane__DeployTargets__0__Backend                     = "honua-gitops-azure-functions"
@@ -292,7 +294,7 @@ locals {
     ControlPlane__DeployTargets__0__ParameterEntries__3__Value  = var.image
     ControlPlane__DeployTargets__0__ParameterEntries__4__Key    = "functions.desired_image"
     ControlPlane__DeployTargets__0__ParameterEntries__4__Value  = local.slot_image
-  }
+  } : {}
   redis_secret_settings = local.redis_connection != "" ? {
     ConnectionStrings__redis = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.redis_connection[0].versionless_id})"
   } : {}
@@ -305,7 +307,7 @@ locals {
     APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.this[0].connection_string
     APPINSIGHTS_INSTRUMENTATIONKEY        = azurerm_application_insights.this[0].instrumentation_key
   } : {}
-  app_settings = merge(local.base_app_settings, local.redis_secret_settings, local.registry_settings, local.app_insights_settings, var.additional_env)
+  app_settings = merge(local.base_app_settings, local.control_plane_app_settings, local.redis_secret_settings, local.registry_settings, local.app_insights_settings, var.additional_env)
 
   image_parts         = split("/", var.image)
   image_registry      = local.image_parts[0]

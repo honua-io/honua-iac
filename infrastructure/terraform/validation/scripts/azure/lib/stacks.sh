@@ -380,7 +380,10 @@ apply_functions_stack() {
   HONUA_PLATFORM_VALIDATION_EXECUTE_DEPLOY_OPERATION="$([[ "$RUN_UPGRADE_ROLLBACK" == "true" ]] && printf 'true' || printf 'false')" \
   HONUA_PLATFORM_VALIDATION_VERIFY_DEPLOY_ROLLBACK="$([[ "$RUN_UPGRADE_ROLLBACK" == "true" ]] && printf 'true' || printf 'false')" \
   HONUA_PLATFORM_VALIDATION_DEPLOY_TIMEOUT_SECONDS="240" \
-  run_honua_platform_post_apply_validation "$url" "azure-functions"
+  run_honua_platform_post_apply_validation "$url" "azure-functions" || {
+    diagnose_functions_failure "$resource_group" "$app_name"
+    return 1
+  }
 
   if [[ "$RUN_UPGRADE_ROLLBACK" == "true" ]]; then
     export TF_VAR_honua_image="$FUNCTIONS_IMAGE"

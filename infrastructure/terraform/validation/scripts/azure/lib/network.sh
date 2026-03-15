@@ -233,7 +233,7 @@ diagnose_functions_failure() {
     return 0
   fi
 
-  log_warn "Functions readiness failed; dumping app/container state for ${resource_group}/${app_name}"
+  log_warn "Functions validation failed; dumping app/container state for ${resource_group}/${app_name}"
   run_az functionapp show \
     --resource-group "$resource_group" \
     --name "$app_name" \
@@ -249,7 +249,7 @@ diagnose_functions_failure() {
   run_az functionapp config appsettings list \
     --resource-group "$resource_group" \
     --name "$app_name" \
-    --query "[?name=='FUNCTIONS_WORKER_RUNTIME' || name=='FUNCTIONS_CUSTOMHANDLER_PORT' || name=='WEBSITES_ENABLE_APP_SERVICE_STORAGE' || name=='AzureWebJobsScriptRoot' || name=='AzureWebJobsStorage' || name=='ConnectionStrings__DefaultConnection' || name=='ConnectionStrings__redis'].[name,value]" \
+    --query "[?name=='FUNCTIONS_WORKER_RUNTIME' || name=='FUNCTIONS_CUSTOMHANDLER_PORT' || name=='WEBSITES_ENABLE_APP_SERVICE_STORAGE' || name=='AzureWebJobsScriptRoot' || name=='AzureWebJobsStorage' || name=='ConnectionStrings__DefaultConnection' || name=='ConnectionStrings__redis' || name=='HONUA_SKIP_MIGRATIONS' || name=='HONUA_OBSERVABILITY' || starts_with(name, 'ControlPlane__DeployTargets__0__')].[name,value]" \
     -o table || true
 }
 

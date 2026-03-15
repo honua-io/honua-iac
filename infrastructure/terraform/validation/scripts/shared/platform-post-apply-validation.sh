@@ -118,6 +118,9 @@ render_control_plane_config_from_terraform() {
   local rendered_target_id=""
   local rendered_current_revision=""
   local rendered_desired_revision=""
+  local rendered_slot_name=""
+  local platform="${HONUA_PLATFORM_VALIDATION_PLATFORM:-${HONUA_CLOUD_TEST_PLATFORM:-}}"
+  local should_export_target_id="true"
   local -a render_args
 
   if [[ -z "$terraform_output_json" ]]; then
@@ -159,9 +162,28 @@ render_control_plane_config_from_terraform() {
 
   export HONUA_PLATFORM_VALIDATION_CONTROL_PLANE_CONFIG_OUTPUT="$rendered_config_path"
 
+  if [[ "$platform" == "azure-functions" && -z "${HONUA_PLATFORM_VALIDATION_DEPLOY_TARGET_ID:-}" ]]; then
+    rendered_slot_name="$(
+      jq -r '
+        .control_plane_slot_name.value //
+        .function_app_slot_name.value //
+        .control_plane_desired_revision.value //
+        empty
+      ' "$terraform_output_json"
+    )"
+    if [[ -z "$rendered_slot_name" ]]; then
+      should_export_target_id="false"
+      platform_validation_log info "Skipping derived deploy target id for Azure Functions because no deployment slot outputs were provisioned"
+    fi
+  fi
+
   if rendered_target_id="$(jq -r '.ControlPlane.DeployTargets[0].TargetId // empty' "$rendered_config_path")" && [[ -n "$rendered_target_id" ]]; then
-    export HONUA_CLOUD_TEST_DEPLOY_TARGET_ID="$rendered_target_id"
-    platform_validation_log info "Derived deploy target id '$rendered_target_id' from Terraform outputs"
+    if [[ "$should_export_target_id" == "true" ]]; then
+      export HONUA_CLOUD_TEST_DEPLOY_TARGET_ID="$rendered_target_id"
+      platform_validation_log info "Derived deploy target id '$rendered_target_id' from Terraform outputs"
+    else
+      unset HONUA_CLOUD_TEST_DEPLOY_TARGET_ID
+    fi
   fi
 
   if [[ -z "${HONUA_CLOUD_TEST_DEPLOY_CURRENT_REVISION:-}" ]]; then
@@ -182,6 +204,7 @@ render_control_plane_config_from_terraform() {
   if [[ -z "${HONUA_CLOUD_TEST_DEPLOY_DESIRED_REVISION:-}" ]]; then
     rendered_desired_revision="$(
       jq -r '
+        .control_plane_desired_revision.value //
         .lambda_function_version.value //
         .control_plane_current_revision.value //
         .lambda_alias_function_version.value //
