@@ -1252,6 +1252,27 @@ ensure_functions_db_firewall_access() {
     return 0
   fi
 
+  # Azure Functions Premium/Consumption plans do not expose a stable, definitive
+  # outbound IP allowlist for PostgreSQL firewalling. Use the temporary
+  # Azure-services rule for validation runs so readiness is not blocked on an
+  # empty or stale outbound IP set.
+  case "$FUNCTIONS_PLAN_SKU" in
+    EP*|Y1)
+      rule_name="functions-validation-azure-services"
+      log_warn "Functions plan '$FUNCTIONS_PLAN_SKU' uses shared/dynamic outbound IPs; allowing Azure services to reach PostgreSQL server $server_name for this validation run"
+      create_postgres_firewall_rule_with_retry \
+        "$postgres_resource_group" \
+        "$server_name" \
+        "$rule_name" \
+        "0.0.0.0" \
+        "0.0.0.0" \
+        "Functions Azure-services fallback"
+
+      FUNCTIONS_DB_FIREWALL_RULES+=("${postgres_resource_group}|${server_name}|${rule_name}")
+      return 0
+      ;;
+  esac
+
   for attempt in $(seq 1 "$max_attempts"); do
     outbound_ips="$(
       {
@@ -1280,7 +1301,17 @@ ensure_functions_db_firewall_access() {
   done
 
   if [[ -z "$outbound_ips" ]]; then
-    log_warn "Functions outbound IP discovery returned no values for $resource_group/$app_name"
+    rule_name="functions-validation-azure-services"
+    log_warn "Functions outbound IP discovery returned no values for $resource_group/$app_name; falling back to a temporary Azure-services PostgreSQL firewall rule"
+    create_postgres_firewall_rule_with_retry \
+      "$postgres_resource_group" \
+      "$server_name" \
+      "$rule_name" \
+      "0.0.0.0" \
+      "0.0.0.0" \
+      "Functions outbound IP fallback"
+
+    FUNCTIONS_DB_FIREWALL_RULES+=("${postgres_resource_group}|${server_name}|${rule_name}")
     return 0
   fi
 
