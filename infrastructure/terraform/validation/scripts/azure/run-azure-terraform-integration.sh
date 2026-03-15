@@ -106,6 +106,9 @@ USE_DOCKER_TF=false
 USE_DOCKER_AZ_CLI=false
 USE_DOCKER_PG_TOOLS=false
 AZ_SESSION_INITIALIZED=false
+AZ_SESSION_CLIENT_ID=""
+AZ_SESSION_TENANT_ID=""
+AZ_SESSION_SUBSCRIPTION_ID=""
 AZ_CONFIG_DIR_DEFAULT="${HONUA_AZURE_CONFIG_DIR:-/tmp/azcfg-honua}"
 AZ_LOGIN_MAX_ATTEMPTS="${HONUA_AZURE_LOGIN_MAX_ATTEMPTS:-18}"
 AZ_LOGIN_RETRY_SECONDS="${HONUA_AZURE_LOGIN_RETRY_SECONDS:-10}"
@@ -945,11 +948,17 @@ run_az() {
 
   ensure_local_az_session() {
     if [[ "$AZ_SESSION_INITIALIZED" == "true" ]] && \
+       [[ "$AZ_SESSION_CLIENT_ID" == "$ARM_CLIENT_ID" ]] && \
+       [[ "$AZ_SESSION_TENANT_ID" == "$ARM_TENANT_ID" ]] && \
+       [[ "$AZ_SESSION_SUBSCRIPTION_ID" == "$ARM_SUBSCRIPTION_ID" ]] && \
        AZURE_CORE_ONLY_SHOW_ERRORS=true az account show --query id -o tsv >/dev/null 2>&1; then
       return 0
     fi
 
     AZ_SESSION_INITIALIZED=false
+    AZ_SESSION_CLIENT_ID=""
+    AZ_SESSION_TENANT_ID=""
+    AZ_SESSION_SUBSCRIPTION_ID=""
     AZURE_CORE_ONLY_SHOW_ERRORS=true az config set extension.use_dynamic_install=yes_without_prompt >/dev/null
     local attempt
     local login_succeeded=false
@@ -974,6 +983,9 @@ run_az() {
     fi
 
     AZ_SESSION_INITIALIZED=true
+    AZ_SESSION_CLIENT_ID="$ARM_CLIENT_ID"
+    AZ_SESSION_TENANT_ID="$ARM_TENANT_ID"
+    AZ_SESSION_SUBSCRIPTION_ID="$ARM_SUBSCRIPTION_ID"
   }
 
   ensure_local_az_session
