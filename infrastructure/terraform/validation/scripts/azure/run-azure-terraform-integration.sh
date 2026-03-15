@@ -1300,6 +1300,34 @@ diagnose_aca_failure() {
     -o table || true
 }
 
+diagnose_functions_failure() {
+  local resource_group="$1"
+  local app_name="$2"
+
+  if [[ -z "$resource_group" || -z "$app_name" ]]; then
+    return 0
+  fi
+
+  log_warn "Functions readiness failed; dumping app/container state for ${resource_group}/${app_name}"
+  run_az functionapp show \
+    --resource-group "$resource_group" \
+    --name "$app_name" \
+    --query "{name:name,state:state,host:defaultHostName,kind:kind,reserved:reserved,enabled:enabled}" \
+    -o table || true
+
+  run_az functionapp config show \
+    --resource-group "$resource_group" \
+    --name "$app_name" \
+    --query "{linuxFxVersion:linuxFxVersion,healthCheckPath:healthCheckPath,alwaysOn:alwaysOn,acrUseManagedIdentityCreds:acrUseManagedIdentityCreds}" \
+    -o table || true
+
+  run_az functionapp config appsettings list \
+    --resource-group "$resource_group" \
+    --name "$app_name" \
+    --query "[?name=='FUNCTIONS_WORKER_RUNTIME' || name=='FUNCTIONS_CUSTOMHANDLER_PORT' || name=='WEBSITES_ENABLE_APP_SERVICE_STORAGE' || name=='AzureWebJobsScriptRoot' || name=='AzureWebJobsStorage' || name=='ConnectionStrings__DefaultConnection' || name=='ConnectionStrings__redis'].[name,value]" \
+    -o table || true
+}
+
 clear_aca_db_firewall_access() {
   local entry
   local resource_group
@@ -2556,7 +2584,10 @@ run_functions_checks() {
   fi
 
   ensure_functions_db_firewall_access "$resource_group" "$app_name" "$db_fqdn"
-  wait_for_ready "$url" "$TIMEOUT_SECONDS"
+  if ! wait_for_ready "$url" "$TIMEOUT_SECONDS"; then
+    diagnose_functions_failure "$resource_group" "$app_name"
+    return 1
+  fi
   if [[ "$CHECK_PROTOCOLS" == "true" ]]; then
     run_admin_api_crud_smoke "$url" "$db_fqdn"
     verify_protocol_endpoints "$url"

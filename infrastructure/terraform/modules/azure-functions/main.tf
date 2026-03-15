@@ -318,7 +318,8 @@ resource "azurerm_linux_function_app" "this" {
   service_plan_id     = azurerm_service_plan.this.id
 
   storage_account_name            = azurerm_storage_account.this.name
-  storage_uses_managed_identity   = true
+  storage_account_access_key      = azurerm_storage_account.this.primary_access_key
+  storage_uses_managed_identity   = false
   key_vault_reference_identity_id = azurerm_user_assigned_identity.function.id
 
   https_only                  = true
@@ -378,7 +379,8 @@ resource "azurerm_linux_function_app_slot" "staging" {
   function_app_id = azurerm_linux_function_app.this.id
 
   storage_account_name            = azurerm_storage_account.this.name
-  storage_uses_managed_identity   = true
+  storage_account_access_key      = azurerm_storage_account.this.primary_access_key
+  storage_uses_managed_identity   = false
   key_vault_reference_identity_id = azurerm_user_assigned_identity.function.id
 
   https_only                  = true
