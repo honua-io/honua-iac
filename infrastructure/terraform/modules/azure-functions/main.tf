@@ -15,8 +15,11 @@ locals {
     Environment = var.environment
     ManagedBy   = "terraform"
   }, var.tags)
-  storage_account_name = substr(replace(lower("${var.name_prefix}${var.environment}${random_string.storage_suffix.result}"), "-", ""), 0, 24)
-  db_use_existing      = var.existing_db_connection_string != ""
+  storage_account_name             = substr(replace(lower("${var.name_prefix}${var.environment}${random_string.storage_suffix.result}"), "-", ""), 0, 24)
+  function_app_name                = "${local.name}-functions"
+  control_plane_target_id          = local.function_app_name
+  control_plane_target_resource_id = "/subscriptions/${data.azurerm_client_config.current.subscription_id}/resourceGroups/${azurerm_resource_group.this.name}/providers/Microsoft.Web/sites/${local.function_app_name}"
+  db_use_existing                  = var.existing_db_connection_string != ""
 }
 
 check "existing_db_inputs" {
@@ -260,18 +263,35 @@ resource "azurerm_key_vault_secret" "redis_connection" {
 
 locals {
   base_app_settings = {
-    FUNCTIONS_WORKER_RUNTIME                  = var.functions_worker_runtime
-    FUNCTIONS_CUSTOMHANDLER_PORT              = tostring(var.container_port)
-    WEBSITES_ENABLE_APP_SERVICE_STORAGE       = "false"
-    AzureWebJobsScriptRoot                    = "/home/site/wwwroot"
-    AzureWebJobsStorage                       = azurerm_storage_account.this.primary_connection_string
-    ConnectionStrings__DefaultConnection      = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.connection_string.versionless_id})"
-    HONUA_ADMIN_PASSWORD                      = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.admin_password.versionless_id})"
-    Security__ConnectionEncryption__MasterKey = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.admin_password.versionless_id})"
-    HONUA_SERVE_ADMIN_UI                      = var.serve_admin_ui ? "true" : "false"
-    HONUA_ADMIN_UI                            = var.serve_admin_ui ? "true" : "false"
-    HONUA_OBSERVABILITY                       = "true"
-    HONUA_SKIP_MIGRATIONS                     = var.skip_migrations ? "true" : "false"
+    FUNCTIONS_WORKER_RUNTIME                                    = var.functions_worker_runtime
+    FUNCTIONS_CUSTOMHANDLER_PORT                                = tostring(var.container_port)
+    WEBSITES_ENABLE_APP_SERVICE_STORAGE                         = "false"
+    AzureWebJobsScriptRoot                                      = "/home/site/wwwroot"
+    AzureWebJobsStorage                                         = azurerm_storage_account.this.primary_connection_string
+    ConnectionStrings__DefaultConnection                        = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.connection_string.versionless_id})"
+    HONUA_ADMIN_PASSWORD                                        = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.admin_password.versionless_id})"
+    Security__ConnectionEncryption__MasterKey                   = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.admin_password.versionless_id})"
+    HONUA_SERVE_ADMIN_UI                                        = var.serve_admin_ui ? "true" : "false"
+    HONUA_ADMIN_UI                                              = var.serve_admin_ui ? "true" : "false"
+    HONUA_OBSERVABILITY                                         = "true"
+    HONUA_SKIP_MIGRATIONS                                       = var.skip_migrations ? "true" : "false"
+    ControlPlane__DeployTargets__0__TargetId                    = local.control_plane_target_id
+    ControlPlane__DeployTargets__0__TargetKind                  = "AzureFunctions"
+    ControlPlane__DeployTargets__0__Backend                     = "honua-gitops-azure-functions"
+    ControlPlane__DeployTargets__0__Environment                 = var.environment
+    ControlPlane__DeployTargets__0__TargetName                  = local.function_app_name
+    ControlPlane__DeployTargets__0__ArtifactReference           = var.image
+    ControlPlane__DeployTargets__0__RequiresOutOfBandMigrations = "true"
+    ControlPlane__DeployTargets__0__ParameterEntries__0__Key    = "target.resource_id"
+    ControlPlane__DeployTargets__0__ParameterEntries__0__Value  = local.control_plane_target_resource_id
+    ControlPlane__DeployTargets__0__ParameterEntries__1__Key    = "azure.resource_group"
+    ControlPlane__DeployTargets__0__ParameterEntries__1__Value  = azurerm_resource_group.this.name
+    ControlPlane__DeployTargets__0__ParameterEntries__2__Key    = "functions.app_name"
+    ControlPlane__DeployTargets__0__ParameterEntries__2__Value  = local.function_app_name
+    ControlPlane__DeployTargets__0__ParameterEntries__3__Key    = "functions.current_image"
+    ControlPlane__DeployTargets__0__ParameterEntries__3__Value  = var.image
+    ControlPlane__DeployTargets__0__ParameterEntries__4__Key    = "functions.desired_image"
+    ControlPlane__DeployTargets__0__ParameterEntries__4__Value  = local.slot_image
   }
   redis_secret_settings = local.redis_connection != "" ? {
     ConnectionStrings__redis = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.redis_connection[0].versionless_id})"
@@ -312,7 +332,7 @@ locals {
 #checkov:skip=CKV_AZURE_221: Public access remains configurable so validation and MVP environments can be reached without private networking.
 resource "azurerm_linux_function_app" "this" {
   #checkov:skip=CKV_AZURE_221: Public access remains configurable so validation and MVP environments can be reached without private networking.
-  name                = "${local.name}-functions"
+  name                = local.function_app_name
   resource_group_name = azurerm_resource_group.this.name
   location            = azurerm_resource_group.this.location
   service_plan_id     = azurerm_service_plan.this.id

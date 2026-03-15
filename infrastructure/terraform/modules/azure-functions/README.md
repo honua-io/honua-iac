@@ -126,3 +126,5 @@ See `outputs.tf` for the Function App URL, database connection string, and Redis
 ## Slot-based rollouts
 
 Set `deployment_slot_enabled = true` to provision a staging slot that can hold the next Honua image separately from production. This module does not perform slot swaps itself. Instead, it emits the slot metadata the Honua control plane or future GitOps controller can use to plan and observe a slot-based rollout.
+
+The module also injects a `ControlPlane__DeployTargets__0__...` target definition into the app settings so the deployed Honua server can advertise and plan Azure Functions rollouts through `/api/v1/admin/deploy/*`.

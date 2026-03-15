@@ -32,7 +32,10 @@ platform_validation_contract_default() {
   local capability="${2:-}"
 
   case "${platform}:${capability}" in
-    azure-functions:deploy-plan|azure-functions:mutation)
+    azure-functions:deploy-plan)
+      printf 'true\n'
+      ;;
+    azure-functions:mutation)
       printf 'false\n'
       ;;
     azure-container-apps:deploy-plan|azure-container-apps:mutation)
