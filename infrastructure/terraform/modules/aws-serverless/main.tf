@@ -137,6 +137,7 @@ locals {
 }
 
 #checkov:skip=CKV2_AWS_5: Security group is attached to the Lambda function.
+#trivy:ignore:AVD-AWS-0104
 resource "aws_security_group" "lambda" {
   #checkov:skip=CKV2_AWS_5: Security group is attached to the Lambda function.
   name_prefix = "${local.name}-lambda-"

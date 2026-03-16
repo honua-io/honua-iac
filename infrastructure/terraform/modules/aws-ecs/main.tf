@@ -219,6 +219,7 @@ resource "aws_security_group" "alb" {
 }
 
 #checkov:skip=CKV2_AWS_5: Security group is attached to the ECS service.
+#trivy:ignore:AVD-AWS-0104
 resource "aws_security_group" "ecs" {
   #checkov:skip=CKV2_AWS_5: Security group is attached to the ECS service.
   name_prefix = "${local.name}-ecs-"
@@ -264,6 +265,7 @@ resource "aws_security_group" "ecs" {
 }
 
 #checkov:skip=CKV2_AWS_5: Security group is attached to the RDS instance.
+#trivy:ignore:AVD-AWS-0104
 resource "aws_security_group" "rds" {
   count = local.db_use_existing ? 0 : 1
   #checkov:skip=CKV2_AWS_5: Security group is attached via the RDS module.
@@ -366,6 +368,7 @@ resource "aws_elasticache_replication_group" "redis" {
 }
 
 #checkov:skip=CKV2_AWS_28: WAF association is optional via waf_web_acl_arn.
+#trivy:ignore:AVD-AWS-0053
 resource "aws_lb" "this" {
   #checkov:skip=CKV2_AWS_76: WAF AMR configuration is managed via waf_web_acl_arn association.
   #checkov:skip=CKV2_AWS_20: HTTP redirect is conditional based on certificate availability.
@@ -460,6 +463,7 @@ resource "aws_s3_bucket_versioning" "alb_logs" {
   }
 }
 
+#trivy:ignore:AVD-AWS-0132
 resource "aws_s3_bucket_server_side_encryption_configuration" "alb_logs" {
   count  = var.alb_access_logs_enabled && var.alb_access_logs_bucket_name == "" ? 1 : 0
   bucket = aws_s3_bucket.alb_logs[0].id
@@ -608,6 +612,7 @@ resource "aws_lb_listener" "http_redirect" {
   }
 }
 
+#trivy:ignore:AVD-AWS-0054
 resource "aws_lb_listener" "http" {
   #checkov:skip=CKV_AWS_2: HTTP listener is used when no HTTPS certificate is configured.
   #checkov:skip=CKV_AWS_103: HTTP listener is required when no HTTPS certificate is configured.

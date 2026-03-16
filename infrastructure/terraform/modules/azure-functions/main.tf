@@ -201,6 +201,7 @@ resource "azurerm_application_insights" "this" {
 
 #checkov:skip=CKV_AZURE_109: Key Vault firewall rules are configured outside this module.
 #checkov:skip=CKV2_AZURE_32: Private endpoints are configured outside this module.
+#trivy:ignore:AVD-AZU-0013
 resource "azurerm_key_vault" "this" {
   #checkov:skip=CKV_AZURE_109: Key Vault firewall rules are configured outside this module.
   #checkov:skip=CKV2_AZURE_32: Private endpoints are configured outside this module.

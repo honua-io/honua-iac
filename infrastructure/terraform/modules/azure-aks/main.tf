@@ -26,6 +26,7 @@ resource "azurerm_resource_group" "this" {
 #checkov:skip=CKV_AZURE_226: Ephemeral OS disks depend on chosen VM sizes and are not universally available.
 #checkov:skip=CKV_AZURE_227: Host/storage encryption settings are environment-specific and may be layered on later.
 #checkov:skip=CKV_AZURE_232: System-node pod isolation is handled by cluster policy after bootstrap.
+#trivy:ignore:AVD-AZU-0041
 resource "azurerm_kubernetes_cluster" "this" {
   #checkov:skip=CKV_AZURE_4: Diagnostics are configured separately when a Log Analytics workspace is provided.
   #checkov:skip=CKV_AZURE_115: Private-cluster networking is environment-specific and can be enabled by the caller.

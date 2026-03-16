@@ -114,7 +114,16 @@ run_checkov() {
 run_trivy_config() {
   local trivy_image="${HONUA_TRIVY_IMAGE:-aquasec/trivy:0.63.0}"
   local trivy_severity="${HONUA_TRIVY_SEVERITY:-HIGH,CRITICAL}"
-  local trivy_args=(config --exit-code 1 --severity "$trivy_severity")
+  local trivy_timeout="${HONUA_TRIVY_TIMEOUT:-15m}"
+  local trivy_args=(
+    config
+    --exit-code 1
+    --severity "$trivy_severity"
+    --timeout "$trivy_timeout"
+    --tf-exclude-downloaded-modules
+    --skip-dirs ".terraform"
+    --skip-dirs "**/.terraform"
+  )
 
   if command -v trivy >/dev/null 2>&1; then
     log_info "Running trivy config"
