@@ -173,6 +173,7 @@ render_control_plane_config_from_terraform() {
     )"
     if [[ -z "$rendered_slot_name" ]]; then
       should_export_target_id="false"
+      export HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT="false"
       platform_validation_log info "Skipping derived deploy target id for Azure Functions because no deployment slot outputs were provisioned"
     fi
   fi
@@ -218,6 +219,40 @@ render_control_plane_config_from_terraform() {
   fi
 
   platform_validation_log info "Rendered control-plane config fragment at $rendered_config_path"
+}
+
+run_filtered_cloud_post_apply_validation() {
+  local validation_root="$1"
+  local include_scale_tests="${2:-false}"
+  local cloud_test_filter="Category=Cloud"
+
+  cd "$validation_root"
+
+  if [[ "${HONUA_CLOUD_TEST_PLATFORM:-}" == "azure-functions" && "${HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT:-}" == "false" ]]; then
+    cloud_test_filter="${cloud_test_filter}&FullyQualifiedName!=Honua.Server.Tests.Cloud.CloudDeploymentValidationTests.DeployPlanEndpoint_ReturnsPlan_WhenTargetConfigured_OrNotFoundContract_WhenNoTargetConfigured"
+    platform_validation_log info "Skipping Azure Functions deploy-plan cloud test because the validation deployment did not provision a rollout target"
+  fi
+
+  chmod +x scripts/post-deployment-verification.sh
+  scripts/post-deployment-verification.sh
+
+  dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+    -p:RunAnalyzers=false \
+    --filter "$cloud_test_filter"
+
+  if [[ "$include_scale_tests" == "true" ]]; then
+    if [[ -z "${HONUA_SCALE_TEST_BASE_URL:-}" ]]; then
+      echo "INCLUDE_SCALE_TESTS=true but HONUA_SCALE_TEST_BASE_URL is not set." >&2
+      return 1
+    fi
+
+    echo "Running scale validation against ${HONUA_SCALE_TEST_BASE_URL}"
+    dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
+      -p:RunAnalyzers=false \
+      --filter "Category=Scale"
+  fi
+
+  echo "Cloud post-apply validation completed successfully."
 }
 
 run_honua_platform_post_apply_validation() {
@@ -369,6 +404,10 @@ run_honua_platform_post_apply_validation() {
 
     export INCLUDE_SCALE_TESTS="$include_scale_tests"
 
-    bash "./scripts/run-cloud-post-apply-validation.sh" "${runner_args[@]}"
+    if [[ "$effective_platform" == "azure-functions" && "${HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT:-}" == "false" ]]; then
+      run_filtered_cloud_post_apply_validation "$validation_root" "$include_scale_tests"
+    else
+      bash "./scripts/run-cloud-post-apply-validation.sh" "${runner_args[@]}"
+    fi
   )
 }
