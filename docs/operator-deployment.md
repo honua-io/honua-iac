@@ -1,6 +1,6 @@
 # Operator Deployment Guide
 
-This guide is for operators deploying Honua into customer-owned AWS or Azure environments. GCP is not supported in this repo.
+This guide is for operators deploying Honua into customer-owned AWS or Azure environments.
 
 ## Prerequisites
 

@@ -1,6 +1,6 @@
 # Honua Terraform
 
-Terraform for deploying Honua into customer-owned AWS and Azure environments. GCP is not in scope for this repository.
+Terraform for deploying Honua into customer-owned AWS and Azure environments.
 
 ## Operator path
 

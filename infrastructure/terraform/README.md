@@ -9,8 +9,6 @@ This directory contains the customer deployment surface for Honua plus the maint
 - Data-only stacks: AWS and Azure
 - Optional observability add-on: Kubernetes/Helm
 
-GCP is intentionally out of scope.
-
 ## Operator quick start
 
 Each example stack now ships with:
