@@ -42,7 +42,9 @@ FUNCTIONS_DEPLOYMENT_SLOT_IMAGE="${HONUA_AZURE_FUNCTIONS_DEPLOYMENT_SLOT_IMAGE:-
 FUNCTIONS_PLAN_SKU="${HONUA_FUNCTIONS_PLAN_SKU:-EP1}"
 FUNCTIONS_SKIP_MIGRATIONS="${HONUA_AZURE_FUNCTIONS_SKIP_MIGRATIONS:-false}"
 AUTO_DESTROY=true
-DESTROY_DATA="${HONUA_AZURE_DESTROY_DATA:-false}"
+DESTROY_DATA="${HONUA_AZURE_DESTROY_DATA:-}"
+DESTROY_DATA_MODE_EXPLICIT=false
+KEEP_DATA="${HONUA_AZURE_KEEP_DATA:-false}"
 QUICK_SCALE=true
 CHECK_IDEMPOTENCY=true
 CHECK_PROTOCOLS=true
@@ -157,7 +159,8 @@ Options:
   --skip-protocol-checks              Skip REST/OGC/OData/admin auth + admin CRUD/query smoke checks
   --skip-db-resilience                Skip DB backup/restore drill
   --no-scale-check                    Skip quick ACA scale check
-  --destroy-data                      Destroy auto-created Azure data stack during cleanup (default: keep for reuse)
+  --destroy-data                      Destroy auto-created Azure data stack during cleanup (default)
+  --keep-data                         Keep auto-created Azure data stack for reuse and enable local cache reuse
   --force-new-data-infra              Ignore cached/existing data inputs and create a fresh data stack
   --force-new-data                    Deprecated alias for --force-new-data-infra
   --no-destroy                        Keep resources after test run
@@ -175,6 +178,7 @@ Required environment variables:
 
 Optional environment variables:
   HONUA_AZURE_DESTROY_DATA
+  HONUA_AZURE_KEEP_DATA
   HONUA_AZURE_DATA_CACHE_FILE
   HONUA_AZURE_FUNCTIONS_DEPLOYMENT_SLOT_ENABLED
   HONUA_AZURE_FUNCTIONS_DEPLOYMENT_SLOT_NAME
@@ -366,6 +370,12 @@ parse_args() {
         ;;
       --destroy-data)
         DESTROY_DATA=true
+        DESTROY_DATA_MODE_EXPLICIT=true
+        shift
+        ;;
+      --keep-data)
+        DESTROY_DATA=false
+        DESTROY_DATA_MODE_EXPLICIT=true
         shift
         ;;
       --force-new-data-infra)

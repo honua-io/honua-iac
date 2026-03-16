@@ -111,35 +111,26 @@ run_checkov() {
   log_warn "checkov unavailable (no binary, no docker); skipping"
 }
 
-run_tfsec() {
-  local tfsec_enabled="${HONUA_TERRAFORM_ENABLE_TFSEC:-false}"
-  local tfsec_image="${HONUA_TFSEC_IMAGE:-aquasec/tfsec:v1.28}"
-  local tfsec_args=()
+run_trivy_config() {
+  local trivy_image="${HONUA_TRIVY_IMAGE:-aquasec/trivy:0.63.0}"
+  local trivy_severity="${HONUA_TRIVY_SEVERITY:-HIGH,CRITICAL}"
+  local trivy_args=(config --exit-code 1 --severity "$trivy_severity")
 
-  if [[ "${tfsec_enabled}" != "true" ]]; then
-    log_warn "tfsec is disabled by default because it cannot parse Terraform check blocks in this repository; enable with HONUA_TERRAFORM_ENABLE_TFSEC=true"
-    return
-  fi
-
-  if [[ "${POLICY_STRICT}" != "true" ]]; then
-    tfsec_args+=(--soft-fail)
-  fi
-
-  if command -v tfsec >/dev/null 2>&1; then
-    log_info "Running tfsec"
-    run_policy_command "tfsec modules" tfsec "${tfsec_args[@]}" "$ROOT/modules"
-    run_policy_command "tfsec examples" tfsec "${tfsec_args[@]}" "$ROOT/examples"
+  if command -v trivy >/dev/null 2>&1; then
+    log_info "Running trivy config"
+    run_policy_command "trivy config modules" trivy "${trivy_args[@]}" "$ROOT/modules"
+    run_policy_command "trivy config examples" trivy "${trivy_args[@]}" "$ROOT/examples"
     return
   fi
 
   if command -v docker >/dev/null 2>&1; then
-    log_info "Running tfsec via docker"
-    run_policy_command "tfsec modules (docker)" docker run --rm -v "$PWD:/src" "$tfsec_image" "${tfsec_args[@]}" /src/"$ROOT/modules"
-    run_policy_command "tfsec examples (docker)" docker run --rm -v "$PWD:/src" "$tfsec_image" "${tfsec_args[@]}" /src/"$ROOT/examples"
+    log_info "Running trivy config via docker"
+    run_policy_command "trivy config modules (docker)" docker run --rm -v "$PWD:/work" "$trivy_image" "${trivy_args[@]}" /work/"$ROOT/modules"
+    run_policy_command "trivy config examples (docker)" docker run --rm -v "$PWD:/work" "$trivy_image" "${trivy_args[@]}" /work/"$ROOT/examples"
     return
   fi
 
-  log_warn "tfsec unavailable (no binary, no docker); skipping"
+  log_warn "trivy unavailable (no binary, no docker); skipping"
 }
 
 assert_regex_absent() {
@@ -253,7 +244,7 @@ main() {
 
   run_tflint
   run_checkov
-  run_tfsec
+  run_trivy_config
   run_custom_policy_checks
 
   log_info "Terraform policy gate checks completed successfully"

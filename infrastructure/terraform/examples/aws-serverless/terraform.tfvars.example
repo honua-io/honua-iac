@@ -1,0 +1,17 @@
+region      = "us-east-1"
+environment = "prod"
+name_prefix = "honuasl"
+
+honua_image_uri       = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server:replace-me"
+honua_admin_password  = "replace-with-32-plus-character-admin-password"
+db_password           = "replace-with-database-password"
+
+enable_postgis = true
+redis_enabled  = true
+skip_migrations = true
+
+tags = {
+  environment = "prod"
+  owner       = "platform"
+  cost_center = "geo"
+}

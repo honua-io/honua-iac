@@ -81,7 +81,7 @@ env:
   AWS_VALIDATION_STACK: ${{ vars.HONUA_AWS_VALIDATION_STACK || 'both' }}
   HONUA_READY_SLO_SECONDS: ${{ vars.HONUA_READY_SLO_SECONDS || '600' }}
   HONUA_MAX_LOAD_ERROR_RATE_PERCENT: ${{ vars.HONUA_MAX_LOAD_ERROR_RATE_PERCENT || '0' }}
-  HONUA_MAX_RUN_COST_USD: ${{ vars.HONUA_MAX_RUN_COST_USD || '0' }}
+  HONUA_MAX_RUN_COST_USD: ${{ vars.HONUA_MAX_RUN_COST_USD || '100' }}
   HONUA_TTL_HOURS: ${{ vars.HONUA_TTL_HOURS || '8' }}
   HONUA_RUN_UPGRADE_ROLLBACK: ${{ vars.HONUA_RUN_UPGRADE_ROLLBACK || 'false' }}
   HONUA_SKIP_DB_RESILIENCE: ${{ vars.HONUA_SKIP_DB_RESILIENCE || 'false' }}
@@ -178,6 +178,29 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: Terraform native tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test_roots=(
+            "infrastructure/terraform/examples/aws"
+            "infrastructure/terraform/examples/aws-serverless"
+            "infrastructure/terraform/examples/aws-data"
+            "infrastructure/terraform/examples/aws-eks"
+            "infrastructure/terraform/examples/azure"
+            "infrastructure/terraform/examples/azure-functions"
+            "infrastructure/terraform/examples/azure-data"
+            "infrastructure/terraform/examples/azure-aks"
+            "infrastructure/terraform/examples/observability"
+          )
+
+          for root in "${test_roots[@]}"; do
+            echo "::group::terraform test ($root)"
+            terraform -chdir="$root" test -no-color
+            echo "::endgroup::"
+          done
+
   policy-gates:
     name: Terraform Policy Gates
     needs: static-validate
@@ -212,23 +235,16 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install checkov==3.2.497
 
-      - name: Install tfsec
+      - name: Install Trivy
         shell: bash
         run: |
           set -euo pipefail
-          TFSEC_VERSION="v1.28.14"
-          TFSEC_URL="https://github.com/aquasecurity/tfsec/releases/download/${TFSEC_VERSION}/tfsec-linux-amd64"
           install_dir="${HOME}/.local/bin"
-
           mkdir -p "$install_dir"
-
-          if curl -fsSL "$TFSEC_URL" -o "${install_dir}/tfsec"; then
-            chmod +x "${install_dir}/tfsec"
-            echo "${install_dir}" >> "$GITHUB_PATH"
-            "${install_dir}/tfsec" --version
-          else
-            echo "::warning::tfsec download failed from ${TFSEC_URL}; continuing without a local tfsec binary"
-          fi
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b "$install_dir" v0.63.0
+          echo "${install_dir}" >> "$GITHUB_PATH"
+          "${install_dir}/trivy" --version
 
       - name: Run Terraform policy gate script
         shell: bash
@@ -490,8 +506,12 @@ jobs:
 
             if [[ "${{ inputs.no_destroy }}" == "true" ]]; then
               args+=(--no-destroy)
-            elif [[ "${{ inputs.deployment_profile }}" == "ephemeral" && "${{ inputs.reuse_data_stack }}" != "true" ]]; then
-              args+=(--destroy-data)
+            elif [[ "${{ inputs.deployment_profile }}" == "ephemeral" ]]; then
+              if [[ "${{ inputs.reuse_data_stack }}" == "true" ]]; then
+                args+=(--keep-data)
+              else
+                args+=(--destroy-data)
+              fi
             fi
 
             if [[ "$HONUA_SKIP_SCALE_CHECK" == "true" ]]; then

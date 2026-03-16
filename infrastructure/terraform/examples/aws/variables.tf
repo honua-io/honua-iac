@@ -154,6 +154,11 @@ variable "canary_weight_percentage" {
   description = "Percentage of default ALB traffic routed to the canary target group."
   type        = number
   default     = 0
+
+  validation {
+    condition     = var.canary_weight_percentage >= 0 && var.canary_weight_percentage <= 100
+    error_message = "canary_weight_percentage must be between 0 and 100."
+  }
 }
 
 variable "alb_deletion_protection" {

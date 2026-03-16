@@ -80,6 +80,31 @@ locals {
       node_security_group_id = module.eks.node_security_group_id
     }
   }
+
+  infrastructure_outputs = {
+    environment = module.eks.environment
+    region      = var.region
+    cluster = {
+      name           = module.eks.cluster_name
+      arn            = module.eks.cluster_arn
+      endpoint       = module.eks.cluster_endpoint
+      vpc_id         = module.eks.vpc_id
+      metrics_target = module.eks.honua_metrics_target
+    }
+  }
+
+  honua_integration_outputs = {
+    control_plane = {
+      target_kind      = module.eks.control_plane_target_kind
+      backend_name     = module.eks.control_plane_backend_name
+      telemetry_policy = module.eks.control_plane_telemetry_policy
+    }
+    contracts = {
+      deployment = local.deployment_contract
+      validation = local.validation_contract
+      operations = local.operations_contract
+    }
+  }
 }
 
 output "cluster_name" {
@@ -116,6 +141,14 @@ output "control_plane_telemetry_policy" {
 
 output "honua_metrics_target" {
   value = module.eks.honua_metrics_target
+}
+
+output "infrastructure_outputs" {
+  value = local.infrastructure_outputs
+}
+
+output "honua_integration_outputs" {
+  value = local.honua_integration_outputs
 }
 
 output "deployment_contract" {

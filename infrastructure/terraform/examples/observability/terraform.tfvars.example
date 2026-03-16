@@ -1,0 +1,8 @@
+kubeconfig_path       = "~/.kube/config"
+namespace             = "honua-observability"
+honua_metrics_target  = "honua.default.svc.cluster.local:8080"
+grafana_ingress_host  = ""
+
+alertmanager_enabled            = true
+prometheus_persistence_enabled  = true
+grafana_persistence_enabled     = true

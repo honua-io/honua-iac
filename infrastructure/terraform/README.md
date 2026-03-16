@@ -1,74 +1,78 @@
 # Terraform Modules and Stacks
 
-This directory contains reusable modules and deployable stacks for Honua.
+This directory contains the customer deployment surface for Honua plus the maintainer validation assets that exercise it.
+
+## Supported scope
+
+- Clouds: AWS and Azure
+- Runtimes: containers, serverless, and managed Kubernetes
+- Data-only stacks: AWS and Azure
+- Optional observability add-on: Kubernetes/Helm
+
+GCP is intentionally out of scope.
 
 ## Operator quick start
 
-Choose a stack, create `terraform.tfvars`, then apply.
+Each example stack now ships with:
 
-### AWS ECS/Fargate
+- `backend.tf.example`
+- `terraform.tfvars.example`
+- customer-facing grouped outputs
+
+Typical flow:
 
 ```bash
+cp infrastructure/terraform/examples/aws/backend.tf.example \
+   infrastructure/terraform/examples/aws/backend.tf
 cp infrastructure/terraform/examples/aws/terraform.tfvars.example \
    infrastructure/terraform/examples/aws/terraform.tfvars
+
 terraform -chdir=infrastructure/terraform/examples/aws init
 terraform -chdir=infrastructure/terraform/examples/aws plan
 terraform -chdir=infrastructure/terraform/examples/aws apply
 ```
 
-### Azure Container Apps
+Customer output groups:
 
-```bash
-cp infrastructure/terraform/examples/azure/terraform.tfvars.example \
-   infrastructure/terraform/examples/azure/terraform.tfvars
-terraform -chdir=infrastructure/terraform/examples/azure init
-terraform -chdir=infrastructure/terraform/examples/azure plan
-terraform -chdir=infrastructure/terraform/examples/azure apply
-```
+- `infrastructure_outputs`: non-sensitive endpoints and resource identifiers
+- `infrastructure_secrets`: sensitive DB/Redis values
+- `honua_integration_outputs`: control-plane metadata and contracts consumed by Honua automation
 
-### AWS Lambda
+Provider versioning policy:
 
-```bash
-cp infrastructure/terraform/examples/aws-serverless/terraform.tfvars.example \
-   infrastructure/terraform/examples/aws-serverless/terraform.tfvars
-terraform -chdir=infrastructure/terraform/examples/aws-serverless init
-terraform -chdir=infrastructure/terraform/examples/aws-serverless plan
-terraform -chdir=infrastructure/terraform/examples/aws-serverless apply
-```
+- modules stay compatibility-oriented
+- example stacks pin to the tested provider minor line for safer customer upgrades
 
-### Azure Functions
+Operator guides:
 
-```bash
-cp infrastructure/terraform/examples/azure-functions/terraform.tfvars.example \
-   infrastructure/terraform/examples/azure-functions/terraform.tfvars
-terraform -chdir=infrastructure/terraform/examples/azure-functions init
-terraform -chdir=infrastructure/terraform/examples/azure-functions plan
-terraform -chdir=infrastructure/terraform/examples/azure-functions apply
-```
-
-Operator guide: `docs/operator-deployment.md`
+- `docs/operator-deployment.md`
+- `docs/operator-state.md`
 
 ## Modules
 
-- `modules/aws-ecs` - ECS/Fargate + RDS + ALB
-- `modules/azure-aca` - Azure Container Apps + PostgreSQL Flexible Server + Key Vault
-- `modules/aws-serverless` - Lambda + API Gateway + RDS
-- `modules/azure-functions` - Azure Functions + PostgreSQL Flexible Server
-- `modules/aws-eks` - EKS + VPC for managed Kubernetes
-- `modules/azure-aks` - AKS for managed Kubernetes
-- `modules/observability-stack` - optional Prometheus + Grafana add-on
+- `modules/aws-ecs`
+- `modules/aws-serverless`
+- `modules/aws-data`
+- `modules/aws-eks`
+- `modules/azure-aca`
+- `modules/azure-functions`
+- `modules/azure-data`
+- `modules/azure-aks`
+- `modules/observability-stack`
 
 ## Examples
 
 - `examples/aws`
-- `examples/azure`
 - `examples/aws-serverless`
-- `examples/azure-functions`
+- `examples/aws-data`
 - `examples/aws-eks`
+- `examples/azure`
+- `examples/azure-functions`
+- `examples/azure-data`
 - `examples/azure-aks`
 - `examples/observability`
 
-## Bootstrap identities (optional)
+## Bootstrap identities
 
 - `bootstrap/aws-ecs`
 - `bootstrap/aws-serverless`
@@ -79,27 +83,36 @@ Operator guide: `docs/operator-deployment.md`
 
 Use these when you need dedicated least-privilege deployment identities.
 
-## Validation assets (maintainers)
+## Fast feedback
 
-Validation automation is intentionally isolated from operator deployment stacks under:
+Static validation now has two layers:
+
+- `terraform validate` for configuration integrity
+- `terraform test` for fast contract and variable-validation coverage without live cloud credentials
+
+## Customer packaging
+
+To produce a clean customer distribution:
+
+```bash
+./scripts/package-customer-terraform.sh
+```
+
+This creates `dist/customer-terraform/` with modules, examples, bootstrap templates, and operator docs only.
+
+## Maintainer validation assets
+
+Validation automation is isolated from the operator surface under:
 
 - `validation/scripts/aws`
 - `validation/scripts/azure`
 - `validation/scripts/k8s`
 - `validation/scripts/shared`
 
-## Validation and CI (maintainers)
-
 For policy gates, drift checks, and live integration validation, use:
 
 - `./infrastructure/terraform/validation/scripts/shared/terraform-policy-gate.sh`
 - `./infrastructure/terraform/validation/scripts/shared/run-terraform-drift-detection.sh`
+- `.github/workflows/terraform-ci.yml`
 - `.github/workflows/terraform-manual-validation.yml`
 - `docs/devops/terraform-validation.md`
-
-## Architecture design (maintainers)
-
-The current refactor target and migration sequence are documented in:
-
-- `docs/adr/0001-terraform-architecture-refactor.md`
-- `docs/devops/terraform-architecture-plan.md`

@@ -1,3 +1,4 @@
 **/.terraform/
+dist/
 scripts/tf-secrets.local.sh
 scripts/tf-pass-insert.local.sh

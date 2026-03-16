@@ -389,8 +389,24 @@ validate_admin_password() {
 }
 
 validate_boolean_flags() {
+  validate_boolean_value "HONUA_AZURE_KEEP_DATA" "$KEEP_DATA"
+
+  if [[ -n "$DESTROY_DATA" ]]; then
+    validate_boolean_value "HONUA_AZURE_DESTROY_DATA" "$DESTROY_DATA"
+  fi
+
   if [[ "$FUNCTIONS_SKIP_MIGRATIONS" != "true" && "$FUNCTIONS_SKIP_MIGRATIONS" != "false" ]]; then
     log_error "HONUA_AZURE_FUNCTIONS_SKIP_MIGRATIONS must be 'true' or 'false' (got '$FUNCTIONS_SKIP_MIGRATIONS')"
+    exit 1
+  fi
+}
+
+validate_boolean_value() {
+  local name="$1"
+  local value="$2"
+
+  if [[ "$value" != "true" && "$value" != "false" ]]; then
+    log_error "$name must be true or false"
     exit 1
   fi
 }
@@ -616,6 +632,8 @@ clear_data_reuse_cache() {
 }
 
 configure_data_stack_mode() {
+  resolve_data_retention_mode
+
   if [[ "$FORCE_NEW_DATA_INFRA" == "true" ]]; then
     EXISTING_DB_FQDN=""
     EXISTING_DB_RESOURCE_GROUP=""
@@ -639,4 +657,21 @@ configure_data_stack_mode() {
   fi
 
   log_warn "Partial existing data inputs detected; skipping azure-data bootstrap stack and using mixed data wiring"
+}
+
+resolve_data_retention_mode() {
+  if [[ "$DESTROY_DATA_MODE_EXPLICIT" == "true" ]]; then
+    return
+  fi
+
+  if [[ "$KEEP_DATA" == "true" ]]; then
+    DESTROY_DATA=false
+    return
+  fi
+
+  if [[ -n "$DESTROY_DATA" ]]; then
+    return
+  fi
+
+  DESTROY_DATA=true
 }

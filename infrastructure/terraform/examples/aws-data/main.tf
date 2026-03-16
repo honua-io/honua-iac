@@ -19,6 +19,25 @@ module "data" {
   tags                            = var.tags
 }
 
+locals {
+  infrastructure_outputs = {
+    environment = var.environment
+    region      = var.region
+    network = {
+      vpc_id             = module.data.vpc_id
+      vpc_cidr           = module.data.vpc_cidr
+      public_subnet_ids  = module.data.public_subnet_ids
+      private_subnet_ids = module.data.private_subnet_ids
+    }
+  }
+
+  infrastructure_secrets = {
+    database_endpoint       = module.data.db_endpoint
+    database_connection     = module.data.db_connection_string
+    redis_connection_string = module.data.redis_connection_string
+  }
+}
+
 output "vpc_id" {
   value = module.data.vpc_id
 }
@@ -47,5 +66,14 @@ output "db_connection_string" {
 
 output "redis_connection_string" {
   value     = module.data.redis_connection_string
+  sensitive = true
+}
+
+output "infrastructure_outputs" {
+  value = local.infrastructure_outputs
+}
+
+output "infrastructure_secrets" {
+  value     = local.infrastructure_secrets
   sensitive = true
 }

@@ -1,0 +1,12 @@
+location    = "westus"
+environment = "prod"
+name_prefix = "honua"
+
+node_count   = 2
+node_vm_size = "Standard_D2s_v3"
+
+tags = {
+  environment = "prod"
+  owner       = "platform"
+  cost_center = "geo"
+}

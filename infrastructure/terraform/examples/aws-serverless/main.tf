@@ -117,6 +117,44 @@ locals {
       provider = "aws-secrets-manager"
     }
   }
+
+  infrastructure_outputs = {
+    environment = module.honua.environment
+    region      = module.honua.aws_region
+    endpoints = {
+      public_base_url = module.honua.api_endpoint
+    }
+    workload = {
+      function_name          = module.honua.lambda_function_name
+      function_arn           = module.honua.lambda_function_arn
+      alias_name             = module.honua.lambda_alias_name
+      alias_arn              = module.honua.lambda_alias_arn
+      alias_function_version = module.honua.lambda_alias_function_version
+    }
+  }
+
+  infrastructure_secrets = {
+    database_endpoint       = module.honua.db_endpoint
+    redis_connection_string = module.honua.redis_connection_string
+  }
+
+  honua_integration_outputs = {
+    control_plane = {
+      target_kind        = module.honua.control_plane_target_kind
+      backend_name       = module.honua.control_plane_backend_name
+      target_id          = module.honua.control_plane_target_id
+      target_name        = module.honua.control_plane_target_name
+      target_resource_id = module.honua.control_plane_target_resource_id
+      telemetry_policy   = module.honua.control_plane_telemetry_policy
+      current_revision   = module.honua.control_plane_current_revision
+      desired_revision   = module.honua.control_plane_desired_revision
+    }
+    contracts = {
+      deployment = local.deployment_contract
+      validation = local.validation_contract
+      operations = local.operations_contract
+    }
+  }
 }
 
 output "honua_url" {
@@ -199,6 +237,19 @@ output "db_endpoint" {
 output "redis_connection_string" {
   value     = module.honua.redis_connection_string
   sensitive = true
+}
+
+output "infrastructure_outputs" {
+  value = local.infrastructure_outputs
+}
+
+output "infrastructure_secrets" {
+  value     = local.infrastructure_secrets
+  sensitive = true
+}
+
+output "honua_integration_outputs" {
+  value = local.honua_integration_outputs
 }
 
 output "deployment_contract" {

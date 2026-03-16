@@ -88,6 +88,11 @@ variable "plan_sku_name" {
   description = "Function App plan SKU (EP* for Premium, Y1 for Consumption)."
   type        = string
   default     = "EP1"
+
+  validation {
+    condition     = can(regex("^(EP[1-3]|Y1)$", var.plan_sku_name))
+    error_message = "plan_sku_name must be one of EP1, EP2, EP3, or Y1."
+  }
 }
 
 variable "enable_postgis" {

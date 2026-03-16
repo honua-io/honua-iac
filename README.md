@@ -1,47 +1,56 @@
 # Honua Terraform
 
-Operator-focused Terraform for deploying Honua in your own AWS or Azure account.
+Terraform for deploying Honua into customer-owned AWS and Azure environments. GCP is not in scope for this repository.
 
-## Deploy Honua (operator path)
+## Operator path
 
-1. Choose a target stack:
-   - `infrastructure/terraform/examples/aws` (AWS ECS/Fargate)
-   - `infrastructure/terraform/examples/azure` (Azure Container Apps)
-   - `infrastructure/terraform/examples/aws-serverless` (AWS Lambda)
-   - `infrastructure/terraform/examples/azure-functions` (Azure Functions)
-2. Copy the stack's `terraform.tfvars.example` to `terraform.tfvars` and fill in secrets/images.
-3. Run apply:
+Choose a stack under `infrastructure/terraform/examples/`, copy `backend.tf.example` and `terraform.tfvars.example`, then apply:
 
 ```bash
+cp infrastructure/terraform/examples/aws/backend.tf.example \
+   infrastructure/terraform/examples/aws/backend.tf
+cp infrastructure/terraform/examples/aws/terraform.tfvars.example \
+   infrastructure/terraform/examples/aws/terraform.tfvars
+
 terraform -chdir=infrastructure/terraform/examples/aws init
 terraform -chdir=infrastructure/terraform/examples/aws plan
 terraform -chdir=infrastructure/terraform/examples/aws apply
 ```
 
-4. Capture outputs (`honua_url`, DB endpoint/FQDN) and run health checks.
+Customer-facing output groups are now split by audience:
 
-Detailed guide: [docs/operator-deployment.md](docs/operator-deployment.md)
+- `infrastructure_outputs`: operator-readable endpoints and resource identifiers
+- `infrastructure_secrets`: sensitive operator values such as DB or Redis connection material
+- `honua_integration_outputs`: Honua control-plane metadata and integration contracts
+
+Detailed guides:
+
+- [docs/operator-deployment.md](docs/operator-deployment.md)
+- [docs/operator-state.md](docs/operator-state.md)
+- [infrastructure/terraform/README.md](infrastructure/terraform/README.md)
+
+## Customer bundle
+
+To produce a customer-ready distribution without CI internals:
+
+```bash
+./scripts/package-customer-terraform.sh
+```
+
+This writes `dist/customer-terraform/` with modules, examples, bootstrap templates, and operator docs while excluding GitHub workflows and maintainer validation assets.
 
 ## Repository layout
 
 - `infrastructure/terraform/modules/`: reusable Terraform modules
-- `infrastructure/terraform/examples/`: deployable stacks for each runtime target
+- `infrastructure/terraform/examples/`: deployable stacks and starter configs
 - `infrastructure/terraform/bootstrap/`: optional least-privilege identity bootstrap templates
 - `infrastructure/terraform/validation/`: maintainer-only integration scripts and runbook helpers
-- `.github/workflows/`: Terraform CI and manual validation workflows
+- `.github/workflows/`: CI and live validation workflows
 
-## Module docs
+## Maintainer path
 
-- `modules/aws-ecs/README.md`
-- `modules/azure-aca/README.md`
-- `modules/aws-serverless/README.md`
-- `modules/azure-functions/README.md`
-- `modules/aws-eks/README.md`
-- `modules/azure-aks/README.md`
+For integration/QA validation flows, policy gates, drift checks, and architecture notes:
 
-## Validation and platform QA (maintainer path)
-
-For integration/QA validation flows (policy gates, live applies, drift checks, AKS/EKS paths), use:
-
-- [infrastructure/terraform/README.md](infrastructure/terraform/README.md)
 - [docs/devops/terraform-validation.md](docs/devops/terraform-validation.md)
+- [docs/adr/0001-terraform-architecture-refactor.md](docs/adr/0001-terraform-architecture-refactor.md)
+- [docs/devops/terraform-architecture-plan.md](docs/devops/terraform-architecture-plan.md)

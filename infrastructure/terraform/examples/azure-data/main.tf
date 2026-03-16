@@ -28,6 +28,24 @@ module "data" {
   tags                                = var.tags
 }
 
+locals {
+  infrastructure_outputs = {
+    environment = var.environment
+    location    = var.location
+    data = {
+      key_vault_id        = module.data.key_vault_id
+      key_vault_name      = module.data.key_vault_name
+      resource_group_name = module.data.resource_group_name
+    }
+  }
+
+  infrastructure_secrets = {
+    database_fqdn           = module.data.db_fqdn
+    database_connection     = module.data.db_connection_string
+    redis_connection_string = module.data.redis_connection_string
+  }
+}
+
 output "db_fqdn" {
   value = module.data.db_fqdn
 }
@@ -52,4 +70,13 @@ output "key_vault_name" {
 
 output "resource_group_name" {
   value = module.data.resource_group_name
+}
+
+output "infrastructure_outputs" {
+  value = local.infrastructure_outputs
+}
+
+output "infrastructure_secrets" {
+  value     = local.infrastructure_secrets
+  sensitive = true
 }

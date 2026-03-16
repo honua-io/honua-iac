@@ -126,6 +126,47 @@ locals {
       provider = "azure-key-vault"
     }
   }
+
+  infrastructure_outputs = {
+    environment = module.honua.environment
+    location    = var.location
+    endpoints = {
+      public_base_url = module.honua.function_app_url
+    }
+    workload = {
+      function_app_name = module.honua.function_app_name
+      function_app_id   = module.honua.function_app_id
+      resource_group    = module.honua.resource_group_name
+      slot_name         = module.honua.function_app_slot_name
+      slot_id           = module.honua.function_app_slot_id
+    }
+  }
+
+  infrastructure_secrets = {
+    database_fqdn = module.honua.db_fqdn
+  }
+
+  honua_integration_outputs = {
+    control_plane = {
+      target_kind           = module.honua.control_plane_target_kind
+      backend_name          = module.honua.control_plane_backend_name
+      target_id             = module.honua.control_plane_target_id
+      target_name           = module.honua.control_plane_target_name
+      target_resource_id    = module.honua.control_plane_target_resource_id
+      target_resource_group = module.honua.control_plane_target_resource_group
+      telemetry_policy      = module.honua.control_plane_telemetry_policy
+      current_revision      = module.honua.control_plane_current_revision
+      desired_revision      = module.honua.control_plane_desired_revision
+      slot_name             = module.honua.control_plane_slot_name
+      current_image         = module.honua.control_plane_current_image
+      desired_image         = module.honua.control_plane_desired_image
+    }
+    contracts = {
+      deployment = local.deployment_contract
+      validation = local.validation_contract
+      operations = local.operations_contract
+    }
+  }
 }
 
 output "honua_url" {
@@ -207,6 +248,19 @@ output "db_fqdn" {
 
 output "resource_group_name" {
   value = module.honua.resource_group_name
+}
+
+output "infrastructure_outputs" {
+  value = local.infrastructure_outputs
+}
+
+output "infrastructure_secrets" {
+  value     = local.infrastructure_secrets
+  sensitive = true
+}
+
+output "honua_integration_outputs" {
+  value = local.honua_integration_outputs
 }
 
 output "deployment_contract" {

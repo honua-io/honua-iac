@@ -22,6 +22,19 @@ module "observability" {
   grafana_ingress_host    = var.grafana_ingress_host
 }
 
+locals {
+  infrastructure_outputs = {
+    namespace = var.namespace
+    monitoring = {
+      prometheus_url            = module.observability.prometheus_url
+      honua_prometheus_job_name = module.observability.honua_prometheus_job_name
+      honua_prometheus_selector = module.observability.honua_prometheus_selector
+      grafana_url               = module.observability.grafana_url
+      grafana_admin_secret_name = module.observability.grafana_admin_secret_name
+    }
+  }
+}
+
 output "prometheus_url" {
   value = module.observability.prometheus_url
 }
@@ -40,4 +53,8 @@ output "grafana_url" {
 
 output "grafana_admin_secret_name" {
   value = module.observability.grafana_admin_secret_name
+}
+
+output "infrastructure_outputs" {
+  value = local.infrastructure_outputs
 }

@@ -43,6 +43,7 @@ concurrency:
 
 env:
   TF_IN_AUTOMATION: true
+  HONUA_MAX_RUN_COST_USD: ${{ vars.HONUA_MAX_RUN_COST_USD || '100' }}
 
 jobs:
   static-validate:
@@ -104,6 +105,29 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: Terraform native tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test_roots=(
+            "infrastructure/terraform/examples/aws"
+            "infrastructure/terraform/examples/aws-serverless"
+            "infrastructure/terraform/examples/aws-data"
+            "infrastructure/terraform/examples/aws-eks"
+            "infrastructure/terraform/examples/azure"
+            "infrastructure/terraform/examples/azure-functions"
+            "infrastructure/terraform/examples/azure-data"
+            "infrastructure/terraform/examples/azure-aks"
+            "infrastructure/terraform/examples/observability"
+          )
+
+          for root in "${test_roots[@]}"; do
+            echo "::group::terraform test ($root)"
+            terraform -chdir="$root" test -no-color
+            echo "::endgroup::"
+          done
+
   policy-gates:
     name: Terraform Policy Gates
     needs: static-validate
@@ -137,6 +161,17 @@ jobs:
           set -euo pipefail
           python -m pip install --upgrade pip
           python -m pip install checkov==3.2.497
+
+      - name: Install Trivy
+        shell: bash
+        run: |
+          set -euo pipefail
+          install_dir="${HOME}/.local/bin"
+          mkdir -p "$install_dir"
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b "$install_dir" v0.63.0
+          echo "${install_dir}" >> "$GITHUB_PATH"
+          "${install_dir}/trivy" --version
 
       - name: Run Terraform policy gate script
         shell: bash

@@ -136,6 +136,42 @@ locals {
       provider = "aws-secrets-manager"
     }
   }
+
+  infrastructure_outputs = {
+    environment = var.environment
+    region      = var.region
+    endpoints = {
+      public_base_url = module.honua.service_url
+    }
+    workload = {
+      cluster_name        = module.honua.ecs_cluster_name
+      service_name        = module.honua.ecs_service_name
+      canary_enabled      = module.honua.canary_enabled
+      canary_service_name = module.honua.canary_ecs_service_name
+    }
+  }
+
+  infrastructure_secrets = {
+    database_endpoint      = module.honua.db_endpoint
+    redis_primary_endpoint = module.honua.redis_primary_endpoint
+  }
+
+  honua_integration_outputs = {
+    control_plane = {
+      target_kind              = module.honua.control_plane_target_kind
+      backend_name             = module.honua.control_plane_backend_name
+      telemetry_policy         = module.honua.control_plane_telemetry_policy
+      telemetry_prometheus_job = module.honua.control_plane_telemetry_prometheus_job
+      telemetry_canary_job     = module.honua.control_plane_telemetry_prometheus_canary_job
+      canary_header_name       = module.honua.canary_verification_header_name
+      canary_header_value      = module.honua.canary_verification_header_value
+    }
+    contracts = {
+      deployment = local.deployment_contract
+      validation = local.validation_contract
+      operations = local.operations_contract
+    }
+  }
 }
 
 output "honua_url" {
@@ -194,6 +230,19 @@ output "db_endpoint" {
 output "redis_primary_endpoint" {
   value     = module.honua.redis_primary_endpoint
   sensitive = true
+}
+
+output "infrastructure_outputs" {
+  value = local.infrastructure_outputs
+}
+
+output "infrastructure_secrets" {
+  value     = local.infrastructure_secrets
+  sensitive = true
+}
+
+output "honua_integration_outputs" {
+  value = local.honua_integration_outputs
 }
 
 output "deployment_contract" {

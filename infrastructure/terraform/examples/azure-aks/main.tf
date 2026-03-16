@@ -73,6 +73,30 @@ locals {
       metrics_target = module.aks.honua_metrics_target
     }
   }
+
+  infrastructure_outputs = {
+    environment = module.aks.environment
+    location    = var.location
+    cluster = {
+      name                = module.aks.cluster_name
+      id                  = module.aks.cluster_id
+      resource_group_name = module.aks.resource_group_name
+      metrics_target      = module.aks.honua_metrics_target
+    }
+  }
+
+  honua_integration_outputs = {
+    control_plane = {
+      target_kind      = module.aks.control_plane_target_kind
+      backend_name     = module.aks.control_plane_backend_name
+      telemetry_policy = module.aks.control_plane_telemetry_policy
+    }
+    contracts = {
+      deployment = local.deployment_contract
+      validation = local.validation_contract
+      operations = local.operations_contract
+    }
+  }
 }
 
 output "resource_group_name" {
@@ -105,6 +129,14 @@ output "control_plane_telemetry_policy" {
 
 output "honua_metrics_target" {
   value = module.aks.honua_metrics_target
+}
+
+output "infrastructure_outputs" {
+  value = local.infrastructure_outputs
+}
+
+output "honua_integration_outputs" {
+  value = local.honua_integration_outputs
 }
 
 output "deployment_contract" {
