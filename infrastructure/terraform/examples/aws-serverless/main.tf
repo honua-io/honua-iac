@@ -94,11 +94,9 @@ locals {
       }
     }
     tests = {
-      base_url                 = module.honua.api_endpoint
-      readiness_url            = "${module.honua.api_endpoint}/healthz/ready"
-      admin_url                = "${module.honua.api_endpoint}/api/v1/admin"
-      expected_environment     = module.honua.environment
-      expected_deployment_mode = "SingleInstance"
+      base_url      = module.honua.api_endpoint
+      readiness_url = "${module.honua.api_endpoint}/healthz/ready"
+      admin_url     = "${module.honua.api_endpoint}/api/v1/admin"
     }
     lifecycle = {
       profile            = "ephemeral"

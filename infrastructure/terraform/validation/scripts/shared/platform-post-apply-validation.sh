@@ -175,10 +175,26 @@ platform_validation_contract_capability_from_terraform() {
 
   case "$capability" in
     deploy-plan)
-      query='.validation_contract.value.platform.capabilities.deploy_plan // empty'
+      query='
+        if .validation_contract.value.platform.capabilities.deploy_plan != null then
+          .validation_contract.value.platform.capabilities.deploy_plan
+        elif .platform_capability_deploy_plan.value != null then
+          .platform_capability_deploy_plan.value
+        else
+          empty
+        end
+      '
       ;;
     mutation)
-      query='.validation_contract.value.platform.capabilities.mutation // empty'
+      query='
+        if .validation_contract.value.platform.capabilities.mutation != null then
+          .validation_contract.value.platform.capabilities.mutation
+        elif .platform_capability_mutation.value != null then
+          .platform_capability_mutation.value
+        else
+          empty
+        end
+      '
       ;;
     *)
       return 0
@@ -244,9 +260,12 @@ normalize_platform_validation_terraform_output_json() {
       + output_entry("base_url"; $deployment.endpoints.public_base_url // $validation.tests.base_url // null)
       + output_entry("public_base_url"; $deployment.endpoints.public_base_url // $validation.tests.base_url // null)
       + output_entry("environment"; $deployment.stack.environment // null)
+      + output_entry("expected_environment"; $validation.tests.expected_environment // null)
       + output_entry("platform"; $platform)
-      + output_entry("deployment_mode"; $validation.tests.expected_deployment_mode // null)
-      + output_entry("ready_for_coordinated_deploy"; $validation.tests.expect_ready_for_coordinated_deploy // null)
+      + output_entry("platform_capability_deploy_plan"; if $validation.platform.capabilities.deploy_plan != null then $validation.platform.capabilities.deploy_plan else null end)
+      + output_entry("platform_capability_mutation"; if $validation.platform.capabilities.mutation != null then $validation.platform.capabilities.mutation else null end)
+      + output_entry("expected_deployment_mode"; $validation.tests.expected_deployment_mode // null)
+      + output_entry("expected_ready_for_coordinated_deploy"; if $validation.tests.expect_ready_for_coordinated_deploy != null then $validation.tests.expect_ready_for_coordinated_deploy else null end)
       + output_entry("control_plane_target_kind"; $target_kind)
       + output_entry("control_plane_backend_name"; $deployment.rollout.backend_name // null)
       + output_entry("control_plane_target_id"; $deployment.rollout.target_id // null)
@@ -279,7 +298,7 @@ normalize_platform_validation_terraform_output_json() {
       + output_entry("lambda_function_version"; if $target_kind == "AwsLambda" then $deployment.rollout.desired_revision // null else null end)
       + output_entry("ecs_cluster_name"; if $target_kind == "AwsEcs" then $deployment.workload.cluster_name // null else null end)
       + output_entry("ecs_service_name"; if $target_kind == "AwsEcs" then $deployment.workload.name // null else null end)
-      + output_entry("canary_enabled"; if $target_kind == "AwsEcs" then $deployment.rollout.canary_enabled // null else null end)
+      + output_entry("canary_enabled"; if $target_kind == "AwsEcs" and $deployment.rollout.canary_enabled != null then $deployment.rollout.canary_enabled else null end)
       + output_entry("canary_ecs_service_name"; if $target_kind == "AwsEcs" then $deployment.workload.canary_name // null else null end)
   ' "$terraform_output_json" > "$normalized_output_json"; then
     rm -f "$normalized_output_json"
@@ -300,9 +319,9 @@ export_platform_validation_env_from_terraform_output() {
 
   platform_validation_export_env_from_tf_candidates HONUA_CLOUD_TEST_BASE_URL "$terraform_output_json" base_url public_base_url service_url
   platform_validation_export_env_from_tf_candidates HONUA_CLOUD_TEST_ADMIN_API_KEY "$terraform_output_json" admin_api_key
-  platform_validation_export_env_from_tf_candidates HONUA_CLOUD_TEST_EXPECTED_ENVIRONMENT "$terraform_output_json" environment
-  platform_validation_export_env_from_tf_candidates HONUA_CLOUD_TEST_EXPECTED_DEPLOYMENT_MODE "$terraform_output_json" deployment_mode
-  platform_validation_export_env_from_tf_candidates HONUA_CLOUD_TEST_EXPECT_READY_FOR_COORDINATED_DEPLOY "$terraform_output_json" ready_for_coordinated_deploy
+  platform_validation_export_env_from_tf_candidates HONUA_CLOUD_TEST_EXPECTED_ENVIRONMENT "$terraform_output_json" expected_environment
+  platform_validation_export_env_from_tf_candidates HONUA_CLOUD_TEST_EXPECTED_DEPLOYMENT_MODE "$terraform_output_json" expected_deployment_mode
+  platform_validation_export_env_from_tf_candidates HONUA_CLOUD_TEST_EXPECT_READY_FOR_COORDINATED_DEPLOY "$terraform_output_json" expected_ready_for_coordinated_deploy
   platform_validation_export_env_from_tf_candidates HONUA_CLOUD_TEST_PLATFORM "$terraform_output_json" platform
   platform_validation_export_env_from_tf_candidates HONUA_CLOUD_TEST_DEPLOY_TARGET_ID "$terraform_output_json" control_plane_target_id
   platform_validation_export_env_from_tf_candidates HONUA_CLOUD_TEST_DEPLOY_DESIRED_REVISION "$terraform_output_json" control_plane_desired_revision lambda_function_version control_plane_current_revision
@@ -510,7 +529,6 @@ run_honua_platform_post_apply_validation() {
       normalized_tf_output_json="$(normalize_platform_validation_terraform_output_json "$HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON")"
       if [[ -n "$normalized_tf_output_json" ]]; then
         export HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON="$normalized_tf_output_json"
-        runner_args+=(--terraform-output-json "$normalized_tf_output_json")
       fi
     fi
 

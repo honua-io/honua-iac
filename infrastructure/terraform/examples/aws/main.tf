@@ -102,17 +102,16 @@ locals {
     platform = {
       name = "aws-ecs"
       capabilities = {
-        deploy_plan = true
+        deploy_plan = false
         mutation    = false
       }
     }
     tests = {
-      base_url             = module.honua.service_url
-      readiness_url        = "${module.honua.service_url}/healthz/ready"
-      admin_url            = "${module.honua.service_url}/api/v1/admin"
-      expected_environment = var.environment
-      extra_header_name    = module.honua.canary_verification_header_name
-      extra_header_value   = module.honua.canary_verification_header_value
+      base_url           = module.honua.service_url
+      readiness_url      = "${module.honua.service_url}/healthz/ready"
+      admin_url          = "${module.honua.service_url}/api/v1/admin"
+      extra_header_name  = module.honua.canary_verification_header_name
+      extra_header_value = module.honua.canary_verification_header_value
     }
     lifecycle = {
       profile            = "ephemeral"

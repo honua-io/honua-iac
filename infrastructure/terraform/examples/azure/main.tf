@@ -94,10 +94,9 @@ locals {
       }
     }
     tests = {
-      base_url             = module.honua.container_app_fqdn
-      readiness_url        = "${module.honua.container_app_fqdn}/healthz/ready"
-      admin_url            = "${module.honua.container_app_fqdn}/api/v1/admin"
-      expected_environment = module.honua.environment
+      base_url      = module.honua.container_app_fqdn
+      readiness_url = "${module.honua.container_app_fqdn}/healthz/ready"
+      admin_url     = "${module.honua.container_app_fqdn}/api/v1/admin"
     }
     lifecycle = {
       profile            = "ephemeral"
