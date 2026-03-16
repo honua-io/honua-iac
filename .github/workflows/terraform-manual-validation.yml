@@ -235,17 +235,6 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install checkov==3.2.497
 
-      - name: Install Trivy
-        shell: bash
-        run: |
-          set -euo pipefail
-          install_dir="${HOME}/.local/bin"
-          mkdir -p "$install_dir"
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
-            | sh -s -- -b "$install_dir" v0.63.0
-          echo "${install_dir}" >> "$GITHUB_PATH"
-          "${install_dir}/trivy" --version
-
       - name: Run Terraform policy gate script
         shell: bash
         env:
