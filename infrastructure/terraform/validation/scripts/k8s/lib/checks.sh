@@ -186,11 +186,35 @@ verify_protocol_endpoints() {
     curl_args=(-H "Host: ${INGRESS_HOSTNAME}")
   fi
 
+  endpoint_status_with_retry() {
+    local endpoint="$1"
+    local attempt
+    local endpoint_status=""
+
+    for attempt in $(seq 1 12); do
+      endpoint_status="$(curl -sS -o /dev/null -w "%{http_code}" --max-time 20 "${curl_args[@]}" "$endpoint" || true)"
+      case "$endpoint_status" in
+        000|502|503|504)
+          if [[ "$attempt" -lt 12 ]]; then
+            log_info "Endpoint ${endpoint} returned transient HTTP ${endpoint_status}; retrying warmup probe (${attempt}/12)"
+            sleep 5
+            continue
+          fi
+          ;;
+      esac
+
+      printf '%s' "$endpoint_status"
+      return 0
+    done
+
+    printf '%s' "$endpoint_status"
+  }
+
   check_endpoint() {
     local endpoint="$1"
     local endpoint_status
 
-    endpoint_status="$(curl -sS -o /dev/null -w "%{http_code}" --max-time 20 "${curl_args[@]}" "$endpoint" || true)"
+    endpoint_status="$(endpoint_status_with_retry "$endpoint")"
     if [[ "$endpoint_status" == 2* || "$endpoint_status" == 3* ]]; then
       return 0
     fi
@@ -211,7 +235,7 @@ verify_protocol_endpoints() {
     local endpoint_status
     local endpoint_body
 
-    endpoint_status="$(curl -sS -o /dev/null -w "%{http_code}" --max-time 20 "${curl_args[@]}" "$endpoint" || true)"
+    endpoint_status="$(endpoint_status_with_retry "$endpoint")"
     if [[ "$endpoint_status" == 2* || "$endpoint_status" == 3* ]]; then
       return 0
     fi
@@ -240,7 +264,7 @@ verify_protocol_endpoints() {
   check_endpoint "${base}/ogc/features"
   check_odata_endpoint "${base}/odata"
 
-  status="$(curl -sS -o /dev/null -w "%{http_code}" --max-time 20 "${curl_args[@]}" "${base}/api/v1/admin/config")"
+  status="$(endpoint_status_with_retry "${base}/api/v1/admin/config")"
   if [[ "$status" != "401" && "$status" != "403" ]]; then
     log_error "Expected unauthenticated admin endpoint to return 401/403, got $status"
     return 1
