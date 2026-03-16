@@ -289,6 +289,8 @@ parse_args() {
 }
 
 main() {
+  local platform_validation_url
+
   parse_args "$@"
   apply_aot_mode
   validate_requested_images
@@ -301,6 +303,11 @@ main() {
 
   if [[ "$CLUSTER_MODE" == "k3d" ]]; then
     require_command k3d
+  fi
+
+  if [[ "$ACCESS_MODE" == "ingress" && "$FORWARD_PORT" == "$HTTP_PORT" ]]; then
+    FORWARD_PORT="$((HTTP_PORT + 1000))"
+    log_info "Adjusted service port-forward port to $FORWARD_PORT to avoid ingress port collision"
   fi
 
   export KUBECONFIG="$KUBECONFIG_PATH"
@@ -349,6 +356,14 @@ main() {
     apply_observability_stack
   fi
 
+  platform_validation_url="$(http_base_url)"
+  if [[ "$ACCESS_MODE" == "ingress" ]]; then
+    start_service_port_forward
+    platform_validation_url="http://localhost:${FORWARD_PORT}"
+    export HONUA_PLATFORM_VALIDATION_SCALE_TEST_BASE_URL="${HONUA_PLATFORM_VALIDATION_SCALE_TEST_BASE_URL:-$platform_validation_url}"
+    log_info "Using service port-forward for post-apply validation: $platform_validation_url"
+  fi
+
   HONUA_PLATFORM_VALIDATION_PUBLISH_DB_HOST="honua-postgis" \
   HONUA_PLATFORM_VALIDATION_PUBLISH_DB_PORT="5432" \
   HONUA_PLATFORM_VALIDATION_PUBLISH_DB_NAME="honua" \
@@ -357,7 +372,7 @@ main() {
   HONUA_PLATFORM_VALIDATION_PUBLISH_DB_SSL_MODE="Disable" \
   HONUA_PLATFORM_VALIDATION_PUBLISH_DB_SSL_REQUIRED="false" \
   VERIFICATION_TIMEOUT="$TIMEOUT_SECONDS" \
-  run_honua_platform_post_apply_validation "$(http_base_url)" "kubernetes"
+  run_honua_platform_post_apply_validation "$platform_validation_url" "kubernetes"
 
   log_info "Kubernetes integration checks completed successfully"
 }

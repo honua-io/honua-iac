@@ -89,12 +89,8 @@ run_load_probe() {
   return 1
 }
 
-start_port_forward() {
+start_service_port_forward() {
   local attempt
-
-  if [[ "$ACCESS_MODE" != "port-forward" ]]; then
-    return
-  fi
 
   stop_port_forward
 
@@ -125,6 +121,14 @@ start_port_forward() {
     cat "$PORT_FORWARD_LOG" >&2
   fi
   return 1
+}
+
+start_port_forward() {
+  if [[ "$ACCESS_MODE" != "port-forward" ]]; then
+    return
+  fi
+
+  start_service_port_forward
 }
 
 stop_port_forward() {
