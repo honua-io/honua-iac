@@ -19,6 +19,62 @@ module "aks" {
   acr_resource_id                       = var.acr_resource_id
 }
 
+locals {
+  deployment_contract = {
+    schema_version = "v1"
+    stack = {
+      id          = "azure-aks"
+      platform    = "azure-aks"
+      runtime     = "kubernetes"
+      environment = var.environment
+      region      = var.location
+    }
+    workload = {
+      kind           = module.aks.control_plane_target_kind
+      name           = module.aks.cluster_name
+      resource_id    = module.aks.cluster_id
+      resource_group = module.aks.resource_group_name
+      metrics_hint   = module.aks.honua_metrics_target
+    }
+    rollout = {
+      backend_name          = module.aks.control_plane_backend_name
+      target_id             = "${var.environment}-${module.aks.cluster_name}"
+      target_name           = module.aks.cluster_name
+      target_resource_id    = module.aks.cluster_id
+      target_resource_group = module.aks.resource_group_name
+    }
+  }
+
+  validation_contract = {
+    schema_version = "v1"
+    platform = {
+      name = "azure-aks"
+      capabilities = {
+        deploy_plan = false
+        mutation    = false
+      }
+    }
+    lifecycle = {
+      profile = "ephemeral"
+    }
+  }
+
+  operations_contract = {
+    schema_version = "v1"
+    observability = {
+      telemetry_policy = module.aks.control_plane_telemetry_policy
+    }
+    grouping = {
+      region         = var.location
+      resource_group = module.aks.resource_group_name
+      tags           = var.tags
+    }
+    cluster = {
+      metrics_target = module.aks.honua_metrics_target
+    }
+  }
+}
+
 output "resource_group_name" {
   value = module.aks.resource_group_name
 }
@@ -49,4 +105,16 @@ output "control_plane_telemetry_policy" {
 
 output "honua_metrics_target" {
   value = module.aks.honua_metrics_target
+}
+
+output "deployment_contract" {
+  value = local.deployment_contract
+}
+
+output "validation_contract" {
+  value = local.validation_contract
+}
+
+output "operations_contract" {
+  value = local.operations_contract
 }

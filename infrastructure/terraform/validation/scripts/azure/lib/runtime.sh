@@ -282,17 +282,18 @@ plan_apply() {
 
   run_tf -chdir="$root" plan -input=false -no-color -out="$plan_file"
   analyze_plan "$root" "$plan_file" "$label"
-  run_tf_apply_with_token_retry "$root" "$plan_file"
+  run_tf_apply_with_retry "$root" "$plan_file"
 }
 
-run_tf_apply_with_token_retry() {
+run_tf_apply_with_retry() {
   local root="$1"
   local plan_file="$2"
   local attempt
   local apply_log
   local exit_code
+  local max_attempts=3
 
-  for attempt in 1 2; do
+  for attempt in $(seq 1 "$max_attempts"); do
     apply_log="$(mktemp)"
 
     set +e
@@ -305,8 +306,14 @@ run_tf_apply_with_token_retry() {
       return 0
     fi
 
-    if grep -q "ExpiredAuthenticationToken" "$apply_log" && [[ "$attempt" -lt 2 ]]; then
-      log_warn "Terraform apply failed with ExpiredAuthenticationToken; retrying apply once"
+    if grep -q "ExpiredAuthenticationToken" "$apply_log" && [[ "$attempt" -lt "$max_attempts" ]]; then
+      log_warn "Terraform apply failed with ExpiredAuthenticationToken; retrying apply"
+      rm -f "$apply_log"
+      continue
+    fi
+
+    if grep -Eqi "HTTP response was nil; connection may have been reset|context deadline exceeded|TLS handshake timeout|transport is closing|unexpected EOF" "$apply_log" && [[ "$attempt" -lt "$max_attempts" ]]; then
+      log_warn "Terraform apply hit a transient Azure control-plane transport error; retrying apply"
       rm -f "$apply_log"
       continue
     fi
