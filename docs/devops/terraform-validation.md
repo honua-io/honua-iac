@@ -2,6 +2,11 @@
 
 This runbook defines the on-demand Terraform validation flow for Honua across Azure, AWS, and Kubernetes.
 
+Architecture and migration references:
+
+- `docs/adr/0001-terraform-architecture-refactor.md`
+- `docs/devops/terraform-architecture-plan.md`
+
 ## Scope
 
 Validation is executed manually when Terraform changes are ready to verify. There is no nightly Terraform apply/destroy schedule in this flow.

@@ -38,6 +38,89 @@ module "honua" {
   }
 }
 
+locals {
+  deployment_contract = {
+    schema_version = "v1"
+    stack = {
+      id          = "azure-aca"
+      platform    = "azure-container-apps"
+      runtime     = "containers"
+      environment = module.honua.environment
+      region      = var.location
+    }
+    endpoints = {
+      public_base_url = module.honua.container_app_fqdn
+      readiness_path  = "/healthz/ready"
+      liveness_path   = "/healthz/live"
+      admin_base_path = "/api/v1/admin"
+      openapi_path    = "/openapi.json"
+    }
+    workload = {
+      kind           = module.honua.control_plane_target_kind
+      name           = module.honua.container_app_name
+      resource_id    = module.honua.container_app_id
+      resource_group = module.honua.resource_group_name
+      environment_id = module.honua.container_app_environment_id
+    }
+    rollout = {
+      backend_name          = module.honua.control_plane_backend_name
+      target_id             = module.honua.control_plane_target_id
+      target_name           = module.honua.control_plane_target_name
+      target_resource_id    = module.honua.control_plane_target_resource_id
+      target_resource_group = module.honua.control_plane_target_resource_group
+    }
+    dependencies = {
+      database = {
+        provider = "azure"
+        kind     = "postgresql-flexible-server"
+        managed  = var.existing_db_fqdn == "" && nonsensitive(var.existing_db_connection_string) == ""
+      }
+      cache = {
+        provider = "azure"
+        kind     = "redis"
+        enabled  = var.redis_enabled
+        managed  = nonsensitive(var.redis_connection_string) == ""
+      }
+    }
+  }
+
+  validation_contract = {
+    schema_version = "v1"
+    platform = {
+      name = "azure-container-apps"
+      capabilities = {
+        deploy_plan = false
+        mutation    = false
+      }
+    }
+    tests = {
+      base_url             = module.honua.container_app_fqdn
+      readiness_url        = "${module.honua.container_app_fqdn}/healthz/ready"
+      admin_url            = "${module.honua.container_app_fqdn}/api/v1/admin"
+      expected_environment = module.honua.environment
+    }
+    lifecycle = {
+      profile            = "ephemeral"
+      reuses_shared_data = var.existing_db_fqdn != "" || nonsensitive(var.existing_db_connection_string) != ""
+    }
+  }
+
+  operations_contract = {
+    schema_version = "v1"
+    observability = {
+      telemetry_policy = module.honua.control_plane_telemetry_policy
+    }
+    grouping = {
+      region         = var.location
+      resource_group = module.honua.resource_group_name
+      tags           = var.tags
+    }
+    secret_store = {
+      provider = "azure-key-vault"
+    }
+  }
+}
+
 output "honua_url" {
   value = module.honua.container_app_fqdn
 }
@@ -93,4 +176,16 @@ output "database_fqdn" {
 
 output "resource_group_name" {
   value = module.honua.resource_group_name
+}
+
+output "deployment_contract" {
+  value = local.deployment_contract
+}
+
+output "validation_contract" {
+  value = local.validation_contract
+}
+
+output "operations_contract" {
+  value = local.operations_contract
 }

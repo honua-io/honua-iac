@@ -68,18 +68,28 @@ export_platform_validation_contract() {
   local platform="${1:-}"
   local deploy_plan_support=""
   local mutation_support=""
+  local contract_deploy_plan_support=""
+  local contract_mutation_support=""
+
+  if [[ -z "${HONUA_PLATFORM_VALIDATION_EXPECT_DEPLOY_PLAN_SUPPORT:-}" ]]; then
+    contract_deploy_plan_support="$(platform_validation_contract_capability_from_terraform "deploy-plan")"
+  fi
+
+  if [[ -z "${HONUA_PLATFORM_VALIDATION_EXPECT_MUTATION_SUPPORT:-}" ]]; then
+    contract_mutation_support="$(platform_validation_contract_capability_from_terraform "mutation")"
+  fi
 
   deploy_plan_support="$(
     platform_validation_contract_value \
       "$platform" \
       "deploy-plan" \
-      "${HONUA_PLATFORM_VALIDATION_EXPECT_DEPLOY_PLAN_SUPPORT:-}"
+      "${HONUA_PLATFORM_VALIDATION_EXPECT_DEPLOY_PLAN_SUPPORT:-$contract_deploy_plan_support}"
   )"
   mutation_support="$(
     platform_validation_contract_value \
       "$platform" \
       "mutation" \
-      "${HONUA_PLATFORM_VALIDATION_EXPECT_MUTATION_SUPPORT:-}"
+      "${HONUA_PLATFORM_VALIDATION_EXPECT_MUTATION_SUPPORT:-$contract_mutation_support}"
   )"
 
   if [[ -n "$deploy_plan_support" ]]; then
@@ -108,6 +118,201 @@ resolve_platform_validation_root() {
   fi
 
   return 1
+}
+
+platform_validation_resolve_tf_output() {
+  local terraform_output_json="${1:-}"
+  local key="${2:-}"
+
+  if [[ -z "$terraform_output_json" || -z "$key" || ! -f "$terraform_output_json" ]]; then
+    return 0
+  fi
+
+  if ! command -v jq >/dev/null 2>&1; then
+    return 0
+  fi
+
+  jq -r --arg key "$key" '
+    if has($key) and .[$key].value != null then
+      .[$key].value
+    else
+      empty
+    end
+  ' "$terraform_output_json"
+}
+
+platform_validation_export_env_from_tf_candidates() {
+  local env_name="$1"
+  local terraform_output_json="$2"
+  local value=""
+  shift 2
+
+  if [[ -n "${!env_name:-}" || -z "$terraform_output_json" || ! -f "$terraform_output_json" ]]; then
+    return 0
+  fi
+
+  for key in "$@"; do
+    value="$(platform_validation_resolve_tf_output "$terraform_output_json" "$key")"
+    if [[ -n "$value" ]]; then
+      export "$env_name=$value"
+      return 0
+    fi
+  done
+}
+
+platform_validation_contract_capability_from_terraform() {
+  local capability="${1:-}"
+  local terraform_output_json="${HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON:-}"
+  local query=""
+
+  if [[ -z "$terraform_output_json" || ! -f "$terraform_output_json" ]]; then
+    return 0
+  fi
+
+  if ! command -v jq >/dev/null 2>&1; then
+    return 0
+  fi
+
+  case "$capability" in
+    deploy-plan)
+      query='.validation_contract.value.platform.capabilities.deploy_plan // empty'
+      ;;
+    mutation)
+      query='.validation_contract.value.platform.capabilities.mutation // empty'
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+
+  jq -r "$query | if . == true or . == false then tostring else empty end" "$terraform_output_json"
+}
+
+normalize_platform_validation_terraform_output_json() {
+  local terraform_output_json="${1:-}"
+  local normalized_output_json=""
+
+  if [[ -z "$terraform_output_json" || ! -f "$terraform_output_json" ]]; then
+    printf '%s\n' "$terraform_output_json"
+    return 0
+  fi
+
+  if ! command -v jq >/dev/null 2>&1; then
+    printf '%s\n' "$terraform_output_json"
+    return 0
+  fi
+
+  if ! jq -e '
+    .deployment_contract.value? != null or
+    .validation_contract.value? != null or
+    .operations_contract.value? != null
+  ' "$terraform_output_json" >/dev/null 2>&1; then
+    printf '%s\n' "$terraform_output_json"
+    return 0
+  fi
+
+  normalized_output_json="$(mktemp "${TMPDIR:-/tmp}/honua-platform-validation-outputs.XXXXXX.json")"
+
+  if ! jq '
+    def tf_type($value):
+      if ($value | type) == "boolean" then "bool"
+      elif ($value | type) == "number" then "number"
+      elif ($value | type) == "string" then "string"
+      elif ($value | type) == "array" then "list"
+      elif ($value | type) == "object" then "object"
+      else "string"
+      end;
+    def tf_output($value):
+      {
+        sensitive: false,
+        type: tf_type($value),
+        value: $value
+      };
+    def output_entry($key; $value):
+      if $value == null or $value == "" then
+        {}
+      else
+        { ($key): tf_output($value) }
+      end;
+    . as $root
+    | ($root.deployment_contract.value // {}) as $deployment
+    | ($root.validation_contract.value // {}) as $validation
+    | ($root.operations_contract.value // {}) as $operations
+    | ($deployment.stack.platform // $validation.platform.name // "") as $platform
+    | ($deployment.workload.kind // "") as $target_kind
+    | $root
+      + output_entry("base_url"; $deployment.endpoints.public_base_url // $validation.tests.base_url // null)
+      + output_entry("public_base_url"; $deployment.endpoints.public_base_url // $validation.tests.base_url // null)
+      + output_entry("environment"; $deployment.stack.environment // null)
+      + output_entry("platform"; $platform)
+      + output_entry("deployment_mode"; $validation.tests.expected_deployment_mode // null)
+      + output_entry("ready_for_coordinated_deploy"; $validation.tests.expect_ready_for_coordinated_deploy // null)
+      + output_entry("control_plane_target_kind"; $target_kind)
+      + output_entry("control_plane_backend_name"; $deployment.rollout.backend_name // null)
+      + output_entry("control_plane_target_id"; $deployment.rollout.target_id // null)
+      + output_entry("control_plane_target_name"; $deployment.rollout.target_name // $deployment.workload.name // null)
+      + output_entry("control_plane_target_resource_id"; $deployment.rollout.target_resource_id // $deployment.workload.resource_id // null)
+      + output_entry("control_plane_target_resource_group"; $deployment.rollout.target_resource_group // $deployment.workload.resource_group // $operations.grouping.resource_group // null)
+      + output_entry("control_plane_telemetry_policy"; $operations.observability.telemetry_policy // null)
+      + output_entry("control_plane_telemetry_prometheus_job"; $deployment.rollout.telemetry_prometheus_job // $operations.observability.prometheus_job // null)
+      + output_entry("control_plane_telemetry_prometheus_canary_job"; $deployment.rollout.telemetry_prometheus_canary_job // $operations.observability.prometheus_canary_job // null)
+      + output_entry("control_plane_current_revision"; $deployment.rollout.current_revision // null)
+      + output_entry("control_plane_desired_revision"; $deployment.rollout.desired_revision // null)
+      + output_entry("control_plane_current_image"; $deployment.rollout.current_image // null)
+      + output_entry("control_plane_desired_image"; $deployment.rollout.desired_image // null)
+      + output_entry("canary_verification_header_name"; $validation.tests.extra_header_name // $operations.observability.canary_verification_name // null)
+      + output_entry("canary_verification_header_value"; $validation.tests.extra_header_value // $operations.observability.canary_verification_value // null)
+      + output_entry("control_plane_slot_name"; if $target_kind == "AzureFunctions" then $deployment.rollout.slot_name // null else null end)
+      + output_entry("function_app_slot_name"; if $target_kind == "AzureFunctions" then $deployment.rollout.slot_name // null else null end)
+      + output_entry("resource_group_name"; if $platform == "azure-functions" then $deployment.workload.resource_group // $operations.grouping.resource_group // null else null end)
+      + output_entry("function_app_name"; if $target_kind == "AzureFunctions" then $deployment.workload.name // null else null end)
+      + output_entry("function_app_id"; if $target_kind == "AzureFunctions" then $deployment.workload.resource_id // null else null end)
+      + output_entry("container_app_name"; if $target_kind == "AzureContainerApps" then $deployment.workload.name // null else null end)
+      + output_entry("container_app_id"; if $target_kind == "AzureContainerApps" then $deployment.workload.resource_id // null else null end)
+      + output_entry("container_app_environment_id"; if $target_kind == "AzureContainerApps" then $deployment.workload.environment_id // null else null end)
+      + output_entry("aws_region"; if $platform == "aws-lambda" then $deployment.stack.region // $operations.grouping.region // null else null end)
+      + output_entry("lambda_function_name"; if $target_kind == "AwsLambda" then $deployment.workload.name // null else null end)
+      + output_entry("lambda_alias_name"; if $target_kind == "AwsLambda" then $deployment.rollout.alias_name // null else null end)
+      + output_entry("lambda_alias_arn"; if $target_kind == "AwsLambda" then $deployment.rollout.alias_arn // null else null end)
+      + output_entry("lambda_alias_invoke_arn"; if $target_kind == "AwsLambda" then $deployment.rollout.alias_invoke_arn // null else null end)
+      + output_entry("lambda_alias_function_version"; if $target_kind == "AwsLambda" then $deployment.rollout.current_revision // null else null end)
+      + output_entry("lambda_function_version"; if $target_kind == "AwsLambda" then $deployment.rollout.desired_revision // null else null end)
+      + output_entry("ecs_cluster_name"; if $target_kind == "AwsEcs" then $deployment.workload.cluster_name // null else null end)
+      + output_entry("ecs_service_name"; if $target_kind == "AwsEcs" then $deployment.workload.name // null else null end)
+      + output_entry("canary_enabled"; if $target_kind == "AwsEcs" then $deployment.rollout.canary_enabled // null else null end)
+      + output_entry("canary_ecs_service_name"; if $target_kind == "AwsEcs" then $deployment.workload.canary_name // null else null end)
+  ' "$terraform_output_json" > "$normalized_output_json"; then
+    rm -f "$normalized_output_json"
+    printf '%s\n' "$terraform_output_json"
+    return 0
+  fi
+
+  platform_validation_log info "Normalized Terraform outputs for contract-aware post-apply validation: $normalized_output_json" >&2
+  printf '%s\n' "$normalized_output_json"
+}
+
+export_platform_validation_env_from_terraform_output() {
+  local terraform_output_json="${HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON:-}"
+
+  if [[ -z "$terraform_output_json" || ! -f "$terraform_output_json" ]]; then
+    return 0
+  fi
+
+  platform_validation_export_env_from_tf_candidates HONUA_CLOUD_TEST_BASE_URL "$terraform_output_json" base_url public_base_url service_url
+  platform_validation_export_env_from_tf_candidates HONUA_CLOUD_TEST_ADMIN_API_KEY "$terraform_output_json" admin_api_key
+  platform_validation_export_env_from_tf_candidates HONUA_CLOUD_TEST_EXPECTED_ENVIRONMENT "$terraform_output_json" environment
+  platform_validation_export_env_from_tf_candidates HONUA_CLOUD_TEST_EXPECTED_DEPLOYMENT_MODE "$terraform_output_json" deployment_mode
+  platform_validation_export_env_from_tf_candidates HONUA_CLOUD_TEST_EXPECT_READY_FOR_COORDINATED_DEPLOY "$terraform_output_json" ready_for_coordinated_deploy
+  platform_validation_export_env_from_tf_candidates HONUA_CLOUD_TEST_PLATFORM "$terraform_output_json" platform
+  platform_validation_export_env_from_tf_candidates HONUA_CLOUD_TEST_DEPLOY_TARGET_ID "$terraform_output_json" control_plane_target_id
+  platform_validation_export_env_from_tf_candidates HONUA_CLOUD_TEST_DEPLOY_DESIRED_REVISION "$terraform_output_json" control_plane_desired_revision lambda_function_version control_plane_current_revision
+  platform_validation_export_env_from_tf_candidates HONUA_CLOUD_TEST_DEPLOY_CURRENT_REVISION "$terraform_output_json" lambda_alias_function_version control_plane_current_revision lambda_function_version
+  platform_validation_export_env_from_tf_candidates HONUA_CLOUD_TEST_EXTRA_HEADER_NAME "$terraform_output_json" canary_verification_header_name
+  platform_validation_export_env_from_tf_candidates HONUA_CLOUD_TEST_EXTRA_HEADER_VALUE "$terraform_output_json" canary_verification_header_value
+  platform_validation_export_env_from_tf_candidates HONUA_SCALE_TEST_BASE_URL "$terraform_output_json" scale_test_base_url
+  platform_validation_export_env_from_tf_candidates HONUA_SCALE_TEST_ADMIN_API_KEY "$terraform_output_json" scale_test_admin_api_key
+  platform_validation_export_env_from_tf_candidates HONUA_SCALE_TEST_SERVICE_ID "$terraform_output_json" scale_test_service_id
+  platform_validation_export_env_from_tf_candidates HONUA_SCALE_TEST_REDIS "$terraform_output_json" redis_connection_string scale_test_redis redis
 }
 
 render_control_plane_config_from_terraform() {
@@ -262,6 +467,7 @@ run_honua_platform_post_apply_validation() {
   local validation_root
   local effective_platform
   local include_scale_tests
+  local normalized_tf_output_json=""
   local -a runner_args
 
   if [[ -z "$validation_runner" ]]; then
@@ -300,6 +506,14 @@ run_honua_platform_post_apply_validation() {
 
     export HONUA_CLOUD_TEST_BASE_URL="$base_url"
 
+    if [[ -n "${HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON:-}" ]]; then
+      normalized_tf_output_json="$(normalize_platform_validation_terraform_output_json "$HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON")"
+      if [[ -n "$normalized_tf_output_json" ]]; then
+        export HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON="$normalized_tf_output_json"
+        runner_args+=(--terraform-output-json "$normalized_tf_output_json")
+      fi
+    fi
+
     if [[ -n "${HONUA_PLATFORM_VALIDATION_ADMIN_API_KEY:-}" ]]; then
       export HONUA_CLOUD_TEST_ADMIN_API_KEY="$HONUA_PLATFORM_VALIDATION_ADMIN_API_KEY"
     elif [[ -n "${HONUA_ADMIN_PASSWORD:-}" ]]; then
@@ -318,7 +532,9 @@ run_honua_platform_post_apply_validation() {
       export HONUA_CLOUD_TEST_EXPECT_READY_FOR_COORDINATED_DEPLOY="$HONUA_PLATFORM_VALIDATION_EXPECT_READY_FOR_COORDINATED_DEPLOY"
     fi
 
-    if [[ -n "$effective_platform" ]]; then
+    export_platform_validation_env_from_terraform_output
+
+    if [[ -n "$effective_platform" && -z "${HONUA_CLOUD_TEST_PLATFORM:-}" ]]; then
       export HONUA_CLOUD_TEST_PLATFORM="$effective_platform"
     fi
 

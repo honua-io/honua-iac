@@ -96,3 +96,10 @@ For policy gates, drift checks, and live integration validation, use:
 - `./infrastructure/terraform/validation/scripts/shared/run-terraform-drift-detection.sh`
 - `.github/workflows/terraform-manual-validation.yml`
 - `docs/devops/terraform-validation.md`
+
+## Architecture design (maintainers)
+
+The current refactor target and migration sequence are documented in:
+
+- `docs/adr/0001-terraform-architecture-refactor.md`
+- `docs/devops/terraform-architecture-plan.md`

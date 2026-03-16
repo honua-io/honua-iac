@@ -45,6 +45,100 @@ module "honua" {
   }
 }
 
+locals {
+  deployment_contract = {
+    schema_version = "v1"
+    stack = {
+      id          = "aws-ecs"
+      platform    = "aws-ecs"
+      runtime     = "containers"
+      environment = var.environment
+      region      = var.region
+    }
+    endpoints = {
+      public_base_url = module.honua.service_url
+      readiness_path  = "/healthz/ready"
+      liveness_path   = "/healthz/live"
+      admin_base_path = "/api/v1/admin"
+      openapi_path    = "/openapi.json"
+    }
+    workload = {
+      kind         = module.honua.control_plane_target_kind
+      name         = module.honua.ecs_service_name
+      cluster_name = module.honua.ecs_cluster_name
+      canary_name  = module.honua.canary_ecs_service_name
+    }
+    rollout = {
+      backend_name                    = module.honua.control_plane_backend_name
+      target_id                       = "${var.environment}-${module.honua.ecs_service_name}"
+      target_name                     = module.honua.ecs_service_name
+      telemetry_policy                = module.honua.control_plane_telemetry_policy
+      telemetry_prometheus_job        = module.honua.control_plane_telemetry_prometheus_job
+      telemetry_prometheus_canary_job = module.honua.control_plane_telemetry_prometheus_canary_job
+      canary_enabled                  = module.honua.canary_enabled
+      canary_weight_percentage        = module.honua.canary_enabled ? var.canary_weight_percentage : 0
+    }
+    dependencies = {
+      database = {
+        provider = "aws"
+        kind     = "rds-postgresql"
+        managed  = var.existing_db_endpoint == "" && nonsensitive(var.existing_db_connection_string) == ""
+      }
+      cache = {
+        provider = "aws"
+        kind     = "elasticache-redis"
+        enabled  = var.redis_enabled
+        managed  = nonsensitive(var.redis_connection_string) == ""
+      }
+      network = {
+        provider = "aws"
+        managed  = var.existing_vpc_id == ""
+      }
+    }
+  }
+
+  validation_contract = {
+    schema_version = "v1"
+    platform = {
+      name = "aws-ecs"
+      capabilities = {
+        deploy_plan = true
+        mutation    = false
+      }
+    }
+    tests = {
+      base_url             = module.honua.service_url
+      readiness_url        = "${module.honua.service_url}/healthz/ready"
+      admin_url            = "${module.honua.service_url}/api/v1/admin"
+      expected_environment = var.environment
+      extra_header_name    = module.honua.canary_verification_header_name
+      extra_header_value   = module.honua.canary_verification_header_value
+    }
+    lifecycle = {
+      profile            = "ephemeral"
+      reuses_shared_data = var.existing_db_endpoint != "" || nonsensitive(var.existing_db_connection_string) != ""
+    }
+  }
+
+  operations_contract = {
+    schema_version = "v1"
+    observability = {
+      telemetry_policy          = module.honua.control_plane_telemetry_policy
+      prometheus_job            = module.honua.control_plane_telemetry_prometheus_job
+      prometheus_canary_job     = module.honua.control_plane_telemetry_prometheus_canary_job
+      canary_verification_name  = module.honua.canary_verification_header_name
+      canary_verification_value = module.honua.canary_verification_header_value
+    }
+    grouping = {
+      region = var.region
+      tags   = var.tags
+    }
+    secret_store = {
+      provider = "aws-secrets-manager"
+    }
+  }
+}
+
 output "honua_url" {
   value = module.honua.service_url
 }
@@ -101,4 +195,16 @@ output "db_endpoint" {
 output "redis_primary_endpoint" {
   value     = module.honua.redis_primary_endpoint
   sensitive = true
+}
+
+output "deployment_contract" {
+  value = local.deployment_contract
+}
+
+output "validation_contract" {
+  value = local.validation_contract
+}
+
+output "operations_contract" {
+  value = local.operations_contract
 }
