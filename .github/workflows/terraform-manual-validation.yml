@@ -933,12 +933,25 @@ jobs:
       HONUA_K8S_IMAGE: ${{ vars.HONUA_K8S_IMAGE || '' }}
       HONUA_K8S_PREVIOUS_IMAGE: ${{ vars.HONUA_K8S_PREVIOUS_IMAGE || '' }}
       HONUA_ADMIN_PASSWORD: ${{ secrets.HONUA_ADMIN_PASSWORD }}
+      HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/run-cloud-post-apply-validation.sh
+      HONUA_PLATFORM_VALIDATION_IMPORT_TABLE_PREFIX: ${{ inputs.deployment_profile == 'ephemeral' && inputs.no_destroy == false && format('cloud{0}{1}', github.run_id, github.run_attempt) || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Checkout honua-server platform validation suite
+        uses: actions/checkout@v4
+        with:
+          repository: honua-io/honua-server
+          path: honua-server
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.200'
 
       - name: Setup kubectl
         uses: azure/setup-kubectl@v4
