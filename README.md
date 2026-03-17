@@ -27,7 +27,7 @@ Detailed guide: [docs/operator-deployment.md](docs/operator-deployment.md)
 - `infrastructure/terraform/modules/`: reusable Terraform modules
 - `infrastructure/terraform/examples/`: deployable stacks for each runtime target
 - `infrastructure/terraform/bootstrap/`: optional least-privilege identity bootstrap templates
-- `infrastructure/terraform/validation/`: maintainer-only integration scripts and runbook helpers
+- `infrastructure/terraform/validation/`: maintainer-only validation runner, scenario manifests, compatibility adapters, and runbook helpers
 - `.github/workflows/`: Terraform CI and manual validation workflows
 
 ## Module docs

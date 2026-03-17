@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "v1",
+  "name": "policy-gates",
+  "kind": "policy-gates",
+  "rootPath": "infrastructure/terraform",
+  "tflintRoots": [
+    "examples/aws",
+    "examples/aws-serverless",
+    "examples/aws-eks",
+    "examples/azure",
+    "examples/azure-data",
+    "examples/azure-functions",
+    "examples/azure-aks",
+    "examples/observability"
+  ],
+  "checkovTargets": [
+    "modules",
+    "examples"
+  ],
+  "tfsecTargets": [
+    "modules",
+    "examples"
+  ],
+  "defaults": {
+    "HONUA_CHECKOV_IMAGE": "bridgecrew/checkov:3.2.497",
+    "HONUA_CHECKOV_SKIP_CHECKS": "CKV_TF_1,CKV_AWS_149,CKV_AWS_191",
+    "HONUA_TERRAFORM_ENABLE_TFSEC": "false",
+    "HONUA_TFSEC_IMAGE": "aquasec/tfsec:v1.28"
+  }
+}

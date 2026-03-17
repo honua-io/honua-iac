@@ -1,0 +1,880 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
+
+namespace Honua.TerraformValidation.Runner;
+
+internal static partial class ValidationRunner
+{
+    private const string DefaultHonuaImage = "ghcr.io/honua-io/honua-server:latest";
+    private const string DefaultHonuaAotImage = "ghcr.io/honua-io/honua-server:latest-aot";
+
+    private static async Task RunNativeK8sValidationAsync(ParsedCommand command, RunnerContext context, ScenarioManifest manifest)
+    {
+        _ = manifest;
+        await ExecuteNativeK8sValidationAsync(context, BuildK8sSettings(command, context));
+    }
+
+    private static async Task RunNativeAksValidationAsync(
+        ParsedCommand command,
+        RunnerContext context,
+        ScenarioManifest manifest,
+        AzureBootstrapCredentials credentials,
+        string defaultPlanDir)
+    {
+        _ = manifest;
+        context.Environment.GetRequired("HONUA_ADMIN_PASSWORD");
+
+        var settings = BuildAksSettings(command, context.Environment, defaultPlanDir);
+        var workspace = PrepareTerraformWorkspace(context, "aks");
+        var terraformRoot = Path.Combine(workspace.TerraformRoot, "examples", "azure-aks");
+        var kubeconfigPath = Path.Combine(workspace.Root, "kubeconfig", "config");
+        Directory.CreateDirectory(Path.GetDirectoryName(kubeconfigPath)!);
+
+        var credentialsEnvironment = new Dictionary<string, string?>
+        {
+            ["ARM_CLIENT_ID"] = credentials.ClientId,
+            ["ARM_CLIENT_SECRET"] = credentials.ClientSecret,
+            ["ARM_TENANT_ID"] = credentials.TenantId,
+            ["ARM_SUBSCRIPTION_ID"] = credentials.SubscriptionId,
+        };
+
+        var validationEnvironment = new Dictionary<string, string?>(credentialsEnvironment, StringComparer.Ordinal)
+        {
+            ["HONUA_VALIDATION_RUN_ID"] = settings.ValidationRunId,
+        };
+        AddConfigEnvironmentVariables(context.Environment, validationEnvironment, ManagedKubernetesAdapterEnvironmentVariables);
+        SetDefaultEnvironmentVariable(validationEnvironment, "HONUA_PLATFORM_VALIDATION_SCRIPT", TryGetDefaultPlatformValidationScript(context));
+
+        var bodyFailure = (Exception?)null;
+        var cleanupFailures = new List<Exception>();
+        var clusterApplied = false;
+        string? resourceGroupName = null;
+        string? clusterName = null;
+
+        try
+        {
+            RequireCommand("terraform");
+            RequireCommand("kubectl");
+            RequireCommand("helm");
+            RequireCommand("az");
+
+            await EnsureAzSessionAsync(context, credentialsEnvironment, credentials.SubscriptionId);
+
+            AssertEstimatedRunCost(
+                nodeCount: settings.NodeCount,
+                unitCostUsd: 25m,
+                maxRunCostUsd: settings.MaxRunCostUsd,
+                label: "AKS");
+
+            if (!settings.SkipQuotaPreflight)
+            {
+                await RunAksQuotaPreflightAsync(context, credentialsEnvironment, settings);
+            }
+
+            var terraformEnvironment = BuildAksTerraformEnvironment(settings, validationEnvironment);
+
+            await context.ProcessRunner.RunAsync("terraform", ["-chdir=" + terraformRoot, "init", "-input=false", "-no-color"], context.RepoRoot, terraformEnvironment);
+            await RunTerraformPlanApplyAsync(context, terraformRoot, terraformEnvironment, settings.PlanArtifactDir, "aks.tfplan", "aks", settings.AllowDestroyPlan);
+            clusterApplied = true;
+
+            resourceGroupName = await CaptureTerraformOutputAsync(context, terraformRoot, "resource_group_name", terraformEnvironment);
+            clusterName = await CaptureTerraformOutputAsync(context, terraformRoot, "cluster_name", terraformEnvironment);
+
+            if (!settings.SkipIdempotency)
+            {
+                await AssertIdempotentPlanAsync(context, terraformRoot, terraformEnvironment);
+            }
+
+            await context.ProcessRunner.RunAsync(
+                "az",
+                [
+                    "aks",
+                    "get-credentials",
+                    "--resource-group", resourceGroupName,
+                    "--name", clusterName,
+                    "--file", kubeconfigPath,
+                    "--overwrite-existing",
+                ],
+                context.RepoRoot,
+                credentialsEnvironment);
+
+            await RunManagedK8sChecksAsync(
+                command,
+                context,
+                clusterName,
+                kubeconfigPath,
+                validationEnvironment);
+        }
+        catch (Exception exception)
+        {
+            bodyFailure = exception;
+        }
+
+        if (settings.AutoDestroy)
+        {
+            if (clusterApplied)
+            {
+                try
+                {
+                    var terraformEnvironment = BuildAksTerraformEnvironment(settings, validationEnvironment);
+                    await context.ProcessRunner.RunAsync(
+                        "terraform",
+                        ["-chdir=" + terraformRoot, "destroy", "-input=false", "-auto-approve", "-no-color"],
+                        context.RepoRoot,
+                        terraformEnvironment);
+                }
+                catch (Exception exception)
+                {
+                    cleanupFailures.Add(exception);
+                }
+            }
+
+            try
+            {
+                await VerifyNoAzureLeaksAsync(context, settings.ValidationRunId, credentialsEnvironment);
+            }
+            catch (Exception exception)
+            {
+                cleanupFailures.Add(exception);
+            }
+
+            try
+            {
+                if (Directory.Exists(workspace.Root))
+                {
+                    Directory.Delete(workspace.Root, recursive: true);
+                }
+            }
+            catch (Exception exception)
+            {
+                cleanupFailures.Add(exception);
+            }
+        }
+        else
+        {
+            Console.WriteLine($"[runner] Auto-destroy disabled; retained AKS Terraform workspace at {workspace.Root}");
+        }
+
+        RethrowIfNeeded(bodyFailure, cleanupFailures);
+    }
+
+    private static async Task RunNativeEksValidationAsync(
+        ParsedCommand command,
+        RunnerContext context,
+        ScenarioManifest manifest,
+        AwsBootstrapCredentials credentials,
+        string defaultPlanDir)
+    {
+        _ = manifest;
+        context.Environment.GetRequired("HONUA_ADMIN_PASSWORD");
+
+        var settings = BuildEksSettings(command, context.Environment, defaultPlanDir);
+        var workspace = PrepareTerraformWorkspace(context, "eks");
+        var terraformRoot = Path.Combine(workspace.TerraformRoot, "examples", "aws-eks");
+        var kubeconfigPath = Path.Combine(workspace.Root, "kubeconfig");
+
+        var credentialsEnvironment = new Dictionary<string, string?>
+        {
+            ["AWS_ACCESS_KEY_ID"] = credentials.AccessKeyId,
+            ["AWS_SECRET_ACCESS_KEY"] = credentials.SecretAccessKey,
+            ["AWS_SESSION_TOKEN"] = string.Empty,
+            ["AWS_REGION"] = settings.Region,
+            ["AWS_DEFAULT_REGION"] = settings.Region,
+        };
+
+        var validationEnvironment = new Dictionary<string, string?>(credentialsEnvironment, StringComparer.Ordinal)
+        {
+            ["HONUA_VALIDATION_RUN_ID"] = settings.ValidationRunId,
+        };
+        AddConfigEnvironmentVariables(context.Environment, validationEnvironment, ManagedKubernetesAdapterEnvironmentVariables);
+        SetDefaultEnvironmentVariable(validationEnvironment, "HONUA_PLATFORM_VALIDATION_SCRIPT", TryGetDefaultPlatformValidationScript(context));
+
+        var bodyFailure = (Exception?)null;
+        var cleanupFailures = new List<Exception>();
+        var clusterApplied = false;
+        string? clusterName = null;
+
+        try
+        {
+            RequireCommand("terraform");
+            RequireCommand("kubectl");
+            RequireCommand("helm");
+            RequireCommand("aws");
+
+            AssertEstimatedRunCost(
+                nodeCount: settings.NodeDesiredSize,
+                unitCostUsd: 35m,
+                maxRunCostUsd: settings.MaxRunCostUsd,
+                label: "EKS");
+
+            if (!settings.SkipQuotaPreflight)
+            {
+                await RunEksQuotaPreflightAsync(context, credentialsEnvironment, settings);
+            }
+
+            var terraformEnvironment = BuildEksTerraformEnvironment(settings, validationEnvironment);
+
+            await context.ProcessRunner.RunAsync("terraform", ["-chdir=" + terraformRoot, "init", "-input=false", "-no-color"], context.RepoRoot, terraformEnvironment);
+            await RunTerraformPlanApplyAsync(context, terraformRoot, terraformEnvironment, settings.PlanArtifactDir, "eks.tfplan", "eks", settings.AllowDestroyPlan);
+            clusterApplied = true;
+
+            clusterName = await CaptureTerraformOutputAsync(context, terraformRoot, "cluster_name", terraformEnvironment);
+
+            if (!settings.SkipIdempotency)
+            {
+                await AssertIdempotentPlanAsync(context, terraformRoot, terraformEnvironment);
+            }
+
+            await context.ProcessRunner.RunAsync(
+                "aws",
+                [
+                    "eks",
+                    "update-kubeconfig",
+                    "--name", clusterName,
+                    "--region", settings.Region,
+                    "--kubeconfig", kubeconfigPath,
+                    "--alias", clusterName,
+                ],
+                context.RepoRoot,
+                credentialsEnvironment);
+
+            await RunManagedK8sChecksAsync(
+                command,
+                context,
+                clusterName,
+                kubeconfigPath,
+                validationEnvironment);
+        }
+        catch (Exception exception)
+        {
+            bodyFailure = exception;
+        }
+
+        if (settings.AutoDestroy)
+        {
+            if (clusterApplied)
+            {
+                try
+                {
+                    var terraformEnvironment = BuildEksTerraformEnvironment(settings, validationEnvironment);
+                    await context.ProcessRunner.RunAsync(
+                        "terraform",
+                        ["-chdir=" + terraformRoot, "destroy", "-input=false", "-auto-approve", "-no-color"],
+                        context.RepoRoot,
+                        terraformEnvironment);
+                }
+                catch (Exception exception)
+                {
+                    cleanupFailures.Add(exception);
+                }
+            }
+
+            try
+            {
+                await VerifyNoAwsLeaksAsync(context, settings.ValidationRunId, credentialsEnvironment);
+            }
+            catch (Exception exception)
+            {
+                cleanupFailures.Add(exception);
+            }
+
+            try
+            {
+                if (Directory.Exists(workspace.Root))
+                {
+                    Directory.Delete(workspace.Root, recursive: true);
+                }
+            }
+            catch (Exception exception)
+            {
+                cleanupFailures.Add(exception);
+            }
+        }
+        else
+        {
+            Console.WriteLine($"[runner] Auto-destroy disabled; retained EKS Terraform workspace at {workspace.Root}");
+        }
+
+        RethrowIfNeeded(bodyFailure, cleanupFailures);
+    }
+
+    private static async Task RunManagedK8sChecksAsync(
+        ParsedCommand command,
+        RunnerContext context,
+        string clusterName,
+        string kubeconfigPath,
+        IReadOnlyDictionary<string, string?> validationEnvironment)
+    {
+        _ = validationEnvironment;
+        await ExecuteNativeK8sValidationAsync(
+            context,
+            BuildK8sSettings(
+                command,
+                context,
+                new K8sScenarioOverrides(
+                    ClusterName: clusterName,
+                    ClusterMode: "external",
+                    AccessMode: "port-forward",
+                    KubeconfigPath: kubeconfigPath,
+                    AutoDestroy: !command.GetBoolean("no-destroy", false))));
+    }
+
+    private static ManagedAksSettings BuildAksSettings(ParsedCommand command, EnvironmentReader env, string defaultPlanDir)
+    {
+        var useAot = GetBooleanOption(command, env, "aot", "HONUA_USE_AOT");
+        var image = ResolveManagedImage(GetOptionOrEnvironment(command, env, "image", "HONUA_K8S_IMAGE", string.Empty), useAot);
+        if (string.IsNullOrWhiteSpace(image))
+        {
+            throw new ValidationException("HONUA_K8S_IMAGE or --image is required for AKS validation.");
+        }
+
+        var previousImage = GetOptionOrEnvironment(command, env, "previous-image", "HONUA_K8S_PREVIOUS_IMAGE", string.Empty);
+        if (GetBooleanOption(command, env, "upgrade-rollback", "HONUA_RUN_UPGRADE_ROLLBACK") &&
+            (string.IsNullOrWhiteSpace(previousImage) || string.Equals(previousImage, image, StringComparison.Ordinal)))
+        {
+            throw new ValidationException("AKS upgrade/rollback requires --previous-image or HONUA_K8S_PREVIOUS_IMAGE and it must differ from the current image.");
+        }
+
+        return new ManagedAksSettings(
+            Location: GetOptionOrEnvironment(command, env, "location", "HONUA_AZURE_VALIDATION_REGION", env.GetOrDefault("AZURE_VALIDATION_REGION", "westus")),
+            Environment: NormalizeTerraformEnvironment(GetOptionOrEnvironment(command, env, "environment", "AKS_TF_ENVIRONMENT", "it")),
+            NamePrefix: NormalizeNamePrefix(GetOptionOrEnvironment(command, env, "name-prefix-base", "HONUA_AKS_NAME_PREFIX_BASE", env.GetOrDefault("AKS_TF_NAME_PREFIX_BASE", $"hnu{DateTime.UtcNow:MMddHHmm}")), maxBaseLength: 10, suffix: "ak", maxTotalLength: 20),
+            NodeCount: GetIntOption(command, env, "node-count", "AKS_NODE_COUNT", 2),
+            NodeVmSize: GetOptionOrEnvironment(command, env, "node-vm-size", "AKS_NODE_VM_SIZE", "Standard_D2s_v3"),
+            PlanArtifactDir: ResolveManagedPlanArtifactDir(command, defaultPlanDir),
+            ValidationRunId: env.GetOrDefault("HONUA_VALIDATION_RUN_ID", $"aks-{DateTime.UtcNow:yyyyMMddHHmmss}"),
+            TtlHours: GetIntOption(command, env, "ttl-hours", "HONUA_TTL_HOURS", 8),
+            MaxRunCostUsd: GetDecimalOption(command, env, "max-run-cost-usd", "HONUA_MAX_RUN_COST_USD", 50m),
+            AllowDestroyPlan: command.GetBoolean("allow-destroy-plan", false),
+            SkipQuotaPreflight: GetBooleanOption(command, env, "skip-quota-preflight", "HONUA_SKIP_QUOTA_PREFLIGHT"),
+            SkipIdempotency: GetBooleanOption(command, env, "skip-idempotency", "HONUA_SKIP_IDEMPOTENCY"),
+            AutoDestroy: !command.GetBoolean("no-destroy", false));
+    }
+
+    private static ManagedEksSettings BuildEksSettings(ParsedCommand command, EnvironmentReader env, string defaultPlanDir)
+    {
+        var useAot = GetBooleanOption(command, env, "aot", "HONUA_USE_AOT");
+        var image = ResolveManagedImage(GetOptionOrEnvironment(command, env, "image", "HONUA_K8S_IMAGE", string.Empty), useAot);
+        if (string.IsNullOrWhiteSpace(image))
+        {
+            throw new ValidationException("HONUA_K8S_IMAGE or --image is required for EKS validation.");
+        }
+
+        var previousImage = GetOptionOrEnvironment(command, env, "previous-image", "HONUA_K8S_PREVIOUS_IMAGE", string.Empty);
+        if (GetBooleanOption(command, env, "upgrade-rollback", "HONUA_RUN_UPGRADE_ROLLBACK") &&
+            (string.IsNullOrWhiteSpace(previousImage) || string.Equals(previousImage, image, StringComparison.Ordinal)))
+        {
+            throw new ValidationException("EKS upgrade/rollback requires --previous-image or HONUA_K8S_PREVIOUS_IMAGE and it must differ from the current image.");
+        }
+
+        return new ManagedEksSettings(
+            Region: GetOptionOrEnvironment(command, env, "region", "HONUA_AWS_VALIDATION_REGION", env.GetOrDefault("AWS_VALIDATION_REGION", "us-east-1")),
+            Environment: NormalizeTerraformEnvironment(GetOptionOrEnvironment(command, env, "environment", "EKS_TF_ENVIRONMENT", "it")),
+            NamePrefix: NormalizeNamePrefix(GetOptionOrEnvironment(command, env, "name-prefix-base", "HONUA_EKS_NAME_PREFIX_BASE", env.GetOrDefault("EKS_TF_NAME_PREFIX_BASE", $"hnu{DateTime.UtcNow:MMddHHmm}")), maxBaseLength: 8, suffix: "ek", maxTotalLength: 16),
+            NodeInstanceType: GetOptionOrEnvironment(command, env, "node-instance-type", "EKS_NODE_INSTANCE_TYPE", "t3.small"),
+            NodeMinSize: GetIntOption(command, env, "node-min-size", "EKS_NODE_MIN_SIZE", 1),
+            NodeMaxSize: GetIntOption(command, env, "node-max-size", "EKS_NODE_MAX_SIZE", 3),
+            NodeDesiredSize: GetIntOption(command, env, "node-desired-size", "EKS_NODE_DESIRED_SIZE", 2),
+            PlanArtifactDir: ResolveManagedPlanArtifactDir(command, defaultPlanDir),
+            ValidationRunId: env.GetOrDefault("HONUA_VALIDATION_RUN_ID", $"eks-{DateTime.UtcNow:yyyyMMddHHmmss}"),
+            TtlHours: GetIntOption(command, env, "ttl-hours", "HONUA_TTL_HOURS", 8),
+            MaxRunCostUsd: GetDecimalOption(command, env, "max-run-cost-usd", "HONUA_MAX_RUN_COST_USD", 50m),
+            AllowDestroyPlan: command.GetBoolean("allow-destroy-plan", false),
+            SkipQuotaPreflight: GetBooleanOption(command, env, "skip-quota-preflight", "HONUA_SKIP_QUOTA_PREFLIGHT"),
+            SkipIdempotency: GetBooleanOption(command, env, "skip-idempotency", "HONUA_SKIP_IDEMPOTENCY"),
+            AutoDestroy: !command.GetBoolean("no-destroy", false));
+    }
+
+    private static Dictionary<string, string?> BuildAksTerraformEnvironment(ManagedAksSettings settings, IReadOnlyDictionary<string, string?> baseEnvironment)
+    {
+        var environment = new Dictionary<string, string?>(baseEnvironment, StringComparer.Ordinal)
+        {
+            ["TF_VAR_location"] = settings.Location,
+            ["TF_VAR_environment"] = settings.Environment,
+            ["TF_VAR_name_prefix"] = settings.NamePrefix,
+            ["TF_VAR_node_count"] = settings.NodeCount.ToString(CultureInfo.InvariantCulture),
+            ["TF_VAR_node_vm_size"] = settings.NodeVmSize,
+            ["TF_VAR_tags"] = BuildValidationTagsJson(settings.ValidationRunId, settings.TtlHours),
+            ["TF_IN_AUTOMATION"] = "true",
+        };
+        return environment;
+    }
+
+    private static Dictionary<string, string?> BuildEksTerraformEnvironment(ManagedEksSettings settings, IReadOnlyDictionary<string, string?> baseEnvironment)
+    {
+        var environment = new Dictionary<string, string?>(baseEnvironment, StringComparer.Ordinal)
+        {
+            ["AWS_REGION"] = settings.Region,
+            ["AWS_DEFAULT_REGION"] = settings.Region,
+            ["TF_VAR_region"] = settings.Region,
+            ["TF_VAR_environment"] = settings.Environment,
+            ["TF_VAR_name_prefix"] = settings.NamePrefix,
+            ["TF_VAR_node_instance_types"] = $"[\"{settings.NodeInstanceType}\"]",
+            ["TF_VAR_node_min_size"] = settings.NodeMinSize.ToString(CultureInfo.InvariantCulture),
+            ["TF_VAR_node_max_size"] = settings.NodeMaxSize.ToString(CultureInfo.InvariantCulture),
+            ["TF_VAR_node_desired_size"] = settings.NodeDesiredSize.ToString(CultureInfo.InvariantCulture),
+            ["TF_VAR_tags"] = BuildValidationTagsJson(settings.ValidationRunId, settings.TtlHours),
+            ["TF_IN_AUTOMATION"] = "true",
+        };
+        return environment;
+    }
+
+    private static async Task RunTerraformPlanApplyAsync(
+        RunnerContext context,
+        string terraformRoot,
+        IReadOnlyDictionary<string, string?> environment,
+        string planArtifactDir,
+        string planFileName,
+        string label,
+        bool allowDestroyPlan)
+    {
+        Directory.CreateDirectory(planArtifactDir);
+        await context.ProcessRunner.RunAsync(
+            "terraform",
+            ["-chdir=" + terraformRoot, "plan", "-input=false", "-no-color", "-out=" + planFileName],
+            context.RepoRoot,
+            environment);
+
+        var planText = await context.ProcessRunner.CaptureAsync(
+            "terraform",
+            ["-chdir=" + terraformRoot, "show", "-no-color", planFileName],
+            context.RepoRoot,
+            environment);
+
+        if (!context.DryRun)
+        {
+            await File.WriteAllTextAsync(Path.Combine(planArtifactDir, $"{label}.plan.txt"), planText);
+
+            var planPath = Path.Combine(terraformRoot, planFileName);
+            if (File.Exists(planPath))
+            {
+                File.Copy(planPath, Path.Combine(planArtifactDir, $"{label}.tfplan"), overwrite: true);
+            }
+        }
+
+        var destroyCount = ParseDestroyCount(planText);
+        if (!allowDestroyPlan && destroyCount > 0)
+        {
+            throw new ValidationException($"Plan '{label}' includes {destroyCount} destroy actions; refusing apply without --allow-destroy-plan");
+        }
+
+        await context.ProcessRunner.RunAsync(
+            "terraform",
+            ["-chdir=" + terraformRoot, "apply", "-input=false", "-auto-approve", "-no-color", planFileName],
+            context.RepoRoot,
+            environment);
+    }
+
+    private static async Task AssertIdempotentPlanAsync(
+        RunnerContext context,
+        string terraformRoot,
+        IReadOnlyDictionary<string, string?> environment)
+    {
+        try
+        {
+            await context.ProcessRunner.CaptureAsync(
+                "terraform",
+                ["-chdir=" + terraformRoot, "plan", "-input=false", "-no-color", "-detailed-exitcode"],
+                context.RepoRoot,
+                environment);
+        }
+        catch (CommandExecutionException exception) when (exception.ExitCode == 2)
+        {
+            throw new ValidationException($"Idempotency check failed for {terraformRoot} (terraform reports pending changes)");
+        }
+    }
+
+    private static async Task<string> CaptureTerraformOutputAsync(
+        RunnerContext context,
+        string terraformRoot,
+        string outputName,
+        IReadOnlyDictionary<string, string?> environment)
+    {
+        return await context.ProcessRunner.CaptureAsync(
+            "terraform",
+            ["-chdir=" + terraformRoot, "output", "-raw", outputName],
+            context.RepoRoot,
+            environment);
+    }
+
+    private static async Task RunAksQuotaPreflightAsync(
+        RunnerContext context,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment,
+        ManagedAksSettings settings)
+    {
+        var vcpuRaw = await context.ProcessRunner.CaptureAsync(
+            "az",
+            [
+                "vm",
+                "list-skus",
+                "-l", settings.Location,
+                "--resource-type", "virtualMachines",
+                "--query", $"[?name=='{settings.NodeVmSize}'].capabilities[?name=='vCPUs'].value | [0]",
+                "-o", "tsv",
+            ],
+            context.RepoRoot,
+            credentialsEnvironment);
+        var vmVcpu = int.TryParse(vcpuRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedVcpu) ? parsedVcpu : 2;
+
+        var usageRaw = await context.ProcessRunner.CaptureAsync(
+            "az",
+            [
+                "vm",
+                "list-usage",
+                "-l", settings.Location,
+                "--query", "[?name.value=='cores'] | [0].[currentValue,limit]",
+                "-o", "tsv",
+            ],
+            context.RepoRoot,
+            credentialsEnvironment);
+
+        var usageParts = usageRaw
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (usageParts.Length >= 2 &&
+            int.TryParse(usageParts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var current) &&
+            int.TryParse(usageParts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var limit))
+        {
+            var required = settings.NodeCount * vmVcpu;
+            if (current + required > limit)
+            {
+                throw new ValidationException($"AKS quota preflight failed: cores usage {current}/{limit}, estimated required +{required}");
+            }
+        }
+    }
+
+    private static async Task RunEksQuotaPreflightAsync(
+        RunnerContext context,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment,
+        ManagedEksSettings settings)
+    {
+        var quotaRaw = await context.ProcessRunner.CaptureAsync(
+            "aws",
+            [
+                "service-quotas",
+                "get-service-quota",
+                "--service-code", "ec2",
+                "--quota-code", "L-1216C47A",
+                "--query", "Quota.Value",
+                "--output", "text",
+            ],
+            context.RepoRoot,
+            credentialsEnvironment);
+
+        var vcpuRaw = await context.ProcessRunner.CaptureAsync(
+            "aws",
+            [
+                "ec2",
+                "describe-instance-types",
+                "--instance-types", settings.NodeInstanceType,
+                "--query", "InstanceTypes[0].VCpuInfo.DefaultVCpus",
+                "--output", "text",
+            ],
+            context.RepoRoot,
+            credentialsEnvironment);
+
+        var vcpuPerNode = int.TryParse(vcpuRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedVcpu) ? parsedVcpu : 2;
+        if (decimal.TryParse(quotaRaw, NumberStyles.Number, CultureInfo.InvariantCulture, out var quota))
+        {
+            var required = settings.NodeDesiredSize * vcpuPerNode;
+            if (required > quota)
+            {
+                throw new ValidationException($"EKS quota preflight failed: required vCPU {required} exceeds EC2 regional quota {quota}");
+            }
+        }
+    }
+
+    private static async Task VerifyNoAzureLeaksAsync(
+        RunnerContext context,
+        string validationRunId,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment)
+    {
+        if (context.DryRun)
+        {
+            Console.WriteLine($"[runner] Dry-run: skipping Azure leak janitor for ValidationRunId={validationRunId}");
+            return;
+        }
+
+        for (var attempt = 1; attempt <= 10; attempt++)
+        {
+            var count = await context.ProcessRunner.CaptureAsync(
+                "az",
+                [
+                    "resource",
+                    "list",
+                    "--tag", $"ValidationRunId={validationRunId}",
+                    "--query", "length(@)",
+                    "-o", "tsv",
+                ],
+                context.RepoRoot,
+                credentialsEnvironment);
+
+            if (count == "0")
+            {
+                return;
+            }
+
+            if (!context.DryRun)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(15));
+            }
+        }
+
+        throw new ValidationException($"Leak janitor check failed: resources tagged ValidationRunId={validationRunId} still exist");
+    }
+
+    private static async Task EnsureAzSessionAsync(
+        RunnerContext context,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment,
+        string subscriptionId)
+    {
+        await context.ProcessRunner.RunAsync(
+            "az",
+            [
+                "login",
+                "--service-principal",
+                "-u", credentialsEnvironment["ARM_CLIENT_ID"] ?? string.Empty,
+                "-p", credentialsEnvironment["ARM_CLIENT_SECRET"] ?? string.Empty,
+                "--tenant", credentialsEnvironment["ARM_TENANT_ID"] ?? string.Empty,
+            ],
+            context.RepoRoot,
+            credentialsEnvironment);
+
+        await context.ProcessRunner.RunAsync(
+            "az",
+            ["account", "set", "-s", subscriptionId],
+            context.RepoRoot,
+            credentialsEnvironment);
+    }
+
+    private static async Task VerifyNoAwsLeaksAsync(
+        RunnerContext context,
+        string validationRunId,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment)
+    {
+        if (context.DryRun)
+        {
+            Console.WriteLine($"[runner] Dry-run: skipping AWS leak janitor for ValidationRunId={validationRunId}");
+            return;
+        }
+
+        for (var attempt = 1; attempt <= 20; attempt++)
+        {
+            var count = await context.ProcessRunner.CaptureAsync(
+                "aws",
+                [
+                    "resourcegroupstaggingapi",
+                    "get-resources",
+                    "--tag-filters", $"Key=ValidationRunId,Values={validationRunId}",
+                    "--query", "length(ResourceTagMappingList)",
+                    "--output", "text",
+                ],
+                context.RepoRoot,
+                credentialsEnvironment);
+
+            if (count is "0" or "None")
+            {
+                return;
+            }
+
+            if (!context.DryRun)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(15));
+            }
+        }
+
+        throw new ValidationException($"Leak janitor check failed: resources tagged ValidationRunId={validationRunId} still exist");
+    }
+
+    private static IsolatedTerraformWorkspace PrepareTerraformWorkspace(RunnerContext context, string label)
+    {
+        var root = context.ResolveTempPath($"managed-k8s-{label}-{Guid.NewGuid():N}");
+        var terraformRoot = Path.Combine(root, "terraform");
+        Directory.CreateDirectory(root);
+        CopyDirectory(context.ResolveRepoPath("infrastructure", "terraform"), terraformRoot);
+        return new IsolatedTerraformWorkspace(root, terraformRoot);
+    }
+
+    private static void CopyDirectory(string sourceDirectory, string destinationDirectory)
+    {
+        Directory.CreateDirectory(destinationDirectory);
+
+        foreach (var directory in Directory.GetDirectories(sourceDirectory, "*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(sourceDirectory, directory);
+            if (relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Any(part => part is ".terraform" or "bin" or "obj"))
+            {
+                continue;
+            }
+
+            Directory.CreateDirectory(Path.Combine(destinationDirectory, relative));
+        }
+
+        foreach (var file in Directory.GetFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(sourceDirectory, file);
+            if (relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Any(part => part is ".terraform" or "bin" or "obj"))
+            {
+                continue;
+            }
+
+            var destination = Path.Combine(destinationDirectory, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(file, destination, overwrite: true);
+        }
+    }
+
+    private static void AssertEstimatedRunCost(int nodeCount, decimal unitCostUsd, decimal maxRunCostUsd, string label)
+    {
+        if (maxRunCostUsd <= 0)
+        {
+            return;
+        }
+
+        var estimated = nodeCount * unitCostUsd;
+        if (estimated > maxRunCostUsd)
+        {
+            throw new ValidationException($"Estimated {label} run cost ({estimated:0.##} USD) exceeds cap ({maxRunCostUsd:0.##} USD)");
+        }
+    }
+
+    private static string ResolveManagedPlanArtifactDir(ParsedCommand command, string defaultPlanDir)
+    {
+        return command.HasOption("plan-artifact-dir")
+            ? Path.GetFullPath(command.GetRequiredString("plan-artifact-dir"))
+            : defaultPlanDir;
+    }
+
+    private static string ResolveManagedImage(string image, bool useAot)
+    {
+        if (!useAot)
+        {
+            return image;
+        }
+
+        return string.Equals(image, DefaultHonuaImage, StringComparison.Ordinal)
+            ? DefaultHonuaAotImage
+            : image;
+    }
+
+    private static bool GetBooleanOption(ParsedCommand command, EnvironmentReader environment, string optionName, string envName)
+    {
+        return command.HasOption(optionName)
+            ? command.GetBoolean(optionName, defaultValue: false)
+            : environment.GetBoolean(envName, defaultValue: false);
+    }
+
+    private static string GetOptionOrEnvironment(ParsedCommand command, EnvironmentReader environment, string optionName, string envName, string defaultValue)
+    {
+        if (command.HasOption(optionName))
+        {
+            return command.GetString(optionName, defaultValue);
+        }
+
+        return environment.GetOrDefault(envName, defaultValue);
+    }
+
+    private static int GetIntOption(ParsedCommand command, EnvironmentReader environment, string optionName, string envName, int defaultValue)
+    {
+        var raw = GetOptionOrEnvironment(command, environment, optionName, envName, defaultValue.ToString(CultureInfo.InvariantCulture));
+        if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        {
+            throw new ValidationException($"Invalid integer value for {optionName}: {raw}");
+        }
+
+        return parsed;
+    }
+
+    private static decimal GetDecimalOption(ParsedCommand command, EnvironmentReader environment, string optionName, string envName, decimal defaultValue)
+    {
+        var raw = GetOptionOrEnvironment(command, environment, optionName, envName, defaultValue.ToString(CultureInfo.InvariantCulture));
+        if (!decimal.TryParse(raw, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed))
+        {
+            throw new ValidationException($"Invalid decimal value for {optionName}: {raw}");
+        }
+
+        return parsed;
+    }
+
+    private static string NormalizeTerraformEnvironment(string value)
+    {
+        var normalized = Regex.Replace(value.ToLowerInvariant(), "[^a-z0-9-]", string.Empty);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            throw new ValidationException("Environment value became empty after normalization");
+        }
+
+        return normalized;
+    }
+
+    private static string NormalizeNamePrefix(string value, int maxBaseLength, string suffix, int maxTotalLength)
+    {
+        var normalized = Regex.Replace(value.ToLowerInvariant(), "[^a-z0-9]", string.Empty);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            throw new ValidationException("Name prefix became empty after normalization");
+        }
+
+        normalized = normalized[..Math.Min(normalized.Length, maxBaseLength)];
+        var combined = normalized + suffix;
+        return combined[..Math.Min(combined.Length, maxTotalLength)];
+    }
+
+    private static int ParseDestroyCount(string planText)
+    {
+        var match = Regex.Match(planText, @"Plan:\s+\d+\s+to add,\s+\d+\s+to change,\s+(\d+)\s+to destroy\.", RegexOptions.CultureInvariant);
+        if (!match.Success || !int.TryParse(match.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var destroyCount))
+        {
+            return 0;
+        }
+
+        return destroyCount;
+    }
+
+    private static string BuildValidationTagsJson(string validationRunId, int ttlHours)
+    {
+        var expiresAt = DateTime.UtcNow.AddHours(ttlHours).ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+        return $$"""{"ValidationRunId":"{{validationRunId}}","TTLHours":"{{ttlHours.ToString(CultureInfo.InvariantCulture)}}","ExpiresAtUTC":"{{expiresAt}}","Owner":"terraform-validation"}""";
+    }
+
+    private static void RequireCommand(string commandName)
+    {
+        if (!CommandExists(commandName))
+        {
+            throw new ValidationException($"Required command not found: {commandName}");
+        }
+    }
+
+    private sealed record ManagedAksSettings(
+        string Location,
+        string Environment,
+        string NamePrefix,
+        int NodeCount,
+        string NodeVmSize,
+        string PlanArtifactDir,
+        string ValidationRunId,
+        int TtlHours,
+        decimal MaxRunCostUsd,
+        bool AllowDestroyPlan,
+        bool SkipQuotaPreflight,
+        bool SkipIdempotency,
+        bool AutoDestroy);
+
+    private sealed record ManagedEksSettings(
+        string Region,
+        string Environment,
+        string NamePrefix,
+        string NodeInstanceType,
+        int NodeMinSize,
+        int NodeMaxSize,
+        int NodeDesiredSize,
+        string PlanArtifactDir,
+        string ValidationRunId,
+        int TtlHours,
+        decimal MaxRunCostUsd,
+        bool AllowDestroyPlan,
+        bool SkipQuotaPreflight,
+        bool SkipIdempotency,
+        bool AutoDestroy);
+
+    private sealed record IsolatedTerraformWorkspace(string Root, string TerraformRoot);
+}

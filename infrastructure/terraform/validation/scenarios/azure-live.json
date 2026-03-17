@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "v1",
+  "name": "azure-live",
+  "kind": "azure-live",
+  "planArtifactRoot": "plans/azure",
+  "bootstrapRoot": "bootstrap/azure",
+  "bootstrapModules": {
+    "aca": {
+      "sourcePath": "infrastructure/terraform/bootstrap/azure-aca",
+      "appNameTemplate": "honua-tf-aca-{runId}-{runAttempt}",
+      "roleNameTemplate": "Honua TF ACA {runId} {runAttempt}"
+    },
+    "functions": {
+      "sourcePath": "infrastructure/terraform/bootstrap/azure-functions",
+      "appNameTemplate": "honua-tf-fn-{runId}-{runAttempt}",
+      "roleNameTemplate": "Honua TF Functions {runId} {runAttempt}"
+    }
+  }
+}

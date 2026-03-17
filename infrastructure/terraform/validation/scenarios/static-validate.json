@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "v1",
+  "name": "static-validate",
+  "kind": "static-validate",
+  "formatPaths": [
+    "infrastructure/terraform",
+    "docs/devops/examples"
+  ],
+  "terraformRoots": [
+    "infrastructure/terraform/bootstrap/azure-aca",
+    "infrastructure/terraform/bootstrap/azure-functions",
+    "infrastructure/terraform/bootstrap/azure-aks",
+    "infrastructure/terraform/bootstrap/aws-ecs",
+    "infrastructure/terraform/bootstrap/aws-serverless",
+    "infrastructure/terraform/bootstrap/aws-eks",
+    "infrastructure/terraform/examples/azure",
+    "infrastructure/terraform/examples/azure-data",
+    "infrastructure/terraform/examples/azure-functions",
+    "infrastructure/terraform/examples/aws",
+    "infrastructure/terraform/examples/aws-serverless",
+    "infrastructure/terraform/examples/aws-data",
+    "infrastructure/terraform/examples/azure-aks",
+    "infrastructure/terraform/examples/aws-eks",
+    "infrastructure/terraform/examples/observability",
+    "infrastructure/terraform/modules/azure-aca",
+    "infrastructure/terraform/modules/azure-data",
+    "infrastructure/terraform/modules/azure-functions",
+    "infrastructure/terraform/modules/aws-ecs",
+    "infrastructure/terraform/modules/aws-serverless",
+    "infrastructure/terraform/modules/aws-data",
+    "infrastructure/terraform/modules/azure-aks",
+    "infrastructure/terraform/modules/aws-eks",
+    "infrastructure/terraform/modules/observability-stack",
+    "docs/devops/examples"
+  ]
+}

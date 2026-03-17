@@ -36,8 +36,135 @@ module "honua" {
   }
 }
 
+locals {
+  honua_url     = module.honua.api_endpoint
+  db_reused     = var.existing_db_endpoint != "" && var.existing_db_connection_string != ""
+  cache_enabled = var.redis_enabled || var.redis_connection_string != ""
+  cache_reused  = var.redis_connection_string != ""
+
+  deployment_contract = {
+    schema_version = "v1"
+    stack = {
+      id          = "aws-serverless"
+      platform    = "aws-serverless"
+      runtime     = "serverless"
+      environment = var.environment
+      region      = var.region
+    }
+    endpoints = {
+      public_base_url = local.honua_url
+      readiness_url   = "${local.honua_url}/healthz/ready"
+      admin_url       = "${local.honua_url}/api/v1/admin"
+      protocol_url    = "${local.honua_url}/v1"
+    }
+    workload = {
+      kind        = module.honua.control_plane_target_kind
+      name        = module.honua.lambda_function_name
+      resource_id = module.honua.lambda_function_arn
+      alias_name  = module.honua.lambda_alias_name
+    }
+    rollout = {
+      backend_name       = module.honua.control_plane_backend_name
+      target_id          = module.honua.control_plane_target_id
+      target_name        = module.honua.control_plane_target_name
+      target_resource_id = module.honua.control_plane_target_resource_id
+      current_revision   = module.honua.control_plane_current_revision
+      desired_revision   = module.honua.control_plane_desired_revision
+      current_image      = var.honua_image_uri
+      desired_image      = var.honua_image_uri
+    }
+    dependencies = {
+      database = {
+        kind       = "aws-rds-postgres"
+        host       = module.honua.db_endpoint
+        reused     = local.db_reused
+        secret_ref = module.honua.db_connection_secret_arn
+      }
+      cache = {
+        kind       = "aws-elasticache-redis"
+        enabled    = local.cache_enabled
+        reused     = local.cache_reused
+        host       = null
+        secret_ref = module.honua.redis_connection_secret_arn
+      }
+    }
+  }
+
+  validation_contract = {
+    schema_version = "v1"
+    platform = {
+      name = "aws-serverless"
+      capabilities = {
+        deploy_plan     = true
+        mutation        = false
+        scale_check     = false
+        backup_drill    = true
+        idempotency     = true
+        protocol_checks = true
+      }
+    }
+    tests = {
+      base_url      = local.honua_url
+      readiness_url = "${local.honua_url}/healthz/ready"
+      admin_url     = "${local.honua_url}/api/v1/admin"
+      protocol_url  = "${local.honua_url}/v1"
+    }
+    artifacts = {
+      terraform_root = path.cwd
+      workload_name  = module.honua.lambda_function_name
+      alias_name     = module.honua.lambda_alias_name
+      region         = var.region
+    }
+    lifecycle = {
+      reuse_data_stack = local.db_reused
+      destroy_mode     = "explicit"
+    }
+  }
+
+  operations_contract = {
+    schema_version = "v1"
+    observability = {
+      telemetry_policy      = module.honua.control_plane_telemetry_policy
+      prometheus_job        = null
+      prometheus_canary_job = null
+      grafana_url           = null
+    }
+    secrets = {
+      secret_store = {
+        kind = "aws-secrets-manager"
+        id   = null
+      }
+      admin_password_secret   = module.honua.admin_password_secret_arn
+      db_connection_secret    = module.honua.db_connection_secret_arn
+      redis_connection_secret = module.honua.redis_connection_secret_arn
+    }
+    grouping = {
+      environment    = var.environment
+      name_prefix    = var.name_prefix
+      resource_group = null
+      tags           = var.tags
+    }
+  }
+}
+
 output "honua_url" {
-  value = module.honua.api_endpoint
+  value = local.honua_url
+}
+
+output "deployment_contract" {
+  description = "Stable deployment contract for validation and operator automation."
+  value       = local.deployment_contract
+  sensitive   = true
+}
+
+output "validation_contract" {
+  description = "Stable validation contract for scenario orchestration."
+  value       = local.validation_contract
+}
+
+output "operations_contract" {
+  description = "Stable operations contract for day-2 metadata and secret references."
+  value       = local.operations_contract
 }
 
 output "environment" {

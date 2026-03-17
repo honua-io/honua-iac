@@ -1,3 +1,5 @@
+# --- Infrastructure outputs ---
+
 output "alb_dns_name" {
   description = "DNS name of the Application Load Balancer."
   value       = aws_lb.this.dns_name
@@ -48,31 +50,6 @@ output "canary_verification_header_value" {
   value       = var.canary_enabled ? var.canary_header_value : null
 }
 
-output "control_plane_target_kind" {
-  description = "Recommended Honua control-plane deploy target kind for this environment."
-  value       = "AwsEcs"
-}
-
-output "control_plane_backend_name" {
-  description = "Recommended Honua control-plane backend identifier for this environment."
-  value       = "honua-gitops-aws-ecs"
-}
-
-output "control_plane_telemetry_policy" {
-  description = "Recommended deploy telemetry preset for the Honua control plane."
-  value       = var.canary_enabled ? "aws-alb-canary" : "honua-http"
-}
-
-output "control_plane_telemetry_prometheus_job" {
-  description = "Recommended Prometheus job label for stable Honua traffic when wiring control-plane rollback gates."
-  value       = "honua"
-}
-
-output "control_plane_telemetry_prometheus_canary_job" {
-  description = "Recommended Prometheus job label for canary Honua traffic when wiring control-plane rollback gates."
-  value       = var.canary_enabled ? "honua-canary" : null
-}
-
 output "db_endpoint" {
   description = "RDS endpoint address."
   value       = local.db_endpoint
@@ -104,4 +81,31 @@ output "redis_primary_endpoint" {
   description = "Redis primary endpoint address (if created)."
   value       = local.redis_create ? aws_elasticache_replication_group.redis[0].primary_endpoint_address : null
   sensitive   = true
+}
+
+# --- Honua control-plane outputs ---
+
+output "control_plane_target_kind" {
+  description = "Recommended Honua control-plane deploy target kind for this environment."
+  value       = "AwsEcs"
+}
+
+output "control_plane_backend_name" {
+  description = "Recommended Honua control-plane backend identifier for this environment."
+  value       = "honua-gitops-aws-ecs"
+}
+
+output "control_plane_telemetry_policy" {
+  description = "Recommended deploy telemetry preset for the Honua control plane."
+  value       = var.canary_enabled ? "aws-alb-canary" : "honua-http"
+}
+
+output "control_plane_telemetry_prometheus_job" {
+  description = "Recommended Prometheus job label for stable Honua traffic when wiring control-plane rollback gates."
+  value       = "honua"
+}
+
+output "control_plane_telemetry_prometheus_canary_job" {
+  description = "Recommended Prometheus job label for canary Honua traffic when wiring control-plane rollback gates."
+  value       = var.canary_enabled ? "honua-canary" : null
 }

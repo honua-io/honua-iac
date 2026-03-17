@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "v1",
+  "name": "aks-live",
+  "kind": "aks-live",
+  "planArtifactRoot": "plans/aks",
+  "bootstrapRoot": "bootstrap/aks",
+  "bootstrapModules": {
+    "aks": {
+      "sourcePath": "infrastructure/terraform/bootstrap/azure-aks",
+      "appNameTemplate": "honua-tf-aks-{runId}-{runAttempt}",
+      "roleNameTemplate": "Honua TF AKS {runId} {runAttempt}"
+    }
+  }
+}

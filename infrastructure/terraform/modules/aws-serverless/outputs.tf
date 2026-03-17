@@ -1,3 +1,5 @@
+# --- Infrastructure outputs ---
+
 output "environment" {
   value = var.environment
 }
@@ -38,6 +40,36 @@ output "lambda_alias_function_version" {
   value = aws_lambda_alias.live.function_version
 }
 
+output "db_endpoint" {
+  value     = local.db_endpoint
+  sensitive = true
+}
+
+output "db_connection_string" {
+  value     = local.db_connection_string
+  sensitive = true
+}
+
+output "db_connection_secret_arn" {
+  value = aws_secretsmanager_secret.connection_string.arn
+}
+
+output "admin_password_secret_arn" {
+  value = aws_secretsmanager_secret.admin_password.arn
+}
+
+output "redis_connection_string" {
+  value     = local.redis_connection
+  sensitive = true
+}
+
+output "redis_connection_secret_arn" {
+  value     = local.redis_connection != "" ? aws_secretsmanager_secret.redis_connection[0].arn : null
+  sensitive = true
+}
+
+# --- Honua control-plane outputs ---
+
 output "control_plane_target_kind" {
   value = "AwsLambda"
 }
@@ -68,24 +100,4 @@ output "control_plane_current_revision" {
 
 output "control_plane_desired_revision" {
   value = aws_lambda_function.this.version
-}
-
-output "db_endpoint" {
-  value     = local.db_endpoint
-  sensitive = true
-}
-
-output "db_connection_string" {
-  value     = local.db_connection_string
-  sensitive = true
-}
-
-output "redis_connection_string" {
-  value     = local.redis_connection
-  sensitive = true
-}
-
-output "redis_connection_secret_arn" {
-  value     = local.redis_connection != "" ? aws_secretsmanager_secret.redis_connection[0].arn : null
-  sensitive = true
 }

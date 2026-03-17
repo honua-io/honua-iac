@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "v1",
+  "name": "eks-live",
+  "kind": "eks-live",
+  "planArtifactRoot": "plans/eks",
+  "bootstrapRoot": "bootstrap/eks",
+  "bootstrapModules": {
+    "eks": {
+      "sourcePath": "infrastructure/terraform/bootstrap/aws-eks",
+      "userNameTemplate": "honua-tf-eks-{runId}-{runAttempt}"
+    }
+  }
+}

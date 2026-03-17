@@ -118,6 +118,8 @@ log_error() {
   echo "[ERROR] $1" >&2
 }
 
+source "$SCRIPT_DIR/../shared/platform-post-apply-validation.sh"
+
 apply_aot_mode() {
   if [[ "$USE_AOT" != "true" ]]; then
     return
@@ -418,6 +420,7 @@ plan_apply() {
   run_tf -chdir="$root" plan -input=false -no-color -out="$plan_file"
   analyze_plan "$root" "$plan_file" "$label"
   run_tf -chdir="$root" apply -input=false -auto-approve -no-color "$plan_file"
+  invalidate_terraform_output_json_cache "$root"
 }
 
 assert_idempotent_plan() {
@@ -508,8 +511,8 @@ apply_cluster() {
 
   CLUSTER_APPLIED=true
 
-  RESOURCE_GROUP_NAME="$(run_tf -chdir=examples/azure-aks output -raw resource_group_name)"
-  CLUSTER_NAME="$(run_tf -chdir=examples/azure-aks output -raw cluster_name)"
+  RESOURCE_GROUP_NAME="$(terraform_stack_resource_group "examples/azure-aks")"
+  CLUSTER_NAME="$(terraform_stack_workload_name "examples/azure-aks")"
 
   if [[ "$CHECK_IDEMPOTENCY" == "true" ]]; then
     assert_idempotent_plan "examples/azure-aks"

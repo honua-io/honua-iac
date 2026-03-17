@@ -1,3 +1,5 @@
+# --- Infrastructure outputs ---
+
 output "resource_group_name" {
   description = "AKS resource group name."
   value       = azurerm_resource_group.this.name
@@ -23,6 +25,8 @@ output "kube_config_raw" {
   value       = azurerm_kubernetes_cluster.this.kube_config_raw
   sensitive   = true
 }
+
+# --- Honua control-plane outputs ---
 
 output "control_plane_target_kind" {
   description = "Honua control-plane deploy target kind for this cluster."

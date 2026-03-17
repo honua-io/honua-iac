@@ -1,3 +1,5 @@
+# --- Infrastructure outputs ---
+
 output "vpc_id" {
   description = "VPC ID for the data stack."
   value       = module.vpc.vpc_id
@@ -30,9 +32,20 @@ output "db_connection_string" {
   sensitive   = true
 }
 
+output "db_connection_secret_arn" {
+  description = "Secrets Manager ARN for the DB connection string."
+  value       = aws_secretsmanager_secret.db_connection.arn
+}
+
 output "redis_connection_string" {
   description = "Redis connection string (empty if redis_enabled=false)."
   value       = local.redis_connection
+  sensitive   = true
+}
+
+output "redis_connection_secret_arn" {
+  description = "Secrets Manager ARN for the Redis connection string (null if redis_enabled=false)."
+  value       = var.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null
   sensitive   = true
 }
 

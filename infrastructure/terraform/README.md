@@ -83,16 +83,20 @@ Use these when you need dedicated least-privilege deployment identities.
 
 Validation automation is intentionally isolated from operator deployment stacks under:
 
-- `validation/scripts/aws`
-- `validation/scripts/azure`
-- `validation/scripts/k8s`
-- `validation/scripts/shared`
+- `validation/runner/Honua.TerraformValidation.Runner`
+- `validation/scenarios`
+- `validation/adapters/aws`
+- `validation/adapters/azure`
+- `validation/adapters/k8s`
+- `validation/adapters/shared`
+- `validation/scripts/*` contains legacy fallback harnesses kept for compatibility and reference
 
 ## Validation and CI (maintainers)
 
 For policy gates, drift checks, and live integration validation, use:
 
-- `./infrastructure/terraform/validation/scripts/shared/terraform-policy-gate.sh`
-- `./infrastructure/terraform/validation/scripts/shared/run-terraform-drift-detection.sh`
+- `dotnet run --project infrastructure/terraform/validation/runner/Honua.TerraformValidation.Runner -- static-validate`
+- `dotnet run --project infrastructure/terraform/validation/runner/Honua.TerraformValidation.Runner -- policy-gates --strict true`
+- `./scripts/run-terraform-drift-detection.sh`
 - `.github/workflows/terraform-manual-validation.yml`
 - `docs/devops/terraform-validation.md`

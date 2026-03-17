@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "v1",
+  "name": "drift",
+  "kind": "drift",
+  "driftDefaults": {
+    "azureBaseRoots": [
+      "infrastructure/terraform/examples/azure",
+      "infrastructure/terraform/examples/azure-functions"
+    ],
+    "azureManagedRoot": "infrastructure/terraform/examples/azure-aks",
+    "awsBaseRoots": [
+      "infrastructure/terraform/examples/aws",
+      "infrastructure/terraform/examples/aws-serverless"
+    ],
+    "awsManagedRoot": "infrastructure/terraform/examples/aws-eks",
+    "alwaysRoots": [
+      "infrastructure/terraform/examples/observability"
+    ]
+  }
+}

@@ -857,6 +857,17 @@ run_aws() {
   AWS_PAGER="" aws --region "$REGION" "$@"
 }
 
+aws_secret_string() {
+  local secret_id="$1"
+
+  if [[ -z "$secret_id" || "$secret_id" == "null" ]]; then
+    log_error "AWS secret reference was empty"
+    return 1
+  fi
+
+  run_aws secretsmanager get-secret-value --secret-id "$secret_id" --query 'SecretString' --output text
+}
+
 existing_db_security_group_ids() {
   local group_ids
 
@@ -994,6 +1005,7 @@ plan_apply() {
   run_tf -chdir="$root" plan -input=false -no-color -out="$plan_file"
   analyze_plan "$root" "$plan_file" "$label"
   run_tf_apply_with_auth_retry "$root" "$plan_file"
+  invalidate_terraform_output_json_cache "$root"
 }
 
 run_tf_apply_with_auth_retry() {
@@ -2140,19 +2152,24 @@ set_data_tf_vars() {
 }
 
 apply_data_stack() {
+  local db_connection_secret_arn
+  local redis_connection_secret_arn
+
   log_info "Applying AWS data stack (RDS + Redis)"
   set_data_tf_vars
 
   run_tf -chdir=examples/aws-data init -input=false -no-color
   plan_apply "examples/aws-data" "data.tfplan" "data"
 
-  EXISTING_DB_ENDPOINT="$(run_tf -chdir=examples/aws-data output -raw db_endpoint)"
-  EXISTING_DB_CONNECTION_STRING="$(run_tf -chdir=examples/aws-data output -raw db_connection_string)"
-  EXISTING_REDIS_CONNECTION_STRING="$(run_tf -chdir=examples/aws-data output -raw redis_connection_string)"
-  EXISTING_VPC_ID="$(run_tf -chdir=examples/aws-data output -raw vpc_id)"
-  EXISTING_VPC_CIDR="$(run_tf -chdir=examples/aws-data output -raw vpc_cidr)"
-  EXISTING_PUBLIC_SUBNET_IDS="$(run_tf -chdir=examples/aws-data output -json public_subnet_ids | tr -d '\n')"
-  EXISTING_PRIVATE_SUBNET_IDS="$(run_tf -chdir=examples/aws-data output -json private_subnet_ids | tr -d '\n')"
+  EXISTING_DB_ENDPOINT="$(terraform_stack_database_host "examples/aws-data")"
+  db_connection_secret_arn="$(terraform_stack_database_secret_ref "examples/aws-data")"
+  redis_connection_secret_arn="$(terraform_stack_cache_secret_ref "examples/aws-data")"
+  EXISTING_DB_CONNECTION_STRING="$(aws_secret_string "$db_connection_secret_arn")"
+  EXISTING_REDIS_CONNECTION_STRING="$(aws_secret_string "$redis_connection_secret_arn")"
+  EXISTING_VPC_ID="$(terraform_stack_network_id "examples/aws-data")"
+  EXISTING_VPC_CIDR="$(terraform_stack_network_cidr "examples/aws-data")"
+  EXISTING_PUBLIC_SUBNET_IDS="$(terraform_stack_public_subnet_ids_json "examples/aws-data")"
+  EXISTING_PRIVATE_SUBNET_IDS="$(terraform_stack_private_subnet_ids_json "examples/aws-data")"
 
   if [[ -z "$EXISTING_DB_ENDPOINT" || -z "$EXISTING_DB_CONNECTION_STRING" || -z "$EXISTING_REDIS_CONNECTION_STRING" || -z "$EXISTING_VPC_ID" || -z "$EXISTING_VPC_CIDR" || -z "$EXISTING_PUBLIC_SUBNET_IDS" || -z "$EXISTING_PRIVATE_SUBNET_IDS" ]]; then
     log_error "AWS data stack output validation failed (missing DB/Redis/VPC output)"
@@ -2195,14 +2212,14 @@ verify_ecs_canary_route() {
   local canary_header_name
   local canary_header_value
 
-  canary_enabled="$(run_tf -chdir=examples/aws output -raw canary_enabled)"
+  canary_enabled="$(terraform_stack_canary_enabled "examples/aws")"
   if [[ "$canary_enabled" != "true" ]]; then
     return 0
   fi
 
-  canary_service_name="$(run_tf -chdir=examples/aws output -raw canary_ecs_service_name)"
-  canary_header_name="$(run_tf -chdir=examples/aws output -raw canary_verification_header_name)"
-  canary_header_value="$(run_tf -chdir=examples/aws output -raw canary_verification_header_value)"
+  canary_service_name="$(terraform_stack_canary_service_name "examples/aws")"
+  canary_header_name="$(terraform_stack_canary_header_name "examples/aws")"
+  canary_header_value="$(terraform_stack_canary_header_value "examples/aws")"
 
   if [[ -z "$canary_service_name" || "$canary_service_name" == "null" ]]; then
     log_error "Canary validation failed: canary service name output was empty"
@@ -2274,15 +2291,15 @@ apply_ecs_stack() {
     export TF_VAR_honua_image="$ECS_PREVIOUS_IMAGE"
     plan_apply "examples/aws" "ecs-prev.tfplan" "ecs-previous"
 
-    url="$(run_tf -chdir=examples/aws output -raw honua_url)"
-    db_endpoint="$(run_tf -chdir=examples/aws output -raw db_endpoint)"
-    cluster_name="$(run_tf -chdir=examples/aws output -raw ecs_cluster_name)"
-    service_name="$(run_tf -chdir=examples/aws output -raw ecs_service_name)"
+    url="$(terraform_stack_base_url "examples/aws")"
+    db_endpoint="$(terraform_stack_database_host "examples/aws")"
+    cluster_name="$(terraform_stack_cluster_name "examples/aws")"
+    service_name="$(terraform_stack_workload_name "examples/aws")"
 
     if [[ -n "$EXISTING_REDIS_CONNECTION_STRING" ]]; then
       log_info "Using existing Redis connection string; skipping ECS Redis endpoint creation check"
     else
-      redis_endpoint="$(run_tf -chdir=examples/aws output -raw redis_primary_endpoint)"
+      redis_endpoint="$(terraform_stack_cache_host "examples/aws")"
       if [[ -z "$redis_endpoint" || "$redis_endpoint" == "null" ]]; then
         log_error "Redis endpoint was empty for ECS stack"
         return 1
@@ -2294,8 +2311,8 @@ apply_ecs_stack() {
 
     export TF_VAR_honua_image="$ECS_IMAGE"
     plan_apply "examples/aws" "ecs-upgrade.tfplan" "ecs-upgrade"
-    url="$(run_tf -chdir=examples/aws output -raw honua_url)"
-    db_endpoint="$(run_tf -chdir=examples/aws output -raw db_endpoint)"
+    url="$(terraform_stack_base_url "examples/aws")"
+    db_endpoint="$(terraform_stack_database_host "examples/aws")"
     run_ecs_checks "$url" "$db_endpoint"
     verify_ecs_canary_route "$url" "$cluster_name"
 
@@ -2327,15 +2344,15 @@ apply_ecs_stack() {
   else
     plan_apply "examples/aws" "ecs.tfplan" "ecs"
 
-    url="$(run_tf -chdir=examples/aws output -raw honua_url)"
-    db_endpoint="$(run_tf -chdir=examples/aws output -raw db_endpoint)"
-    cluster_name="$(run_tf -chdir=examples/aws output -raw ecs_cluster_name)"
-    service_name="$(run_tf -chdir=examples/aws output -raw ecs_service_name)"
+    url="$(terraform_stack_base_url "examples/aws")"
+    db_endpoint="$(terraform_stack_database_host "examples/aws")"
+    cluster_name="$(terraform_stack_cluster_name "examples/aws")"
+    service_name="$(terraform_stack_workload_name "examples/aws")"
 
     if [[ -n "$EXISTING_REDIS_CONNECTION_STRING" ]]; then
       log_info "Using existing Redis connection string; skipping ECS Redis endpoint creation check"
     else
-      redis_endpoint="$(run_tf -chdir=examples/aws output -raw redis_primary_endpoint)"
+      redis_endpoint="$(terraform_stack_cache_host "examples/aws")"
       if [[ -z "$redis_endpoint" || "$redis_endpoint" == "null" ]]; then
         log_error "Redis endpoint was empty for ECS stack"
         return 1
@@ -2364,8 +2381,7 @@ apply_ecs_stack() {
     assert_idempotent_plan "examples/aws"
   fi
 
-  tf_output_json="$(mktemp "${TMPDIR:-/tmp}/honua-aws-ecs-outputs.XXXXXX.json")"
-  run_tf -chdir=examples/aws output -json > "$tf_output_json"
+  tf_output_json="$(load_terraform_output_json "examples/aws")"
 
   HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON="$tf_output_json" \
   HONUA_PLATFORM_VALIDATION_PUBLISH_DB_HOST="$db_endpoint" \
@@ -2378,13 +2394,14 @@ apply_ecs_stack() {
   run_honua_platform_post_apply_validation "$url" "aws-ecs"
 
   log_info "ECS stack checks passed"
-  log_info "ECS URL: $(run_tf -chdir=examples/aws output -raw honua_url)"
+  log_info "ECS URL: $(terraform_stack_base_url "examples/aws")"
 }
 
 apply_serverless_stack() {
   local url
   local db_endpoint
   local redis_connection
+  local redis_connection_secret_arn
   local tf_output_json
   local previous_live_revision
   local desired_revision
@@ -2410,9 +2427,10 @@ apply_serverless_stack() {
     export TF_VAR_honua_image_uri="$SERVERLESS_PREVIOUS_IMAGE"
     plan_apply "examples/aws-serverless" "serverless-prev.tfplan" "serverless-previous"
 
-    url="$(run_tf -chdir=examples/aws-serverless output -raw honua_url)"
-    db_endpoint="$(run_tf -chdir=examples/aws-serverless output -raw db_endpoint)"
-    redis_connection="$(run_tf -chdir=examples/aws-serverless output -raw redis_connection_string)"
+    url="$(terraform_stack_base_url "examples/aws-serverless")"
+    db_endpoint="$(terraform_stack_database_host "examples/aws-serverless")"
+    redis_connection_secret_arn="$(terraform_stack_cache_secret_ref "examples/aws-serverless")"
+    redis_connection="$(aws_secret_string "$redis_connection_secret_arn")"
 
     if [[ -z "$redis_connection" || "$redis_connection" == "null" ]]; then
       log_error "Redis connection string was empty for serverless stack"
@@ -2420,7 +2438,7 @@ apply_serverless_stack() {
     fi
 
     run_serverless_checks "$url" "$db_endpoint"
-    previous_live_revision="$(run_tf -chdir=examples/aws-serverless output -raw control_plane_current_revision)"
+    previous_live_revision="$(terraform_stack_current_revision "examples/aws-serverless")"
     if [[ -z "$previous_live_revision" || "$previous_live_revision" == "null" ]]; then
       log_error "Serverless validation requires a stable Lambda alias revision before publishing the new version"
       return 1
@@ -2429,9 +2447,9 @@ apply_serverless_stack() {
     export TF_VAR_honua_image_uri="$SERVERLESS_IMAGE"
     export TF_VAR_lambda_alias_version="$previous_live_revision"
     plan_apply "examples/aws-serverless" "serverless-stage-current.tfplan" "serverless-stage-current"
-    url="$(run_tf -chdir=examples/aws-serverless output -raw honua_url)"
-    db_endpoint="$(run_tf -chdir=examples/aws-serverless output -raw db_endpoint)"
-    desired_revision="$(run_tf -chdir=examples/aws-serverless output -raw control_plane_desired_revision)"
+    url="$(terraform_stack_base_url "examples/aws-serverless")"
+    db_endpoint="$(terraform_stack_database_host "examples/aws-serverless")"
+    desired_revision="$(terraform_stack_desired_revision "examples/aws-serverless")"
     if [[ -z "$desired_revision" || "$desired_revision" == "null" || "$desired_revision" == "$previous_live_revision" ]]; then
       log_error "Serverless validation requires a newly published Lambda version that differs from the stable alias revision"
       return 1
@@ -2440,9 +2458,10 @@ apply_serverless_stack() {
   else
     plan_apply "examples/aws-serverless" "serverless.tfplan" "serverless"
 
-    url="$(run_tf -chdir=examples/aws-serverless output -raw honua_url)"
-    db_endpoint="$(run_tf -chdir=examples/aws-serverless output -raw db_endpoint)"
-    redis_connection="$(run_tf -chdir=examples/aws-serverless output -raw redis_connection_string)"
+    url="$(terraform_stack_base_url "examples/aws-serverless")"
+    db_endpoint="$(terraform_stack_database_host "examples/aws-serverless")"
+    redis_connection_secret_arn="$(terraform_stack_cache_secret_ref "examples/aws-serverless")"
+    redis_connection="$(aws_secret_string "$redis_connection_secret_arn")"
 
     if [[ -z "$redis_connection" || "$redis_connection" == "null" ]]; then
       log_error "Redis connection string was empty for serverless stack"
@@ -2456,8 +2475,7 @@ apply_serverless_stack() {
     assert_idempotent_plan "examples/aws-serverless"
   fi
 
-  tf_output_json="$(mktemp "${TMPDIR:-/tmp}/honua-aws-serverless-outputs.XXXXXX.json")"
-  run_tf -chdir=examples/aws-serverless output -json > "$tf_output_json"
+  tf_output_json="$(load_terraform_output_json "examples/aws-serverless")"
 
   HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON="$tf_output_json" \
   HONUA_PLATFORM_VALIDATION_PUBLISH_DB_HOST="$db_endpoint" \
@@ -2478,13 +2496,13 @@ apply_serverless_stack() {
     unset TF_VAR_lambda_alias_version
     export TF_VAR_honua_image_uri="$SERVERLESS_IMAGE"
     plan_apply "examples/aws-serverless" "serverless-reconcile-current.tfplan" "serverless-reconcile-current"
-    url="$(run_tf -chdir=examples/aws-serverless output -raw honua_url)"
-    db_endpoint="$(run_tf -chdir=examples/aws-serverless output -raw db_endpoint)"
+    url="$(terraform_stack_base_url "examples/aws-serverless")"
+    db_endpoint="$(terraform_stack_database_host "examples/aws-serverless")"
     run_serverless_checks "$url" "$db_endpoint"
   fi
 
   log_info "Serverless stack checks passed"
-  log_info "Serverless URL: $(run_tf -chdir=examples/aws-serverless output -raw honua_url)"
+  log_info "Serverless URL: $(terraform_stack_base_url "examples/aws-serverless")"
 }
 
 destroy_ecs_stack() {

@@ -1,0 +1,5 @@
+{
+  "schemaVersion": "v1",
+  "name": "k8s-live",
+  "kind": "k8s-live"
+}

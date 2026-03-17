@@ -35,8 +35,139 @@ module "honua" {
   }
 }
 
+locals {
+  honua_url     = module.honua.container_app_fqdn != null ? "https://${module.honua.container_app_fqdn}" : null
+  db_reused     = var.existing_db_fqdn != "" && var.existing_db_connection_string != ""
+  cache_enabled = var.redis_enabled || var.redis_connection_string != ""
+  cache_reused  = var.redis_connection_string != ""
+
+  deployment_contract = {
+    schema_version = "v1"
+    stack = {
+      id          = "azure-aca"
+      platform    = "azure-container-apps"
+      runtime     = "container"
+      environment = var.environment
+      region      = var.location
+    }
+    endpoints = {
+      public_base_url = local.honua_url
+      readiness_url   = local.honua_url != null ? "${local.honua_url}/healthz/ready" : null
+      admin_url       = local.honua_url != null ? "${local.honua_url}/api/v1/admin" : null
+      protocol_url    = local.honua_url != null ? "${local.honua_url}/v1" : null
+    }
+    workload = {
+      kind        = module.honua.control_plane_target_kind
+      name        = module.honua.container_app_name
+      resource_id = module.honua.container_app_id
+    }
+    rollout = {
+      backend_name          = module.honua.control_plane_backend_name
+      target_id             = module.honua.control_plane_target_id
+      target_name           = module.honua.control_plane_target_name
+      target_resource_id    = module.honua.control_plane_target_resource_id
+      target_resource_group = module.honua.control_plane_target_resource_group
+      current_revision      = null
+      desired_revision      = null
+      current_image         = var.honua_image
+      desired_image         = var.honua_image
+    }
+    dependencies = {
+      database = {
+        kind       = "azure-postgres"
+        host       = module.honua.database_fqdn
+        reused     = local.db_reused
+        secret_ref = module.honua.db_connection_secret_id
+      }
+      cache = {
+        kind       = "azure-redis"
+        enabled    = local.cache_enabled
+        reused     = local.cache_reused
+        host       = null
+        secret_ref = module.honua.redis_connection_secret_id
+      }
+      secret_store = {
+        kind = "azure-key-vault"
+        id   = module.honua.key_vault_id
+      }
+    }
+  }
+
+  validation_contract = {
+    schema_version = "v1"
+    platform = {
+      name = "azure-container-apps"
+      capabilities = {
+        deploy_plan     = false
+        mutation        = false
+        scale_check     = true
+        backup_drill    = true
+        idempotency     = true
+        protocol_checks = true
+      }
+    }
+    tests = {
+      base_url      = local.honua_url
+      readiness_url = local.honua_url != null ? "${local.honua_url}/healthz/ready" : null
+      admin_url     = local.honua_url != null ? "${local.honua_url}/api/v1/admin" : null
+      protocol_url  = local.honua_url != null ? "${local.honua_url}/v1" : null
+    }
+    artifacts = {
+      terraform_root = path.cwd
+      workload_name  = module.honua.container_app_name
+      resource_group = module.honua.resource_group_name
+      region         = var.location
+    }
+    lifecycle = {
+      reuse_data_stack = local.db_reused
+      destroy_mode     = "explicit"
+    }
+  }
+
+  operations_contract = {
+    schema_version = "v1"
+    observability = {
+      telemetry_policy      = module.honua.control_plane_telemetry_policy
+      prometheus_job        = null
+      prometheus_canary_job = null
+      grafana_url           = null
+    }
+    secrets = {
+      secret_store = {
+        kind = "azure-key-vault"
+        id   = module.honua.key_vault_id
+      }
+      admin_password_secret   = module.honua.admin_password_secret_id
+      db_connection_secret    = module.honua.db_connection_secret_id
+      redis_connection_secret = module.honua.redis_connection_secret_id
+    }
+    grouping = {
+      environment    = var.environment
+      name_prefix    = var.name_prefix
+      resource_group = module.honua.resource_group_name
+      tags           = var.tags
+    }
+  }
+}
+
 output "honua_url" {
-  value = module.honua.container_app_fqdn
+  value = local.honua_url
+}
+
+output "deployment_contract" {
+  description = "Stable deployment contract for validation and operator automation."
+  value       = local.deployment_contract
+  sensitive   = true
+}
+
+output "validation_contract" {
+  description = "Stable validation contract for scenario orchestration."
+  value       = local.validation_contract
+}
+
+output "operations_contract" {
+  description = "Stable operations contract for day-2 metadata and secret references."
+  value       = local.operations_contract
 }
 
 output "environment" {

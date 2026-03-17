@@ -43,6 +43,7 @@ concurrency:
 
 env:
   TF_IN_AUTOMATION: true
+  HONUA_VALIDATION_GHA_VARS_JSON: ${{ toJSON(vars) }}
 
 jobs:
   static-validate:
@@ -56,53 +57,17 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Terraform fmt check
-        run: |
-          terraform fmt -check -recursive infrastructure/terraform
-          terraform fmt -check -recursive docs/devops/examples
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
 
-      - name: Terraform init/validate (selected roots)
+      - name: Run static validation via typed runner
         shell: bash
         run: |
           set -euo pipefail
-
-          roots=(
-            "infrastructure/terraform/bootstrap/azure-aca"
-            "infrastructure/terraform/bootstrap/azure-functions"
-            "infrastructure/terraform/bootstrap/azure-aks"
-            "infrastructure/terraform/bootstrap/aws-ecs"
-            "infrastructure/terraform/bootstrap/aws-serverless"
-            "infrastructure/terraform/bootstrap/aws-eks"
-            "infrastructure/terraform/examples/azure"
-            "infrastructure/terraform/examples/azure-data"
-            "infrastructure/terraform/examples/azure-functions"
-            "infrastructure/terraform/examples/aws"
-            "infrastructure/terraform/examples/aws-serverless"
-            "infrastructure/terraform/examples/aws-data"
-            "infrastructure/terraform/examples/azure-aks"
-            "infrastructure/terraform/examples/aws-eks"
-            "infrastructure/terraform/examples/observability"
-            "infrastructure/terraform/modules/azure-aca"
-            "infrastructure/terraform/modules/azure-data"
-            "infrastructure/terraform/modules/azure-functions"
-            "infrastructure/terraform/modules/aws-ecs"
-            "infrastructure/terraform/modules/aws-serverless"
-            "infrastructure/terraform/modules/aws-data"
-            "infrastructure/terraform/modules/azure-aks"
-            "infrastructure/terraform/modules/aws-eks"
-            "infrastructure/terraform/modules/observability-stack"
-            "docs/devops/examples"
-          )
-
-          for root in "${roots[@]}"; do
-            echo "::group::terraform init ($root)"
-            terraform -chdir="$root" init -backend=false -input=false -no-color
-            echo "::endgroup::"
-
-            echo "::group::terraform validate ($root)"
-            terraform -chdir="$root" validate -no-color
-            echo "::endgroup::"
-          done
+          dotnet run --project infrastructure/terraform/validation/runner/Honua.TerraformValidation.Runner -- \
+            static-validate
 
   policy-gates:
     name: Terraform Policy Gates
@@ -115,6 +80,11 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
 
       - name: Setup tflint
         uses: terraform-linters/setup-tflint@v4
@@ -138,8 +108,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install checkov==3.2.497
 
-      - name: Run Terraform policy gate script
+      - name: Run Terraform policy gates via typed runner
         shell: bash
-        env:
-          HONUA_TERRAFORM_POLICY_STRICT: "true"
-        run: ./infrastructure/terraform/validation/scripts/shared/terraform-policy-gate.sh
+        run: |
+          set -euo pipefail
+          dotnet run --project infrastructure/terraform/validation/runner/Honua.TerraformValidation.Runner -- \
+            policy-gates \
+            --strict true

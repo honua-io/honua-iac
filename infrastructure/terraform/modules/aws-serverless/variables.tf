@@ -115,7 +115,7 @@ variable "lambda_alias_version" {
   default     = null
 
   validation {
-    condition     = var.lambda_alias_version == null || (trimspace(var.lambda_alias_version) != "" && trimspace(var.lambda_alias_version) != "$LATEST")
+    condition     = var.lambda_alias_version == null ? true : (trimspace(var.lambda_alias_version) != "" && trimspace(var.lambda_alias_version) != "$LATEST")
     error_message = "lambda_alias_version must be null or a published Lambda version number, never an empty string or $LATEST."
   }
 }

@@ -872,6 +872,17 @@ run_az() {
   AZURE_CORE_ONLY_SHOW_ERRORS=true az "$@"
 }
 
+azure_secret_value() {
+  local secret_id="$1"
+
+  if [[ -z "$secret_id" || "$secret_id" == "null" ]]; then
+    log_error "Azure secret reference was empty"
+    return 1
+  fi
+
+  AZURE_CORE_ONLY_SHOW_ERRORS=true run_az keyvault secret show --id "$secret_id" --query value -o tsv
+}
+
 pg_conn() {
   local db_host="$1"
   local db_name="$2"
@@ -931,6 +942,7 @@ plan_apply() {
   run_tf -chdir="$root" plan -input=false -no-color -out="$plan_file"
   analyze_plan "$root" "$plan_file" "$label"
   run_tf_apply_with_token_retry "$root" "$plan_file"
+  invalidate_terraform_output_json_cache "$root"
 }
 
 run_tf_apply_with_token_retry() {
@@ -2110,6 +2122,9 @@ set_data_tf_vars() {
 }
 
 apply_data_stack() {
+  local db_connection_secret_id
+  local redis_connection_secret_id
+
   if [[ "$AUTO_PROVISION_DATA_STACK" != "true" ]]; then
     return
   fi
@@ -2123,10 +2138,12 @@ apply_data_stack() {
 
   plan_apply "examples/azure-data" "data.tfplan" "azure-data"
 
-  EXISTING_DB_FQDN="$(run_tf -chdir=examples/azure-data output -raw db_fqdn)"
-  EXISTING_DB_CONNECTION_STRING="$(run_tf -chdir=examples/azure-data output -raw db_connection_string)"
-  EXISTING_REDIS_CONNECTION_STRING="$(run_tf -chdir=examples/azure-data output -raw redis_connection_string)"
-  DATA_RESOURCE_GROUP="$(run_tf -chdir=examples/azure-data output -raw resource_group_name)"
+  EXISTING_DB_FQDN="$(terraform_stack_database_host "examples/azure-data")"
+  db_connection_secret_id="$(terraform_stack_database_secret_ref "examples/azure-data")"
+  redis_connection_secret_id="$(terraform_stack_cache_secret_ref "examples/azure-data")"
+  EXISTING_DB_CONNECTION_STRING="$(azure_secret_value "$db_connection_secret_id")"
+  EXISTING_REDIS_CONNECTION_STRING="$(azure_secret_value "$redis_connection_secret_id")"
+  DATA_RESOURCE_GROUP="$(terraform_stack_resource_group "examples/azure-data")"
 
   if [[ -z "$EXISTING_DB_FQDN" || -z "$EXISTING_DB_CONNECTION_STRING" ]]; then
     log_error "Azure data stack output validation failed: db_fqdn/db_connection_string must be non-empty"
@@ -2220,18 +2237,18 @@ apply_aca_stack() {
 
     export TF_VAR_honua_image="$ACA_PREVIOUS_IMAGE"
     plan_apply "examples/azure" "aca-prev.tfplan" "aca-previous"
-    url="$(run_tf -chdir=examples/azure output -raw honua_url)"
-    db_fqdn="$(run_tf -chdir=examples/azure output -raw database_fqdn)"
-    resource_group="$(run_tf -chdir=examples/azure output -raw resource_group_name)"
-    app_name="$(run_tf -chdir=examples/azure output -raw container_app_name)"
+    url="$(terraform_stack_base_url "examples/azure")"
+    db_fqdn="$(terraform_stack_database_host "examples/azure")"
+    resource_group="$(terraform_stack_resource_group "examples/azure")"
+    app_name="$(terraform_stack_workload_name "examples/azure")"
     run_aca_checks "$url" "$db_fqdn" "$resource_group" "$app_name"
 
     export TF_VAR_honua_image="$ACA_IMAGE"
     plan_apply "examples/azure" "aca-upgrade.tfplan" "aca-upgrade"
-    url="$(run_tf -chdir=examples/azure output -raw honua_url)"
-    db_fqdn="$(run_tf -chdir=examples/azure output -raw database_fqdn)"
-    resource_group="$(run_tf -chdir=examples/azure output -raw resource_group_name)"
-    app_name="$(run_tf -chdir=examples/azure output -raw container_app_name)"
+    url="$(terraform_stack_base_url "examples/azure")"
+    db_fqdn="$(terraform_stack_database_host "examples/azure")"
+    resource_group="$(terraform_stack_resource_group "examples/azure")"
+    app_name="$(terraform_stack_workload_name "examples/azure")"
     run_aca_checks "$url" "$db_fqdn" "$resource_group" "$app_name"
 
     if [[ "$QUICK_SCALE" == "true" ]]; then
@@ -2260,10 +2277,10 @@ apply_aca_stack() {
   else
     plan_apply "examples/azure" "aca.tfplan" "aca"
 
-    url="$(run_tf -chdir=examples/azure output -raw honua_url)"
-    db_fqdn="$(run_tf -chdir=examples/azure output -raw database_fqdn)"
-    resource_group="$(run_tf -chdir=examples/azure output -raw resource_group_name)"
-    app_name="$(run_tf -chdir=examples/azure output -raw container_app_name)"
+    url="$(terraform_stack_base_url "examples/azure")"
+    db_fqdn="$(terraform_stack_database_host "examples/azure")"
+    resource_group="$(terraform_stack_resource_group "examples/azure")"
+    app_name="$(terraform_stack_workload_name "examples/azure")"
 
     run_aca_checks "$url" "$db_fqdn" "$resource_group" "$app_name"
 
@@ -2284,8 +2301,7 @@ apply_aca_stack() {
     assert_idempotent_plan "examples/azure"
   fi
 
-  tf_output_json="$(mktemp "${TMPDIR:-/tmp}/honua-azure-aca-outputs.XXXXXX.json")"
-  run_tf -chdir=examples/azure output -json > "$tf_output_json"
+  tf_output_json="$(load_terraform_output_json "examples/azure")"
 
   HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON="$tf_output_json" \
   HONUA_PLATFORM_VALIDATION_PUBLISH_DB_HOST="$db_fqdn" \
@@ -2298,7 +2314,7 @@ apply_aca_stack() {
   run_honua_platform_post_apply_validation "$url" "azure-container-apps"
 
   log_info "ACA stack checks passed"
-  log_info "ACA URL: $(run_tf -chdir=examples/azure output -raw honua_url)"
+  log_info "ACA URL: $(terraform_stack_base_url "examples/azure")"
 }
 
 apply_functions_stack() {
@@ -2328,11 +2344,11 @@ apply_functions_stack() {
     export TF_VAR_honua_image="$FUNCTIONS_PREVIOUS_IMAGE"
     export TF_VAR_deployment_slot_image="$FUNCTIONS_PREVIOUS_IMAGE"
     plan_apply "examples/azure-functions" "functions-prev.tfplan" "functions-previous"
-    url="$(run_tf -chdir=examples/azure-functions output -raw honua_url)"
-    db_fqdn="$(run_tf -chdir=examples/azure-functions output -raw db_fqdn)"
-    resource_group="$(run_tf -chdir=examples/azure-functions output -raw resource_group_name)"
+    url="$(terraform_stack_base_url "examples/azure-functions")"
+    db_fqdn="$(terraform_stack_database_host "examples/azure-functions")"
+    resource_group="$(terraform_stack_resource_group "examples/azure-functions")"
     run_functions_checks "$url" "$db_fqdn" "$resource_group"
-    previous_live_revision="$(run_tf -chdir=examples/azure-functions output -raw control_plane_current_revision)"
+    previous_live_revision="$(terraform_stack_current_revision "examples/azure-functions")"
     if [[ -z "$previous_live_revision" || "$previous_live_revision" == "null" ]]; then
       log_error "Functions validation requires control_plane_current_revision once the deployment slot is enabled"
       return 1
@@ -2341,10 +2357,10 @@ apply_functions_stack() {
     export TF_VAR_honua_image="$FUNCTIONS_PREVIOUS_IMAGE"
     export TF_VAR_deployment_slot_image="$FUNCTIONS_IMAGE"
     plan_apply "examples/azure-functions" "functions-stage-current.tfplan" "functions-stage-current"
-    url="$(run_tf -chdir=examples/azure-functions output -raw honua_url)"
-    db_fqdn="$(run_tf -chdir=examples/azure-functions output -raw db_fqdn)"
-    resource_group="$(run_tf -chdir=examples/azure-functions output -raw resource_group_name)"
-    desired_revision="$(run_tf -chdir=examples/azure-functions output -raw control_plane_desired_revision)"
+    url="$(terraform_stack_base_url "examples/azure-functions")"
+    db_fqdn="$(terraform_stack_database_host "examples/azure-functions")"
+    resource_group="$(terraform_stack_resource_group "examples/azure-functions")"
+    desired_revision="$(terraform_stack_desired_revision "examples/azure-functions")"
     if [[ -z "$desired_revision" || "$desired_revision" == "null" ]]; then
       log_error "Functions validation requires control_plane_desired_revision once the deployment slot is enabled"
       return 1
@@ -2353,9 +2369,9 @@ apply_functions_stack() {
   else
     plan_apply "examples/azure-functions" "functions.tfplan" "functions"
 
-    url="$(run_tf -chdir=examples/azure-functions output -raw honua_url)"
-    db_fqdn="$(run_tf -chdir=examples/azure-functions output -raw db_fqdn)"
-    resource_group="$(run_tf -chdir=examples/azure-functions output -raw resource_group_name)"
+    url="$(terraform_stack_base_url "examples/azure-functions")"
+    db_fqdn="$(terraform_stack_database_host "examples/azure-functions")"
+    resource_group="$(terraform_stack_resource_group "examples/azure-functions")"
 
     run_functions_checks "$url" "$db_fqdn" "$resource_group"
   fi
@@ -2364,8 +2380,7 @@ apply_functions_stack() {
     assert_idempotent_plan "examples/azure-functions"
   fi
 
-  tf_output_json="$(mktemp "${TMPDIR:-/tmp}/honua-azure-functions-outputs.XXXXXX.json")"
-  run_tf -chdir=examples/azure-functions output -json > "$tf_output_json"
+  tf_output_json="$(load_terraform_output_json "examples/azure-functions")"
 
   HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON="$tf_output_json" \
   HONUA_PLATFORM_VALIDATION_PUBLISH_DB_HOST="$db_fqdn" \
@@ -2388,14 +2403,14 @@ apply_functions_stack() {
     export TF_VAR_deployment_slot_name="$FUNCTIONS_DEPLOYMENT_SLOT_NAME"
     export TF_VAR_deployment_slot_image="$FUNCTIONS_IMAGE"
     plan_apply "examples/azure-functions" "functions-reconcile-current.tfplan" "functions-reconcile-current"
-    url="$(run_tf -chdir=examples/azure-functions output -raw honua_url)"
-    db_fqdn="$(run_tf -chdir=examples/azure-functions output -raw db_fqdn)"
-    resource_group="$(run_tf -chdir=examples/azure-functions output -raw resource_group_name)"
+    url="$(terraform_stack_base_url "examples/azure-functions")"
+    db_fqdn="$(terraform_stack_database_host "examples/azure-functions")"
+    resource_group="$(terraform_stack_resource_group "examples/azure-functions")"
     run_functions_checks "$url" "$db_fqdn" "$resource_group"
   fi
 
   log_info "Functions stack checks passed"
-  log_info "Functions URL: $(run_tf -chdir=examples/azure-functions output -raw honua_url)"
+  log_info "Functions URL: $(terraform_stack_base_url "examples/azure-functions")"
 }
 
 destroy_aca_stack() {

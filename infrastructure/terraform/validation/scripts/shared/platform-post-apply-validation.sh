@@ -27,6 +27,378 @@ platform_validation_log() {
   esac
 }
 
+declare -Ag HONUA_TERRAFORM_OUTPUT_JSON_CACHE=()
+declare -Ag HONUA_TERRAFORM_OUTPUT_SOURCE_LOG=()
+
+terraform_output_runner() {
+  if declare -F run_tf >/dev/null 2>&1; then
+    run_tf "$@"
+    return
+  fi
+
+  terraform "$@"
+}
+
+invalidate_terraform_output_json_cache() {
+  local terraform_root="$1"
+
+  if [[ -n "${HONUA_TERRAFORM_OUTPUT_JSON_CACHE[$terraform_root]:-}" ]]; then
+    rm -f "${HONUA_TERRAFORM_OUTPUT_JSON_CACHE[$terraform_root]}"
+    unset 'HONUA_TERRAFORM_OUTPUT_JSON_CACHE[$terraform_root]'
+  fi
+}
+
+load_terraform_output_json() {
+  local terraform_root="$1"
+  local cached_path="${HONUA_TERRAFORM_OUTPUT_JSON_CACHE[$terraform_root]:-}"
+
+  if [[ -n "$cached_path" && -f "$cached_path" ]]; then
+    printf '%s' "$cached_path"
+    return 0
+  fi
+
+  cached_path="$(mktemp "${TMPDIR:-/tmp}/honua-terraform-output.XXXXXX.json")"
+
+  if ! terraform_output_runner -chdir="$terraform_root" output -json > "$cached_path"; then
+    rm -f "$cached_path"
+    return 1
+  fi
+
+  HONUA_TERRAFORM_OUTPUT_JSON_CACHE["$terraform_root"]="$cached_path"
+  printf '%s' "$cached_path"
+}
+
+log_output_source_once() {
+  local json_file="$1"
+  local description="$2"
+  local source="$3"
+  local cache_key="${json_file}:${description}:${source}"
+
+  if [[ -n "${HONUA_TERRAFORM_OUTPUT_SOURCE_LOG[$cache_key]:-}" ]]; then
+    return 0
+  fi
+
+  HONUA_TERRAFORM_OUTPUT_SOURCE_LOG["$cache_key"]=1
+
+  if [[ "$source" == "contract" ]]; then
+    platform_validation_log info "Using stack contract for $description"
+  else
+    platform_validation_log info "Using legacy Terraform output for $description"
+  fi
+}
+
+resolve_terraform_output_string() {
+  local json_file="$1"
+  local description="$2"
+  local contract_filter="$3"
+  local legacy_filter="$4"
+  local value=""
+
+  if [[ ! -f "$json_file" ]] || ! command -v jq >/dev/null 2>&1; then
+    return 1
+  fi
+
+  if value="$(jq -r "$contract_filter" "$json_file" 2>/dev/null)" && [[ -n "$value" && "$value" != "null" ]]; then
+    log_output_source_once "$json_file" "$description" "contract"
+    printf '%s' "$value"
+    return 0
+  fi
+
+  if value="$(jq -r "$legacy_filter" "$json_file" 2>/dev/null)" && [[ -n "$value" && "$value" != "null" ]]; then
+    log_output_source_once "$json_file" "$description" "legacy"
+    printf '%s' "$value"
+    return 0
+  fi
+
+  return 1
+}
+
+resolve_terraform_output_compact_json() {
+  local json_file="$1"
+  local description="$2"
+  local contract_filter="$3"
+  local legacy_filter="$4"
+  local value=""
+
+  if [[ ! -f "$json_file" ]] || ! command -v jq >/dev/null 2>&1; then
+    return 1
+  fi
+
+  if value="$(jq -c "$contract_filter" "$json_file" 2>/dev/null)" && [[ -n "$value" && "$value" != "null" ]]; then
+    log_output_source_once "$json_file" "$description" "contract"
+    printf '%s' "$value"
+    return 0
+  fi
+
+  if value="$(jq -c "$legacy_filter" "$json_file" 2>/dev/null)" && [[ -n "$value" && "$value" != "null" ]]; then
+    log_output_source_once "$json_file" "$description" "legacy"
+    printf '%s' "$value"
+    return 0
+  fi
+
+  return 1
+}
+
+terraform_stack_base_url() {
+  local terraform_root="$1"
+  local json_file
+
+  json_file="$(load_terraform_output_json "$terraform_root")" || return 1
+
+  resolve_terraform_output_string \
+    "$json_file" \
+    "base URL for $terraform_root" \
+    '.validation_contract.value.tests.base_url // .deployment_contract.value.endpoints.public_base_url // empty' \
+    '.honua_url.value // empty'
+}
+
+terraform_stack_database_host() {
+  local terraform_root="$1"
+  local json_file
+
+  json_file="$(load_terraform_output_json "$terraform_root")" || return 1
+
+  resolve_terraform_output_string \
+    "$json_file" \
+    "database host for $terraform_root" \
+    '.deployment_contract.value.dependencies.database.host // empty' \
+    '.db_endpoint.value // .database_fqdn.value // .db_fqdn.value // empty'
+}
+
+terraform_stack_database_secret_ref() {
+  local terraform_root="$1"
+  local json_file
+
+  json_file="$(load_terraform_output_json "$terraform_root")" || return 1
+
+  resolve_terraform_output_string \
+    "$json_file" \
+    "database secret reference for $terraform_root" \
+    '.deployment_contract.value.dependencies.database.secret_ref // .operations_contract.value.secrets.db_connection_secret // empty' \
+    '.db_connection_secret_arn.value // .db_connection_secret_id.value // empty'
+}
+
+terraform_stack_cache_secret_ref() {
+  local terraform_root="$1"
+  local json_file
+
+  json_file="$(load_terraform_output_json "$terraform_root")" || return 1
+
+  resolve_terraform_output_string \
+    "$json_file" \
+    "cache secret reference for $terraform_root" \
+    '.deployment_contract.value.dependencies.cache.secret_ref // .operations_contract.value.secrets.redis_connection_secret // empty' \
+    '.redis_connection_secret_arn.value // .redis_connection_secret_id.value // empty'
+}
+
+terraform_stack_cache_host() {
+  local terraform_root="$1"
+  local json_file
+
+  json_file="$(load_terraform_output_json "$terraform_root")" || return 1
+
+  resolve_terraform_output_string \
+    "$json_file" \
+    "cache host for $terraform_root" \
+    '.deployment_contract.value.dependencies.cache.host // empty' \
+    '.redis_primary_endpoint.value // empty'
+}
+
+terraform_stack_cache_enabled() {
+  local terraform_root="$1"
+  local json_file
+
+  json_file="$(load_terraform_output_json "$terraform_root")" || return 1
+
+  resolve_terraform_output_string \
+    "$json_file" \
+    "cache enabled flag for $terraform_root" \
+    '.deployment_contract.value.dependencies.cache.enabled // empty' \
+    'if ((.redis_connection_string.value // "") != "" or (.redis_primary_endpoint.value // "") != "") then "true" else "false" end'
+}
+
+terraform_stack_secret_store_id() {
+  local terraform_root="$1"
+  local json_file
+
+  json_file="$(load_terraform_output_json "$terraform_root")" || return 1
+
+  resolve_terraform_output_string \
+    "$json_file" \
+    "secret store id for $terraform_root" \
+    '.deployment_contract.value.dependencies.secret_store.id // .operations_contract.value.secrets.secret_store.id // empty' \
+    '.key_vault_id.value // empty'
+}
+
+terraform_stack_network_id() {
+  local terraform_root="$1"
+  local json_file
+
+  json_file="$(load_terraform_output_json "$terraform_root")" || return 1
+
+  resolve_terraform_output_string \
+    "$json_file" \
+    "network id for $terraform_root" \
+    '.deployment_contract.value.dependencies.network.id // empty' \
+    '.vpc_id.value // empty'
+}
+
+terraform_stack_network_cidr() {
+  local terraform_root="$1"
+  local json_file
+
+  json_file="$(load_terraform_output_json "$terraform_root")" || return 1
+
+  resolve_terraform_output_string \
+    "$json_file" \
+    "network cidr for $terraform_root" \
+    '.deployment_contract.value.dependencies.network.cidr // empty' \
+    '.vpc_cidr.value // empty'
+}
+
+terraform_stack_public_subnet_ids_json() {
+  local terraform_root="$1"
+  local json_file
+
+  json_file="$(load_terraform_output_json "$terraform_root")" || return 1
+
+  resolve_terraform_output_compact_json \
+    "$json_file" \
+    "public subnet ids for $terraform_root" \
+    '.deployment_contract.value.dependencies.network.public_subnet_ids // empty' \
+    '.public_subnet_ids.value // empty'
+}
+
+terraform_stack_private_subnet_ids_json() {
+  local terraform_root="$1"
+  local json_file
+
+  json_file="$(load_terraform_output_json "$terraform_root")" || return 1
+
+  resolve_terraform_output_compact_json \
+    "$json_file" \
+    "private subnet ids for $terraform_root" \
+    '.deployment_contract.value.dependencies.network.private_subnet_ids // empty' \
+    '.private_subnet_ids.value // empty'
+}
+
+terraform_stack_resource_group() {
+  local terraform_root="$1"
+  local json_file
+
+  json_file="$(load_terraform_output_json "$terraform_root")" || return 1
+
+  resolve_terraform_output_string \
+    "$json_file" \
+    "resource group for $terraform_root" \
+    '.operations_contract.value.grouping.resource_group // .validation_contract.value.artifacts.resource_group // empty' \
+    '.resource_group_name.value // empty'
+}
+
+terraform_stack_workload_name() {
+  local terraform_root="$1"
+  local json_file
+
+  json_file="$(load_terraform_output_json "$terraform_root")" || return 1
+
+  resolve_terraform_output_string \
+    "$json_file" \
+    "workload name for $terraform_root" \
+    '.deployment_contract.value.workload.name // empty' \
+    '.container_app_name.value // .function_app_name.value // .ecs_service_name.value // .lambda_function_name.value // .cluster_name.value // .prometheus_release.value // empty'
+}
+
+terraform_stack_cluster_name() {
+  local terraform_root="$1"
+  local json_file
+
+  json_file="$(load_terraform_output_json "$terraform_root")" || return 1
+
+  resolve_terraform_output_string \
+    "$json_file" \
+    "cluster name for $terraform_root" \
+    '.validation_contract.value.artifacts.cluster_name // .deployment_contract.value.workload.cluster_name // empty' \
+    '.ecs_cluster_name.value // empty'
+}
+
+terraform_stack_canary_enabled() {
+  local terraform_root="$1"
+  local json_file
+
+  json_file="$(load_terraform_output_json "$terraform_root")" || return 1
+
+  resolve_terraform_output_string \
+    "$json_file" \
+    "canary enabled flag for $terraform_root" \
+    '.deployment_contract.value.rollout.canary_enabled // empty' \
+    '.canary_enabled.value // empty'
+}
+
+terraform_stack_canary_service_name() {
+  local terraform_root="$1"
+  local json_file
+
+  json_file="$(load_terraform_output_json "$terraform_root")" || return 1
+
+  resolve_terraform_output_string \
+    "$json_file" \
+    "canary service name for $terraform_root" \
+    '.deployment_contract.value.rollout.canary_service_name // empty' \
+    '.canary_ecs_service_name.value // empty'
+}
+
+terraform_stack_canary_header_name() {
+  local terraform_root="$1"
+  local json_file
+
+  json_file="$(load_terraform_output_json "$terraform_root")" || return 1
+
+  resolve_terraform_output_string \
+    "$json_file" \
+    "canary verification header name for $terraform_root" \
+    '.deployment_contract.value.rollout.canary_verification_header_name // empty' \
+    '.canary_verification_header_name.value // empty'
+}
+
+terraform_stack_canary_header_value() {
+  local terraform_root="$1"
+  local json_file
+
+  json_file="$(load_terraform_output_json "$terraform_root")" || return 1
+
+  resolve_terraform_output_string \
+    "$json_file" \
+    "canary verification header value for $terraform_root" \
+    '.deployment_contract.value.rollout.canary_verification_header_value // empty' \
+    '.canary_verification_header_value.value // empty'
+}
+
+terraform_stack_current_revision() {
+  local terraform_root="$1"
+  local json_file
+
+  json_file="$(load_terraform_output_json "$terraform_root")" || return 1
+
+  resolve_terraform_output_string \
+    "$json_file" \
+    "current deploy revision for $terraform_root" \
+    '.deployment_contract.value.rollout.current_revision // empty' \
+    '.lambda_alias_function_version.value // .control_plane_current_revision.value // .lambda_function_version.value // empty'
+}
+
+terraform_stack_desired_revision() {
+  local terraform_root="$1"
+  local json_file
+
+  json_file="$(load_terraform_output_json "$terraform_root")" || return 1
+
+  resolve_terraform_output_string \
+    "$json_file" \
+    "desired deploy revision for $terraform_root" \
+    '.deployment_contract.value.rollout.desired_revision // empty' \
+    '.lambda_function_version.value // .control_plane_desired_revision.value // .control_plane_current_revision.value // .lambda_alias_function_version.value // empty'
+}
+
 resolve_platform_validation_root() {
   local runner_path="$1"
   local runner_dir
@@ -98,17 +470,30 @@ render_control_plane_config_from_terraform() {
   if rendered_target_id="$(jq -r '.ControlPlane.DeployTargets[0].TargetId // empty' "$rendered_config_path")" && [[ -n "$rendered_target_id" ]]; then
     export HONUA_CLOUD_TEST_DEPLOY_TARGET_ID="$rendered_target_id"
     platform_validation_log info "Derived deploy target id '$rendered_target_id' from Terraform outputs"
+  elif [[ -z "${HONUA_CLOUD_TEST_DEPLOY_TARGET_ID:-}" ]]; then
+    rendered_target_id="$(
+      resolve_terraform_output_string \
+        "$terraform_output_json" \
+        "control-plane target id" \
+        '.deployment_contract.value.rollout.target_id // empty' \
+        '.control_plane_target_id.value // .control_plane_target_name.value // .lambda_function_name.value // .ecs_service_name.value // empty'
+    )" || true
+
+    if [[ -n "$rendered_target_id" ]]; then
+      export HONUA_CLOUD_TEST_DEPLOY_TARGET_ID="$rendered_target_id"
+      platform_validation_log info "Derived deploy target id '$rendered_target_id' from Terraform outputs"
+    fi
   fi
 
   if [[ -z "${HONUA_CLOUD_TEST_DEPLOY_CURRENT_REVISION:-}" ]]; then
     rendered_current_revision="$(
-      jq -r '
-        .lambda_alias_function_version.value //
-        .control_plane_current_revision.value //
-        .lambda_function_version.value //
-        empty
-      ' "$terraform_output_json"
-    )"
+      resolve_terraform_output_string \
+        "$terraform_output_json" \
+        "current deploy revision" \
+        '.deployment_contract.value.rollout.current_revision // empty' \
+        '.lambda_alias_function_version.value // .control_plane_current_revision.value // .lambda_function_version.value // empty'
+    )" || true
+
     if [[ -n "$rendered_current_revision" ]]; then
       export HONUA_CLOUD_TEST_DEPLOY_CURRENT_REVISION="$rendered_current_revision"
       platform_validation_log info "Derived current deploy revision '$rendered_current_revision' from Terraform outputs"
@@ -117,13 +502,13 @@ render_control_plane_config_from_terraform() {
 
   if [[ -z "${HONUA_CLOUD_TEST_DEPLOY_DESIRED_REVISION:-}" ]]; then
     rendered_desired_revision="$(
-      jq -r '
-        .lambda_function_version.value //
-        .control_plane_current_revision.value //
-        .lambda_alias_function_version.value //
-        empty
-      ' "$terraform_output_json"
-    )"
+      resolve_terraform_output_string \
+        "$terraform_output_json" \
+        "desired deploy revision" \
+        '.deployment_contract.value.rollout.desired_revision // empty' \
+        '.lambda_function_version.value // .control_plane_desired_revision.value // .control_plane_current_revision.value // .lambda_alias_function_version.value // empty'
+    )" || true
+
     if [[ -n "$rendered_desired_revision" ]]; then
       export HONUA_CLOUD_TEST_DEPLOY_DESIRED_REVISION="$rendered_desired_revision"
       platform_validation_log info "Derived desired deploy revision '$rendered_desired_revision' from Terraform outputs"

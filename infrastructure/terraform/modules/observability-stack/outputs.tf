@@ -1,3 +1,5 @@
+# --- Infrastructure outputs ---
+
 output "prometheus_release" {
   description = "Prometheus Helm release name."
   value       = helm_release.prometheus.name
@@ -12,6 +14,8 @@ output "prometheus_url" {
   description = "In-cluster Prometheus URL."
   value       = "http://${var.prometheus_release_name}-server.${var.namespace}.svc.cluster.local"
 }
+
+# --- Honua integration outputs ---
 
 output "honua_prometheus_job_name" {
   description = "Prometheus job name used for the Honua scrape target."

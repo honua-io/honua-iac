@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "v1",
+  "name": "aws-live",
+  "kind": "aws-live",
+  "planArtifactRoot": "plans/aws",
+  "bootstrapRoot": "bootstrap/aws",
+  "bootstrapModules": {
+    "ecs": {
+      "sourcePath": "infrastructure/terraform/bootstrap/aws-ecs",
+      "userNameTemplate": "honua-tf-ecs-{runId}-{runAttempt}"
+    },
+    "serverless": {
+      "sourcePath": "infrastructure/terraform/bootstrap/aws-serverless",
+      "userNameTemplate": "honua-tf-sls-{runId}-{runAttempt}"
+    }
+  }
+}

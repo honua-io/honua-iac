@@ -193,6 +193,34 @@ module "rds" {
   tags = local.tags
 }
 
+#checkov:skip=CKV2_AWS_57: Secrets rotation is handled outside the module.
+resource "aws_secretsmanager_secret" "db_connection" {
+  #checkov:skip=CKV2_AWS_57: Secrets rotation is handled outside the module.
+  name_prefix = "${local.name}-db-"
+  description = "Honua database connection string"
+  tags        = local.tags
+}
+
+resource "aws_secretsmanager_secret_version" "db_connection" {
+  secret_id     = aws_secretsmanager_secret.db_connection.id
+  secret_string = local.db_connection_string
+}
+
+#checkov:skip=CKV2_AWS_57: Secrets rotation is handled outside the module.
+resource "aws_secretsmanager_secret" "redis_connection" {
+  #checkov:skip=CKV2_AWS_57: Secrets rotation is handled outside the module.
+  count       = var.redis_enabled ? 1 : 0
+  name_prefix = "${local.name}-redis-"
+  description = "Honua Redis connection string"
+  tags        = local.tags
+}
+
+resource "aws_secretsmanager_secret_version" "redis_connection" {
+  count         = var.redis_enabled ? 1 : 0
+  secret_id     = aws_secretsmanager_secret.redis_connection[0].id
+  secret_string = local.redis_connection
+}
+
 resource "null_resource" "enable_postgis" {
   count = var.enable_postgis ? 1 : 0
 

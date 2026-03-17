@@ -1,3 +1,5 @@
+# --- Infrastructure outputs ---
+
 output "environment" {
   description = "Deployment environment label used for control-plane target IDs."
   value       = var.environment
@@ -18,10 +20,44 @@ output "container_app_environment_id" {
   value       = azurerm_container_app_environment.this.id
 }
 
+output "container_app_fqdn" {
+  description = "Container App FQDN (if ingress enabled)."
+  value       = try(azurerm_container_app.this.ingress[0].fqdn, null)
+}
+
 output "resource_group_name" {
   description = "Resource group name."
   value       = azurerm_resource_group.this.name
 }
+
+output "database_fqdn" {
+  description = "PostgreSQL server FQDN."
+  value       = local.db_server_fqdn
+  sensitive   = true
+}
+
+output "key_vault_id" {
+  description = "Key Vault resource ID."
+  value       = azurerm_key_vault.this.id
+}
+
+output "db_connection_secret_id" {
+  description = "Key Vault secret ID for the DB connection string."
+  value       = azurerm_key_vault_secret.db_connection.id
+}
+
+output "admin_password_secret_id" {
+  description = "Key Vault secret ID for the admin password."
+  value       = azurerm_key_vault_secret.admin_password.id
+}
+
+output "redis_connection_secret_id" {
+  description = "Key Vault secret ID for the Redis connection string (if set)."
+  value       = local.redis_connection != "" ? azurerm_key_vault_secret.redis_connection[0].id : null
+  sensitive   = true
+}
+
+# --- Honua control-plane outputs ---
 
 output "control_plane_target_kind" {
   description = "Honua control-plane deploy target kind for Azure Container Apps."
@@ -56,36 +92,4 @@ output "control_plane_target_resource_group" {
 output "control_plane_telemetry_policy" {
   description = "Default Honua telemetry policy for Azure Container Apps deploy health evaluation."
   value       = "honua-http"
-}
-
-output "container_app_fqdn" {
-  description = "Container App FQDN (if ingress enabled)."
-  value       = try(azurerm_container_app.this.ingress[0].fqdn, null)
-}
-
-output "database_fqdn" {
-  description = "PostgreSQL server FQDN."
-  value       = local.db_server_fqdn
-  sensitive   = true
-}
-
-output "key_vault_id" {
-  description = "Key Vault resource ID."
-  value       = azurerm_key_vault.this.id
-}
-
-output "db_connection_secret_id" {
-  description = "Key Vault secret ID for the DB connection string."
-  value       = azurerm_key_vault_secret.db_connection.id
-}
-
-output "admin_password_secret_id" {
-  description = "Key Vault secret ID for the admin password."
-  value       = azurerm_key_vault_secret.admin_password.id
-}
-
-output "redis_connection_secret_id" {
-  description = "Key Vault secret ID for the Redis connection string (if set)."
-  value       = local.redis_connection != "" ? azurerm_key_vault_secret.redis_connection[0].id : null
-  sensitive   = true
 }

@@ -1,3 +1,5 @@
+# --- Infrastructure outputs ---
+
 output "environment" {
   value = var.environment
 }
@@ -10,8 +12,8 @@ output "function_app_id" {
   value = azurerm_linux_function_app.this.id
 }
 
-output "resource_group_name" {
-  value = azurerm_resource_group.this.name
+output "function_app_url" {
+  value = "https://${azurerm_linux_function_app.this.default_hostname}"
 }
 
 output "function_app_slot_name" {
@@ -21,6 +23,44 @@ output "function_app_slot_name" {
 output "function_app_slot_id" {
   value = var.deployment_slot_enabled ? azurerm_linux_function_app_slot.staging[0].id : null
 }
+
+output "resource_group_name" {
+  value = azurerm_resource_group.this.name
+}
+
+output "key_vault_id" {
+  value = azurerm_key_vault.this.id
+}
+
+output "db_fqdn" {
+  value     = local.db_server_fqdn
+  sensitive = true
+}
+
+output "db_connection_string" {
+  value     = local.db_connection_string
+  sensitive = true
+}
+
+output "db_connection_secret_id" {
+  value = azurerm_key_vault_secret.connection_string.id
+}
+
+output "admin_password_secret_id" {
+  value = azurerm_key_vault_secret.admin_password.id
+}
+
+output "redis_connection_string" {
+  value     = local.redis_connection
+  sensitive = true
+}
+
+output "redis_connection_secret_id" {
+  value     = local.redis_connection != "" ? azurerm_key_vault_secret.redis_connection[0].id : null
+  sensitive = true
+}
+
+# --- Honua control-plane outputs ---
 
 output "control_plane_target_kind" {
   value = "AzureFunctions"
@@ -68,28 +108,4 @@ output "control_plane_current_image" {
 
 output "control_plane_desired_image" {
   value = var.deployment_slot_enabled ? local.slot_image : null
-}
-
-output "function_app_url" {
-  value = "https://${azurerm_linux_function_app.this.default_hostname}"
-}
-
-output "db_fqdn" {
-  value     = local.db_server_fqdn
-  sensitive = true
-}
-
-output "db_connection_string" {
-  value     = local.db_connection_string
-  sensitive = true
-}
-
-output "redis_connection_string" {
-  value     = local.redis_connection
-  sensitive = true
-}
-
-output "redis_connection_secret_id" {
-  value     = local.redis_connection != "" ? azurerm_key_vault_secret.redis_connection[0].id : null
-  sensitive = true
 }

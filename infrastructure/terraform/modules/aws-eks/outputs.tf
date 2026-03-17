@@ -1,3 +1,5 @@
+# --- Infrastructure outputs ---
+
 output "cluster_name" {
   description = "EKS cluster name."
   value       = module.eks.cluster_name
@@ -47,6 +49,8 @@ output "node_security_group_id" {
   description = "Security group ID attached to EKS managed node groups."
   value       = module.eks.node_security_group_id
 }
+
+# --- Honua control-plane outputs ---
 
 output "control_plane_target_kind" {
   description = "Honua control-plane deploy target kind for this cluster."
