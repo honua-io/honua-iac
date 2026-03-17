@@ -1,19 +1,31 @@
 # Sourced by validation.sh after config, network, runtime, and verification helpers are defined.
 
+terraform_rollout_output() {
+  local root="$1"
+  local field="$2"
+
+  run_tf -chdir="$root" output -json | jq -r --arg field "$field" '
+    .deployment_contract.value.rollout[$field]
+    // .honua_integration_outputs.value.contracts.deployment.rollout[$field]
+    // (if $field == "current_revision" then .control_plane_current_revision.value else .control_plane_desired_revision.value end)
+    // empty
+  '
+}
+
 apply_data_stack() {
   log_info "Applying AWS data stack (RDS + Redis)"
   set_data_tf_vars
 
-  run_tf -chdir=examples/aws-data init -input=false -no-color
-  plan_apply "examples/aws-data" "data.tfplan" "data"
+  run_tf -chdir=stacks/test/aws-data init -input=false -no-color
+  plan_apply "stacks/test/aws-data" "data.tfplan" "data"
 
-  EXISTING_DB_ENDPOINT="$(run_tf -chdir=examples/aws-data output -raw db_endpoint)"
-  EXISTING_DB_CONNECTION_STRING="$(run_tf -chdir=examples/aws-data output -raw db_connection_string)"
-  EXISTING_REDIS_CONNECTION_STRING="$(run_tf -chdir=examples/aws-data output -raw redis_connection_string)"
-  EXISTING_VPC_ID="$(run_tf -chdir=examples/aws-data output -raw vpc_id)"
-  EXISTING_VPC_CIDR="$(run_tf -chdir=examples/aws-data output -raw vpc_cidr)"
-  EXISTING_PUBLIC_SUBNET_IDS="$(run_tf -chdir=examples/aws-data output -json public_subnet_ids | tr -d '\n')"
-  EXISTING_PRIVATE_SUBNET_IDS="$(run_tf -chdir=examples/aws-data output -json private_subnet_ids | tr -d '\n')"
+  EXISTING_DB_ENDPOINT="$(run_tf -chdir=stacks/test/aws-data output -raw db_endpoint)"
+  EXISTING_DB_CONNECTION_STRING="$(run_tf -chdir=stacks/test/aws-data output -raw db_connection_string)"
+  EXISTING_REDIS_CONNECTION_STRING="$(run_tf -chdir=stacks/test/aws-data output -raw redis_connection_string)"
+  EXISTING_VPC_ID="$(run_tf -chdir=stacks/test/aws-data output -raw vpc_id)"
+  EXISTING_VPC_CIDR="$(run_tf -chdir=stacks/test/aws-data output -raw vpc_cidr)"
+  EXISTING_PUBLIC_SUBNET_IDS="$(run_tf -chdir=stacks/test/aws-data output -json public_subnet_ids | tr -d '\n')"
+  EXISTING_PRIVATE_SUBNET_IDS="$(run_tf -chdir=stacks/test/aws-data output -json private_subnet_ids | tr -d '\n')"
 
   if [[ -z "$EXISTING_DB_ENDPOINT" || -z "$EXISTING_DB_CONNECTION_STRING" || -z "$EXISTING_REDIS_CONNECTION_STRING" || -z "$EXISTING_VPC_ID" || -z "$EXISTING_VPC_CIDR" || -z "$EXISTING_PUBLIC_SUBNET_IDS" || -z "$EXISTING_PRIVATE_SUBNET_IDS" ]]; then
     log_error "AWS data stack output validation failed (missing DB/Redis/VPC output)"
@@ -24,7 +36,7 @@ apply_data_stack() {
   DATA_CREATED=true
 
   if [[ "$CHECK_IDEMPOTENCY" == "true" ]]; then
-    assert_idempotent_plan "examples/aws-data"
+    assert_idempotent_plan "stacks/test/aws-data"
   fi
 
   persist_data_reuse_cache
@@ -42,7 +54,7 @@ apply_ecs_stack() {
   log_info "Applying AWS ECS stack"
   set_ecs_tf_vars
 
-  run_tf -chdir=examples/aws init -input=false -no-color
+  run_tf -chdir=stacks/test/aws init -input=false -no-color
   # Mark stack as applied before first plan/apply so cleanup destroys partial resources on failed apply.
   ECS_APPLIED=true
 
@@ -53,17 +65,17 @@ apply_ecs_stack() {
     fi
 
     export TF_VAR_honua_image="$ECS_PREVIOUS_IMAGE"
-    plan_apply "examples/aws" "ecs-prev.tfplan" "ecs-previous"
+    plan_apply "stacks/test/aws" "ecs-prev.tfplan" "ecs-previous"
 
-    url="$(run_tf -chdir=examples/aws output -raw honua_url)"
-    db_endpoint="$(run_tf -chdir=examples/aws output -raw db_endpoint)"
-    cluster_name="$(run_tf -chdir=examples/aws output -raw ecs_cluster_name)"
-    service_name="$(run_tf -chdir=examples/aws output -raw ecs_service_name)"
+    url="$(run_tf -chdir=stacks/test/aws output -raw honua_url)"
+    db_endpoint="$(run_tf -chdir=stacks/test/aws output -raw db_endpoint)"
+    cluster_name="$(run_tf -chdir=stacks/test/aws output -raw ecs_cluster_name)"
+    service_name="$(run_tf -chdir=stacks/test/aws output -raw ecs_service_name)"
 
     if [[ -n "$EXISTING_REDIS_CONNECTION_STRING" ]]; then
       log_info "Using existing Redis connection string; skipping ECS Redis endpoint creation check"
     else
-      redis_endpoint="$(run_tf -chdir=examples/aws output -raw redis_primary_endpoint)"
+      redis_endpoint="$(run_tf -chdir=stacks/test/aws output -raw redis_primary_endpoint)"
       if [[ -z "$redis_endpoint" || "$redis_endpoint" == "null" ]]; then
         log_error "Redis endpoint was empty for ECS stack"
         return 1
@@ -74,49 +86,49 @@ apply_ecs_stack() {
     verify_ecs_canary_route "$url" "$cluster_name"
 
     export TF_VAR_honua_image="$ECS_IMAGE"
-    plan_apply "examples/aws" "ecs-upgrade.tfplan" "ecs-upgrade"
-    url="$(run_tf -chdir=examples/aws output -raw honua_url)"
-    db_endpoint="$(run_tf -chdir=examples/aws output -raw db_endpoint)"
+    plan_apply "stacks/test/aws" "ecs-upgrade.tfplan" "ecs-upgrade"
+    url="$(run_tf -chdir=stacks/test/aws output -raw honua_url)"
+    db_endpoint="$(run_tf -chdir=stacks/test/aws output -raw db_endpoint)"
     run_ecs_checks "$url" "$db_endpoint"
     verify_ecs_canary_route "$url" "$cluster_name"
 
     if [[ "$QUICK_SCALE" == "true" ]]; then
       log_info "Running quick ECS scale validation by raising desired_count to $ECS_SCALE_TARGET_DESIRED_COUNT"
       export TF_VAR_desired_count="$ECS_SCALE_TARGET_DESIRED_COUNT"
-      plan_apply "examples/aws" "ecs-scale.tfplan" "ecs-scale"
+      plan_apply "stacks/test/aws" "ecs-scale.tfplan" "ecs-scale"
       wait_for_ecs_running_count "$cluster_name" "$service_name" "$ECS_SCALE_TARGET_DESIRED_COUNT" 900
       export TF_VAR_desired_count="$ECS_DESIRED_COUNT"
-      plan_apply "examples/aws" "ecs-scale-reset.tfplan" "ecs-scale-reset"
+      plan_apply "stacks/test/aws" "ecs-scale-reset.tfplan" "ecs-scale-reset"
       if [[ "$ECS_DESIRED_COUNT" =~ ^[0-9]+$ ]] && (( ECS_DESIRED_COUNT > 0 )); then
         wait_for_ecs_running_count "$cluster_name" "$service_name" "$ECS_DESIRED_COUNT" 900
       fi
     fi
 
     export TF_VAR_honua_image="$ECS_PREVIOUS_IMAGE"
-    plan_apply "examples/aws" "ecs-rollback.tfplan" "ecs-rollback"
+    plan_apply "stacks/test/aws" "ecs-rollback.tfplan" "ecs-rollback"
     run_ecs_checks "$url" "$db_endpoint"
     verify_ecs_canary_route "$url" "$cluster_name"
 
     if [[ "$AUTO_DESTROY" != "true" ]]; then
       export TF_VAR_honua_image="$ECS_IMAGE"
-      plan_apply "examples/aws" "ecs-restore-current.tfplan" "ecs-restore-current"
+      plan_apply "stacks/test/aws" "ecs-restore-current.tfplan" "ecs-restore-current"
       run_ecs_checks "$url" "$db_endpoint"
       verify_ecs_canary_route "$url" "$cluster_name"
     fi
 
     export TF_VAR_honua_image="$ECS_IMAGE"
   else
-    plan_apply "examples/aws" "ecs.tfplan" "ecs"
+    plan_apply "stacks/test/aws" "ecs.tfplan" "ecs"
 
-    url="$(run_tf -chdir=examples/aws output -raw honua_url)"
-    db_endpoint="$(run_tf -chdir=examples/aws output -raw db_endpoint)"
-    cluster_name="$(run_tf -chdir=examples/aws output -raw ecs_cluster_name)"
-    service_name="$(run_tf -chdir=examples/aws output -raw ecs_service_name)"
+    url="$(run_tf -chdir=stacks/test/aws output -raw honua_url)"
+    db_endpoint="$(run_tf -chdir=stacks/test/aws output -raw db_endpoint)"
+    cluster_name="$(run_tf -chdir=stacks/test/aws output -raw ecs_cluster_name)"
+    service_name="$(run_tf -chdir=stacks/test/aws output -raw ecs_service_name)"
 
     if [[ -n "$EXISTING_REDIS_CONNECTION_STRING" ]]; then
       log_info "Using existing Redis connection string; skipping ECS Redis endpoint creation check"
     else
-      redis_endpoint="$(run_tf -chdir=examples/aws output -raw redis_primary_endpoint)"
+      redis_endpoint="$(run_tf -chdir=stacks/test/aws output -raw redis_primary_endpoint)"
       if [[ -z "$redis_endpoint" || "$redis_endpoint" == "null" ]]; then
         log_error "Redis endpoint was empty for ECS stack"
         return 1
@@ -129,10 +141,10 @@ apply_ecs_stack() {
     if [[ "$QUICK_SCALE" == "true" ]]; then
       log_info "Running quick ECS scale validation by raising desired_count to $ECS_SCALE_TARGET_DESIRED_COUNT"
       export TF_VAR_desired_count="$ECS_SCALE_TARGET_DESIRED_COUNT"
-      plan_apply "examples/aws" "ecs-scale.tfplan" "ecs-scale"
+      plan_apply "stacks/test/aws" "ecs-scale.tfplan" "ecs-scale"
       wait_for_ecs_running_count "$cluster_name" "$service_name" "$ECS_SCALE_TARGET_DESIRED_COUNT" 900
       export TF_VAR_desired_count="$ECS_DESIRED_COUNT"
-      plan_apply "examples/aws" "ecs-scale-reset.tfplan" "ecs-scale-reset"
+      plan_apply "stacks/test/aws" "ecs-scale-reset.tfplan" "ecs-scale-reset"
       if [[ "$ECS_DESIRED_COUNT" =~ ^[0-9]+$ ]] && (( ECS_DESIRED_COUNT > 0 )); then
         wait_for_ecs_running_count "$cluster_name" "$service_name" "$ECS_DESIRED_COUNT" 900
       fi
@@ -142,11 +154,11 @@ apply_ecs_stack() {
   ECS_APPLIED=true
 
   if [[ "$CHECK_IDEMPOTENCY" == "true" ]]; then
-    assert_idempotent_plan "examples/aws"
+    assert_idempotent_plan "stacks/test/aws"
   fi
 
   tf_output_json="$(mktemp "${TMPDIR:-/tmp}/honua-aws-ecs-outputs.XXXXXX.json")"
-  run_tf -chdir=examples/aws output -json > "$tf_output_json"
+  run_tf -chdir=stacks/test/aws output -json > "$tf_output_json"
 
   HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON="$tf_output_json" \
   HONUA_PLATFORM_VALIDATION_PUBLISH_DB_HOST="$db_endpoint" \
@@ -159,7 +171,7 @@ apply_ecs_stack() {
   run_honua_platform_post_apply_validation "$url" "aws-ecs"
 
   log_info "ECS stack checks passed"
-  log_info "ECS URL: $(run_tf -chdir=examples/aws output -raw honua_url)"
+  log_info "ECS URL: $(run_tf -chdir=stacks/test/aws output -raw honua_url)"
 }
 
 apply_serverless_stack() {
@@ -178,7 +190,7 @@ apply_serverless_stack() {
   log_info "Applying AWS serverless stack"
   set_serverless_tf_vars
 
-  run_tf -chdir=examples/aws-serverless init -input=false -no-color
+  run_tf -chdir=stacks/test/aws-serverless init -input=false -no-color
   # Mark stack as applied before first plan/apply so cleanup destroys partial resources on failed apply.
   SERVERLESS_APPLIED=true
 
@@ -189,11 +201,11 @@ apply_serverless_stack() {
     fi
 
     export TF_VAR_honua_image_uri="$SERVERLESS_PREVIOUS_IMAGE"
-    plan_apply "examples/aws-serverless" "serverless-prev.tfplan" "serverless-previous"
+    plan_apply "stacks/test/aws-serverless" "serverless-prev.tfplan" "serverless-previous"
 
-    url="$(run_tf -chdir=examples/aws-serverless output -raw honua_url)"
-    db_endpoint="$(run_tf -chdir=examples/aws-serverless output -raw db_endpoint)"
-    redis_connection="$(run_tf -chdir=examples/aws-serverless output -raw redis_connection_string)"
+    url="$(run_tf -chdir=stacks/test/aws-serverless output -raw honua_url)"
+    db_endpoint="$(run_tf -chdir=stacks/test/aws-serverless output -raw db_endpoint)"
+    redis_connection="$(run_tf -chdir=stacks/test/aws-serverless output -raw redis_connection_string)"
 
     if [[ -z "$redis_connection" || "$redis_connection" == "null" ]]; then
       log_error "Redis connection string was empty for serverless stack"
@@ -201,7 +213,7 @@ apply_serverless_stack() {
     fi
 
     run_serverless_checks "$url" "$db_endpoint"
-    previous_live_revision="$(run_tf -chdir=examples/aws-serverless output -raw control_plane_current_revision)"
+    previous_live_revision="$(terraform_rollout_output "stacks/test/aws-serverless" "current_revision")"
     if [[ -z "$previous_live_revision" || "$previous_live_revision" == "null" ]]; then
       log_error "Serverless validation requires a stable Lambda alias revision before publishing the new version"
       return 1
@@ -209,21 +221,21 @@ apply_serverless_stack() {
 
     export TF_VAR_honua_image_uri="$SERVERLESS_IMAGE"
     export TF_VAR_lambda_alias_version="$previous_live_revision"
-    plan_apply "examples/aws-serverless" "serverless-stage-current.tfplan" "serverless-stage-current"
-    url="$(run_tf -chdir=examples/aws-serverless output -raw honua_url)"
-    db_endpoint="$(run_tf -chdir=examples/aws-serverless output -raw db_endpoint)"
-    desired_revision="$(run_tf -chdir=examples/aws-serverless output -raw control_plane_desired_revision)"
+    plan_apply "stacks/test/aws-serverless" "serverless-stage-current.tfplan" "serverless-stage-current"
+    url="$(run_tf -chdir=stacks/test/aws-serverless output -raw honua_url)"
+    db_endpoint="$(run_tf -chdir=stacks/test/aws-serverless output -raw db_endpoint)"
+    desired_revision="$(terraform_rollout_output "stacks/test/aws-serverless" "desired_revision")"
     if [[ -z "$desired_revision" || "$desired_revision" == "null" || "$desired_revision" == "$previous_live_revision" ]]; then
       log_error "Serverless validation requires a newly published Lambda version that differs from the stable alias revision"
       return 1
     fi
     run_serverless_checks "$url" "$db_endpoint"
   else
-    plan_apply "examples/aws-serverless" "serverless.tfplan" "serverless"
+    plan_apply "stacks/test/aws-serverless" "serverless.tfplan" "serverless"
 
-    url="$(run_tf -chdir=examples/aws-serverless output -raw honua_url)"
-    db_endpoint="$(run_tf -chdir=examples/aws-serverless output -raw db_endpoint)"
-    redis_connection="$(run_tf -chdir=examples/aws-serverless output -raw redis_connection_string)"
+    url="$(run_tf -chdir=stacks/test/aws-serverless output -raw honua_url)"
+    db_endpoint="$(run_tf -chdir=stacks/test/aws-serverless output -raw db_endpoint)"
+    redis_connection="$(run_tf -chdir=stacks/test/aws-serverless output -raw redis_connection_string)"
 
     if [[ -z "$redis_connection" || "$redis_connection" == "null" ]]; then
       log_error "Redis connection string was empty for serverless stack"
@@ -234,11 +246,11 @@ apply_serverless_stack() {
   fi
 
   if [[ "$CHECK_IDEMPOTENCY" == "true" ]]; then
-    assert_idempotent_plan "examples/aws-serverless"
+    assert_idempotent_plan "stacks/test/aws-serverless"
   fi
 
   tf_output_json="$(mktemp "${TMPDIR:-/tmp}/honua-aws-serverless-outputs.XXXXXX.json")"
-  run_tf -chdir=examples/aws-serverless output -json > "$tf_output_json"
+  run_tf -chdir=stacks/test/aws-serverless output -json > "$tf_output_json"
 
   HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON="$tf_output_json" \
   HONUA_PLATFORM_VALIDATION_PUBLISH_DB_HOST="$db_endpoint" \
@@ -258,14 +270,14 @@ apply_serverless_stack() {
   if [[ "$RUN_UPGRADE_ROLLBACK" == "true" ]]; then
     unset TF_VAR_lambda_alias_version
     export TF_VAR_honua_image_uri="$SERVERLESS_IMAGE"
-    plan_apply "examples/aws-serverless" "serverless-reconcile-current.tfplan" "serverless-reconcile-current"
-    url="$(run_tf -chdir=examples/aws-serverless output -raw honua_url)"
-    db_endpoint="$(run_tf -chdir=examples/aws-serverless output -raw db_endpoint)"
+    plan_apply "stacks/test/aws-serverless" "serverless-reconcile-current.tfplan" "serverless-reconcile-current"
+    url="$(run_tf -chdir=stacks/test/aws-serverless output -raw honua_url)"
+    db_endpoint="$(run_tf -chdir=stacks/test/aws-serverless output -raw db_endpoint)"
     run_serverless_checks "$url" "$db_endpoint"
   fi
 
   log_info "Serverless stack checks passed"
-  log_info "Serverless URL: $(run_tf -chdir=examples/aws-serverless output -raw honua_url)"
+  log_info "Serverless URL: $(run_tf -chdir=stacks/test/aws-serverless output -raw honua_url)"
 }
 
 destroy_ecs_stack() {
@@ -275,7 +287,7 @@ destroy_ecs_stack() {
 
   log_info "Destroying AWS ECS stack"
   set_ecs_tf_vars
-  run_tf -chdir=examples/aws destroy -input=false -auto-approve -no-color || log_warn "ECS destroy encountered errors"
+  run_tf -chdir=stacks/test/aws destroy -input=false -auto-approve -no-color || log_warn "ECS destroy encountered errors"
 }
 
 destroy_serverless_stack() {
@@ -285,7 +297,7 @@ destroy_serverless_stack() {
 
   log_info "Destroying AWS serverless stack"
   set_serverless_tf_vars
-  run_tf -chdir=examples/aws-serverless destroy -input=false -auto-approve -no-color || log_warn "Serverless destroy encountered errors"
+  run_tf -chdir=stacks/test/aws-serverless destroy -input=false -auto-approve -no-color || log_warn "Serverless destroy encountered errors"
 }
 
 destroy_data_stack() {
@@ -295,7 +307,7 @@ destroy_data_stack() {
 
   log_info "Destroying AWS data stack"
   set_data_tf_vars
-  if run_tf -chdir=examples/aws-data destroy -input=false -auto-approve -no-color; then
+  if run_tf -chdir=stacks/test/aws-data destroy -input=false -auto-approve -no-color; then
     clear_data_reuse_cache
   else
     log_warn "Data stack destroy encountered errors"

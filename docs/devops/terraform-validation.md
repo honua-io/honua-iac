@@ -17,8 +17,8 @@ The workflow and scripts cover:
 
 - Static validation: `terraform fmt`, `terraform init -backend=false`, `terraform validate`, and `terraform test`
 - Policy/security gates: `tflint`, `checkov`, `trivy config`, and custom guard checks in `infrastructure/terraform/validation/scripts/shared/terraform-policy-gate.sh`
-- Azure live integration: `examples/azure-data` bootstrap (Postgres + Redis) by default, then ACA + Functions using those existing connections; includes Redis wiring, PostGIS + raster checks, protocol/admin smoke checks, admin CRUD/query smoke (`create connection -> publish layer -> query`), idempotency, quick scale check, DB resilience drill, plan artifacts, compute auto-destroy, and reusable data-stack retention by default
-- AWS live integration: `examples/aws-data` bootstrap (RDS + Redis) by default, then ECS + serverless using those existing connections/VPC; includes Redis wiring, PostGIS + raster checks, protocol/admin smoke checks, admin CRUD/query smoke (`create connection -> publish layer -> query`), idempotency, quick scale check, DB resilience drill, plan artifacts, and compute auto-destroy with reusable data-stack retention
+- Azure live integration: `stacks/test/azure-data` bootstrap (Postgres + Redis) by default, then ACA + Functions using those existing connections; includes Redis wiring, PostGIS + raster checks, protocol/admin smoke checks, admin CRUD/query smoke (`create connection -> publish layer -> query`), idempotency, quick scale check, DB resilience drill, plan artifacts, compute auto-destroy, and reusable data-stack retention by default
+- AWS live integration: `stacks/test/aws-data` bootstrap (RDS + Redis) by default, then ECS + serverless using those existing connections/VPC; includes Redis wiring, PostGIS + raster checks, protocol/admin smoke checks, admin CRUD/query smoke (`create connection -> publish layer -> query`), idempotency, quick scale check, DB resilience drill, plan artifacts, and compute auto-destroy with reusable data-stack retention
 - Kubernetes live integration: k3d + Helm + observability Terraform module, Helm static validation (`lint` + `template` + `kubeconform`), PostGIS + raster checks, protocol/admin smoke checks, admin CRUD/query smoke (`create connection -> publish layer -> query`), idempotency, quick scale check, and optional DB resilience drill
 - Managed Kubernetes integration: AKS and EKS Terraform cluster provisioning, then Kubernetes validation flow, then auto-destroy + leak check
 - Cross-repo platform validation: Azure, AWS, AKS, and EKS live jobs also check out `honua-server` and run its post-apply platform suite against the deployed environment before cleanup; this exercises deploy preflight, migration observability, admin OpenAPI, and optional cloud-staged import checks against real cloud infrastructure
@@ -28,20 +28,19 @@ The workflow and scripts cover:
 
 Workflow: `.github/workflows/terraform-manual-validation.yml`
 
-Dispatch inputs (10 total, within GitHub limit):
+Dispatch inputs:
 
 - `cloud`: `both|azure|aws`
+- `scenario_set`: `standard|full|aws|azure|kubernetes`
+- `scenario_ids`: optional comma-separated scenario ids to add to the selected set
 - `deployment_profile`: `ephemeral|persistent`
 - `apply_confirmation`: must be `APPROVED` when `deployment_profile=persistent`
 - `run_live`: enable/disable live apply tests
-- `run_k8s`: include local k3d Kubernetes validation
-- `run_aks`: include AKS validation
-- `run_eks`: include EKS validation
 - `run_drift`: include drift detection job
 - `no_destroy`: keep live resources after tests
 - `allow_destroy_plan`: allow apply when plan contains destroys
 
-Advanced controls (regions, stacks, SLO/cost caps, optional skips) are configured via repository variables instead of extra dispatch inputs.
+Scenario expansion is handled by `validation/runner/Honua.Terraform.ValidationRunner` from the YAML manifests under `validation/scenarios/`. Advanced controls (regions, stacks, SLO/cost caps, optional skips) are configured via repository variables instead of extra dispatch inputs.
 
 ## Required GitHub secrets
 
@@ -224,12 +223,11 @@ CLI:
 ```bash
 gh workflow run terraform-manual-validation.yml \
   -f cloud=both \
+  -f scenario_set=full \
+  -f scenario_ids= \
   -f deployment_profile=ephemeral \
   -f apply_confirmation= \
   -f run_live=true \
-  -f run_k8s=true \
-  -f run_aks=true \
-  -f run_eks=true \
   -f run_drift=true \
   -f reuse_data_stack=true \
   -f no_destroy=false \
@@ -251,7 +249,7 @@ Single combined run (legacy behavior):
 Local script entry points:
 
 ```bash
-# Default flow provisions/reuses examples/azure-data, then runs compute stack validation.
+# Default flow provisions/reuses stacks/test/azure-data, then runs compute stack validation.
 ./infrastructure/terraform/validation/scripts/azure/run-azure-terraform-integration.sh --stack both
 ./infrastructure/terraform/validation/scripts/azure/run-azure-terraform-integration.sh --stack both --force-new-data-infra
 ./infrastructure/terraform/validation/scripts/azure/run-azure-terraform-integration.sh --stack both --destroy-data
@@ -286,7 +284,7 @@ Local script entry points:
 ./scripts/run-eks-terraform-integration.sh
 ./scripts/run-k8s-terraform-integration.sh
 ./infrastructure/terraform/validation/scripts/shared/terraform-policy-gate.sh
-./infrastructure/terraform/validation/scripts/shared/run-terraform-drift-detection.sh --root infrastructure/terraform/examples/azure
+./infrastructure/terraform/validation/scripts/shared/run-terraform-drift-detection.sh --root infrastructure/terraform/stacks/test/azure
 ```
 
 ## Notes
@@ -300,12 +298,12 @@ Local script entry points:
   - `infrastructure/terraform/bootstrap/aws-serverless`
   - `infrastructure/terraform/bootstrap/aws-eks`
 - Use one database admin secret: `HONUA_DB_PASSWORD` (not separate per cloud).
-- Azure script behavior: when existing Azure data inputs are not provided, `infrastructure/terraform/validation/scripts/azure/run-azure-terraform-integration.sh` applies `infrastructure/terraform/examples/azure-data`, saves outputs to `/tmp/honua-azure-data-reuse.env` (or `HONUA_AZURE_DATA_CACHE_FILE`), reuses them in subsequent runs, and opens the PostgreSQL firewall to the ACA outbound IPs before readiness checks.
+- Azure script behavior: when existing Azure data inputs are not provided, `infrastructure/terraform/validation/scripts/azure/run-azure-terraform-integration.sh` applies `infrastructure/terraform/stacks/test/azure-data`, saves outputs to `/tmp/honua-azure-data-reuse.env` (or `HONUA_AZURE_DATA_CACHE_FILE`), reuses them in subsequent runs, and opens the PostgreSQL firewall to the ACA outbound IPs before readiness checks.
 - Azure bootstrap validation now retries `az login` / `az account set` after creating the least-privilege service principal so Azure AD and subscription role assignment propagation does not fail fast on a fresh identity.
 - Azure ACA validation defaults `min_replicas=1` and a wider startup probe budget so cold boot plus migrations can complete before ACA marks the revision unhealthy.
 - Azure Functions validation now uses a temporary PostgreSQL firewall rule for Azure services on Premium/Consumption-style plans (`EP*`, `Y1`) because App Service outbound IP metadata is not stable enough to use as the only DB allowlist during validation. Cleanup removes that rule after the run.
 - AKS script defaults target `westus` with node VM size `Standard_D2s_v3` (override with `--location` / `--node-vm-size` if needed).
-- AWS script behavior: when existing AWS data inputs are not provided, `infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh` applies `infrastructure/terraform/examples/aws-data`. By default it destroys that auto-created data stack on cleanup. Reuse is explicit: set `--keep-data` or `HONUA_AWS_KEEP_DATA=true` to save outputs to `/tmp/honua-aws-data-reuse.env` (or `HONUA_AWS_DATA_CACHE_FILE`) and reuse them in subsequent runs.
+- AWS script behavior: when existing AWS data inputs are not provided, `infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh` applies `infrastructure/terraform/stacks/test/aws-data`. By default it destroys that auto-created data stack on cleanup. Reuse is explicit: set `--keep-data` or `HONUA_AWS_KEEP_DATA=true` to save outputs to `/tmp/honua-aws-data-reuse.env` (or `HONUA_AWS_DATA_CACHE_FILE`) and reuse them in subsequent runs.
 - AWS ECS validation forces `alb_deletion_protection=false` and `alb_access_logs_enabled=false` so ephemeral runs do not strand ALBs and log buckets during teardown.
 - AWS ECS canary validation is opt-in. When `HONUA_AWS_ECS_CANARY_ENABLED=true`, the live script provisions the secondary ECS service with `0%` default traffic unless you explicitly set a non-zero `HONUA_AWS_ECS_CANARY_WEIGHT_PERCENTAGE`, waits for the canary tasks to become healthy, and verifies the ALB header route before continuing. Recommended rollout shape is still two-step: create canary at `0%`, verify, then raise weight in a later run.
 - Azure Functions upgrade/rollback validation is now slot-based when `HONUA_RUN_UPGRADE_ROLLBACK=true`: the live script keeps production on the previous image, stages the candidate image in the configured deployment slot, exercises promote/rollback/restore through the Honua admin API, then reconciles Terraform back to the current image baseline.

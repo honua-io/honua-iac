@@ -24,6 +24,9 @@ paths=(
   "docs/operator-state.md"
   "infrastructure/terraform/README.md"
   "infrastructure/terraform/bootstrap"
+  "infrastructure/terraform/platforms"
+  "infrastructure/terraform/components"
+  "infrastructure/terraform/stacks/customer"
   "infrastructure/terraform/examples"
   "infrastructure/terraform/modules"
 )
@@ -40,11 +43,12 @@ Included:
 - root operator README
 - operator deployment/state guides
 - bootstrap identities
-- examples
-- modules
+- canonical platforms/components/customer stacks
+- examples and modules compatibility wrappers
 
 Excluded:
 - .github workflows
+- infrastructure/terraform/stacks/test
 - infrastructure/terraform/validation
 - docs/devops
 - docs/adr

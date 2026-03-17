@@ -1,6 +1,18 @@
 # Sourced by run-azure-terraform-integration.sh after the common logging,
 # runtime, config, verification, and network helpers have been defined.
 
+terraform_rollout_output() {
+  local root="$1"
+  local field="$2"
+
+  run_tf -chdir="$root" output -json | jq -r --arg field "$field" '
+    .deployment_contract.value.rollout[$field]
+    // .honua_integration_outputs.value.contracts.deployment.rollout[$field]
+    // (if $field == "current_revision" then .control_plane_current_revision.value else .control_plane_desired_revision.value end)
+    // empty
+  '
+}
+
 set_common_tf_vars() {
   ensure_existing_db_connection_string_shape
   ensure_existing_redis_connection_string_shape
@@ -107,16 +119,16 @@ apply_data_stack() {
   log_info "Applying Azure data stack"
   set_data_tf_vars
 
-  run_tf -chdir=examples/azure-data init -input=false -no-color
+  run_tf -chdir=stacks/test/azure-data init -input=false -no-color
   # Mark stack as applied before first plan/apply so cleanup destroys partial resources on failed apply.
   DATA_APPLIED=true
 
-  plan_apply "examples/azure-data" "data.tfplan" "azure-data"
+  plan_apply "stacks/test/azure-data" "data.tfplan" "azure-data"
 
-  EXISTING_DB_FQDN="$(run_tf -chdir=examples/azure-data output -raw db_fqdn)"
-  EXISTING_DB_CONNECTION_STRING="$(run_tf -chdir=examples/azure-data output -raw db_connection_string)"
-  EXISTING_REDIS_CONNECTION_STRING="$(run_tf -chdir=examples/azure-data output -raw redis_connection_string)"
-  DATA_RESOURCE_GROUP="$(run_tf -chdir=examples/azure-data output -raw resource_group_name)"
+  EXISTING_DB_FQDN="$(run_tf -chdir=stacks/test/azure-data output -raw db_fqdn)"
+  EXISTING_DB_CONNECTION_STRING="$(run_tf -chdir=stacks/test/azure-data output -raw db_connection_string)"
+  EXISTING_REDIS_CONNECTION_STRING="$(run_tf -chdir=stacks/test/azure-data output -raw redis_connection_string)"
+  DATA_RESOURCE_GROUP="$(run_tf -chdir=stacks/test/azure-data output -raw resource_group_name)"
   EXISTING_DB_RESOURCE_GROUP="$DATA_RESOURCE_GROUP"
 
   if [[ -z "$EXISTING_DB_FQDN" || -z "$EXISTING_DB_CONNECTION_STRING" ]]; then
@@ -130,7 +142,7 @@ apply_data_stack() {
   fi
 
   if [[ "$CHECK_IDEMPOTENCY" == "true" ]]; then
-    assert_idempotent_plan "examples/azure-data"
+    assert_idempotent_plan "stacks/test/azure-data"
   fi
 
   DATA_CREATED=true
@@ -204,7 +216,7 @@ apply_aca_stack() {
   log_info "Applying Azure ACA stack"
   set_aca_tf_vars
 
-  run_tf -chdir=examples/azure init -input=false -no-color
+  run_tf -chdir=stacks/test/azure init -input=false -no-color
   # Mark stack as applied before first plan/apply so cleanup destroys partial resources on failed apply.
   ACA_APPLIED=true
 
@@ -215,61 +227,61 @@ apply_aca_stack() {
     fi
 
     export TF_VAR_honua_image="$ACA_PREVIOUS_IMAGE"
-    plan_apply "examples/azure" "aca-prev.tfplan" "aca-previous"
-    url="$(run_tf -chdir=examples/azure output -raw honua_url)"
-    db_fqdn="$(run_tf -chdir=examples/azure output -raw database_fqdn)"
-    resource_group="$(run_tf -chdir=examples/azure output -raw resource_group_name)"
-    app_name="$(run_tf -chdir=examples/azure output -raw container_app_name)"
+    plan_apply "stacks/test/azure" "aca-prev.tfplan" "aca-previous"
+    url="$(run_tf -chdir=stacks/test/azure output -raw honua_url)"
+    db_fqdn="$(run_tf -chdir=stacks/test/azure output -raw database_fqdn)"
+    resource_group="$(run_tf -chdir=stacks/test/azure output -raw resource_group_name)"
+    app_name="$(run_tf -chdir=stacks/test/azure output -raw container_app_name)"
     run_aca_checks "$url" "$db_fqdn" "$resource_group" "$app_name"
 
     export TF_VAR_honua_image="$ACA_IMAGE"
-    plan_apply "examples/azure" "aca-upgrade.tfplan" "aca-upgrade"
-    url="$(run_tf -chdir=examples/azure output -raw honua_url)"
-    db_fqdn="$(run_tf -chdir=examples/azure output -raw database_fqdn)"
-    resource_group="$(run_tf -chdir=examples/azure output -raw resource_group_name)"
-    app_name="$(run_tf -chdir=examples/azure output -raw container_app_name)"
+    plan_apply "stacks/test/azure" "aca-upgrade.tfplan" "aca-upgrade"
+    url="$(run_tf -chdir=stacks/test/azure output -raw honua_url)"
+    db_fqdn="$(run_tf -chdir=stacks/test/azure output -raw database_fqdn)"
+    resource_group="$(run_tf -chdir=stacks/test/azure output -raw resource_group_name)"
+    app_name="$(run_tf -chdir=stacks/test/azure output -raw container_app_name)"
     run_aca_checks "$url" "$db_fqdn" "$resource_group" "$app_name"
 
     if [[ "$QUICK_SCALE" == "true" ]]; then
       log_info "Running quick ACA scale validation by raising min replicas to $ACA_SCALE_TARGET_MIN_REPLICAS"
       export TF_VAR_min_replicas="$ACA_SCALE_TARGET_MIN_REPLICAS"
-      plan_apply "examples/azure" "aca-scale.tfplan" "aca-scale"
+      plan_apply "stacks/test/azure" "aca-scale.tfplan" "aca-scale"
       wait_for_aca_replicas "$resource_group" "$app_name" "$ACA_SCALE_TARGET_MIN_REPLICAS" 600
       export TF_VAR_min_replicas="$ACA_MIN_REPLICAS"
-      plan_apply "examples/azure" "aca-scale-reset.tfplan" "aca-scale-reset"
+      plan_apply "stacks/test/azure" "aca-scale-reset.tfplan" "aca-scale-reset"
       if [[ "$ACA_MIN_REPLICAS" =~ ^[0-9]+$ ]] && (( ACA_MIN_REPLICAS > 0 )); then
         wait_for_aca_replicas "$resource_group" "$app_name" "$ACA_MIN_REPLICAS" 600
       fi
     fi
 
     export TF_VAR_honua_image="$ACA_PREVIOUS_IMAGE"
-    plan_apply "examples/azure" "aca-rollback.tfplan" "aca-rollback"
+    plan_apply "stacks/test/azure" "aca-rollback.tfplan" "aca-rollback"
     run_aca_checks "$url" "$db_fqdn" "$resource_group" "$app_name"
 
     if [[ "$AUTO_DESTROY" != "true" ]]; then
       export TF_VAR_honua_image="$ACA_IMAGE"
-      plan_apply "examples/azure" "aca-restore-current.tfplan" "aca-restore-current"
+      plan_apply "stacks/test/azure" "aca-restore-current.tfplan" "aca-restore-current"
       run_aca_checks "$url" "$db_fqdn" "$resource_group" "$app_name"
     fi
 
     export TF_VAR_honua_image="$ACA_IMAGE"
   else
-    plan_apply "examples/azure" "aca.tfplan" "aca"
+    plan_apply "stacks/test/azure" "aca.tfplan" "aca"
 
-    url="$(run_tf -chdir=examples/azure output -raw honua_url)"
-    db_fqdn="$(run_tf -chdir=examples/azure output -raw database_fqdn)"
-    resource_group="$(run_tf -chdir=examples/azure output -raw resource_group_name)"
-    app_name="$(run_tf -chdir=examples/azure output -raw container_app_name)"
+    url="$(run_tf -chdir=stacks/test/azure output -raw honua_url)"
+    db_fqdn="$(run_tf -chdir=stacks/test/azure output -raw database_fqdn)"
+    resource_group="$(run_tf -chdir=stacks/test/azure output -raw resource_group_name)"
+    app_name="$(run_tf -chdir=stacks/test/azure output -raw container_app_name)"
 
     run_aca_checks "$url" "$db_fqdn" "$resource_group" "$app_name"
 
     if [[ "$QUICK_SCALE" == "true" ]]; then
       log_info "Running quick ACA scale validation by raising min replicas to $ACA_SCALE_TARGET_MIN_REPLICAS"
       export TF_VAR_min_replicas="$ACA_SCALE_TARGET_MIN_REPLICAS"
-      plan_apply "examples/azure" "aca-scale.tfplan" "aca-scale"
+      plan_apply "stacks/test/azure" "aca-scale.tfplan" "aca-scale"
       wait_for_aca_replicas "$resource_group" "$app_name" "$ACA_SCALE_TARGET_MIN_REPLICAS" 600
       export TF_VAR_min_replicas="$ACA_MIN_REPLICAS"
-      plan_apply "examples/azure" "aca-scale-reset.tfplan" "aca-scale-reset"
+      plan_apply "stacks/test/azure" "aca-scale-reset.tfplan" "aca-scale-reset"
       if [[ "$ACA_MIN_REPLICAS" =~ ^[0-9]+$ ]] && (( ACA_MIN_REPLICAS > 0 )); then
         wait_for_aca_replicas "$resource_group" "$app_name" "$ACA_MIN_REPLICAS" 600
       fi
@@ -277,11 +289,11 @@ apply_aca_stack() {
   fi
 
   if [[ "$CHECK_IDEMPOTENCY" == "true" ]]; then
-    assert_idempotent_plan "examples/azure"
+    assert_idempotent_plan "stacks/test/azure"
   fi
 
   tf_output_json="$(mktemp "${TMPDIR:-/tmp}/honua-azure-aca-outputs.XXXXXX.json")"
-  run_tf -chdir=examples/azure output -json > "$tf_output_json"
+  run_tf -chdir=stacks/test/azure output -json > "$tf_output_json"
 
   HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON="$tf_output_json" \
   HONUA_PLATFORM_VALIDATION_PUBLISH_DB_HOST="$db_fqdn" \
@@ -294,7 +306,7 @@ apply_aca_stack() {
   run_honua_platform_post_apply_validation "$url" "azure-container-apps"
 
   log_info "ACA stack checks passed"
-  log_info "ACA URL: $(run_tf -chdir=examples/azure output -raw honua_url)"
+  log_info "ACA URL: $(run_tf -chdir=stacks/test/azure output -raw honua_url)"
 }
 
 apply_functions_stack() {
@@ -309,7 +321,7 @@ apply_functions_stack() {
   log_info "Applying Azure Functions stack"
   set_functions_tf_vars
 
-  run_tf -chdir=examples/azure-functions init -input=false -no-color
+  run_tf -chdir=stacks/test/azure-functions init -input=false -no-color
   # Mark stack as applied before first plan/apply so cleanup destroys partial resources on failed apply.
   FUNCTIONS_APPLIED=true
 
@@ -324,13 +336,13 @@ apply_functions_stack() {
 
     export TF_VAR_honua_image="$FUNCTIONS_PREVIOUS_IMAGE"
     export TF_VAR_deployment_slot_image="$FUNCTIONS_PREVIOUS_IMAGE"
-    plan_apply "examples/azure-functions" "functions-prev.tfplan" "functions-previous"
-    url="$(run_tf -chdir=examples/azure-functions output -raw honua_url)"
-    db_fqdn="$(run_tf -chdir=examples/azure-functions output -raw db_fqdn)"
-    resource_group="$(run_tf -chdir=examples/azure-functions output -raw resource_group_name)"
-    app_name="$(run_tf -chdir=examples/azure-functions output -raw function_app_name)"
+    plan_apply "stacks/test/azure-functions" "functions-prev.tfplan" "functions-previous"
+    url="$(run_tf -chdir=stacks/test/azure-functions output -raw honua_url)"
+    db_fqdn="$(run_tf -chdir=stacks/test/azure-functions output -raw db_fqdn)"
+    resource_group="$(run_tf -chdir=stacks/test/azure-functions output -raw resource_group_name)"
+    app_name="$(run_tf -chdir=stacks/test/azure-functions output -raw function_app_name)"
     run_functions_checks "$url" "$db_fqdn" "$resource_group" "$app_name"
-    previous_live_revision="$(run_tf -chdir=examples/azure-functions output -raw control_plane_current_revision)"
+    previous_live_revision="$(terraform_rollout_output "stacks/test/azure-functions" "current_revision")"
     if [[ -z "$previous_live_revision" || "$previous_live_revision" == "null" ]]; then
       log_error "Functions validation requires control_plane_current_revision once the deployment slot is enabled"
       return 1
@@ -338,34 +350,34 @@ apply_functions_stack() {
 
     export TF_VAR_honua_image="$FUNCTIONS_PREVIOUS_IMAGE"
     export TF_VAR_deployment_slot_image="$FUNCTIONS_IMAGE"
-    plan_apply "examples/azure-functions" "functions-stage-current.tfplan" "functions-stage-current"
-    url="$(run_tf -chdir=examples/azure-functions output -raw honua_url)"
-    db_fqdn="$(run_tf -chdir=examples/azure-functions output -raw db_fqdn)"
-    resource_group="$(run_tf -chdir=examples/azure-functions output -raw resource_group_name)"
-    app_name="$(run_tf -chdir=examples/azure-functions output -raw function_app_name)"
-    desired_revision="$(run_tf -chdir=examples/azure-functions output -raw control_plane_desired_revision)"
+    plan_apply "stacks/test/azure-functions" "functions-stage-current.tfplan" "functions-stage-current"
+    url="$(run_tf -chdir=stacks/test/azure-functions output -raw honua_url)"
+    db_fqdn="$(run_tf -chdir=stacks/test/azure-functions output -raw db_fqdn)"
+    resource_group="$(run_tf -chdir=stacks/test/azure-functions output -raw resource_group_name)"
+    app_name="$(run_tf -chdir=stacks/test/azure-functions output -raw function_app_name)"
+    desired_revision="$(terraform_rollout_output "stacks/test/azure-functions" "desired_revision")"
     if [[ -z "$desired_revision" || "$desired_revision" == "null" ]]; then
       log_error "Functions validation requires control_plane_desired_revision once the deployment slot is enabled"
       return 1
     fi
     run_functions_checks "$url" "$db_fqdn" "$resource_group" "$app_name"
   else
-    plan_apply "examples/azure-functions" "functions.tfplan" "functions"
+    plan_apply "stacks/test/azure-functions" "functions.tfplan" "functions"
 
-    url="$(run_tf -chdir=examples/azure-functions output -raw honua_url)"
-    db_fqdn="$(run_tf -chdir=examples/azure-functions output -raw db_fqdn)"
-    resource_group="$(run_tf -chdir=examples/azure-functions output -raw resource_group_name)"
-    app_name="$(run_tf -chdir=examples/azure-functions output -raw function_app_name)"
+    url="$(run_tf -chdir=stacks/test/azure-functions output -raw honua_url)"
+    db_fqdn="$(run_tf -chdir=stacks/test/azure-functions output -raw db_fqdn)"
+    resource_group="$(run_tf -chdir=stacks/test/azure-functions output -raw resource_group_name)"
+    app_name="$(run_tf -chdir=stacks/test/azure-functions output -raw function_app_name)"
 
     run_functions_checks "$url" "$db_fqdn" "$resource_group" "$app_name"
   fi
 
   if [[ "$CHECK_IDEMPOTENCY" == "true" ]]; then
-    assert_idempotent_plan "examples/azure-functions"
+    assert_idempotent_plan "stacks/test/azure-functions"
   fi
 
   tf_output_json="$(mktemp "${TMPDIR:-/tmp}/honua-azure-functions-outputs.XXXXXX.json")"
-  run_tf -chdir=examples/azure-functions output -json > "$tf_output_json"
+  run_tf -chdir=stacks/test/azure-functions output -json > "$tf_output_json"
 
   HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON="$tf_output_json" \
   HONUA_PLATFORM_VALIDATION_PUBLISH_DB_HOST="$db_fqdn" \
@@ -390,16 +402,16 @@ apply_functions_stack() {
     export TF_VAR_deployment_slot_enabled="true"
     export TF_VAR_deployment_slot_name="$FUNCTIONS_DEPLOYMENT_SLOT_NAME"
     export TF_VAR_deployment_slot_image="$FUNCTIONS_IMAGE"
-    plan_apply "examples/azure-functions" "functions-reconcile-current.tfplan" "functions-reconcile-current"
-    url="$(run_tf -chdir=examples/azure-functions output -raw honua_url)"
-    db_fqdn="$(run_tf -chdir=examples/azure-functions output -raw db_fqdn)"
-    resource_group="$(run_tf -chdir=examples/azure-functions output -raw resource_group_name)"
-    app_name="$(run_tf -chdir=examples/azure-functions output -raw function_app_name)"
+    plan_apply "stacks/test/azure-functions" "functions-reconcile-current.tfplan" "functions-reconcile-current"
+    url="$(run_tf -chdir=stacks/test/azure-functions output -raw honua_url)"
+    db_fqdn="$(run_tf -chdir=stacks/test/azure-functions output -raw db_fqdn)"
+    resource_group="$(run_tf -chdir=stacks/test/azure-functions output -raw resource_group_name)"
+    app_name="$(run_tf -chdir=stacks/test/azure-functions output -raw function_app_name)"
     run_functions_checks "$url" "$db_fqdn" "$resource_group" "$app_name"
   fi
 
   log_info "Functions stack checks passed"
-  log_info "Functions URL: $(run_tf -chdir=examples/azure-functions output -raw honua_url)"
+  log_info "Functions URL: $(run_tf -chdir=stacks/test/azure-functions output -raw honua_url)"
 }
 
 destroy_aca_stack() {
@@ -409,7 +421,7 @@ destroy_aca_stack() {
 
   log_info "Destroying Azure ACA stack"
   set_aca_tf_vars
-  run_tf -chdir=examples/azure destroy -input=false -auto-approve -no-color || log_warn "ACA destroy encountered errors"
+  run_tf -chdir=stacks/test/azure destroy -input=false -auto-approve -no-color || log_warn "ACA destroy encountered errors"
 }
 
 destroy_functions_stack() {
@@ -419,7 +431,7 @@ destroy_functions_stack() {
 
   log_info "Destroying Azure Functions stack"
   set_functions_tf_vars
-  run_tf -chdir=examples/azure-functions destroy -input=false -auto-approve -no-color || log_warn "Functions destroy encountered errors"
+  run_tf -chdir=stacks/test/azure-functions destroy -input=false -auto-approve -no-color || log_warn "Functions destroy encountered errors"
 }
 
 destroy_data_stack() {
@@ -429,7 +441,7 @@ destroy_data_stack() {
 
   log_info "Destroying Azure data stack"
   set_data_tf_vars
-  if run_tf -chdir=examples/azure-data destroy -input=false -auto-approve -no-color; then
+  if run_tf -chdir=stacks/test/azure-data destroy -input=false -auto-approve -no-color; then
     clear_data_reuse_cache
   else
     log_warn "Data stack destroy encountered errors"

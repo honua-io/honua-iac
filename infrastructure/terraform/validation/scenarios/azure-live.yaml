@@ -1,0 +1,14 @@
+apiVersion: honua/v1
+kind: scenario
+id: azure-live
+name: Azure Live Validation
+job: azure-live
+category: live
+clouds:
+  - azure
+requiresLive: true
+requiresDrift: false
+roots:
+  - infrastructure/terraform/stacks/test/azure
+  - infrastructure/terraform/stacks/test/azure-functions
+  - infrastructure/terraform/stacks/test/azure-data

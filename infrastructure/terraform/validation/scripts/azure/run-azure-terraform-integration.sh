@@ -122,7 +122,7 @@ Run live Terraform integration tests for Azure ACA and Azure Functions.
 Usage:
   ./infrastructure/terraform/validation/scripts/azure/run-azure-terraform-integration.sh [options]
 
-When existing DB/Redis settings are not provided, the script provisions 'examples/azure-data'
+When existing DB/Redis settings are not provided, the script provisions 'stacks/test/azure-data'
 first and then feeds those outputs into ACA/Functions validation applies.
 
 Options:

@@ -4,7 +4,7 @@ Terraform for deploying Honua into customer-owned AWS and Azure environments.
 
 ## Operator path
 
-Choose a stack under `infrastructure/terraform/examples/`, copy `backend.tf.example` and `terraform.tfvars.example`, then apply:
+Choose a compatibility example under `infrastructure/terraform/examples/`, copy `backend.tf.example` and `terraform.tfvars.example`, then apply:
 
 ```bash
 cp infrastructure/terraform/examples/aws/backend.tf.example \
@@ -37,14 +37,18 @@ To produce a customer-ready distribution without CI internals:
 ./scripts/package-customer-terraform.sh
 ```
 
-This writes `dist/customer-terraform/` with modules, examples, bootstrap templates, and operator docs while excluding GitHub workflows and maintainer validation assets.
+This writes `dist/customer-terraform/` with canonical `platforms/`, `components/`, `stacks/customer/`, compatibility `examples/` and `modules/`, bootstrap templates, and operator docs while excluding maintainer validation assets.
 
 ## Repository layout
 
-- `infrastructure/terraform/modules/`: reusable Terraform modules
-- `infrastructure/terraform/examples/`: deployable stacks and starter configs
+- `infrastructure/terraform/platforms/`: canonical provider-native runtime implementations
+- `infrastructure/terraform/components/`: canonical shared data and add-on implementations
+- `infrastructure/terraform/stacks/customer/`: canonical operator-facing stack compositions
+- `infrastructure/terraform/stacks/test/`: maintainer-only validation roots
+- `infrastructure/terraform/examples/`: compatibility wrappers and starter configs for operators
+- `infrastructure/terraform/modules/`: compatibility wrappers over canonical platforms/components
 - `infrastructure/terraform/bootstrap/`: optional least-privilege identity bootstrap templates
-- `infrastructure/terraform/validation/`: maintainer-only integration scripts and runbook helpers
+- `infrastructure/terraform/validation/`: scenario manifests, typed runner, and maintainer validation adapters
 - `.github/workflows/`: CI and live validation workflows
 
 ## Maintainer path

@@ -1,95 +1,93 @@
+// Pass through the canonical platform/component outputs.
+
 output "environment" {
-  value = var.environment
+  value = module.platform.environment
 }
 
 output "function_app_name" {
-  value = azurerm_linux_function_app.this.name
+  value = module.platform.function_app_name
 }
 
 output "function_app_id" {
-  value = azurerm_linux_function_app.this.id
+  value = module.platform.function_app_id
 }
 
 output "resource_group_name" {
-  value = azurerm_resource_group.this.name
+  value = module.platform.resource_group_name
 }
 
 output "function_app_slot_name" {
-  value = var.deployment_slot_enabled ? azurerm_linux_function_app_slot.staging[0].name : null
+  value = module.platform.function_app_slot_name
 }
 
 output "function_app_slot_id" {
-  value = var.deployment_slot_enabled ? azurerm_linux_function_app_slot.staging[0].id : null
+  value = module.platform.function_app_slot_id
 }
 
 output "control_plane_target_kind" {
-  value = "AzureFunctions"
+  value = module.platform.control_plane_target_kind
 }
 
 output "control_plane_backend_name" {
-  value = "honua-gitops-azure-functions"
+  value = module.platform.control_plane_backend_name
 }
 
 output "control_plane_target_id" {
-  value = azurerm_linux_function_app.this.name
+  value = module.platform.control_plane_target_id
 }
 
 output "control_plane_target_name" {
-  value = azurerm_linux_function_app.this.name
+  value = module.platform.control_plane_target_name
 }
 
 output "control_plane_target_resource_id" {
-  value = azurerm_linux_function_app.this.id
+  value = module.platform.control_plane_target_resource_id
 }
 
 output "control_plane_target_resource_group" {
-  value = azurerm_resource_group.this.name
+  value = module.platform.control_plane_target_resource_group
 }
 
 output "control_plane_telemetry_policy" {
-  value = "honua-http"
+  value = module.platform.control_plane_telemetry_policy
 }
 
 output "control_plane_current_revision" {
-  value = var.deployment_slot_enabled ? "production" : null
+  value = module.platform.control_plane_current_revision
 }
 
 output "control_plane_desired_revision" {
-  value = var.deployment_slot_enabled ? var.deployment_slot_name : null
+  value = module.platform.control_plane_desired_revision
 }
 
 output "control_plane_slot_name" {
-  value = var.deployment_slot_enabled ? azurerm_linux_function_app_slot.staging[0].name : null
+  value = module.platform.control_plane_slot_name
 }
 
 output "control_plane_current_image" {
-  value = var.image
+  value = module.platform.control_plane_current_image
 }
 
 output "control_plane_desired_image" {
-  value = var.deployment_slot_enabled ? local.slot_image : null
+  value = module.platform.control_plane_desired_image
 }
 
 output "function_app_url" {
-  value = "https://${azurerm_linux_function_app.this.default_hostname}"
+  value = module.platform.function_app_url
 }
 
 output "db_fqdn" {
-  value     = local.db_server_fqdn
-  sensitive = true
+  value = module.platform.db_fqdn
 }
 
 output "db_connection_string" {
-  value     = local.db_connection_string
-  sensitive = true
+  value = module.platform.db_connection_string
 }
 
 output "redis_connection_string" {
-  value     = local.redis_connection
-  sensitive = true
+  value = module.platform.redis_connection_string
 }
 
 output "redis_connection_secret_id" {
-  value     = local.redis_connection != "" ? azurerm_key_vault_secret.redis_connection[0].id : null
-  sensitive = true
+  value = module.platform.redis_connection_secret_id
 }

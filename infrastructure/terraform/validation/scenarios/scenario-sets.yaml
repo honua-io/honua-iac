@@ -1,0 +1,22 @@
+apiVersion: honua/v1
+kind: scenarioSets
+sets:
+  standard:
+    - azure-live
+    - aws-live
+    - kubernetes-live
+  full:
+    - azure-live
+    - aws-live
+    - kubernetes-live
+    - aks-live
+    - eks-live
+    - drift-detect
+  aws:
+    - aws-live
+    - eks-live
+  azure:
+    - azure-live
+    - aks-live
+  kubernetes:
+    - kubernetes-live

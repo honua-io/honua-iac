@@ -44,6 +44,7 @@ concurrency:
 env:
   TF_IN_AUTOMATION: true
   HONUA_MAX_RUN_COST_USD: ${{ vars.HONUA_MAX_RUN_COST_USD || '100' }}
+  HONUA_TERRAFORM_VALIDATION_RUNNER_PROJECT: infrastructure/terraform/validation/runner/Honua.Terraform.ValidationRunner/Honua.Terraform.ValidationRunner.csproj
 
 jobs:
   static-validate:
@@ -57,6 +58,11 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.200'
+
       - name: Terraform fmt check
         run: |
           terraform fmt -check -recursive infrastructure/terraform
@@ -67,33 +73,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          roots=(
-            "infrastructure/terraform/bootstrap/azure-aca"
-            "infrastructure/terraform/bootstrap/azure-functions"
-            "infrastructure/terraform/bootstrap/azure-aks"
-            "infrastructure/terraform/bootstrap/aws-ecs"
-            "infrastructure/terraform/bootstrap/aws-serverless"
-            "infrastructure/terraform/bootstrap/aws-eks"
-            "infrastructure/terraform/examples/azure"
-            "infrastructure/terraform/examples/azure-data"
-            "infrastructure/terraform/examples/azure-functions"
-            "infrastructure/terraform/examples/aws"
-            "infrastructure/terraform/examples/aws-serverless"
-            "infrastructure/terraform/examples/aws-data"
-            "infrastructure/terraform/examples/azure-aks"
-            "infrastructure/terraform/examples/aws-eks"
-            "infrastructure/terraform/examples/observability"
-            "infrastructure/terraform/modules/azure-aca"
-            "infrastructure/terraform/modules/azure-data"
-            "infrastructure/terraform/modules/azure-functions"
-            "infrastructure/terraform/modules/aws-ecs"
-            "infrastructure/terraform/modules/aws-serverless"
-            "infrastructure/terraform/modules/aws-data"
-            "infrastructure/terraform/modules/azure-aks"
-            "infrastructure/terraform/modules/aws-eks"
-            "infrastructure/terraform/modules/observability-stack"
-            "docs/devops/examples"
-          )
+          mapfile -t roots < <(dotnet run --project "$HONUA_TERRAFORM_VALIDATION_RUNNER_PROJECT" -- roots static-validate --format lines)
 
           for root in "${roots[@]}"; do
             echo "::group::terraform init ($root)"
@@ -110,17 +90,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          test_roots=(
-            "infrastructure/terraform/examples/aws"
-            "infrastructure/terraform/examples/aws-serverless"
-            "infrastructure/terraform/examples/aws-data"
-            "infrastructure/terraform/examples/aws-eks"
-            "infrastructure/terraform/examples/azure"
-            "infrastructure/terraform/examples/azure-functions"
-            "infrastructure/terraform/examples/azure-data"
-            "infrastructure/terraform/examples/azure-aks"
-            "infrastructure/terraform/examples/observability"
-          )
+          mapfile -t test_roots < <(dotnet run --project "$HONUA_TERRAFORM_VALIDATION_RUNNER_PROJECT" -- roots native-tests --format lines)
 
           for root in "${test_roots[@]}"; do
             echo "::group::terraform test ($root)"
@@ -139,6 +109,11 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.200'
 
       - name: Setup tflint
         uses: terraform-linters/setup-tflint@v4

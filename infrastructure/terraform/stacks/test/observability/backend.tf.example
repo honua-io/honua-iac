@@ -1,0 +1,22 @@
+# Choose one backend block and remove the other before terraform init.
+#
+# AWS / S3
+# terraform {
+#   backend "s3" {
+#     bucket         = "replace-with-terraform-state-bucket"
+#     key            = "honua/observability/terraform.tfstate"
+#     region         = "us-east-1"
+#     dynamodb_table = "replace-with-terraform-lock-table"
+#     encrypt        = true
+#   }
+# }
+#
+# Azure / azurerm
+# terraform {
+#   backend "azurerm" {
+#     resource_group_name  = "replace-with-tfstate-resource-group"
+#     storage_account_name = "replacewithtfstateacct"
+#     container_name       = "tfstate"
+#     key                  = "honua/observability/terraform.tfstate"
+#   }
+# }

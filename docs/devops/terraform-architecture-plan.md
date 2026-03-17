@@ -2,6 +2,15 @@
 
 This plan turns [ADR 0001](../adr/0001-terraform-architecture-refactor.md) into a migration sequence that preserves customer usability while reducing maintainer complexity.
 
+## Status
+
+- Phase 0 completed on 2026-03-15.
+- Phase 1 completed with contract outputs on the canonical customer stacks and compatibility wrappers.
+- Phase 2 completed with AWS, Azure, and Kubernetes shell entrypoints split into smaller library-oriented adapters.
+- Phase 3 completed with the `.NET 10` validation runner and YAML scenario catalog under `validation/runner` and `validation/scenarios`.
+- Phase 4 completed with canonical `platforms/`, `components/`, `stacks/customer/`, and `stacks/test/` directories, plus compatibility wrappers for `examples/*` and `modules/*`.
+- Phase 5 completed for validation orchestration: live validation now targets `stacks/test/*` and contract-driven rollout metadata instead of depending on the legacy example-root layout.
+
 ## Goals
 
 - keep customer deployment entrypoints simple and stable
@@ -34,6 +43,8 @@ This plan turns [ADR 0001](../adr/0001-terraform-architecture-refactor.md) into 
 
 ## Phase 0: Baseline And Guardrails
 
+Status: Completed
+
 Scope:
 
 - document the target architecture
@@ -54,6 +65,8 @@ Acceptance criteria:
 - no existing customer deployment path changes yet
 
 ## Phase 1: Stack Contracts
+
+Status: Completed
 
 Scope:
 
@@ -97,6 +110,8 @@ Recommended first slice:
 
 ## Phase 2: Normalize Shell Adapters
 
+Status: Completed
+
 Scope:
 
 - bring AWS and Kubernetes validation orchestration to the same decomposition standard as Azure
@@ -121,6 +136,8 @@ Acceptance criteria:
 - the same validation scenario can be traced through a small number of explicit functions
 
 ## Phase 3: Scenario Manifests And Typed Runner
+
+Status: Completed
 
 Scope:
 
@@ -167,6 +184,8 @@ Acceptance criteria:
 
 ## Phase 4: Recompose Customer And Test Stacks
 
+Status: Completed
+
 Scope:
 
 - extract real shared Terraform components where duplication is meaningful
@@ -191,6 +210,8 @@ Acceptance criteria:
 - validation stacks can evolve without destabilizing the operator-facing interface
 
 ## Phase 5: Remove Compatibility Shims
+
+Status: Completed for validation orchestration and canonical stack ownership. Compatibility outputs remain intentionally available at the stack boundary so customer automation can migrate without a flag day.
 
 Scope:
 

@@ -1,0 +1,19 @@
+location    = "eastus"
+environment = "prod"
+name_prefix = "honuafn"
+
+honua_image          = "ghcr.io/honua-io/honua-server:replace-me"
+honua_admin_password = "replace-with-32-plus-character-admin-password"
+db_admin_password    = "replace-with-database-password"
+
+deployment_slot_enabled = false
+plan_sku_name           = "EP1"
+enable_postgis          = true
+redis_enabled           = true
+skip_migrations         = true
+
+tags = {
+  environment = "prod"
+  owner       = "platform"
+  cost_center = "geo"
+}

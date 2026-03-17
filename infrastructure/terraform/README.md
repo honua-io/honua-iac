@@ -1,4 +1,4 @@
-# Terraform Modules and Stacks
+# Terraform Platforms And Stacks
 
 This directory contains the customer deployment surface for Honua plus the maintainer validation assets that exercise it.
 
@@ -11,7 +11,7 @@ This directory contains the customer deployment surface for Honua plus the maint
 
 ## Operator quick start
 
-Each example stack now ships with:
+Each compatibility example stack now ships with:
 
 - `backend.tf.example`
 - `terraform.tfvars.example`
@@ -38,15 +38,29 @@ Customer output groups:
 
 Provider versioning policy:
 
-- modules stay compatibility-oriented
-- example stacks pin to the tested provider minor line for safer customer upgrades
+- canonical customer stacks pin to the tested provider minor line for safer operator upgrades
+- compatibility wrappers (`examples/*`, `modules/*`) stay aligned to the canonical stacks and platforms
 
 Operator guides:
 
 - `docs/operator-deployment.md`
 - `docs/operator-state.md`
 
-## Modules
+## Canonical Layout
+
+- `platforms/aws-ecs`
+- `platforms/aws-serverless`
+- `platforms/aws-eks`
+- `platforms/azure-aca`
+- `platforms/azure-functions`
+- `platforms/azure-aks`
+- `components/data/aws-postgres-redis`
+- `components/data/azure-postgres-redis`
+- `components/observability`
+- `stacks/customer/*`
+- `stacks/test/*`
+
+## Compatibility Layout
 
 - `modules/aws-ecs`
 - `modules/aws-serverless`
@@ -69,6 +83,8 @@ Operator guides:
 - `examples/azure-data`
 - `examples/azure-aks`
 - `examples/observability`
+
+`examples/*` now wrap `stacks/customer/*`, and `modules/*` now wrap the canonical `platforms/*` and `components/*`.
 
 ## Bootstrap identities
 
@@ -102,6 +118,8 @@ This creates `dist/customer-terraform/` with modules, examples, bootstrap templa
 
 Validation automation is isolated from the operator surface under:
 
+- `validation/runner/Honua.Terraform.ValidationRunner`
+- `validation/scenarios`
 - `validation/scripts/aws`
 - `validation/scripts/azure`
 - `validation/scripts/k8s`

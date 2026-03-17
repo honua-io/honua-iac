@@ -713,16 +713,16 @@ run_quota_preflight() {
 apply_cluster() {
   set_tf_vars
 
-  run_tf -chdir=examples/azure-aks init -input=false -no-color
-  plan_apply "examples/azure-aks" "aks.tfplan" "aks"
+  run_tf -chdir=stacks/test/azure-aks init -input=false -no-color
+  plan_apply "stacks/test/azure-aks" "aks.tfplan" "aks"
 
   CLUSTER_APPLIED=true
 
-  RESOURCE_GROUP_NAME="$(run_tf -chdir=examples/azure-aks output -raw resource_group_name)"
-  CLUSTER_NAME="$(run_tf -chdir=examples/azure-aks output -raw cluster_name)"
+  RESOURCE_GROUP_NAME="$(run_tf -chdir=stacks/test/azure-aks output -raw resource_group_name)"
+  CLUSTER_NAME="$(run_tf -chdir=stacks/test/azure-aks output -raw cluster_name)"
 
   if [[ "$CHECK_IDEMPOTENCY" == "true" ]]; then
-    assert_idempotent_plan "examples/azure-aks"
+    assert_idempotent_plan "stacks/test/azure-aks"
   fi
 }
 
@@ -824,7 +824,7 @@ destroy_cluster() {
 
   log_info "Destroying AKS integration cluster"
   set_tf_vars
-  run_tf -chdir=examples/azure-aks destroy -input=false -auto-approve -no-color || log_warn "AKS destroy encountered errors"
+  run_tf -chdir=stacks/test/azure-aks destroy -input=false -auto-approve -no-color || log_warn "AKS destroy encountered errors"
 }
 
 verify_no_leaks() {

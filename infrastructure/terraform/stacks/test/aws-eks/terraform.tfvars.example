@@ -1,0 +1,13 @@
+region      = "us-east-1"
+environment = "prod"
+name_prefix = "honua"
+
+cluster_version      = "1.30"
+node_instance_types  = ["t4g.small"]
+node_desired_size    = 2
+
+tags = {
+  environment = "prod"
+  owner       = "platform"
+  cost_center = "geo"
+}

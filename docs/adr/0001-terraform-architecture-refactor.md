@@ -1,7 +1,7 @@
 # ADR 0001: Layer Terraform around stack contracts, platform modules, and scenario-driven validation
 
-- Status: Proposed
-- Date: 2026-03-15
+- Status: Accepted
+- Date: 2026-03-16
 
 ## Context
 

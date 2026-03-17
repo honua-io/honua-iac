@@ -1,0 +1,8 @@
+terraform {
+  backend "azurerm" {
+    resource_group_name  = "replace-with-tfstate-resource-group"
+    storage_account_name = "replacewithtfstateacct"
+    container_name       = "tfstate"
+    key                  = "honua/azure-data/terraform.tfstate"
+  }
+}

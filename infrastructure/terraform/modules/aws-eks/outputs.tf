@@ -1,69 +1,57 @@
+// Pass through the canonical platform/component outputs.
+
 output "cluster_name" {
-  description = "EKS cluster name."
-  value       = module.eks.cluster_name
+  value = module.platform.cluster_name
 }
 
 output "environment" {
-  description = "Deployment environment label used for control-plane target IDs."
-  value       = var.environment
+  value = module.platform.environment
 }
 
 output "cluster_arn" {
-  description = "EKS cluster ARN."
-  value       = module.eks.cluster_arn
+  value = module.platform.cluster_arn
 }
 
 output "cluster_endpoint" {
-  description = "EKS cluster endpoint."
-  value       = module.eks.cluster_endpoint
+  value = module.platform.cluster_endpoint
 }
 
 output "cluster_certificate_authority_data" {
-  description = "Base64 encoded EKS cluster CA data."
-  value       = module.eks.cluster_certificate_authority_data
+  value = module.platform.cluster_certificate_authority_data
 }
 
 output "vpc_id" {
-  description = "VPC ID used by the EKS cluster."
-  value       = module.vpc.vpc_id
+  value = module.platform.vpc_id
 }
 
 output "oidc_provider_arn" {
-  description = "ARN of the OIDC provider for IRSA."
-  value       = module.eks.oidc_provider_arn
+  value = module.platform.oidc_provider_arn
 }
 
 output "oidc_provider" {
-  description = "OIDC provider URL (without https://)."
-  value       = module.eks.oidc_provider
+  value = module.platform.oidc_provider
 }
 
 output "cluster_security_group_id" {
-  description = "Security group ID attached to the EKS cluster."
-  value       = module.eks.cluster_security_group_id
+  value = module.platform.cluster_security_group_id
 }
 
 output "node_security_group_id" {
-  description = "Security group ID attached to EKS managed node groups."
-  value       = module.eks.node_security_group_id
+  value = module.platform.node_security_group_id
 }
 
 output "control_plane_target_kind" {
-  description = "Honua control-plane deploy target kind for this cluster."
-  value       = "Kubernetes"
+  value = module.platform.control_plane_target_kind
 }
 
 output "control_plane_backend_name" {
-  description = "Honua control-plane deploy backend name for Kubernetes GitOps."
-  value       = "honua-gitops-kubernetes"
+  value = module.platform.control_plane_backend_name
 }
 
 output "control_plane_telemetry_policy" {
-  description = "Default Honua telemetry policy for Kubernetes deploy health evaluation."
-  value       = "kubernetes-honua-http"
+  value = module.platform.control_plane_telemetry_policy
 }
 
 output "honua_metrics_target" {
-  description = "Default Honua workload name hint used by the standard Helm deployment."
-  value       = "honua"
+  value = module.platform.honua_metrics_target
 }

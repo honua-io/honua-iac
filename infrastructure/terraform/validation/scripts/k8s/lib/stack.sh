@@ -148,7 +148,7 @@ deploy_honua_stack() {
 
 apply_observability_stack() {
   local root
-  root="$TEMP_REPO_ROOT/infrastructure/terraform/examples/observability"
+  root="$TEMP_REPO_ROOT/infrastructure/terraform/stacks/test/observability"
 
   log_info "Applying Terraform observability stack against Kubernetes cluster"
 
@@ -180,7 +180,7 @@ apply_observability_stack() {
 
 destroy_observability_stack() {
   local root
-  root="$TEMP_REPO_ROOT/infrastructure/terraform/examples/observability"
+  root="$TEMP_REPO_ROOT/infrastructure/terraform/stacks/test/observability"
 
   if [[ "$OBS_APPLIED" != "true" ]]; then
     return

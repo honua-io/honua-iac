@@ -1,0 +1,11 @@
+apiVersion: honua/v1
+kind: scenario
+id: drift-detect
+name: Terraform Drift Detection
+job: drift-detect
+category: drift
+clouds:
+  - neutral
+requiresLive: false
+requiresDrift: true
+roots: []

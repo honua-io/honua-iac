@@ -560,14 +560,14 @@ verify_ecs_canary_route() {
   local canary_header_name
   local canary_header_value
 
-  canary_enabled="$(run_tf -chdir=examples/aws output -raw canary_enabled)"
+  canary_enabled="$(run_tf -chdir=stacks/test/aws output -raw canary_enabled)"
   if [[ "$canary_enabled" != "true" ]]; then
     return 0
   fi
 
-  canary_service_name="$(run_tf -chdir=examples/aws output -raw canary_ecs_service_name)"
-  canary_header_name="$(run_tf -chdir=examples/aws output -raw canary_verification_header_name)"
-  canary_header_value="$(run_tf -chdir=examples/aws output -raw canary_verification_header_value)"
+  canary_service_name="$(run_tf -chdir=stacks/test/aws output -raw canary_ecs_service_name)"
+  canary_header_name="$(run_tf -chdir=stacks/test/aws output -raw canary_verification_header_name)"
+  canary_header_value="$(run_tf -chdir=stacks/test/aws output -raw canary_verification_header_value)"
 
   if [[ -z "$canary_service_name" || "$canary_service_name" == "null" ]]; then
     log_error "Canary validation failed: canary service name output was empty"

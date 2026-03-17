@@ -1,0 +1,12 @@
+apiVersion: honua/v1
+kind: scenario
+id: aks-live
+name: AKS Live Validation
+job: aks-live
+category: live
+clouds:
+  - azure
+requiresLive: true
+requiresDrift: false
+roots:
+  - infrastructure/terraform/stacks/test/azure-aks

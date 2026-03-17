@@ -1,45 +1,37 @@
+// Pass through the canonical platform/component outputs.
+
 output "resource_group_name" {
-  description = "AKS resource group name."
-  value       = azurerm_resource_group.this.name
+  value = module.platform.resource_group_name
 }
 
 output "environment" {
-  description = "Deployment environment label used for control-plane target IDs."
-  value       = var.environment
+  value = module.platform.environment
 }
 
 output "cluster_name" {
-  description = "AKS cluster name."
-  value       = azurerm_kubernetes_cluster.this.name
+  value = module.platform.cluster_name
 }
 
 output "cluster_id" {
-  description = "AKS cluster resource ID."
-  value       = azurerm_kubernetes_cluster.this.id
+  value = module.platform.cluster_id
 }
 
 output "kube_config_raw" {
-  description = "Raw kubeconfig for the AKS cluster."
-  value       = azurerm_kubernetes_cluster.this.kube_config_raw
-  sensitive   = true
+  value = module.platform.kube_config_raw
 }
 
 output "control_plane_target_kind" {
-  description = "Honua control-plane deploy target kind for this cluster."
-  value       = "Kubernetes"
+  value = module.platform.control_plane_target_kind
 }
 
 output "control_plane_backend_name" {
-  description = "Honua control-plane deploy backend name for Kubernetes GitOps."
-  value       = "honua-gitops-kubernetes"
+  value = module.platform.control_plane_backend_name
 }
 
 output "control_plane_telemetry_policy" {
-  description = "Default Honua telemetry policy for Kubernetes deploy health evaluation."
-  value       = "kubernetes-honua-http"
+  value = module.platform.control_plane_telemetry_policy
 }
 
 output "honua_metrics_target" {
-  description = "Default Honua workload name hint used by the standard Helm deployment."
-  value       = "honua"
+  value = module.platform.honua_metrics_target
 }

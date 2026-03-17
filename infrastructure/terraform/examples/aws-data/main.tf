@@ -1,10 +1,9 @@
-provider "aws" {
-  region = var.region
-}
+// Compatibility example wrapper around the canonical customer stack.
 
-module "data" {
-  source = "../../modules/aws-data"
+module "stack" {
+  source = "../../stacks/customer/aws-data"
 
+  region                          = var.region
   environment                     = var.environment
   name_prefix                     = var.name_prefix
   db_password                     = var.db_password
@@ -19,61 +18,38 @@ module "data" {
   tags                            = var.tags
 }
 
-locals {
-  infrastructure_outputs = {
-    environment = var.environment
-    region      = var.region
-    network = {
-      vpc_id             = module.data.vpc_id
-      vpc_cidr           = module.data.vpc_cidr
-      public_subnet_ids  = module.data.public_subnet_ids
-      private_subnet_ids = module.data.private_subnet_ids
-    }
-  }
-
-  infrastructure_secrets = {
-    database_endpoint       = module.data.db_endpoint
-    database_connection     = module.data.db_connection_string
-    redis_connection_string = module.data.redis_connection_string
-  }
-}
-
 output "vpc_id" {
-  value = module.data.vpc_id
+  value = module.stack.vpc_id
 }
 
 output "vpc_cidr" {
-  value = module.data.vpc_cidr
+  value = module.stack.vpc_cidr
 }
 
 output "public_subnet_ids" {
-  value = module.data.public_subnet_ids
+  value = module.stack.public_subnet_ids
 }
 
 output "private_subnet_ids" {
-  value = module.data.private_subnet_ids
+  value = module.stack.private_subnet_ids
 }
 
 output "db_endpoint" {
-  value     = module.data.db_endpoint
-  sensitive = true
+  value = module.stack.db_endpoint
 }
 
 output "db_connection_string" {
-  value     = module.data.db_connection_string
-  sensitive = true
+  value = module.stack.db_connection_string
 }
 
 output "redis_connection_string" {
-  value     = module.data.redis_connection_string
-  sensitive = true
+  value = module.stack.redis_connection_string
 }
 
 output "infrastructure_outputs" {
-  value = local.infrastructure_outputs
+  value = module.stack.infrastructure_outputs
 }
 
 output "infrastructure_secrets" {
-  value     = local.infrastructure_secrets
-  sensitive = true
+  value = module.stack.infrastructure_secrets
 }

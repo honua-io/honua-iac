@@ -1,0 +1,12 @@
+apiVersion: honua/v1
+kind: scenario
+id: eks-live
+name: EKS Live Validation
+job: eks-live
+category: live
+clouds:
+  - aws
+requiresLive: true
+requiresDrift: false
+roots:
+  - infrastructure/terraform/stacks/test/aws-eks

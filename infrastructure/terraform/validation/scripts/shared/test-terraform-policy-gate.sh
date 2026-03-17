@@ -41,26 +41,26 @@ set -euo pipefail
 exit "${FAKE_CHECKOV_EXIT_CODE:-0}"
 EOF
 
-cat > "$FAKE_BIN/tfsec" <<'EOF'
+cat > "$FAKE_BIN/trivy" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-exit "${FAKE_TFSEC_EXIT_CODE:-0}"
+exit "${FAKE_TRIVY_EXIT_CODE:-0}"
 EOF
 
-chmod +x "$FAKE_BIN/tflint" "$FAKE_BIN/checkov" "$FAKE_BIN/tfsec"
+chmod +x "$FAKE_BIN/tflint" "$FAKE_BIN/checkov" "$FAKE_BIN/trivy"
 
 run_gate() {
   local strict="$1"
   local tflint_code="$2"
   local checkov_code="$3"
-  local tfsec_code="$4"
+  local trivy_code="$4"
 
-  GATE_OUTPUT_FILE="$TMP_DIR/policy-gate-${strict}-${tflint_code}-${checkov_code}-${tfsec_code}.log"
+  GATE_OUTPUT_FILE="$TMP_DIR/policy-gate-${strict}-${tflint_code}-${checkov_code}-${trivy_code}.log"
   set +e
   PATH="$FAKE_BIN:$PATH" \
     FAKE_TFLINT_EXIT_CODE="$tflint_code" \
     FAKE_CHECKOV_EXIT_CODE="$checkov_code" \
-    FAKE_TFSEC_EXIT_CODE="$tfsec_code" \
+    FAKE_TRIVY_EXIT_CODE="$trivy_code" \
     HONUA_TERRAFORM_POLICY_STRICT="$strict" \
     "$POLICY_GATE_SCRIPT" "$ROOT" >"$GATE_OUTPUT_FILE" 2>&1
   GATE_EXIT_CODE=$?
@@ -90,7 +90,7 @@ if [[ "$GATE_EXIT_CODE" -ne 7 ]]; then
   cat "$GATE_OUTPUT_FILE" >&2
   exit 1
 fi
-assert_output_contains 'checkov modules failed with exit code 7'
+assert_output_contains 'checkov \(.+\) failed with exit code 7'
 
 run_gate "true" 5 0 0
 if [[ "$GATE_EXIT_CODE" -ne 5 ]]; then

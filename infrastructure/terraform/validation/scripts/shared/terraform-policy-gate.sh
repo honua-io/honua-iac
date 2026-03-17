@@ -2,8 +2,12 @@
 
 set -euo pipefail
 
-ROOT="${1:-infrastructure/terraform}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../../../.." && pwd)"
+ROOT="${1:-$REPO_ROOT/infrastructure/terraform}"
 POLICY_STRICT="${HONUA_TERRAFORM_POLICY_STRICT:-false}"
+RUNNER_PROJECT="${HONUA_TERRAFORM_VALIDATION_RUNNER_PROJECT:-$REPO_ROOT/infrastructure/terraform/validation/runner/Honua.Terraform.ValidationRunner/Honua.Terraform.ValidationRunner.csproj}"
+declare -a POLICY_ROOTS=()
 
 log_info() {
   echo "[INFO] $1"
@@ -28,9 +32,9 @@ run_policy_command() {
     exit_code=$?
   fi
 
-  if [[ "${POLICY_STRICT}" == "true" ]]; then
+  if [[ "$POLICY_STRICT" == "true" ]]; then
     log_error "${label} failed with exit code ${exit_code}"
-    return "${exit_code}"
+    return "$exit_code"
   fi
 
   log_warn "${label} failed with exit code ${exit_code}; continuing because strict mode is disabled"
@@ -44,67 +48,97 @@ require_dir() {
   fi
 }
 
+load_policy_roots() {
+  if [[ "${#POLICY_ROOTS[@]}" -gt 0 ]]; then
+    return
+  fi
+
+  if ! command -v dotnet >/dev/null 2>&1; then
+    log_error "dotnet is required to load the Terraform validation catalog"
+    exit 1
+  fi
+
+  if [[ ! -f "$RUNNER_PROJECT" ]]; then
+    log_error "Terraform validation runner project not found: $RUNNER_PROJECT"
+    exit 1
+  fi
+
+  local raw_root
+  local relative_root
+  while IFS= read -r raw_root; do
+    [[ -z "$raw_root" ]] && continue
+    if [[ "$raw_root" = /* ]]; then
+      relative_root="${raw_root#$REPO_ROOT/}"
+    else
+      relative_root="$raw_root"
+    fi
+    POLICY_ROOTS+=("$relative_root")
+  done < <(dotnet run --project "$RUNNER_PROJECT" -- roots policy --format lines)
+
+  if [[ "${#POLICY_ROOTS[@]}" -eq 0 ]]; then
+    log_error "Terraform validation catalog returned no policy roots"
+    exit 1
+  fi
+}
+
 run_tflint() {
   if ! command -v tflint >/dev/null 2>&1; then
     log_warn "tflint is not installed; skipping tflint checks"
     return
   fi
 
-  local roots=(
-    "$ROOT/examples/aws"
-    "$ROOT/examples/aws-serverless"
-    "$ROOT/examples/aws-eks"
-    "$ROOT/examples/azure"
-    "$ROOT/examples/azure-data"
-    "$ROOT/examples/azure-functions"
-    "$ROOT/examples/azure-aks"
-    "$ROOT/examples/observability"
-  )
+  load_policy_roots
 
   local root
-  for root in "${roots[@]}"; do
-    [[ -d "$root" ]] || continue
+  for root in "${POLICY_ROOTS[@]}"; do
+    local local_root="$REPO_ROOT/$root"
+    [[ -d "$local_root" ]] || continue
     log_info "tflint: $root"
-    run_policy_command "tflint ($root)" run_tflint_in_dir "$root"
+    run_policy_command "tflint ($root)" run_tflint_in_dir "$local_root"
   done
 }
 
 run_tflint_in_dir() {
   local root="$1"
   (
-      cd "$root"
-      tflint --init >/dev/null
-      tflint
+    cd "$root"
+    tflint --init >/dev/null
+    tflint
   )
 }
 
 run_checkov() {
-  # Scope policy gates to repository-managed Terraform only.
-  # External modules can introduce findings outside our ownership and should
-  # be validated in their upstream source.
   local checkov_image="${HONUA_CHECKOV_IMAGE:-bridgecrew/checkov:3.2.497}"
   local checkov_skip_checks="${HONUA_CHECKOV_SKIP_CHECKS:-CKV_TF_1,CKV_AWS_149,CKV_AWS_191}"
   local checkov_args=(--download-external-modules false --compact)
-  if [[ -n "${checkov_skip_checks}" ]]; then
-    checkov_args+=(--skip-check "${checkov_skip_checks}")
+  if [[ -n "$checkov_skip_checks" ]]; then
+    checkov_args+=(--skip-check "$checkov_skip_checks")
   fi
-  if [[ "${POLICY_STRICT}" != "true" ]]; then
+  if [[ "$POLICY_STRICT" != "true" ]]; then
     checkov_args+=(--soft-fail)
   fi
 
+  load_policy_roots
+
+  local root
   if command -v checkov >/dev/null 2>&1; then
     log_info "Running checkov"
-    run_policy_command "checkov modules" checkov -d "$ROOT/modules" "${checkov_args[@]}"
-    run_policy_command "checkov examples" checkov -d "$ROOT/examples" "${checkov_args[@]}"
+    for root in "${POLICY_ROOTS[@]}"; do
+      local local_root="$REPO_ROOT/$root"
+      [[ -d "$local_root" ]] || continue
+      run_policy_command "checkov ($root)" checkov -d "$local_root" "${checkov_args[@]}"
+    done
     return
   fi
 
   if command -v docker >/dev/null 2>&1; then
     log_info "Running checkov via docker"
-    run_policy_command "checkov modules (docker)" docker run --rm -v "$PWD:/workspace" -w /workspace "$checkov_image" \
-      -d "$ROOT/modules" "${checkov_args[@]}"
-    run_policy_command "checkov examples (docker)" docker run --rm -v "$PWD:/workspace" -w /workspace "$checkov_image" \
-      -d "$ROOT/examples" "${checkov_args[@]}"
+    for root in "${POLICY_ROOTS[@]}"; do
+      local local_root="$REPO_ROOT/$root"
+      [[ -d "$local_root" ]] || continue
+      run_policy_command "checkov ($root) (docker)" docker run --rm -v "$REPO_ROOT:/workspace" -w /workspace "$checkov_image" \
+        -d "$root" "${checkov_args[@]}"
+    done
     return
   fi
 
@@ -125,17 +159,26 @@ run_trivy_config() {
     --skip-dirs "**/.terraform"
   )
 
+  load_policy_roots
+
+  local root
   if command -v trivy >/dev/null 2>&1; then
     log_info "Running trivy config"
-    run_policy_command "trivy config modules" trivy "${trivy_args[@]}" "$ROOT/modules"
-    run_policy_command "trivy config examples" trivy "${trivy_args[@]}" "$ROOT/examples"
+    for root in "${POLICY_ROOTS[@]}"; do
+      local local_root="$REPO_ROOT/$root"
+      [[ -d "$local_root" ]] || continue
+      run_policy_command "trivy config ($root)" trivy "${trivy_args[@]}" "$local_root"
+    done
     return
   fi
 
   if command -v docker >/dev/null 2>&1; then
     log_info "Running trivy config via docker"
-    run_policy_command "trivy config modules (docker)" docker run --rm -v "$PWD:/work" "$trivy_image" "${trivy_args[@]}" /work/"$ROOT/modules"
-    run_policy_command "trivy config examples (docker)" docker run --rm -v "$PWD:/work" "$trivy_image" "${trivy_args[@]}" /work/"$ROOT/examples"
+    for root in "${POLICY_ROOTS[@]}"; do
+      local local_root="$REPO_ROOT/$root"
+      [[ -d "$local_root" ]] || continue
+      run_policy_command "trivy config ($root) (docker)" docker run --rm -v "$REPO_ROOT:/work" "$trivy_image" "${trivy_args[@]}" "/work/$root"
+    done
     return
   fi
 
@@ -193,20 +236,22 @@ run_custom_policy_checks() {
   assert_regex_absent 'Action"[[:space:]]*:[[:space:]]*"\*"' "$ROOT" "least-privilege-actions-json"
 
   local tag_files=(
-    "$ROOT/modules/aws-ecs/variables.tf"
-    "$ROOT/modules/aws-serverless/variables.tf"
-    "$ROOT/modules/aws-eks/variables.tf"
-    "$ROOT/modules/azure-aca/variables.tf"
-    "$ROOT/modules/azure-data/variables.tf"
-    "$ROOT/modules/azure-functions/variables.tf"
-    "$ROOT/modules/azure-aks/variables.tf"
-    "$ROOT/examples/aws/variables.tf"
-    "$ROOT/examples/aws-serverless/variables.tf"
-    "$ROOT/examples/aws-eks/variables.tf"
-    "$ROOT/examples/azure/variables.tf"
-    "$ROOT/examples/azure-data/variables.tf"
-    "$ROOT/examples/azure-functions/variables.tf"
-    "$ROOT/examples/azure-aks/variables.tf"
+    "$ROOT/platforms/aws-ecs/variables.tf"
+    "$ROOT/platforms/aws-serverless/variables.tf"
+    "$ROOT/platforms/aws-eks/variables.tf"
+    "$ROOT/platforms/azure-aca/variables.tf"
+    "$ROOT/platforms/azure-functions/variables.tf"
+    "$ROOT/platforms/azure-aks/variables.tf"
+    "$ROOT/components/data/aws-postgres-redis/variables.tf"
+    "$ROOT/components/data/azure-postgres-redis/variables.tf"
+    "$ROOT/stacks/customer/aws/variables.tf"
+    "$ROOT/stacks/customer/aws-data/variables.tf"
+    "$ROOT/stacks/customer/aws-eks/variables.tf"
+    "$ROOT/stacks/customer/aws-serverless/variables.tf"
+    "$ROOT/stacks/customer/azure/variables.tf"
+    "$ROOT/stacks/customer/azure-data/variables.tf"
+    "$ROOT/stacks/customer/azure-aks/variables.tf"
+    "$ROOT/stacks/customer/azure-functions/variables.tf"
   )
 
   local file
@@ -215,37 +260,39 @@ run_custom_policy_checks() {
     assert_regex_present 'variable "tags"' "$file" "mandatory-tags-variable"
   done
 
-  assert_regex_present 'storage_encrypted[[:space:]]*=[[:space:]]*true' "$ROOT/modules/aws-ecs/main.tf" "aws-ecs-rds-encryption"
-  assert_regex_present 'storage_encrypted[[:space:]]*=[[:space:]]*true' "$ROOT/modules/aws-serverless/main.tf" "aws-serverless-rds-encryption"
-  assert_regex_present 'transit_encryption_enabled[[:space:]]*=[[:space:]]*true' "$ROOT/modules/aws-ecs/main.tf" "aws-ecs-redis-transit-encryption"
-  assert_regex_present 'transit_encryption_enabled[[:space:]]*=[[:space:]]*true' "$ROOT/modules/aws-serverless/main.tf" "aws-serverless-redis-transit-encryption"
-  assert_regex_present 'minimum_tls_version[[:space:]]*=[[:space:]]*"1\.2"' "$ROOT/modules/azure-aca/main.tf" "azure-aca-redis-tls12"
-  assert_regex_present 'minimum_tls_version[[:space:]]*=[[:space:]]*"1\.2"' "$ROOT/modules/azure-data/main.tf" "azure-data-redis-tls12"
-  assert_regex_present 'minimum_tls_version[[:space:]]*=[[:space:]]*"1\.2"' "$ROOT/modules/azure-functions/main.tf" "azure-functions-redis-tls12"
+  assert_regex_present 'storage_encrypted[[:space:]]*=[[:space:]]*true' "$ROOT/platforms/aws-ecs/main.tf" "aws-ecs-rds-encryption"
+  assert_regex_present 'storage_encrypted[[:space:]]*=[[:space:]]*true' "$ROOT/platforms/aws-serverless/main.tf" "aws-serverless-rds-encryption"
+  assert_regex_present 'transit_encryption_enabled[[:space:]]*=[[:space:]]*true' "$ROOT/platforms/aws-ecs/main.tf" "aws-ecs-redis-transit-encryption"
+  assert_regex_present 'transit_encryption_enabled[[:space:]]*=[[:space:]]*true' "$ROOT/platforms/aws-serverless/main.tf" "aws-serverless-redis-transit-encryption"
+  assert_regex_present 'minimum_tls_version[[:space:]]*=[[:space:]]*"1\.2"' "$ROOT/platforms/azure-aca/main.tf" "azure-aca-redis-tls12"
+  assert_regex_present 'minimum_tls_version[[:space:]]*=[[:space:]]*"1\.2"' "$ROOT/components/data/azure-postgres-redis/main.tf" "azure-data-redis-tls12"
+  assert_regex_present 'minimum_tls_version[[:space:]]*=[[:space:]]*"1\.2"' "$ROOT/platforms/azure-functions/main.tf" "azure-functions-redis-tls12"
 
   assert_regex_absent '^[[:space:]]*source[[:space:]]+"\$DATA_CACHE_FILE"' "$ROOT/validation/scripts/aws/run-aws-terraform-integration.sh" "aws-cache-source-execution"
   assert_regex_absent '^[[:space:]]*source[[:space:]]+"\$DATA_CACHE_FILE"' "$ROOT/validation/scripts/azure/run-azure-terraform-integration.sh" "azure-cache-source-execution"
   assert_regex_present 'DATA_CACHE_FORMAT="v2-base64"' "$ROOT/validation/scripts/aws/run-aws-terraform-integration.sh" "aws-cache-format-marker"
   assert_regex_present 'DATA_CACHE_FORMAT="v2-base64"' "$ROOT/validation/scripts/azure/run-azure-terraform-integration.sh" "azure-cache-format-marker"
 
-  assert_regex_absent 'ConnectionStrings__redis[[:space:]]*=[[:space:]]*local\.redis_connection' "$ROOT/modules/aws-serverless/main.tf" "aws-serverless-redis-plaintext-env"
-  assert_regex_present 'ConnectionStrings__redis[[:space:]]*=[[:space:]]*"env:HONUA_RUNTIME_REDIS_CONNECTION"' "$ROOT/modules/aws-serverless/main.tf" "aws-serverless-redis-env-ref"
-  assert_regex_present 'HONUA_RUNTIME_REDIS_CONNECTION[[:space:]]*=[[:space:]]*local\.redis_connection' "$ROOT/modules/aws-serverless/main.tf" "aws-serverless-redis-env-source"
+  assert_regex_absent 'ConnectionStrings__redis[[:space:]]*=[[:space:]]*local\.redis_connection' "$ROOT/platforms/aws-serverless/main.tf" "aws-serverless-redis-plaintext-env"
+  assert_regex_present 'ConnectionStrings__redis[[:space:]]*=[[:space:]]*"env:HONUA_RUNTIME_REDIS_CONNECTION"' "$ROOT/platforms/aws-serverless/main.tf" "aws-serverless-redis-env-ref"
+  assert_regex_present 'HONUA_RUNTIME_REDIS_CONNECTION[[:space:]]*=[[:space:]]*local\.redis_connection' "$ROOT/platforms/aws-serverless/main.tf" "aws-serverless-redis-env-source"
 
-  assert_regex_absent 'ConnectionStrings__redis[[:space:]]*=[[:space:]]*local\.redis_connection' "$ROOT/modules/azure-functions/main.tf" "azure-functions-redis-plaintext-env"
-  assert_regex_present 'azurerm_key_vault_secret" "redis_connection"' "$ROOT/modules/azure-functions/main.tf" "azure-functions-redis-secret-resource"
-  assert_regex_present 'ConnectionStrings__redis[[:space:]]*=[[:space:]]*"@Microsoft\.KeyVault\(SecretUri=\$\{azurerm_key_vault_secret\.redis_connection\[0\]\.versionless_id\}\)"' "$ROOT/modules/azure-functions/main.tf" "azure-functions-redis-keyvault-reference"
+  assert_regex_absent 'ConnectionStrings__redis[[:space:]]*=[[:space:]]*local\.redis_connection' "$ROOT/platforms/azure-functions/main.tf" "azure-functions-redis-plaintext-env"
+  assert_regex_present 'azurerm_key_vault_secret" "redis_connection"' "$ROOT/platforms/azure-functions/main.tf" "azure-functions-redis-secret-resource"
+  assert_regex_present 'ConnectionStrings__redis[[:space:]]*=[[:space:]]*"@Microsoft\.KeyVault\(SecretUri=\$\{azurerm_key_vault_secret\.redis_connection\[0\]\.versionless_id\}\)"' "$ROOT/platforms/azure-functions/main.tf" "azure-functions-redis-keyvault-reference"
 
-  assert_regex_absent 'kubernetes[[:space:]]*=[[:space:]]*\{' "$ROOT/examples/observability/main.tf" "helm-provider-kubernetes-attribute"
-  assert_regex_present '^[[:space:]]*kubernetes[[:space:]]*\{' "$ROOT/examples/observability/main.tf" "helm-provider-kubernetes-block"
+  assert_regex_absent 'kubernetes[[:space:]]*=[[:space:]]*\{' "$ROOT/stacks/customer/observability/main.tf" "helm-provider-kubernetes-attribute"
+  assert_regex_present '^[[:space:]]*kubernetes[[:space:]]*\{' "$ROOT/stacks/customer/observability/main.tf" "helm-provider-kubernetes-block"
 }
 
 main() {
   require_dir "$ROOT"
-  require_dir "$ROOT/modules"
+  require_dir "$ROOT/platforms"
+  require_dir "$ROOT/components"
+  require_dir "$ROOT/stacks/customer"
   require_dir "$ROOT/examples"
 
-  if [[ "${POLICY_STRICT}" == "true" ]]; then
+  if [[ "$POLICY_STRICT" == "true" ]]; then
     log_info "Policy scanner strict mode enabled"
   else
     log_warn "Policy scanner strict mode disabled; findings are reported but do not fail the run (set HONUA_TERRAFORM_POLICY_STRICT=true to enforce)"

@@ -20,6 +20,22 @@ on:
         options:
           - ephemeral
           - persistent
+      scenario_set:
+        description: "Validation scenario set"
+        required: true
+        type: choice
+        default: standard
+        options:
+          - standard
+          - full
+          - aws
+          - azure
+          - kubernetes
+      scenario_ids:
+        description: "Optional comma-separated scenario ids to add"
+        required: false
+        type: string
+        default: ""
       apply_confirmation:
         description: "Type APPROVED for persistent apply"
         required: false
@@ -35,21 +51,6 @@ on:
         required: true
         type: boolean
         default: true
-      run_k8s:
-        description: "Run local Kubernetes validation (k3d + Helm + observability)"
-        required: true
-        type: boolean
-        default: true
-      run_aks:
-        description: "Run AKS validation (Terraform cluster + Kubernetes checks)"
-        required: true
-        type: boolean
-        default: false
-      run_eks:
-        description: "Run EKS validation (Terraform cluster + Kubernetes checks)"
-        required: true
-        type: boolean
-        default: false
       run_drift:
         description: "Run drift detection job"
         required: true
@@ -70,11 +71,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: terraform-manual-validation-${{ github.ref }}-${{ inputs.cloud }}-${{ inputs.deployment_profile }}
+  group: terraform-manual-validation-${{ github.ref }}-${{ inputs.cloud }}-${{ inputs.deployment_profile }}-${{ inputs.scenario_set }}
   cancel-in-progress: false
 
 env:
   TF_IN_AUTOMATION: true
+  HONUA_TERRAFORM_VALIDATION_RUNNER_PROJECT: infrastructure/terraform/validation/runner/Honua.Terraform.ValidationRunner/Honua.Terraform.ValidationRunner.csproj
   AZURE_VALIDATION_REGION: ${{ vars.HONUA_AZURE_VALIDATION_REGION || 'westus' }}
   AWS_VALIDATION_REGION: ${{ vars.HONUA_AWS_VALIDATION_REGION || 'us-east-1' }}
   AZURE_VALIDATION_STACK: ${{ vars.HONUA_AZURE_VALIDATION_STACK || 'both' }}
@@ -130,6 +132,11 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.200'
+
       - name: Terraform fmt check
         run: |
           terraform fmt -check -recursive infrastructure/terraform
@@ -140,33 +147,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          roots=(
-            "infrastructure/terraform/bootstrap/azure-aca"
-            "infrastructure/terraform/bootstrap/azure-functions"
-            "infrastructure/terraform/bootstrap/azure-aks"
-            "infrastructure/terraform/bootstrap/aws-ecs"
-            "infrastructure/terraform/bootstrap/aws-serverless"
-            "infrastructure/terraform/bootstrap/aws-eks"
-            "infrastructure/terraform/examples/azure"
-            "infrastructure/terraform/examples/azure-data"
-            "infrastructure/terraform/examples/azure-functions"
-            "infrastructure/terraform/examples/aws"
-            "infrastructure/terraform/examples/aws-serverless"
-            "infrastructure/terraform/examples/aws-data"
-            "infrastructure/terraform/examples/azure-aks"
-            "infrastructure/terraform/examples/aws-eks"
-            "infrastructure/terraform/examples/observability"
-            "infrastructure/terraform/modules/azure-aca"
-            "infrastructure/terraform/modules/azure-data"
-            "infrastructure/terraform/modules/azure-functions"
-            "infrastructure/terraform/modules/aws-ecs"
-            "infrastructure/terraform/modules/aws-serverless"
-            "infrastructure/terraform/modules/aws-data"
-            "infrastructure/terraform/modules/azure-aks"
-            "infrastructure/terraform/modules/aws-eks"
-            "infrastructure/terraform/modules/observability-stack"
-            "docs/devops/examples"
-          )
+          mapfile -t roots < <(dotnet run --project "$HONUA_TERRAFORM_VALIDATION_RUNNER_PROJECT" -- roots static-validate --format lines)
 
           for root in "${roots[@]}"; do
             echo "::group::terraform init ($root)"
@@ -183,17 +164,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          test_roots=(
-            "infrastructure/terraform/examples/aws"
-            "infrastructure/terraform/examples/aws-serverless"
-            "infrastructure/terraform/examples/aws-data"
-            "infrastructure/terraform/examples/aws-eks"
-            "infrastructure/terraform/examples/azure"
-            "infrastructure/terraform/examples/azure-functions"
-            "infrastructure/terraform/examples/azure-data"
-            "infrastructure/terraform/examples/azure-aks"
-            "infrastructure/terraform/examples/observability"
-          )
+          mapfile -t test_roots < <(dotnet run --project "$HONUA_TERRAFORM_VALIDATION_RUNNER_PROJECT" -- roots native-tests --format lines)
 
           for root in "${test_roots[@]}"; do
             echo "::group::terraform test ($root)"
@@ -212,6 +183,11 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.200'
 
       - name: Setup tflint
         uses: terraform-linters/setup-tflint@v4
@@ -241,10 +217,54 @@ jobs:
           HONUA_TERRAFORM_POLICY_STRICT: "true"
         run: ./infrastructure/terraform/validation/scripts/shared/terraform-policy-gate.sh
 
+  prepare-validation:
+    name: Prepare Validation Plan
+    needs: policy-gates
+    runs-on: ubuntu-latest
+    outputs:
+      selected_scenarios_json: ${{ steps.plan.outputs.selected_scenarios_json }}
+      selected_scenarios_csv: ${{ steps.plan.outputs.selected_scenarios_csv }}
+      drift_roots_json: ${{ steps.plan.outputs.drift_roots_json }}
+      drift_roots_csv: ${{ steps.plan.outputs.drift_roots_csv }}
+      run_azure_live: ${{ steps.plan.outputs.run_azure_live }}
+      run_aws_live: ${{ steps.plan.outputs.run_aws_live }}
+      run_k8s_live: ${{ steps.plan.outputs.run_k8s_live }}
+      run_aks_live: ${{ steps.plan.outputs.run_aks_live }}
+      run_eks_live: ${{ steps.plan.outputs.run_eks_live }}
+      run_drift_detect: ${{ steps.plan.outputs.run_drift_detect }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.200'
+
+      - name: Compute validation plan
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          dotnet run --project "$HONUA_TERRAFORM_VALIDATION_RUNNER_PROJECT" -- workflow manual \
+            --cloud "${{ inputs.cloud }}" \
+            --scenario-set "${{ inputs.scenario_set }}" \
+            --scenario-ids "${{ inputs.scenario_ids }}" \
+            --run-live "${{ inputs.run_live }}" \
+            --run-drift "${{ inputs.run_drift }}" \
+            --format github-output >> "$GITHUB_OUTPUT"
+
+      - name: Echo selected scenarios
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Selected scenarios: ${{ steps.plan.outputs.selected_scenarios_csv }}"
+
   azure-live:
     name: Azure Live Validation
-    needs: policy-gates
-    if: ${{ inputs.run_live && (inputs.cloud == 'both' || inputs.cloud == 'azure') }}
+    needs: [policy-gates, prepare-validation]
+    if: ${{ needs.prepare-validation.outputs.run_azure_live == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 240
     environment: ${{ inputs.deployment_profile == 'persistent' && 'terraform-live-approval' || 'terraform-ephemeral' }}
@@ -595,8 +615,8 @@ jobs:
 
   aws-live:
     name: AWS Live Validation
-    needs: policy-gates
-    if: ${{ inputs.run_live && (inputs.cloud == 'both' || inputs.cloud == 'aws') }}
+    needs: [policy-gates, prepare-validation]
+    if: ${{ needs.prepare-validation.outputs.run_aws_live == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 240
     environment: ${{ inputs.deployment_profile == 'persistent' && 'terraform-live-approval' || 'terraform-ephemeral' }}
@@ -933,8 +953,8 @@ jobs:
 
   k8s-live:
     name: Kubernetes Live Validation
-    needs: policy-gates
-    if: ${{ inputs.run_live && inputs.run_k8s }}
+    needs: [policy-gates, prepare-validation]
+    if: ${{ needs.prepare-validation.outputs.run_k8s_live == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     environment: ${{ inputs.deployment_profile == 'persistent' && 'terraform-live-approval' || 'terraform-ephemeral' }}
@@ -1058,8 +1078,8 @@ jobs:
 
   aks-live:
     name: AKS Live Validation
-    needs: policy-gates
-    if: ${{ inputs.run_live && inputs.run_aks && (inputs.cloud == 'both' || inputs.cloud == 'azure') }}
+    needs: [policy-gates, prepare-validation]
+    if: ${{ needs.prepare-validation.outputs.run_aks_live == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     environment: ${{ inputs.deployment_profile == 'persistent' && 'terraform-live-approval' || 'terraform-ephemeral' }}
@@ -1260,8 +1280,8 @@ jobs:
 
   eks-live:
     name: EKS Live Validation
-    needs: policy-gates
-    if: ${{ inputs.run_live && inputs.run_eks && (inputs.cloud == 'both' || inputs.cloud == 'aws') }}
+    needs: [policy-gates, prepare-validation]
+    if: ${{ needs.prepare-validation.outputs.run_eks_live == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     environment: ${{ inputs.deployment_profile == 'persistent' && 'terraform-live-approval' || 'terraform-ephemeral' }}
@@ -1451,8 +1471,8 @@ jobs:
 
   drift-detect:
     name: Terraform Drift Detection
-    needs: policy-gates
-    if: ${{ inputs.run_drift }}
+    needs: [policy-gates, prepare-validation]
+    if: ${{ needs.prepare-validation.outputs.run_drift_detect == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
@@ -1484,30 +1504,7 @@ jobs:
 
           roots_csv="$HONUA_DRIFT_ROOTS"
           if [[ -z "$roots_csv" ]]; then
-            roots=()
-
-            if [[ "${{ inputs.cloud }}" == "both" || "${{ inputs.cloud }}" == "azure" ]]; then
-              roots+=(
-                "infrastructure/terraform/examples/azure"
-                "infrastructure/terraform/examples/azure-functions"
-              )
-              if [[ "${{ inputs.run_aks }}" == "true" ]]; then
-                roots+=("infrastructure/terraform/examples/azure-aks")
-              fi
-            fi
-
-            if [[ "${{ inputs.cloud }}" == "both" || "${{ inputs.cloud }}" == "aws" ]]; then
-              roots+=(
-                "infrastructure/terraform/examples/aws"
-                "infrastructure/terraform/examples/aws-serverless"
-              )
-              if [[ "${{ inputs.run_eks }}" == "true" ]]; then
-                roots+=("infrastructure/terraform/examples/aws-eks")
-              fi
-            fi
-
-            roots+=("infrastructure/terraform/examples/observability")
-            roots_csv="$(IFS=','; echo "${roots[*]}")"
+            roots_csv="${{ needs.prepare-validation.outputs.drift_roots_csv }}"
           fi
 
           IFS=',' read -ra roots <<< "$roots_csv"

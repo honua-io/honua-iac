@@ -1,0 +1,12 @@
+apiVersion: honua/v1
+kind: scenario
+id: kubernetes-live
+name: Kubernetes Live Validation
+job: k8s-live
+category: live
+clouds:
+  - neutral
+requiresLive: true
+requiresDrift: false
+roots:
+  - infrastructure/terraform/stacks/test/observability

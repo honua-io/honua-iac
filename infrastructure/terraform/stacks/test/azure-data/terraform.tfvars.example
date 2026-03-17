@@ -1,0 +1,15 @@
+location    = "eastus"
+environment = "prod"
+name_prefix = "honua"
+
+honua_admin_password = "replace-with-32-plus-character-admin-password"
+db_admin_password    = "replace-with-database-password"
+
+enable_postgis = true
+redis_enabled  = true
+
+tags = {
+  environment = "prod"
+  owner       = "platform"
+  cost_center = "geo"
+}

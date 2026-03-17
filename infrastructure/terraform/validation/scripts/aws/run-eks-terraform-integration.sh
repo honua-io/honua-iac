@@ -510,14 +510,14 @@ run_quota_preflight() {
 apply_cluster() {
   set_tf_vars
 
-  run_tf -chdir=examples/aws-eks init -input=false -no-color
-  plan_apply "examples/aws-eks" "eks.tfplan" "eks"
+  run_tf -chdir=stacks/test/aws-eks init -input=false -no-color
+  plan_apply "stacks/test/aws-eks" "eks.tfplan" "eks"
 
   CLUSTER_APPLIED=true
-  CLUSTER_NAME="$(run_tf -chdir=examples/aws-eks output -raw cluster_name)"
+  CLUSTER_NAME="$(run_tf -chdir=stacks/test/aws-eks output -raw cluster_name)"
 
   if [[ "$CHECK_IDEMPOTENCY" == "true" ]]; then
-    assert_idempotent_plan "examples/aws-eks"
+    assert_idempotent_plan "stacks/test/aws-eks"
   fi
 }
 
@@ -589,7 +589,7 @@ destroy_cluster() {
 
   log_info "Destroying EKS integration cluster"
   set_tf_vars
-  run_tf -chdir=examples/aws-eks destroy -input=false -auto-approve -no-color || log_warn "EKS destroy encountered errors"
+  run_tf -chdir=stacks/test/aws-eks destroy -input=false -auto-approve -no-color || log_warn "EKS destroy encountered errors"
 }
 
 verify_no_leaks() {

@@ -1,47 +1,37 @@
+// Pass through the canonical platform/component outputs.
+
 output "prometheus_release" {
-  description = "Prometheus Helm release name."
-  value       = helm_release.prometheus.name
+  value = module.platform.prometheus_release
 }
 
 output "grafana_release" {
-  description = "Grafana Helm release name."
-  value       = helm_release.grafana.name
+  value = module.platform.grafana_release
 }
 
 output "prometheus_url" {
-  description = "In-cluster Prometheus URL."
-  value       = "http://${var.prometheus_release_name}-server.${var.namespace}.svc.cluster.local"
+  value = module.platform.prometheus_url
 }
 
 output "honua_prometheus_job_name" {
-  description = "Prometheus job name used for the Honua scrape target."
-  value       = local.honua_scrape_config.job_name
+  value = module.platform.honua_prometheus_job_name
 }
 
 output "honua_prometheus_selector" {
-  description = "PromQL selector fragment for the Honua scrape target."
-  value       = "job=\"${local.honua_scrape_config.job_name}\""
+  value = module.platform.honua_prometheus_selector
 }
 
 output "grafana_url" {
-  description = "URL for accessing the Grafana dashboard."
-  value       = var.grafana_ingress_enabled && var.grafana_ingress_host != "" ? "${var.grafana_ingress_tls_secret != "" ? "https" : "http"}://${var.grafana_ingress_host}" : "kubectl port-forward svc/grafana 3000:80 -n ${var.namespace}"
+  value = module.platform.grafana_url
 }
 
 output "grafana_admin_secret_name" {
-  description = "Kubernetes secret containing Grafana admin credentials."
-  value       = kubernetes_secret_v1.grafana_admin.metadata[0].name
+  value = module.platform.grafana_admin_secret_name
 }
 
 output "grafana_admin_secret_keys" {
-  description = "Secret data keys for Grafana admin credentials."
-  value = {
-    username = "admin-user"
-    password = "admin-pass"
-  }
+  value = module.platform.grafana_admin_secret_keys
 }
 
 output "dashboard_configmap_name" {
-  description = "ConfigMap that provisions the Honua Grafana dashboard."
-  value       = kubernetes_config_map_v1.honua_dashboard.metadata[0].name
+  value = module.platform.dashboard_configmap_name
 }
