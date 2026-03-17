@@ -46,6 +46,7 @@ resource "azurerm_role_definition" "terraform" {
   permissions {
     actions = [
       "Microsoft.Resources/subscriptions/read",
+      "Microsoft.Resources/subscriptions/resources/read",
       "Microsoft.Resources/subscriptions/resourceGroups/*",
       "Microsoft.ManagedIdentity/userAssignedIdentities/*",
       "Microsoft.KeyVault/vaults/*",
