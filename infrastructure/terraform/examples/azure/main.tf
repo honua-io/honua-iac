@@ -163,11 +163,13 @@ output "deployment_contract" {
 output "validation_contract" {
   description = "Stable validation contract for scenario orchestration."
   value       = local.validation_contract
+  sensitive   = true
 }
 
 output "operations_contract" {
   description = "Stable operations contract for day-2 metadata and secret references."
   value       = local.operations_contract
+  sensitive   = true
 }
 
 output "environment" {

@@ -114,16 +114,19 @@ locals {
 output "deployment_contract" {
   description = "Stable deployment contract for validation and operator automation."
   value       = local.deployment_contract
+  sensitive   = true
 }
 
 output "validation_contract" {
   description = "Stable validation contract for scenario orchestration."
   value       = local.validation_contract
+  sensitive   = true
 }
 
 output "operations_contract" {
   description = "Stable operations contract for day-2 metadata and secret references."
   value       = local.operations_contract
+  sensitive   = true
 }
 
 output "resource_group_name" {
