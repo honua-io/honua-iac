@@ -41,7 +41,7 @@ module "aks" {
   node_os_disk_size_gb = 128
 
   # Access
-  local_account_disabled = true
+  local_account_disabled = false
   authorized_ip_ranges   = ["203.0.113.0/24"]
 
   # Networking
@@ -70,7 +70,7 @@ Network policy is enforced via the Azure or Calico provider (set `network_policy
 ## Security
 
 - **RBAC**: Kubernetes RBAC is always enabled.
-- **Local accounts**: Disabled by default (`local_account_disabled = true`). Set to `false` for dev clusters where Azure AD is not configured.
+- **Local accounts**: Enabled by default (`local_account_disabled = false`) unless you add Azure AD integration. Set to `true` only when the cluster is configured for Azure AD authentication.
 - **API server access**: Restrict with `authorized_ip_ranges`. When set, only listed CIDRs can reach the API server.
 - **System-assigned identity**: The cluster uses a system-assigned managed identity for Azure resource operations.
 - **Diagnostics**: When `log_analytics_workspace_id` is provided, API server, audit, controller manager, and scheduler logs are sent to Log Analytics.
@@ -90,7 +90,7 @@ Network policy is enforced via the Azure or Calico provider (set `network_policy
 | `node_os_disk_size_gb` | `64` | OS disk size in GB. |
 | `network_plugin` | `"azure"` | Network plugin (`azure` or `kubenet`). |
 | `network_policy` | `"azure"` | Network policy provider (`azure`, `calico`, or `""`). |
-| `local_account_disabled` | `true` | Disable local Kubernetes accounts. |
+| `local_account_disabled` | `false` | Disable local Kubernetes accounts when Azure AD integration is configured. |
 | `authorized_ip_ranges` | `[]` | CIDR ranges authorized to access the AKS API server. |
 | `log_analytics_workspace_id` | `""` | Log Analytics workspace ID for diagnostic logs. Empty to disable. |
 

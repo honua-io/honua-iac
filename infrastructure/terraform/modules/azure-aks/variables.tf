@@ -64,9 +64,9 @@ variable "authorized_ip_ranges" {
 }
 
 variable "local_account_disabled" {
-  description = "Disable local Kubernetes accounts to enforce Azure AD authentication."
+  description = "Disable local Kubernetes accounts when Azure AD integration is configured."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "auto_scaling_enabled" {

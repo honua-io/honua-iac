@@ -130,6 +130,7 @@ data "aws_iam_policy_document" "terraform" {
       "s3:PutBucket*",
       "s3:PutEncryptionConfiguration",
       "s3:PutObject",
+      "servicequotas:GetServiceQuota",
       "ecr:BatchGetImage",
       "ecr:CreateRepository",
       "ecr:DeleteRepository",
@@ -139,6 +140,7 @@ data "aws_iam_policy_document" "terraform" {
       "ecr:List*",
       "ecr:PutImage",
       "ecr:SetRepositoryPolicy",
+      "tag:GetResources",
       "ecr:TagResource",
       "ecr:UntagResource"
     ]

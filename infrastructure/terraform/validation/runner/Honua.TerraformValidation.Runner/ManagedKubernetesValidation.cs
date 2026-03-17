@@ -344,7 +344,7 @@ internal static partial class ValidationRunner
             PlanArtifactDir: ResolveManagedPlanArtifactDir(command, defaultPlanDir),
             ValidationRunId: env.GetOrDefault("HONUA_VALIDATION_RUN_ID", $"aks-{DateTime.UtcNow:yyyyMMddHHmmss}"),
             TtlHours: GetIntOption(command, env, "ttl-hours", "HONUA_TTL_HOURS", 8),
-            MaxRunCostUsd: GetDecimalOption(command, env, "max-run-cost-usd", "HONUA_MAX_RUN_COST_USD", 50m),
+            MaxRunCostUsd: GetDecimalOption(command, env, "max-run-cost-usd", "HONUA_MAX_RUN_COST_USD", 100m),
             AllowDestroyPlan: command.GetBoolean("allow-destroy-plan", false),
             SkipQuotaPreflight: GetBooleanOption(command, env, "skip-quota-preflight", "HONUA_SKIP_QUOTA_PREFLIGHT"),
             SkipIdempotency: GetBooleanOption(command, env, "skip-idempotency", "HONUA_SKIP_IDEMPOTENCY"),
@@ -627,23 +627,56 @@ internal static partial class ValidationRunner
         IReadOnlyDictionary<string, string?> credentialsEnvironment,
         string subscriptionId)
     {
-        await context.ProcessRunner.RunAsync(
-            "az",
-            [
-                "login",
-                "--service-principal",
-                "-u", credentialsEnvironment["ARM_CLIENT_ID"] ?? string.Empty,
-                "-p", credentialsEnvironment["ARM_CLIENT_SECRET"] ?? string.Empty,
-                "--tenant", credentialsEnvironment["ARM_TENANT_ID"] ?? string.Empty,
-            ],
-            context.RepoRoot,
-            credentialsEnvironment);
+        var maxAttemptsRaw = context.Environment.GetOrDefault("HONUA_AZURE_LOGIN_MAX_ATTEMPTS", "12");
+        var retrySecondsRaw = context.Environment.GetOrDefault("HONUA_AZURE_LOGIN_RETRY_SECONDS", "10");
+        var maxAttempts = int.TryParse(maxAttemptsRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedMaxAttempts)
+            ? Math.Max(parsedMaxAttempts, 1)
+            : 12;
+        var retrySeconds = int.TryParse(retrySecondsRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedRetrySeconds)
+            ? Math.Max(parsedRetrySeconds, 1)
+            : 10;
 
-        await context.ProcessRunner.RunAsync(
-            "az",
-            ["account", "set", "-s", subscriptionId],
-            context.RepoRoot,
-            credentialsEnvironment);
+        Exception? lastFailure = null;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                await context.ProcessRunner.RunAsync(
+                    "az",
+                    [
+                        "login",
+                        "--service-principal",
+                        "--allow-no-subscriptions",
+                        "-u", credentialsEnvironment["ARM_CLIENT_ID"] ?? string.Empty,
+                        "-p", credentialsEnvironment["ARM_CLIENT_SECRET"] ?? string.Empty,
+                        "--tenant", credentialsEnvironment["ARM_TENANT_ID"] ?? string.Empty,
+                    ],
+                    context.RepoRoot,
+                    credentialsEnvironment);
+
+                await context.ProcessRunner.RunAsync(
+                    "az",
+                    ["account", "set", "-s", subscriptionId],
+                    context.RepoRoot,
+                    credentialsEnvironment);
+
+                return;
+            }
+            catch (Exception exception) when (attempt < maxAttempts)
+            {
+                lastFailure = exception;
+                Console.WriteLine($"[runner] Azure session attempt {attempt}/{maxAttempts} failed; retrying in {retrySeconds}s");
+                if (!context.DryRun)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(retrySeconds));
+                }
+            }
+        }
+
+        if (lastFailure is not null)
+        {
+            throw lastFailure;
+        }
     }
 
     private static async Task VerifyNoAwsLeaksAsync(

@@ -90,6 +90,7 @@ data "aws_iam_policy_document" "terraform" {
       "cloudwatch:Get*",
       "cloudwatch:List*",
       "cloudwatch:Put*",
+      "servicequotas:GetServiceQuota",
       "kms:CreateAlias",
       "kms:CreateKey",
       "kms:Decrypt",
@@ -114,6 +115,7 @@ data "aws_iam_policy_document" "terraform" {
       "ssm:List*",
       "ssm:Put*",
       "ssm:RemoveTagsFromResource",
+      "tag:GetResources",
       "ssm:Update*"
     ]
     resources = ["*"]

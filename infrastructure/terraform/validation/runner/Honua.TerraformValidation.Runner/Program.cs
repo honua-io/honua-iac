@@ -39,6 +39,17 @@ catch (AggregateException exception)
 {
     foreach (var innerException in exception.Flatten().InnerExceptions)
     {
+        if (innerException is CommandExecutionException commandException)
+        {
+            Console.Error.WriteLine($"[runner] Command failed with exit code {commandException.ExitCode}: {commandException.CommandText}");
+            if (!string.IsNullOrWhiteSpace(commandException.Output))
+            {
+                Console.Error.WriteLine(commandException.Output);
+            }
+
+            continue;
+        }
+
         Console.Error.WriteLine($"[runner] {innerException.Message}");
     }
 
