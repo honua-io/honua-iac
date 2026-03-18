@@ -337,6 +337,8 @@ internal static partial class ValidationRunner
             roots = BuildDefaultDriftRoots(manifest, cloud, command.GetBoolean("run-aks", false), command.GetBoolean("run-eks", false));
         }
 
+        roots = FilterUnavailableDriftRoots(context, roots);
+
         if (roots.Count == 0)
         {
             throw new ValidationException("No Terraform roots selected for drift detection");
@@ -1084,8 +1086,66 @@ internal static partial class ValidationRunner
                 ? "[]"
                 : $"[\"{vpcCidr}\"]";
         }
+        else if (string.Equals(relativeRoot, "infrastructure/terraform/examples/observability", StringComparison.Ordinal))
+        {
+            environment["TF_VAR_honua_metrics_target"] = env.GetOrDefault("HONUA_DRIFT_OBSERVABILITY_TARGET", "honua.default.svc.cluster.local:8080");
+            AddIfPresent(environment, "TF_VAR_kubeconfig_path", ResolveAvailableKubeconfigPath(context, env));
+        }
 
         return environment;
+    }
+
+    private static IReadOnlyList<string> FilterUnavailableDriftRoots(RunnerContext context, IReadOnlyList<string> roots)
+    {
+        var filteredRoots = new List<string>(roots.Count);
+        foreach (var root in roots)
+        {
+            var normalizedRoot = root.Replace('\\', '/');
+            if (string.Equals(normalizedRoot, "infrastructure/terraform/examples/observability", StringComparison.Ordinal) &&
+                !ShouldIncludeObservabilityDriftRoot(context))
+            {
+                Console.WriteLine("[runner] Skipping observability drift root because no kubeconfig is available. Set HONUA_DRIFT_INCLUDE_OBSERVABILITY=true to force it.");
+                continue;
+            }
+
+            filteredRoots.Add(root);
+        }
+
+        return filteredRoots;
+    }
+
+    private static bool ShouldIncludeObservabilityDriftRoot(RunnerContext context)
+    {
+        var env = context.Environment;
+        if (env.GetBoolean("HONUA_DRIFT_INCLUDE_OBSERVABILITY"))
+        {
+            return true;
+        }
+
+        return !string.IsNullOrWhiteSpace(ResolveAvailableKubeconfigPath(context, env));
+    }
+
+    private static string? ResolveAvailableKubeconfigPath(RunnerContext context, EnvironmentReader env)
+    {
+        var candidates = new List<string>();
+        var kubeconfig = env.GetOptional("KUBECONFIG");
+        if (!string.IsNullOrWhiteSpace(kubeconfig))
+        {
+            candidates.Add(kubeconfig);
+        }
+
+        candidates.Add(Path.Combine(System.Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".kube", "config"));
+        candidates.Add(context.ResolveRepoPath(".kube", "config"));
+
+        foreach (var candidate in candidates)
+        {
+            if (!string.IsNullOrWhiteSpace(candidate) && File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     private static void AddIfPresent(IDictionary<string, string?> environment, string key, string? value)
