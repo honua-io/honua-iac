@@ -637,13 +637,19 @@ internal static partial class ValidationRunner
 
     private static async Task RunAwsQuotaPreflightAsync(RunnerContext context, IReadOnlyDictionary<string, string?> credentialsEnvironment, AwsLiveSettings settings)
     {
-        var quotaRaw = await context.ProcessRunner.CaptureAsync("aws", ["service-quotas", "get-service-quota", "--service-code", "ec2", "--quota-code", "L-1216C47A", "--query", "Quota.Value", "--output", "text"], context.RepoRoot, credentialsEnvironment);
+        var (quotaSuccess, quotaRaw) = await context.ProcessRunner.TryCaptureAsync("aws", ["service-quotas", "get-service-quota", "--service-code", "ec2", "--quota-code", "L-1216C47A", "--query", "Quota.Value", "--output", "text"], context.RepoRoot, credentialsEnvironment);
         if (context.DryRun)
         {
             return;
         }
 
-        if (!decimal.TryParse(quotaRaw, NumberStyles.Number, CultureInfo.InvariantCulture, out var quota))
+        if (!quotaSuccess)
+        {
+            Console.WriteLine("[runner] Warn: unable to query EC2 vCPU quota; skipping AWS quota preflight.");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(quotaRaw) || !decimal.TryParse(quotaRaw, NumberStyles.Number, CultureInfo.InvariantCulture, out var quota))
         {
             return;
         }
@@ -747,6 +753,7 @@ internal static partial class ValidationRunner
             state.ResourceGroupName = GetTerraformResourceGroup(outputs) ?? $"{settings.AcaNamePrefix}-{settings.Environment}-rg";
             state.WorkloadName = GetTerraformWorkloadName(outputs) ?? settings.AcaNamePrefix;
             await EnsureAcaDbFirewallAccessAsync(context, state, credentialsEnvironment);
+            await WaitForAzureAcaReplicasAsync(context, credentialsEnvironment, state.ResourceGroupName!, state.WorkloadName!, minReplicas, settings.TimeoutSeconds);
             await RunCloudHttpChecksAsync(context, settings.AdminPassword, state.BaseUrl, settings.TimeoutSeconds, settings.ReadySloSeconds, settings.LoadRequests, settings.LoadConcurrency, settings.MaxLoadErrorRatePercent, settings.SkipProtocolChecks);
             if (runPlatformValidation)
             {

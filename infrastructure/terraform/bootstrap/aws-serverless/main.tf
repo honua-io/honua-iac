@@ -122,14 +122,6 @@ data "aws_iam_policy_document" "terraform" {
       "cloudwatch:Get*",
       "cloudwatch:List*",
       "cloudwatch:Put*",
-      "s3:CreateBucket",
-      "s3:DeleteBucket",
-      "s3:DeleteObject",
-      "s3:Get*",
-      "s3:List*",
-      "s3:PutBucket*",
-      "s3:PutEncryptionConfiguration",
-      "s3:PutObject",
       "servicequotas:GetServiceQuota",
       "ecr:BatchGetImage",
       "ecr:CreateRepository",
@@ -151,6 +143,22 @@ data "aws_iam_policy_document" "terraform" {
       variable = "aws:RequestedRegion"
       values   = [var.aws_region]
     }
+  }
+
+  statement {
+    sid = "S3ForServerless"
+    actions = [
+      "s3:CreateBucket",
+      "s3:DeleteBucket",
+      "s3:DeleteBucketPolicy",
+      "s3:DeleteObject",
+      "s3:Get*",
+      "s3:List*",
+      "s3:PutBucket*",
+      "s3:PutEncryptionConfiguration",
+      "s3:PutObject"
+    ]
+    resources = ["*"]
   }
 
   statement {

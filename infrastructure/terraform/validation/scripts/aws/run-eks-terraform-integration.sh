@@ -457,6 +457,8 @@ run_quota_preflight() {
   local quota
   local vcpu_per_node
   local required
+  local vpc_quota
+  local current_vpcs
 
   if [[ "$RUN_QUOTA_PREFLIGHT" != "true" ]]; then
     return
@@ -477,6 +479,17 @@ run_quota_preflight() {
   fi
 
   log_info "EKS quota preflight passed (EC2 regional vCPU quota=${quota:-unknown}, required=$required)"
+
+  vpc_quota="$(aws service-quotas get-service-quota --service-code vpc --quota-code L-F678F1CE --query 'Quota.Value' --output text 2>/dev/null || echo '')"
+  current_vpcs="$(aws ec2 describe-vpcs --query 'length(Vpcs)' --output text 2>/dev/null || echo '')"
+
+  if [[ -n "$vpc_quota" && "$vpc_quota" != "None" && -n "$current_vpcs" && "$current_vpcs" != "None" ]] &&
+     awk -v q="$vpc_quota" -v c="$current_vpcs" 'BEGIN { exit !(c >= q) }'; then
+    log_error "EKS quota preflight failed: VPC usage $current_vpcs/$vpc_quota; no capacity remains for the validation VPC"
+    exit 1
+  fi
+
+  log_info "EKS quota preflight passed (VPC quota=${vpc_quota:-unknown}, current=${current_vpcs:-unknown})"
 }
 
 apply_cluster() {

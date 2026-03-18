@@ -92,14 +92,6 @@ data "aws_iam_policy_document" "terraform" {
       "rds:ListTagsForResource",
       "rds:Modify*",
       "rds:RemoveTagsFromResource",
-      "s3:CreateBucket",
-      "s3:DeleteBucket",
-      "s3:DeleteObject",
-      "s3:Get*",
-      "s3:List*",
-      "s3:PutBucket*",
-      "s3:PutEncryptionConfiguration",
-      "s3:PutObject",
       "servicequotas:GetServiceQuota",
       "secretsmanager:CreateSecret",
       "secretsmanager:DeleteSecret",
@@ -165,6 +157,22 @@ data "aws_iam_policy_document" "terraform" {
       variable = "aws:RequestedRegion"
       values   = [var.aws_region]
     }
+  }
+
+  statement {
+    sid = "S3ForEcs"
+    actions = [
+      "s3:CreateBucket",
+      "s3:DeleteBucket",
+      "s3:DeleteBucketPolicy",
+      "s3:DeleteObject",
+      "s3:Get*",
+      "s3:List*",
+      "s3:PutBucket*",
+      "s3:PutEncryptionConfiguration",
+      "s3:PutObject"
+    ]
+    resources = ["*"]
   }
 
   statement {

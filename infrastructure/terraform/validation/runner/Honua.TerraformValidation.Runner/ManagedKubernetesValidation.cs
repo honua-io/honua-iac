@@ -551,7 +551,7 @@ internal static partial class ValidationRunner
         IReadOnlyDictionary<string, string?> credentialsEnvironment,
         ManagedEksSettings settings)
     {
-        var quotaRaw = await context.ProcessRunner.CaptureAsync(
+        var (quotaSuccess, quotaRaw) = await context.ProcessRunner.TryCaptureAsync(
             "aws",
             [
                 "service-quotas",
@@ -564,7 +564,12 @@ internal static partial class ValidationRunner
             context.RepoRoot,
             credentialsEnvironment);
 
-        var vcpuRaw = await context.ProcessRunner.CaptureAsync(
+        if (!quotaSuccess)
+        {
+            Console.WriteLine("[runner] Warn: unable to query EC2 vCPU quota; skipping EKS vCPU quota preflight.");
+        }
+
+        var (vcpuSuccess, vcpuRaw) = await context.ProcessRunner.TryCaptureAsync(
             "aws",
             [
                 "ec2",
@@ -576,8 +581,14 @@ internal static partial class ValidationRunner
             context.RepoRoot,
             credentialsEnvironment);
 
-        var vcpuPerNode = int.TryParse(vcpuRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedVcpu) ? parsedVcpu : 2;
-        if (decimal.TryParse(quotaRaw, NumberStyles.Number, CultureInfo.InvariantCulture, out var quota))
+        var vcpuPerNode = vcpuSuccess &&
+                          int.TryParse(vcpuRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedVcpu)
+            ? parsedVcpu
+            : 2;
+
+        if (quotaSuccess &&
+            !string.IsNullOrWhiteSpace(quotaRaw) &&
+            decimal.TryParse(quotaRaw, NumberStyles.Number, CultureInfo.InvariantCulture, out var quota))
         {
             var required = settings.NodeDesiredSize * vcpuPerNode;
             if (required > quota)
@@ -586,7 +597,7 @@ internal static partial class ValidationRunner
             }
         }
 
-        var vpcQuotaRaw = await context.ProcessRunner.CaptureAsync(
+        var (vpcQuotaSuccess, vpcQuotaRaw) = await context.ProcessRunner.TryCaptureAsync(
             "aws",
             [
                 "service-quotas",
@@ -599,7 +610,13 @@ internal static partial class ValidationRunner
             context.RepoRoot,
             credentialsEnvironment);
 
-        var currentVpcCountRaw = await context.ProcessRunner.CaptureAsync(
+        if (!vpcQuotaSuccess)
+        {
+            Console.WriteLine("[runner] Warn: unable to query VPC quota; skipping EKS VPC quota preflight.");
+            return;
+        }
+
+        var (currentVpcCountSuccess, currentVpcCountRaw) = await context.ProcessRunner.TryCaptureAsync(
             "aws",
             [
                 "ec2",
@@ -609,6 +626,12 @@ internal static partial class ValidationRunner
             ],
             context.RepoRoot,
             credentialsEnvironment);
+
+        if (!currentVpcCountSuccess)
+        {
+            Console.WriteLine("[runner] Warn: unable to query current VPC count; skipping EKS VPC quota preflight.");
+            return;
+        }
 
         if (int.TryParse(vpcQuotaRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var vpcQuota) &&
             int.TryParse(currentVpcCountRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var currentVpcCount) &&

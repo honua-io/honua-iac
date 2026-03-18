@@ -279,6 +279,28 @@ internal sealed class ProcessRunner(bool dryRun)
         return await CaptureWithInputAsync(fileName, arguments, workingDirectory, standardInput: null, environmentOverrides, redactOutput);
     }
 
+    public async Task<(bool Success, string? Output)> TryCaptureAsync(
+        string fileName,
+        IEnumerable<string> arguments,
+        string workingDirectory,
+        IReadOnlyDictionary<string, string?>? environmentOverrides = null,
+        bool redactOutput = false)
+    {
+        try
+        {
+            return (true, await CaptureAsync(fileName, arguments, workingDirectory, environmentOverrides, redactOutput));
+        }
+        catch (CommandExecutionException exception)
+        {
+            if (!redactOutput && !string.IsNullOrWhiteSpace(exception.Output))
+            {
+                Console.Error.WriteLine(exception.Output.TrimEnd());
+            }
+
+            return (false, null);
+        }
+    }
+
     public async Task<string> CaptureWithInputAsync(
         string fileName,
         IEnumerable<string> arguments,
