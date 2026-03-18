@@ -589,10 +589,11 @@ internal static partial class ValidationRunner
         var vpcQuotaRaw = await context.ProcessRunner.CaptureAsync(
             "aws",
             [
-                "ec2",
-                "describe-account-attributes",
-                "--attribute-names", "max-vpcs-per-region",
-                "--query", "AccountAttributes[0].AttributeValues[0].AttributeValue",
+                "service-quotas",
+                "get-service-quota",
+                "--service-code", "vpc",
+                "--quota-code", "L-F678F1CE",
+                "--query", "Quota.Value",
                 "--output", "text",
             ],
             context.RepoRoot,
