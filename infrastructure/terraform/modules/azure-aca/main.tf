@@ -350,7 +350,7 @@ resource "azurerm_container_app" "this" {
 
       startup_probe {
         transport = "HTTP"
-        path      = "/healthz/ready"
+        path      = "/healthz/live"
         port      = var.container_port
 
         initial_delay           = var.startup_probe_initial_delay_seconds

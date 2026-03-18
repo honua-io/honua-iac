@@ -92,6 +92,7 @@ data "aws_iam_policy_document" "terraform" {
       "cloudwatch:List*",
       "cloudwatch:Put*",
       "servicequotas:GetServiceQuota",
+      "servicequotas:ListServiceQuotas",
       "kms:CreateAlias",
       "kms:CreateKey",
       "kms:Decrypt",

@@ -1393,6 +1393,9 @@ internal static partial class ValidationRunner
             ["HONUA_PLATFORM_VALIDATION_PUBLISH_DB_SSL_MODE"] = "Require",
             ["HONUA_PLATFORM_VALIDATION_PUBLISH_DB_SSL_REQUIRED"] = "true",
             ["HONUA_CLOUD_TEST_BASE_URL"] = baseUrl,
+            ["HONUA_CLOUD_TEST_ADMIN_API_KEY"] = validationEnvironment.TryGetValue("HONUA_ADMIN_PASSWORD", out var adminApiKey)
+                ? adminApiKey
+                : null,
         };
         if (!string.IsNullOrWhiteSpace(currentRevision))
         {
