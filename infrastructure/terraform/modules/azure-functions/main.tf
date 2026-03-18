@@ -477,7 +477,11 @@ resource "postgresql_extension" "postgis" {
   name     = "postgis"
   schema   = "public"
 
-  depends_on = local.db_use_existing ? [] : [azurerm_postgresql_flexible_server.this[0]]
+  depends_on = [
+    azurerm_postgresql_flexible_server.this,
+    azurerm_postgresql_flexible_server_database.this,
+    azurerm_postgresql_flexible_server_configuration.postgis,
+  ]
 }
 
 resource "postgresql_extension" "postgis_raster" {
@@ -486,5 +490,10 @@ resource "postgresql_extension" "postgis_raster" {
   name     = "postgis_raster"
   schema   = "public"
 
-  depends_on = local.db_use_existing ? [postgresql_extension.postgis] : [azurerm_postgresql_flexible_server.this[0], postgresql_extension.postgis]
+  depends_on = [
+    azurerm_postgresql_flexible_server.this,
+    azurerm_postgresql_flexible_server_database.this,
+    azurerm_postgresql_flexible_server_configuration.postgis,
+    postgresql_extension.postgis,
+  ]
 }

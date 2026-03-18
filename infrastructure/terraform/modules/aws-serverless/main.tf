@@ -608,7 +608,9 @@ resource "postgresql_extension" "postgis" {
   name     = "postgis"
   schema   = "public"
 
-  depends_on = local.db_use_existing ? [] : [module.rds[0]]
+  depends_on = [
+    module.rds,
+  ]
 }
 
 resource "postgresql_extension" "postgis_raster" {
@@ -617,5 +619,8 @@ resource "postgresql_extension" "postgis_raster" {
   name     = "postgis_raster"
   schema   = "public"
 
-  depends_on = local.db_use_existing ? [postgresql_extension.postgis] : [module.rds[0], postgresql_extension.postgis]
+  depends_on = [
+    module.rds,
+    postgresql_extension.postgis,
+  ]
 }
