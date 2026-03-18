@@ -693,7 +693,7 @@ internal static partial class ValidationRunner
             return;
         }
 
-        var suffix = $"{DateTime.UtcNow:MMddHHmmss}{Guid.NewGuid():N[..6]}";
+        var suffix = $"{DateTime.UtcNow:MMddHHmmss}{Guid.NewGuid():N}".Substring(0, 16);
         var tableName = $"smoke_{suffix}";
         var layerName = $"Smoke Layer {suffix}";
         var serviceName = $"smoke{suffix}";

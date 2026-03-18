@@ -177,7 +177,7 @@ internal static partial class ValidationRunner
         {
             ["AWS_ACCESS_KEY_ID"] = credentials.AccessKeyId,
             ["AWS_SECRET_ACCESS_KEY"] = credentials.SecretAccessKey,
-            ["AWS_SESSION_TOKEN"] = string.Empty,
+            ["AWS_SESSION_TOKEN"] = null,
             ["AWS_REGION"] = settings.Region,
             ["AWS_DEFAULT_REGION"] = settings.Region,
         };
@@ -201,6 +201,7 @@ internal static partial class ValidationRunner
             RequireCommand("helm");
             RequireCommand("aws");
 
+            await EnsureAwsSessionAsync(context, credentialsEnvironment);
             AssertEstimatedRunCost(
                 nodeCount: settings.NodeDesiredSize,
                 unitCostUsd: 35m,
@@ -378,7 +379,7 @@ internal static partial class ValidationRunner
             PlanArtifactDir: ResolveManagedPlanArtifactDir(command, defaultPlanDir),
             ValidationRunId: env.GetOrDefault("HONUA_VALIDATION_RUN_ID", $"eks-{DateTime.UtcNow:yyyyMMddHHmmss}"),
             TtlHours: GetIntOption(command, env, "ttl-hours", "HONUA_TTL_HOURS", 8),
-            MaxRunCostUsd: GetDecimalOption(command, env, "max-run-cost-usd", "HONUA_MAX_RUN_COST_USD", 50m),
+            MaxRunCostUsd: GetDecimalOption(command, env, "max-run-cost-usd", "HONUA_MAX_RUN_COST_USD", 100m),
             AllowDestroyPlan: command.GetBoolean("allow-destroy-plan", false),
             SkipQuotaPreflight: GetBooleanOption(command, env, "skip-quota-preflight", "HONUA_SKIP_QUOTA_PREFLIGHT"),
             SkipIdempotency: GetBooleanOption(command, env, "skip-idempotency", "HONUA_SKIP_IDEMPOTENCY"),

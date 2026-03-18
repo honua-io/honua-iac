@@ -129,7 +129,7 @@ internal static partial class ValidationRunner
         {
             ["AWS_ACCESS_KEY_ID"] = credentials.AccessKeyId,
             ["AWS_SECRET_ACCESS_KEY"] = credentials.SecretAccessKey,
-            ["AWS_SESSION_TOKEN"] = string.Empty,
+            ["AWS_SESSION_TOKEN"] = null,
             ["AWS_REGION"] = settings.Region,
             ["AWS_DEFAULT_REGION"] = settings.Region,
         };
@@ -151,6 +151,7 @@ internal static partial class ValidationRunner
             RequireCommand("aws");
             ValidateCloudAdminPassword(settings.AdminPassword);
 
+            await EnsureAwsSessionAsync(context, credentialsEnvironment);
             AssertAwsCostGuardrail(settings);
             if (!settings.SkipQuotaPreflight)
             {
@@ -560,19 +561,71 @@ internal static partial class ValidationRunner
 
     private static async Task RunAzureQuotaPreflightAsync(RunnerContext context, IReadOnlyDictionary<string, string?> credentialsEnvironment, AzureLiveSettings settings)
     {
-        var usageJson = await context.ProcessRunner.CaptureAsync("az", ["vm", "list-usage", "-l", settings.Location, "--query", "[?name.value=='cores'] | [0]", "-o", "json"], context.RepoRoot, credentialsEnvironment);
+        var usageRaw = await context.ProcessRunner.CaptureAsync(
+            "az",
+            ["vm", "list-usage", "-l", settings.Location, "--query", "[?name.value=='cores'] | [0].[currentValue,limit]", "-o", "tsv"],
+            context.RepoRoot,
+            credentialsEnvironment);
         if (context.DryRun)
         {
             return;
         }
 
-        using var document = JsonDocument.Parse(usageJson);
-        var current = document.RootElement.TryGetProperty("currentValue", out var currentValue) ? currentValue.GetInt32() : 0;
-        var limit = document.RootElement.TryGetProperty("limit", out var limitValue) ? limitValue.GetInt32() : int.MaxValue;
-        var required = settings.Stack == AzureStack.Aca ? 4 : 2;
-        if (current + required > limit)
+        var usageParts = usageRaw
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (usageParts.Length >= 2 &&
+            int.TryParse(usageParts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var current) &&
+            int.TryParse(usageParts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var limit))
         {
-            throw new ValidationException($"Azure quota preflight failed: cores usage {current}/{limit}, estimated required +{required}");
+            var required = settings.Stack == AzureStack.Aca ? 4 : 2;
+            if (current + required > limit)
+            {
+                throw new ValidationException($"Azure quota preflight failed: cores usage {current}/{limit}, estimated required +{required}");
+            }
+        }
+    }
+
+    private static async Task EnsureAwsSessionAsync(
+        RunnerContext context,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment)
+    {
+        if (context.DryRun)
+        {
+            return;
+        }
+
+        var maxAttemptsRaw = context.Environment.GetOrDefault("HONUA_AWS_LOGIN_MAX_ATTEMPTS", "12");
+        var retrySecondsRaw = context.Environment.GetOrDefault("HONUA_AWS_LOGIN_RETRY_SECONDS", "10");
+        var maxAttempts = int.TryParse(maxAttemptsRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedMaxAttempts)
+            ? Math.Max(parsedMaxAttempts, 1)
+            : 12;
+        var retrySeconds = int.TryParse(retrySecondsRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedRetrySeconds)
+            ? Math.Max(parsedRetrySeconds, 1)
+            : 10;
+
+        Exception? lastFailure = null;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                await context.ProcessRunner.RunAsync(
+                    "aws",
+                    ["sts", "get-caller-identity", "--output", "json"],
+                    context.RepoRoot,
+                    credentialsEnvironment);
+                return;
+            }
+            catch (Exception exception) when (attempt < maxAttempts)
+            {
+                lastFailure = exception;
+                Console.WriteLine($"[runner] AWS session attempt {attempt}/{maxAttempts} failed; retrying in {retrySeconds}s");
+                await Task.Delay(TimeSpan.FromSeconds(retrySeconds));
+            }
+        }
+
+        if (lastFailure is not null)
+        {
+            throw lastFailure;
         }
     }
 
