@@ -1,22 +1,44 @@
 # Terraform Validation Assets
 
-This folder contains maintainer-only Terraform validation automation.
+This directory contains maintainer-only validation automation for Terraform roots under `infrastructure/terraform`.
 
-- `runner/Honua.TerraformValidation.Runner`: `.NET 10` typed workflow runner that validates inputs, bootstraps least-privilege identities, and dispatches validation scenarios
-- `scenarios/`: declarative scenario manifests consumed by the runner
-- `adapters/aws`: AWS runner-facing adapter entrypoints
-- `adapters/azure`: Azure runner-facing adapter entrypoints
-- `adapters/k8s`: Kubernetes runner-facing adapter entrypoints
-- `adapters/shared`: compatibility entrypoints that translate policy-gate and drift calls back into the `.NET 10` runner
-- `scripts/*`: legacy shell fallback harnesses retained for compatibility and reference
+## Architecture
 
-Current live-scenario split:
+```mermaid
+flowchart LR
+  Workflow[GitHub workflow or local invocation] --> Runner[.NET 10 runner]
+  Wrapper[scripts/* or adapters/*] --> Runner
+  Runner --> Scenario[Scenario manifest]
+  Scenario --> Native[Runner-native execution]
+  Native --> Tools[terraform / az / aws / kubectl / helm]
+  Tools --> Roots[Terraform roots]
+  Native --> Platform[Optional honua-server post-apply suite]
+```
 
-- `azure-live`, `aws-live`, `k8s-live`, `aks-live`, and `eks-live` are runner-native scenarios executed by the `.NET 10` runner.
-- The shell adapter entrypoints remain stable compatibility shims. They invoke the runner when `dotnet` is available and fall back to the legacy shell harnesses only when the runner is unavailable.
-- Azure, AWS, AKS, and EKS can also invoke the external `honua-server` post-apply platform suite when that repo is checked out and `HONUA_PLATFORM_VALIDATION_SCRIPT` is set or auto-discovered.
+## Boundary Rules
 
-For full run instructions, use:
+- `validation/runner/*` is the typed orchestration layer.
+- `validation/scenarios/*` defines what each scenario is allowed to execute.
+- `validation/adapters/*` is the stable wrapper boundary for existing shell entrypoints.
+- `validation/scripts/*` is private implementation detail. Treat it as replaceable, not as the long-term public interface.
 
-- `docs/devops/terraform-validation.md`
-- `.github/workflows/terraform-manual-validation.yml`
+## Current Scenario Split
+
+| Scenario | Status | Notes |
+|---|---|---|
+| `static-validate` | runner-native | `terraform fmt`, `init -backend=false`, `validate`, and isolated `terraform test` module roots |
+| `policy-gates` | runner-native | `tflint`, `checkov`, optional `tfsec`, custom guard checks |
+| `drift` | runner-native | `terraform plan -detailed-exitcode` |
+| `k8s-live` | runner-native | cluster prep, Helm validation, observability apply, and app checks are orchestrated in C# |
+| `aks-live` | runner-native | bootstrap identity, plan/apply, kubeconfig handoff, Kubernetes checks, cleanup/leak checks are in C# |
+| `eks-live` | runner-native | bootstrap identity, plan/apply, kubeconfig handoff, Kubernetes checks, cleanup/leak checks are in C# |
+| `azure-live` | runner-native | bootstrap identity, plan/apply, post-apply validation, and cleanup are orchestrated in C# |
+| `aws-live` | runner-native | bootstrap identity, plan/apply, post-apply validation, and cleanup are orchestrated in C# |
+
+The only intentional script execution still on the live path is the optional external `honua-server` post-apply suite referenced by `HONUA_PLATFORM_VALIDATION_SCRIPT`.
+
+## Read Next
+
+- Runbook: `docs/devops/terraform-validation.md`
+- Runner internals: `infrastructure/terraform/validation/runner/README.md`
+- Adapter boundary: `infrastructure/terraform/validation/adapters/README.md`

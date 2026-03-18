@@ -1,9 +1,10 @@
 locals {
-  default_alert_rules_file = "${path.module}/assets/alerts.yml"
-  default_dashboard_file   = "${path.module}/assets/honua-overview.json"
-  alert_rules_file         = var.alert_rules_file != "" ? var.alert_rules_file : local.default_alert_rules_file
-  honua_dashboard_file     = var.honua_dashboard_file != "" ? var.honua_dashboard_file : local.default_dashboard_file
-  alert_rules              = yamldecode(file(local.alert_rules_file))
+  default_alert_rules_file   = "${path.module}/assets/alerts.yml"
+  default_dashboard_file     = "${path.module}/assets/honua-overview.json"
+  alert_rules_file           = var.alert_rules_file != "" ? var.alert_rules_file : local.default_alert_rules_file
+  honua_dashboard_file       = var.honua_dashboard_file != "" ? var.honua_dashboard_file : local.default_dashboard_file
+  alert_rules                = yamldecode(file(local.alert_rules_file))
+  opentelemetry_service_host = "${var.opentelemetry_release_name}.${var.namespace}.svc.cluster.local"
 
   honua_scrape_config = merge(
     {
@@ -20,6 +21,89 @@ locals {
         format = [var.honua_metrics_format]
       }
     } : {}
+  )
+  opentelemetry_collector_scrape_config = {
+    job_name     = "opentelemetry-collector"
+    metrics_path = "/metrics"
+    static_configs = [
+      {
+        targets = ["${local.opentelemetry_service_host}:8888"]
+      }
+    ]
+  }
+  opentelemetry_collector_exporters = merge(
+    var.opentelemetry_collector_enable_debug_exporter ? {
+      debug = {
+        verbosity = "basic"
+      }
+    } : {},
+    var.opentelemetry_collector_otlp_endpoint != "" ? {
+      otlp = {
+        endpoint = var.opentelemetry_collector_otlp_endpoint
+        tls = {
+          insecure = var.opentelemetry_collector_otlp_insecure
+        }
+        headers = var.opentelemetry_collector_otlp_headers
+      }
+    } : {}
+  )
+  opentelemetry_collector_exporter_names = keys(local.opentelemetry_collector_exporters)
+  opentelemetry_collector_receivers = var.opentelemetry_collector_enable_otlp_receiver ? {
+    otlp = {
+      protocols = {
+        grpc = {
+          endpoint = "0.0.0.0:4317"
+        }
+        http = {
+          endpoint = "0.0.0.0:4318"
+        }
+      }
+    }
+  } : {}
+  opentelemetry_collector_pipelines = var.opentelemetry_collector_enable_otlp_receiver && length(local.opentelemetry_collector_exporter_names) > 0 ? {
+    logs = {
+      receivers  = ["otlp"]
+      processors = ["memory_limiter", "batch"]
+      exporters  = local.opentelemetry_collector_exporter_names
+    }
+    metrics = {
+      receivers  = ["otlp"]
+      processors = ["memory_limiter", "batch"]
+      exporters  = local.opentelemetry_collector_exporter_names
+    }
+    traces = {
+      receivers  = ["otlp"]
+      processors = ["memory_limiter", "batch"]
+      exporters  = local.opentelemetry_collector_exporter_names
+    }
+  } : {}
+  opentelemetry_collector_config = {
+    receivers = local.opentelemetry_collector_receivers
+    processors = {
+      batch = {}
+      memory_limiter = {
+        check_interval  = "1s"
+        limit_mib       = 256
+        spike_limit_mib = 64
+      }
+    }
+    exporters = local.opentelemetry_collector_exporters
+    service = merge(
+      {
+        telemetry = {
+          metrics = {
+            address = "0.0.0.0:8888"
+          }
+        }
+      },
+      length(local.opentelemetry_collector_pipelines) > 0 ? {
+        pipelines = local.opentelemetry_collector_pipelines
+      } : {}
+    )
+  }
+  extra_scrape_configs = concat(
+    [local.honua_scrape_config],
+    var.opentelemetry_collector_enabled ? [local.opentelemetry_collector_scrape_config] : []
   )
 
   prometheus_values = {
@@ -64,9 +148,7 @@ locals {
         }
       }
     }
-    extraScrapeConfigs = yamlencode([
-      local.honua_scrape_config
-    ])
+    extraScrapeConfigs = yamlencode(local.extra_scrape_configs)
     serverFiles = {
       "alerting_rules.yml" = local.alert_rules
     }
@@ -141,6 +223,44 @@ locals {
       }
     }
   }
+
+  opentelemetry_values = merge(
+    {
+      mode   = "deployment"
+      config = local.opentelemetry_collector_config
+      ports = {
+        metrics = {
+          enabled       = true
+          containerPort = 8888
+          servicePort   = 8888
+          protocol      = "TCP"
+        }
+        otlp = {
+          enabled       = var.opentelemetry_collector_enable_otlp_receiver
+          containerPort = 4317
+          servicePort   = 4317
+          protocol      = "TCP"
+        }
+        otlp-http = {
+          enabled       = var.opentelemetry_collector_enable_otlp_receiver
+          containerPort = 4318
+          servicePort   = 4318
+          protocol      = "TCP"
+        }
+      }
+      resources = {
+        requests = {
+          cpu    = "50m"
+          memory = "128Mi"
+        }
+        limits = {
+          cpu    = "250m"
+          memory = "256Mi"
+        }
+      }
+    },
+    var.opentelemetry_collector_values
+  )
 }
 
 resource "kubernetes_namespace_v1" "this" {
@@ -148,6 +268,13 @@ resource "kubernetes_namespace_v1" "this" {
 
   metadata {
     name = var.namespace
+  }
+}
+
+check "opentelemetry_collector_exporters" {
+  assert {
+    condition     = !var.opentelemetry_collector_enabled || var.opentelemetry_collector_enable_debug_exporter || var.opentelemetry_collector_otlp_endpoint != ""
+    error_message = "When opentelemetry_collector_enabled is true, configure opentelemetry_collector_otlp_endpoint or keep the debug exporter enabled."
   }
 }
 
@@ -214,4 +341,19 @@ resource "helm_release" "grafana" {
     kubernetes_secret_v1.grafana_admin,
     kubernetes_config_map_v1.honua_dashboard,
   ]
+}
+
+resource "helm_release" "opentelemetry_collector" {
+  count            = var.opentelemetry_collector_enabled ? 1 : 0
+  name             = var.opentelemetry_release_name
+  repository       = "https://open-telemetry.github.io/opentelemetry-helm-charts"
+  chart            = "opentelemetry-collector"
+  version          = var.opentelemetry_chart_version != "" ? var.opentelemetry_chart_version : null
+  namespace        = var.namespace
+  create_namespace = false
+  timeout          = var.helm_timeout_seconds
+
+  values = [yamlencode(local.opentelemetry_values)]
+
+  depends_on = [kubernetes_namespace_v1.this]
 }

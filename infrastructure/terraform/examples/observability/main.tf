@@ -14,8 +14,12 @@ module "observability" {
   namespace            = var.namespace
   honua_metrics_target = var.honua_metrics_target
 
-  grafana_ingress_enabled = var.grafana_ingress_host != ""
-  grafana_ingress_host    = var.grafana_ingress_host
+  grafana_ingress_enabled               = var.grafana_ingress_host != ""
+  grafana_ingress_host                  = var.grafana_ingress_host
+  opentelemetry_collector_enabled       = var.opentelemetry_collector_enabled
+  opentelemetry_chart_version           = var.opentelemetry_chart_version
+  opentelemetry_collector_otlp_endpoint = var.opentelemetry_collector_otlp_endpoint
+  opentelemetry_collector_otlp_insecure = var.opentelemetry_collector_otlp_insecure
 }
 
 locals {
@@ -98,7 +102,11 @@ locals {
       prometheus_canary_job = null
       prometheus_url        = module.observability.prometheus_url
       grafana_url           = module.observability.grafana_url
+      collector_metrics_url = module.observability.opentelemetry_collector_metrics_endpoint
+      otlp_grpc_endpoint    = module.observability.opentelemetry_collector_otlp_grpc_endpoint
+      otlp_http_endpoint    = module.observability.opentelemetry_collector_otlp_http_endpoint
     }
+    runbooks = module.observability.operations_metadata
     secrets = {
       secret_store = {
         kind = "kubernetes-secret"
@@ -136,6 +144,11 @@ output "operations_contract" {
   sensitive   = true
 }
 
+output "operations_metadata" {
+  description = "Structured operational metadata for observability runbooks and telemetry onboarding."
+  value       = module.observability.operations_metadata
+}
+
 output "prometheus_url" {
   value = module.observability.prometheus_url
 }
@@ -154,4 +167,24 @@ output "grafana_url" {
 
 output "grafana_admin_secret_name" {
   value = module.observability.grafana_admin_secret_name
+}
+
+output "opentelemetry_release" {
+  value = module.observability.opentelemetry_release
+}
+
+output "opentelemetry_collector_service_name" {
+  value = module.observability.opentelemetry_collector_service_name
+}
+
+output "opentelemetry_collector_metrics_endpoint" {
+  value = module.observability.opentelemetry_collector_metrics_endpoint
+}
+
+output "opentelemetry_otlp_grpc_endpoint" {
+  value = module.observability.opentelemetry_otlp_grpc_endpoint
+}
+
+output "opentelemetry_otlp_http_endpoint" {
+  value = module.observability.opentelemetry_otlp_http_endpoint
 }

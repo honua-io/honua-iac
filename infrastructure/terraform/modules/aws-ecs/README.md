@@ -20,7 +20,7 @@ module "honua" {
 }
 ```
 
-> **PostGIS + PostGIS Raster are required.** Set `enable_postgis = true` to enable both extensions on the RDS instance via a local-exec provisioner. This requires `psql` on the machine running `terraform apply` and network access to the RDS endpoint. If you cannot run local-exec, enable both extensions manually after apply. For controlled temporary access from CI/local runners, use `db_additional_ingress_cidrs`.
+> **PostGIS + PostGIS Raster are required.** Set `enable_postgis = true` so Terraform's `postgresql_extension` resources run `CREATE EXTENSION` against the database without needing `psql` on the apply host. When reusing an existing PostgreSQL endpoint, pair `existing_db_connection_string` with `existing_db_admin_password` so the provider can authenticate and manage the extensions automatically.
 >
 > If you do not set `allow_http_ingress_cidrs` or `allow_https_ingress_cidrs`, the ALB listener defaults to VPC-only ingress using the active VPC CIDR. Set explicit CIDRs before exposing the service more broadly.
 
@@ -159,7 +159,8 @@ If your Prometheus scrape config uses different job names, override the correspo
 | `canary_header_value` | `always` | Header value that forces ALB routing to the canary target group. |
 | `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster on RDS. **Set to true.** |
 | `existing_db_endpoint` | `""` | Reuse an existing PostgreSQL endpoint (must be paired with `existing_db_connection_string`). |
-| `existing_db_connection_string` | `""` | Reuse an existing PostgreSQL connection string (skips RDS provisioning and PostGIS local-exec). |
+| `existing_db_connection_string` | `""` | Reuse an existing PostgreSQL connection string (skips provisioning; pair with `existing_db_admin_password` when `enable_postgis = true` so Terraform can manage PostGIS). |
+| `existing_db_admin_password` | `""` | Admin password for an existing PostgreSQL database. Required when `enable_postgis = true` and `existing_db_connection_string` is used. |
 | `db_instance_class` | `db.t3.micro` | RDS instance class. Use `db.r6g.*` for production. |
 | `db_multi_az` | false | Enable Multi-AZ failover. Recommended for production. |
 | `db_require_ssl` | true | Append SSL requirements to the connection string. |
@@ -178,6 +179,9 @@ See `variables.tf` for the complete list.
 ## Outputs
 
 See `outputs.tf` for ALB URL, ECS service names, canary routing headers, control-plane telemetry hints, RDS endpoint, secrets ARNs, and connection strings.
+
+- `latest_db_snapshot_arn` – ARN of the most recent automated PostgreSQL snapshot created by the RDS module.
+- `operations_metadata.database.backup.latest_snapshot_arn` – same ARN surfaced in the structured metadata for backup/restore automation.
 
 ## After apply
 

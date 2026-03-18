@@ -23,7 +23,7 @@ module "honua" {
 ## Prerequisites
 
 - **ECR image**: Lambda container images must be stored in ECR. Push the Honua Lambda image (`*-lambda-aot` preferred; `*-lambda` debug fallback) to your ECR repository before applying.
-- **PostGIS + PostGIS Raster**: Set `enable_postgis = true` (requires `psql` on the apply machine with network access to RDS). For controlled temporary access from CI/local runners, use `db_additional_ingress_cidrs`.
+- **PostGIS + PostGIS Raster**: Set `enable_postgis = true` so Terraform's `postgresql_extension` resources run `CREATE EXTENSION`. When reusing an existing database, pair `existing_db_connection_string` with `existing_db_admin_password` so the provider can authenticate without requiring `psql`. For controlled temporary access from CI/local runners, use `db_additional_ingress_cidrs`.
 - **Migrations**: `skip_migrations` defaults to `true` for serverless. Run migrations out-of-band (e.g. via a one-off ECS task or local `psql`) before first use.
 
 ## Production example
@@ -78,7 +78,8 @@ module "honua" {
 | `lambda_alias_version` | `null` | Optional published version to pin the stable alias to; defaults to the version published by the current apply. |
 | `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster on RDS. **Set to true.** |
 | `existing_db_endpoint` | `""` | Reuse an existing PostgreSQL endpoint (must be paired with `existing_db_connection_string`). |
-| `existing_db_connection_string` | `""` | Reuse an existing PostgreSQL connection string (skips RDS provisioning and PostGIS local-exec). |
+| `existing_db_connection_string` | `""` | Reuse an existing PostgreSQL connection string (skips RDS provisioning; pair with `existing_db_admin_password` when `enable_postgis = true` so Terraform can manage PostGIS). |
+| `existing_db_admin_password` | `""` | Admin password for an existing PostgreSQL database. Required when `enable_postgis = true` and `existing_db_connection_string` is used. |
 | `skip_migrations` | true | Skip auto-migrations. Run them out-of-band for serverless. |
 | `db_instance_class` | `db.t3.micro` | RDS instance class. |
 | `db_multi_az` | false | Enable Multi-AZ failover. |
@@ -107,7 +108,12 @@ If you want staged Lambda rollout instead of direct alias cutover, add a deploy-
 
 ## Outputs
 
-See `outputs.tf` for the API endpoint URL, RDS connection string, and secrets. The module also emits Honua control-plane handoff metadata:
+See `outputs.tf` for the API endpoint URL, RDS connection string, and secrets. The module also emits Honua control-plane handoff metadata plus snapshot info:
+
+- `latest_db_snapshot_arn` – ARN of the most recent automated PostgreSQL snapshot.
+- `operations_metadata.database.backup.latest_snapshot_arn` – same ARN surfaced to structured automation consumers.
+
+The module also emits Honua control-plane handoff metadata:
 
 - `environment`
 - `aws_region`

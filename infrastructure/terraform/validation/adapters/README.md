@@ -1,16 +1,26 @@
 # Validation Adapters
 
-These adapter entrypoints are the runner-facing compatibility boundary for
-Terraform validation.
+Adapters are the compatibility boundary between historical shell entrypoints and the `.NET 10` validation runner.
 
-- `adapters/azure/run-aks-terraform-integration.sh` and
-  `adapters/aws/run-eks-terraform-integration.sh` are runner-first compatibility
-  shims. They invoke the `.NET 10` runner when `dotnet` is available and fall
-  back to the legacy shell implementations under `validation/scripts/` only when
-  the runner is unavailable.
-- `adapters/k8s`, `adapters/azure/run-azure-terraform-integration.sh`, and
-  `adapters/aws/run-aws-terraform-integration.sh` now use that same runner-first
-  compatibility pattern.
-- `adapters/shared` now forwards `policy-gates` and `drift` back into the `.NET
-  10` runner so those shared scenarios are runner-native while keeping the shell
-  entrypoints stable.
+## Runner vs Wrapper Boundary
+
+- Use the runner directly from GitHub Actions and for new local automation.
+- Keep adapter entrypoints stable for humans, CI glue, and older scripts that still call shell commands.
+- Do not point new orchestration at `validation/scripts/*` directly. That layer is private implementation detail.
+
+## Current Behavior
+
+| Adapter family | Current behavior |
+|---|---|
+| `adapters/shared` | Runner-first shims for `policy-gates` and `drift` |
+| `adapters/azure` | Runner-first compatibility shims for `azure-live` and `aks-live`, with legacy fallback only when the runner is unavailable |
+| `adapters/aws` | Runner-first compatibility shims for `aws-live` and `eks-live`, with legacy fallback only when the runner is unavailable |
+| `adapters/k8s` | Runner-first compatibility shim for `k8s-live`, with legacy fallback only when the runner is unavailable |
+
+## Practical Rule
+
+If you are documenting or wiring a new path:
+
+1. Prefer `dotnet run --project ...Honua.TerraformValidation.Runner -- <scenario>`.
+2. Use adapters only when you need stable shell-compatible entrypoints.
+3. Treat `validation/scripts/*` as legacy implementation detail or shared asset source, never as the primary orchestration surface.

@@ -26,6 +26,13 @@ check "existing_db_inputs" {
   }
 }
 
+check "existing_postgis_credentials" {
+  assert {
+    condition     = !(local.db_use_existing && var.enable_postgis) || var.existing_db_admin_password != ""
+    error_message = "Provide existing_db_admin_password when enabling PostGIS on an existing database."
+  }
+}
+
 resource "azurerm_resource_group" "this" {
   name     = "${local.name}-rg"
   location = var.location
@@ -102,12 +109,23 @@ resource "random_password" "db" {
 }
 
 locals {
-  db_password          = var.db_admin_password != null ? var.db_admin_password : (local.db_use_existing ? "" : random_password.db[0].result)
+  db_password          = var.db_admin_password != null ? var.db_admin_password : (local.db_use_existing ? var.existing_db_admin_password : random_password.db[0].result)
   db_server_fqdn       = local.db_use_existing ? var.existing_db_fqdn : azurerm_postgresql_flexible_server.this[0].fqdn
   db_connection_string = local.db_use_existing ? var.existing_db_connection_string : "Host=${azurerm_postgresql_flexible_server.this[0].fqdn};Port=5432;Database=${var.db_name};Username=${var.db_admin_username};Password=${local.db_password};SSL Mode=Require;Trust Server Certificate=false"
   redis_enabled        = var.redis_enabled || var.redis_connection_string != ""
   redis_create         = var.redis_enabled && var.redis_connection_string == ""
   redis_connection     = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? azurerm_redis_cache.this[0].primary_connection_string : "")
+}
+
+provider "postgresql" {
+  alias           = "honua"
+  host            = local.db_server_fqdn
+  port            = 5432
+  database        = var.db_name
+  username        = var.db_admin_username
+  password        = local.db_password
+  sslmode         = "require"
+  connect_timeout = 10
 }
 
 #checkov:skip=CKV2_AZURE_57: Private endpoints are configured outside this module.
@@ -453,48 +471,20 @@ resource "azurerm_role_assignment" "function_storage_table" {
   principal_id         = azurerm_user_assigned_identity.function.principal_id
 }
 
-resource "null_resource" "enable_postgis" {
-  count = !local.db_use_existing && var.enable_postgis ? 1 : 0
+resource "postgresql_extension" "postgis" {
+  count    = var.enable_postgis ? 1 : 0
+  provider = postgresql.honua
+  name     = "postgis"
+  schema   = "public"
 
-  triggers = {
-    db_endpoint = local.db_server_fqdn
-  }
+  depends_on = local.db_use_existing ? [] : [azurerm_postgresql_flexible_server.this[0]]
+}
 
-  provisioner "local-exec" {
-    command = <<-EOT
-      set -e
-      echo "Waiting for PostgreSQL readiness on ${local.db_server_fqdn}"
-      for attempt in $(seq 1 30); do
-        if PGCONNECT_TIMEOUT=5 psql \
-          --host=${local.db_server_fqdn} \
-          --username=${var.db_admin_username} \
-          --dbname=${var.db_name} \
-          --command="SELECT 1;" >/dev/null 2>&1; then
-          break
-        fi
-        if [ "$attempt" -eq 30 ]; then
-          echo "PostgreSQL readiness check failed after 30 attempts" >&2
-          exit 1
-        fi
-        sleep 10
-      done
+resource "postgresql_extension" "postgis_raster" {
+  count    = var.enable_postgis ? 1 : 0
+  provider = postgresql.honua
+  name     = "postgis_raster"
+  schema   = "public"
 
-      echo "Enabling PostGIS + PostGIS Raster on ${local.db_server_fqdn}"
-      PGCONNECT_TIMEOUT=5 psql \
-        --host=${local.db_server_fqdn} \
-        --username=${var.db_admin_username} \
-        --dbname=${var.db_name} \
-        --set=ON_ERROR_STOP=1 \
-        --command="CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;"
-    EOT
-
-    environment = {
-      PGPASSWORD = local.db_password
-    }
-  }
-
-  depends_on = [
-    azurerm_postgresql_flexible_server_database.this,
-    azurerm_postgresql_flexible_server_firewall_rule.validation
-  ]
+  depends_on = local.db_use_existing ? [postgresql_extension.postgis] : [azurerm_postgresql_flexible_server.this[0], postgresql_extension.postgis]
 }

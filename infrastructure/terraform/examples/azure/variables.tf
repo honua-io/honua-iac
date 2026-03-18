@@ -72,6 +72,18 @@ variable "enable_postgis" {
   default     = true
 }
 
+variable "postgis_readiness_max_attempts" {
+  description = "Maximum readiness attempts before PostGIS enablement fails."
+  type        = number
+  default     = 30
+}
+
+variable "postgis_readiness_sleep_seconds" {
+  description = "Seconds to wait between PostgreSQL readiness probes during PostGIS enablement."
+  type        = number
+  default     = 10
+}
+
 variable "redis_enabled" {
   description = "Provision Azure Cache for Redis."
   type        = bool

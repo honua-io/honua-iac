@@ -92,9 +92,31 @@ variable "db_backup_retention_days" {
 }
 
 variable "enable_postgis" {
-  description = "Attempt to enable PostGIS and PostGIS Raster via local-exec (requires psql + network access)."
+  description = "Enable PostGIS and PostGIS Raster via Terraform's `postgresql_extension` resources."
   type        = bool
   default     = false
+}
+
+variable "postgis_readiness_max_attempts" {
+  description = "Maximum number of readiness checks before PostGIS enablement fails."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.postgis_readiness_max_attempts >= 1
+    error_message = "postgis_readiness_max_attempts must be at least 1."
+  }
+}
+
+variable "postgis_readiness_sleep_seconds" {
+  description = "Seconds to wait between PostgreSQL readiness checks during PostGIS enablement."
+  type        = number
+  default     = 10
+
+  validation {
+    condition     = var.postgis_readiness_sleep_seconds >= 1
+    error_message = "postgis_readiness_sleep_seconds must be at least 1."
+  }
 }
 
 # --- Redis ---

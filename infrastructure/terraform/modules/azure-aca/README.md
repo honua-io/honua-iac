@@ -21,7 +21,7 @@ module "honua" {
 }
 ```
 
-> **PostGIS + PostGIS Raster are required.** Set `enable_postgis = true` to enable both extensions via a local-exec provisioner. This requires `psql` on the machine running `terraform apply` and network access to the database. If you cannot run local-exec, enable both extensions manually after apply.
+- **PostGIS + PostGIS Raster are required.** Set `enable_postgis = true` so Terraform's `postgresql_extension` resources create the extensions without needing `psql` locally. When reusing an existing PostgreSQL server, provide `existing_db_connection_string` along with `existing_db_admin_password` so the provider can authenticate and manage the extensions automatically.
 
 ## Production example
 
@@ -87,7 +87,8 @@ module "honua" {
 | `container_memory` | `"1Gi"` | Memory with `Gi` suffix (for example `1Gi`, `1.5Gi`). |
 | `min_replicas` / `max_replicas` | 1 / 5 | Scaling range. Use min 2 for production. |
 | `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster extensions. **Set to true.** |
-| `existing_db_connection_string` + `existing_db_fqdn` | `""` | Reuse an existing PostgreSQL server and skip DB creation/bootstrap. |
+| `existing_db_connection_string` + `existing_db_fqdn` | `""` | Reuse an existing PostgreSQL server and skip DB creation/bootstrap. When `enable_postgis = true`, also set `existing_db_admin_password` so the PostgreSQL provider can enable the extensions. |
+| `existing_db_admin_password` | `""` | Admin password for the reused PostgreSQL server. Required when `enable_postgis = true`. |
 | `db_sku_name` | `B_Standard_B1ms` | PostgreSQL SKU. Use `GP_Standard_*` for production. |
 | `db_storage_mb` | 32768 | Database storage in MB. |
 | `db_geo_redundant_backup_enabled` | true | Geo-redundant backups. |

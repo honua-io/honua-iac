@@ -62,6 +62,12 @@ internal static partial class ValidationRunner
 
     private static async Task RunStaticValidateAsync(RunnerContext context, ScenarioManifest manifest)
     {
+        var moduleTestRoots = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var moduleTestRoot in manifest.ModuleTestRoots ?? [])
+        {
+            moduleTestRoots.Add(ResolveRepoRelativePath(context, moduleTestRoot));
+        }
+
         foreach (var formatPath in manifest.FormatPaths ?? [])
         {
             await context.ProcessRunner.RunAsync(
@@ -81,6 +87,14 @@ internal static partial class ValidationRunner
                 "terraform",
                 [$"-chdir={resolvedRoot}", "validate", "-no-color"],
                 context.RepoRoot);
+
+            if (moduleTestRoots.Contains(resolvedRoot))
+            {
+                await context.ProcessRunner.RunAsync(
+                    "terraform",
+                    [$"-chdir={resolvedRoot}", "test", "-no-color"],
+                    context.RepoRoot);
+            }
         }
     }
 

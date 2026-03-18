@@ -159,6 +159,11 @@ run "control_plane_outputs_without_canary" {
     condition     = output.control_plane_telemetry_prometheus_canary_job == null
     error_message = "Expected null canary Prometheus job when canary is disabled."
   }
+
+  assert {
+    condition     = output.operations_metadata.database.port == 5432
+    error_message = "Expected operations metadata to expose PostgreSQL port 5432."
+  }
 }
 
 run "control_plane_outputs_with_canary" {
@@ -177,5 +182,10 @@ run "control_plane_outputs_with_canary" {
   assert {
     condition     = output.control_plane_telemetry_prometheus_canary_job == "honua-canary"
     error_message = "Expected canary Prometheus job honua-canary when canary is enabled."
+  }
+
+  assert {
+    condition     = output.operations_metadata.workload.canary_service_name != null
+    error_message = "Expected canary operations metadata when canary is enabled."
   }
 }

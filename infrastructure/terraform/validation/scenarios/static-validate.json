@@ -32,5 +32,15 @@
     "infrastructure/terraform/modules/aws-eks",
     "infrastructure/terraform/modules/observability-stack",
     "docs/devops/examples"
+  ],
+  "moduleTestRoots": [
+    "infrastructure/terraform/modules/aws-data",
+    "infrastructure/terraform/modules/aws-ecs",
+    "infrastructure/terraform/modules/aws-serverless",
+    "infrastructure/terraform/modules/azure-aca",
+    "infrastructure/terraform/modules/azure-aks",
+    "infrastructure/terraform/modules/azure-data",
+    "infrastructure/terraform/modules/azure-functions",
+    "infrastructure/terraform/modules/observability-stack"
   ]
 }

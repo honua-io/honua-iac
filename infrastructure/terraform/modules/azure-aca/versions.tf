@@ -3,19 +3,23 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = ">= 4.0, < 5.0"
+      version = "~> 4.58"
     }
     random = {
       source  = "hashicorp/random"
-      version = ">= 3.5, < 4.0"
+      version = "~> 3.8"
     }
     null = {
       source  = "hashicorp/null"
-      version = ">= 3.2, < 4.0"
+      version = "~> 3.2"
     }
     time = {
       source  = "hashicorp/time"
-      version = ">= 0.9, < 1.0"
+      version = "~> 0.13"
+    }
+    postgresql = {
+      source  = "cyrilgdn/postgresql"
+      version = "~> 1.17"
     }
   }
 }

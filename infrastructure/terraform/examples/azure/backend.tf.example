@@ -1,0 +1,11 @@
+# Uncomment and configure for remote state storage.
+# See https://developer.hashicorp.com/terraform/language/backend/azurerm
+
+# terraform {
+#   backend "azurerm" {
+#     resource_group_name  = "my-honua-tfstate-rg"
+#     storage_account_name = "myhounatfstate"
+#     container_name       = "tfstate"
+#     key                  = "honua/azure-aca/terraform.tfstate"
+#   }
+# }

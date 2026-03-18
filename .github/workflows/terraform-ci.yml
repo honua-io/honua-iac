@@ -15,6 +15,7 @@ on:
       - 'docs/devops/terraform-validation.md'
       - 'docs/devops/examples/**'
       - '.github/workflows/terraform-ci.yml'
+      - '.github/workflows/terraform-drift-scheduled.yml'
       - '.github/workflows/terraform-manual-validation.yml'
   push:
     branches:
@@ -32,6 +33,7 @@ on:
       - 'docs/devops/terraform-validation.md'
       - 'docs/devops/examples/**'
       - '.github/workflows/terraform-ci.yml'
+      - '.github/workflows/terraform-drift-scheduled.yml'
       - '.github/workflows/terraform-manual-validation.yml'
 
 permissions:

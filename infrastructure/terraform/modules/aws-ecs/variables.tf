@@ -146,6 +146,13 @@ variable "db_password" {
   default     = null
 }
 
+variable "existing_db_admin_password" {
+  description = "Admin password for an existing PostgreSQL database when enabling PostGIS."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "db_name" {
   description = "PostgreSQL database name."
   type        = string
@@ -464,7 +471,7 @@ variable "kms_key_deletion_window_days" {
 }
 
 variable "enable_postgis" {
-  description = "Attempt to enable PostGIS and PostGIS Raster via local-exec (requires psql + network access)."
+  description = "Enable PostGIS and PostGIS Raster via Terraform's `postgresql_extension` resources. When reusing a database, also supply `existing_db_admin_password` so Terraform can authenticate."
   type        = bool
   default     = false
 }

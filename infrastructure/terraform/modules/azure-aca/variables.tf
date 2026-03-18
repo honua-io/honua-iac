@@ -104,6 +104,13 @@ variable "existing_db_connection_string" {
   sensitive   = true
 }
 
+variable "existing_db_admin_password" {
+  description = "Admin password usable when enabling PostGIS on an existing PostgreSQL server."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "db_name" {
   description = "PostgreSQL database name."
   type        = string
@@ -153,9 +160,31 @@ variable "db_geo_redundant_backup_enabled" {
 }
 
 variable "enable_postgis" {
-  description = "Attempt to enable PostGIS and PostGIS Raster via local-exec (requires psql + network access)."
+  description = "Enable PostGIS and PostGIS Raster via Terraform's `postgresql_extension` resources. When reusing a database, also provide `existing_db_admin_password` so Terraform can authenticate."
   type        = bool
   default     = false
+}
+
+variable "postgis_readiness_max_attempts" {
+  description = "Maximum readiness attempts before PostGIS enablement fails."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.postgis_readiness_max_attempts >= 1
+    error_message = "postgis_readiness_max_attempts must be at least 1."
+  }
+}
+
+variable "postgis_readiness_sleep_seconds" {
+  description = "Seconds to wait between PostgreSQL readiness probes during PostGIS enablement."
+  type        = number
+  default     = 10
+
+  validation {
+    condition     = var.postgis_readiness_sleep_seconds >= 1
+    error_message = "postgis_readiness_sleep_seconds must be at least 1."
+  }
 }
 
 variable "additional_env" {

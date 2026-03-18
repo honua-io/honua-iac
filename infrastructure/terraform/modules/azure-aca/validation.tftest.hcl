@@ -74,6 +74,30 @@ run "container_memory_valid_format" {
   }
 }
 
+run "postgis_readiness_max_attempts_minimum" {
+  command = plan
+
+  variables {
+    postgis_readiness_max_attempts = 0
+  }
+
+  expect_failures = [
+    var.postgis_readiness_max_attempts,
+  ]
+}
+
+run "postgis_readiness_sleep_seconds_minimum" {
+  command = plan
+
+  variables {
+    postgis_readiness_sleep_seconds = 0
+  }
+
+  expect_failures = [
+    var.postgis_readiness_sleep_seconds,
+  ]
+}
+
 run "key_vault_soft_delete_retention_too_low" {
   command = plan
 
@@ -116,5 +140,15 @@ run "control_plane_outputs_shape" {
   assert {
     condition     = output.control_plane_telemetry_policy == "honua-http"
     error_message = "Expected telemetry policy honua-http."
+  }
+
+  assert {
+    condition     = output.operations_metadata.database.port == 5432
+    error_message = "Expected operations metadata to expose PostgreSQL port 5432."
+  }
+
+  assert {
+    condition     = output.operations_metadata.database.postgis.readiness_max_attempts == 30
+    error_message = "Expected operations metadata to expose the default PostGIS readiness attempts."
   }
 }

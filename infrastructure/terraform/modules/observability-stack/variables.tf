@@ -51,6 +51,42 @@ variable "honua_metrics_format" {
   default     = ""
 }
 
+variable "opentelemetry_collector_enabled" {
+  description = "Deploy an in-cluster OpenTelemetry Collector alongside Prometheus and Grafana."
+  type        = bool
+  default     = false
+}
+
+variable "opentelemetry_collector_enable_otlp_receiver" {
+  description = "Expose OTLP gRPC and HTTP receivers on the collector service."
+  type        = bool
+  default     = true
+}
+
+variable "opentelemetry_collector_enable_debug_exporter" {
+  description = "Enable the collector debug exporter when no external OTLP sink is configured yet."
+  type        = bool
+  default     = true
+}
+
+variable "opentelemetry_collector_otlp_endpoint" {
+  description = "Optional upstream OTLP endpoint for forwarding traces, metrics, and logs."
+  type        = string
+  default     = ""
+}
+
+variable "opentelemetry_collector_otlp_insecure" {
+  description = "Disable TLS verification for the upstream OTLP exporter."
+  type        = bool
+  default     = false
+}
+
+variable "opentelemetry_collector_otlp_headers" {
+  description = "Additional headers to send to the upstream OTLP exporter."
+  type        = map(string)
+  default     = {}
+}
+
 variable "scrape_interval" {
   description = "Prometheus scrape interval."
   type        = string
@@ -151,4 +187,22 @@ variable "helm_timeout_seconds" {
   description = "Timeout in seconds for Helm release install/upgrade operations."
   type        = number
   default     = 900
+}
+
+variable "opentelemetry_release_name" {
+  description = "Helm release name for the optional OpenTelemetry Collector."
+  type        = string
+  default     = "honua-otel"
+}
+
+variable "opentelemetry_chart_version" {
+  description = "Optional OpenTelemetry Collector chart version. Leave empty to accept the chart default."
+  type        = string
+  default     = ""
+}
+
+variable "opentelemetry_collector_values" {
+  description = "Optional top-level Helm values merged into the default OpenTelemetry Collector configuration."
+  type        = any
+  default     = {}
 }

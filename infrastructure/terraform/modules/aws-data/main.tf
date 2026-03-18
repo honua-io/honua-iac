@@ -60,6 +60,17 @@ locals {
   db_subnet_ids = var.db_publicly_accessible ? module.vpc.public_subnets : module.vpc.private_subnets
 }
 
+provider "postgresql" {
+  alias           = "honua"
+  host            = local.db_endpoint
+  port            = 5432
+  database        = var.db_name
+  username        = var.db_username
+  password        = local.db_password
+  sslmode         = var.db_require_ssl ? "require" : "disable"
+  connect_timeout = 10
+}
+
 #checkov:skip=CKV2_AWS_5: Security group is attached through the RDS module inputs below.
 resource "aws_security_group" "rds" {
   #checkov:skip=CKV2_AWS_5: Security group is attached through the RDS module inputs below.
@@ -221,45 +232,25 @@ resource "aws_secretsmanager_secret_version" "redis_connection" {
   secret_string = local.redis_connection
 }
 
-resource "null_resource" "enable_postgis" {
-  count = var.enable_postgis ? 1 : 0
+resource "postgresql_extension" "postgis" {
+  count    = var.enable_postgis ? 1 : 0
+  provider = postgresql.honua
+  name     = "postgis"
+  schema   = "public"
 
-  triggers = {
-    db_endpoint = local.db_endpoint
-  }
+  depends_on = [
+    module.rds,
+  ]
+}
 
-  provisioner "local-exec" {
-    command = <<-EOT
-      set -e
-      echo "Waiting for PostgreSQL readiness on ${local.db_endpoint}"
-      for attempt in $(seq 1 ${var.postgis_readiness_max_attempts}); do
-        if PGCONNECT_TIMEOUT=5 psql \
-          --host=${local.db_endpoint} \
-          --username=${var.db_username} \
-          --dbname=${var.db_name} \
-          --command="SELECT 1;" >/dev/null 2>&1; then
-          echo "PostgreSQL readiness check succeeded after $attempt attempt(s)"
-          break
-        fi
-        if [ "$attempt" -eq ${var.postgis_readiness_max_attempts} ]; then
-          echo "PostgreSQL readiness check failed after ${var.postgis_readiness_max_attempts} attempts" >&2
-          exit 1
-        fi
-        sleep ${var.postgis_readiness_sleep_seconds}
-      done
+resource "postgresql_extension" "postgis_raster" {
+  count    = var.enable_postgis ? 1 : 0
+  provider = postgresql.honua
+  name     = "postgis_raster"
+  schema   = "public"
 
-      echo "Enabling PostGIS + PostGIS Raster on ${local.db_endpoint}"
-      PGCONNECT_TIMEOUT=5 psql \
-        --host=${local.db_endpoint} \
-        --username=${var.db_username} \
-        --dbname=${var.db_name} \
-        --set=ON_ERROR_STOP=1 \
-        --command="CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;"
-    EOT
-    environment = {
-      PGPASSWORD = local.db_password
-    }
-  }
-
-  depends_on = [module.rds]
+  depends_on = [
+    module.rds,
+    postgresql_extension.postgis,
+  ]
 }

@@ -42,6 +42,30 @@ run "admin_password_minimum_length" {
   ]
 }
 
+run "postgis_readiness_max_attempts_minimum" {
+  command = plan
+
+  variables {
+    postgis_readiness_max_attempts = 0
+  }
+
+  expect_failures = [
+    var.postgis_readiness_max_attempts,
+  ]
+}
+
+run "postgis_readiness_sleep_seconds_minimum" {
+  command = plan
+
+  variables {
+    postgis_readiness_sleep_seconds = 0
+  }
+
+  expect_failures = [
+    var.postgis_readiness_sleep_seconds,
+  ]
+}
+
 # --- Control-plane output shape tests ---
 
 run "control_plane_outputs_without_slot" {
@@ -85,6 +109,11 @@ run "control_plane_outputs_without_slot" {
     condition     = output.function_app_slot_name == null
     error_message = "Expected null slot name when slots are disabled."
   }
+
+  assert {
+    condition     = output.operations_metadata.database.port == 5432
+    error_message = "Expected operations metadata to expose PostgreSQL port 5432."
+  }
 }
 
 run "control_plane_outputs_with_slot" {
@@ -104,5 +133,10 @@ run "control_plane_outputs_with_slot" {
   assert {
     condition     = output.control_plane_desired_revision == "staging"
     error_message = "Expected desired revision to match slot name."
+  }
+
+  assert {
+    condition     = output.operations_metadata.workload.deployment_slot_enabled
+    error_message = "Expected operations metadata to note slot-based rollout mode."
   }
 }

@@ -1,52 +1,69 @@
 # Terraform Validation Runbook
 
-This runbook defines the on-demand Terraform validation flow for Honua across Azure, AWS, and Kubernetes.
+This runbook is for maintainers operating Terraform validation in CI and from local workstations.
 
-## Scope
+## Architecture
 
-Validation is executed manually when Terraform changes are ready to verify. There is no nightly Terraform apply/destroy schedule in this flow.
+```mermaid
+flowchart LR
+  Workflow[GitHub Actions or local CLI] --> Runner[.NET 10 validation runner]
+  Wrapper[scripts/* and adapters/*] --> Runner
+  Runner --> Scenario[validation/scenarios/*.json]
+  Scenario --> Native[Runner-native execution]
+  Native --> Tools[terraform / az / aws / kubectl / helm]
+  Tools --> Roots[Terraform roots]
+  Roots --> Platform[Optional honua-server post-apply suite]
+```
 
-## What gets validated
+## Runner vs Wrapper Boundary
 
-The workflow, runner, and adapters cover:
+- The runner is the canonical orchestration contract.
+- GitHub workflows should call the runner directly.
+- `scripts/*` and `validation/adapters/*` remain stable shell entrypoints for compatibility.
+- `validation/scripts/*` is private implementation detail, not the long-term public interface.
 
-- Static validation: `terraform fmt`, `terraform init -backend=false`, `terraform validate`
-- Policy/security gates: runner-native `tflint`, `checkov`, `tfsec`, and custom guard checks, with compatibility entrypoints at `infrastructure/terraform/validation/adapters/shared/terraform-policy-gate.sh`
-- Typed workflow orchestration: `.NET 10` runner at `infrastructure/terraform/validation/runner/Honua.TerraformValidation.Runner` validates workflow inputs, enforces persistent-apply approval, bootstraps least-privilege identities, and dispatches the provider-specific validation paths
-- Declarative scenarios: manifests under `infrastructure/terraform/validation/scenarios` define the live and drift scenario boundaries that the runner executes
-- Azure live integration: runner-native `examples/azure-data` bootstrap (Postgres + Redis) by default, then ACA + Functions using those existing connections; includes Redis wiring, PostGIS + raster checks, protocol/admin smoke checks, admin CRUD/query smoke (`create connection -> publish layer -> query`), idempotency, quick scale check, DB resilience drill, plan artifacts, compute auto-destroy, and reusable data-stack retention by default
-- AWS live integration: runner-native `examples/aws-data` bootstrap (RDS + Redis) by default, then ECS + serverless using those existing connections/VPC; includes Redis wiring, PostGIS + raster checks, protocol/admin smoke checks, admin CRUD/query smoke (`create connection -> publish layer -> query`), idempotency, quick scale check, DB resilience drill, plan artifacts, and compute auto-destroy with reusable data-stack retention
-- Kubernetes live integration: runner-native k3d + Helm + observability Terraform module, Helm static validation (`lint` + `template` + `kubeconform`), PostGIS + raster checks, protocol/admin smoke checks, admin CRUD/query smoke (`create connection -> publish layer -> query`), idempotency, quick scale check, and optional DB resilience drill
-- Managed Kubernetes integration: runner-native AKS and EKS Terraform cluster provisioning, kubeconfig handoff into the shared Kubernetes validation flow, then auto-destroy + leak check; direct shell entrypoints remain compatibility shims back into the runner
-- Cross-repo platform validation: Azure, AWS, AKS, and EKS live jobs also check out `honua-server` and run its post-apply platform suite against the deployed environment before cleanup; this exercises deploy preflight, migration observability, admin OpenAPI, and optional cloud-staged import checks against real cloud infrastructure
-- Drift detection: runner-native `terraform plan -detailed-exitcode`, with compatibility entrypoints at `infrastructure/terraform/validation/adapters/shared/run-terraform-drift-detection.sh`
+Current status:
 
-## Manual GitHub Actions workflow
+| Scenario | Status |
+|---|---|
+| `static-validate` | runner-native |
+| `policy-gates` | runner-native |
+| `drift` | runner-native |
+| `k8s-live` | runner-native |
+| `aks-live` | runner-native |
+| `eks-live` | runner-native |
+| `azure-live` | runner-native |
+| `aws-live` | runner-native |
 
-Workflow: `.github/workflows/terraform-manual-validation.yml`
+## Scenario Coverage
 
-Dispatch inputs (10 total, within GitHub limit):
+| Scenario | Terraform roots covered |
+|---|---|
+| `static-validate` | bootstrap roots, all example roots, all module roots |
+| `policy-gates` | `infrastructure/terraform/examples/*` and `modules/*` |
+| `azure-live` | `examples/azure`, `examples/azure-functions`, and supporting `examples/azure-data` reuse when configured |
+| `aws-live` | `examples/aws`, `examples/aws-serverless`, and supporting `examples/aws-data` reuse when configured |
+| `k8s-live` | shared local Kubernetes harness plus `examples/observability` |
+| `aks-live` | `examples/azure-aks`, then shared Kubernetes validation flow |
+| `eks-live` | `examples/aws-eks`, then shared Kubernetes validation flow |
+| `drift` | app roots by default; managed roots when `--run-aks true` / `--run-eks true` |
+
+## Workflow Entry Point
+
+Primary workflow: `.github/workflows/terraform-manual-validation.yml`
+
+Important dispatch controls:
 
 - `cloud`: `both|azure|aws`
 - `deployment_profile`: `ephemeral|persistent`
-- `apply_confirmation`: must be `APPROVED` when `deployment_profile=persistent`
-- `run_live`: enable/disable live apply tests
-- `run_k8s`: include local k3d Kubernetes validation
-- `run_aks`: include AKS validation
-- `run_eks`: include EKS validation
-- `run_drift`: include drift detection job
-- `no_destroy`: keep live resources after tests
-- `allow_destroy_plan`: allow apply when plan contains destroys
+- `apply_confirmation`: must be `APPROVED` for persistent applies
+- `run_live`, `run_k8s`, `run_aks`, `run_eks`, `run_drift`
+- `no_destroy`
+- `allow_destroy_plan`
 
-Advanced controls (regions, stacks, SLO/cost caps, optional skips) are configured via repository variables instead of extra dispatch inputs.
+The workflow also checks out `honua-server` for live jobs that need the cross-repo platform suite or the shared Kubernetes/Helm assets.
 
-Completion callbacks:
-
-- `.github/workflows/terraform-manual-validation-callback.yml` runs automatically when `Terraform Manual Validation` completes
-- it can post a GitHub issue comment and/or an outbound webhook so operators do not need to poll Actions manually
-- the callback never checks out repo code; it reads the completed run metadata and job results via the GitHub Actions API
-
-## Required GitHub secrets
+## Required Secrets
 
 Common:
 
@@ -64,226 +81,51 @@ AWS live / EKS:
 
 - `AWS_ACCESS_KEY_ID`
 - `AWS_SECRET_ACCESS_KEY`
-- `AWS_SESSION_TOKEN` (optional)
+- `AWS_SESSION_TOKEN` if your auth flow requires it
 
-Optional callback secrets:
+## Important Repository Variables
 
-- `HONUA_VALIDATION_WEBHOOK_URL`
-- `HONUA_VALIDATION_WEBHOOK_BEARER_TOKEN`
-- `HONUA_VALIDATION_WEBHOOK_HMAC_SECRET`
+Image references:
 
-## Image configuration
+- `HONUA_ACA_IMAGE`, `HONUA_FUNCTIONS_IMAGE`
+- `HONUA_AWS_ECS_IMAGE`, `HONUA_AWS_SERVERLESS_IMAGE`
+- `HONUA_K8S_IMAGE`
+- matching `*_PREVIOUS_IMAGE` variables for upgrade/rollback scenarios
 
-Image refs are configuration, not secrets.
+Behavior controls:
 
-For GitHub Actions, set them as repository variables:
+- `HONUA_AZURE_VALIDATION_STACK`
+- `HONUA_AWS_VALIDATION_STACK`
+- `HONUA_MAX_RUN_COST_USD`
+- `HONUA_READY_SLO_SECONDS`
+- `HONUA_MAX_LOAD_ERROR_RATE_PERCENT`
+- `HONUA_TTL_HOURS`
+- `HONUA_SKIP_DB_RESILIENCE`
+- `HONUA_SKIP_QUOTA_PREFLIGHT`
+- `HONUA_SKIP_HELM_STATIC_VALIDATION`
+- `HONUA_SKIP_OBSERVABILITY`
+- `HONUA_SKIP_IDEMPOTENCY`
+- `HONUA_SKIP_PROTOCOL_CHECKS`
+- `HONUA_SKIP_SCALE_CHECK`
+- `HONUA_RUN_UPGRADE_ROLLBACK`
 
-- Azure app images: `HONUA_ACA_IMAGE`, `HONUA_FUNCTIONS_IMAGE`
-- Azure rollback images: `HONUA_ACA_PREVIOUS_IMAGE`, `HONUA_FUNCTIONS_PREVIOUS_IMAGE`
-- AWS app images: `HONUA_AWS_ECS_IMAGE`, `HONUA_AWS_SERVERLESS_IMAGE`
-- AWS rollback images: `HONUA_AWS_ECS_PREVIOUS_IMAGE`, `HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE`
-- AWS ECS canary image: `HONUA_AWS_ECS_CANARY_IMAGE`
-- Kubernetes app images: `HONUA_K8S_IMAGE`, `HONUA_K8S_PREVIOUS_IMAGE`
+## Local Entry Points
 
-The repo helper can seed the current validation variables for you:
-
-```bash
-source <(scripts/tf-pass-secrets.sh export --scope publish)
-scripts/bootstrap-gh-vars.sh
-```
-
-Default behavior:
-
-- `HONUA_AWS_ECS_IMAGE` is derived from the `honua-server` ECR publish lane (`latest-ecs-aot`) and is intentionally left unset when the ECR ECS lane is not reachable.
-- `HONUA_AWS_SERVERLESS_IMAGE` is derived from the `honua-server` ECR publish lane (`latest-lambda-aot`) when AWS credentials are available.
-- `HONUA_ACA_IMAGE` and `HONUA_FUNCTIONS_IMAGE` prefer ACR when `ACR_LOGIN_SERVER` is configured in `honua-server`.
-- `HONUA_K8S_IMAGE` continues to use the public GHCR `latest-aot` image by default.
-- Validation stack vars are auto-synced to the image coverage that actually exists. For example, if only ACA is available on Azure, the helper sets `HONUA_AZURE_VALIDATION_STACK=aca` so the live workflow stops requiring Functions prematurely.
-
-Recommended tag shapes:
-
-- Azure Container Apps: generic image tag in ACR (`latest-aot` preferred, `latest` debug fallback); ACA runs `amd64`
-- Azure Functions: ACR URI with `*-functions-aot` preferred; `*-functions` is the debug fallback; Functions custom containers are treated as `amd64`
-- AKS: generic multi-arch image tag (`latest-aot` preferred, `latest` debug fallback); Arm node pools should pull the `arm64` variant automatically
-- AWS ECS: ECR URI with `*-ecs-aot` preferred; `*-ecs` is the debug fallback; ECS validation defaults to `ARM64`
-- AWS Lambda: ECR URI with `*-lambda-aot` preferred; `*-lambda` is the debug fallback; Lambda validation defaults to `arm64`
-
-For local runs, prefer explicit script flags instead of exporting image refs as secrets:
-
-- Azure: `--aca-image`, `--functions-image`, `--aca-previous-image`, `--functions-previous-image`
-- AWS: `--ecs-image`, `--serverless-image`, `--ecs-previous-image`, `--serverless-previous-image`, `--ecs-canary-image`
-- Kubernetes: set `HONUA_K8S_IMAGE` / `HONUA_K8S_PREVIOUS_IMAGE` in the shell only when you actually run the k8s path
-
-## Local credentials setup (set-creds script)
-
-For local runs, use the repo helper script instead of repeatedly exporting variables:
+Use the runner directly for new local automation:
 
 ```bash
-cp scripts/tf-secrets.local.example.sh scripts/tf-secrets.local.sh
-chmod 600 scripts/tf-secrets.local.sh
-# edit scripts/tf-secrets.local.sh with real values
-source scripts/tf-secrets.local.sh
-```
-
-If you want local credentials to persist across branch switches without keeping a working file around, store only the real secrets in `pass` and load them on demand:
-
-```bash
-scripts/tf-pass-secrets.sh import --env-file scripts/tf-secrets.local.sh --force
-source <(scripts/tf-pass-secrets.sh export)
-```
-
-To push the same pass-backed credentials into GitHub Actions secrets:
-
-```bash
-scripts/tf-pass-secrets.sh sync-gh --repo honua-io/honua-terraform
-scripts/tf-pass-secrets.sh sync-gh --scope publish --repo honua-io/honua-server
-```
-
-`sync-gh --scope publish --repo honua-io/honua-server` now pushes only AWS and Azure cloud credentials. Registry identity is derived at runtime:
-
-- ECR: from AWS credentials + `AWS_ECR_REGION`
-- ACR: from Azure ARM credentials + repo variable `ACR_LOGIN_SERVER`
-
-Then bootstrap the repo variables separately:
-
-```bash
-scripts/bootstrap-gh-vars.sh
-```
-
-Recommended default pass prefix is `honua/terraform/<ENV_VAR_NAME>`. Inspect the expected key mapping with:
-
-```bash
-scripts/tf-pass-secrets.sh paths
-scripts/tf-pass-secrets.sh paths --scope publish
-```
-
-Quick auth checks before live runs:
-
-```bash
-aws sts get-caller-identity
-az account show
-```
-
-## Recommended repository variables
-
-- Region and stack selection:
-  - `HONUA_AZURE_VALIDATION_REGION`, `HONUA_AWS_VALIDATION_REGION`
-  - `HONUA_AZURE_VALIDATION_STACK` (`aca|functions|both`)
-  - `HONUA_AWS_VALIDATION_STACK` (`ecs|serverless|both`)
-- Image refs:
-  - `HONUA_ACA_IMAGE`, `HONUA_FUNCTIONS_IMAGE`
-  - `HONUA_ACA_PREVIOUS_IMAGE`, `HONUA_FUNCTIONS_PREVIOUS_IMAGE`
-  - `HONUA_AWS_ECS_IMAGE`, `HONUA_AWS_SERVERLESS_IMAGE`
-  - `HONUA_AWS_ECS_PREVIOUS_IMAGE`, `HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE`
-  - `HONUA_AWS_ECS_CANARY_IMAGE`
-  - `HONUA_K8S_IMAGE`, `HONUA_K8S_PREVIOUS_IMAGE`
-- Registry publish config:
-  - `AWS_ECR_REGION`, `AWS_ECR_REPOSITORY`
-  - `ACR_LOGIN_SERVER`, `ACR_REPOSITORY`
-- Cost/SLO:
-  - `HONUA_MAX_RUN_COST_USD`
-  - `HONUA_READY_SLO_SECONDS`
-  - `HONUA_MAX_LOAD_ERROR_RATE_PERCENT`
-  - `HONUA_TTL_HOURS`
-- Optional behavior toggles:
-  - `HONUA_USE_AOT` (`true|false`; switches default images to `latest-aot` in validation scripts)
-  - `HONUA_AZURE_FUNCTIONS_AOT_AUTOSWITCH` (`true|false`; defaults to `true` for AOT-first Functions image selection)
-  - `HONUA_AZURE_FUNCTIONS_DEPLOYMENT_SLOT_ENABLED` (`true|false`; provisions a staging slot so the control-plane handoff includes slot rollout metadata)
-  - `HONUA_AZURE_FUNCTIONS_DEPLOYMENT_SLOT_NAME` (defaults to `staging`)
-  - `HONUA_AZURE_FUNCTIONS_DEPLOYMENT_SLOT_IMAGE` (optional explicit staging-slot image; defaults to the primary Functions image)
-  - `HONUA_RUN_UPGRADE_ROLLBACK`
-  - `HONUA_SKIP_DB_RESILIENCE`
-  - `HONUA_SKIP_QUOTA_PREFLIGHT`
-  - `HONUA_SKIP_HELM_STATIC_VALIDATION`
-  - `HONUA_SKIP_OBSERVABILITY`
-  - `HONUA_SKIP_IDEMPOTENCY`
-  - `HONUA_SKIP_PROTOCOL_CHECKS`
-  - `HONUA_SKIP_SCALE_CHECK`
-- Optional callback routing:
-  - `HONUA_VALIDATION_STATUS_ISSUE_NUMBER` (same-repo issue number to comment on when validation completes)
-- Optional existing dependency reuse (faster/cheaper validation runs):
-  - `HONUA_AZURE_EXISTING_DB_FQDN`
-  - `HONUA_AZURE_EXISTING_DB_CONNECTION_STRING`
-  - `HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING`
-  - `HONUA_AZURE_DATA_CACHE_FILE` (defaults to `/tmp/honua-azure-data-reuse.env`)
-  - `HONUA_AZURE_DESTROY_DATA` (`true|false`, default `false`)
-  - `HONUA_AZURE_LOGIN_MAX_ATTEMPTS` / `HONUA_AZURE_LOGIN_RETRY_SECONDS` (bootstrap SP propagation retry budget)
-  - `HONUA_AWS_EXISTING_DB_ENDPOINT`
-  - `HONUA_AWS_EXISTING_DB_CONNECTION_STRING`
-  - `HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING`
-  - `HONUA_AWS_ECS_CANARY_ENABLED`
-  - `HONUA_AWS_ECS_CANARY_DESIRED_COUNT`
-  - `HONUA_AWS_ECS_CANARY_WEIGHT_PERCENTAGE`
-  - `HONUA_AWS_ECS_CANARY_HEADER_NAME`
-  - `HONUA_AWS_ECS_CANARY_HEADER_VALUE`
-  - `HONUA_AWS_EXISTING_VPC_ID`
-  - `HONUA_AWS_EXISTING_VPC_CIDR`
-  - `HONUA_AWS_EXISTING_PUBLIC_SUBNET_IDS`
-  - `HONUA_AWS_EXISTING_PRIVATE_SUBNET_IDS`
-  - `HONUA_AWS_KEEP_DATA` (`true|false`, default `false`; opt-in local/CI data reuse)
-  - `HONUA_AWS_DATA_CACHE_FILE` (defaults to `/tmp/honua-aws-data-reuse.env`)
-  - `HONUA_AWS_DESTROY_DATA` (`true|false`, default `true`)
-- Drift:
-  - `HONUA_DRIFT_ROOTS`
-  - `HONUA_DRIFT_VAR_FILES`
-
-## Manual run examples
-
-CLI:
-
-```bash
-gh workflow run terraform-manual-validation.yml \
-  -f cloud=both \
-  -f deployment_profile=ephemeral \
-  -f apply_confirmation= \
-  -f run_live=true \
-  -f run_k8s=true \
-  -f run_aks=true \
-  -f run_eks=true \
-  -f run_drift=true \
-  -f reuse_data_stack=true \
-  -f no_destroy=false \
-  -f allow_destroy_plan=false
-```
-
-Separate AWS and Azure dispatches on the same ref:
-
-```bash
-./scripts/dispatch-terraform-manual-validation.sh --cloud both --ref trunk
-```
-
-Single combined run (legacy behavior):
-
-```bash
-./scripts/dispatch-terraform-manual-validation.sh --cloud both --single-run --ref trunk
-```
-
-Local entry points:
-
-```bash
-# The typed runner matches the GitHub workflow orchestration and loads
-# scenario manifests from infrastructure/terraform/validation/scenarios/*.json.
 dotnet run --project infrastructure/terraform/validation/runner/Honua.TerraformValidation.Runner -- \
-  azure-live \
-  --deployment-profile ephemeral \
-  --apply-confirmation "" \
-  --reuse-data-stack true \
-  --allow-destroy-plan false \
-  --no-destroy false
+  static-validate
 
 dotnet run --project infrastructure/terraform/validation/runner/Honua.TerraformValidation.Runner -- \
-  aws-live \
-  --deployment-profile ephemeral \
-  --apply-confirmation "" \
-  --reuse-data-stack true \
-  --allow-destroy-plan false \
-  --no-destroy false
+  policy-gates \
+  --strict true
 
 dotnet run --project infrastructure/terraform/validation/runner/Honua.TerraformValidation.Runner -- \
-  k8s-live \
-  --deployment-profile ephemeral \
-  --apply-confirmation "" \
-  --no-destroy false
+  drift \
+  --cloud both \
+  --run-aks true \
+  --run-eks true
 
 dotnet run --project infrastructure/terraform/validation/runner/Honua.TerraformValidation.Runner -- \
   aks-live \
@@ -298,90 +140,48 @@ dotnet run --project infrastructure/terraform/validation/runner/Honua.TerraformV
   --apply-confirmation "" \
   --allow-destroy-plan false \
   --no-destroy false
-
-dotnet run --project infrastructure/terraform/validation/runner/Honua.TerraformValidation.Runner -- \
-  policy-gates \
-  --strict true
-
-dotnet run --project infrastructure/terraform/validation/runner/Honua.TerraformValidation.Runner -- \
-  drift \
-  --cloud both \
-  --run-aks true \
-  --run-eks true
 ```
 
-Underlying adapter entry points:
+Keep compatibility wrappers only when you need stable shell invocations:
 
-```bash
-# All live scenarios are runner-native.
-# The adapter entrypoints remain stable compatibility shims for existing direct invocations.
-./infrastructure/terraform/validation/adapters/azure/run-azure-terraform-integration.sh --stack both
-./infrastructure/terraform/validation/adapters/azure/run-azure-terraform-integration.sh --stack both --force-new-data-infra
-./infrastructure/terraform/validation/adapters/azure/run-azure-terraform-integration.sh --stack both --destroy-data
-./infrastructure/terraform/validation/adapters/azure/run-azure-terraform-integration.sh --stack both --aot
-./infrastructure/terraform/validation/adapters/azure/run-azure-terraform-integration.sh \
-  --stack aca \
-  --existing-db-fqdn mypg.postgres.database.azure.com \
-  --existing-db-connection "Host=mypg.postgres.database.azure.com;Port=5432;Database=honua;Username=honua;Password=***;SSL Mode=Require;Trust Server Certificate=false" \
-  --existing-redis-connection "myredis.redis.cache.windows.net:6380,password=***,ssl=True,abortConnect=False"
-./scripts/run-azure-terraform-integration.sh --stack both
-./infrastructure/terraform/validation/adapters/aws/run-aws-terraform-integration.sh --stack both
-./infrastructure/terraform/validation/adapters/aws/run-aws-terraform-integration.sh --stack data --no-destroy
-./infrastructure/terraform/validation/adapters/aws/run-aws-terraform-integration.sh --stack both --keep-data
-./infrastructure/terraform/validation/adapters/aws/run-aws-terraform-integration.sh --stack ecs --aot
-./infrastructure/terraform/validation/adapters/aws/run-aws-terraform-integration.sh \
-  --stack ecs \
-  --ecs-canary-enabled \
-  --ecs-canary-image "<account>.dkr.ecr.<region>.amazonaws.com/honua-server:canary-aot" \
-  --ecs-canary-weight 0
-./infrastructure/terraform/validation/adapters/aws/run-aws-terraform-integration.sh --stack serverless --serverless-image "<account>.dkr.ecr.<region>.amazonaws.com/honua-server:latest-lambda-aot"
-./scripts/run-aws-terraform-integration.sh --stack serverless
-./infrastructure/terraform/validation/adapters/aws/run-aws-terraform-integration.sh \
-  --stack ecs \
-  --existing-db-endpoint mydb.xxxxxxxxxxxx.us-east-1.rds.amazonaws.com \
-  --existing-db-connection "Host=mydb.xxxxxxxxxxxx.us-east-1.rds.amazonaws.com;Port=5432;Database=honua;Username=honua;Password=***;SSL Mode=Require;Trust Server Certificate=false" \
-  --existing-redis-connection "mycache.xxxxxx.use1.cache.amazonaws.com:6379,password=***,ssl=true"
-./infrastructure/terraform/validation/adapters/k8s/run-k8s-terraform-integration.sh
-./infrastructure/terraform/validation/adapters/k8s/run-k8s-terraform-integration.sh --aot
-./infrastructure/terraform/validation/adapters/azure/run-aks-terraform-integration.sh
-./infrastructure/terraform/validation/adapters/aws/run-eks-terraform-integration.sh
-./scripts/run-aks-terraform-integration.sh
-./scripts/run-eks-terraform-integration.sh
-./scripts/run-k8s-terraform-integration.sh
-./infrastructure/terraform/validation/adapters/shared/terraform-policy-gate.sh
-./infrastructure/terraform/validation/adapters/shared/run-terraform-drift-detection.sh --root infrastructure/terraform/examples/azure
-```
+- `./scripts/run-aks-terraform-integration.sh`
+- `./scripts/run-eks-terraform-integration.sh`
+- `./scripts/run-k8s-terraform-integration.sh`
+- `./scripts/run-aws-terraform-integration.sh`
+- `./scripts/run-azure-terraform-integration.sh`
 
-## Notes
+## Troubleshooting
 
-- Azure/AWS credential secrets are treated as bootstrap credentials. The `.NET 10` runner used by the workflow creates ephemeral least-privilege identities per stack (`aca`, `functions`, `ecs`, `serverless`, `aks`, `eks`), runs validation with those identities, then destroys them.
-- `azure-live`, `aws-live`, `k8s-live`, `aks-live`, and `eks-live` are runner-native scenarios. Their shell adapter entrypoints translate the legacy flag surface back into the runner when `dotnet` is available and fall back to the legacy scripts only when the runner is unavailable.
-- The only intentional script execution still on the live path is the optional external `honua-server` post-apply platform suite (`HONUA_PLATFORM_VALIDATION_SCRIPT`). That cross-repo handoff is separate from the deprecated internal Terraform shell harnesses.
-- Validation adapters now resolve stack metadata from `deployment_contract`, `validation_contract`, and `operations_contract` first. Legacy scalar outputs remain only as fallback compatibility and for secret-value handoff where the contracts intentionally expose only managed-secret references.
-- Dedicated bootstrap modules used by the workflow:
-  - `infrastructure/terraform/bootstrap/azure-aca`
-  - `infrastructure/terraform/bootstrap/azure-functions`
-  - `infrastructure/terraform/bootstrap/azure-aks`
-  - `infrastructure/terraform/bootstrap/aws-ecs`
-  - `infrastructure/terraform/bootstrap/aws-serverless`
-  - `infrastructure/terraform/bootstrap/aws-eks`
-- Use one database admin secret: `HONUA_DB_PASSWORD` (not separate per cloud).
-- Azure live behavior: when existing Azure data inputs are not provided, the runner applies `infrastructure/terraform/examples/azure-data`, saves outputs to `/tmp/honua-azure-data-reuse.env` (or `HONUA_AZURE_DATA_CACHE_FILE`), reuses them in subsequent runs, and opens the PostgreSQL firewall to the ACA outbound IPs before readiness checks.
-- Azure bootstrap validation now retries `az login` / `az account set` after creating the least-privilege service principal so Azure AD and subscription role assignment propagation does not fail fast on a fresh identity.
-- Azure ACA validation defaults `min_replicas=1` and a wider startup probe budget so cold boot plus migrations can complete before ACA marks the revision unhealthy.
-- AKS script defaults target `westus` with node VM size `Standard_D2s_v3` (override with `--location` / `--node-vm-size` if needed).
-- The `k8s-live`, `aks-live`, and `eks-live` workflow jobs all check out `honua-server` because the shared Kubernetes harness still resolves Helm assets and the cross-repo platform validation suite from that repository.
-- AWS live behavior: when existing AWS data inputs are not provided, the runner applies `infrastructure/terraform/examples/aws-data`. By default it now destroys that auto-created data stack on cleanup. Reuse is explicit: set `--keep-data` or `HONUA_AWS_KEEP_DATA=true` to save outputs to `/tmp/honua-aws-data-reuse.env` (or `HONUA_AWS_DATA_CACHE_FILE`) and reuse them in subsequent runs.
-- AWS ECS validation forces `alb_deletion_protection=false` and `alb_access_logs_enabled=false` so ephemeral runs do not strand ALBs and log buckets during teardown.
-- AWS ECS canary validation is opt-in. When `HONUA_AWS_ECS_CANARY_ENABLED=true`, the live scenario provisions the secondary ECS service with `0%` default traffic unless you explicitly set a non-zero `HONUA_AWS_ECS_CANARY_WEIGHT_PERCENTAGE`, waits for the canary tasks to become healthy, and verifies the ALB header route before continuing. Recommended rollout shape is still two-step: create canary at `0%`, verify, then raise weight in a later run.
-- Azure Functions upgrade/rollback validation is now slot-based when `HONUA_RUN_UPGRADE_ROLLBACK=true`: the live scenario keeps production on the previous image, stages the candidate image in the configured deployment slot, exercises promote/rollback/restore through the Honua admin API, then reconciles Terraform back to the current image baseline.
-- Current known issue (February 28, 2026): generic web tags (`latest`, `latest-aot`) crash on Azure Functions custom container startup (container exit code `139`). Use Functions-targeted tags (`*-functions-aot` preferred, `*-functions` debug fallback).
-- Registry strategy: web runtime tags (`latest`, `latest-aot`, versioned base tags) are published to GHCR/Docker Hub, while cloud-targeted platform tags (`*-ecs`, `*-ecs-aot`, `*-lambda`, `*-lambda-aot`, `*-functions`, `*-functions-aot`) are published by CI directly to cloud registries (ECR/ACR).
-- `.terraform` directories are already ignored in `.gitignore`.
-- Live scripts auto-destroy compute resources by default unless `--no-destroy` / `no_destroy=true` is set. Azure still retains the data stack by default for reuse and only tears it down when `--destroy-data` (or `HONUA_AZURE_DESTROY_DATA=true`) is set. AWS now does the opposite: it destroys auto-created data by default, and only keeps/reuses it when `--keep-data` / `HONUA_AWS_KEEP_DATA=true` is set. GitHub manual validation still passes `--destroy-data` automatically for `deployment_profile=ephemeral` when `no_destroy=false`.
-- GitHub-hosted runners do not preserve `/tmp` between runs. In CI, true data-stack reuse can come from either repository vars or secrets. Use vars for nonsecret topology like `HONUA_AZURE_EXISTING_DB_FQDN`, `HONUA_AWS_EXISTING_DB_ENDPOINT`, and `HONUA_AWS_EXISTING_VPC_*`. Use secrets for connection strings such as `HONUA_AZURE_EXISTING_DB_CONNECTION_STRING`, `HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING`, `HONUA_AWS_EXISTING_DB_CONNECTION_STRING`, and `HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING`.
-- The manual validation workflow now has `reuse_data_stack=true` by default. For GitHub-hosted runs it restores/saves the Azure and AWS data-cache files with GitHub Actions cache, so the first successful reusable run creates the shared PostGIS/Redis stack and subsequent runs on the same ref/region can skip rebuilding it.
-- Azure ephemeral CI reuse works by omitting `--destroy-data` and restoring `${GITHUB_WORKSPACE}/.gha-cache/azure-data-reuse.env`. AWS ephemeral CI reuse works by passing `--keep-data` and restoring `${GITHUB_WORKSPACE}/.gha-cache/aws-data-reuse.env`.
-- Azure reuse is now resilient to compute-stage failures: if the Azure data stack was created successfully and `destroy-data` is disabled, the workflow keeps that PostGIS/Redis stack for the next run even when ACA/Functions verification fails later.
-- The manual validation workflow concurrency key now includes `inputs.cloud`, so separate `cloud=aws` and `cloud=azure` dispatches can run concurrently on the same ref without blocking each other.
-- To run the cross-repo platform suite locally after apply, point the live validation scripts at the `honua-server` runner: `export HONUA_PLATFORM_VALIDATION_SCRIPT=/path/to/honua-server/scripts/run-cloud-post-apply-validation.sh`.
+| Symptom | Likely cause | Checks |
+|---|---|---|
+| Persistent run is rejected immediately | approval gate not satisfied | confirm `--apply-confirmation APPROVED` |
+| `azure-live` or `aws-live` fails after Terraform apply | optional external platform-validation handoff or runtime-level verification failed | inspect runner output, uploaded plans, and the `honua-server` post-apply suite logs if `HONUA_PLATFORM_VALIDATION_SCRIPT` was set |
+| AKS/EKS runner fails before k8s checks | bootstrap creds, plan guard, or cluster CLI auth | check Terraform plan artifact, `az login`/`aws sts get-caller-identity`, quota guard, cluster outputs |
+| Shared Kubernetes validation cannot find chart assets | `honua-server` checkout missing | confirm `honua-server` exists beside the repo root or under the workflow checkout path |
+| Post-apply platform suite is skipped unexpectedly | `HONUA_PLATFORM_VALIDATION_SCRIPT` missing and auto-discovery failed | verify `honua-server/scripts/run-cloud-post-apply-validation.sh` exists |
+| Drift job reports no managed roots | flags omitted | rerun with `--run-aks true` and/or `--run-eks true` |
+| Plan apply is refused | destroy actions detected | inspect uploaded plan text and rerun only if `--allow-destroy-plan true` is justified |
+| Policy gates differ between local and CI | missing local tools | compare installed `tflint`, `checkov`, `tfsec`, `dotnet`, `terraform` versions |
+
+## Cost Controls for Validation
+
+Use the following levers before widening a scenario:
+
+- keep `deployment_profile=ephemeral` unless you explicitly need persistent resources
+- reuse shared data stacks only when the scenario is meant to validate compute against stable data dependencies
+- cap runs with `HONUA_MAX_RUN_COST_USD`
+- disable expensive optional checks temporarily only when debugging (`HONUA_SKIP_*`)
+- avoid `no_destroy=true` unless you are actively debugging teardown or post-apply state
+
+## Known Operational Facts
+
+- All internal Terraform validation scenarios are runner-native at the orchestration layer.
+- The only non-native live hook is the optional external `honua-server` platform-validation script invoked after apply.
+- `k8s-live` is a shared harness, not a standalone deployable Terraform runtime root.
+
+## Related Docs
+
+- `docs/operator-deployment.md`
+- `infrastructure/terraform/validation/README.md`
+- `infrastructure/terraform/validation/adapters/README.md`
+- `infrastructure/terraform/validation/runner/README.md`

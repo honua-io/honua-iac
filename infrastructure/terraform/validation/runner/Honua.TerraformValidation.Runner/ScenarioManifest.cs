@@ -111,6 +111,23 @@ internal static class ScenarioManifestLoader
             {
                 throw new ValidationException($"Static validate scenario manifest is missing terraformRoots: {manifestPath}");
             }
+
+            if (manifest.ModuleTestRoots is not null)
+            {
+                var invalidRoots = new List<string>();
+                foreach (var moduleTestRoot in manifest.ModuleTestRoots)
+                {
+                    if (!manifest.TerraformRoots.Contains(moduleTestRoot, StringComparer.Ordinal))
+                    {
+                        invalidRoots.Add(moduleTestRoot);
+                    }
+                }
+
+                if (invalidRoots.Count > 0)
+                {
+                    throw new ValidationException($"Static validate scenario manifest has moduleTestRoots outside terraformRoots: {string.Join(", ", invalidRoots)}");
+                }
+            }
         }
     }
 }
@@ -149,6 +166,9 @@ internal sealed class ScenarioManifest
 
     [JsonPropertyName("terraformRoots")]
     public List<string>? TerraformRoots { get; init; }
+
+    [JsonPropertyName("moduleTestRoots")]
+    public List<string>? ModuleTestRoots { get; init; }
 
     [JsonPropertyName("rootPath")]
     public string? RootPath { get; init; }

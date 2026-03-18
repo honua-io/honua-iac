@@ -116,4 +116,14 @@ run "control_plane_outputs_shape" {
     condition     = output.control_plane_telemetry_policy == "honua-http"
     error_message = "Expected telemetry policy honua-http."
   }
+
+  assert {
+    condition     = output.operations_metadata.database.port == 5432
+    error_message = "Expected operations metadata to expose PostgreSQL port 5432."
+  }
+
+  assert {
+    condition     = output.operations_metadata.workload.alias_name == "live"
+    error_message = "Expected operations metadata to expose the default live alias."
+  }
 }

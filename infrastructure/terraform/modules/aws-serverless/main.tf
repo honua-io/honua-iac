@@ -36,6 +36,13 @@ check "existing_db_inputs" {
   }
 }
 
+check "existing_db_admin_password_required" {
+  assert {
+    condition     = !(local.db_use_existing && var.enable_postgis) || var.existing_db_admin_password != ""
+    error_message = "Provide existing_db_admin_password when enabling PostGIS on an existing database."
+  }
+}
+
 check "existing_vpc_inputs" {
   assert {
     condition = (
@@ -68,7 +75,7 @@ resource "random_password" "redis_auth" {
 }
 
 locals {
-  db_password          = var.db_password != null ? var.db_password : (local.db_use_existing ? "" : random_password.db[0].result)
+  db_password          = var.db_password != null ? var.db_password : (local.db_use_existing ? var.existing_db_admin_password : random_password.db[0].result)
   db_ssl               = var.db_require_ssl ? ";SSL Mode=Require;Trust Server Certificate=false" : ""
   db_endpoint          = local.db_use_existing ? var.existing_db_endpoint : module.rds[0].db_instance_address
   db_connection_string = local.db_use_existing ? var.existing_db_connection_string : "Host=${local.db_endpoint};Port=5432;Database=${var.db_name};Username=${var.db_username};Password=${local.db_password}${local.db_ssl}"
@@ -99,6 +106,17 @@ locals {
     ControlPlane__DeployTargets__0__ParameterEntries__2__Key    = "aws.region"
     ControlPlane__DeployTargets__0__ParameterEntries__2__Value  = data.aws_region.current.name
   }, var.additional_env, local.redis_secret_environment)
+}
+
+provider "postgresql" {
+  alias           = "honua"
+  host            = local.db_endpoint
+  port            = 5432
+  database        = var.db_name
+  username        = var.db_username
+  password        = local.db_password
+  sslmode         = var.db_require_ssl ? "require" : "disable"
+  connect_timeout = 10
 }
 
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
@@ -304,6 +322,14 @@ module "rds" {
   maintenance_window      = "Sun:04:00-Sun:05:00"
 
   tags = local.tags
+}
+
+data "aws_db_snapshot" "latest" {
+  count                  = local.db_use_existing ? 0 : 1
+  db_instance_identifier = module.rds[0].db_instance_identifier
+  most_recent            = true
+
+  depends_on = [module.rds]
 }
 
 data "aws_iam_policy_document" "lambda_assume" {
@@ -576,50 +602,20 @@ resource "aws_lambda_permission" "api_gateway" {
   source_arn    = "${aws_apigatewayv2_api.this.execution_arn}/*/*"
 }
 
-resource "null_resource" "enable_postgis" {
-  count = var.enable_postgis && !local.db_use_existing ? 1 : 0
+resource "postgresql_extension" "postgis" {
+  count    = var.enable_postgis ? 1 : 0
+  provider = postgresql.honua
+  name     = "postgis"
+  schema   = "public"
 
-  triggers = {
-    db_endpoint = local.db_endpoint
-  }
+  depends_on = local.db_use_existing ? [] : [module.rds[0]]
+}
 
-  provisioner "local-exec" {
-    command = <<-EOT
-      set -e
-      echo "Waiting for PostgreSQL readiness on ${local.db_endpoint}"
-      for attempt in $(seq 1 ${var.postgis_readiness_max_attempts}); do
-        if PGCONNECT_TIMEOUT=5 psql \
-          --host=${local.db_endpoint} \
-          --username=${var.db_username} \
-          --dbname=${var.db_name} \
-          --command="SELECT 1;" >/dev/null 2>&1; then
-          echo "PostgreSQL readiness check succeeded after $attempt attempt(s)"
-          break
-        fi
-        if [ "$attempt" -eq ${var.postgis_readiness_max_attempts} ]; then
-          echo "PostgreSQL readiness check failed after ${var.postgis_readiness_max_attempts} attempts" >&2
-          PGCONNECT_TIMEOUT=5 psql \
-            --host=${local.db_endpoint} \
-            --username=${var.db_username} \
-            --dbname=${var.db_name} \
-            --command="SELECT 1;" >&2 || true
-          exit 1
-        fi
-        sleep ${var.postgis_readiness_sleep_seconds}
-      done
+resource "postgresql_extension" "postgis_raster" {
+  count    = var.enable_postgis ? 1 : 0
+  provider = postgresql.honua
+  name     = "postgis_raster"
+  schema   = "public"
 
-      echo "Enabling PostGIS + PostGIS Raster on ${local.db_endpoint}"
-      PGCONNECT_TIMEOUT=5 psql \
-        --host=${local.db_endpoint} \
-        --username=${var.db_username} \
-        --dbname=${var.db_name} \
-        --set=ON_ERROR_STOP=1 \
-        --command="CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;"
-    EOT
-    environment = {
-      PGPASSWORD = local.db_password
-    }
-  }
-
-  depends_on = [module.rds]
+  depends_on = local.db_use_existing ? [postgresql_extension.postgis] : [module.rds[0], postgresql_extension.postgis]
 }

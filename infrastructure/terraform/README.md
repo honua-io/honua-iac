@@ -1,74 +1,41 @@
 # Terraform Modules and Stacks
 
-This directory contains reusable modules and deployable stacks for Honua.
+This directory contains the deployable Terraform roots, reusable modules, bootstrap identity templates, and maintainer validation assets for Honua.
 
-## Operator quick start
+## Start Here
 
-Choose a stack, create `terraform.tfvars`, then apply.
+- Operators: `docs/operator-deployment.md`
+- Validation and CI maintainers: `docs/devops/terraform-validation.md`
+- Validation runner internals: `infrastructure/terraform/validation/runner/README.md`
 
-### AWS ECS/Fargate
+## Repository Layout
 
-```bash
-cp infrastructure/terraform/examples/aws/terraform.tfvars.example \
-   infrastructure/terraform/examples/aws/terraform.tfvars
-terraform -chdir=infrastructure/terraform/examples/aws init
-terraform -chdir=infrastructure/terraform/examples/aws plan
-terraform -chdir=infrastructure/terraform/examples/aws apply
-```
+### Deployable runtime roots
 
-### Azure Container Apps
+- `examples/aws` - AWS ECS/Fargate runtime
+- `examples/aws-serverless` - AWS Lambda/API Gateway runtime
+- `examples/azure` - Azure Container Apps runtime
+- `examples/azure-functions` - Azure Functions runtime
+- `examples/aws-eks` - EKS cluster root
+- `examples/azure-aks` - AKS cluster root
 
-```bash
-cp infrastructure/terraform/examples/azure/terraform.tfvars.example \
-   infrastructure/terraform/examples/azure/terraform.tfvars
-terraform -chdir=infrastructure/terraform/examples/azure init
-terraform -chdir=infrastructure/terraform/examples/azure plan
-terraform -chdir=infrastructure/terraform/examples/azure apply
-```
+### Support roots
 
-### AWS Lambda
+- `examples/aws-data` - shared AWS data services for validation/reuse
+- `examples/azure-data` - shared Azure data services for validation/reuse
+- `examples/observability` - Prometheus + Grafana add-on for Kubernetes scenarios
 
-```bash
-cp infrastructure/terraform/examples/aws-serverless/terraform.tfvars.example \
-   infrastructure/terraform/examples/aws-serverless/terraform.tfvars
-terraform -chdir=infrastructure/terraform/examples/aws-serverless init
-terraform -chdir=infrastructure/terraform/examples/aws-serverless plan
-terraform -chdir=infrastructure/terraform/examples/aws-serverless apply
-```
+### Reusable modules
 
-### Azure Functions
+- `modules/aws-ecs`
+- `modules/aws-serverless`
+- `modules/azure-aca`
+- `modules/azure-functions`
+- `modules/aws-eks`
+- `modules/azure-aks`
+- `modules/observability-stack`
 
-```bash
-cp infrastructure/terraform/examples/azure-functions/terraform.tfvars.example \
-   infrastructure/terraform/examples/azure-functions/terraform.tfvars
-terraform -chdir=infrastructure/terraform/examples/azure-functions init
-terraform -chdir=infrastructure/terraform/examples/azure-functions plan
-terraform -chdir=infrastructure/terraform/examples/azure-functions apply
-```
-
-Operator guide: `docs/operator-deployment.md`
-
-## Modules
-
-- `modules/aws-ecs` - ECS/Fargate + RDS + ALB
-- `modules/azure-aca` - Azure Container Apps + PostgreSQL Flexible Server + Key Vault
-- `modules/aws-serverless` - Lambda + API Gateway + RDS
-- `modules/azure-functions` - Azure Functions + PostgreSQL Flexible Server
-- `modules/aws-eks` - EKS + VPC for managed Kubernetes
-- `modules/azure-aks` - AKS for managed Kubernetes
-- `modules/observability-stack` - optional Prometheus + Grafana add-on
-
-## Examples
-
-- `examples/aws`
-- `examples/azure`
-- `examples/aws-serverless`
-- `examples/azure-functions`
-- `examples/aws-eks`
-- `examples/azure-aks`
-- `examples/observability`
-
-## Bootstrap identities (optional)
+### Bootstrap identities
 
 - `bootstrap/aws-ecs`
 - `bootstrap/aws-serverless`
@@ -77,26 +44,46 @@ Operator guide: `docs/operator-deployment.md`
 - `bootstrap/azure-functions`
 - `bootstrap/azure-aks`
 
-Use these when you need dedicated least-privilege deployment identities.
+### Validation assets
 
-## Validation assets (maintainers)
+- `validation/scenarios` - declarative scenario manifests
+- `validation/runner/Honua.TerraformValidation.Runner` - `.NET 10` validation runner
+- `validation/adapters/*` - stable wrapper boundary for validation entrypoints
+- `validation/scripts/*` - private shell implementation layer retained where scenarios are not yet fully runner-native
 
-Validation automation is intentionally isolated from operator deployment stacks under:
+## Runtime Selection
 
-- `validation/runner/Honua.TerraformValidation.Runner`
-- `validation/scenarios`
-- `validation/adapters/aws`
-- `validation/adapters/azure`
-- `validation/adapters/k8s`
-- `validation/adapters/shared`
-- `validation/scripts/*` contains legacy fallback harnesses kept for compatibility and reference
+| Need | Recommended root |
+|---|---|
+| Long-running HTTP service on AWS | `examples/aws` |
+| Serverless HTTP on AWS | `examples/aws-serverless` |
+| Managed container app on Azure | `examples/azure` |
+| Serverless custom container on Azure | `examples/azure-functions` |
+| Managed Kubernetes on AWS | `examples/aws-eks` |
+| Managed Kubernetes on Azure | `examples/azure-aks` |
 
-## Validation and CI (maintainers)
+## Minimal Operator Workflow
 
-For policy gates, drift checks, and live integration validation, use:
+```bash
+cp infrastructure/terraform/examples/<stack>/terraform.tfvars.example \
+  infrastructure/terraform/examples/<stack>/terraform.tfvars
 
-- `dotnet run --project infrastructure/terraform/validation/runner/Honua.TerraformValidation.Runner -- static-validate`
-- `dotnet run --project infrastructure/terraform/validation/runner/Honua.TerraformValidation.Runner -- policy-gates --strict true`
-- `./scripts/run-terraform-drift-detection.sh`
-- `.github/workflows/terraform-manual-validation.yml`
-- `docs/devops/terraform-validation.md`
+terraform -chdir=infrastructure/terraform/examples/<stack> init
+terraform -chdir=infrastructure/terraform/examples/<stack> plan
+terraform -chdir=infrastructure/terraform/examples/<stack> apply
+```
+
+The detailed operator procedures, cross-cloud comparison, registry guidance, backup/restore, and credential rotation steps live in `docs/operator-deployment.md`.
+
+## Validation Boundary
+
+The validation stack has two user-facing entry layers:
+
+- GitHub Actions workflows call the `.NET 10` runner directly.
+- Stable shell entrypoints under `scripts/` and `validation/adapters/` exist for compatibility.
+
+The current split is:
+
+- `static-validate`, `policy-gates`, `drift`, `k8s-live`, `aks-live`, `eks-live`, `azure-live`, and `aws-live` are all orchestrated by the `.NET 10` runner.
+- `scripts/` and `validation/adapters/` remain stable compatibility entrypoints for humans and older CI glue.
+- The only intentional script execution still on the live path is the optional external `honua-server` post-apply platform suite.

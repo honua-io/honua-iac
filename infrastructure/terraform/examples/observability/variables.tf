@@ -20,3 +20,27 @@ variable "grafana_ingress_host" {
   type        = string
   default     = ""
 }
+
+variable "opentelemetry_collector_enabled" {
+  description = "Deploy the optional in-cluster OpenTelemetry Collector gateway."
+  type        = bool
+  default     = false
+}
+
+variable "opentelemetry_chart_version" {
+  description = "Optional OpenTelemetry Collector chart version."
+  type        = string
+  default     = ""
+}
+
+variable "opentelemetry_collector_otlp_endpoint" {
+  description = "Optional upstream OTLP endpoint for forwarding telemetry."
+  type        = string
+  default     = ""
+}
+
+variable "opentelemetry_collector_otlp_insecure" {
+  description = "Disable TLS verification for the upstream OTLP exporter."
+  type        = bool
+  default     = false
+}

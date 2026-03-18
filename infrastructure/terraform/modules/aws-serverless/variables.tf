@@ -204,8 +204,15 @@ variable "existing_db_connection_string" {
   sensitive   = true
 }
 
+variable "existing_db_admin_password" {
+  description = "Admin password usable when enabling PostGIS against an existing PostgreSQL instance."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "enable_postgis" {
-  description = "Attempt to enable PostGIS and PostGIS Raster via local-exec (requires psql + network access)."
+  description = "Enable PostGIS and PostGIS Raster via Terraform's `postgresql_extension` resources. When using `existing_db_connection_string`, also supply `existing_db_admin_password` so Terraform can authenticate."
   type        = bool
   default     = false
 }

@@ -114,7 +114,7 @@ variable "db_require_ssl" {
 }
 
 variable "enable_postgis" {
-  description = "Attempt to enable PostGIS and PostGIS Raster via local-exec. Opt in only when the apply environment has psql and network reachability to RDS."
+  description = "Enable PostGIS and PostGIS Raster via Terraform's `postgresql_extension` resources."
   type        = bool
   default     = false
 }

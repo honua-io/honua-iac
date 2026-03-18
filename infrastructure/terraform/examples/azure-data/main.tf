@@ -19,6 +19,8 @@ module "data" {
   db_firewall_start_ip                = var.db_firewall_start_ip
   db_firewall_end_ip                  = var.db_firewall_end_ip
   enable_postgis                      = var.enable_postgis
+  postgis_readiness_max_attempts      = var.postgis_readiness_max_attempts
+  postgis_readiness_sleep_seconds     = var.postgis_readiness_sleep_seconds
   redis_enabled                       = var.redis_enabled
   redis_sku_name                      = var.redis_sku_name
   redis_family                        = var.redis_family
@@ -114,6 +116,7 @@ locals {
       prometheus_canary_job = null
       grafana_url           = null
     }
+    runbooks = module.data.operations_metadata
     secrets = {
       secret_store = {
         kind = "azure-key-vault"
@@ -147,6 +150,12 @@ output "validation_contract" {
 output "operations_contract" {
   description = "Stable operations contract for day-2 metadata and secret references."
   value       = local.operations_contract
+  sensitive   = true
+}
+
+output "operations_metadata" {
+  description = "Structured operational metadata for backup/restore and secret rotation runbooks."
+  value       = module.data.operations_metadata
   sensitive   = true
 }
 

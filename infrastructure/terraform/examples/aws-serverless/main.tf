@@ -129,6 +129,7 @@ locals {
       prometheus_canary_job = null
       grafana_url           = null
     }
+    runbooks = module.honua.operations_metadata
     secrets = {
       secret_store = {
         kind = "aws-secrets-manager"
@@ -166,6 +167,12 @@ output "validation_contract" {
 output "operations_contract" {
   description = "Stable operations contract for day-2 metadata and secret references."
   value       = local.operations_contract
+  sensitive   = true
+}
+
+output "operations_metadata" {
+  description = "Structured operational metadata for backup/restore and secret rotation runbooks."
+  value       = module.honua.operations_metadata
   sensitive   = true
 }
 

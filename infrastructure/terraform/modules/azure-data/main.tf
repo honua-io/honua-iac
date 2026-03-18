@@ -140,6 +140,17 @@ resource "azurerm_postgresql_flexible_server_database" "this" {
   collation = "en_US.utf8"
 }
 
+provider "postgresql" {
+  alias           = "honua"
+  host            = azurerm_postgresql_flexible_server.this.fqdn
+  port            = 5432
+  database        = var.db_name
+  username        = var.db_admin_username
+  password        = local.db_password
+  sslmode         = "require"
+  connect_timeout = 10
+}
+
 resource "azurerm_postgresql_flexible_server_configuration" "postgis" {
   count     = var.enable_postgis ? 1 : 0
   name      = "azure.extensions"
@@ -147,69 +158,26 @@ resource "azurerm_postgresql_flexible_server_configuration" "postgis" {
   value     = "POSTGIS,POSTGIS_RASTER"
 }
 
-resource "null_resource" "enable_postgis" {
-  count = var.enable_postgis ? 1 : 0
-
-  triggers = {
-    db_endpoint = azurerm_postgresql_flexible_server.this.fqdn
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      set -e
-      echo "Waiting for PostgreSQL readiness on ${azurerm_postgresql_flexible_server.this.fqdn}"
-      for attempt in $(seq 1 30); do
-        if PGCONNECT_TIMEOUT=5 psql \
-          --host=${azurerm_postgresql_flexible_server.this.fqdn} \
-          --username=${var.db_admin_username} \
-          --dbname=${var.db_name} \
-          --command="SELECT 1;" >/dev/null 2>&1; then
-          break
-        fi
-        if [ "$attempt" -eq 30 ]; then
-          echo "PostgreSQL readiness check failed after 30 attempts" >&2
-          exit 1
-        fi
-        sleep 10
-      done
-
-      echo "Enabling PostGIS + PostGIS Raster on ${azurerm_postgresql_flexible_server.this.fqdn}"
-      for attempt in $(seq 1 30); do
-        if PGCONNECT_TIMEOUT=5 psql \
-          --host=${azurerm_postgresql_flexible_server.this.fqdn} \
-          --username=${var.db_admin_username} \
-          --dbname=${var.db_name} \
-          --set=ON_ERROR_STOP=1 \
-          --command="CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;" >/dev/null 2>&1; then
-          echo "PostGIS extensions enabled"
-          break
-        fi
-
-        if [ "$attempt" -eq 30 ]; then
-          echo "PostGIS enablement failed after 30 attempts" >&2
-          PGCONNECT_TIMEOUT=5 psql \
-            --host=${azurerm_postgresql_flexible_server.this.fqdn} \
-            --username=${var.db_admin_username} \
-            --dbname=${var.db_name} \
-            --set=ON_ERROR_STOP=1 \
-            --command="CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster;"
-          exit 1
-        fi
-
-        echo "PostGIS allow-list not ready yet (attempt $attempt/30), retrying in 10s..."
-        sleep 10
-      done
-    EOT
-
-    environment = {
-      PGPASSWORD = local.db_password
-    }
-  }
+resource "postgresql_extension" "postgis" {
+  count    = var.enable_postgis ? 1 : 0
+  provider = postgresql.honua
+  name     = "postgis"
+  schema   = "public"
 
   depends_on = [
-    azurerm_postgresql_flexible_server_database.this,
-    azurerm_postgresql_flexible_server_configuration.postgis,
-    azurerm_postgresql_flexible_server_firewall_rule.validation
+    azurerm_postgresql_flexible_server.this,
+  ]
+}
+
+resource "postgresql_extension" "postgis_raster" {
+  count    = var.enable_postgis ? 1 : 0
+  provider = postgresql.honua
+  name     = "postgis_raster"
+  schema   = "public"
+
+  depends_on = [
+    azurerm_postgresql_flexible_server.this,
+    postgresql_extension.postgis,
   ]
 }
 
