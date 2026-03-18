@@ -23,6 +23,9 @@ module "honua" {
   redis_sku_name                  = var.redis_sku_name
   redis_family                    = var.redis_family
   redis_capacity                  = var.redis_capacity
+  registry_server                 = var.registry_server
+  registry_username               = var.registry_username
+  registry_password               = var.registry_password
   min_replicas                    = var.min_replicas
   max_replicas                    = var.max_replicas
   key_vault_default_action        = var.key_vault_default_action

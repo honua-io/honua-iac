@@ -47,6 +47,25 @@ variable "honua_image" {
   type        = string
 }
 
+variable "registry_server" {
+  description = "Container registry server (optional)."
+  type        = string
+  default     = ""
+}
+
+variable "registry_username" {
+  description = "Container registry username (optional)."
+  type        = string
+  default     = ""
+}
+
+variable "registry_password" {
+  description = "Container registry password (optional)."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "deployment_slot_enabled" {
   description = "Provision a staging deployment slot for slot-based rollout workflows."
   type        = bool

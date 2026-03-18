@@ -50,6 +50,7 @@ data "aws_iam_policy_document" "terraform" {
       "ec2:Modify*",
       "ec2:ReplaceRoute",
       "ec2:ReleaseAddress",
+      "ec2:RunInstances",
       "ec2:RevokeSecurityGroupEgress",
       "ec2:RevokeSecurityGroupIngress",
       "eks:AssociateAccessPolicy",

@@ -1358,9 +1358,9 @@ internal static partial class ValidationRunner
     private static string GetRequiredJsonString(string payload, string propertyName)
     {
         using var document = JsonDocument.Parse(payload);
-        if (!document.RootElement.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.String)
+        if (!TryGetResponseProperty(document.RootElement, propertyName, out var property) || property.ValueKind != JsonValueKind.String)
         {
-            throw new ValidationException($"Could not parse {propertyName} from JSON response");
+            throw new ValidationException(BuildJsonParseFailureMessage(document.RootElement, propertyName));
         }
 
         return property.GetString() ?? throw new ValidationException($"JSON property {propertyName} was empty");
@@ -1369,12 +1369,44 @@ internal static partial class ValidationRunner
     private static int GetRequiredJsonInt(string payload, string propertyName)
     {
         using var document = JsonDocument.Parse(payload);
-        if (!document.RootElement.TryGetProperty(propertyName, out var property) || !property.TryGetInt32(out var value))
+        if (!TryGetResponseProperty(document.RootElement, propertyName, out var property) || !property.TryGetInt32(out var value))
         {
-            throw new ValidationException($"Could not parse {propertyName} from JSON response");
+            throw new ValidationException(BuildJsonParseFailureMessage(document.RootElement, propertyName));
         }
 
         return value;
+    }
+
+    private static bool TryGetResponseProperty(JsonElement root, string propertyName, out JsonElement property)
+    {
+        if (root.TryGetProperty(propertyName, out property))
+        {
+            return true;
+        }
+
+        if (root.TryGetProperty("data", out var data) &&
+            data.ValueKind == JsonValueKind.Object &&
+            data.TryGetProperty(propertyName, out property))
+        {
+            return true;
+        }
+
+        property = default;
+        return false;
+    }
+
+    private static string BuildJsonParseFailureMessage(JsonElement root, string propertyName)
+    {
+        if (root.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.String)
+        {
+            var messageText = message.GetString();
+            if (!string.IsNullOrWhiteSpace(messageText))
+            {
+                return $"Could not parse {propertyName} from JSON response: {messageText}";
+            }
+        }
+
+        return $"Could not parse {propertyName} from JSON response";
     }
 
     private static string GetDefaultKubeconfigPath()

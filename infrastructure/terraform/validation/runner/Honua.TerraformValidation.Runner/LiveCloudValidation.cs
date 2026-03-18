@@ -48,6 +48,7 @@ internal static partial class ValidationRunner
             ValidateCloudAdminPassword(settings.AdminPassword);
 
             await EnsureAzSessionAsync(context, credentialsEnvironment, credentials.SubscriptionId);
+            await ResolveAzureRegistryCredentialsAsync(context, settings, credentialsEnvironment);
             AssertAzureCostGuardrail(settings);
             if (!settings.SkipQuotaPreflight)
             {
@@ -349,6 +350,10 @@ internal static partial class ValidationRunner
             AcaMinReplicas = int.Parse(env.GetOrDefault("HONUA_AZURE_ACA_MIN_REPLICAS", "1"), CultureInfo.InvariantCulture),
             AcaMaxReplicas = int.Parse(env.GetOrDefault("HONUA_AZURE_ACA_MAX_REPLICAS", "3"), CultureInfo.InvariantCulture),
             AcaScaleTargetMinReplicas = int.Parse(env.GetOrDefault("HONUA_AZURE_ACA_SCALE_TARGET_MIN_REPLICAS", "2"), CultureInfo.InvariantCulture),
+            RegistryResourceId = env.GetOptional("HONUA_AZURE_REGISTRY_RESOURCE_ID"),
+            RegistryServer = env.GetOptional("HONUA_AZURE_REGISTRY_SERVER"),
+            RegistryUsername = env.GetOptional("HONUA_AZURE_REGISTRY_USERNAME"),
+            RegistryPassword = env.GetOptional("HONUA_AZURE_REGISTRY_PASSWORD"),
             DataCacheFile = env.GetOrDefault("HONUA_AZURE_DATA_CACHE_FILE", GetWorkflowCachePath(context, "azure-data-reuse.env")),
             ForceNewDataInfra = env.GetBooleanAny(["HONUA_AZURE_FORCE_NEW_DATA_INFRA", "HONUA_AZURE_FORCE_NEW_DATA"], defaultValue: false),
             ExistingDbFqdn = env.GetOptional("HONUA_AZURE_EXISTING_DB_FQDN"),
@@ -919,6 +924,9 @@ internal static partial class ValidationRunner
             ["TF_VAR_db_firewall_start_ip"] = settings.DbFirewallStartIp,
             ["TF_VAR_db_firewall_end_ip"] = settings.DbFirewallEndIp,
             ["TF_VAR_honua_image"] = image,
+            ["TF_VAR_registry_server"] = settings.RegistryServer,
+            ["TF_VAR_registry_username"] = settings.RegistryUsername,
+            ["TF_VAR_registry_password"] = settings.RegistryPassword,
             ["TF_VAR_min_replicas"] = minReplicas.ToString(CultureInfo.InvariantCulture),
             ["TF_VAR_max_replicas"] = settings.AcaMaxReplicas.ToString(CultureInfo.InvariantCulture),
             ["TF_VAR_key_vault_default_action"] = "Allow",
@@ -944,6 +952,9 @@ internal static partial class ValidationRunner
             ["TF_VAR_db_firewall_start_ip"] = settings.DbFirewallStartIp,
             ["TF_VAR_db_firewall_end_ip"] = settings.DbFirewallEndIp,
             ["TF_VAR_honua_image"] = image,
+            ["TF_VAR_registry_server"] = settings.RegistryServer,
+            ["TF_VAR_registry_username"] = settings.RegistryUsername,
+            ["TF_VAR_registry_password"] = settings.RegistryPassword,
             ["TF_VAR_deployment_slot_enabled"] = deploymentSlotEnabled.ToString().ToLowerInvariant(),
             ["TF_VAR_deployment_slot_name"] = settings.FunctionsDeploymentSlotName,
             ["TF_VAR_deployment_slot_image"] = slotImage ?? settings.FunctionsDeploymentSlotImage ?? image,
@@ -951,6 +962,123 @@ internal static partial class ValidationRunner
             ["TF_VAR_skip_migrations"] = settings.FunctionsSkipMigrations.ToString().ToLowerInvariant(),
             ["TF_VAR_tags"] = BuildAzureValidationTagsJson(settings.ValidationRunId, settings.TtlHours),
         };
+    }
+
+    private static async Task ResolveAzureRegistryCredentialsAsync(
+        RunnerContext context,
+        AzureLiveSettings settings,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment)
+    {
+        if (!NeedsAzureRegistryCredentials(settings))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(settings.RegistryServer) &&
+            !string.IsNullOrWhiteSpace(settings.RegistryUsername) &&
+            !string.IsNullOrWhiteSpace(settings.RegistryPassword))
+        {
+            return;
+        }
+
+        if (context.DryRun)
+        {
+            settings.RegistryServer ??= GetAzureRegistryServerFromImages(settings) ?? "example.azurecr.io";
+            settings.RegistryUsername ??= "<dry-run>";
+            settings.RegistryPassword ??= "<dry-run>";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(settings.RegistryResourceId))
+        {
+            throw new ValidationException("HONUA_AZURE_REGISTRY_RESOURCE_ID is required when Azure live validation uses private registry images without explicit registry credentials.");
+        }
+
+        if (string.IsNullOrWhiteSpace(settings.RegistryServer))
+        {
+            settings.RegistryServer = await context.ProcessRunner.CaptureAsync(
+                "az",
+                ["acr", "show", "--ids", settings.RegistryResourceId, "--query", "loginServer", "-o", "tsv"],
+                context.RepoRoot,
+                credentialsEnvironment);
+        }
+
+        if (!string.IsNullOrWhiteSpace(settings.RegistryUsername) &&
+            !string.IsNullOrWhiteSpace(settings.RegistryPassword))
+        {
+            return;
+        }
+
+        var registryName = GetAzureResourceName(settings.RegistryResourceId);
+        var credentialsJson = await context.ProcessRunner.CaptureAsync(
+            "az",
+            ["acr", "credential", "show", "--name", registryName, "--query", "{username:username,password:passwords[0].value}", "-o", "json"],
+            context.RepoRoot,
+            credentialsEnvironment,
+            redactOutput: true);
+
+        using var document = JsonDocument.Parse(credentialsJson);
+        settings.RegistryUsername = document.RootElement.TryGetProperty("username", out var usernameValue)
+            ? usernameValue.GetString()
+            : settings.RegistryUsername;
+        settings.RegistryPassword = document.RootElement.TryGetProperty("password", out var passwordValue)
+            ? passwordValue.GetString()
+            : settings.RegistryPassword;
+
+        if (string.IsNullOrWhiteSpace(settings.RegistryServer) ||
+            string.IsNullOrWhiteSpace(settings.RegistryUsername) ||
+            string.IsNullOrWhiteSpace(settings.RegistryPassword))
+        {
+            throw new ValidationException("Failed to resolve Azure Container Registry credentials for azure-live validation.");
+        }
+    }
+
+    private static bool NeedsAzureRegistryCredentials(AzureLiveSettings settings)
+    {
+        return UsesAzureContainerRegistry(settings.AcaImage) ||
+               UsesAzureContainerRegistry(settings.FunctionsImage) ||
+               UsesAzureContainerRegistry(settings.FunctionsDeploymentSlotImage);
+    }
+
+    private static bool UsesAzureContainerRegistry(string? image)
+    {
+        if (string.IsNullOrWhiteSpace(image))
+        {
+            return false;
+        }
+
+        var imageParts = image.Split('/', 2, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        return imageParts.Length > 1 && imageParts[0].EndsWith(".azurecr.io", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? GetAzureRegistryServerFromImages(AzureLiveSettings settings)
+    {
+        return GetAzureRegistryServer(settings.AcaImage) ??
+               GetAzureRegistryServer(settings.FunctionsImage) ??
+               GetAzureRegistryServer(settings.FunctionsDeploymentSlotImage);
+    }
+
+    private static string? GetAzureRegistryServer(string? image)
+    {
+        if (!UsesAzureContainerRegistry(image))
+        {
+            return null;
+        }
+
+        var imageParts = image!.Split('/', 2, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        return imageParts[0];
+    }
+
+    private static string GetAzureResourceName(string resourceId)
+    {
+        var segments = resourceId
+            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length == 0)
+        {
+            throw new ValidationException($"Invalid Azure resource ID: {resourceId}");
+        }
+
+        return segments[^1];
     }
 
     private static async Task EnsureAcaDbFirewallAccessAsync(RunnerContext context, AzureLiveState state, IReadOnlyDictionary<string, string?> credentialsEnvironment)
@@ -1024,6 +1152,8 @@ internal static partial class ValidationRunner
 
         using var client = new HttpClient { BaseAddress = new Uri(NormalizeBaseUrl(baseUrl), UriKind.Absolute), Timeout = TimeSpan.FromSeconds(20) };
         var startedAt = DateTimeOffset.UtcNow;
+        var readySloSatisfied = false;
+        var consecutiveReadyChecks = 0;
         while (true)
         {
             try
@@ -1031,19 +1161,33 @@ internal static partial class ValidationRunner
                 using var response = await client.GetAsync("/healthz/ready");
                 if (response.IsSuccessStatusCode)
                 {
-                    var elapsed = (DateTimeOffset.UtcNow - startedAt).TotalSeconds;
-                    if (elapsed > readySloSeconds)
+                    if (!readySloSatisfied)
                     {
-                        throw new ValidationException($"Ready SLO failed: {elapsed:0}s exceeds {readySloSeconds}s");
+                        var elapsed = (DateTimeOffset.UtcNow - startedAt).TotalSeconds;
+                        if (elapsed > readySloSeconds)
+                        {
+                            throw new ValidationException($"Ready SLO failed: {elapsed:0}s exceeds {readySloSeconds}s");
+                        }
+
+                        readySloSatisfied = true;
                     }
 
-                    return;
+                    consecutiveReadyChecks++;
+                    if (consecutiveReadyChecks >= 3)
+                    {
+                        return;
+                    }
+
+                    await Task.Delay(TimeSpan.FromSeconds(5));
+                    continue;
                 }
             }
             catch
             {
                 // retry
             }
+
+            consecutiveReadyChecks = 0;
 
             if ((DateTimeOffset.UtcNow - startedAt).TotalSeconds > timeoutSeconds)
             {
@@ -1899,6 +2043,10 @@ internal static partial class ValidationRunner
         public required int AcaMinReplicas { get; init; }
         public required int AcaMaxReplicas { get; init; }
         public required int AcaScaleTargetMinReplicas { get; init; }
+        public string? RegistryResourceId { get; set; }
+        public string? RegistryServer { get; set; }
+        public string? RegistryUsername { get; set; }
+        public string? RegistryPassword { get; set; }
         public required string DataCacheFile { get; init; }
         public required bool ForceNewDataInfra { get; init; }
         public string? ExistingDbFqdn { get; set; }
