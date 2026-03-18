@@ -770,7 +770,8 @@ internal static partial class ValidationRunner
         IReadOnlyList<string> remainingResources = Array.Empty<string>();
         for (var attempt = 1; attempt <= 24; attempt++)
         {
-            remainingResources = await ListAwsTaggedResourcesAsync(context, validationRunId, credentialsEnvironment);
+            var taggedResources = await ListAwsTaggedResourcesAsync(context, validationRunId, credentialsEnvironment);
+            remainingResources = await FilterActionableAwsResourcesAsync(context, taggedResources, credentialsEnvironment);
             if (remainingResources.Count == 0)
             {
                 return;
@@ -778,7 +779,7 @@ internal static partial class ValidationRunner
 
             if (attempt == 1 || attempt % 4 == 0)
             {
-                Console.WriteLine($"[runner] AWS leak janitor wait {attempt}/24: {remainingResources.Count} tagged resources still visible for ValidationRunId={validationRunId}");
+                Console.WriteLine($"[runner] AWS leak janitor wait {attempt}/24: {remainingResources.Count} actionable tagged resources still visible for ValidationRunId={validationRunId}");
                 foreach (var resource in remainingResources.Take(10))
                 {
                     Console.WriteLine($"[runner]   lingering resource: {resource}");
@@ -798,6 +799,175 @@ internal static partial class ValidationRunner
         }
 
         throw new ValidationException($"Leak janitor check failed: resources tagged ValidationRunId={validationRunId} still exist after extended wait: {string.Join(", ", remainingResources.Take(20))}");
+    }
+
+    private static async Task<IReadOnlyList<string>> FilterActionableAwsResourcesAsync(
+        RunnerContext context,
+        IReadOnlyList<string> resources,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment)
+    {
+        if (resources.Count == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        var actionableResources = new List<string>(resources.Count);
+        foreach (var resourceArn in resources)
+        {
+            var ignoreReason = await TryGetIgnorableAwsResourceReasonAsync(context, resourceArn, credentialsEnvironment);
+            if (ignoreReason is null)
+            {
+                actionableResources.Add(resourceArn);
+                continue;
+            }
+
+            Console.WriteLine($"[runner]   ignoring transient AWS cleanup artifact: {resourceArn} ({ignoreReason})");
+        }
+
+        actionableResources.Sort(StringComparer.Ordinal);
+        return actionableResources;
+    }
+
+    private static async Task<string?> TryGetIgnorableAwsResourceReasonAsync(
+        RunnerContext context,
+        string resourceArn,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment)
+    {
+        if (resourceArn.Contains(":secretsmanager:", StringComparison.Ordinal))
+        {
+            var deletedDate = await TryCaptureAwsFieldAsync(
+                context,
+                ["secretsmanager", "describe-secret", "--secret-id", resourceArn, "--query", "DeletedDate", "--output", "text"],
+                credentialsEnvironment);
+            if (IsMissingAwsField(deletedDate))
+            {
+                return null;
+            }
+
+            return "scheduled for deletion";
+        }
+
+        if (resourceArn.Contains(":kms:", StringComparison.Ordinal))
+        {
+            var keyState = await TryCaptureAwsFieldAsync(
+                context,
+                ["kms", "describe-key", "--key-id", resourceArn, "--query", "KeyMetadata.KeyState", "--output", "text"],
+                credentialsEnvironment);
+            if (string.IsNullOrWhiteSpace(keyState))
+            {
+                return null;
+            }
+
+            if (!string.Equals(keyState, "Enabled", StringComparison.OrdinalIgnoreCase))
+            {
+                return $"kms state {keyState}";
+            }
+
+            return null;
+        }
+
+        if (!resourceArn.Contains(":ecs:", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var resourcePart = GetAwsArnResourcePart(resourceArn);
+        if (resourcePart.StartsWith("cluster/", StringComparison.Ordinal))
+        {
+            var clusterStatus = await TryCaptureAwsFieldAsync(
+                context,
+                ["ecs", "describe-clusters", "--clusters", resourceArn, "--query", "clusters[0].status", "--output", "text"],
+                credentialsEnvironment);
+            if (string.IsNullOrWhiteSpace(clusterStatus))
+            {
+                return "cluster not found";
+            }
+
+            if (!string.Equals(clusterStatus, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+            {
+                return $"cluster status {clusterStatus}";
+            }
+
+            return null;
+        }
+
+        if (resourcePart.StartsWith("service/", StringComparison.Ordinal))
+        {
+            var segments = resourcePart.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (segments.Length >= 3)
+            {
+                var serviceStatus = await TryCaptureAwsFieldAsync(
+                    context,
+                    ["ecs", "describe-services", "--cluster", segments[1], "--services", segments[2], "--query", "services[0].status", "--output", "text"],
+                    credentialsEnvironment);
+                if (string.IsNullOrWhiteSpace(serviceStatus))
+                {
+                    return "service not found";
+                }
+
+                if (!string.Equals(serviceStatus, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+                {
+                    return $"service status {serviceStatus}";
+                }
+            }
+
+            return null;
+        }
+
+        if (resourcePart.StartsWith("task-definition/", StringComparison.Ordinal))
+        {
+            var taskDefinitionStatus = await TryCaptureAwsFieldAsync(
+                context,
+                ["ecs", "describe-task-definition", "--task-definition", resourceArn, "--query", "taskDefinition.status", "--output", "text"],
+                credentialsEnvironment);
+            if (string.IsNullOrWhiteSpace(taskDefinitionStatus))
+            {
+                return "task definition not found";
+            }
+
+            if (!string.Equals(taskDefinitionStatus, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+            {
+                return $"task definition status {taskDefinitionStatus}";
+            }
+        }
+
+        return null;
+    }
+
+    private static async Task<string?> TryCaptureAwsFieldAsync(
+        RunnerContext context,
+        IReadOnlyList<string> arguments,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment)
+    {
+        var (success, output) = await context.ProcessRunner.TryCaptureAsync("aws", arguments, context.RepoRoot, credentialsEnvironment);
+        if (!success)
+        {
+            return null;
+        }
+
+        var normalized = output?.Trim();
+        return IsMissingAwsField(normalized) ? null : normalized;
+    }
+
+    private static bool IsMissingAwsField(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ||
+               string.Equals(value, "None", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(value, "null", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(value, "[]", StringComparison.Ordinal);
+    }
+
+    private static string GetAwsArnResourcePart(string arn)
+    {
+        var separatorIndex = arn.IndexOf(':');
+        for (var i = 0; i < 5 && separatorIndex >= 0; i++)
+        {
+            separatorIndex = arn.IndexOf(':', separatorIndex + 1);
+        }
+
+        return separatorIndex >= 0 && separatorIndex + 1 < arn.Length
+            ? arn[(separatorIndex + 1)..]
+            : string.Empty;
     }
 
     private static async Task<IReadOnlyList<string>> ListAwsTaggedResourcesAsync(

@@ -167,6 +167,7 @@ data "aws_iam_policy_document" "terraform" {
       "iam:CreateInstanceProfile",
       "iam:DeleteInstanceProfile",
       "iam:GetInstanceProfile",
+      "iam:ListInstanceProfilesForRole",
       "iam:AddRoleToInstanceProfile",
       "iam:RemoveRoleFromInstanceProfile",
       "iam:CreateServiceLinkedRole"
