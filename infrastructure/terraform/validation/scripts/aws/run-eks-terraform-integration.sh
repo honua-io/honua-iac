@@ -480,7 +480,10 @@ run_quota_preflight() {
 
   log_info "EKS quota preflight passed (EC2 regional vCPU quota=${quota:-unknown}, required=$required)"
 
-  vpc_quota="$(aws service-quotas get-service-quota --service-code vpc --quota-code L-F678F1CE --query 'Quota.Value' --output text 2>/dev/null || echo '')"
+  vpc_quota="$(aws ec2 describe-account-attributes --attribute-names max-vpcs --query 'AccountAttributes[0].AttributeValues[0].AttributeValue' --output text 2>/dev/null || echo '')"
+  if [[ -z "$vpc_quota" || "$vpc_quota" == "None" ]]; then
+    vpc_quota="$(aws service-quotas list-service-quotas --service-code vpc --query \"Quotas[?QuotaName=='VPCs per Region'] | [0].Value\" --output text 2>/dev/null || echo '')"
+  fi
   current_vpcs="$(aws ec2 describe-vpcs --query 'length(Vpcs)' --output text 2>/dev/null || echo '')"
 
   if [[ -n "$vpc_quota" && "$vpc_quota" != "None" && -n "$current_vpcs" && "$current_vpcs" != "None" ]] &&

@@ -600,15 +600,29 @@ internal static partial class ValidationRunner
         var (vpcQuotaSuccess, vpcQuotaRaw) = await context.ProcessRunner.TryCaptureAsync(
             "aws",
             [
-                "service-quotas",
-                "get-service-quota",
-                "--service-code", "vpc",
-                "--quota-code", "L-F678F1CE",
-                "--query", "Quota.Value",
+                "ec2",
+                "describe-account-attributes",
+                "--attribute-names", "max-vpcs",
+                "--query", "AccountAttributes[0].AttributeValues[0].AttributeValue",
                 "--output", "text",
             ],
             context.RepoRoot,
             credentialsEnvironment);
+
+        if (!vpcQuotaSuccess || string.IsNullOrWhiteSpace(vpcQuotaRaw) || string.Equals(vpcQuotaRaw.Trim(), "None", StringComparison.OrdinalIgnoreCase))
+        {
+            (vpcQuotaSuccess, vpcQuotaRaw) = await context.ProcessRunner.TryCaptureAsync(
+                "aws",
+                [
+                    "service-quotas",
+                    "list-service-quotas",
+                    "--service-code", "vpc",
+                    "--query", "Quotas[?QuotaName=='VPCs per Region'] | [0].Value",
+                    "--output", "text",
+                ],
+                context.RepoRoot,
+                credentialsEnvironment);
+        }
 
         if (!vpcQuotaSuccess)
         {

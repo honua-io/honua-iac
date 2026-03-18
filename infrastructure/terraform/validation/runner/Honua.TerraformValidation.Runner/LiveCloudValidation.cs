@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -754,10 +755,11 @@ internal static partial class ValidationRunner
             state.WorkloadName = GetTerraformWorkloadName(outputs) ?? settings.AcaNamePrefix;
             await EnsureAcaDbFirewallAccessAsync(context, state, credentialsEnvironment);
             await WaitForAzureAcaReplicasAsync(context, credentialsEnvironment, state.ResourceGroupName!, state.WorkloadName!, minReplicas, settings.TimeoutSeconds);
-            await RunCloudHttpChecksAsync(context, settings.AdminPassword, state.BaseUrl, settings.TimeoutSeconds, settings.ReadySloSeconds, settings.LoadRequests, settings.LoadConcurrency, settings.MaxLoadErrorRatePercent, settings.SkipProtocolChecks);
+            state.ActiveBaseUrl = await ResolveAzureAcaProbeBaseUrlAsync(context, credentialsEnvironment, state.ResourceGroupName!, state.WorkloadName!, state.BaseUrl);
+            await RunCloudHttpChecksAsync(context, settings.AdminPassword, state.ActiveBaseUrl ?? state.BaseUrl, settings.TimeoutSeconds, settings.ReadySloSeconds, settings.LoadRequests, settings.LoadConcurrency, settings.MaxLoadErrorRatePercent, settings.SkipProtocolChecks);
             if (runPlatformValidation)
             {
-                await RunCloudPlatformValidationAsync(context, validationEnvironment, state.BaseUrl, "azure-container-apps", outputs, state.DbHost!, settings.DbAdminPassword);
+                await RunCloudPlatformValidationAsync(context, validationEnvironment, state.ActiveBaseUrl ?? state.BaseUrl, "azure-container-apps", outputs, state.DbHost!, settings.DbAdminPassword);
             }
         }
 
@@ -1142,6 +1144,67 @@ internal static partial class ValidationRunner
         }
     }
 
+    private static async Task<string?> ResolveAzureAcaProbeBaseUrlAsync(
+        RunnerContext context,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment,
+        string resourceGroup,
+        string appName,
+        string? fallbackBaseUrl)
+    {
+        if (context.DryRun)
+        {
+            return fallbackBaseUrl;
+        }
+
+        var appUrl = string.IsNullOrWhiteSpace(fallbackBaseUrl) ? null : NormalizeBaseUrl(fallbackBaseUrl);
+        var revisionUrl = await TryGetAzureAcaLatestRevisionUrlAsync(context, credentialsEnvironment, resourceGroup, appName);
+        if (string.IsNullOrWhiteSpace(revisionUrl))
+        {
+            return appUrl;
+        }
+
+        if (string.Equals(appUrl, revisionUrl, StringComparison.OrdinalIgnoreCase))
+        {
+            return appUrl;
+        }
+
+        Console.WriteLine($"[runner] ACA readiness will probe latest revision endpoint first: {revisionUrl}");
+        return revisionUrl;
+    }
+
+    private static async Task<string?> TryGetAzureAcaLatestRevisionUrlAsync(
+        RunnerContext context,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment,
+        string resourceGroup,
+        string appName)
+    {
+        var (success, raw) = await context.ProcessRunner.TryCaptureAsync(
+            "az",
+            [
+                "containerapp",
+                "show",
+                "--resource-group", resourceGroup,
+                "--name", appName,
+                "--query", "properties.latestRevisionFqdn",
+                "-o", "tsv",
+            ],
+            context.RepoRoot,
+            credentialsEnvironment);
+
+        if (!success)
+        {
+            Console.WriteLine("[runner] Warn: unable to query ACA latest revision FQDN; using app ingress FQDN.");
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(raw) || string.Equals(raw.Trim(), "None", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return NormalizeBaseUrl(raw.Trim());
+    }
+
     private static async Task RunCloudHttpChecksAsync(RunnerContext context, string adminApiKey, string baseUrl, int timeoutSeconds, int readySloSeconds, int loadRequests, int loadConcurrency, decimal maxLoadErrorRatePercent, bool skipProtocolChecks)
     {
         await WaitForCloudReadyAsync(context, baseUrl, timeoutSeconds, readySloSeconds);
@@ -1161,6 +1224,7 @@ internal static partial class ValidationRunner
         }
 
         using var client = new HttpClient { BaseAddress = new Uri(NormalizeBaseUrl(baseUrl), UriKind.Absolute), Timeout = TimeSpan.FromSeconds(20) };
+        client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("HonuaTerraformValidation", "1.0"));
         var startedAt = DateTimeOffset.UtcNow;
         var readySloSatisfied = false;
         var consecutiveReadyChecks = 0;
@@ -2138,6 +2202,7 @@ internal static partial class ValidationRunner
         public string? ExistingRedisConnectionString { get; set; }
         public string? DataResourceGroup { get; set; }
         public string? BaseUrl { get; set; }
+        public string? ActiveBaseUrl { get; set; }
         public string? DbHost { get; set; }
         public string? ResourceGroupName { get; set; }
         public string? WorkloadName { get; set; }
