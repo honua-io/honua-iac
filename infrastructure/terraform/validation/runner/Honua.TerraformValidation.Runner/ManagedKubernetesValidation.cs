@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace Honua.TerraformValidation.Runner;
@@ -766,32 +767,82 @@ internal static partial class ValidationRunner
             return;
         }
 
-        for (var attempt = 1; attempt <= 20; attempt++)
+        IReadOnlyList<string> remainingResources = Array.Empty<string>();
+        for (var attempt = 1; attempt <= 24; attempt++)
         {
-            var count = await context.ProcessRunner.CaptureAsync(
-                "aws",
-                [
-                    "resourcegroupstaggingapi",
-                    "get-resources",
-                    "--tag-filters", $"Key=ValidationRunId,Values={validationRunId}",
-                    "--query", "length(ResourceTagMappingList)",
-                    "--output", "text",
-                ],
-                context.RepoRoot,
-                credentialsEnvironment);
-
-            if (count is "0" or "None")
+            remainingResources = await ListAwsTaggedResourcesAsync(context, validationRunId, credentialsEnvironment);
+            if (remainingResources.Count == 0)
             {
                 return;
             }
 
+            if (attempt == 1 || attempt % 4 == 0)
+            {
+                Console.WriteLine($"[runner] AWS leak janitor wait {attempt}/24: {remainingResources.Count} tagged resources still visible for ValidationRunId={validationRunId}");
+                foreach (var resource in remainingResources.Take(10))
+                {
+                    Console.WriteLine($"[runner]   lingering resource: {resource}");
+                }
+
+                if (remainingResources.Count > 10)
+                {
+                    Console.WriteLine($"[runner]   ... and {remainingResources.Count - 10} more");
+                }
+            }
+
             if (!context.DryRun)
             {
-                await Task.Delay(TimeSpan.FromSeconds(15));
+                var delaySeconds = Math.Min(15 + ((attempt - 1) / 4) * 15, 60);
+                await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
             }
         }
 
-        throw new ValidationException($"Leak janitor check failed: resources tagged ValidationRunId={validationRunId} still exist");
+        throw new ValidationException($"Leak janitor check failed: resources tagged ValidationRunId={validationRunId} still exist after extended wait: {string.Join(", ", remainingResources.Take(20))}");
+    }
+
+    private static async Task<IReadOnlyList<string>> ListAwsTaggedResourcesAsync(
+        RunnerContext context,
+        string validationRunId,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment)
+    {
+        var raw = await context.ProcessRunner.CaptureAsync(
+            "aws",
+            [
+                "resourcegroupstaggingapi",
+                "get-resources",
+                "--tag-filters", $"Key=ValidationRunId,Values={validationRunId}",
+                "--query", "ResourceTagMappingList[].ResourceARN",
+                "--output", "json",
+            ],
+            context.RepoRoot,
+            credentialsEnvironment);
+
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return Array.Empty<string>();
+        }
+
+        using var document = JsonDocument.Parse(raw);
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
+        {
+            return Array.Empty<string>();
+        }
+
+        var results = new List<string>();
+        foreach (var element in document.RootElement.EnumerateArray())
+        {
+            if (element.ValueKind == JsonValueKind.String)
+            {
+                var value = element.GetString();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    results.Add(value);
+                }
+            }
+        }
+
+        results.Sort(StringComparer.Ordinal);
+        return results.Distinct(StringComparer.Ordinal).ToArray();
     }
 
     private static IsolatedTerraformWorkspace PrepareTerraformWorkspace(RunnerContext context, string label)
