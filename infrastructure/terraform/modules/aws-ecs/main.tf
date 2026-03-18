@@ -101,8 +101,8 @@ check "existing_db_inputs" {
 
 check "existing_db_admin_password_required" {
   assert {
-    condition     = !(local.db_use_existing && var.enable_postgis) || var.existing_db_admin_password != ""
-    error_message = "Provide existing_db_admin_password when enabling PostGIS on an existing database."
+    condition     = !(local.db_use_existing && var.enable_postgis) || var.existing_db_admin_password != "" || var.db_password != null
+    error_message = "Provide existing_db_admin_password or db_password when enabling PostGIS on an existing database."
   }
 }
 

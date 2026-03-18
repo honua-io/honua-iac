@@ -359,12 +359,14 @@ internal static partial class ValidationRunner
 
         foreach (var root in roots)
         {
+            var rootPath = ResolveRepoRelativePath(context, root);
             await RunDriftCheckForRootAsync(
                 context,
-                ResolveRepoRelativePath(context, root),
+                rootPath,
                 resolvedVarFiles,
                 driftDir,
-                backendEnabled);
+                backendEnabled,
+                BuildDriftEnvironmentForRoot(context, rootPath));
         }
 
         Console.WriteLine("[runner] Terraform drift detection completed successfully");
@@ -953,7 +955,8 @@ internal static partial class ValidationRunner
         string rootPath,
         IReadOnlyList<string> varFiles,
         string planArtifactDir,
-        bool backendEnabled)
+        bool backendEnabled,
+        IReadOnlyDictionary<string, string?> environmentOverrides)
     {
         if (!Directory.Exists(rootPath))
         {
@@ -976,7 +979,7 @@ internal static partial class ValidationRunner
         }
 
         Console.WriteLine($"[runner] terraform init ({rootPath})");
-        await context.ProcessRunner.RunAsync("terraform", initArguments, context.RepoRoot);
+        await context.ProcessRunner.RunAsync("terraform", initArguments, context.RepoRoot, environmentOverrides);
 
         var planArguments = new List<string>
         {
@@ -994,7 +997,7 @@ internal static partial class ValidationRunner
         Console.WriteLine($"[runner] terraform plan -detailed-exitcode ({rootPath})");
         try
         {
-            var output = await context.ProcessRunner.CaptureAsync("terraform", planArguments, context.RepoRoot);
+            var output = await context.ProcessRunner.CaptureAsync("terraform", planArguments, context.RepoRoot, environmentOverrides);
             if (!context.DryRun)
             {
                 await File.WriteAllTextAsync(logFile, output);
@@ -1017,6 +1020,79 @@ internal static partial class ValidationRunner
             }
 
             throw new ValidationException($"Drift check errored for {rootPath}. See {logFile}");
+        }
+    }
+
+    private static IReadOnlyDictionary<string, string?> BuildDriftEnvironmentForRoot(RunnerContext context, string rootPath)
+    {
+        var env = context.Environment;
+        var relativeRoot = Path.GetRelativePath(context.RepoRoot, rootPath).Replace('\\', '/');
+        var environment = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["TF_IN_AUTOMATION"] = "true",
+        };
+
+        AddIfPresent(environment, "TF_VAR_honua_admin_password", env.GetOptional("HONUA_ADMIN_PASSWORD"));
+        AddIfPresent(environment, "TF_VAR_db_admin_password", env.GetOptional("HONUA_DB_PASSWORD"));
+        AddIfPresent(environment, "TF_VAR_db_password", env.GetOptional("HONUA_DB_PASSWORD"));
+
+        if (string.Equals(relativeRoot, "infrastructure/terraform/examples/azure", StringComparison.Ordinal))
+        {
+            AddIfPresent(environment, "TF_VAR_honua_image", env.GetOptional("HONUA_ACA_IMAGE"));
+            AddIfPresent(environment, "TF_VAR_existing_db_fqdn", env.GetOptional("HONUA_AZURE_EXISTING_DB_FQDN"));
+            AddIfPresent(environment, "TF_VAR_existing_db_connection_string", env.GetOptional("HONUA_AZURE_EXISTING_DB_CONNECTION_STRING"));
+            AddIfPresent(environment, "TF_VAR_redis_connection_string", env.GetOptional("HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING"));
+            environment["TF_VAR_enable_postgis"] = string.IsNullOrWhiteSpace(env.GetOptional("HONUA_AZURE_EXISTING_DB_CONNECTION_STRING")) ? "true" : "false";
+        }
+        else if (string.Equals(relativeRoot, "infrastructure/terraform/examples/azure-functions", StringComparison.Ordinal))
+        {
+            AddIfPresent(environment, "TF_VAR_honua_image", env.GetOptional("HONUA_FUNCTIONS_IMAGE"));
+            AddIfPresent(environment, "TF_VAR_existing_db_fqdn", env.GetOptional("HONUA_AZURE_EXISTING_DB_FQDN"));
+            AddIfPresent(environment, "TF_VAR_existing_db_connection_string", env.GetOptional("HONUA_AZURE_EXISTING_DB_CONNECTION_STRING"));
+            AddIfPresent(environment, "TF_VAR_redis_connection_string", env.GetOptional("HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING"));
+            environment["TF_VAR_enable_postgis"] = string.IsNullOrWhiteSpace(env.GetOptional("HONUA_AZURE_EXISTING_DB_CONNECTION_STRING")) ? "true" : "false";
+        }
+        else if (string.Equals(relativeRoot, "infrastructure/terraform/examples/aws", StringComparison.Ordinal))
+        {
+            AddIfPresent(environment, "TF_VAR_honua_image", env.GetOptional("HONUA_AWS_ECS_IMAGE"));
+            AddIfPresent(environment, "TF_VAR_existing_db_endpoint", env.GetOptional("HONUA_AWS_EXISTING_DB_ENDPOINT"));
+            AddIfPresent(environment, "TF_VAR_existing_db_connection_string", env.GetOptional("HONUA_AWS_EXISTING_DB_CONNECTION_STRING"));
+            AddIfPresent(environment, "TF_VAR_existing_vpc_id", env.GetOptional("HONUA_AWS_EXISTING_VPC_ID"));
+            AddIfPresent(environment, "TF_VAR_existing_vpc_cidr", env.GetOptional("HONUA_AWS_EXISTING_VPC_CIDR"));
+            AddIfPresent(environment, "TF_VAR_existing_public_subnet_ids", env.GetOptional("HONUA_AWS_EXISTING_PUBLIC_SUBNET_IDS"));
+            AddIfPresent(environment, "TF_VAR_existing_private_subnet_ids", env.GetOptional("HONUA_AWS_EXISTING_PRIVATE_SUBNET_IDS"));
+            AddIfPresent(environment, "TF_VAR_redis_connection_string", env.GetOptional("HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING"));
+            environment["TF_VAR_enable_postgis"] = string.IsNullOrWhiteSpace(env.GetOptional("HONUA_AWS_EXISTING_DB_CONNECTION_STRING")) ? "true" : "false";
+            var vpcCidr = env.GetOptional("HONUA_AWS_EXISTING_VPC_CIDR");
+            environment["TF_VAR_redis_connection_cidrs"] = string.IsNullOrWhiteSpace(env.GetOptional("HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING")) || string.IsNullOrWhiteSpace(vpcCidr)
+                ? "[]"
+                : $"[\"{vpcCidr}\"]";
+        }
+        else if (string.Equals(relativeRoot, "infrastructure/terraform/examples/aws-serverless", StringComparison.Ordinal))
+        {
+            AddIfPresent(environment, "TF_VAR_honua_image_uri", env.GetOptional("HONUA_AWS_SERVERLESS_IMAGE"));
+            AddIfPresent(environment, "TF_VAR_existing_db_endpoint", env.GetOptional("HONUA_AWS_EXISTING_DB_ENDPOINT"));
+            AddIfPresent(environment, "TF_VAR_existing_db_connection_string", env.GetOptional("HONUA_AWS_EXISTING_DB_CONNECTION_STRING"));
+            AddIfPresent(environment, "TF_VAR_existing_vpc_id", env.GetOptional("HONUA_AWS_EXISTING_VPC_ID"));
+            AddIfPresent(environment, "TF_VAR_existing_vpc_cidr", env.GetOptional("HONUA_AWS_EXISTING_VPC_CIDR"));
+            AddIfPresent(environment, "TF_VAR_existing_public_subnet_ids", env.GetOptional("HONUA_AWS_EXISTING_PUBLIC_SUBNET_IDS"));
+            AddIfPresent(environment, "TF_VAR_existing_private_subnet_ids", env.GetOptional("HONUA_AWS_EXISTING_PRIVATE_SUBNET_IDS"));
+            AddIfPresent(environment, "TF_VAR_redis_connection_string", env.GetOptional("HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING"));
+            environment["TF_VAR_enable_postgis"] = string.IsNullOrWhiteSpace(env.GetOptional("HONUA_AWS_EXISTING_DB_CONNECTION_STRING")) ? "true" : "false";
+            var vpcCidr = env.GetOptional("HONUA_AWS_EXISTING_VPC_CIDR");
+            environment["TF_VAR_redis_connection_cidrs"] = string.IsNullOrWhiteSpace(env.GetOptional("HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING")) || string.IsNullOrWhiteSpace(vpcCidr)
+                ? "[]"
+                : $"[\"{vpcCidr}\"]";
+        }
+
+        return environment;
+    }
+
+    private static void AddIfPresent(IDictionary<string, string?> environment, string key, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            environment[key] = value;
         }
     }
 

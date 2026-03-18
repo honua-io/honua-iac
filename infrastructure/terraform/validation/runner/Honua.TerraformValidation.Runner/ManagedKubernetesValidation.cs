@@ -585,6 +585,36 @@ internal static partial class ValidationRunner
                 throw new ValidationException($"EKS quota preflight failed: required vCPU {required} exceeds EC2 regional quota {quota}");
             }
         }
+
+        var vpcQuotaRaw = await context.ProcessRunner.CaptureAsync(
+            "aws",
+            [
+                "ec2",
+                "describe-account-attributes",
+                "--attribute-names", "max-vpcs-per-region",
+                "--query", "AccountAttributes[0].AttributeValues[0].AttributeValue",
+                "--output", "text",
+            ],
+            context.RepoRoot,
+            credentialsEnvironment);
+
+        var currentVpcCountRaw = await context.ProcessRunner.CaptureAsync(
+            "aws",
+            [
+                "ec2",
+                "describe-vpcs",
+                "--query", "length(Vpcs)",
+                "--output", "text",
+            ],
+            context.RepoRoot,
+            credentialsEnvironment);
+
+        if (int.TryParse(vpcQuotaRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var vpcQuota) &&
+            int.TryParse(currentVpcCountRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var currentVpcCount) &&
+            currentVpcCount >= vpcQuota)
+        {
+            throw new ValidationException($"EKS quota preflight failed: VPC usage {currentVpcCount}/{vpcQuota}; no capacity remains for the validation VPC.");
+        }
     }
 
     private static async Task VerifyNoAzureLeaksAsync(

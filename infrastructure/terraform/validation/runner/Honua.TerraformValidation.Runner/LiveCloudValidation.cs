@@ -909,6 +909,7 @@ internal static partial class ValidationRunner
 
     private static Dictionary<string, string?> BuildAzureAcaEnvironment(AzureLiveSettings settings, AzureLiveState state, IReadOnlyDictionary<string, string?> baseEnvironment, string image, int minReplicas)
     {
+        var reusingExistingData = !string.IsNullOrWhiteSpace(state.ExistingDbConnectionString);
         return new Dictionary<string, string?>(baseEnvironment, StringComparer.Ordinal)
         {
             ["TF_IN_AUTOMATION"] = "true",
@@ -917,7 +918,7 @@ internal static partial class ValidationRunner
             ["TF_VAR_name_prefix"] = settings.AcaNamePrefix,
             ["TF_VAR_honua_admin_password"] = settings.AdminPassword,
             ["TF_VAR_db_admin_password"] = settings.DbAdminPassword,
-            ["TF_VAR_enable_postgis"] = "true",
+            ["TF_VAR_enable_postgis"] = (!reusingExistingData).ToString().ToLowerInvariant(),
             ["TF_VAR_redis_enabled"] = "true",
             ["TF_VAR_existing_db_fqdn"] = state.ExistingDbFqdn,
             ["TF_VAR_existing_db_connection_string"] = state.ExistingDbConnectionString,
@@ -937,6 +938,7 @@ internal static partial class ValidationRunner
 
     private static Dictionary<string, string?> BuildAzureFunctionsEnvironment(AzureLiveSettings settings, AzureLiveState state, IReadOnlyDictionary<string, string?> baseEnvironment, string image, string? slotImage, bool deploymentSlotEnabled)
     {
+        var reusingExistingData = !string.IsNullOrWhiteSpace(state.ExistingDbConnectionString);
         return new Dictionary<string, string?>(baseEnvironment, StringComparer.Ordinal)
         {
             ["TF_IN_AUTOMATION"] = "true",
@@ -945,7 +947,7 @@ internal static partial class ValidationRunner
             ["TF_VAR_name_prefix"] = settings.FunctionsNamePrefix,
             ["TF_VAR_honua_admin_password"] = settings.AdminPassword,
             ["TF_VAR_db_admin_password"] = settings.DbAdminPassword,
-            ["TF_VAR_enable_postgis"] = "true",
+            ["TF_VAR_enable_postgis"] = (!reusingExistingData).ToString().ToLowerInvariant(),
             ["TF_VAR_redis_enabled"] = "true",
             ["TF_VAR_existing_db_fqdn"] = state.ExistingDbFqdn,
             ["TF_VAR_existing_db_connection_string"] = state.ExistingDbConnectionString,
@@ -1867,6 +1869,7 @@ internal static partial class ValidationRunner
 
     private static Dictionary<string, string?> BuildAwsAppEnvironment(AwsLiveSettings settings, AwsLiveState state, IReadOnlyDictionary<string, string?> baseEnvironment, string kind, string image, int? desiredCount, string? aliasVersion)
     {
+        var reusingExistingData = !string.IsNullOrWhiteSpace(state.ExistingDbConnectionString);
         var environment = new Dictionary<string, string?>(baseEnvironment, StringComparer.Ordinal)
         {
             ["TF_IN_AUTOMATION"] = "true",
@@ -1882,9 +1885,12 @@ internal static partial class ValidationRunner
             ["TF_VAR_existing_vpc_cidr"] = state.ExistingVpcCidr,
             ["TF_VAR_existing_public_subnet_ids"] = state.ExistingPublicSubnetIdsJson ?? "[]",
             ["TF_VAR_existing_private_subnet_ids"] = state.ExistingPrivateSubnetIdsJson ?? "[]",
-            ["TF_VAR_enable_postgis"] = "true",
+            ["TF_VAR_enable_postgis"] = (!reusingExistingData).ToString().ToLowerInvariant(),
             ["TF_VAR_redis_enabled"] = "true",
             ["TF_VAR_redis_connection_string"] = state.ExistingRedisConnectionString,
+            ["TF_VAR_redis_connection_cidrs"] = string.IsNullOrWhiteSpace(state.ExistingRedisConnectionString) || string.IsNullOrWhiteSpace(state.ExistingVpcCidr)
+                ? "[]"
+                : JsonSerializer.Serialize(new[] { state.ExistingVpcCidr }),
             ["TF_VAR_db_publicly_accessible"] = "true",
             ["TF_VAR_allow_http_ingress_cidrs"] = JsonSerializer.Serialize(new[] { settings.HttpIngressCidr! }),
             ["TF_VAR_db_additional_ingress_cidrs"] = string.IsNullOrWhiteSpace(state.ExistingDbConnectionString) ? JsonSerializer.Serialize(new[] { settings.DbIngressCidr! }) : "[]",

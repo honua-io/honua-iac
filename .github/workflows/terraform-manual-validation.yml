@@ -319,6 +319,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Checkout honua-server platform validation suite
+        uses: actions/checkout@v4
+        with:
+          repository: honua-io/honua-server
+          path: honua-server
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
