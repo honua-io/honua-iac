@@ -40,6 +40,30 @@ variable "private_subnet_cidrs" {
   default     = ["10.40.1.0/24", "10.40.2.0/24", "10.40.3.0/24"]
 }
 
+variable "existing_vpc_id" {
+  description = "Existing VPC ID to reuse instead of creating a new VPC."
+  type        = string
+  default     = ""
+}
+
+variable "existing_vpc_cidr" {
+  description = "CIDR block for existing_vpc_id. Required when reusing a VPC."
+  type        = string
+  default     = ""
+}
+
+variable "existing_public_subnet_ids" {
+  description = "Public subnet IDs in existing_vpc_id. Required when reusing a VPC."
+  type        = list(string)
+  default     = []
+}
+
+variable "existing_private_subnet_ids" {
+  description = "Private subnet IDs in existing_vpc_id. Required when reusing a VPC."
+  type        = list(string)
+  default     = []
+}
+
 variable "cluster_version" {
   description = "EKS cluster version."
   type        = string

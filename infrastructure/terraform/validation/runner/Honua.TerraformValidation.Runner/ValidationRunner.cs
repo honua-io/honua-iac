@@ -40,6 +40,10 @@ internal static partial class ValidationRunner
     [
         "HONUA_USE_AOT",
         "HONUA_PLATFORM_VALIDATION_SCRIPT",
+        "HONUA_AWS_EXISTING_VPC_ID",
+        "HONUA_AWS_EXISTING_VPC_CIDR",
+        "HONUA_AWS_EXISTING_PUBLIC_SUBNET_IDS",
+        "HONUA_AWS_EXISTING_PRIVATE_SUBNET_IDS",
     ];
 
     public static Task RunAsync(ParsedCommand command, RunnerContext context)

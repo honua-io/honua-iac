@@ -383,6 +383,10 @@ internal static partial class ValidationRunner
             ValidationRunId: validationRunId,
             TtlHours: GetIntOption(command, env, "ttl-hours", "HONUA_TTL_HOURS", 8),
             MaxRunCostUsd: GetDecimalOption(command, env, "max-run-cost-usd", "HONUA_MAX_RUN_COST_USD", 100m),
+            ExistingVpcId: env.GetOptional("HONUA_AWS_EXISTING_VPC_ID"),
+            ExistingVpcCidr: env.GetOptional("HONUA_AWS_EXISTING_VPC_CIDR"),
+            ExistingPublicSubnetIdsJson: env.GetOptional("HONUA_AWS_EXISTING_PUBLIC_SUBNET_IDS"),
+            ExistingPrivateSubnetIdsJson: env.GetOptional("HONUA_AWS_EXISTING_PRIVATE_SUBNET_IDS"),
             AllowDestroyPlan: command.GetBoolean("allow-destroy-plan", false),
             SkipQuotaPreflight: GetBooleanOption(command, env, "skip-quota-preflight", "HONUA_SKIP_QUOTA_PREFLIGHT"),
             SkipIdempotency: GetBooleanOption(command, env, "skip-idempotency", "HONUA_SKIP_IDEMPOTENCY"),
@@ -420,6 +424,15 @@ internal static partial class ValidationRunner
             ["TF_VAR_tags"] = BuildValidationTagsJson(settings.ValidationRunId, settings.TtlHours),
             ["TF_IN_AUTOMATION"] = "true",
         };
+
+        if (!string.IsNullOrWhiteSpace(settings.ExistingVpcId))
+        {
+            environment["TF_VAR_existing_vpc_id"] = settings.ExistingVpcId;
+            environment["TF_VAR_existing_vpc_cidr"] = settings.ExistingVpcCidr;
+            environment["TF_VAR_existing_public_subnet_ids"] = settings.ExistingPublicSubnetIdsJson ?? "[]";
+            environment["TF_VAR_existing_private_subnet_ids"] = settings.ExistingPrivateSubnetIdsJson ?? "[]";
+        }
+
         return environment;
     }
 
@@ -597,32 +610,23 @@ internal static partial class ValidationRunner
             }
         }
 
+        if (!string.IsNullOrWhiteSpace(settings.ExistingVpcId))
+        {
+            Console.WriteLine($"[runner] Reusing existing VPC for EKS validation: {settings.ExistingVpcId}");
+            return;
+        }
+
         var (vpcQuotaSuccess, vpcQuotaRaw) = await context.ProcessRunner.TryCaptureAsync(
             "aws",
             [
-                "ec2",
-                "describe-account-attributes",
-                "--attribute-names", "max-vpcs",
-                "--query", "AccountAttributes[0].AttributeValues[0].AttributeValue",
+                "service-quotas",
+                "list-service-quotas",
+                "--service-code", "vpc",
+                "--query", "Quotas[?QuotaName=='VPCs per Region'] | [0].Value",
                 "--output", "text",
             ],
             context.RepoRoot,
             credentialsEnvironment);
-
-        if (!vpcQuotaSuccess || string.IsNullOrWhiteSpace(vpcQuotaRaw) || string.Equals(vpcQuotaRaw.Trim(), "None", StringComparison.OrdinalIgnoreCase))
-        {
-            (vpcQuotaSuccess, vpcQuotaRaw) = await context.ProcessRunner.TryCaptureAsync(
-                "aws",
-                [
-                    "service-quotas",
-                    "list-service-quotas",
-                    "--service-code", "vpc",
-                    "--query", "Quotas[?QuotaName=='VPCs per Region'] | [0].Value",
-                    "--output", "text",
-                ],
-                context.RepoRoot,
-                credentialsEnvironment);
-        }
 
         if (!vpcQuotaSuccess)
         {
@@ -647,9 +651,9 @@ internal static partial class ValidationRunner
             return;
         }
 
-        if (int.TryParse(vpcQuotaRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var vpcQuota) &&
+        if (decimal.TryParse(vpcQuotaRaw, NumberStyles.Number, CultureInfo.InvariantCulture, out var vpcQuota) &&
             int.TryParse(currentVpcCountRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var currentVpcCount) &&
-            currentVpcCount >= vpcQuota)
+            currentVpcCount >= decimal.ToInt32(decimal.Truncate(vpcQuota)))
         {
             throw new ValidationException($"EKS quota preflight failed: VPC usage {currentVpcCount}/{vpcQuota}; no capacity remains for the validation VPC.");
         }
@@ -988,6 +992,10 @@ internal static partial class ValidationRunner
         string ValidationRunId,
         int TtlHours,
         decimal MaxRunCostUsd,
+        string? ExistingVpcId,
+        string? ExistingVpcCidr,
+        string? ExistingPublicSubnetIdsJson,
+        string? ExistingPrivateSubnetIdsJson,
         bool AllowDestroyPlan,
         bool SkipQuotaPreflight,
         bool SkipIdempotency,

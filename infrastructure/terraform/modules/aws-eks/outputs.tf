@@ -27,7 +27,7 @@ output "cluster_certificate_authority_data" {
 
 output "vpc_id" {
   description = "VPC ID used by the EKS cluster."
-  value       = module.vpc.vpc_id
+  value       = local.vpc_id
 }
 
 output "oidc_provider_arn" {

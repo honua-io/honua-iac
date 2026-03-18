@@ -759,7 +759,7 @@ internal static partial class ValidationRunner
             await RunCloudHttpChecksAsync(context, settings.AdminPassword, state.ActiveBaseUrl ?? state.BaseUrl, settings.TimeoutSeconds, settings.ReadySloSeconds, settings.LoadRequests, settings.LoadConcurrency, settings.MaxLoadErrorRatePercent, settings.SkipProtocolChecks);
             if (runPlatformValidation)
             {
-                await RunCloudPlatformValidationAsync(context, validationEnvironment, state.ActiveBaseUrl ?? state.BaseUrl, "azure-container-apps", outputs, state.DbHost!, settings.DbAdminPassword);
+                await RunCloudPlatformValidationAsync(context, validationEnvironment, state.ActiveBaseUrl ?? state.BaseUrl, "azure-container-apps", outputs, state.DbHost!, settings.AdminPassword, settings.DbAdminPassword);
             }
         }
 
@@ -831,7 +831,7 @@ internal static partial class ValidationRunner
             await RunCloudHttpChecksAsync(context, settings.AdminPassword, state.BaseUrl, settings.TimeoutSeconds, settings.ReadySloSeconds, settings.LoadRequests, settings.LoadConcurrency, settings.MaxLoadErrorRatePercent, settings.SkipProtocolChecks);
             if (runPlatformValidation)
             {
-                await RunCloudPlatformValidationAsync(context, validationEnvironment, state.BaseUrl, "azure-functions", outputs, state.DbHost!, settings.DbAdminPassword, currentRevision, desiredRevision, settings.RunUpgradeRollback);
+                await RunCloudPlatformValidationAsync(context, validationEnvironment, state.BaseUrl, "azure-functions", outputs, state.DbHost!, settings.AdminPassword, settings.DbAdminPassword, currentRevision, desiredRevision, settings.RunUpgradeRollback);
             }
         }
 
@@ -1369,6 +1369,7 @@ internal static partial class ValidationRunner
         string defaultPlatform,
         string rawTerraformOutputs,
         string dbHost,
+        string adminApiKey,
         string dbPassword,
         string? currentRevision = null,
         string? desiredRevision = null,
@@ -1393,9 +1394,7 @@ internal static partial class ValidationRunner
             ["HONUA_PLATFORM_VALIDATION_PUBLISH_DB_SSL_MODE"] = "Require",
             ["HONUA_PLATFORM_VALIDATION_PUBLISH_DB_SSL_REQUIRED"] = "true",
             ["HONUA_CLOUD_TEST_BASE_URL"] = baseUrl,
-            ["HONUA_CLOUD_TEST_ADMIN_API_KEY"] = validationEnvironment.TryGetValue("HONUA_ADMIN_PASSWORD", out var adminApiKey)
-                ? adminApiKey
-                : null,
+            ["HONUA_CLOUD_TEST_ADMIN_API_KEY"] = adminApiKey,
         };
         if (!string.IsNullOrWhiteSpace(currentRevision))
         {
@@ -1791,7 +1790,7 @@ internal static partial class ValidationRunner
             {
                 await WaitForEcsRunningCountAsync(context, credentialsEnvironment, state.ClusterName!, state.CanaryServiceName!, settings.EcsCanaryDesiredCount, settings.TimeoutSeconds);
             }
-            await RunCloudPlatformValidationAsync(context, validationEnvironment, state.BaseUrl, "aws-ecs", outputs, state.DbHost!, settings.DbAdminPassword);
+            await RunCloudPlatformValidationAsync(context, validationEnvironment, state.BaseUrl, "aws-ecs", outputs, state.DbHost!, settings.AdminPassword, settings.DbAdminPassword);
         }
 
         if (settings.RunUpgradeRollback)
@@ -1848,7 +1847,7 @@ internal static partial class ValidationRunner
             await RunCloudHttpChecksAsync(context, settings.AdminPassword, state.BaseUrl, settings.TimeoutSeconds, settings.ReadySloSeconds, settings.LoadRequests == 120 ? 40 : settings.LoadRequests, settings.LoadConcurrency == 20 ? 5 : settings.LoadConcurrency, settings.MaxLoadErrorRatePercent, settings.SkipProtocolChecks);
             if (runPlatformValidation)
             {
-                await RunCloudPlatformValidationAsync(context, validationEnvironment, state.BaseUrl, "aws-lambda", outputs, state.DbHost!, settings.DbAdminPassword, currentRevision, desiredRevision, settings.RunUpgradeRollback);
+                await RunCloudPlatformValidationAsync(context, validationEnvironment, state.BaseUrl, "aws-lambda", outputs, state.DbHost!, settings.AdminPassword, settings.DbAdminPassword, currentRevision, desiredRevision, settings.RunUpgradeRollback);
             }
         }
 

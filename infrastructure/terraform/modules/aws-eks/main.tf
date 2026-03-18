@@ -9,6 +9,11 @@ locals {
     Environment = var.environment
     ManagedBy   = "terraform"
   }, var.tags)
+  use_existing_vpc = var.existing_vpc_id != ""
+  vpc_id           = local.use_existing_vpc ? var.existing_vpc_id : module.vpc[0].vpc_id
+  vpc_cidr_block   = local.use_existing_vpc ? var.existing_vpc_cidr : module.vpc[0].vpc_cidr_block
+  public_subnets   = local.use_existing_vpc ? var.existing_public_subnet_ids : module.vpc[0].public_subnets
+  private_subnets  = local.use_existing_vpc ? var.existing_private_subnet_ids : module.vpc[0].private_subnets
 }
 
 check "public_endpoint_cidrs_required" {
@@ -18,7 +23,18 @@ check "public_endpoint_cidrs_required" {
   }
 }
 
+check "existing_vpc_inputs" {
+  assert {
+    condition = (
+      (var.existing_vpc_id == "" && var.existing_vpc_cidr == "" && length(var.existing_public_subnet_ids) == 0 && length(var.existing_private_subnet_ids) == 0) ||
+      (var.existing_vpc_id != "" && var.existing_vpc_cidr != "" && length(var.existing_public_subnet_ids) > 0 && length(var.existing_private_subnet_ids) > 0)
+    )
+    error_message = "existing_vpc_id, existing_vpc_cidr, existing_public_subnet_ids, and existing_private_subnet_ids must be set together."
+  }
+}
+
 module "vpc" {
+  count   = local.use_existing_vpc ? 0 : 1
   source  = "terraform-aws-modules/vpc/aws"
   version = "~> 5.0"
 
@@ -89,9 +105,9 @@ module "eks" {
 
   cluster_enabled_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
 
-  vpc_id                   = module.vpc.vpc_id
-  subnet_ids               = module.vpc.private_subnets
-  control_plane_subnet_ids = module.vpc.private_subnets
+  vpc_id                   = local.vpc_id
+  subnet_ids               = local.private_subnets
+  control_plane_subnet_ids = local.private_subnets
 
   eks_managed_node_groups = {
     default = {
@@ -102,7 +118,7 @@ module "eks" {
       min_size       = var.node_min_size
       max_size       = var.node_max_size
       desired_size   = var.node_desired_size
-      subnet_ids     = module.vpc.private_subnets
+      subnet_ids     = local.private_subnets
     }
   }
 

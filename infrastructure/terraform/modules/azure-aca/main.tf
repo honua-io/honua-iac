@@ -253,23 +253,20 @@ resource "azurerm_container_app" "this" {
   }
 
   secret {
-    name                = "db-connection"
-    key_vault_secret_id = azurerm_key_vault_secret.db_connection.id
-    identity            = azurerm_user_assigned_identity.this.id
+    name  = "db-connection"
+    value = local.db_connection_string
   }
 
   secret {
-    name                = "admin-password"
-    key_vault_secret_id = azurerm_key_vault_secret.admin_password.id
-    identity            = azurerm_user_assigned_identity.this.id
+    name  = "admin-password"
+    value = var.admin_password
   }
 
   dynamic "secret" {
     for_each = toset(local.redis_enabled ? ["redis"] : [])
     content {
-      name                = "redis-connection"
-      key_vault_secret_id = azurerm_key_vault_secret.redis_connection[0].id
-      identity            = azurerm_user_assigned_identity.this.id
+      name  = "redis-connection"
+      value = local.redis_connection
     }
   }
 
