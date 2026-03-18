@@ -308,7 +308,6 @@ internal static partial class ValidationRunner
         string kubeconfigPath,
         IReadOnlyDictionary<string, string?> validationEnvironment)
     {
-        _ = validationEnvironment;
         await ExecuteNativeK8sValidationAsync(
             context,
             BuildK8sSettings(
@@ -319,6 +318,7 @@ internal static partial class ValidationRunner
                     ClusterMode: "external",
                     AccessMode: "port-forward",
                     KubeconfigPath: kubeconfigPath,
+                    EnvironmentOverrides: validationEnvironment,
                     AutoDestroy: !command.GetBoolean("no-destroy", false))));
     }
 
@@ -868,24 +868,42 @@ internal static partial class ValidationRunner
 
         if (!resourceArn.Contains(":ecs:", StringComparison.Ordinal))
         {
+            if (resourceArn.Contains(":ec2:", StringComparison.Ordinal))
+            {
+                return await TryGetIgnorableEc2ResourceReasonAsync(context, resourceArn, credentialsEnvironment);
+            }
+
             return null;
         }
 
         var resourcePart = GetAwsArnResourcePart(resourceArn);
         if (resourcePart.StartsWith("cluster/", StringComparison.Ordinal))
         {
-            var clusterStatus = await TryCaptureAwsFieldAsync(
+            var clusterStateRaw = await TryCaptureAwsFieldAsync(
                 context,
-                ["ecs", "describe-clusters", "--clusters", resourceArn, "--query", "clusters[0].status", "--output", "text"],
+                ["ecs", "describe-clusters", "--clusters", resourceArn, "--query", "clusters[0].[status,runningTasksCount,pendingTasksCount,activeServicesCount]", "--output", "text"],
                 credentialsEnvironment);
-            if (string.IsNullOrWhiteSpace(clusterStatus))
+            if (string.IsNullOrWhiteSpace(clusterStateRaw))
             {
                 return "cluster not found";
             }
 
-            if (!string.Equals(clusterStatus, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+            var clusterParts = clusterStateRaw.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (clusterParts.Length >= 4 &&
+                int.TryParse(clusterParts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var runningTasks) &&
+                int.TryParse(clusterParts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var pendingTasks) &&
+                int.TryParse(clusterParts[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out var activeServices) &&
+                runningTasks == 0 &&
+                pendingTasks == 0)
             {
-                return $"cluster status {clusterStatus}";
+                return activeServices == 0
+                    ? $"cluster status {clusterParts[0]} with zero active services/tasks"
+                    : $"cluster status {clusterParts[0]} with zero running/pending tasks";
+            }
+
+            if (!string.Equals(clusterParts[0], "ACTIVE", StringComparison.OrdinalIgnoreCase))
+            {
+                return $"cluster status {clusterParts[0]}";
             }
 
             return null;
@@ -896,18 +914,31 @@ internal static partial class ValidationRunner
             var segments = resourcePart.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             if (segments.Length >= 3)
             {
-                var serviceStatus = await TryCaptureAwsFieldAsync(
+                var serviceStateRaw = await TryCaptureAwsFieldAsync(
                     context,
-                    ["ecs", "describe-services", "--cluster", segments[1], "--services", segments[2], "--query", "services[0].status", "--output", "text"],
+                    ["ecs", "describe-services", "--cluster", segments[1], "--services", segments[2], "--query", "services[0].[status,desiredCount,runningCount,pendingCount]", "--output", "text"],
                     credentialsEnvironment);
-                if (string.IsNullOrWhiteSpace(serviceStatus))
+                if (string.IsNullOrWhiteSpace(serviceStateRaw))
                 {
                     return "service not found";
                 }
 
-                if (!string.Equals(serviceStatus, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+                var serviceParts = serviceStateRaw.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (serviceParts.Length >= 4 &&
+                    int.TryParse(serviceParts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var desiredCount) &&
+                    int.TryParse(serviceParts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var runningCount) &&
+                    int.TryParse(serviceParts[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out var pendingCount) &&
+                    runningCount == 0 &&
+                    pendingCount == 0)
                 {
-                    return $"service status {serviceStatus}";
+                    return desiredCount == 0
+                        ? $"service status {serviceParts[0]} with zero desired/running/pending tasks"
+                        : $"service status {serviceParts[0]} with zero running/pending tasks";
+                }
+
+                if (!string.Equals(serviceParts[0], "ACTIVE", StringComparison.OrdinalIgnoreCase))
+                {
+                    return $"service status {serviceParts[0]}";
                 }
             }
 
@@ -916,19 +947,80 @@ internal static partial class ValidationRunner
 
         if (resourcePart.StartsWith("task-definition/", StringComparison.Ordinal))
         {
-            var taskDefinitionStatus = await TryCaptureAwsFieldAsync(
+            return "ECS task definitions are non-billable metadata";
+        }
+
+        return null;
+    }
+
+    private static async Task<string?> TryGetIgnorableEc2ResourceReasonAsync(
+        RunnerContext context,
+        string resourceArn,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment)
+    {
+        var resourcePart = GetAwsArnResourcePart(resourceArn);
+        if (resourcePart.StartsWith("instance/", StringComparison.Ordinal))
+        {
+            var instanceId = resourcePart["instance/".Length..];
+            var state = await TryCaptureAwsFieldAsync(
                 context,
-                ["ecs", "describe-task-definition", "--task-definition", resourceArn, "--query", "taskDefinition.status", "--output", "text"],
+                ["ec2", "describe-instances", "--instance-ids", instanceId, "--query", "Reservations[0].Instances[0].State.Name", "--output", "text"],
                 credentialsEnvironment);
-            if (string.IsNullOrWhiteSpace(taskDefinitionStatus))
+            if (string.IsNullOrWhiteSpace(state))
             {
-                return "task definition not found";
+                return "instance not found";
             }
 
-            if (!string.Equals(taskDefinitionStatus, "ACTIVE", StringComparison.OrdinalIgnoreCase))
+            if (state is "shutting-down" or "terminated")
             {
-                return $"task definition status {taskDefinitionStatus}";
+                return $"instance state {state}";
             }
+
+            return null;
+        }
+
+        if (resourcePart.StartsWith("network-interface/", StringComparison.Ordinal))
+        {
+            var networkInterfaceId = resourcePart["network-interface/".Length..];
+            var state = await TryCaptureAwsFieldAsync(
+                context,
+                ["ec2", "describe-network-interfaces", "--network-interface-ids", networkInterfaceId, "--query", "NetworkInterfaces[0].[Status,Attachment.Status]", "--output", "text"],
+                credentialsEnvironment);
+            if (string.IsNullOrWhiteSpace(state))
+            {
+                return "network interface not found";
+            }
+
+            var parts = state.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var interfaceStatus = parts.Length >= 1 ? parts[0] : string.Empty;
+            var attachmentStatus = parts.Length >= 2 ? parts[1] : string.Empty;
+            if (string.Equals(interfaceStatus, "available", StringComparison.OrdinalIgnoreCase) &&
+                (string.IsNullOrWhiteSpace(attachmentStatus) || string.Equals(attachmentStatus, "detached", StringComparison.OrdinalIgnoreCase)))
+            {
+                return $"network interface status {interfaceStatus}";
+            }
+
+            return null;
+        }
+
+        if (resourcePart.StartsWith("volume/", StringComparison.Ordinal))
+        {
+            var volumeId = resourcePart["volume/".Length..];
+            var state = await TryCaptureAwsFieldAsync(
+                context,
+                ["ec2", "describe-volumes", "--volume-ids", volumeId, "--query", "Volumes[0].State", "--output", "text"],
+                credentialsEnvironment);
+            if (string.IsNullOrWhiteSpace(state))
+            {
+                return "volume not found";
+            }
+
+            if (state is "deleting" or "deleted")
+            {
+                return $"volume state {state}";
+            }
+
+            return null;
         }
 
         return null;

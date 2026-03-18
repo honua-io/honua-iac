@@ -1097,28 +1097,87 @@ internal static partial class ValidationRunner
 
     private static async Task EnsureAcaDbFirewallAccessAsync(RunnerContext context, AzureLiveState state, IReadOnlyDictionary<string, string?> credentialsEnvironment)
     {
-        if (context.DryRun || string.IsNullOrWhiteSpace(state.DbHost) || string.IsNullOrWhiteSpace(state.ResourceGroupName) || string.IsNullOrWhiteSpace(state.WorkloadName) || !state.DbHost.EndsWith(".postgres.database.azure.com", StringComparison.Ordinal))
+        if (context.DryRun)
         {
             return;
         }
 
-        var serverName = state.DbHost[..state.DbHost.IndexOf('.', StringComparison.Ordinal)];
+        var dbHost = state.DbHost;
+        if (string.IsNullOrWhiteSpace(dbHost))
+        {
+            dbHost = TryGetConnectionStringHost(state.ExistingDbConnectionString);
+            if (!string.IsNullOrWhiteSpace(dbHost))
+            {
+                state.DbHost = dbHost;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(dbHost))
+        {
+            Console.WriteLine("[runner] ACA DB firewall helper skipped: database host was not available from outputs or connection string.");
+            return;
+        }
+
+        if (!dbHost.EndsWith(".postgres.database.azure.com", StringComparison.Ordinal))
+        {
+            Console.WriteLine($"[runner] ACA DB firewall helper skipped: database host is not an Azure PostgreSQL Flexible Server endpoint ({dbHost}).");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(state.ResourceGroupName) || string.IsNullOrWhiteSpace(state.WorkloadName))
+        {
+            Console.WriteLine("[runner] ACA DB firewall helper skipped: resource group or workload name was empty.");
+            return;
+        }
+
+        var serverName = dbHost[..dbHost.IndexOf('.', StringComparison.Ordinal)];
         var resourceGroup = !string.IsNullOrWhiteSpace(state.DataResourceGroup)
             ? state.DataResourceGroup
             : await context.ProcessRunner.CaptureAsync("az", ["resource", "list", "--name", serverName, "--resource-type", "Microsoft.DBforPostgreSQL/flexibleServers", "--query", "[0].resourceGroup", "-o", "tsv"], context.RepoRoot, credentialsEnvironment);
         if (string.IsNullOrWhiteSpace(resourceGroup) || string.Equals(resourceGroup, "None", StringComparison.OrdinalIgnoreCase))
         {
+            Console.WriteLine($"[runner] ACA DB firewall helper skipped: could not resolve resource group for PostgreSQL server {serverName}.");
             return;
         }
 
         var outboundIps = await context.ProcessRunner.CaptureAsync("az", ["containerapp", "show", "--resource-group", state.ResourceGroupName, "--name", state.WorkloadName, "--query", "properties.outboundIpAddresses[]", "-o", "tsv"], context.RepoRoot, credentialsEnvironment);
         var ips = outboundIps.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (ips.Length == 0)
+        {
+            Console.WriteLine($"[runner] ACA DB firewall helper skipped: no outbound IPs were reported for container app {state.WorkloadName}.");
+            return;
+        }
+
         for (var index = 0; index < ips.Length; index++)
         {
             var ruleName = $"aca-validation-egress-{index}";
             await context.ProcessRunner.RunAsync("az", ["postgres", "flexible-server", "firewall-rule", "create", "--resource-group", resourceGroup, "--name", serverName, "--rule-name", ruleName, "--start-ip-address", ips[index], "--end-ip-address", ips[index]], context.RepoRoot, credentialsEnvironment);
             state.AcaFirewallRules.Add((resourceGroup, serverName, ruleName));
         }
+    }
+
+    private static string? TryGetConnectionStringHost(string? connectionString)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return null;
+        }
+
+        foreach (var segment in connectionString.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = segment.Split('=', 2, StringSplitOptions.TrimEntries);
+            if (parts.Length != 2)
+            {
+                continue;
+            }
+
+            if (parts[0] is "Host" or "Server")
+            {
+                return parts[1];
+            }
+        }
+
+        return null;
     }
 
     private static async Task WaitForAzureAcaReplicasAsync(RunnerContext context, IReadOnlyDictionary<string, string?> credentialsEnvironment, string resourceGroup, string appName, int expectedMinReplicas, int timeoutSeconds)

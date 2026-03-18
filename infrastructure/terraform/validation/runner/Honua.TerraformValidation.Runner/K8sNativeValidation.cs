@@ -106,6 +106,7 @@ internal static partial class ValidationRunner
             ClusterMode: overrides?.ClusterMode ?? GetOptionOrEnvironment(command, env, "cluster-mode", "K8S_TF_CLUSTER_MODE", "k3d"),
             AccessMode: overrides?.AccessMode ?? GetOptionOrEnvironment(command, env, "access-mode", "K8S_TF_ACCESS_MODE", "ingress"),
             KubeconfigPath: overrides?.KubeconfigPath ?? GetOptionOrEnvironment(command, env, "kubeconfig", "KUBECONFIG", GetDefaultKubeconfigPath()),
+            EnvironmentOverrides: overrides?.EnvironmentOverrides ?? new Dictionary<string, string?>(StringComparer.Ordinal),
             KubeContext: overrides?.KubeContext ?? GetOptionOrEnvironment(command, env, "kube-context", "K8S_TF_KUBE_CONTEXT", string.Empty),
             HttpPort: GetIntOption(command, env, "http-port", "K8S_TF_HTTP_PORT", 8080),
             HttpsPort: GetIntOption(command, env, "https-port", "K8S_TF_HTTPS_PORT", 8443),
@@ -1250,10 +1251,17 @@ internal static partial class ValidationRunner
 
     private static IReadOnlyDictionary<string, string?> BuildKubeEnvironment(K8sScenarioSettings settings)
     {
-        return new Dictionary<string, string?>(StringComparer.Ordinal)
+        var environment = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             ["KUBECONFIG"] = settings.KubeconfigPath,
         };
+
+        foreach (var pair in settings.EnvironmentOverrides)
+        {
+            environment[pair.Key] = pair.Value;
+        }
+
+        return environment;
     }
 
     private static void ValidateK8sSettings(K8sScenarioSettings settings)
@@ -1426,6 +1434,7 @@ internal static partial class ValidationRunner
         string ClusterMode,
         string AccessMode,
         string KubeconfigPath,
+        IReadOnlyDictionary<string, string?> EnvironmentOverrides,
         string KubeContext,
         int HttpPort,
         int HttpsPort,
@@ -1462,6 +1471,7 @@ internal static partial class ValidationRunner
         string? ClusterMode = null,
         string? AccessMode = null,
         string? KubeconfigPath = null,
+        IReadOnlyDictionary<string, string?>? EnvironmentOverrides = null,
         string? KubeContext = null,
         string? Namespace = null,
         string? ObservabilityNamespace = null,
