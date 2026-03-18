@@ -18,6 +18,7 @@ internal static partial class ValidationRunner
         RunnerContext context,
         AzureStack stack,
         AzureBootstrapCredentials credentials,
+        IReadOnlyDictionary<string, string?> rootCredentialsEnvironment,
         string defaultPlanDir)
     {
         var settings = BuildAzureLiveSettings(command, context, stack, defaultPlanDir);
@@ -101,7 +102,7 @@ internal static partial class ValidationRunner
 
             try
             {
-                await VerifyNoAzureLeaksAsync(context, settings.ValidationRunId, credentialsEnvironment);
+                await VerifyNoAzureLeaksAsync(context, settings.ValidationRunId, rootCredentialsEnvironment);
             }
             catch (Exception exception)
             {
@@ -994,11 +995,12 @@ internal static partial class ValidationRunner
             throw new ValidationException("HONUA_AZURE_REGISTRY_RESOURCE_ID is required when Azure live validation uses private registry images without explicit registry credentials.");
         }
 
+        var registryName = GetAzureResourceName(settings.RegistryResourceId);
         if (string.IsNullOrWhiteSpace(settings.RegistryServer))
         {
             settings.RegistryServer = await context.ProcessRunner.CaptureAsync(
                 "az",
-                ["acr", "show", "--ids", settings.RegistryResourceId, "--query", "loginServer", "-o", "tsv"],
+                ["acr", "show", "--name", registryName, "--query", "loginServer", "-o", "tsv"],
                 context.RepoRoot,
                 credentialsEnvironment);
         }
@@ -1009,7 +1011,6 @@ internal static partial class ValidationRunner
             return;
         }
 
-        var registryName = GetAzureResourceName(settings.RegistryResourceId);
         var credentialsJson = await context.ProcessRunner.CaptureAsync(
             "az",
             ["acr", "credential", "show", "--name", registryName, "--query", "{username:username,password:passwords[0].value}", "-o", "json"],
@@ -1337,7 +1338,9 @@ internal static partial class ValidationRunner
             processEnvironment["HONUA_PLATFORM_VALIDATION_DEPLOY_TIMEOUT_SECONDS"] = "240";
         }
 
-        await context.ProcessRunner.RunAsync("bash", [scriptPath], context.RepoRoot, processEnvironment);
+        var scriptDirectory = Path.GetDirectoryName(scriptPath) ?? context.RepoRoot;
+        var scriptWorkingDirectory = Directory.GetParent(scriptDirectory)?.FullName ?? context.RepoRoot;
+        await context.ProcessRunner.RunAsync("bash", [scriptPath], scriptWorkingDirectory, processEnvironment);
     }
 
     private static async Task<string> ReadAzureSecretAsync(RunnerContext context, string? secretId, IReadOnlyDictionary<string, string?> credentialsEnvironment)
@@ -1893,6 +1896,7 @@ internal static partial class ValidationRunner
             environment["TF_VAR_name_prefix"] = settings.EcsNamePrefix;
             environment["TF_VAR_honua_image"] = image;
             environment["TF_VAR_desired_count"] = desiredCount?.ToString(CultureInfo.InvariantCulture);
+            environment["TF_VAR_alb_deletion_protection"] = "false";
             environment["TF_VAR_canary_enabled"] = settings.EcsCanaryEnabled.ToString().ToLowerInvariant();
             environment["TF_VAR_canary_image"] = settings.EcsCanaryImage ?? image;
             environment["TF_VAR_canary_desired_count"] = settings.EcsCanaryDesiredCount.ToString(CultureInfo.InvariantCulture);

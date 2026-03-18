@@ -149,7 +149,7 @@ internal static partial class ValidationRunner
             {
                 var lease = await BootstrapAzureAsync(context, manifest, stack, bootstrapRoot, rootCredentials);
                 leases.Add(lease);
-                await RunAzureValidationAsync(command, context, manifest, stack, lease.Credentials, planRoot);
+                await RunAzureValidationAsync(command, context, manifest, stack, lease.Credentials, rootCredentials, planRoot);
             }
         }
         catch (Exception exception)
@@ -246,7 +246,7 @@ internal static partial class ValidationRunner
         try
         {
             lease = await BootstrapManagedAzureAsync(context, manifest, bootstrapDir, rootCredentials);
-            await RunAksValidationAsync(command, context, manifest, lease.Credentials, planDir);
+            await RunAksValidationAsync(command, context, manifest, lease.Credentials, rootCredentials, planDir);
         }
         catch (Exception exception)
         {
@@ -513,10 +513,11 @@ internal static partial class ValidationRunner
         ScenarioManifest manifest,
         AzureStack stack,
         AzureBootstrapCredentials credentials,
+        IReadOnlyDictionary<string, string?> rootCredentials,
         string planRoot)
     {
         _ = manifest;
-        await ExecuteNativeAzureValidationAsync(command, context, stack, credentials, planRoot);
+        await ExecuteNativeAzureValidationAsync(command, context, stack, credentials, rootCredentials, planRoot);
     }
 
     private static async Task RunAwsValidationAsync(
@@ -536,9 +537,10 @@ internal static partial class ValidationRunner
         RunnerContext context,
         ScenarioManifest manifest,
         AzureBootstrapCredentials credentials,
+        IReadOnlyDictionary<string, string?> rootCredentials,
         string planDir)
     {
-        await RunNativeAksValidationAsync(command, context, manifest, credentials, planDir);
+        await RunNativeAksValidationAsync(command, context, manifest, credentials, rootCredentials, planDir);
     }
 
     private static async Task RunEksValidationAsync(

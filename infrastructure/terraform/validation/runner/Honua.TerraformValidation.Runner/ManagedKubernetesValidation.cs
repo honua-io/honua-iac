@@ -19,6 +19,7 @@ internal static partial class ValidationRunner
         RunnerContext context,
         ScenarioManifest manifest,
         AzureBootstrapCredentials credentials,
+        IReadOnlyDictionary<string, string?> rootCredentialsEnvironment,
         string defaultPlanDir)
     {
         _ = manifest;
@@ -131,7 +132,7 @@ internal static partial class ValidationRunner
 
             try
             {
-                await VerifyNoAzureLeaksAsync(context, settings.ValidationRunId, credentialsEnvironment);
+                await VerifyNoAzureLeaksAsync(context, settings.ValidationRunId, rootCredentialsEnvironment);
             }
             catch (Exception exception)
             {
@@ -322,6 +323,7 @@ internal static partial class ValidationRunner
 
     private static ManagedAksSettings BuildAksSettings(ParsedCommand command, EnvironmentReader env, string defaultPlanDir)
     {
+        var validationRunId = env.GetOrDefault("HONUA_VALIDATION_RUN_ID", $"aks-{DateTime.UtcNow:yyyyMMddHHmmss}");
         var useAot = GetBooleanOption(command, env, "aot", "HONUA_USE_AOT");
         var image = ResolveManagedImage(GetOptionOrEnvironment(command, env, "image", "HONUA_K8S_IMAGE", string.Empty), useAot);
         if (string.IsNullOrWhiteSpace(image))
@@ -339,11 +341,11 @@ internal static partial class ValidationRunner
         return new ManagedAksSettings(
             Location: GetOptionOrEnvironment(command, env, "location", "HONUA_AZURE_VALIDATION_REGION", env.GetOrDefault("AZURE_VALIDATION_REGION", "westus")),
             Environment: NormalizeTerraformEnvironment(GetOptionOrEnvironment(command, env, "environment", "AKS_TF_ENVIRONMENT", "it")),
-            NamePrefix: NormalizeNamePrefix(GetOptionOrEnvironment(command, env, "name-prefix-base", "HONUA_AKS_NAME_PREFIX_BASE", env.GetOrDefault("AKS_TF_NAME_PREFIX_BASE", $"hnu{DateTime.UtcNow:MMddHHmm}")), maxBaseLength: 10, suffix: "ak", maxTotalLength: 20),
+            NamePrefix: NormalizeNamePrefix(GetOptionOrEnvironment(command, env, "name-prefix-base", "HONUA_AKS_NAME_PREFIX_BASE", env.GetOrDefault("AKS_TF_NAME_PREFIX_BASE", BuildManagedNamePrefixBase(validationRunId, 10))), maxBaseLength: 10, suffix: "ak", maxTotalLength: 20),
             NodeCount: GetIntOption(command, env, "node-count", "AKS_NODE_COUNT", 2),
             NodeVmSize: GetOptionOrEnvironment(command, env, "node-vm-size", "AKS_NODE_VM_SIZE", "Standard_D2s_v3"),
             PlanArtifactDir: ResolveManagedPlanArtifactDir(command, defaultPlanDir),
-            ValidationRunId: env.GetOrDefault("HONUA_VALIDATION_RUN_ID", $"aks-{DateTime.UtcNow:yyyyMMddHHmmss}"),
+            ValidationRunId: validationRunId,
             TtlHours: GetIntOption(command, env, "ttl-hours", "HONUA_TTL_HOURS", 8),
             MaxRunCostUsd: GetDecimalOption(command, env, "max-run-cost-usd", "HONUA_MAX_RUN_COST_USD", 100m),
             AllowDestroyPlan: command.GetBoolean("allow-destroy-plan", false),
@@ -354,6 +356,7 @@ internal static partial class ValidationRunner
 
     private static ManagedEksSettings BuildEksSettings(ParsedCommand command, EnvironmentReader env, string defaultPlanDir)
     {
+        var validationRunId = env.GetOrDefault("HONUA_VALIDATION_RUN_ID", $"eks-{DateTime.UtcNow:yyyyMMddHHmmss}");
         var useAot = GetBooleanOption(command, env, "aot", "HONUA_USE_AOT");
         var image = ResolveManagedImage(GetOptionOrEnvironment(command, env, "image", "HONUA_K8S_IMAGE", string.Empty), useAot);
         if (string.IsNullOrWhiteSpace(image))
@@ -371,13 +374,13 @@ internal static partial class ValidationRunner
         return new ManagedEksSettings(
             Region: GetOptionOrEnvironment(command, env, "region", "HONUA_AWS_VALIDATION_REGION", env.GetOrDefault("AWS_VALIDATION_REGION", "us-east-1")),
             Environment: NormalizeTerraformEnvironment(GetOptionOrEnvironment(command, env, "environment", "EKS_TF_ENVIRONMENT", "it")),
-            NamePrefix: NormalizeNamePrefix(GetOptionOrEnvironment(command, env, "name-prefix-base", "HONUA_EKS_NAME_PREFIX_BASE", env.GetOrDefault("EKS_TF_NAME_PREFIX_BASE", $"hnu{DateTime.UtcNow:MMddHHmm}")), maxBaseLength: 8, suffix: "ek", maxTotalLength: 16),
+            NamePrefix: NormalizeNamePrefix(GetOptionOrEnvironment(command, env, "name-prefix-base", "HONUA_EKS_NAME_PREFIX_BASE", env.GetOrDefault("EKS_TF_NAME_PREFIX_BASE", BuildManagedNamePrefixBase(validationRunId, 8))), maxBaseLength: 8, suffix: "ek", maxTotalLength: 16),
             NodeInstanceType: GetOptionOrEnvironment(command, env, "node-instance-type", "EKS_NODE_INSTANCE_TYPE", "t3.small"),
             NodeMinSize: GetIntOption(command, env, "node-min-size", "EKS_NODE_MIN_SIZE", 1),
             NodeMaxSize: GetIntOption(command, env, "node-max-size", "EKS_NODE_MAX_SIZE", 3),
             NodeDesiredSize: GetIntOption(command, env, "node-desired-size", "EKS_NODE_DESIRED_SIZE", 2),
             PlanArtifactDir: ResolveManagedPlanArtifactDir(command, defaultPlanDir),
-            ValidationRunId: env.GetOrDefault("HONUA_VALIDATION_RUN_ID", $"eks-{DateTime.UtcNow:yyyyMMddHHmmss}"),
+            ValidationRunId: validationRunId,
             TtlHours: GetIntOption(command, env, "ttl-hours", "HONUA_TTL_HOURS", 8),
             MaxRunCostUsd: GetDecimalOption(command, env, "max-run-cost-usd", "HONUA_MAX_RUN_COST_USD", 100m),
             AllowDestroyPlan: command.GetBoolean("allow-destroy-plan", false),
@@ -868,6 +871,18 @@ internal static partial class ValidationRunner
     {
         var expiresAt = DateTime.UtcNow.AddHours(ttlHours).ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
         return $$"""{"ValidationRunId":"{{validationRunId}}","TTLHours":"{{ttlHours.ToString(CultureInfo.InvariantCulture)}}","ExpiresAtUTC":"{{expiresAt}}","Owner":"terraform-validation"}""";
+    }
+
+    private static string BuildManagedNamePrefixBase(string validationRunId, int maxBaseLength)
+    {
+        var normalized = Regex.Replace(validationRunId.ToLowerInvariant(), "[^a-z0-9]", string.Empty);
+        var payloadLength = Math.Max(maxBaseLength - 1, 1);
+        if (normalized.Length > payloadLength)
+        {
+            normalized = normalized[^payloadLength..];
+        }
+
+        return $"h{normalized.PadLeft(payloadLength, '0')}";
     }
 
     private static void RequireCommand(string commandName)
