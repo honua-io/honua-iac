@@ -1,7 +1,6 @@
 mock_provider "azurerm" {}
 mock_provider "random" {}
 mock_provider "null" {}
-mock_provider "time" {}
 
 override_data {
   target = data.azurerm_client_config.current
