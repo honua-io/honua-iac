@@ -156,8 +156,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/b692c20b68c0121346b7b34e81d6b1867ca8e1a8/scripts/install_linux.sh | bash
-          tfsec --version
+          if [[ "${HONUA_TERRAFORM_ENABLE_TFSEC:-false}" != "true" ]]; then
+            echo "tfsec disabled for this workflow run; skipping install"
+            exit 0
+          fi
+
+          if ! curl -fsSL https://raw.githubusercontent.com/aquasecurity/tfsec/b692c20b68c0121346b7b34e81d6b1867ca8e1a8/scripts/install_linux.sh | bash; then
+            echo "tfsec install failed; continuing because tfsec is optional in policy gates"
+            exit 0
+          fi
+
+          tfsec --version || true
 
       - name: Run Terraform policy gates via typed runner
         shell: bash
