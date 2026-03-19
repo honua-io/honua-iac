@@ -226,6 +226,7 @@ internal static partial class ValidationRunner
             clusterApplied = true;
 
             clusterName = await CaptureTerraformOutputAsync(context, terraformRoot, "cluster_name", terraformEnvironment);
+            await EnsureEksClusterAdminAccessAsync(context, clusterName, credentialsEnvironment);
 
             if (!settings.SkipIdempotency)
             {
@@ -457,6 +458,56 @@ internal static partial class ValidationRunner
 
             Console.WriteLine($"[runner] EKS API access not ready for cluster {clusterName}; retrying in 10s");
             await Task.Delay(TimeSpan.FromSeconds(10));
+        }
+    }
+
+    private static async Task EnsureEksClusterAdminAccessAsync(
+        RunnerContext context,
+        string clusterName,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment)
+    {
+        var callerIdentityRaw = await context.ProcessRunner.CaptureAsync(
+            "aws",
+            ["sts", "get-caller-identity", "--output", "json"],
+            context.RepoRoot,
+            credentialsEnvironment,
+            redactOutput: true);
+        using var callerIdentity = JsonDocument.Parse(callerIdentityRaw);
+        var principalArn = callerIdentity.RootElement.GetProperty("Arn").GetString();
+        if (string.IsNullOrWhiteSpace(principalArn))
+        {
+            throw new ValidationException($"Could not determine AWS caller ARN for EKS cluster {clusterName}");
+        }
+
+        var (hasAccessEntry, _) = await context.ProcessRunner.TryCaptureAsync(
+            "aws",
+            ["eks", "describe-access-entry", "--cluster-name", clusterName, "--principal-arn", principalArn, "--output", "json"],
+            context.RepoRoot,
+            credentialsEnvironment,
+            redactOutput: true);
+        if (!hasAccessEntry)
+        {
+            await context.ProcessRunner.RunAsync(
+                "aws",
+                ["eks", "create-access-entry", "--cluster-name", clusterName, "--principal-arn", principalArn, "--type", "STANDARD"],
+                context.RepoRoot,
+                credentialsEnvironment);
+        }
+
+        const string clusterAdminPolicyArn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy";
+        var (hasClusterAdminPolicy, associatedPolicies) = await context.ProcessRunner.TryCaptureAsync(
+            "aws",
+            ["eks", "list-associated-access-policies", "--cluster-name", clusterName, "--principal-arn", principalArn, "--query", "associatedAccessPolicies[].policyArn", "--output", "text"],
+            context.RepoRoot,
+            credentialsEnvironment,
+            redactOutput: true);
+        if (!hasClusterAdminPolicy || !associatedPolicies.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Contains(clusterAdminPolicyArn, StringComparer.Ordinal))
+        {
+            await context.ProcessRunner.RunAsync(
+                "aws",
+                ["eks", "associate-access-policy", "--cluster-name", clusterName, "--principal-arn", principalArn, "--policy-arn", clusterAdminPolicyArn, "--access-scope", "type=cluster"],
+                context.RepoRoot,
+                credentialsEnvironment);
         }
     }
 

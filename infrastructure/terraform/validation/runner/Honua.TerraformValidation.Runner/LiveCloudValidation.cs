@@ -819,7 +819,8 @@ internal static partial class ValidationRunner
             await EnsureAcaDbFirewallAccessAsync(context, state, credentialsEnvironment);
             await WaitForAzureAcaReplicasAsync(context, credentialsEnvironment, state.ResourceGroupName!, state.WorkloadName!, minReplicas, settings.TimeoutSeconds);
             state.ActiveBaseUrl = await ResolveAzureAcaProbeBaseUrlAsync(context, credentialsEnvironment, state.ResourceGroupName!, state.WorkloadName!, state.BaseUrl);
-            await RunCloudHttpChecksAsync(context, settings.AdminPassword, state.ActiveBaseUrl ?? state.BaseUrl, settings.TimeoutSeconds, settings.ReadySloSeconds, settings.LoadRequests, settings.LoadConcurrency, settings.MaxLoadErrorRatePercent, settings.SkipProtocolChecks);
+            var readinessTimeoutSeconds = Math.Max(settings.TimeoutSeconds, 1800);
+            await RunCloudHttpChecksAsync(context, settings.AdminPassword, state.ActiveBaseUrl ?? state.BaseUrl, readinessTimeoutSeconds, settings.ReadySloSeconds, settings.LoadRequests, settings.LoadConcurrency, settings.MaxLoadErrorRatePercent, settings.SkipProtocolChecks);
             if (runPlatformValidation)
             {
                 await RunCloudPlatformValidationAsync(context, validationEnvironment, state.ActiveBaseUrl ?? state.BaseUrl, "azure-container-apps", outputs, state.DbHost!, settings.AdminPassword, settings.DbAdminPassword);
@@ -2080,7 +2081,8 @@ internal static partial class ValidationRunner
             state.WorkloadName = GetTerraformWorkloadName(outputs) ?? $"{settings.ServerlessNamePrefix}-lambda";
             state.CurrentRevision = GetTerraformCurrentRevision(outputs) ?? "dry-run-current";
             state.DesiredRevision = GetTerraformDesiredRevision(outputs) ?? "dry-run-desired";
-            await RunCloudHttpChecksAsync(context, settings.AdminPassword, state.BaseUrl, settings.TimeoutSeconds, settings.ReadySloSeconds, settings.LoadRequests == 120 ? 40 : settings.LoadRequests, settings.LoadConcurrency == 20 ? 5 : settings.LoadConcurrency, settings.MaxLoadErrorRatePercent, settings.SkipProtocolChecks);
+            var readinessTimeoutSeconds = Math.Max(settings.TimeoutSeconds, 1800);
+            await RunCloudHttpChecksAsync(context, settings.AdminPassword, state.BaseUrl, readinessTimeoutSeconds, settings.ReadySloSeconds, settings.LoadRequests == 120 ? 40 : settings.LoadRequests, settings.LoadConcurrency == 20 ? 5 : settings.LoadConcurrency, settings.MaxLoadErrorRatePercent, settings.SkipProtocolChecks);
             if (runPlatformValidation)
             {
                 await RunCloudPlatformValidationAsync(context, validationEnvironment, state.BaseUrl, "aws-lambda", outputs, state.DbHost!, settings.AdminPassword, settings.DbAdminPassword, currentRevision, desiredRevision, settings.RunUpgradeRollback);
