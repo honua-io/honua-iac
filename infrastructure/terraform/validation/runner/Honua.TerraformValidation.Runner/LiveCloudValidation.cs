@@ -60,6 +60,11 @@ internal static partial class ValidationRunner
             await PrepareAzureInputsAsync(context, settings, state);
             if (state.HasReusableDataInputs)
             {
+                await ValidateAzureReusableDataInputsAsync(context, settings, state, credentialsEnvironment);
+            }
+
+            if (state.HasReusableDataInputs)
+            {
                 await EnsureExistingAzureDbFirewallAccessAsync(context, settings, state, credentialsEnvironment);
             }
             else
@@ -693,6 +698,54 @@ internal static partial class ValidationRunner
         await context.ProcessRunner.RunAsync("az", ["postgres", "flexible-server", "firewall-rule", "create", "--resource-group", resourceGroup, "--name", serverName, "--rule-name", ruleName, "--start-ip-address", settings.DbFirewallStartIp!, "--end-ip-address", settings.DbFirewallEndIp!], context.RepoRoot, credentialsEnvironment);
         state.DataResourceGroup = resourceGroup;
         state.RunnerFirewallRules.Add((resourceGroup, serverName, ruleName));
+    }
+
+    private static async Task ValidateAzureReusableDataInputsAsync(
+        RunnerContext context,
+        AzureLiveSettings settings,
+        AzureLiveState state,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment)
+    {
+        if (!state.HasReusableDataInputs)
+        {
+            return;
+        }
+
+        var dbHost = state.ExistingDbFqdn;
+        if (string.IsNullOrWhiteSpace(dbHost))
+        {
+            dbHost = TryGetConnectionStringHost(state.ExistingDbConnectionString);
+            state.ExistingDbFqdn = dbHost;
+        }
+
+        if (string.IsNullOrWhiteSpace(dbHost) ||
+            !dbHost.EndsWith(".postgres.database.azure.com", StringComparison.Ordinal))
+        {
+            Console.WriteLine("[runner] Existing Azure data reuse disabled: reusable DB host was unavailable or not an Azure PostgreSQL Flexible Server endpoint; provisioning fresh data infra.");
+            ClearAzureReusableDataInputs(state);
+            return;
+        }
+
+        var serverName = dbHost[..dbHost.IndexOf('.', StringComparison.Ordinal)];
+        var resourceGroup = await ResolveAzurePostgresResourceGroupAsync(context, credentialsEnvironment, serverName, state.DataResourceGroup);
+        if (string.IsNullOrWhiteSpace(resourceGroup) || string.Equals(resourceGroup, "None", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine($"[runner] Existing Azure data reuse disabled: could not resolve resource group for PostgreSQL server {serverName}; provisioning fresh data infra.");
+            ClearAzureReusableDataInputs(state);
+            return;
+        }
+
+        state.DataResourceGroup = resourceGroup;
+        PersistAzureDataReuseCache(settings, state);
+    }
+
+    private static void ClearAzureReusableDataInputs(AzureLiveState state)
+    {
+        state.HasReusableDataInputs = false;
+        state.DataResourceGroup = null;
+        state.ExistingDbFqdn = null;
+        state.ExistingDbConnectionString = null;
+        state.ExistingRedisConnectionString = null;
     }
 
     private static async Task ApplyAzureDataStackAsync(

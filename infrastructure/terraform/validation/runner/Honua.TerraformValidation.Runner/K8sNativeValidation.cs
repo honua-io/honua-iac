@@ -303,7 +303,7 @@ internal static partial class ValidationRunner
     {
         await EnsureNamespaceAsync(context, settings.Namespace, kubectlEnvironment);
         var manifestPath = context.ResolveRepoPath("infrastructure", "terraform", "validation", "scripts", "k8s", "k8s", "postgis.yaml");
-        await context.ProcessRunner.RunAsync("kubectl", ["-n", settings.Namespace, "apply", "-f", manifestPath], context.RepoRoot, kubectlEnvironment);
+        await context.ProcessRunner.RunAsync("kubectl", ["-n", settings.Namespace, "apply", "--validate=false", "-f", manifestPath], context.RepoRoot, kubectlEnvironment);
         state.PostgisApplied = true;
 
         await context.ProcessRunner.RunAsync(
@@ -627,7 +627,7 @@ internal static partial class ValidationRunner
             ["create", "namespace", namespaceName, "--dry-run=client", "-o", "yaml"],
             context.RepoRoot,
             kubectlEnvironment);
-        await context.ProcessRunner.RunWithInputAsync("kubectl", ["apply", "-f", "-"], context.RepoRoot, yaml, kubectlEnvironment);
+        await context.ProcessRunner.RunWithInputAsync("kubectl", ["apply", "--validate=false", "-f", "-"], context.RepoRoot, yaml, kubectlEnvironment);
     }
 
     private static async Task WaitForReadyAsync(RunnerContext context, K8sScenarioSettings settings)
