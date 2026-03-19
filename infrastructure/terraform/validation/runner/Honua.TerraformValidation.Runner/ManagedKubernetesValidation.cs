@@ -993,15 +993,8 @@ internal static partial class ValidationRunner
 
     private static string GetAwsArnResourcePart(string arn)
     {
-        var separatorIndex = arn.IndexOf(':');
-        for (var i = 0; i < 5 && separatorIndex >= 0; i++)
-        {
-            separatorIndex = arn.IndexOf(':', separatorIndex + 1);
-        }
-
-        return separatorIndex >= 0 && separatorIndex + 1 < arn.Length
-            ? arn[(separatorIndex + 1)..]
-            : string.Empty;
+        var parts = arn.Split(':', 6, StringSplitOptions.None);
+        return parts.Length == 6 ? parts[5] : string.Empty;
     }
 
     private static async Task<IReadOnlyList<string>> ListAwsTaggedResourcesAsync(

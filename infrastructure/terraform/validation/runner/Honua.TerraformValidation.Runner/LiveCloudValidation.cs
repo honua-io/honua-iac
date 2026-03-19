@@ -454,6 +454,7 @@ internal static partial class ValidationRunner
         {
             LoadKeyValueCache(settings.DataCacheFile, AzureDataCacheFormat, values =>
             {
+                state.DataResourceGroup ??= values.GetValueOrDefault("EXISTING_DB_RESOURCE_GROUP");
                 state.ExistingDbFqdn = values.GetValueOrDefault("EXISTING_DB_FQDN");
                 state.ExistingDbConnectionString = values.GetValueOrDefault("EXISTING_DB_CONNECTION_STRING");
                 state.ExistingRedisConnectionString = values.GetValueOrDefault("EXISTING_REDIS_CONNECTION_STRING");
@@ -681,7 +682,7 @@ internal static partial class ValidationRunner
         }
 
         var serverName = state.ExistingDbFqdn[..state.ExistingDbFqdn.IndexOf('.', StringComparison.Ordinal)];
-        var resourceGroup = await context.ProcessRunner.CaptureAsync("az", ["resource", "list", "--name", serverName, "--resource-type", "Microsoft.DBforPostgreSQL/flexibleServers", "--query", "[0].resourceGroup", "-o", "tsv"], context.RepoRoot, credentialsEnvironment);
+        var resourceGroup = await ResolveAzurePostgresResourceGroupAsync(context, credentialsEnvironment, serverName, state.DataResourceGroup);
         if (string.IsNullOrWhiteSpace(resourceGroup) || string.Equals(resourceGroup, "None", StringComparison.OrdinalIgnoreCase))
         {
             return;
@@ -690,6 +691,7 @@ internal static partial class ValidationRunner
         var runId = Regex.Replace(settings.ValidationRunId.ToLowerInvariant(), "[^a-z0-9-]", string.Empty);
         var ruleName = $"runner-{runId[..Math.Min(runId.Length, 52)]}";
         await context.ProcessRunner.RunAsync("az", ["postgres", "flexible-server", "firewall-rule", "create", "--resource-group", resourceGroup, "--name", serverName, "--rule-name", ruleName, "--start-ip-address", settings.DbFirewallStartIp!, "--end-ip-address", settings.DbFirewallEndIp!], context.RepoRoot, credentialsEnvironment);
+        state.DataResourceGroup = resourceGroup;
         state.RunnerFirewallRules.Add((resourceGroup, serverName, ruleName));
     }
 
@@ -1133,9 +1135,7 @@ internal static partial class ValidationRunner
         }
 
         var serverName = dbHost[..dbHost.IndexOf('.', StringComparison.Ordinal)];
-        var resourceGroup = !string.IsNullOrWhiteSpace(state.DataResourceGroup)
-            ? state.DataResourceGroup
-            : await context.ProcessRunner.CaptureAsync("az", ["resource", "list", "--name", serverName, "--resource-type", "Microsoft.DBforPostgreSQL/flexibleServers", "--query", "[0].resourceGroup", "-o", "tsv"], context.RepoRoot, credentialsEnvironment);
+        var resourceGroup = await ResolveAzurePostgresResourceGroupAsync(context, credentialsEnvironment, serverName, state.DataResourceGroup);
         if (string.IsNullOrWhiteSpace(resourceGroup) || string.Equals(resourceGroup, "None", StringComparison.OrdinalIgnoreCase))
         {
             Console.WriteLine($"[runner] ACA DB firewall helper skipped: could not resolve resource group for PostgreSQL server {serverName}.");
@@ -1156,6 +1156,58 @@ internal static partial class ValidationRunner
             await context.ProcessRunner.RunAsync("az", ["postgres", "flexible-server", "firewall-rule", "create", "--resource-group", resourceGroup, "--name", serverName, "--rule-name", ruleName, "--start-ip-address", ips[index], "--end-ip-address", ips[index]], context.RepoRoot, credentialsEnvironment);
             state.AcaFirewallRules.Add((resourceGroup, serverName, ruleName));
         }
+
+        state.DataResourceGroup = resourceGroup;
+    }
+
+    private static async Task<string?> ResolveAzurePostgresResourceGroupAsync(
+        RunnerContext context,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment,
+        string serverName,
+        string? preferredResourceGroup)
+    {
+        if (!string.IsNullOrWhiteSpace(preferredResourceGroup))
+        {
+            var (resourceGroupExists, resourceGroup) = await context.ProcessRunner.TryCaptureAsync(
+                "az",
+                ["resource", "show", "--resource-group", preferredResourceGroup, "--resource-type", "Microsoft.DBforPostgreSQL/flexibleServers", "--name", serverName, "--query", "resourceGroup", "-o", "tsv"],
+                context.RepoRoot,
+                credentialsEnvironment);
+            if (resourceGroupExists &&
+                !string.IsNullOrWhiteSpace(resourceGroup) &&
+                !string.Equals(resourceGroup, "None", StringComparison.OrdinalIgnoreCase))
+            {
+                return resourceGroup;
+            }
+
+            Console.WriteLine($"[runner] Azure PostgreSQL server {serverName} was not found in configured resource group {preferredResourceGroup}; attempting subscription-wide discovery.");
+        }
+
+        var (serverListed, discoveredResourceGroup) = await context.ProcessRunner.TryCaptureAsync(
+            "az",
+            ["postgres", "flexible-server", "list", "--query", $"[?name=='{serverName}'].resourceGroup | [0]", "-o", "tsv"],
+            context.RepoRoot,
+            credentialsEnvironment);
+        if (serverListed &&
+            !string.IsNullOrWhiteSpace(discoveredResourceGroup) &&
+            !string.Equals(discoveredResourceGroup, "None", StringComparison.OrdinalIgnoreCase))
+        {
+            return discoveredResourceGroup;
+        }
+
+        var (resourceListed, listedResourceGroup) = await context.ProcessRunner.TryCaptureAsync(
+            "az",
+            ["resource", "list", "--name", serverName, "--resource-type", "Microsoft.DBforPostgreSQL/flexibleServers", "--query", "[0].resourceGroup", "-o", "tsv"],
+            context.RepoRoot,
+            credentialsEnvironment);
+        if (resourceListed &&
+            !string.IsNullOrWhiteSpace(listedResourceGroup) &&
+            !string.Equals(listedResourceGroup, "None", StringComparison.OrdinalIgnoreCase))
+        {
+            return listedResourceGroup;
+        }
+
+        return null;
     }
 
     private static string? TryGetConnectionStringHost(string? connectionString)
@@ -1552,6 +1604,7 @@ internal static partial class ValidationRunner
     {
         WriteKeyValueCache(settings.DataCacheFile, AzureDataCacheFormat, new Dictionary<string, string?>
         {
+            ["EXISTING_DB_RESOURCE_GROUP"] = state.DataResourceGroup,
             ["EXISTING_DB_FQDN"] = state.ExistingDbFqdn,
             ["EXISTING_DB_CONNECTION_STRING"] = state.ExistingDbConnectionString,
             ["EXISTING_REDIS_CONNECTION_STRING"] = state.ExistingRedisConnectionString,
