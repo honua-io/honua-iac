@@ -961,7 +961,7 @@ internal static partial class ValidationRunner
             ["TF_VAR_name_prefix"] = settings.DataNamePrefix,
             ["TF_VAR_honua_admin_password"] = settings.AdminPassword,
             ["TF_VAR_db_admin_password"] = settings.DbAdminPassword,
-            ["TF_VAR_enable_postgis"] = "true",
+            ["TF_VAR_enable_postgis"] = "false",
             ["TF_VAR_redis_enabled"] = "true",
             ["TF_VAR_existing_db_fqdn"] = string.Empty,
             ["TF_VAR_existing_db_connection_string"] = string.Empty,
@@ -2012,6 +2012,7 @@ internal static partial class ValidationRunner
         IsolatedTerraformWorkspace workspace)
     {
         var terraformRoot = Path.Combine(workspace.TerraformRoot, "examples", "aws-serverless");
+        await EnsureLambdaCanPullEcrImageAsync(context, settings.ServerlessImage, validationEnvironment, settings.Region);
         state.ServerlessApplied = true;
         await context.ProcessRunner.RunAsync("terraform", ["-chdir=" + terraformRoot, "init", "-input=false", "-no-color"], context.RepoRoot, BuildAwsServerlessEnvironment(settings, state, validationEnvironment, settings.ServerlessImage, null));
 
@@ -2209,6 +2210,153 @@ internal static partial class ValidationRunner
 
             await Task.Delay(TimeSpan.FromSeconds(15));
         }
+    }
+
+    private static async Task EnsureLambdaCanPullEcrImageAsync(
+        RunnerContext context,
+        string image,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment,
+        string region)
+    {
+        if (!TryGetEcrRepositoryName(image, region, out var repositoryName))
+        {
+            return;
+        }
+
+        var (hasExistingPolicy, existingPolicyText) = await context.ProcessRunner.TryCaptureAsync(
+            "aws",
+            ["ecr", "get-repository-policy", "--repository-name", repositoryName, "--query", "policyText", "--output", "text"],
+            context.RepoRoot,
+            credentialsEnvironment,
+            redactOutput: true);
+
+        using var policyDocument = JsonDocument.Parse(hasExistingPolicy && !string.IsNullOrWhiteSpace(existingPolicyText) && existingPolicyText != "None"
+            ? existingPolicyText
+            : """{"Version":"2012-10-17","Statement":[]}""");
+        var existingPolicyRoot = policyDocument.RootElement.Clone();
+        if (PolicyAllowsLambdaImagePull(existingPolicyRoot))
+        {
+            return;
+        }
+
+        var statements = new List<object>();
+        if (existingPolicyRoot.TryGetProperty("Statement", out var existingStatements))
+        {
+            if (existingStatements.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var statement in existingStatements.EnumerateArray())
+                {
+                    statements.Add(JsonSerializer.Deserialize<object>(statement.GetRawText())!);
+                }
+            }
+            else
+            {
+                statements.Add(JsonSerializer.Deserialize<object>(existingStatements.GetRawText())!);
+            }
+        }
+
+        statements.Add(new
+        {
+            Sid = "AllowLambdaImageRetrieval",
+            Effect = "Allow",
+            Principal = new { Service = "lambda.amazonaws.com" },
+            Action = new[] { "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer" }
+        });
+
+        var mergedPolicy = JsonSerializer.Serialize(new
+        {
+            Version = existingPolicyRoot.TryGetProperty("Version", out var version) ? version.GetString() ?? "2012-10-17" : "2012-10-17",
+            Statement = statements
+        });
+
+        await context.ProcessRunner.RunAsync(
+            "aws",
+            ["ecr", "set-repository-policy", "--repository-name", repositoryName, "--policy-text", mergedPolicy, "--force"],
+            context.RepoRoot,
+            credentialsEnvironment);
+    }
+
+    private static bool TryGetEcrRepositoryName(string image, string region, out string repositoryName)
+    {
+        repositoryName = string.Empty;
+        if (string.IsNullOrWhiteSpace(image))
+        {
+            return false;
+        }
+
+        var imageWithoutDigest = image.Split('@', 2, StringSplitOptions.TrimEntries)[0];
+        var parts = imageWithoutDigest.Split('/', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2 || !parts[0].EndsWith($".dkr.ecr.{region}.amazonaws.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        repositoryName = string.Join("/", parts[1..]);
+        var tagIndex = repositoryName.LastIndexOf(':');
+        if (tagIndex >= 0)
+        {
+            repositoryName = repositoryName[..tagIndex];
+        }
+
+        return !string.IsNullOrWhiteSpace(repositoryName);
+    }
+
+    private static bool PolicyAllowsLambdaImagePull(JsonElement policyRoot)
+    {
+        if (!policyRoot.TryGetProperty("Statement", out var statements))
+        {
+            return false;
+        }
+
+        var elements = statements.ValueKind == JsonValueKind.Array
+            ? statements.EnumerateArray().ToArray()
+            : new[] { statements };
+        foreach (var statement in elements)
+        {
+            if (StatementAllowsLambdaImagePull(statement))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool StatementAllowsLambdaImagePull(JsonElement statement)
+    {
+        if (!statement.TryGetProperty("Effect", out var effect) ||
+            !string.Equals(effect.GetString(), "Allow", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!statement.TryGetProperty("Principal", out var principal) ||
+            !principal.TryGetProperty("Service", out var service))
+        {
+            return false;
+        }
+
+        var services = service.ValueKind == JsonValueKind.Array
+            ? service.EnumerateArray().Select(static value => value.GetString())
+            : new[] { service.GetString() };
+        if (!services.Any(static value => string.Equals(value, "lambda.amazonaws.com", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        if (!statement.TryGetProperty("Action", out var action))
+        {
+            return false;
+        }
+
+        var actions = action.ValueKind == JsonValueKind.Array
+            ? action.EnumerateArray()
+                .Select(static value => value.GetString())
+                .Where(static value => !string.IsNullOrWhiteSpace(value))
+                .Select(static value => value!)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>(new[] { action.GetString() ?? string.Empty }, StringComparer.OrdinalIgnoreCase);
+        return actions.Contains("ecr:BatchGetImage") && actions.Contains("ecr:GetDownloadUrlForLayer");
     }
 
     private static string? GetTerraformClusterName(string rawJson) => GetTerraformOutputString(rawJson,

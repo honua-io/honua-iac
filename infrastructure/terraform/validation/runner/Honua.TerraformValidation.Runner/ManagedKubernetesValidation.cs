@@ -244,7 +244,7 @@ internal static partial class ValidationRunner
                 ],
                 context.RepoRoot,
                 credentialsEnvironment);
-            await PersistEksExecCredentialsAsync(context, kubeconfigPath, credentialsEnvironment);
+            await PersistEksBearerTokenAsync(context, clusterName, kubeconfigPath, credentialsEnvironment);
 
             await RunManagedK8sChecksAsync(
                 command,
@@ -327,8 +327,9 @@ internal static partial class ValidationRunner
                     AutoDestroy: !command.GetBoolean("no-destroy", false))));
     }
 
-    private static async Task PersistEksExecCredentialsAsync(
+    private static async Task PersistEksBearerTokenAsync(
         RunnerContext context,
+        string clusterName,
         string kubeconfigPath,
         IReadOnlyDictionary<string, string?> credentialsEnvironment)
     {
@@ -342,23 +343,24 @@ internal static partial class ValidationRunner
             throw new ValidationException($"Could not determine EKS kubeconfig user from {kubeconfigPath}");
         }
 
-        var arguments = new List<string>
+        var tokenResponse = await context.ProcessRunner.CaptureAsync(
+            "aws",
+            ["eks", "get-token", "--cluster-name", clusterName, "--region", credentialsEnvironment["AWS_REGION"]!],
+            context.RepoRoot,
+            credentialsEnvironment,
+            redactOutput: true);
+        using var tokenDocument = JsonDocument.Parse(tokenResponse);
+        var token = tokenDocument.RootElement.GetProperty("status").GetProperty("token").GetString();
+        if (string.IsNullOrWhiteSpace(token))
         {
-            "config", "set-credentials", userName,
-            "--kubeconfig", kubeconfigPath,
-            $"--exec-env=AWS_ACCESS_KEY_ID={credentialsEnvironment["AWS_ACCESS_KEY_ID"]}",
-            $"--exec-env=AWS_SECRET_ACCESS_KEY={credentialsEnvironment["AWS_SECRET_ACCESS_KEY"]}",
-            $"--exec-env=AWS_REGION={credentialsEnvironment["AWS_REGION"]}",
-            $"--exec-env=AWS_DEFAULT_REGION={credentialsEnvironment["AWS_DEFAULT_REGION"]}",
-        };
-
-        if (credentialsEnvironment.TryGetValue("AWS_SESSION_TOKEN", out var sessionToken) &&
-            !string.IsNullOrWhiteSpace(sessionToken))
-        {
-            arguments.Add($"--exec-env=AWS_SESSION_TOKEN={sessionToken}");
+            throw new ValidationException($"Failed to capture EKS bearer token for cluster {clusterName}");
         }
 
-        await context.ProcessRunner.RunAsync("kubectl", arguments, context.RepoRoot, credentialsEnvironment);
+        await context.ProcessRunner.RunAsync(
+            "kubectl",
+            ["config", "set-credentials", userName, "--kubeconfig", kubeconfigPath, $"--token={token}"],
+            context.RepoRoot,
+            credentialsEnvironment);
     }
 
     private static ManagedAksSettings BuildAksSettings(ParsedCommand command, EnvironmentReader env, string defaultPlanDir)
