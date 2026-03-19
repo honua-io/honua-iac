@@ -245,6 +245,7 @@ internal static partial class ValidationRunner
                 context.RepoRoot,
                 credentialsEnvironment);
             await MaterializeStaticEksKubeconfigAsync(context, clusterName, kubeconfigPath, credentialsEnvironment);
+            await WaitForEksApiAccessAsync(context, clusterName, kubeconfigPath, credentialsEnvironment, timeoutSeconds: 300);
 
             await RunManagedK8sChecksAsync(
                 command,
@@ -425,6 +426,38 @@ internal static partial class ValidationRunner
             {
                 WriteIndented = true
             }));
+    }
+
+    private static async Task WaitForEksApiAccessAsync(
+        RunnerContext context,
+        string clusterName,
+        string kubeconfigPath,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment,
+        int timeoutSeconds)
+    {
+        var startedAt = DateTimeOffset.UtcNow;
+        while (true)
+        {
+            await MaterializeStaticEksKubeconfigAsync(context, clusterName, kubeconfigPath, credentialsEnvironment);
+
+            var (captured, output) = await context.ProcessRunner.TryCaptureAsync(
+                "kubectl",
+                ["--kubeconfig", kubeconfigPath, "get", "namespace", "default", "--request-timeout=15s", "-o", "name"],
+                context.RepoRoot,
+                credentialsEnvironment);
+            if (captured && string.Equals(output.Trim(), "namespace/default", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            if ((DateTimeOffset.UtcNow - startedAt).TotalSeconds > timeoutSeconds)
+            {
+                throw new ValidationException($"Timed out waiting for EKS Kubernetes API access on cluster {clusterName}");
+            }
+
+            Console.WriteLine($"[runner] EKS API access not ready for cluster {clusterName}; retrying in 10s");
+            await Task.Delay(TimeSpan.FromSeconds(10));
+        }
     }
 
     private static ManagedAksSettings BuildAksSettings(ParsedCommand command, EnvironmentReader env, string defaultPlanDir)
