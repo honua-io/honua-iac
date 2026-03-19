@@ -466,6 +466,7 @@ internal static partial class ValidationRunner
             ["TF_VAR_node_desired_size"] = settings.NodeDesiredSize.ToString(CultureInfo.InvariantCulture),
             ["TF_VAR_cluster_endpoint_public_access"] = "true",
             ["TF_VAR_cluster_endpoint_public_access_cidrs"] = JsonSerializer.Serialize(new[] { settings.RunnerAccessCidr ?? "0.0.0.0/0" }),
+            ["TF_VAR_enable_cluster_creator_admin_permissions"] = "true",
             ["TF_VAR_tags"] = BuildValidationTagsJson(settings.ValidationRunId, settings.TtlHours),
             ["TF_IN_AUTOMATION"] = "true",
         };
