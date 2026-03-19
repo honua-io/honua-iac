@@ -359,6 +359,7 @@ internal static partial class ValidationRunner
             DataCacheFile = env.GetOrDefault("HONUA_AZURE_DATA_CACHE_FILE", GetWorkflowCachePath(context, "azure-data-reuse.env")),
             ForceNewDataInfra = env.GetBooleanAny(["HONUA_AZURE_FORCE_NEW_DATA_INFRA", "HONUA_AZURE_FORCE_NEW_DATA"], defaultValue: false),
             ExistingDbFqdn = env.GetOptional("HONUA_AZURE_EXISTING_DB_FQDN"),
+            ExistingDbResourceGroup = env.GetOptional("HONUA_AZURE_EXISTING_DB_RESOURCE_GROUP"),
             ExistingDbConnectionString = env.GetOptional("HONUA_AZURE_EXISTING_DB_CONNECTION_STRING"),
             ExistingRedisConnectionString = env.GetOptional("HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING"),
             DbFirewallStartIp = env.GetOptional("HONUA_AZURE_DB_FIREWALL_START_IP"),
@@ -443,6 +444,7 @@ internal static partial class ValidationRunner
     private static async Task PrepareAzureInputsAsync(RunnerContext context, AzureLiveSettings settings, AzureLiveState state)
     {
         state.ExistingDbFqdn = settings.ExistingDbFqdn;
+        state.DataResourceGroup = settings.ExistingDbResourceGroup;
         state.ExistingDbConnectionString = settings.ExistingDbConnectionString;
         state.ExistingRedisConnectionString = settings.ExistingRedisConnectionString;
 
@@ -2194,6 +2196,7 @@ internal static partial class ValidationRunner
         public required string DataCacheFile { get; init; }
         public required bool ForceNewDataInfra { get; init; }
         public string? ExistingDbFqdn { get; set; }
+        public string? ExistingDbResourceGroup { get; set; }
         public string? ExistingDbConnectionString { get; set; }
         public string? ExistingRedisConnectionString { get; set; }
         public string? DbFirewallStartIp { get; set; }

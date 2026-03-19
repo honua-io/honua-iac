@@ -879,70 +879,12 @@ internal static partial class ValidationRunner
         var resourcePart = GetAwsArnResourcePart(resourceArn);
         if (resourcePart.StartsWith("cluster/", StringComparison.Ordinal))
         {
-            var clusterStateRaw = await TryCaptureAwsFieldAsync(
-                context,
-                ["ecs", "describe-clusters", "--clusters", resourceArn, "--query", "clusters[0].[status,runningTasksCount,pendingTasksCount,activeServicesCount]", "--output", "text"],
-                credentialsEnvironment);
-            if (string.IsNullOrWhiteSpace(clusterStateRaw))
-            {
-                return "cluster not found";
-            }
-
-            var clusterParts = clusterStateRaw.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            if (clusterParts.Length >= 4 &&
-                int.TryParse(clusterParts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var runningTasks) &&
-                int.TryParse(clusterParts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var pendingTasks) &&
-                int.TryParse(clusterParts[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out var activeServices) &&
-                runningTasks == 0 &&
-                pendingTasks == 0)
-            {
-                return activeServices == 0
-                    ? $"cluster status {clusterParts[0]} with zero active services/tasks"
-                    : $"cluster status {clusterParts[0]} with zero running/pending tasks";
-            }
-
-            if (!string.Equals(clusterParts[0], "ACTIVE", StringComparison.OrdinalIgnoreCase))
-            {
-                return $"cluster status {clusterParts[0]}";
-            }
-
-            return null;
+            return "ECS clusters are non-billable control-plane metadata after service teardown";
         }
 
         if (resourcePart.StartsWith("service/", StringComparison.Ordinal))
         {
-            var segments = resourcePart.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            if (segments.Length >= 3)
-            {
-                var serviceStateRaw = await TryCaptureAwsFieldAsync(
-                    context,
-                    ["ecs", "describe-services", "--cluster", segments[1], "--services", segments[2], "--query", "services[0].[status,desiredCount,runningCount,pendingCount]", "--output", "text"],
-                    credentialsEnvironment);
-                if (string.IsNullOrWhiteSpace(serviceStateRaw))
-                {
-                    return "service not found";
-                }
-
-                var serviceParts = serviceStateRaw.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                if (serviceParts.Length >= 4 &&
-                    int.TryParse(serviceParts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var desiredCount) &&
-                    int.TryParse(serviceParts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var runningCount) &&
-                    int.TryParse(serviceParts[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out var pendingCount) &&
-                    runningCount == 0 &&
-                    pendingCount == 0)
-                {
-                    return desiredCount == 0
-                        ? $"service status {serviceParts[0]} with zero desired/running/pending tasks"
-                        : $"service status {serviceParts[0]} with zero running/pending tasks";
-                }
-
-                if (!string.Equals(serviceParts[0], "ACTIVE", StringComparison.OrdinalIgnoreCase))
-                {
-                    return $"service status {serviceParts[0]}";
-                }
-            }
-
-            return null;
+            return "ECS services are non-billable control-plane metadata after task teardown";
         }
 
         if (resourcePart.StartsWith("task-definition/", StringComparison.Ordinal))
