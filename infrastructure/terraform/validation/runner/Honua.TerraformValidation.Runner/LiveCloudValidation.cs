@@ -693,6 +693,12 @@ internal static partial class ValidationRunner
             return;
         }
 
+        if (!await AzurePostgresSupportsFirewallRulesAsync(context, credentialsEnvironment, resourceGroup, serverName))
+        {
+            Console.WriteLine($"[runner] Existing Azure DB firewall helper skipped: PostgreSQL server {serverName} does not have public network access enabled.");
+            return;
+        }
+
         var runId = Regex.Replace(settings.ValidationRunId.ToLowerInvariant(), "[^a-z0-9-]", string.Empty);
         var ruleName = $"runner-{runId[..Math.Min(runId.Length, 52)]}";
         await context.ProcessRunner.RunAsync("az", ["postgres", "flexible-server", "firewall-rule", "create", "--resource-group", resourceGroup, "--name", serverName, "--rule-name", ruleName, "--start-ip-address", settings.DbFirewallStartIp!, "--end-ip-address", settings.DbFirewallEndIp!], context.RepoRoot, credentialsEnvironment);
@@ -1195,6 +1201,12 @@ internal static partial class ValidationRunner
             return;
         }
 
+        if (!await AzurePostgresSupportsFirewallRulesAsync(context, credentialsEnvironment, resourceGroup, serverName))
+        {
+            Console.WriteLine($"[runner] ACA DB firewall helper skipped: PostgreSQL server {serverName} does not have public network access enabled.");
+            return;
+        }
+
         var outboundIps = await context.ProcessRunner.CaptureAsync("az", ["containerapp", "show", "--resource-group", state.ResourceGroupName, "--name", state.WorkloadName, "--query", "properties.outboundIpAddresses[]", "-o", "tsv"], context.RepoRoot, credentialsEnvironment);
         var ips = outboundIps.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (ips.Length == 0)
@@ -1261,6 +1273,25 @@ internal static partial class ValidationRunner
         }
 
         return null;
+    }
+
+    private static async Task<bool> AzurePostgresSupportsFirewallRulesAsync(
+        RunnerContext context,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment,
+        string resourceGroup,
+        string serverName)
+    {
+        var (captured, publicNetworkAccess) = await context.ProcessRunner.TryCaptureAsync(
+            "az",
+            ["postgres", "flexible-server", "show", "--resource-group", resourceGroup, "--name", serverName, "--query", "network.publicNetworkAccess", "-o", "tsv"],
+            context.RepoRoot,
+            credentialsEnvironment);
+        if (!captured)
+        {
+            return false;
+        }
+
+        return string.Equals(publicNetworkAccess?.Trim(), "Enabled", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? TryGetConnectionStringHost(string? connectionString)

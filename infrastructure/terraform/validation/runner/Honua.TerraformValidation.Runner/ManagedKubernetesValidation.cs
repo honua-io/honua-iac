@@ -244,7 +244,7 @@ internal static partial class ValidationRunner
                 ],
                 context.RepoRoot,
                 credentialsEnvironment);
-            await PersistEksBearerTokenAsync(context, clusterName, kubeconfigPath, credentialsEnvironment);
+            await MaterializeStaticEksKubeconfigAsync(context, clusterName, kubeconfigPath, credentialsEnvironment);
 
             await RunManagedK8sChecksAsync(
                 command,
@@ -327,22 +327,12 @@ internal static partial class ValidationRunner
                     AutoDestroy: !command.GetBoolean("no-destroy", false))));
     }
 
-    private static async Task PersistEksBearerTokenAsync(
+    private static async Task MaterializeStaticEksKubeconfigAsync(
         RunnerContext context,
         string clusterName,
         string kubeconfigPath,
         IReadOnlyDictionary<string, string?> credentialsEnvironment)
     {
-        var userName = (await context.ProcessRunner.CaptureAsync(
-            "kubectl",
-            ["config", "view", "--kubeconfig", kubeconfigPath, "-o", "jsonpath={.users[0].name}"],
-            context.RepoRoot,
-            credentialsEnvironment)).Trim();
-        if (string.IsNullOrWhiteSpace(userName))
-        {
-            throw new ValidationException($"Could not determine EKS kubeconfig user from {kubeconfigPath}");
-        }
-
         var tokenResponse = await context.ProcessRunner.CaptureAsync(
             "aws",
             ["eks", "get-token", "--cluster-name", clusterName, "--region", credentialsEnvironment["AWS_REGION"]!],
@@ -356,11 +346,85 @@ internal static partial class ValidationRunner
             throw new ValidationException($"Failed to capture EKS bearer token for cluster {clusterName}");
         }
 
-        await context.ProcessRunner.RunAsync(
+        var kubeconfigJson = await context.ProcessRunner.CaptureAsync(
             "kubectl",
-            ["config", "set-credentials", userName, "--kubeconfig", kubeconfigPath, $"--token={token}"],
+            ["config", "view", "--raw", "--kubeconfig", kubeconfigPath, "-o", "json"],
             context.RepoRoot,
             credentialsEnvironment);
+        using var kubeconfigDocument = JsonDocument.Parse(kubeconfigJson);
+        var root = kubeconfigDocument.RootElement;
+        var clusterEntry = root.GetProperty("clusters").EnumerateArray().FirstOrDefault();
+        var contextEntry = root.GetProperty("contexts").EnumerateArray().FirstOrDefault();
+        if (clusterEntry.ValueKind == JsonValueKind.Undefined || contextEntry.ValueKind == JsonValueKind.Undefined)
+        {
+            throw new ValidationException($"Could not determine EKS cluster/context from kubeconfig {kubeconfigPath}");
+        }
+
+        var clusterRef = clusterEntry.GetProperty("name").GetString();
+        var cluster = clusterEntry.GetProperty("cluster");
+        var server = cluster.GetProperty("server").GetString();
+        var certificateAuthorityData = cluster.GetProperty("certificate-authority-data").GetString();
+        if (string.IsNullOrWhiteSpace(clusterRef) || string.IsNullOrWhiteSpace(server) || string.IsNullOrWhiteSpace(certificateAuthorityData))
+        {
+            throw new ValidationException($"EKS kubeconfig {kubeconfigPath} was missing cluster connection details");
+        }
+
+        var contextName = root.TryGetProperty("current-context", out var currentContextElement)
+            ? currentContextElement.GetString()
+            : contextEntry.GetProperty("name").GetString();
+        if (string.IsNullOrWhiteSpace(contextName))
+        {
+            contextName = clusterName;
+        }
+
+        var staticKubeconfig = new Dictionary<string, object?>
+        {
+            ["apiVersion"] = "v1",
+            ["kind"] = "Config",
+            ["clusters"] = new object[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["name"] = clusterRef,
+                    ["cluster"] = new Dictionary<string, object?>
+                    {
+                        ["server"] = server,
+                        ["certificate-authority-data"] = certificateAuthorityData
+                    }
+                }
+            },
+            ["users"] = new object[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["name"] = clusterName,
+                    ["user"] = new Dictionary<string, object?>
+                    {
+                        ["token"] = token
+                    }
+                }
+            },
+            ["contexts"] = new object[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["name"] = contextName,
+                    ["context"] = new Dictionary<string, object?>
+                    {
+                        ["cluster"] = clusterRef,
+                        ["user"] = clusterName
+                    }
+                }
+            },
+            ["current-context"] = contextName
+        };
+
+        File.WriteAllText(
+            kubeconfigPath,
+            JsonSerializer.Serialize(staticKubeconfig, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            }));
     }
 
     private static ManagedAksSettings BuildAksSettings(ParsedCommand command, EnvironmentReader env, string defaultPlanDir)
