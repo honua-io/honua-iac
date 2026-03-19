@@ -139,6 +139,31 @@ resolve_terraform_output_compact_json() {
   return 1
 }
 
+terraform_output_validation_capability() {
+  local json_file="$1"
+  local capability="$2"
+  local value=""
+
+  if [[ ! -f "$json_file" ]] || ! command -v jq >/dev/null 2>&1; then
+    return 1
+  fi
+
+  if value="$(jq -r --arg capability "$capability" '
+      if (.validation_contract.value.platform.capabilities | has($capability)) then
+        .validation_contract.value.platform.capabilities[$capability]
+      else
+        empty
+      end
+    ' "$json_file" 2>/dev/null)" &&
+    [[ -n "$value" && "$value" != "null" ]]; then
+    log_output_source_once "$json_file" "validation capability '$capability'" "contract"
+    printf '%s' "$value"
+    return 0
+  fi
+
+  return 1
+}
+
 terraform_stack_base_url() {
   local terraform_root="$1"
   local json_file
@@ -525,6 +550,9 @@ run_honua_platform_post_apply_validation() {
   local validation_root
   local effective_platform
   local include_scale_tests
+  local terraform_output_json="${HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON:-}"
+  local deploy_plan_support=""
+  local mutation_support=""
   local -a runner_args
 
   if [[ -z "$validation_runner" ]]; then
@@ -586,6 +614,24 @@ run_honua_platform_post_apply_validation() {
     fi
 
     render_control_plane_config_from_terraform "$validation_root"
+
+    if [[ -f "$terraform_output_json" ]]; then
+      if [[ -z "${HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT:-}" ]]; then
+        deploy_plan_support="$(terraform_output_validation_capability "$terraform_output_json" "deploy_plan")" || true
+        if [[ -n "$deploy_plan_support" ]]; then
+          export HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT="$deploy_plan_support"
+          platform_validation_log info "Derived deploy-plan support '$deploy_plan_support' from Terraform validation contract"
+        fi
+      fi
+
+      if [[ -z "${HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT:-}" ]]; then
+        mutation_support="$(terraform_output_validation_capability "$terraform_output_json" "mutation")" || true
+        if [[ -n "$mutation_support" ]]; then
+          export HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT="$mutation_support"
+          platform_validation_log info "Derived mutation support '$mutation_support' from Terraform validation contract"
+        fi
+      fi
+    fi
 
     if [[ -n "${HONUA_PLATFORM_VALIDATION_DEPLOY_TARGET_ID:-}" ]]; then
       export HONUA_CLOUD_TEST_DEPLOY_TARGET_ID="$HONUA_PLATFORM_VALIDATION_DEPLOY_TARGET_ID"
