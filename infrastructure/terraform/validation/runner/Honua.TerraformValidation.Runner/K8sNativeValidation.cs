@@ -529,6 +529,7 @@ internal static partial class ValidationRunner
             ["TF_VAR_grafana_ingress_host"] = string.Empty,
             ["TF_VAR_prometheus_persistence_enabled"] = "false",
             ["TF_VAR_grafana_persistence_enabled"] = "false",
+            ["TF_VAR_helm_timeout_seconds"] = Math.Max(settings.TimeoutSeconds, 1800).ToString(CultureInfo.InvariantCulture),
             ["TF_IN_AUTOMATION"] = "true",
         };
 
@@ -579,6 +580,7 @@ internal static partial class ValidationRunner
             ["TF_VAR_grafana_ingress_host"] = string.Empty,
             ["TF_VAR_prometheus_persistence_enabled"] = "false",
             ["TF_VAR_grafana_persistence_enabled"] = "false",
+            ["TF_VAR_helm_timeout_seconds"] = Math.Max(settings.TimeoutSeconds, 1800).ToString(CultureInfo.InvariantCulture),
             ["TF_IN_AUTOMATION"] = "true",
         };
 

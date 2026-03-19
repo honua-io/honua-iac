@@ -1007,6 +1007,10 @@ internal static partial class ValidationRunner
             ["TF_VAR_min_replicas"] = minReplicas.ToString(CultureInfo.InvariantCulture),
             ["TF_VAR_max_replicas"] = settings.AcaMaxReplicas.ToString(CultureInfo.InvariantCulture),
             ["TF_VAR_key_vault_default_action"] = "Allow",
+            ["TF_VAR_additional_env"] = JsonSerializer.Serialize(new Dictionary<string, string>
+            {
+                ["HONUA_SKIP_MIGRATIONS"] = "true",
+            }),
             ["TF_VAR_tags"] = BuildAzureValidationTagsJson(settings.ValidationRunId, settings.TtlHours),
         };
     }
@@ -2197,9 +2201,9 @@ internal static partial class ValidationRunner
             ["TF_VAR_existing_public_subnet_ids"] = state.ExistingPublicSubnetIdsJson ?? "[]",
             ["TF_VAR_existing_private_subnet_ids"] = state.ExistingPrivateSubnetIdsJson ?? "[]",
             ["TF_VAR_enable_postgis"] = (!reusingExistingData).ToString().ToLowerInvariant(),
-            ["TF_VAR_redis_enabled"] = "true",
-            ["TF_VAR_redis_connection_string"] = state.ExistingRedisConnectionString,
-            ["TF_VAR_redis_connection_cidrs"] = string.IsNullOrWhiteSpace(state.ExistingRedisConnectionString) || string.IsNullOrWhiteSpace(state.ExistingVpcCidr)
+            ["TF_VAR_redis_enabled"] = kind == "serverless" ? "false" : "true",
+            ["TF_VAR_redis_connection_string"] = kind == "serverless" ? string.Empty : state.ExistingRedisConnectionString,
+            ["TF_VAR_redis_connection_cidrs"] = kind == "serverless" || string.IsNullOrWhiteSpace(state.ExistingRedisConnectionString) || string.IsNullOrWhiteSpace(state.ExistingVpcCidr)
                 ? "[]"
                 : JsonSerializer.Serialize(new[] { state.ExistingVpcCidr }),
             ["TF_VAR_db_publicly_accessible"] = "true",

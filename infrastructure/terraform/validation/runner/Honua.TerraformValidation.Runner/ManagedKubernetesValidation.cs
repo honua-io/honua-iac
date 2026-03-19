@@ -245,7 +245,7 @@ internal static partial class ValidationRunner
                 ],
                 context.RepoRoot,
                 credentialsEnvironment);
-            await MaterializeStaticEksKubeconfigAsync(context, clusterName, kubeconfigPath, credentialsEnvironment);
+            await MaterializeExecEksKubeconfigAsync(context, clusterName, kubeconfigPath, credentialsEnvironment);
             await WaitForEksApiAccessAsync(context, clusterName, kubeconfigPath, credentialsEnvironment, timeoutSeconds: 300);
 
             await RunManagedK8sChecksAsync(
@@ -329,25 +329,12 @@ internal static partial class ValidationRunner
                     AutoDestroy: !command.GetBoolean("no-destroy", false))));
     }
 
-    private static async Task MaterializeStaticEksKubeconfigAsync(
+    private static async Task MaterializeExecEksKubeconfigAsync(
         RunnerContext context,
         string clusterName,
         string kubeconfigPath,
         IReadOnlyDictionary<string, string?> credentialsEnvironment)
     {
-        var tokenResponse = await context.ProcessRunner.CaptureAsync(
-            "aws",
-            ["eks", "get-token", "--cluster-name", clusterName, "--region", credentialsEnvironment["AWS_REGION"]!],
-            context.RepoRoot,
-            credentialsEnvironment,
-            redactOutput: true);
-        using var tokenDocument = JsonDocument.Parse(tokenResponse);
-        var token = tokenDocument.RootElement.GetProperty("status").GetProperty("token").GetString();
-        if (string.IsNullOrWhiteSpace(token))
-        {
-            throw new ValidationException($"Failed to capture EKS bearer token for cluster {clusterName}");
-        }
-
         var kubeconfigJson = await context.ProcessRunner.CaptureAsync(
             "kubectl",
             ["config", "view", "--raw", "--kubeconfig", kubeconfigPath, "-o", "json"],
@@ -402,7 +389,20 @@ internal static partial class ValidationRunner
                     ["name"] = clusterName,
                     ["user"] = new Dictionary<string, object?>
                     {
-                        ["token"] = token
+                        ["exec"] = new Dictionary<string, object?>
+                        {
+                            ["apiVersion"] = "client.authentication.k8s.io/v1beta1",
+                            ["command"] = "aws",
+                            ["args"] = new object[]
+                            {
+                                "eks",
+                                "get-token",
+                                "--cluster-name", clusterName,
+                                "--region", credentialsEnvironment["AWS_REGION"]!
+                            },
+                            ["env"] = BuildEksExecEnvironment(credentialsEnvironment),
+                            ["interactiveMode"] = "Never"
+                        }
                     }
                 }
             },
@@ -429,6 +429,24 @@ internal static partial class ValidationRunner
             }));
     }
 
+    private static object[] BuildEksExecEnvironment(IReadOnlyDictionary<string, string?> credentialsEnvironment)
+    {
+        var pairs = new List<object>();
+        foreach (var key in new[] { "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_REGION", "AWS_DEFAULT_REGION" })
+        {
+            if (credentialsEnvironment.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value))
+            {
+                pairs.Add(new Dictionary<string, string>
+                {
+                    ["name"] = key,
+                    ["value"] = value
+                });
+            }
+        }
+
+        return pairs.ToArray();
+    }
+
     private static async Task WaitForEksApiAccessAsync(
         RunnerContext context,
         string clusterName,
@@ -439,7 +457,7 @@ internal static partial class ValidationRunner
         var startedAt = DateTimeOffset.UtcNow;
         while (true)
         {
-            await MaterializeStaticEksKubeconfigAsync(context, clusterName, kubeconfigPath, credentialsEnvironment);
+            await MaterializeExecEksKubeconfigAsync(context, clusterName, kubeconfigPath, credentialsEnvironment);
 
             var (captured, output) = await context.ProcessRunner.TryCaptureAsync(
                 "kubectl",
