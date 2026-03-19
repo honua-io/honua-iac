@@ -1564,6 +1564,18 @@ internal static partial class ValidationRunner
             ["HONUA_CLOUD_TEST_BASE_URL"] = baseUrl,
             ["HONUA_CLOUD_TEST_ADMIN_API_KEY"] = adminApiKey,
         };
+        var deployPlanSupport = GetTerraformValidationCapability(rawTerraformOutputs, "deploy_plan");
+        if (!string.IsNullOrWhiteSpace(deployPlanSupport))
+        {
+            processEnvironment["HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT"] = deployPlanSupport;
+        }
+
+        var mutationSupport = GetTerraformValidationCapability(rawTerraformOutputs, "mutation");
+        if (!string.IsNullOrWhiteSpace(mutationSupport))
+        {
+            processEnvironment["HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT"] = mutationSupport;
+        }
+
         if (!string.IsNullOrWhiteSpace(currentRevision))
         {
             processEnvironment["HONUA_PLATFORM_VALIDATION_DEPLOY_CURRENT_REVISION"] = currentRevision;
@@ -1779,6 +1791,9 @@ internal static partial class ValidationRunner
     private static string? GetTerraformDesiredRevision(string rawJson) => GetTerraformOutputString(rawJson,
         ["deployment_contract", "value", "rollout", "desired_revision"],
         ["control_plane_desired_revision", "value"]);
+
+    private static string? GetTerraformValidationCapability(string rawJson, string capability) => GetTerraformOutputString(rawJson,
+        ["validation_contract", "value", "platform", "capabilities", capability]);
 
     private static string? GetTerraformOutputString(string rawJson, params string[][] candidatePaths)
     {

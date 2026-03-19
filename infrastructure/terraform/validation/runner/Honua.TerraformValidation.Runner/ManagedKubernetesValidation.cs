@@ -244,6 +244,7 @@ internal static partial class ValidationRunner
                 ],
                 context.RepoRoot,
                 credentialsEnvironment);
+            await PersistEksExecCredentialsAsync(context, kubeconfigPath, credentialsEnvironment);
 
             await RunManagedK8sChecksAsync(
                 command,
@@ -324,6 +325,40 @@ internal static partial class ValidationRunner
                     KubeconfigPath: kubeconfigPath,
                     EnvironmentOverrides: validationEnvironment,
                     AutoDestroy: !command.GetBoolean("no-destroy", false))));
+    }
+
+    private static async Task PersistEksExecCredentialsAsync(
+        RunnerContext context,
+        string kubeconfigPath,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment)
+    {
+        var userName = (await context.ProcessRunner.CaptureAsync(
+            "kubectl",
+            ["config", "view", "--kubeconfig", kubeconfigPath, "-o", "jsonpath={.users[0].name}"],
+            context.RepoRoot,
+            credentialsEnvironment)).Trim();
+        if (string.IsNullOrWhiteSpace(userName))
+        {
+            throw new ValidationException($"Could not determine EKS kubeconfig user from {kubeconfigPath}");
+        }
+
+        var arguments = new List<string>
+        {
+            "config", "set-credentials", userName,
+            "--kubeconfig", kubeconfigPath,
+            $"--exec-env=AWS_ACCESS_KEY_ID={credentialsEnvironment["AWS_ACCESS_KEY_ID"]}",
+            $"--exec-env=AWS_SECRET_ACCESS_KEY={credentialsEnvironment["AWS_SECRET_ACCESS_KEY"]}",
+            $"--exec-env=AWS_REGION={credentialsEnvironment["AWS_REGION"]}",
+            $"--exec-env=AWS_DEFAULT_REGION={credentialsEnvironment["AWS_DEFAULT_REGION"]}",
+        };
+
+        if (credentialsEnvironment.TryGetValue("AWS_SESSION_TOKEN", out var sessionToken) &&
+            !string.IsNullOrWhiteSpace(sessionToken))
+        {
+            arguments.Add($"--exec-env=AWS_SESSION_TOKEN={sessionToken}");
+        }
+
+        await context.ProcessRunner.RunAsync("kubectl", arguments, context.RepoRoot, credentialsEnvironment);
     }
 
     private static ManagedAksSettings BuildAksSettings(ParsedCommand command, EnvironmentReader env, string defaultPlanDir)
