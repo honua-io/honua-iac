@@ -5,21 +5,23 @@ provider "aws" {
 module "eks" {
   source = "../../modules/aws-eks"
 
-  name_prefix                 = var.name_prefix
-  environment                 = var.environment
-  tags                        = var.tags
-  vpc_cidr                    = var.vpc_cidr
-  public_subnet_cidrs         = var.public_subnet_cidrs
-  private_subnet_cidrs        = var.private_subnet_cidrs
-  existing_vpc_id             = var.existing_vpc_id
-  existing_vpc_cidr           = var.existing_vpc_cidr
-  existing_public_subnet_ids  = var.existing_public_subnet_ids
-  existing_private_subnet_ids = var.existing_private_subnet_ids
-  cluster_version             = var.cluster_version
-  node_instance_types         = var.node_instance_types
-  node_min_size               = var.node_min_size
-  node_max_size               = var.node_max_size
-  node_desired_size           = var.node_desired_size
+  name_prefix                          = var.name_prefix
+  environment                          = var.environment
+  tags                                 = var.tags
+  vpc_cidr                             = var.vpc_cidr
+  public_subnet_cidrs                  = var.public_subnet_cidrs
+  private_subnet_cidrs                 = var.private_subnet_cidrs
+  existing_vpc_id                      = var.existing_vpc_id
+  existing_vpc_cidr                    = var.existing_vpc_cidr
+  existing_public_subnet_ids           = var.existing_public_subnet_ids
+  existing_private_subnet_ids          = var.existing_private_subnet_ids
+  cluster_version                      = var.cluster_version
+  cluster_endpoint_public_access       = var.cluster_endpoint_public_access
+  cluster_endpoint_public_access_cidrs = var.cluster_endpoint_public_access_cidrs
+  node_instance_types                  = var.node_instance_types
+  node_min_size                        = var.node_min_size
+  node_max_size                        = var.node_max_size
+  node_desired_size                    = var.node_desired_size
 }
 
 locals {

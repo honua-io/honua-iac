@@ -70,6 +70,18 @@ variable "cluster_version" {
   default     = "1.30"
 }
 
+variable "cluster_endpoint_public_access" {
+  description = "Whether the EKS API server endpoint is publicly accessible."
+  type        = bool
+  default     = false
+}
+
+variable "cluster_endpoint_public_access_cidrs" {
+  description = "CIDR blocks allowed to access the EKS public endpoint."
+  type        = list(string)
+  default     = []
+}
+
 variable "node_instance_types" {
   description = "Managed node group instance types."
   type        = list(string)

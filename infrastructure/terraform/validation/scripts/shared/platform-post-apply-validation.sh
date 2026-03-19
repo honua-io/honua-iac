@@ -68,6 +68,29 @@ load_terraform_output_json() {
   printf '%s' "$cached_path"
 }
 
+materialize_terraform_output_json_input() {
+  local input_value="${1:-}"
+  local materialized_path=""
+
+  if [[ -z "$input_value" ]]; then
+    return 1
+  fi
+
+  if [[ -f "$input_value" ]]; then
+    printf '%s' "$input_value"
+    return 0
+  fi
+
+  if [[ "$input_value" =~ ^[[:space:]]*[\{\[] ]]; then
+    materialized_path="$(mktemp "${TMPDIR:-/tmp}/honua-platform-output.XXXXXX.json")"
+    printf '%s' "$input_value" > "$materialized_path"
+    printf '%s' "$materialized_path"
+    return 0
+  fi
+
+  return 1
+}
+
 log_output_source_once() {
   local json_file="$1"
   local description="$2"
@@ -445,7 +468,8 @@ resolve_platform_validation_root() {
 
 render_control_plane_config_from_terraform() {
   local validation_root="$1"
-  local terraform_output_json="${HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON:-}"
+  local terraform_output_json_input="${HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON:-}"
+  local terraform_output_json=""
   local render_script="${HONUA_PLATFORM_VALIDATION_RENDER_CONTROL_PLANE_SCRIPT:-$validation_root/scripts/render-control-plane-config-from-terraform.sh}"
   local rendered_config_path="${HONUA_PLATFORM_VALIDATION_CONTROL_PLANE_CONFIG_OUTPUT:-}"
   local rendered_target_id=""
@@ -453,12 +477,12 @@ render_control_plane_config_from_terraform() {
   local rendered_desired_revision=""
   local -a render_args
 
-  if [[ -z "$terraform_output_json" ]]; then
+  if [[ -z "$terraform_output_json_input" ]]; then
     return 0
   fi
 
-  if [[ ! -f "$terraform_output_json" ]]; then
-    platform_validation_log warn "Skipping control-plane config render because Terraform output JSON was not found: $terraform_output_json"
+  if ! terraform_output_json="$(materialize_terraform_output_json_input "$terraform_output_json_input")"; then
+    platform_validation_log warn "Skipping control-plane config render because Terraform output JSON input was not a readable file or JSON document"
     return 0
   fi
 
@@ -550,7 +574,8 @@ run_honua_platform_post_apply_validation() {
   local validation_root
   local effective_platform
   local include_scale_tests
-  local terraform_output_json="${HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON:-}"
+  local terraform_output_json_input="${HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON:-}"
+  local terraform_output_json=""
   local deploy_plan_support=""
   local mutation_support=""
   local -a runner_args
@@ -583,6 +608,10 @@ run_honua_platform_post_apply_validation() {
   fi
 
   platform_validation_log info "Running Honua platform post-apply validation against $base_url"
+
+  if [[ -n "$terraform_output_json_input" ]]; then
+    terraform_output_json="$(materialize_terraform_output_json_input "$terraform_output_json_input")" || true
+  fi
 
   (
     set -euo pipefail

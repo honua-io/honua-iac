@@ -215,6 +215,10 @@ internal static partial class ValidationRunner
                 await RunEksQuotaPreflightAsync(context, credentialsEnvironment, settings);
             }
 
+            settings = settings with
+            {
+                RunnerAccessCidr = settings.RunnerAccessCidr ?? $"{await DetectPublicIpv4Async(context)}/32"
+            };
             var terraformEnvironment = BuildEksTerraformEnvironment(settings, validationEnvironment);
 
             await context.ProcessRunner.RunAsync("terraform", ["-chdir=" + terraformRoot, "init", "-input=false", "-no-color"], context.RepoRoot, terraformEnvironment);
@@ -388,6 +392,7 @@ internal static partial class ValidationRunner
             ExistingVpcCidr: env.GetOptional("HONUA_AWS_EXISTING_VPC_CIDR"),
             ExistingPublicSubnetIdsJson: env.GetOptional("HONUA_AWS_EXISTING_PUBLIC_SUBNET_IDS"),
             ExistingPrivateSubnetIdsJson: env.GetOptional("HONUA_AWS_EXISTING_PRIVATE_SUBNET_IDS"),
+            RunnerAccessCidr: env.GetOptional("HONUA_EKS_CLUSTER_ENDPOINT_PUBLIC_ACCESS_CIDR"),
             AllowDestroyPlan: command.GetBoolean("allow-destroy-plan", false),
             SkipQuotaPreflight: GetBooleanOption(command, env, "skip-quota-preflight", "HONUA_SKIP_QUOTA_PREFLIGHT"),
             SkipIdempotency: GetBooleanOption(command, env, "skip-idempotency", "HONUA_SKIP_IDEMPOTENCY"),
@@ -422,6 +427,8 @@ internal static partial class ValidationRunner
             ["TF_VAR_node_min_size"] = settings.NodeMinSize.ToString(CultureInfo.InvariantCulture),
             ["TF_VAR_node_max_size"] = settings.NodeMaxSize.ToString(CultureInfo.InvariantCulture),
             ["TF_VAR_node_desired_size"] = settings.NodeDesiredSize.ToString(CultureInfo.InvariantCulture),
+            ["TF_VAR_cluster_endpoint_public_access"] = "true",
+            ["TF_VAR_cluster_endpoint_public_access_cidrs"] = JsonSerializer.Serialize(new[] { settings.RunnerAccessCidr ?? "0.0.0.0/0" }),
             ["TF_VAR_tags"] = BuildValidationTagsJson(settings.ValidationRunId, settings.TtlHours),
             ["TF_IN_AUTOMATION"] = "true",
         };
@@ -671,32 +678,71 @@ internal static partial class ValidationRunner
             return;
         }
 
-        for (var attempt = 1; attempt <= 10; attempt++)
+        IReadOnlyList<string> remainingResources = Array.Empty<string>();
+        for (var attempt = 1; attempt <= 24; attempt++)
         {
-            var count = await context.ProcessRunner.CaptureAsync(
+            var resourcesJson = await context.ProcessRunner.CaptureAsync(
                 "az",
                 [
                     "resource",
                     "list",
                     "--tag", $"ValidationRunId={validationRunId}",
-                    "--query", "length(@)",
-                    "-o", "tsv",
+                    "--query", "[].{id:id,type:type,name:name,provisioningState:properties.provisioningState}",
+                    "-o", "json",
                 ],
                 context.RepoRoot,
                 credentialsEnvironment);
 
-            if (count == "0")
+            remainingResources = ClassifyAzureLeakResources(resourcesJson);
+            if (remainingResources.Count == 0)
             {
                 return;
             }
 
+            Console.WriteLine($"[runner] Azure leak janitor wait {attempt}/24: {remainingResources.Count} tagged resources still visible for ValidationRunId={validationRunId}");
             if (!context.DryRun)
             {
-                await Task.Delay(TimeSpan.FromSeconds(15));
+                await Task.Delay(TimeSpan.FromSeconds(Math.Min(15 * attempt, 60)));
             }
         }
 
-        throw new ValidationException($"Leak janitor check failed: resources tagged ValidationRunId={validationRunId} still exist");
+        throw new ValidationException($"Leak janitor check failed: resources tagged ValidationRunId={validationRunId} still exist after extended wait: {string.Join(", ", remainingResources.Take(20))}");
+    }
+
+    private static IReadOnlyList<string> ClassifyAzureLeakResources(string resourcesJson)
+    {
+        if (string.IsNullOrWhiteSpace(resourcesJson))
+        {
+            return Array.Empty<string>();
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(resourcesJson);
+            var actionable = new List<string>();
+            foreach (var resource in document.RootElement.EnumerateArray())
+            {
+                var id = resource.TryGetProperty("id", out var idProperty) ? idProperty.GetString() : null;
+                var type = resource.TryGetProperty("type", out var typeProperty) ? typeProperty.GetString() : null;
+                var name = resource.TryGetProperty("name", out var nameProperty) ? nameProperty.GetString() : null;
+                var provisioningState = resource.TryGetProperty("provisioningState", out var stateProperty) ? stateProperty.GetString() : null;
+
+                if (!string.IsNullOrWhiteSpace(provisioningState) &&
+                    (provisioningState.Contains("Deleting", StringComparison.OrdinalIgnoreCase) ||
+                     provisioningState.Contains("Deleted", StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
+
+                actionable.Add($"{type ?? "unknown"}:{name ?? id ?? "unknown"}");
+            }
+
+            return actionable;
+        }
+        catch
+        {
+            return Array.Empty<string>();
+        }
     }
 
     private static async Task EnsureAzSessionAsync(
@@ -1244,6 +1290,7 @@ internal static partial class ValidationRunner
         string? ExistingVpcCidr,
         string? ExistingPublicSubnetIdsJson,
         string? ExistingPrivateSubnetIdsJson,
+        string? RunnerAccessCidr,
         bool AllowDestroyPlan,
         bool SkipQuotaPreflight,
         bool SkipIdempotency,

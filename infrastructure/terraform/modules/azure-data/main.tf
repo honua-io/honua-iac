@@ -158,6 +158,19 @@ resource "azurerm_postgresql_flexible_server_configuration" "postgis" {
   value     = "POSTGIS,POSTGIS_RASTER"
 }
 
+resource "time_sleep" "postgis_readiness" {
+  count = var.enable_postgis ? 1 : 0
+
+  create_duration = format("%ds", var.postgis_readiness_sleep_seconds * 3)
+
+  depends_on = [
+    azurerm_postgresql_flexible_server.this,
+    azurerm_postgresql_flexible_server_database.this,
+    azurerm_postgresql_flexible_server_configuration.postgis,
+    azurerm_postgresql_flexible_server_firewall_rule.validation,
+  ]
+}
+
 resource "postgresql_extension" "postgis" {
   count    = var.enable_postgis ? 1 : 0
   provider = postgresql.honua
@@ -166,6 +179,9 @@ resource "postgresql_extension" "postgis" {
 
   depends_on = [
     azurerm_postgresql_flexible_server.this,
+    azurerm_postgresql_flexible_server_database.this,
+    azurerm_postgresql_flexible_server_configuration.postgis,
+    time_sleep.postgis_readiness,
   ]
 }
 
@@ -177,6 +193,9 @@ resource "postgresql_extension" "postgis_raster" {
 
   depends_on = [
     azurerm_postgresql_flexible_server.this,
+    azurerm_postgresql_flexible_server_database.this,
+    azurerm_postgresql_flexible_server_configuration.postgis,
+    time_sleep.postgis_readiness,
     postgresql_extension.postgis,
   ]
 }
