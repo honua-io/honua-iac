@@ -105,7 +105,8 @@ internal static partial class ValidationRunner
                 context,
                 clusterName,
                 kubeconfigPath,
-                validationEnvironment);
+                validationEnvironment,
+                skipObservability: false);
         }
         catch (Exception exception)
         {
@@ -253,7 +254,8 @@ internal static partial class ValidationRunner
                 context,
                 clusterName,
                 kubeconfigPath,
-                validationEnvironment);
+                validationEnvironment,
+                skipObservability: true);
         }
         catch (Exception exception)
         {
@@ -313,7 +315,8 @@ internal static partial class ValidationRunner
         RunnerContext context,
         string clusterName,
         string kubeconfigPath,
-        IReadOnlyDictionary<string, string?> validationEnvironment)
+        IReadOnlyDictionary<string, string?> validationEnvironment,
+        bool skipObservability)
     {
         await ExecuteNativeK8sValidationAsync(
             context,
@@ -326,6 +329,7 @@ internal static partial class ValidationRunner
                     AccessMode: "port-forward",
                     KubeconfigPath: kubeconfigPath,
                     EnvironmentOverrides: validationEnvironment,
+                    SkipObservability: skipObservability,
                     AutoDestroy: !command.GetBoolean("no-destroy", false))));
     }
 

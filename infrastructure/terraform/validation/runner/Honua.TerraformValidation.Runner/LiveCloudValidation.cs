@@ -969,12 +969,13 @@ internal static partial class ValidationRunner
             ["TF_VAR_honua_admin_password"] = settings.AdminPassword,
             ["TF_VAR_db_admin_password"] = settings.DbAdminPassword,
             ["TF_VAR_enable_postgis"] = "false",
-            ["TF_VAR_redis_enabled"] = "true",
+            ["TF_VAR_redis_enabled"] = "false",
             ["TF_VAR_existing_db_fqdn"] = string.Empty,
             ["TF_VAR_existing_db_connection_string"] = string.Empty,
             ["TF_VAR_redis_connection_string"] = string.Empty,
-            ["TF_VAR_db_firewall_start_ip"] = settings.DbFirewallStartIp,
-            ["TF_VAR_db_firewall_end_ip"] = settings.DbFirewallEndIp,
+            ["TF_VAR_db_public_network_access"] = "true",
+            ["TF_VAR_db_firewall_start_ip"] = "0.0.0.0",
+            ["TF_VAR_db_firewall_end_ip"] = "0.0.0.0",
             ["TF_VAR_key_vault_default_action"] = "Allow",
             ["TF_VAR_tags"] = BuildAzureValidationTagsJson(settings.ValidationRunId, settings.TtlHours),
         };
@@ -1924,7 +1925,23 @@ internal static partial class ValidationRunner
 
     private static async Task AuthorizeExistingAwsDbIngressAsync(RunnerContext context, AwsLiveSettings settings, AwsLiveState state, IReadOnlyDictionary<string, string?> credentialsEnvironment)
     {
-        if (context.DryRun || string.IsNullOrWhiteSpace(state.ExistingDbEndpoint) || string.IsNullOrWhiteSpace(settings.DbIngressCidr))
+        if (context.DryRun || string.IsNullOrWhiteSpace(state.ExistingDbEndpoint))
+        {
+            return;
+        }
+
+        var ingressCidrs = new HashSet<string>(StringComparer.Ordinal);
+        if (!string.IsNullOrWhiteSpace(settings.DbIngressCidr))
+        {
+            ingressCidrs.Add(settings.DbIngressCidr);
+        }
+
+        if (!string.IsNullOrWhiteSpace(state.ExistingVpcCidr))
+        {
+            ingressCidrs.Add(state.ExistingVpcCidr);
+        }
+
+        if (ingressCidrs.Count == 0)
         {
             return;
         }
@@ -1932,24 +1949,35 @@ internal static partial class ValidationRunner
         var groupsRaw = await context.ProcessRunner.CaptureAsync("aws", ["rds", "describe-db-instances", "--query", $"DBInstances[?Endpoint.Address=='{state.ExistingDbEndpoint}'].VpcSecurityGroups[].VpcSecurityGroupId", "--output", "text"], context.RepoRoot, credentialsEnvironment);
         foreach (var groupId in groupsRaw.Split(['\t', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            try
+            foreach (var cidr in ingressCidrs)
             {
-                var permissions = $"[{{\"IpProtocol\":\"tcp\",\"FromPort\":5432,\"ToPort\":5432,\"IpRanges\":[{{\"CidrIp\":\"{settings.DbIngressCidr}\",\"Description\":\"Honua validation runner {settings.ValidationRunId}\"}}]}}]";
-                await context.ProcessRunner.RunAsync("aws", ["ec2", "authorize-security-group-ingress", "--group-id", groupId, "--ip-permissions", permissions], context.RepoRoot, credentialsEnvironment);
-                state.DbIngressSecurityGroupIds.Add(groupId);
-            }
-            catch
-            {
-                // Security group may already allow the ingress.
+                try
+                {
+                    var permissions = $"[{{\"IpProtocol\":\"tcp\",\"FromPort\":5432,\"ToPort\":5432,\"IpRanges\":[{{\"CidrIp\":\"{cidr}\",\"Description\":\"Honua validation runner {settings.ValidationRunId}\"}}]}}]";
+                    await context.ProcessRunner.RunAsync("aws", ["ec2", "authorize-security-group-ingress", "--group-id", groupId, "--ip-permissions", permissions], context.RepoRoot, credentialsEnvironment);
+                    state.DbIngressSecurityGroupIds.Add($"{groupId}|{cidr}");
+                }
+                catch
+                {
+                    // Security group may already allow the ingress.
+                }
             }
         }
     }
 
     private static async Task RevokeExistingAwsDbIngressAsync(RunnerContext context, AwsLiveSettings settings, AwsLiveState state, IReadOnlyDictionary<string, string?> credentialsEnvironment)
     {
-        foreach (var groupId in state.DbIngressSecurityGroupIds)
+        foreach (var entry in state.DbIngressSecurityGroupIds)
         {
-            var permissions = $"[{{\"IpProtocol\":\"tcp\",\"FromPort\":5432,\"ToPort\":5432,\"IpRanges\":[{{\"CidrIp\":\"{settings.DbIngressCidr}\"}}]}}]";
+            var parts = entry.Split('|', 2, StringSplitOptions.TrimEntries);
+            var groupId = parts[0];
+            var cidr = parts.Length == 2 ? parts[1] : settings.DbIngressCidr;
+            if (string.IsNullOrWhiteSpace(cidr))
+            {
+                continue;
+            }
+
+            var permissions = $"[{{\"IpProtocol\":\"tcp\",\"FromPort\":5432,\"ToPort\":5432,\"IpRanges\":[{{\"CidrIp\":\"{cidr}\"}}]}}]";
             await context.ProcessRunner.RunAsync("aws", ["ec2", "revoke-security-group-ingress", "--group-id", groupId, "--ip-permissions", permissions], context.RepoRoot, credentialsEnvironment);
         }
     }
@@ -2231,13 +2259,6 @@ internal static partial class ValidationRunner
             environment["TF_VAR_name_prefix"] = settings.ServerlessNamePrefix;
             environment["TF_VAR_honua_image_uri"] = image;
             environment["TF_VAR_skip_migrations"] = "true";
-            environment["TF_VAR_existing_db_endpoint"] = string.Empty;
-            environment["TF_VAR_existing_db_connection_string"] = string.Empty;
-            environment["TF_VAR_existing_vpc_id"] = string.Empty;
-            environment["TF_VAR_existing_vpc_cidr"] = string.Empty;
-            environment["TF_VAR_existing_public_subnet_ids"] = "[]";
-            environment["TF_VAR_existing_private_subnet_ids"] = "[]";
-            environment["TF_VAR_enable_postgis"] = "true";
             if (!string.IsNullOrWhiteSpace(aliasVersion))
             {
                 environment["TF_VAR_lambda_alias_version"] = aliasVersion;
