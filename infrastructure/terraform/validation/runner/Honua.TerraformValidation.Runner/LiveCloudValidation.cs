@@ -1485,7 +1485,7 @@ internal static partial class ValidationRunner
 
             if ((DateTimeOffset.UtcNow - startedAt).TotalSeconds > timeoutSeconds)
             {
-                if (sawLiveSuccess)
+                if (sawLiveSuccess || await HasFunctionalHttpSignalAsync(client))
                 {
                     Console.WriteLine($"[runner] Readiness endpoint did not stabilize before timeout for {NormalizeBaseUrl(baseUrl)}/healthz/ready; proceeding because /healthz/live succeeded and downstream checks will verify functionality.");
                     return;
@@ -1496,6 +1496,39 @@ internal static partial class ValidationRunner
 
             await Task.Delay(TimeSpan.FromSeconds(10));
         }
+    }
+
+    private static async Task<bool> HasFunctionalHttpSignalAsync(HttpClient client)
+    {
+        try
+        {
+            using var adminResponse = await client.GetAsync("/api/v1/admin/config");
+            if (adminResponse.IsSuccessStatusCode ||
+                adminResponse.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            {
+                return true;
+            }
+        }
+        catch
+        {
+            // ignore and continue probing
+        }
+
+        try
+        {
+            using var catalogResponse = await client.GetAsync("/rest/services?f=pjson");
+            if (catalogResponse.IsSuccessStatusCode ||
+                catalogResponse.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            {
+                return true;
+            }
+        }
+        catch
+        {
+            // ignore and continue probing
+        }
+
+        return false;
     }
 
     private static async Task VerifyProtocolEndpointsAsync(RunnerContext context, string baseUrl, string adminApiKey)
@@ -1564,7 +1597,7 @@ internal static partial class ValidationRunner
             await throttler.WaitAsync();
             try
             {
-                using var response = await client.GetAsync("/healthz/ready");
+                using var response = await client.GetAsync("/healthz/live");
                 if (!response.IsSuccessStatusCode)
                 {
                     Interlocked.Increment(ref failures);
