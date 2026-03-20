@@ -983,6 +983,10 @@ internal static partial class ValidationRunner
     private static Dictionary<string, string?> BuildAzureAcaEnvironment(AzureLiveSettings settings, AzureLiveState state, IReadOnlyDictionary<string, string?> baseEnvironment, string image, int minReplicas)
     {
         var reusingExistingData = !string.IsNullOrWhiteSpace(state.ExistingDbConnectionString);
+        var additionalEnv = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["HONUA_SKIP_MIGRATIONS"] = "false",
+        };
         return new Dictionary<string, string?>(baseEnvironment, StringComparer.Ordinal)
         {
             ["TF_IN_AUTOMATION"] = "true",
@@ -1008,10 +1012,7 @@ internal static partial class ValidationRunner
             ["TF_VAR_min_replicas"] = minReplicas.ToString(CultureInfo.InvariantCulture),
             ["TF_VAR_max_replicas"] = settings.AcaMaxReplicas.ToString(CultureInfo.InvariantCulture),
             ["TF_VAR_key_vault_default_action"] = "Allow",
-            ["TF_VAR_additional_env"] = JsonSerializer.Serialize(new Dictionary<string, string>
-            {
-                ["HONUA_SKIP_MIGRATIONS"] = "true",
-            }),
+            ["TF_VAR_additional_env"] = JsonSerializer.Serialize(additionalEnv),
             ["TF_VAR_tags"] = BuildAzureValidationTagsJson(settings.ValidationRunId, settings.TtlHours),
         };
     }
@@ -2249,6 +2250,11 @@ internal static partial class ValidationRunner
             ["TF_VAR_db_additional_ingress_cidrs"] = string.IsNullOrWhiteSpace(state.ExistingDbConnectionString) ? JsonSerializer.Serialize(new[] { settings.DbIngressCidr! }) : "[]",
             ["TF_VAR_tags"] = BuildValidationTagsJson(settings.ValidationRunId, settings.TtlHours),
         };
+
+        if (kind == "serverless")
+        {
+            environment["TF_VAR_skip_migrations"] = "false";
+        }
 
         if (kind == "ecs")
         {
