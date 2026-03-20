@@ -819,7 +819,17 @@ internal static partial class ValidationRunner
             await WaitForAzureAcaReplicasAsync(context, credentialsEnvironment, state.ResourceGroupName!, state.WorkloadName!, minReplicas, settings.TimeoutSeconds);
             state.ActiveBaseUrl = await ResolveAzureAcaProbeBaseUrlAsync(context, credentialsEnvironment, state.ResourceGroupName!, state.WorkloadName!, state.BaseUrl);
             var readinessTimeoutSeconds = Math.Max(settings.TimeoutSeconds, 1800);
-            await RunCloudHttpChecksAsync(context, settings.AdminPassword, state.ActiveBaseUrl ?? state.BaseUrl, readinessTimeoutSeconds, settings.ReadySloSeconds, settings.LoadRequests, settings.LoadConcurrency, settings.MaxLoadErrorRatePercent, settings.SkipProtocolChecks);
+            state.ActiveBaseUrl = await RunAzureCloudHttpChecksAsync(
+                context,
+                settings.AdminPassword,
+                state.ActiveBaseUrl ?? state.BaseUrl,
+                state.BaseUrl,
+                readinessTimeoutSeconds,
+                settings.ReadySloSeconds,
+                settings.LoadRequests,
+                settings.LoadConcurrency,
+                settings.MaxLoadErrorRatePercent,
+                settings.SkipProtocolChecks);
             if (runPlatformValidation)
             {
                 await RunCloudPlatformValidationAsync(context, validationEnvironment, state.ActiveBaseUrl ?? state.BaseUrl, "azure-container-apps", outputs, state.DbHost!, settings.AdminPassword, settings.DbAdminPassword);
@@ -1422,6 +1432,33 @@ internal static partial class ValidationRunner
         await RunLoadProbeAsync(context, baseUrl, loadRequests, loadConcurrency, maxLoadErrorRatePercent);
     }
 
+    private static async Task<string> RunAzureCloudHttpChecksAsync(
+        RunnerContext context,
+        string adminApiKey,
+        string primaryBaseUrl,
+        string? fallbackBaseUrl,
+        int timeoutSeconds,
+        int readySloSeconds,
+        int loadRequests,
+        int loadConcurrency,
+        decimal maxLoadErrorRatePercent,
+        bool skipProtocolChecks)
+    {
+        try
+        {
+            await RunCloudHttpChecksAsync(context, adminApiKey, primaryBaseUrl, timeoutSeconds, readySloSeconds, loadRequests, loadConcurrency, maxLoadErrorRatePercent, skipProtocolChecks);
+            return primaryBaseUrl;
+        }
+        catch (ValidationException) when (
+            !string.IsNullOrWhiteSpace(fallbackBaseUrl) &&
+            !string.Equals(NormalizeBaseUrl(primaryBaseUrl), NormalizeBaseUrl(fallbackBaseUrl), StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine($"[runner] ACA readiness failed on revision URL {NormalizeBaseUrl(primaryBaseUrl)}; retrying shared app URL {NormalizeBaseUrl(fallbackBaseUrl)}.");
+            await RunCloudHttpChecksAsync(context, adminApiKey, fallbackBaseUrl, timeoutSeconds, readySloSeconds, loadRequests, loadConcurrency, maxLoadErrorRatePercent, skipProtocolChecks);
+            return fallbackBaseUrl;
+        }
+    }
+
     private static async Task WaitForCloudReadyAsync(RunnerContext context, string baseUrl, int timeoutSeconds, int readySloSeconds)
     {
         if (context.DryRun)
@@ -1505,6 +1542,19 @@ internal static partial class ValidationRunner
             using var adminResponse = await client.GetAsync("/api/v1/admin/config");
             if (adminResponse.IsSuccessStatusCode ||
                 adminResponse.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            {
+                return true;
+            }
+        }
+        catch
+        {
+            // ignore and continue probing
+        }
+
+        try
+        {
+            using var rootResponse = await client.GetAsync("/");
+            if ((int)rootResponse.StatusCode < 500)
             {
                 return true;
             }
