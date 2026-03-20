@@ -467,8 +467,7 @@ internal static partial class ValidationRunner
         }
 
         state.HasReusableDataInputs =
-            !string.IsNullOrWhiteSpace(state.ExistingDbConnectionString) &&
-            !string.IsNullOrWhiteSpace(state.ExistingRedisConnectionString);
+            !string.IsNullOrWhiteSpace(state.ExistingDbConnectionString);
 
         if (!string.IsNullOrWhiteSpace(settings.DbFirewallStartIp) ^ !string.IsNullOrWhiteSpace(settings.DbFirewallEndIp))
         {
@@ -784,7 +783,7 @@ internal static partial class ValidationRunner
         state.DataResourceGroup = GetTerraformResourceGroup(outputs);
         state.ExistingDbFqdn = GetTerraformDatabaseHost(outputs);
         state.ExistingDbConnectionString = await ReadAzureSecretAsync(context, GetTerraformDatabaseSecretRef(outputs), validationEnvironment);
-        state.ExistingRedisConnectionString = await ReadAzureSecretAsync(context, GetTerraformCacheSecretRef(outputs), validationEnvironment);
+        state.ExistingRedisConnectionString = await ReadAzureOptionalSecretAsync(context, GetTerraformCacheSecretRef(outputs), validationEnvironment);
         state.HasReusableDataInputs = true;
         if (!settings.SkipIdempotency)
         {
@@ -1664,6 +1663,16 @@ internal static partial class ValidationRunner
         }
 
         return await context.ProcessRunner.CaptureAsync("az", ["keyvault", "secret", "show", "--id", secretId, "--query", "value", "-o", "tsv"], context.RepoRoot, credentialsEnvironment, redactOutput: true);
+    }
+
+    private static async Task<string?> ReadAzureOptionalSecretAsync(RunnerContext context, string? secretId, IReadOnlyDictionary<string, string?> credentialsEnvironment)
+    {
+        if (string.IsNullOrWhiteSpace(secretId))
+        {
+            return null;
+        }
+
+        return await ReadAzureSecretAsync(context, secretId, credentialsEnvironment);
     }
 
     private static string BuildDryRunConnectionString(string dbHost)
