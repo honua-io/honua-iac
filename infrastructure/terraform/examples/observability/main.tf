@@ -16,6 +16,7 @@ module "observability" {
 
   grafana_ingress_enabled               = var.grafana_ingress_host != ""
   grafana_ingress_host                  = var.grafana_ingress_host
+  helm_timeout_seconds                  = var.helm_timeout_seconds
   opentelemetry_collector_enabled       = var.opentelemetry_collector_enabled
   opentelemetry_chart_version           = var.opentelemetry_chart_version
   opentelemetry_collector_otlp_endpoint = var.opentelemetry_collector_otlp_endpoint

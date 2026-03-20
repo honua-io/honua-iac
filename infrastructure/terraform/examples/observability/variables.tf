@@ -21,6 +21,12 @@ variable "grafana_ingress_host" {
   default     = ""
 }
 
+variable "helm_timeout_seconds" {
+  description = "Helm timeout for Prometheus/Grafana installs."
+  type        = number
+  default     = 900
+}
+
 variable "opentelemetry_collector_enabled" {
   description = "Deploy the optional in-cluster OpenTelemetry Collector gateway."
   type        = bool

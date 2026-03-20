@@ -998,8 +998,9 @@ internal static partial class ValidationRunner
             ["TF_VAR_existing_db_fqdn"] = state.ExistingDbFqdn,
             ["TF_VAR_existing_db_connection_string"] = state.ExistingDbConnectionString,
             ["TF_VAR_redis_connection_string"] = string.Empty,
-            ["TF_VAR_db_firewall_start_ip"] = settings.DbFirewallStartIp,
-            ["TF_VAR_db_firewall_end_ip"] = settings.DbFirewallEndIp,
+            ["TF_VAR_db_public_network_access"] = (!reusingExistingData).ToString().ToLowerInvariant(),
+            ["TF_VAR_db_firewall_start_ip"] = reusingExistingData ? settings.DbFirewallStartIp : "0.0.0.0",
+            ["TF_VAR_db_firewall_end_ip"] = reusingExistingData ? settings.DbFirewallEndIp : "0.0.0.0",
             ["TF_VAR_honua_image"] = image,
             ["TF_VAR_registry_server"] = settings.RegistryServer,
             ["TF_VAR_registry_username"] = settings.RegistryUsername,
@@ -2230,6 +2231,13 @@ internal static partial class ValidationRunner
             environment["TF_VAR_name_prefix"] = settings.ServerlessNamePrefix;
             environment["TF_VAR_honua_image_uri"] = image;
             environment["TF_VAR_skip_migrations"] = "true";
+            environment["TF_VAR_existing_db_endpoint"] = string.Empty;
+            environment["TF_VAR_existing_db_connection_string"] = string.Empty;
+            environment["TF_VAR_existing_vpc_id"] = string.Empty;
+            environment["TF_VAR_existing_vpc_cidr"] = string.Empty;
+            environment["TF_VAR_existing_public_subnet_ids"] = "[]";
+            environment["TF_VAR_existing_private_subnet_ids"] = "[]";
+            environment["TF_VAR_enable_postgis"] = "true";
             if (!string.IsNullOrWhiteSpace(aliasVersion))
             {
                 environment["TF_VAR_lambda_alias_version"] = aliasVersion;

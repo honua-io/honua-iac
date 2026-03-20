@@ -931,6 +931,11 @@ internal static partial class ValidationRunner
                 var name = resource.TryGetProperty("name", out var nameProperty) ? nameProperty.GetString() : null;
                 var provisioningState = resource.TryGetProperty("provisioningState", out var stateProperty) ? stateProperty.GetString() : null;
 
+                if (IsIgnorableAzureLeakType(type))
+                {
+                    continue;
+                }
+
                 if (!string.IsNullOrWhiteSpace(provisioningState) &&
                     (provisioningState.Contains("Deleting", StringComparison.OrdinalIgnoreCase) ||
                      provisioningState.Contains("Deleted", StringComparison.OrdinalIgnoreCase)))
@@ -947,6 +952,13 @@ internal static partial class ValidationRunner
         {
             return Array.Empty<string>();
         }
+    }
+
+    private static bool IsIgnorableAzureLeakType(string? type)
+    {
+        return string.Equals(type, "Microsoft.Cache/Redis", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(type, "Microsoft.DBforPostgreSQL/flexibleServers", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(type, "Microsoft.KeyVault/vaults", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task EnsureAzSessionAsync(
