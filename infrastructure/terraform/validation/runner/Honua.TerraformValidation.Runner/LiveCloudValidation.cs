@@ -84,6 +84,7 @@ internal static partial class ValidationRunner
         catch (Exception exception)
         {
             bodyFailure = exception;
+            await TryDumpAzureFailureDiagnosticsAsync(context, state, credentialsEnvironment, exception);
         }
 
         try
@@ -189,6 +190,7 @@ internal static partial class ValidationRunner
         catch (Exception exception)
         {
             bodyFailure = exception;
+            await TryDumpAwsFailureDiagnosticsAsync(context, state, credentialsEnvironment, exception);
         }
 
         try
@@ -1471,114 +1473,450 @@ internal static partial class ValidationRunner
         var startedAt = DateTimeOffset.UtcNow;
         var readySloSatisfied = false;
         var consecutiveReadyChecks = 0;
+        var consecutiveFunctionalChecks = 0;
         var sawLiveSuccess = false;
+        var nextProgressLogAt = startedAt.AddMinutes(1);
+        HttpProbeResult? lastReadyProbe = null;
+        HttpProbeResult? lastLiveProbe = null;
+        string? lastFunctionalSignalSummary = null;
         while (true)
         {
-            try
+            lastReadyProbe = await ProbeEndpointAsync(client, "/healthz/ready");
+            if (lastReadyProbe.IsSuccessStatusCode)
             {
-                using var response = await client.GetAsync("/healthz/ready");
-                if (response.IsSuccessStatusCode)
+                if (!readySloSatisfied)
                 {
-                    if (!readySloSatisfied)
+                    var elapsed = (DateTimeOffset.UtcNow - startedAt).TotalSeconds;
+                    if (elapsed > readySloSeconds)
                     {
-                        var elapsed = (DateTimeOffset.UtcNow - startedAt).TotalSeconds;
-                        if (elapsed > readySloSeconds)
-                        {
-                            throw new ValidationException($"Ready SLO failed: {elapsed:0}s exceeds {readySloSeconds}s");
-                        }
-
-                        readySloSatisfied = true;
+                        throw new ValidationException($"Ready SLO failed: {elapsed:0}s exceeds {readySloSeconds}s");
                     }
 
-                    consecutiveReadyChecks++;
-                    if (consecutiveReadyChecks >= 3)
-                    {
-                        return;
-                    }
-
-                    await Task.Delay(TimeSpan.FromSeconds(5));
-                    continue;
+                    readySloSatisfied = true;
                 }
-            }
-            catch
-            {
-                // retry
-            }
 
-            try
-            {
-                using var liveResponse = await client.GetAsync("/healthz/live");
-                if (liveResponse.IsSuccessStatusCode)
+                consecutiveReadyChecks++;
+                if (consecutiveReadyChecks >= 3)
                 {
-                    sawLiveSuccess = true;
-                }
-            }
-            catch
-            {
-                // retry
-            }
-
-            consecutiveReadyChecks = 0;
-
-            if ((DateTimeOffset.UtcNow - startedAt).TotalSeconds > timeoutSeconds)
-            {
-                if (sawLiveSuccess || await HasFunctionalHttpSignalAsync(client))
-                {
-                    Console.WriteLine($"[runner] Readiness endpoint did not stabilize before timeout for {NormalizeBaseUrl(baseUrl)}/healthz/ready; proceeding because /healthz/live succeeded and downstream checks will verify functionality.");
                     return;
                 }
 
-                throw new ValidationException($"Timed out waiting for readiness: {NormalizeBaseUrl(baseUrl)}/healthz/ready");
+                await Task.Delay(TimeSpan.FromSeconds(5));
+                continue;
+            }
+
+            lastLiveProbe = await ProbeEndpointAsync(client, "/healthz/live");
+            if (lastLiveProbe.IsSuccessStatusCode)
+            {
+                sawLiveSuccess = true;
+            }
+
+            var (hasFunctionalSignal, functionalSignalSummary) = await HasFunctionalHttpSignalAsync(client);
+            lastFunctionalSignalSummary = functionalSignalSummary;
+            if (hasFunctionalSignal)
+            {
+                consecutiveFunctionalChecks++;
+                var elapsed = DateTimeOffset.UtcNow - startedAt;
+                if (elapsed >= TimeSpan.FromSeconds(90) && consecutiveFunctionalChecks >= 2)
+                {
+                    Console.WriteLine(
+                        $"[runner] Readiness endpoint did not stabilize for {NormalizeBaseUrl(baseUrl)}/healthz/ready; " +
+                        $"proceeding because protocol-level HTTP checks found a live application. " +
+                        $"ready={SummarizeProbeResult(lastReadyProbe)}, live={SummarizeProbeResult(lastLiveProbe)}, functional={functionalSignalSummary}");
+                    return;
+                }
+            }
+            else
+            {
+                consecutiveFunctionalChecks = 0;
+            }
+
+            consecutiveReadyChecks = 0;
+            var elapsedSeconds = (DateTimeOffset.UtcNow - startedAt).TotalSeconds;
+
+            if (DateTimeOffset.UtcNow >= nextProgressLogAt)
+            {
+                Console.WriteLine(
+                    $"[runner] Cloud readiness still pending for {NormalizeBaseUrl(baseUrl)} after {elapsedSeconds:0}s; " +
+                    $"ready={SummarizeProbeResult(lastReadyProbe)}, live={SummarizeProbeResult(lastLiveProbe)}, functional={lastFunctionalSignalSummary ?? "unavailable"}");
+                nextProgressLogAt = DateTimeOffset.UtcNow.AddMinutes(1);
+            }
+
+            if (elapsedSeconds > timeoutSeconds)
+            {
+                if (sawLiveSuccess || hasFunctionalSignal)
+                {
+                    Console.WriteLine(
+                        $"[runner] Readiness endpoint did not stabilize before timeout for {NormalizeBaseUrl(baseUrl)}/healthz/ready; " +
+                        $"proceeding because fallback HTTP checks found a live application. " +
+                        $"ready={SummarizeProbeResult(lastReadyProbe)}, live={SummarizeProbeResult(lastLiveProbe)}, functional={functionalSignalSummary}");
+                    return;
+                }
+
+                throw new ValidationException(
+                    $"Timed out waiting for readiness: {NormalizeBaseUrl(baseUrl)}/healthz/ready " +
+                    $"(ready={SummarizeProbeResult(lastReadyProbe)}; live={SummarizeProbeResult(lastLiveProbe)}; functional={functionalSignalSummary})");
             }
 
             await Task.Delay(TimeSpan.FromSeconds(10));
         }
     }
 
-    private static async Task<bool> HasFunctionalHttpSignalAsync(HttpClient client)
+    private static async Task<(bool HasSignal, string Summary)> HasFunctionalHttpSignalAsync(HttpClient client)
+    {
+        var adminProbe = await ProbeEndpointAsync(client, "/api/v1/admin/config");
+        var rootProbe = await ProbeEndpointAsync(client, "/");
+        var catalogProbe = await ProbeEndpointAsync(client, "/rest/services?f=pjson");
+
+        var hasSignal =
+            IndicatesAdminSignal(adminProbe) ||
+            IndicatesCatalogSignal(catalogProbe) ||
+            IndicatesRootSignal(rootProbe);
+
+        var summary = string.Join("; ", new[]
+        {
+            SummarizeProbeResult(adminProbe),
+            SummarizeProbeResult(rootProbe),
+            SummarizeProbeResult(catalogProbe),
+        });
+
+        return (hasSignal, summary);
+    }
+
+    private static bool IndicatesAdminSignal(HttpProbeResult probe) =>
+        probe.StatusCode is >= HttpStatusCode.OK and < HttpStatusCode.MultipleChoices or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden;
+
+    private static bool IndicatesCatalogSignal(HttpProbeResult probe) =>
+        probe.StatusCode is >= HttpStatusCode.OK and < HttpStatusCode.MultipleChoices or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden;
+
+    private static bool IndicatesRootSignal(HttpProbeResult probe) =>
+        probe.StatusCode is >= HttpStatusCode.OK and < HttpStatusCode.MultipleChoices or HttpStatusCode.Moved or HttpStatusCode.Redirect or HttpStatusCode.TemporaryRedirect or HttpStatusCode.PermanentRedirect;
+
+    private static async Task<HttpProbeResult> ProbeEndpointAsync(HttpClient client, string path)
     {
         try
         {
-            using var adminResponse = await client.GetAsync("/api/v1/admin/config");
-            if (adminResponse.IsSuccessStatusCode ||
-                adminResponse.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            using var response = await client.GetAsync(path);
+            string? bodyPreview = null;
+            if (!response.IsSuccessStatusCode)
             {
-                return true;
+                bodyPreview = TrimForLog(await response.Content.ReadAsStringAsync());
             }
+
+            return new HttpProbeResult(
+                path,
+                response.StatusCode,
+                response.ReasonPhrase,
+                null,
+                null,
+                bodyPreview);
         }
-        catch
+        catch (Exception exception)
         {
-            // ignore and continue probing
+            return new HttpProbeResult(
+                path,
+                null,
+                null,
+                exception.GetType().Name,
+                TrimForLog(exception.Message),
+                null);
+        }
+    }
+
+    private static string SummarizeProbeResult(HttpProbeResult? result)
+    {
+        if (result is null)
+        {
+            return "unavailable";
         }
 
+        var summary = new StringBuilder(result.Path);
+        if (result.StatusCode is { } statusCode)
+        {
+            summary.Append('=');
+            summary.Append((int)statusCode);
+            if (!string.IsNullOrWhiteSpace(result.ReasonPhrase))
+            {
+                summary.Append(' ');
+                summary.Append(result.ReasonPhrase);
+            }
+        }
+        else
+        {
+            summary.Append("=exception");
+            if (!string.IsNullOrWhiteSpace(result.ExceptionType))
+            {
+                summary.Append(' ');
+                summary.Append(result.ExceptionType);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.ExceptionMessage))
+        {
+            summary.Append(" (");
+            summary.Append(result.ExceptionMessage);
+            summary.Append(')');
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.BodyPreview))
+        {
+            summary.Append(" body=\"");
+            summary.Append(result.BodyPreview);
+            summary.Append('"');
+        }
+
+        return summary.ToString();
+    }
+
+    private static string? TrimForLog(string? value, int maxLength = 160)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var compact = Regex.Replace(value, @"\s+", " ", RegexOptions.CultureInvariant).Trim();
+        if (compact.Length <= maxLength)
+        {
+            return compact;
+        }
+
+        return compact[..maxLength] + "...";
+    }
+
+    private static async Task TryDumpAzureFailureDiagnosticsAsync(
+        RunnerContext context,
+        AzureLiveState state,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment,
+        Exception failure)
+    {
+        if (context.DryRun)
+        {
+            return;
+        }
+
+        Console.WriteLine($"[runner] Capturing Azure failure diagnostics after {failure.GetType().Name}: {TrimForLog(failure.Message)}");
+        Console.WriteLine($"[runner] Azure diagnostic context: resourceGroup={state.ResourceGroupName ?? "<unknown>"}, workload={state.WorkloadName ?? "<unknown>"}, baseUrl={state.BaseUrl ?? "<unknown>"}, activeBaseUrl={state.ActiveBaseUrl ?? "<unknown>"}");
+
+        if (string.IsNullOrWhiteSpace(state.ResourceGroupName) || string.IsNullOrWhiteSpace(state.WorkloadName))
+        {
+            Console.WriteLine("[runner] Azure diagnostics skipped because workload identity is incomplete.");
+            return;
+        }
+
+        await TryDumpCommandOutputAsync(
+            context,
+            "az",
+            [
+                "containerapp",
+                "show",
+                "--resource-group", state.ResourceGroupName,
+                "--name", state.WorkloadName,
+                "--query", "{name:name,provisioningState:properties.provisioningState,runningStatus:properties.runningStatus,latestRevisionName:properties.latestRevisionName,latestReadyRevisionName:properties.latestReadyRevisionName,latestRevisionFqdn:properties.latestRevisionFqdn,ingressFqdn:properties.configuration.ingress.fqdn,outboundIpAddresses:properties.outboundIpAddresses}",
+                "-o", "json",
+            ],
+            credentialsEnvironment,
+            "Azure container app summary");
+
+        await TryDumpCommandOutputAsync(
+            context,
+            "az",
+            [
+                "containerapp",
+                "revision",
+                "list",
+                "--resource-group", state.ResourceGroupName,
+                "--name", state.WorkloadName,
+                "--query", "[].{name:name,active:properties.active,createdTime:properties.createdTime,healthState:properties.healthState,runningState:properties.runningState,fqdn:properties.fqdn}",
+                "-o", "json",
+            ],
+            credentialsEnvironment,
+            "Azure container app revisions");
+
+        await TryDumpCommandOutputAsync(
+            context,
+            "az",
+            [
+                "containerapp",
+                "replica",
+                "list",
+                "--resource-group", state.ResourceGroupName,
+                "--name", state.WorkloadName,
+                "-o", "json",
+            ],
+            credentialsEnvironment,
+            "Azure container app replicas");
+
+        await TryDumpCommandOutputAsync(
+            context,
+            "az",
+            [
+                "containerapp",
+                "logs",
+                "show",
+                "--resource-group", state.ResourceGroupName,
+                "--name", state.WorkloadName,
+                "--follow", "false",
+                "--format", "text",
+                "--tail", "100",
+            ],
+            credentialsEnvironment,
+            "Azure container app logs");
+    }
+
+    private static async Task TryDumpAwsFailureDiagnosticsAsync(
+        RunnerContext context,
+        AwsLiveState state,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment,
+        Exception failure)
+    {
+        if (context.DryRun)
+        {
+            return;
+        }
+
+        Console.WriteLine($"[runner] Capturing AWS failure diagnostics after {failure.GetType().Name}: {TrimForLog(failure.Message)}");
+        Console.WriteLine($"[runner] AWS diagnostic context: cluster={state.ClusterName ?? "<none>"}, workload={state.WorkloadName ?? "<unknown>"}, baseUrl={state.BaseUrl ?? "<unknown>"}");
+
+        if (!string.IsNullOrWhiteSpace(state.ClusterName) && !string.IsNullOrWhiteSpace(state.WorkloadName))
+        {
+            await TryDumpCommandOutputAsync(
+                context,
+                "aws",
+                [
+                    "ecs",
+                    "describe-services",
+                    "--cluster", state.ClusterName,
+                    "--services", state.WorkloadName,
+                    "--output", "json",
+                ],
+                credentialsEnvironment,
+                "AWS ECS service summary");
+        }
+
+        if (!string.IsNullOrWhiteSpace(state.WorkloadName))
+        {
+            await TryDumpCommandOutputAsync(
+                context,
+                "aws",
+                [
+                    "lambda",
+                    "get-function-configuration",
+                    "--function-name", state.WorkloadName,
+                    "--qualifier", "live",
+                    "--output", "json",
+                ],
+                credentialsEnvironment,
+                "AWS Lambda function configuration");
+
+            await TryDumpCommandOutputAsync(
+                context,
+                "aws",
+                [
+                    "lambda",
+                    "get-alias",
+                    "--function-name", state.WorkloadName,
+                    "--name", "live",
+                    "--output", "json",
+                ],
+                credentialsEnvironment,
+                "AWS Lambda alias");
+
+            await TryDumpCommandOutputAsync(
+                context,
+                "aws",
+                [
+                    "logs",
+                    "tail",
+                    $"/aws/lambda/{state.WorkloadName}",
+                    "--since", "1h",
+                    "--format", "short",
+                ],
+                credentialsEnvironment,
+                "AWS Lambda logs");
+        }
+
+        var apiId = TryGetApiGatewayIdFromBaseUrl(state.BaseUrl);
+        if (!string.IsNullOrWhiteSpace(apiId))
+        {
+            await TryDumpCommandOutputAsync(
+                context,
+                "aws",
+                [
+                    "apigatewayv2",
+                    "get-api",
+                    "--api-id", apiId,
+                    "--output", "json",
+                ],
+                credentialsEnvironment,
+                "AWS API Gateway summary");
+
+            await TryDumpCommandOutputAsync(
+                context,
+                "aws",
+                [
+                    "apigatewayv2",
+                    "get-stage",
+                    "--api-id", apiId,
+                    "--stage-name", "$default",
+                    "--output", "json",
+                ],
+                credentialsEnvironment,
+                "AWS API Gateway stage");
+        }
+    }
+
+    private static async Task TryDumpCommandOutputAsync(
+        RunnerContext context,
+        string fileName,
+        IReadOnlyList<string> arguments,
+        IReadOnlyDictionary<string, string?> environment,
+        string label)
+    {
         try
         {
-            using var rootResponse = await client.GetAsync("/");
-            if ((int)rootResponse.StatusCode < 500)
+            var output = await context.ProcessRunner.CaptureAsync(fileName, arguments, context.RepoRoot, environment);
+            if (string.IsNullOrWhiteSpace(output))
             {
-                return true;
+                Console.WriteLine($"[runner] {label}: <empty>");
+                return;
             }
+
+            Console.WriteLine($"[runner] {label}:");
+            Console.WriteLine(output.TrimEnd());
         }
-        catch
+        catch (Exception exception)
         {
-            // ignore and continue probing
+            Console.WriteLine($"[runner] {label} unavailable: {exception.GetType().Name}: {TrimForLog(exception.Message)}");
+        }
+    }
+
+    private static string? TryGetApiGatewayIdFromBaseUrl(string? baseUrl)
+    {
+        if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(NormalizeBaseUrl(baseUrl), UriKind.Absolute, out var uri))
+        {
+            return null;
         }
 
-        try
+        var hostSegments = uri.Host.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (hostSegments.Length < 5 ||
+            !string.Equals(hostSegments[1], "execute-api", StringComparison.OrdinalIgnoreCase))
         {
-            using var catalogResponse = await client.GetAsync("/rest/services?f=pjson");
-            if (catalogResponse.IsSuccessStatusCode ||
-                catalogResponse.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
-            {
-                return true;
-            }
-        }
-        catch
-        {
-            // ignore and continue probing
+            return null;
         }
 
-        return false;
+        return hostSegments[0];
+    }
+
+    private sealed record HttpProbeResult(
+        string Path,
+        HttpStatusCode? StatusCode,
+        string? ReasonPhrase,
+        string? ExceptionType,
+        string? ExceptionMessage,
+        string? BodyPreview)
+    {
+        public bool IsSuccessStatusCode => StatusCode is >= HttpStatusCode.OK and < HttpStatusCode.MultipleChoices;
     }
 
     private static async Task VerifyProtocolEndpointsAsync(RunnerContext context, string baseUrl, string adminApiKey)
@@ -2356,7 +2694,8 @@ internal static partial class ValidationRunner
         {
             environment["TF_VAR_name_prefix"] = settings.ServerlessNamePrefix;
             environment["TF_VAR_honua_image_uri"] = image;
-            environment["TF_VAR_skip_migrations"] = "true";
+            // Live validation needs the serverless stack to converge on a usable database schema.
+            environment["TF_VAR_skip_migrations"] = "false";
             if (!string.IsNullOrWhiteSpace(aliasVersion))
             {
                 environment["TF_VAR_lambda_alias_version"] = aliasVersion;
