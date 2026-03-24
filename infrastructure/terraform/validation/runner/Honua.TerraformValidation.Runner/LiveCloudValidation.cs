@@ -3777,13 +3777,15 @@ internal static partial class ValidationRunner
             try
             {
                 var dataTerraformRoot = Path.Combine(workspace.TerraformRoot, "examples", "aws-data");
-                var dataEnvironment = BuildAwsDataEnvironment(settings, validationEnvironment);
+                var dataEnvironment = BuildAwsDataDestroyEnvironment(settings, validationEnvironment);
                 await DetachAwsDataPostgisExtensionsAsync(context, dataTerraformRoot, dataEnvironment);
                 await DestroyAwsTerraformStackAsync(
                     context,
                     dataTerraformRoot,
                     dataEnvironment,
-                    "data");
+                    "data",
+                    maxAttempts: 2,
+                    timeout: TimeSpan.FromMinutes(20));
                 ClearDataReuseCache(settings.DataCacheFile);
             }
             catch (Exception exception)
@@ -3954,7 +3956,7 @@ internal static partial class ValidationRunner
 
         var extensionAddresses = stateList
             .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(address => address is "module.data.postgresql_extension.postgis[0]" or "module.data.postgresql_extension.postgis_raster[0]")
+            .Where(address => address.StartsWith("module.data.postgresql_", StringComparison.Ordinal))
             .ToArray();
 
         if (extensionAddresses.Length == 0)
@@ -3996,6 +3998,13 @@ internal static partial class ValidationRunner
             ["TF_VAR_db_additional_ingress_cidrs"] = JsonSerializer.Serialize(new[] { settings.DbIngressCidr! }),
             ["TF_VAR_tags"] = settings.ValidationTagsJson,
         };
+    }
+
+    private static Dictionary<string, string?> BuildAwsDataDestroyEnvironment(AwsLiveSettings settings, IReadOnlyDictionary<string, string?> baseEnvironment)
+    {
+        var environment = BuildAwsDataEnvironment(settings, baseEnvironment);
+        environment["TF_VAR_enable_postgis"] = "false";
+        return environment;
     }
 
     private static Dictionary<string, string?> BuildAwsEcsEnvironment(AwsLiveSettings settings, AwsLiveState state, IReadOnlyDictionary<string, string?> baseEnvironment, string image, int desiredCount)
