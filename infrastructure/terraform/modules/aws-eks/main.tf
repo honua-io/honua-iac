@@ -44,9 +44,9 @@ check "managed_node_group_bounds" {
   }
 }
 
- #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
+#checkov:skip=CKV_TF_1: Registry modules are version-pinned.
 module "vpc" {
-  count  = local.use_existing_vpc ? 0 : 1
+  count = local.use_existing_vpc ? 0 : 1
   #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
   #checkov:skip=CKV2_AWS_12: Default SG is managed via module inputs.
   source = "../vendor/aws-vpc"
