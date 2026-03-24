@@ -471,7 +471,9 @@ internal static partial class ValidationRunner
                 ["--kubeconfig", kubeconfigPath, "get", "namespace", "default", "--request-timeout=15s", "-o", "name"],
                 context.RepoRoot,
                 credentialsEnvironment);
-            if (captured && string.Equals(output.Trim(), "namespace/default", StringComparison.OrdinalIgnoreCase))
+            if (captured &&
+                !string.IsNullOrWhiteSpace(output) &&
+                string.Equals(output.Trim(), "namespace/default", StringComparison.OrdinalIgnoreCase))
             {
                 return;
             }
@@ -526,7 +528,10 @@ internal static partial class ValidationRunner
             context.RepoRoot,
             credentialsEnvironment,
             redactOutput: true);
-        if (!hasClusterAdminPolicy || !associatedPolicies.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Contains(clusterAdminPolicyArn, StringComparer.Ordinal))
+        var clusterPolicies = string.IsNullOrWhiteSpace(associatedPolicies)
+            ? Array.Empty<string>()
+            : associatedPolicies.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (!hasClusterAdminPolicy || !clusterPolicies.Contains(clusterAdminPolicyArn, StringComparer.Ordinal))
         {
             await context.ProcessRunner.RunAsync(
                 "aws",

@@ -1702,6 +1702,11 @@ internal static partial class ValidationRunner
             return (false, null, $"subnets configured for VPC {vpcId} could not be described");
         }
 
+        if (string.IsNullOrWhiteSpace(subnetsRaw))
+        {
+            return (false, null, $"subnets configured for VPC {vpcId} returned an empty payload");
+        }
+
         using var document = JsonDocument.Parse(subnetsRaw);
         if (document.RootElement.ValueKind != JsonValueKind.Array)
         {
@@ -1741,7 +1746,7 @@ internal static partial class ValidationRunner
             }
         }
 
-        return (true, vpcCidrRaw.Trim(), string.Empty);
+        return (true, vpcCidrRaw?.Trim(), string.Empty);
     }
 
     private static string[] ParseJsonStringArray(string? rawJson)
