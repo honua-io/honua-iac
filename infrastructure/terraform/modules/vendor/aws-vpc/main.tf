@@ -25,7 +25,9 @@ locals {
 # VPC
 ################################################################################
 
+#checkov:skip=CKV2_AWS_11: Flow logs are optional in this vendored base module and are enabled by callers when required.
 resource "aws_vpc" "this" {
+  #checkov:skip=CKV2_AWS_11: Flow logs are optional in this vendored base module and are enabled by callers when required.
   count = local.create_vpc ? 1 : 0
 
   cidr_block          = var.use_ipam_pool ? null : var.cidr
@@ -1089,7 +1091,9 @@ locals {
   nat_gateway_ips   = var.reuse_nat_ips ? var.external_nat_ip_ids : aws_eip.nat[*].id
 }
 
+#checkov:skip=CKV2_AWS_19: NAT gateway EIPs are intentionally attached to aws_nat_gateway resources rather than EC2 instances.
 resource "aws_eip" "nat" {
+  #checkov:skip=CKV2_AWS_19: NAT gateway EIPs are intentionally attached to aws_nat_gateway resources rather than EC2 instances.
   count = local.create_vpc && var.enable_nat_gateway && !var.reuse_nat_ips ? local.nat_gateway_count : 0
 
   domain = "vpc"

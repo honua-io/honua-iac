@@ -73,7 +73,9 @@ resource "aws_vpc_endpoint" "this" {
 # Security Group
 ################################################################################
 
+#checkov:skip=CKV2_AWS_5: This security group is attached indirectly through the VPC endpoint resources in this module.
 resource "aws_security_group" "this" {
+  #checkov:skip=CKV2_AWS_5: This security group is attached indirectly through the VPC endpoint resources in this module.
   count = var.create && var.create_security_group ? 1 : 0
 
   name        = var.security_group_name
