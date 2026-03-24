@@ -63,3 +63,14 @@ variable "tags" {
   description = "Tags to apply to the IAM user and policy."
   default     = {}
 }
+
+variable "managed_name_globs" {
+  type        = list(string)
+  description = "Glob patterns for runtime AWS resource names this bootstrap identity may manage."
+  default     = ["honua*"]
+
+  validation {
+    condition     = length([for glob in var.managed_name_globs : trimspace(glob) if trimspace(glob) != ""]) > 0
+    error_message = "managed_name_globs must contain at least one non-empty glob."
+  }
+}

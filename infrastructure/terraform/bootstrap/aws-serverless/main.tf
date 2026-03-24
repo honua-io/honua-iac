@@ -17,15 +17,23 @@ data "aws_caller_identity" "current" {}
 data "aws_partition" "current" {}
 
 locals {
-  user_name                  = var.user_name != "" ? var.user_name : "${var.name_prefix}-${var.environment}"
-  role_name                  = var.role_name != "" ? var.role_name : "${local.user_name}-federated"
-  oidc_provider_key          = var.oidc_provider_arn != "" ? split("oidc-provider/", var.oidc_provider_arn)[1] : ""
-  managed_name_glob          = "honua*"
-  managed_role_arn           = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${local.managed_name_glob}"
-  managed_policy_arn         = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:policy/${local.managed_name_glob}"
-  managed_bucket_arn         = "arn:${data.aws_partition.current.partition}:s3:::${local.managed_name_glob}"
-  managed_lambda_arn         = "arn:${data.aws_partition.current.partition}:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${local.managed_name_glob}"
-  managed_ecr_repository_arn = "arn:${data.aws_partition.current.partition}:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/${local.managed_name_glob}"
+  user_name          = var.user_name != "" ? var.user_name : "${var.name_prefix}-${var.environment}"
+  role_name          = var.role_name != "" ? var.role_name : "${local.user_name}-federated"
+  oidc_provider_key  = var.oidc_provider_arn != "" ? split("oidc-provider/", var.oidc_provider_arn)[1] : ""
+  managed_name_globs = distinct(compact([for glob in var.managed_name_globs : trimspace(glob)]))
+  managed_role_arns = [
+    for glob in local.managed_name_globs : "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${glob}"
+  ]
+  managed_policy_arns = [
+    for glob in local.managed_name_globs : "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:policy/${glob}"
+  ]
+  managed_bucket_arns = [for glob in local.managed_name_globs : "arn:${data.aws_partition.current.partition}:s3:::${glob}"]
+  managed_lambda_arns = [
+    for glob in local.managed_name_globs : "arn:${data.aws_partition.current.partition}:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${glob}"
+  ]
+  managed_ecr_repository_arns = [
+    for glob in local.managed_name_globs : "arn:${data.aws_partition.current.partition}:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/${glob}"
+  ]
 }
 
 check "bootstrap_identity_surface" {
@@ -195,10 +203,10 @@ data "aws_iam_policy_document" "terraform" {
       "s3:PutEncryptionConfiguration",
       "s3:PutObject"
     ]
-    resources = [
-      local.managed_bucket_arn,
-      "${local.managed_bucket_arn}/*"
-    ]
+    resources = concat(
+      local.managed_bucket_arns,
+      [for arn in local.managed_bucket_arns : "${arn}/*"]
+    )
   }
 
   statement {
@@ -206,7 +214,7 @@ data "aws_iam_policy_document" "terraform" {
     actions = [
       "lambda:InvokeFunction"
     ]
-    resources = [local.managed_lambda_arn]
+    resources = local.managed_lambda_arns
   }
 
   statement {
@@ -221,7 +229,7 @@ data "aws_iam_policy_document" "terraform" {
       "ecr:TagResource",
       "ecr:UntagResource"
     ]
-    resources = [local.managed_ecr_repository_arn]
+    resources = local.managed_ecr_repository_arns
   }
 
   statement {
@@ -249,7 +257,7 @@ data "aws_iam_policy_document" "terraform" {
       "iam:TagRole",
       "iam:UntagRole"
     ]
-    resources = [local.managed_role_arn]
+    resources = local.managed_role_arns
   }
 
   statement {
@@ -265,7 +273,7 @@ data "aws_iam_policy_document" "terraform" {
       "iam:TagPolicy",
       "iam:UntagPolicy"
     ]
-    resources = [local.managed_policy_arn]
+    resources = local.managed_policy_arns
   }
 
   statement {
@@ -273,7 +281,7 @@ data "aws_iam_policy_document" "terraform" {
     actions = [
       "iam:PassRole"
     ]
-    resources = [local.managed_role_arn]
+    resources = local.managed_role_arns
 
     condition {
       test     = "StringEquals"

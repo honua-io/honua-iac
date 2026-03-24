@@ -91,8 +91,12 @@ module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 20.0"
 
-  cluster_name    = "${local.name}-eks"
-  cluster_version = var.cluster_version
+  cluster_name                              = "${local.name}-eks"
+  cluster_version                           = var.cluster_version
+  iam_role_name                             = "${local.name}-eks-cluster"
+  iam_role_use_name_prefix                  = false
+  cluster_encryption_policy_name            = "${local.name}-eks-cluster-encryption"
+  cluster_encryption_policy_use_name_prefix = false
 
   cluster_endpoint_public_access           = var.cluster_endpoint_public_access
   cluster_endpoint_public_access_cidrs     = var.cluster_endpoint_public_access_cidrs
@@ -124,14 +128,16 @@ module "eks" {
 
   eks_managed_node_groups = {
     default = {
-      name           = "default"
-      instance_types = var.node_instance_types
-      ami_type       = "AL2023_x86_64_STANDARD"
-      disk_size      = 50
-      min_size       = var.node_min_size
-      max_size       = var.node_max_size
-      desired_size   = var.node_desired_size
-      subnet_ids     = local.private_subnets
+      name                     = "default"
+      iam_role_name            = "${local.name}-eks-node"
+      iam_role_use_name_prefix = false
+      instance_types           = var.node_instance_types
+      ami_type                 = "AL2023_x86_64_STANDARD"
+      disk_size                = 50
+      min_size                 = var.node_min_size
+      max_size                 = var.node_max_size
+      desired_size             = var.node_desired_size
+      subnet_ids               = local.private_subnets
     }
   }
 

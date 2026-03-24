@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace Honua.TerraformValidation.Runner;
@@ -206,12 +207,21 @@ internal static partial class ValidationRunner
 
         var leases = new List<BootstrapLease<AwsBootstrapCredentials>>();
         Exception? bodyFailure = null;
+        string? awsNamePrefixBase = env.GetOptional("HONUA_AWS_NAME_PREFIX_BASE");
 
         try
         {
             foreach (var stack in Expand(requestedStack))
             {
-                var lease = await BootstrapAwsAsync(context, manifest, stack, bootstrapRoot, rootCredentials);
+                var settings = BuildAwsLiveSettings(command, context, stack, planRoot);
+                if (string.IsNullOrWhiteSpace(awsNamePrefixBase))
+                {
+                    awsNamePrefixBase = settings.DataNamePrefix[..^4];
+                    System.Environment.SetEnvironmentVariable("HONUA_AWS_NAME_PREFIX_BASE", awsNamePrefixBase);
+                    Console.WriteLine($"[runner] Fixed AWS live name prefix base to '{awsNamePrefixBase}' for bootstrap/runtime consistency");
+                }
+
+                var lease = await BootstrapAwsAsync(context, manifest, stack, bootstrapRoot, rootCredentials, BuildAwsBootstrapManagedNameGlobs(settings, stack));
                 leases.Add(lease);
                 await RunAwsValidationAsync(command, context, manifest, stack, lease.Credentials, planRoot);
             }
@@ -310,7 +320,15 @@ internal static partial class ValidationRunner
 
         try
         {
-            lease = await BootstrapManagedAwsAsync(context, manifest, bootstrapDir, rootCredentials);
+            var settings = BuildEksSettings(command, env, planDir);
+            if (string.IsNullOrWhiteSpace(env.GetOptional("HONUA_EKS_NAME_PREFIX_BASE")))
+            {
+                var eksNamePrefixBase = settings.NamePrefix[..^2];
+                System.Environment.SetEnvironmentVariable("HONUA_EKS_NAME_PREFIX_BASE", eksNamePrefixBase);
+                Console.WriteLine($"[runner] Fixed EKS live name prefix base to '{eksNamePrefixBase}' for bootstrap/runtime consistency");
+            }
+
+            lease = await BootstrapManagedAwsAsync(context, manifest, bootstrapDir, rootCredentials, BuildEksBootstrapManagedNameGlobs(settings));
             await RunEksValidationAsync(command, context, manifest, lease.Credentials, planDir);
         }
         catch (Exception exception)
@@ -424,7 +442,8 @@ internal static partial class ValidationRunner
         ScenarioManifest manifest,
         AwsStack stack,
         string bootstrapRoot,
-        IReadOnlyDictionary<string, string?> rootCredentials)
+        IReadOnlyDictionary<string, string?> rootCredentials,
+        IReadOnlyList<string> managedNameGlobs)
     {
         var bootstrapName = stack switch
         {
@@ -456,6 +475,7 @@ internal static partial class ValidationRunner
                 "-var", "create_iam_user=true",
                 "-var", "create_access_key=true",
                 "-var", $"user_name={userName}",
+                "-var", $"managed_name_globs={JsonSerializer.Serialize(managedNameGlobs)}",
             ],
             context.RepoRoot,
             rootCredentials);
@@ -504,7 +524,8 @@ internal static partial class ValidationRunner
         RunnerContext context,
         ScenarioManifest manifest,
         string bootstrapDir,
-        IReadOnlyDictionary<string, string?> rootCredentials)
+        IReadOnlyDictionary<string, string?> rootCredentials,
+        IReadOnlyList<string> managedNameGlobs)
     {
         var bootstrapModule = GetRequiredBootstrapModule(manifest, "eks");
         CopyTerraformFiles(context.ResolveRepoRelativePath(bootstrapModule.SourcePath), bootstrapDir);
@@ -521,6 +542,7 @@ internal static partial class ValidationRunner
                 "-var", "create_iam_user=true",
                 "-var", "create_access_key=true",
                 "-var", $"user_name={bootstrapModule.ExpandUserName(context)}",
+                "-var", $"managed_name_globs={JsonSerializer.Serialize(managedNameGlobs)}",
             ],
             context.RepoRoot,
             rootCredentials);
@@ -658,6 +680,17 @@ internal static partial class ValidationRunner
                 env.GetRequired("HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE");
             }
         }
+    }
+
+    private static IReadOnlyList<string> BuildAwsBootstrapManagedNameGlobs(AwsLiveSettings settings, AwsStack stack)
+    {
+        var runtimeNamePrefix = stack == AwsStack.Ecs ? settings.EcsNamePrefix : settings.ServerlessNamePrefix;
+        return [$"{runtimeNamePrefix}-{settings.Environment}*"];
+    }
+
+    private static IReadOnlyList<string> BuildEksBootstrapManagedNameGlobs(ManagedEksSettings settings)
+    {
+        return [$"{settings.NamePrefix}-{settings.Environment}*"];
     }
 
     private static async Task RunTflintAsync(RunnerContext context, ScenarioManifest manifest, string rootPath, bool strictMode)
