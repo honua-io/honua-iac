@@ -97,11 +97,17 @@ resource "azurerm_role_assignment" "registry_pull" {
 #checkov:skip=CKV2_AZURE_33: Private endpoints are configured outside this module.
 #checkov:skip=CKV2_AZURE_40: Shared key authorization is retained so validation tooling can exercise blob storage safely.
 #checkov:skip=CKV2_AZURE_41: SAS expiration policies are managed outside this module.
+#checkov:skip=CKV_AZURE_59: Public access is constrained by deny-by-default network rules and optional private endpoints are managed outside this module.
+#checkov:skip=CKV_AZURE_206: Replication strategy is environment-specific for optional application object storage.
+#checkov:skip=CKV_AZURE_33: Queue logging is not configured because this storage account is used for blob containers, not queue workloads.
 resource "azurerm_storage_account" "app_storage" {
   #checkov:skip=CKV2_AZURE_1: Customer-managed keys are optional and managed outside this module.
   #checkov:skip=CKV2_AZURE_33: Private endpoints are configured outside this module.
   #checkov:skip=CKV2_AZURE_40: Shared key authorization is retained so validation tooling can exercise blob storage safely.
   #checkov:skip=CKV2_AZURE_41: SAS expiration policies are managed outside this module.
+  #checkov:skip=CKV_AZURE_59: Public access is constrained by deny-by-default network rules and optional private endpoints are managed outside this module.
+  #checkov:skip=CKV_AZURE_206: Replication strategy is environment-specific for optional application object storage.
+  #checkov:skip=CKV_AZURE_33: Queue logging is not configured because this storage account is used for blob containers, not queue workloads.
   count = var.app_storage_enabled ? 1 : 0
 
   name                            = local.app_storage_account_name
