@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
@@ -6,12 +7,17 @@ namespace Honua.TerraformValidation.Runner;
 
 internal sealed class RunnerContext
 {
+    private readonly string bootstrapTemplateRunAttempt;
+    private readonly string bootstrapTemplateRunId;
+    private readonly string bootstrapWorkspaceSuffix;
+
     private RunnerContext(string repoRoot, string tempRoot, bool dryRun)
     {
         RepoRoot = repoRoot;
         TempRoot = tempRoot;
         DryRun = dryRun;
         Environment = new EnvironmentReader();
+        (bootstrapTemplateRunId, bootstrapTemplateRunAttempt, bootstrapWorkspaceSuffix) = ResolveBootstrapTemplateValues(Environment);
         ProcessRunner = new ProcessRunner(dryRun);
     }
 
@@ -28,6 +34,12 @@ internal sealed class RunnerContext
     public string GitHubRunId => Environment.GetOrDefault("GITHUB_RUN_ID", "local");
 
     public string GitHubRunAttempt => Environment.GetOrDefault("GITHUB_RUN_ATTEMPT", "0");
+
+    public string BootstrapTemplateRunId => bootstrapTemplateRunId;
+
+    public string BootstrapTemplateRunAttempt => bootstrapTemplateRunAttempt;
+
+    public string BootstrapWorkspaceSuffix => bootstrapWorkspaceSuffix;
 
     public static RunnerContext Create(ParsedCommand command)
     {
@@ -59,6 +71,30 @@ internal sealed class RunnerContext
     private static string NormalizeRelativePath(string relativePath)
     {
         return relativePath.Replace('/', Path.DirectorySeparatorChar);
+    }
+
+    private static (string RunId, string RunAttempt, string WorkspaceSuffix) ResolveBootstrapTemplateValues(EnvironmentReader environment)
+    {
+        var gitHubRunId = environment.GetOrDefault("GITHUB_RUN_ID", "local");
+        var gitHubRunAttempt = environment.GetOrDefault("GITHUB_RUN_ATTEMPT", "0");
+        if (!string.Equals(gitHubRunId, "local", StringComparison.OrdinalIgnoreCase))
+        {
+            return (gitHubRunId, gitHubRunAttempt, $"{gitHubRunId}-{gitHubRunAttempt}");
+        }
+
+        var validationRunId = environment.GetOptional("HONUA_VALIDATION_RUN_ID");
+        var localSource = string.IsNullOrWhiteSpace(validationRunId)
+            ? $"local-{DateTime.UtcNow:yyyyMMddHHmmss}"
+            : validationRunId;
+        var localToken = ComputeShortStableToken(localSource);
+        return (localToken, "0", localToken);
+    }
+
+    private static string ComputeShortStableToken(string value)
+    {
+        using var sha256 = SHA256.Create();
+        var hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(value));
+        return Convert.ToHexString(hash[..5]).ToLowerInvariant();
     }
 }
 
@@ -207,13 +243,25 @@ internal sealed class EnvironmentReader
 
 internal sealed class ProcessRunner(bool dryRun)
 {
+    private static readonly HashSet<string> SensitiveArgumentNames = new(StringComparer.Ordinal)
+    {
+        "-p",
+        "--password",
+        "--client-secret",
+        "--secret",
+        "--secret-access-key",
+        "--token",
+        "--auth-token",
+    };
+
     public async Task RunAsync(
         string fileName,
         IEnumerable<string> arguments,
         string workingDirectory,
-        IReadOnlyDictionary<string, string?>? environmentOverrides = null)
+        IReadOnlyDictionary<string, string?>? environmentOverrides = null,
+        TimeSpan? timeout = null)
     {
-        await RunWithInputAsync(fileName, arguments, workingDirectory, standardInput: null, environmentOverrides);
+        await RunWithInputAsync(fileName, arguments, workingDirectory, standardInput: null, environmentOverrides, timeout);
     }
 
     public async Task RunWithInputAsync(
@@ -221,7 +269,8 @@ internal sealed class ProcessRunner(bool dryRun)
         IEnumerable<string> arguments,
         string workingDirectory,
         string? standardInput,
-        IReadOnlyDictionary<string, string?>? environmentOverrides = null)
+        IReadOnlyDictionary<string, string?>? environmentOverrides = null,
+        TimeSpan? timeout = null)
     {
         var commandText = FormatCommand(fileName, arguments);
         Console.WriteLine($"[runner] {commandText}");
@@ -262,7 +311,11 @@ internal sealed class ProcessRunner(bool dryRun)
         }
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
-        await process.WaitForExitAsync();
+        if (!await WaitForExitWithinAsync(process, timeout))
+        {
+            throw new TimeoutException($"Command timed out after {FormatTimeout(timeout)}: {commandText}");
+        }
+
         if (process.ExitCode != 0)
         {
             throw new CommandExecutionException(commandText, process.ExitCode, output: null);
@@ -353,6 +406,51 @@ internal sealed class ProcessRunner(bool dryRun)
         return stdout.TrimEnd('\r', '\n');
     }
 
+    private static async Task<bool> WaitForExitWithinAsync(Process process, TimeSpan? timeout)
+    {
+        if (timeout is null)
+        {
+            await process.WaitForExitAsync();
+            return true;
+        }
+
+        var waitTask = process.WaitForExitAsync();
+        var delayTask = Task.Delay(timeout.Value);
+        var completedTask = await Task.WhenAny(waitTask, delayTask);
+        if (completedTask == waitTask)
+        {
+            await waitTask;
+            return true;
+        }
+
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch
+        {
+            // Best effort. The timeout exception still captures the failure mode.
+        }
+
+        await process.WaitForExitAsync();
+        return false;
+    }
+
+    private static string FormatTimeout(TimeSpan? timeout)
+    {
+        if (timeout is null)
+        {
+            return "unknown duration";
+        }
+
+        return timeout.Value.TotalMinutes >= 1
+            ? $"{timeout.Value.TotalMinutes:0.#}m"
+            : $"{timeout.Value.TotalSeconds:0}s";
+    }
+
     private static Process CreateProcess(
         string fileName,
         IEnumerable<string> arguments,
@@ -410,11 +508,50 @@ internal sealed class ProcessRunner(bool dryRun)
                 : value;
         }
 
+        static bool IsSensitiveKey(string key)
+        {
+            return key.Contains("password", StringComparison.OrdinalIgnoreCase) ||
+                   key.Contains("client_secret", StringComparison.OrdinalIgnoreCase) ||
+                   key.Contains("secret_access_key", StringComparison.OrdinalIgnoreCase) ||
+                   key.Contains("auth_token", StringComparison.OrdinalIgnoreCase) ||
+                   key.Contains("token", StringComparison.OrdinalIgnoreCase);
+        }
+
+        static string RedactIfSensitiveAssignment(string argument)
+        {
+            var separatorIndex = argument.IndexOf('=');
+            if (separatorIndex <= 0)
+            {
+                return argument;
+            }
+
+            var key = argument[..separatorIndex];
+            return IsSensitiveKey(key)
+                ? $"{key}=<redacted>"
+                : argument;
+        }
+
         var builder = new StringBuilder(fileName);
+        var redactNextArgument = false;
         foreach (var argument in arguments)
         {
+            var displayedArgument = argument;
+            if (redactNextArgument)
+            {
+                displayedArgument = "<redacted>";
+                redactNextArgument = false;
+            }
+            else
+            {
+                displayedArgument = RedactIfSensitiveAssignment(argument);
+                if (SensitiveArgumentNames.Contains(argument))
+                {
+                    redactNextArgument = true;
+                }
+            }
+
             builder.Append(' ');
-            builder.Append(Quote(argument));
+            builder.Append(Quote(displayedArgument));
         }
 
         return builder.ToString();

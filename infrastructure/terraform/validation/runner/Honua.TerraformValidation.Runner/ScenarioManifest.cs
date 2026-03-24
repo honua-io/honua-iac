@@ -72,6 +72,16 @@ internal static class ScenarioManifestLoader
             }
         }
 
+        if (scenario == ScenarioName.AzureLive)
+        {
+            ValidateTargetDescriptors(manifest, manifestPath, ["aca", "functions"]);
+        }
+
+        if (scenario == ScenarioName.AwsLive)
+        {
+            ValidateTargetDescriptors(manifest, manifestPath, ["ecs", "serverless"]);
+        }
+
         if (scenario == ScenarioName.Drift && manifest.DriftDefaults is null)
         {
             throw new ValidationException($"Drift scenario manifest is missing driftDefaults: {manifestPath}");
@@ -130,6 +140,30 @@ internal static class ScenarioManifestLoader
             }
         }
     }
+
+    private static void ValidateTargetDescriptors(ScenarioManifest manifest, string manifestPath, IReadOnlyList<string> requiredTargets)
+    {
+        if (manifest.TargetDescriptors is null || manifest.TargetDescriptors.Count == 0)
+        {
+            throw new ValidationException($"Scenario manifest is missing targetDescriptors: {manifestPath}");
+        }
+
+        var missingTargets = requiredTargets
+            .Where(target => !manifest.TargetDescriptors.ContainsKey(target))
+            .ToArray();
+        if (missingTargets.Length > 0)
+        {
+            throw new ValidationException($"Scenario manifest is missing targetDescriptors entries in {manifestPath}: {string.Join(", ", missingTargets)}");
+        }
+
+        foreach (var target in requiredTargets)
+        {
+            if (manifest.TargetDescriptors[target].Outputs is null || manifest.TargetDescriptors[target].Outputs!.Count == 0)
+            {
+                throw new ValidationException($"Scenario manifest targetDescriptor '{target}' is missing outputs: {manifestPath}");
+            }
+        }
+    }
 }
 
 internal sealed class ScenarioManifest
@@ -151,6 +185,9 @@ internal sealed class ScenarioManifest
 
     [JsonPropertyName("bootstrapModules")]
     public Dictionary<string, BootstrapModuleManifest>? BootstrapModules { get; init; }
+
+    [JsonPropertyName("targetDescriptors")]
+    public Dictionary<string, TargetDescriptorManifest>? TargetDescriptors { get; init; }
 
     [JsonPropertyName("driftDefaults")]
     public DriftDefaultsManifest? DriftDefaults { get; init; }
@@ -181,6 +218,38 @@ internal sealed class ScenarioManifest
 
     [JsonPropertyName("tfsecTargets")]
     public List<string>? TfsecTargets { get; init; }
+
+    public TargetDescriptorManifest? GetTargetDescriptor(string targetId)
+    {
+        if (TargetDescriptors is null || !TargetDescriptors.TryGetValue(targetId, out var descriptor))
+        {
+            return null;
+        }
+
+        return descriptor;
+    }
+
+    public TargetDescriptorManifest GetRequiredTargetDescriptor(string targetId)
+    {
+        return GetTargetDescriptor(targetId)
+            ?? throw new ValidationException($"Scenario manifest is missing required targetDescriptor '{targetId}'.");
+    }
+}
+
+internal sealed class TargetDescriptorManifest
+{
+    [JsonPropertyName("outputs")]
+    public Dictionary<string, List<string>>? Outputs { get; init; }
+
+    public IReadOnlyList<string>? GetOutputPaths(string key)
+    {
+        if (Outputs is null || !Outputs.TryGetValue(key, out var paths))
+        {
+            return null;
+        }
+
+        return paths;
+    }
 }
 
 internal sealed class BootstrapModuleManifest
@@ -211,8 +280,8 @@ internal sealed class BootstrapModuleManifest
         }
 
         return template
-            .Replace("{runId}", context.GitHubRunId, StringComparison.Ordinal)
-            .Replace("{runAttempt}", context.GitHubRunAttempt, StringComparison.Ordinal);
+            .Replace("{runId}", context.BootstrapTemplateRunId, StringComparison.Ordinal)
+            .Replace("{runAttempt}", context.BootstrapTemplateRunAttempt, StringComparison.Ordinal);
     }
 }
 

@@ -15,5 +15,93 @@
       "appNameTemplate": "honua-tf-fn-{runId}-{runAttempt}",
       "roleNameTemplate": "Honua TF Functions {runId} {runAttempt}"
     }
+  },
+  "targetDescriptors": {
+    "aca": {
+      "outputs": {
+        "baseUrl": [
+          "deploy_contract.value.endpoint"
+        ],
+        "databaseHost": [
+          "deployment_contract.value.dependencies.database.host"
+        ],
+        "databaseSecretRef": [
+          "deploy_contract.value.secret_refs.database_connection.id"
+        ],
+        "cacheSecretRef": [
+          "deploy_contract.value.secret_refs.redis_connection.id"
+        ],
+        "resourceGroup": [
+          "deploy_contract.value.resource_group"
+        ],
+        "workloadName": [
+          "deploy_contract.value.target_name"
+        ],
+        "currentRevision": [
+          "deploy_contract.value.current_revision"
+        ],
+        "desiredRevision": [
+          "deploy_contract.value.desired_revision"
+        ],
+        "deployTargetId": [
+          "deploy_contract.value.target_id"
+        ],
+        "objectStorageEnabled": [
+          "deploy_contract.value.object_storage_refs.enabled"
+        ],
+        "azureObjectStorageAccountName": [
+          "deploy_contract.value.object_storage_refs.storage_account_name"
+        ],
+        "azureObjectStorageAccountId": [
+          "deploy_contract.value.object_storage_refs.storage_account_id"
+        ],
+        "azureObjectStorageContainerName": [
+          "deploy_contract.value.object_storage_refs.container_name"
+        ]
+      }
+    },
+    "functions": {
+      "outputs": {
+        "baseUrl": [
+          "deploy_contract.value.endpoint"
+        ],
+        "databaseHost": [
+          "deployment_contract.value.dependencies.database.host"
+        ],
+        "databaseSecretRef": [
+          "deploy_contract.value.secret_refs.database_connection.id"
+        ],
+        "cacheSecretRef": [
+          "deploy_contract.value.secret_refs.redis_connection.id"
+        ],
+        "resourceGroup": [
+          "deploy_contract.value.resource_group"
+        ],
+        "workloadName": [
+          "deploy_contract.value.target_name"
+        ],
+        "currentRevision": [
+          "deploy_contract.value.current_revision"
+        ],
+        "desiredRevision": [
+          "deploy_contract.value.desired_revision"
+        ],
+        "deployTargetId": [
+          "deploy_contract.value.target_id"
+        ],
+        "objectStorageEnabled": [
+          "deploy_contract.value.object_storage_refs.enabled"
+        ],
+        "azureObjectStorageAccountName": [
+          "deploy_contract.value.object_storage_refs.storage_account_name"
+        ],
+        "azureObjectStorageAccountId": [
+          "deploy_contract.value.object_storage_refs.storage_account_id"
+        ],
+        "azureObjectStorageContainerName": [
+          "deploy_contract.value.object_storage_refs.container_name"
+        ]
+      }
+    }
   }
 }

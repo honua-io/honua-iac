@@ -253,7 +253,7 @@ internal static partial class ValidationRunner
             env.GetRequired("HONUA_K8S_PREVIOUS_IMAGE");
         }
 
-        var bootstrapDir = context.ResolveTempRelativePath(RequiredManifestValue(manifest.BootstrapRoot, manifest, "bootstrapRoot"));
+        var bootstrapDir = ResolveBootstrapDirectory(context, manifest, "aks");
         var planDir = context.ResolveTempRelativePath(RequiredManifestValue(manifest.PlanArtifactRoot, manifest, "planArtifactRoot"));
         Directory.CreateDirectory(bootstrapDir);
         Directory.CreateDirectory(planDir);
@@ -300,7 +300,7 @@ internal static partial class ValidationRunner
             env.GetRequired("HONUA_K8S_PREVIOUS_IMAGE");
         }
 
-        var bootstrapDir = context.ResolveTempRelativePath(RequiredManifestValue(manifest.BootstrapRoot, manifest, "bootstrapRoot"));
+        var bootstrapDir = ResolveBootstrapDirectory(context, manifest, "eks");
         var planDir = context.ResolveTempRelativePath(RequiredManifestValue(manifest.PlanArtifactRoot, manifest, "planArtifactRoot"));
         Directory.CreateDirectory(bootstrapDir);
         Directory.CreateDirectory(planDir);
@@ -392,7 +392,7 @@ internal static partial class ValidationRunner
             _ => throw new ValidationException($"Unsupported Azure stack bootstrap: {stack}"),
         };
 
-        var bootstrapDir = Path.Combine(bootstrapRoot, bootstrapName);
+        var bootstrapDir = Path.Combine(bootstrapRoot, $"{bootstrapName}-{context.BootstrapWorkspaceSuffix}");
         Directory.CreateDirectory(bootstrapDir);
 
         var bootstrapModule = GetRequiredBootstrapModule(manifest, bootstrapName);
@@ -406,7 +406,7 @@ internal static partial class ValidationRunner
 
         await context.ProcessRunner.RunAsync(
             "terraform",
-            ["-chdir=" + bootstrapDir, "apply", "-input=false", "-auto-approve", "-no-color", "-var", $"app_name={appName}", "-var", $"role_name={roleName}"],
+            ["-chdir=" + bootstrapDir, "apply", "-input=false", "-auto-approve", "-no-color", "-var", $"app_name={appName}", "-var", $"role_name={roleName}", "-var", "create_client_secret=true"],
             context.RepoRoot,
             rootCredentials);
 
@@ -433,7 +433,7 @@ internal static partial class ValidationRunner
             _ => throw new ValidationException($"Unsupported AWS stack bootstrap: {stack}"),
         };
 
-        var bootstrapDir = Path.Combine(bootstrapRoot, bootstrapName);
+        var bootstrapDir = Path.Combine(bootstrapRoot, $"{bootstrapName}-{context.BootstrapWorkspaceSuffix}");
         Directory.CreateDirectory(bootstrapDir);
 
         var bootstrapModule = GetRequiredBootstrapModule(manifest, bootstrapName);
@@ -453,6 +453,7 @@ internal static partial class ValidationRunner
                 "-auto-approve",
                 "-no-color",
                 "-var", $"aws_region={context.Environment.GetOrDefaultAny(["AWS_VALIDATION_REGION", "HONUA_AWS_VALIDATION_REGION"], "us-east-1")}",
+                "-var", "create_iam_user=true",
                 "-var", "create_access_key=true",
                 "-var", $"user_name={userName}",
             ],
@@ -485,6 +486,7 @@ internal static partial class ValidationRunner
                 "-no-color",
                 "-var", $"app_name={bootstrapModule.ExpandAppName(context)}",
                 "-var", $"role_name={bootstrapModule.ExpandRoleName(context)}",
+                "-var", "create_client_secret=true",
             ],
             context.RepoRoot,
             rootCredentials);
@@ -516,6 +518,7 @@ internal static partial class ValidationRunner
                 "-auto-approve",
                 "-no-color",
                 "-var", $"aws_region={context.Environment.GetOrDefaultAny(["AWS_VALIDATION_REGION", "HONUA_AWS_VALIDATION_REGION"], "us-east-1")}",
+                "-var", "create_iam_user=true",
                 "-var", "create_access_key=true",
                 "-var", $"user_name={bootstrapModule.ExpandUserName(context)}",
             ],
@@ -538,8 +541,7 @@ internal static partial class ValidationRunner
         IReadOnlyDictionary<string, string?> rootCredentials,
         string planRoot)
     {
-        _ = manifest;
-        await ExecuteNativeAzureValidationAsync(command, context, stack, credentials, rootCredentials, planRoot);
+        await ExecuteNativeAzureValidationAsync(command, context, manifest, stack, credentials, rootCredentials, planRoot);
     }
 
     private static async Task RunAwsValidationAsync(
@@ -550,8 +552,7 @@ internal static partial class ValidationRunner
         AwsBootstrapCredentials credentials,
         string planRoot)
     {
-        _ = manifest;
-        await RunNativeAwsValidationAsync(command, context, stack, credentials, planRoot);
+        await RunNativeAwsValidationAsync(command, context, manifest, stack, credentials, planRoot);
     }
 
     private static async Task RunAksValidationAsync(
@@ -609,6 +610,12 @@ internal static partial class ValidationRunner
             ["-chdir=" + lease.Directory, "destroy", "-input=false", "-auto-approve", "-no-color"],
             context.RepoRoot,
             rootCredentials);
+    }
+
+    private static string ResolveBootstrapDirectory(RunnerContext context, ScenarioManifest manifest, string bootstrapName)
+    {
+        var bootstrapRoot = context.ResolveTempRelativePath(RequiredManifestValue(manifest.BootstrapRoot, manifest, "bootstrapRoot"));
+        return Path.Combine(bootstrapRoot, $"{bootstrapName}-{context.BootstrapWorkspaceSuffix}");
     }
 
     private static void ValidateAzureImages(EnvironmentReader env, AzureStackSelection stackSelection, bool runUpgradeRollback)
@@ -691,7 +698,7 @@ internal static partial class ValidationRunner
             return;
         }
 
-        var checkovImage = GetScenarioSetting(context.Environment, manifest, "HONUA_CHECKOV_IMAGE", "bridgecrew/checkov:3.2.497");
+        var checkovImage = GetScenarioSetting(context.Environment, manifest, "HONUA_CHECKOV_IMAGE", "bridgecrew/checkov:3.2.477");
         var checkovSkipChecks = GetScenarioSetting(context.Environment, manifest, "HONUA_CHECKOV_SKIP_CHECKS", "CKV_TF_1,CKV_AWS_149,CKV_AWS_191");
 
         foreach (var configuredTarget in manifest.CheckovTargets ?? [])
@@ -823,18 +830,37 @@ internal static partial class ValidationRunner
         AssertRegexPresent(@"minimum_tls_version\s*=\s*""1\.2""", ResolvePathUnderRoot(rootPath, "modules/azure-aca/main.tf"), "azure-aca-redis-tls12");
         AssertRegexPresent(@"minimum_tls_version\s*=\s*""1\.2""", ResolvePathUnderRoot(rootPath, "modules/azure-data/main.tf"), "azure-data-redis-tls12");
         AssertRegexPresent(@"minimum_tls_version\s*=\s*""1\.2""", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-redis-tls12");
+        AssertRegexAbsent(@"AmazonECSTaskExecutionRolePolicy", ResolvePathUnderRoot(rootPath, "modules/aws-ecs/main.tf"), "aws-ecs-managed-task-execution-policy");
+        AssertRegexAbsent(@"AWSLambdaBasicExecutionRole", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-managed-basic-policy");
+        AssertRegexAbsent(@"AWSLambdaVPCAccessExecutionRole", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-managed-vpc-policy");
+        AssertRegexPresent(@"resource ""aws_iam_policy"" ""task_execution_runtime""", ResolvePathUnderRoot(rootPath, "modules/aws-ecs/main.tf"), "aws-ecs-custom-task-execution-policy");
+        AssertRegexPresent(@"resource ""aws_iam_policy"" ""lambda_runtime""", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-custom-runtime-policy");
+        AssertRegexPresent(@"scope\s*=\s*azurerm_storage_container\.app_storage\[0\]\.id", ResolvePathUnderRoot(rootPath, "modules/azure-aca/main.tf"), "azure-aca-app-storage-container-scope");
+        AssertRegexPresent(@"scope\s*=\s*azurerm_storage_container\.app_storage\[0\]\.id", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-app-storage-container-scope");
+        AssertRegexPresent(@"resource ""azurerm_key_vault_access_policy"" ""identity""[\s\S]*?secret_permissions\s*=\s*\[\s*""Get""\s*\]", ResolvePathUnderRoot(rootPath, "modules/azure-aca/main.tf"), "azure-aca-key-vault-get-only");
 
         AssertRegexAbsent(@"^\s*source\s+""\$DATA_CACHE_FILE""", ResolvePathUnderRoot(rootPath, "validation/scripts/aws/run-aws-terraform-integration.sh"), "aws-cache-source-execution");
         AssertRegexAbsent(@"^\s*source\s+""\$DATA_CACHE_FILE""", ResolvePathUnderRoot(rootPath, "validation/scripts/azure/run-azure-terraform-integration.sh"), "azure-cache-source-execution");
         AssertRegexPresent(@"DATA_CACHE_FORMAT=""v2-base64""", ResolvePathUnderRoot(rootPath, "validation/scripts/aws/run-aws-terraform-integration.sh"), "aws-cache-format-marker");
         AssertRegexPresent(@"DATA_CACHE_FORMAT=""v2-base64""", ResolvePathUnderRoot(rootPath, "validation/scripts/azure/run-azure-terraform-integration.sh"), "azure-cache-format-marker");
 
-        AssertRegexAbsent(@"ConnectionStrings__redis\s*=\s*local\.redis_connection", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-redis-plaintext-env");
-        AssertRegexPresent(@"HONUA_SECRET_REDIS_CONNECTION_ARN", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-redis-secret-env");
+        AssertRegexPresent(@"ConnectionStrings__DefaultConnection\s*=\s*local\.db_connection_string", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-db-direct-env");
+        AssertRegexPresent(@"ConnectionStrings__redis\s*=\s*local\.redis_connection", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-redis-direct-env");
+        AssertRegexPresent(@"HONUA_ADMIN_PASSWORD\s*=\s*var\.admin_password", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-admin-password-direct-env");
+        AssertRegexPresent(@"Security__ConnectionEncryption__MasterKey\s*=\s*var\.admin_password", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-master-key-direct-env");
+        AssertRegexAbsent(@"HONUA_SECRET_CONNECTION_STRING_ARN", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-no-db-secret-env");
+        AssertRegexAbsent(@"HONUA_SECRET_ADMIN_PASSWORD_ARN", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-no-admin-secret-env");
+        AssertRegexAbsent(@"HONUA_SECRET_REDIS_CONNECTION_ARN", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-no-redis-secret-env");
+        AssertRegexAbsent(@"secretsmanager:GetSecretValue", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-no-runtime-secret-read");
 
-        AssertRegexAbsent(@"ConnectionStrings__redis\s*=\s*local\.redis_connection", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-redis-plaintext-env");
-        AssertRegexPresent(@"azurerm_key_vault_secret"" ""redis_connection""", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-redis-secret-resource");
-        AssertRegexPresent(@"ConnectionStrings__redis\s*=\s*""@Microsoft\.KeyVault\(SecretUri=\$\{azurerm_key_vault_secret\.redis_connection\[0\]\.versionless_id\}\)""", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-redis-keyvault-reference");
+        AssertRegexPresent(@"ConnectionStrings__DefaultConnection\s*=\s*local\.db_connection_string", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-db-direct-env");
+        AssertRegexPresent(@"ConnectionStrings__redis\s*=\s*local\.redis_connection", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-redis-direct-env");
+        AssertRegexPresent(@"HONUA_ADMIN_PASSWORD\s*=\s*var\.admin_password", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-admin-password-direct-env");
+        AssertRegexPresent(@"Security__ConnectionEncryption__MasterKey\s*=\s*var\.admin_password", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-master-key-direct-env");
+        AssertRegexPresent(@"WEBSITE_WARMUP_PATH\s*=\s*""/admin/host/ping""", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-warmup-path-live");
+        AssertRegexPresent(@"WEBSITE_WARMUP_STATUSES\s*=\s*""200""", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-warmup-statuses-200");
+        AssertRegexAbsent(@"resource ""azurerm_key_vault_access_policy"" ""function_app""", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-no-runtime-keyvault-policy");
+        AssertRegexAbsent(@"key_vault_reference_identity_id", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-no-keyvault-reference-identity");
 
         AssertRegexAbsent(@"kubernetes\s*=\s*\{", ResolvePathUnderRoot(rootPath, "examples/observability/main.tf"), "helm-provider-kubernetes-attribute");
         AssertRegexPresent(@"^\s*kubernetes\s*\{", ResolvePathUnderRoot(rootPath, "examples/observability/main.tf"), "helm-provider-kubernetes-block");
@@ -1063,6 +1089,10 @@ internal static partial class ValidationRunner
             AddIfPresent(environment, "TF_VAR_honua_image", env.GetOptional("HONUA_AWS_ECS_IMAGE"));
             AddIfPresent(environment, "TF_VAR_existing_db_endpoint", env.GetOptional("HONUA_AWS_EXISTING_DB_ENDPOINT"));
             AddIfPresent(environment, "TF_VAR_existing_db_connection_string", env.GetOptional("HONUA_AWS_EXISTING_DB_CONNECTION_STRING"));
+            var existingDbCidr = env.GetOptional("HONUA_AWS_EXISTING_VPC_CIDR");
+            environment["TF_VAR_existing_db_cidrs"] = string.IsNullOrWhiteSpace(env.GetOptional("HONUA_AWS_EXISTING_DB_CONNECTION_STRING")) || string.IsNullOrWhiteSpace(existingDbCidr)
+                ? "[]"
+                : $"[\"{existingDbCidr}\"]";
             AddIfPresent(environment, "TF_VAR_existing_vpc_id", env.GetOptional("HONUA_AWS_EXISTING_VPC_ID"));
             AddIfPresent(environment, "TF_VAR_existing_vpc_cidr", env.GetOptional("HONUA_AWS_EXISTING_VPC_CIDR"));
             AddIfPresent(environment, "TF_VAR_existing_public_subnet_ids", env.GetOptional("HONUA_AWS_EXISTING_PUBLIC_SUBNET_IDS"));
@@ -1079,6 +1109,10 @@ internal static partial class ValidationRunner
             AddIfPresent(environment, "TF_VAR_honua_image_uri", env.GetOptional("HONUA_AWS_SERVERLESS_IMAGE"));
             AddIfPresent(environment, "TF_VAR_existing_db_endpoint", env.GetOptional("HONUA_AWS_EXISTING_DB_ENDPOINT"));
             AddIfPresent(environment, "TF_VAR_existing_db_connection_string", env.GetOptional("HONUA_AWS_EXISTING_DB_CONNECTION_STRING"));
+            var existingDbCidr = env.GetOptional("HONUA_AWS_EXISTING_VPC_CIDR");
+            environment["TF_VAR_existing_db_cidrs"] = string.IsNullOrWhiteSpace(env.GetOptional("HONUA_AWS_EXISTING_DB_CONNECTION_STRING")) || string.IsNullOrWhiteSpace(existingDbCidr)
+                ? "[]"
+                : $"[\"{existingDbCidr}\"]";
             AddIfPresent(environment, "TF_VAR_existing_vpc_id", env.GetOptional("HONUA_AWS_EXISTING_VPC_ID"));
             AddIfPresent(environment, "TF_VAR_existing_vpc_cidr", env.GetOptional("HONUA_AWS_EXISTING_VPC_CIDR"));
             AddIfPresent(environment, "TF_VAR_existing_public_subnet_ids", env.GetOptional("HONUA_AWS_EXISTING_PUBLIC_SUBNET_IDS"));
@@ -1405,8 +1439,13 @@ internal static partial class ValidationRunner
 
     private static string? TryGetDefaultPlatformValidationScript(RunnerContext context)
     {
-        var scriptPath = context.ResolveRepoPath("honua-server", "scripts", "run-cloud-post-apply-validation.sh");
-        return File.Exists(scriptPath) ? scriptPath : null;
+        var candidates = new[]
+        {
+            context.ResolveRepoPath("honua-server", "scripts", "run-cloud-post-apply-validation.sh"),
+            Path.GetFullPath(Path.Combine(context.RepoRoot, "..", "honua-server", "scripts", "run-cloud-post-apply-validation.sh")),
+        };
+
+        return candidates.FirstOrDefault(File.Exists);
     }
 
     private static string? BuildImportTablePrefix(RunnerContext context, ParsedCommand command)
