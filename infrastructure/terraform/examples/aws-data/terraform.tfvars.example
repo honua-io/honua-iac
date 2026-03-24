@@ -1,0 +1,8 @@
+# Minimal inputs for the shared AWS data-plane root.
+region = "us-east-1"
+
+db_password = "CHANGE-ME-TO-A-REAL-32-CHAR-DB-PASSWORD"
+
+tags = {
+  Owner = "platform"
+}

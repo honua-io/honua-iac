@@ -74,18 +74,33 @@ variable "node_min_size" {
   description = "Minimum node group size."
   type        = number
   default     = 1
+
+  validation {
+    condition     = var.node_min_size >= 0
+    error_message = "node_min_size must be greater than or equal to 0."
+  }
 }
 
 variable "node_max_size" {
   description = "Maximum node group size."
   type        = number
   default     = 3
+
+  validation {
+    condition     = var.node_max_size >= 0
+    error_message = "node_max_size must be greater than or equal to 0."
+  }
 }
 
 variable "node_desired_size" {
   description = "Desired node group size."
   type        = number
   default     = 2
+
+  validation {
+    condition     = var.node_desired_size >= 0
+    error_message = "node_desired_size must be greater than or equal to 0."
+  }
 }
 
 variable "cluster_endpoint_public_access" {

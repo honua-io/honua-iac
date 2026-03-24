@@ -23,6 +23,30 @@ variable "db_password" {
   default     = null
 }
 
+variable "db_instance_class" {
+  description = "RDS instance class."
+  type        = string
+  default     = "db.t3.micro"
+}
+
+variable "db_allocated_storage" {
+  description = "RDS allocated storage in GB."
+  type        = number
+  default     = 20
+}
+
+variable "db_max_allocated_storage" {
+  description = "Maximum allocated storage in GB for RDS autoscaling."
+  type        = number
+  default     = 100
+}
+
+variable "db_maintenance_window" {
+  description = "Preferred RDS maintenance window in Ddd:HH:MM-Ddd:HH:MM format."
+  type        = string
+  default     = "Sun:04:00-Sun:05:00"
+}
+
 variable "db_publicly_accessible" {
   description = "Expose RDS publicly when validation runners need direct reachability."
   type        = bool
@@ -38,7 +62,7 @@ variable "db_additional_ingress_cidrs" {
 variable "enable_postgis" {
   description = "Enable PostGIS and PostGIS Raster during apply when the runner has psql and database reachability."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "postgis_readiness_max_attempts" {

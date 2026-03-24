@@ -26,6 +26,11 @@ variable "node_count" {
   description = "AKS system node count."
   type        = number
   default     = 2
+
+  validation {
+    condition     = var.node_count >= 1
+    error_message = "node_count must be greater than or equal to 1."
+  }
 }
 
 variable "node_vm_size" {
@@ -58,15 +63,26 @@ variable "sku_tier" {
 }
 
 variable "authorized_ip_ranges" {
-  description = "CIDR ranges authorized to access the AKS API server. Leave empty to allow public access until you set trusted operator CIDRs."
+  description = "CIDR ranges authorized to access the AKS API server when private_cluster_enabled is false."
   type        = list(string)
   default     = []
+
+  validation {
+    condition     = alltrue([for cidr in var.authorized_ip_ranges : can(cidrnetmask(cidr))])
+    error_message = "authorized_ip_ranges must contain valid CIDR blocks."
+  }
 }
 
 variable "local_account_disabled" {
-  description = "Disable local Kubernetes accounts when Azure AD integration is configured."
+  description = "Disable local Kubernetes accounts to avoid static admin kubeconfigs."
   type        = bool
-  default     = false
+  default     = true
+}
+
+variable "private_cluster_enabled" {
+  description = "Provision AKS with a private API endpoint."
+  type        = bool
+  default     = true
 }
 
 variable "auto_scaling_enabled" {
@@ -79,12 +95,22 @@ variable "node_min_count" {
   description = "Minimum node count when auto-scaling is enabled."
   type        = number
   default     = 1
+
+  validation {
+    condition     = var.node_min_count >= 1
+    error_message = "node_min_count must be greater than or equal to 1."
+  }
 }
 
 variable "node_max_count" {
   description = "Maximum node count when auto-scaling is enabled."
   type        = number
   default     = 5
+
+  validation {
+    condition     = var.node_max_count >= 1
+    error_message = "node_max_count must be greater than or equal to 1."
+  }
 }
 
 variable "network_plugin" {

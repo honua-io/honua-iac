@@ -1,5 +1,14 @@
 data "azurerm_client_config" "current" {}
 
+resource "random_string" "app_storage_suffix" {
+  count   = var.app_storage_enabled ? 1 : 0
+  length  = 6
+  upper   = false
+  lower   = true
+  numeric = true
+  special = false
+}
+
 locals {
   name = "${var.name_prefix}-${var.environment}"
   tags = merge({
@@ -7,7 +16,18 @@ locals {
     Environment = var.environment
     ManagedBy   = "terraform"
   }, var.tags)
-  db_use_existing = var.existing_db_connection_string != ""
+  db_use_existing            = var.existing_db_connection_string != ""
+  app_storage_account_name   = var.app_storage_enabled ? substr(replace(lower("${var.name_prefix}${var.environment}app${random_string.app_storage_suffix[0].result}"), "-", ""), 0, 24) : null
+  registry_server_normalized = trimspace(var.registry_server)
+  registry_auth_mode_resolved = local.registry_server_normalized == "" ? "none" : (
+    lower(trimspace(var.registry_auth_mode)) == "auto"
+    ? (
+      trimspace(var.registry_username) != "" && trimspace(var.registry_password) != ""
+      ? "username_password"
+      : "managed_identity"
+    )
+    : lower(trimspace(var.registry_auth_mode))
+  )
 }
 
 check "existing_db_inputs" {
@@ -24,6 +44,34 @@ check "existing_postgis_credentials" {
   }
 }
 
+check "db_public_access_requires_firewall_rule" {
+  assert {
+    condition     = local.db_use_existing || !var.db_public_network_access || (trimspace(var.db_firewall_start_ip) != "" && trimspace(var.db_firewall_end_ip) != "")
+    error_message = "Set db_firewall_start_ip and db_firewall_end_ip when db_public_network_access is true."
+  }
+}
+
+check "redis_reuse_is_exclusive" {
+  assert {
+    condition     = !(var.redis_enabled && trimspace(var.redis_connection_string) != "")
+    error_message = "Set either redis_enabled = true to provision Redis or redis_connection_string to reuse an existing Redis instance, not both."
+  }
+}
+
+check "replica_bounds" {
+  assert {
+    condition     = var.max_replicas >= var.min_replicas
+    error_message = "max_replicas must be greater than or equal to min_replicas."
+  }
+}
+
+check "ingress_requires_allowed_cidrs" {
+  assert {
+    condition     = !var.enable_ingress || length(var.ingress_allowed_cidrs) > 0
+    error_message = "Set ingress_allowed_cidrs when enable_ingress is true."
+  }
+}
+
 resource "azurerm_resource_group" "this" {
   name     = "${local.name}-rg"
   location = var.location
@@ -35,6 +83,59 @@ resource "azurerm_user_assigned_identity" "this" {
   location            = azurerm_resource_group.this.location
   resource_group_name = azurerm_resource_group.this.name
   tags                = local.tags
+}
+
+resource "azurerm_role_assignment" "registry_pull" {
+  count = local.registry_auth_mode_resolved == "managed_identity" && trimspace(var.registry_resource_id) != "" ? 1 : 0
+
+  scope                = var.registry_resource_id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_user_assigned_identity.this.principal_id
+}
+
+#checkov:skip=CKV2_AZURE_1: Customer-managed keys are optional and managed outside this module.
+#checkov:skip=CKV2_AZURE_33: Private endpoints are configured outside this module.
+#checkov:skip=CKV2_AZURE_40: Shared key authorization is retained so validation tooling can exercise blob storage safely.
+#checkov:skip=CKV2_AZURE_41: SAS expiration policies are managed outside this module.
+resource "azurerm_storage_account" "app_storage" {
+  #checkov:skip=CKV2_AZURE_1: Customer-managed keys are optional and managed outside this module.
+  #checkov:skip=CKV2_AZURE_33: Private endpoints are configured outside this module.
+  #checkov:skip=CKV2_AZURE_40: Shared key authorization is retained so validation tooling can exercise blob storage safely.
+  #checkov:skip=CKV2_AZURE_41: SAS expiration policies are managed outside this module.
+  count = var.app_storage_enabled ? 1 : 0
+
+  name                            = local.app_storage_account_name
+  resource_group_name             = azurerm_resource_group.this.name
+  location                        = azurerm_resource_group.this.location
+  account_tier                    = "Standard"
+  account_replication_type        = "LRS"
+  allow_nested_items_to_be_public = false
+  min_tls_version                 = "TLS1_2"
+  tags                            = local.tags
+
+  network_rules {
+    default_action = "Deny"
+    bypass         = ["AzureServices"]
+  }
+
+  blob_properties {
+    delete_retention_policy {
+      days = 7
+    }
+    container_delete_retention_policy {
+      days = 7
+    }
+  }
+}
+
+#checkov:skip=CKV2_AZURE_21: Blob service logging is configured at the storage account level, not on the container resource itself.
+resource "azurerm_storage_container" "app_storage" {
+  #checkov:skip=CKV2_AZURE_21: Blob service logging is configured at the storage account level, not on the container resource itself.
+  count = var.app_storage_enabled ? 1 : 0
+
+  name                  = var.app_storage_container_name
+  storage_account_id    = azurerm_storage_account.app_storage[0].id
+  container_access_type = "private"
 }
 
 #checkov:skip=CKV_AZURE_189: Private endpoints are configured outside this module.
@@ -81,9 +182,16 @@ resource "azurerm_key_vault_access_policy" "identity" {
   object_id    = azurerm_user_assigned_identity.this.principal_id
 
   secret_permissions = [
-    "Get",
-    "List"
+    "Get"
   ]
+}
+
+resource "azurerm_role_assignment" "app_storage_blob" {
+  count = var.app_storage_enabled ? 1 : 0
+
+  scope                = azurerm_storage_container.app_storage[0].id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = azurerm_user_assigned_identity.this.principal_id
 }
 
 resource "random_password" "db" {
@@ -91,18 +199,34 @@ resource "random_password" "db" {
   length           = 32
   special          = true
   override_special = "#%*()-_=+[]{}:?."
+
+  lifecycle {
+    ignore_changes = [length, special, override_special]
+  }
+}
+
+resource "random_password" "connection_encryption_master_key" {
+  count            = var.connection_encryption_master_key == null ? 1 : 0
+  length           = 32
+  special          = true
+  override_special = "#%*()-_=+[]{}:?."
+
+  lifecycle {
+    ignore_changes = [length, special, override_special]
+  }
 }
 
 resource "time_static" "secret_baseline" {}
 
 locals {
-  db_password            = var.db_admin_password != null ? var.db_admin_password : (local.db_use_existing ? var.existing_db_admin_password : random_password.db[0].result)
-  db_server_fqdn         = local.db_use_existing ? var.existing_db_fqdn : azurerm_postgresql_flexible_server.this[0].fqdn
-  db_connection_string   = local.db_use_existing ? var.existing_db_connection_string : "Host=${azurerm_postgresql_flexible_server.this[0].fqdn};Port=5432;Database=${var.db_name};Username=${var.db_admin_username};Password=${local.db_password};SSL Mode=Require;Trust Server Certificate=false"
-  redis_enabled          = var.redis_enabled || var.redis_connection_string != ""
-  redis_create           = var.redis_enabled && var.redis_connection_string == ""
-  redis_connection       = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? azurerm_redis_cache.this[0].primary_connection_string : "")
-  secret_expiration_date = timeadd(time_static.secret_baseline.rfc3339, format("%dh", var.secret_expiration_days * 24))
+  db_password                      = var.db_admin_password != null ? var.db_admin_password : (local.db_use_existing ? var.existing_db_admin_password : random_password.db[0].result)
+  db_server_fqdn                   = local.db_use_existing ? var.existing_db_fqdn : azurerm_postgresql_flexible_server.this[0].fqdn
+  db_connection_string             = local.db_use_existing ? var.existing_db_connection_string : "Host=${azurerm_postgresql_flexible_server.this[0].fqdn};Port=5432;Database=${var.db_name};Username=${var.db_admin_username};Password=${local.db_password};SSL Mode=Require;Trust Server Certificate=false"
+  connection_encryption_master_key = var.connection_encryption_master_key != null ? var.connection_encryption_master_key : random_password.connection_encryption_master_key[0].result
+  redis_enabled                    = var.redis_enabled || var.redis_connection_string != ""
+  redis_create                     = var.redis_enabled && var.redis_connection_string == ""
+  redis_connection                 = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? azurerm_redis_cache.this[0].primary_connection_string : "")
+  secret_expiration_date           = timeadd(time_static.secret_baseline.rfc3339, format("%dh", var.secret_expiration_days * 24))
 }
 
 provider "postgresql" {
@@ -202,6 +326,15 @@ resource "azurerm_key_vault_secret" "admin_password" {
   depends_on      = [azurerm_key_vault_access_policy.identity, azurerm_key_vault_access_policy.current]
 }
 
+resource "azurerm_key_vault_secret" "connection_encryption_master_key" {
+  name            = "honua-connection-encryption-master-key"
+  value           = local.connection_encryption_master_key
+  content_type    = "password"
+  expiration_date = local.secret_expiration_date
+  key_vault_id    = azurerm_key_vault.this.id
+  depends_on      = [azurerm_key_vault_access_policy.identity, azurerm_key_vault_access_policy.current]
+}
+
 resource "azurerm_key_vault_secret" "redis_connection" {
   count           = local.redis_enabled ? 1 : 0
   name            = "honua-redis-connection"
@@ -244,11 +377,12 @@ resource "azurerm_container_app" "this" {
   }
 
   dynamic "registry" {
-    for_each = toset(var.registry_server != "" ? ["registry"] : [])
+    for_each = toset(local.registry_server_normalized != "" ? ["registry"] : [])
     content {
-      server               = var.registry_server
-      username             = var.registry_username
-      password_secret_name = "registry-password"
+      server               = local.registry_server_normalized
+      identity             = local.registry_auth_mode_resolved == "managed_identity" ? azurerm_user_assigned_identity.this.id : null
+      username             = local.registry_auth_mode_resolved == "username_password" ? var.registry_username : null
+      password_secret_name = local.registry_auth_mode_resolved == "username_password" ? "registry-password" : null
     }
   }
 
@@ -262,6 +396,11 @@ resource "azurerm_container_app" "this" {
     value = var.admin_password
   }
 
+  secret {
+    name  = "connection-encryption-master-key"
+    value = local.connection_encryption_master_key
+  }
+
   dynamic "secret" {
     for_each = toset(local.redis_enabled ? ["redis"] : [])
     content {
@@ -271,7 +410,7 @@ resource "azurerm_container_app" "this" {
   }
 
   dynamic "secret" {
-    for_each = toset(var.registry_server != "" ? ["registry"] : [])
+    for_each = toset(local.registry_auth_mode_resolved == "username_password" ? ["registry"] : [])
     content {
       name  = "registry-password"
       value = var.registry_password
@@ -305,7 +444,7 @@ resource "azurerm_container_app" "this" {
 
       env {
         name        = "Security__ConnectionEncryption__MasterKey"
-        secret_name = "admin-password"
+        secret_name = "connection-encryption-master-key"
       }
 
       dynamic "env" {
@@ -359,9 +498,20 @@ resource "azurerm_container_app" "this" {
   }
 
   ingress {
-    external_enabled = var.enable_ingress
-    target_port      = var.container_port
-    transport        = "auto"
+    external_enabled           = var.enable_ingress
+    allow_insecure_connections = false
+    target_port                = var.container_port
+    transport                  = "auto"
+
+    dynamic "ip_security_restriction" {
+      for_each = { for idx, cidr in var.ingress_allowed_cidrs : idx => cidr }
+
+      content {
+        action           = "Allow"
+        name             = "allow-${ip_security_restriction.key}"
+        ip_address_range = ip_security_restriction.value
+      }
+    }
 
     traffic_weight {
       latest_revision = true
@@ -372,15 +522,17 @@ resource "azurerm_container_app" "this" {
   tags = local.tags
 
   depends_on = [
-    azurerm_key_vault_access_policy.identity
+    azurerm_key_vault_access_policy.identity,
+    azurerm_role_assignment.registry_pull
   ]
 }
 
 resource "postgresql_extension" "postgis" {
-  count    = var.enable_postgis ? 1 : 0
-  provider = postgresql.honua
-  name     = "postgis"
-  schema   = "public"
+  count        = var.enable_postgis ? 1 : 0
+  provider     = postgresql.honua
+  name         = "postgis"
+  schema       = "public"
+  drop_cascade = true
 
   depends_on = [
     azurerm_postgresql_flexible_server.this,
@@ -390,10 +542,11 @@ resource "postgresql_extension" "postgis" {
 }
 
 resource "postgresql_extension" "postgis_raster" {
-  count    = var.enable_postgis ? 1 : 0
-  provider = postgresql.honua
-  name     = "postgis_raster"
-  schema   = "public"
+  count        = var.enable_postgis ? 1 : 0
+  provider     = postgresql.honua
+  name         = "postgis_raster"
+  schema       = "public"
+  drop_cascade = true
 
   depends_on = [
     azurerm_postgresql_flexible_server.this,

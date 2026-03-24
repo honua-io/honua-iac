@@ -1,0 +1,11 @@
+# Minimal operator inputs for the Azure AKS cluster root.
+location = "westus"
+
+private_cluster_enabled = false
+authorized_ip_ranges = [
+  "203.0.113.10/32",
+]
+
+tags = {
+  Owner = "platform"
+}

@@ -2064,6 +2064,11 @@ set_common_tf_vars() {
   export TF_VAR_db_password="$HONUA_DB_PASSWORD"
   export TF_VAR_existing_db_endpoint="$EXISTING_DB_ENDPOINT"
   export TF_VAR_existing_db_connection_string="$EXISTING_DB_CONNECTION_STRING"
+  if [[ -n "$EXISTING_DB_CONNECTION_STRING" && -n "$EXISTING_VPC_CIDR" ]]; then
+    export TF_VAR_existing_db_cidrs="[\"$EXISTING_VPC_CIDR\"]"
+  else
+    export TF_VAR_existing_db_cidrs="[]"
+  fi
   export TF_VAR_existing_vpc_id="$EXISTING_VPC_ID"
   export TF_VAR_existing_vpc_cidr="$EXISTING_VPC_CIDR"
   export TF_VAR_existing_public_subnet_ids="${EXISTING_PUBLIC_SUBNET_IDS:-[]}"

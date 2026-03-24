@@ -5,7 +5,7 @@ output "environment" {
 }
 
 output "aws_region" {
-  value = data.aws_region.current.name
+  value = data.aws_region.current.id
 }
 
 output "api_endpoint" {
@@ -58,6 +58,10 @@ output "admin_password_secret_arn" {
   value = aws_secretsmanager_secret.admin_password.arn
 }
 
+output "connection_encryption_master_key_secret_arn" {
+  value = aws_secretsmanager_secret.connection_encryption_master_key.arn
+}
+
 output "redis_connection_string" {
   value     = local.redis_connection
   sensitive = true
@@ -74,6 +78,26 @@ output "latest_db_snapshot_arn" {
   sensitive   = true
 }
 
+output "app_storage_enabled" {
+  description = "Whether application S3 storage is enabled."
+  value       = var.app_storage_enabled
+}
+
+output "app_storage_bucket_name" {
+  description = "Application S3 bucket name when storage is enabled."
+  value       = var.app_storage_enabled ? aws_s3_bucket.app_storage[0].bucket : null
+}
+
+output "app_storage_bucket_arn" {
+  description = "Application S3 bucket ARN when storage is enabled."
+  value       = var.app_storage_enabled ? aws_s3_bucket.app_storage[0].arn : null
+}
+
+output "app_storage_prefix" {
+  description = "Application S3 key prefix used for validation probes."
+  value       = var.app_storage_enabled ? local.app_storage_prefix : null
+}
+
 # --- Honua control-plane outputs ---
 
 output "control_plane_target_kind" {
@@ -82,6 +106,11 @@ output "control_plane_target_kind" {
 
 output "control_plane_backend_name" {
   value = "honua-gitops-aws-lambda"
+}
+
+output "control_plane_contract_version" {
+  description = "Schema version for the unified Honua control-plane contract."
+  value       = "v2"
 }
 
 output "control_plane_target_id" {
@@ -96,6 +125,10 @@ output "control_plane_target_resource_id" {
   value = aws_lambda_alias.live.arn
 }
 
+output "control_plane_target_resource_group" {
+  value = null
+}
+
 output "control_plane_telemetry_policy" {
   value = "honua-http"
 }
@@ -106,6 +139,142 @@ output "control_plane_current_revision" {
 
 output "control_plane_desired_revision" {
   value = aws_lambda_function.this.version
+}
+
+output "control_plane_current_image" {
+  value = var.image
+}
+
+output "control_plane_desired_image" {
+  value = var.image
+}
+
+output "marketplace_profile" {
+  description = "Machine-readable marketplace deployment support profile."
+  value = {
+    schema_version  = "v1"
+    eligible        = false
+    turnkey_runtime = true
+    bundle_profile  = "operator-only"
+    target_family   = "aws-serverless"
+    blocker_reason  = "Serverless runtime targets are excluded from marketplace-targeted bundles; prefer aws-ecs."
+  }
+}
+
+output "control_plane_contract" {
+  description = "Unified control-plane contract for deploy automation and marketplace packaging."
+  value = nonsensitive({
+    schema_version = "v2"
+    backend_name   = "honua-gitops-aws-lambda"
+    target_kind    = "AwsLambda"
+    target_id      = "${aws_lambda_function.this.function_name}-${aws_lambda_alias.live.name}"
+    target_name    = aws_lambda_function.this.function_name
+    resource_id    = aws_lambda_alias.live.arn
+    resource_group = null
+    endpoint       = aws_apigatewayv2_api.this.api_endpoint
+    artifact_reference = {
+      kind    = "container-image"
+      current = var.image
+      desired = var.image
+    }
+    current_revision = aws_lambda_alias.live.function_version
+    desired_revision = aws_lambda_function.this.version
+    secret_refs = {
+      secret_store = {
+        kind           = "aws-secrets-manager"
+        id             = data.aws_region.current.id
+        name           = null
+        versionless_id = null
+      }
+      admin_password = {
+        kind           = "aws-secrets-manager"
+        id             = aws_secretsmanager_secret.admin_password.arn
+        name           = aws_secretsmanager_secret.admin_password.name
+        versionless_id = null
+      }
+      connection_encryption_master_key = {
+        kind           = "aws-secrets-manager"
+        id             = aws_secretsmanager_secret.connection_encryption_master_key.arn
+        name           = aws_secretsmanager_secret.connection_encryption_master_key.name
+        versionless_id = null
+      }
+      database_connection = {
+        kind           = "aws-secrets-manager"
+        id             = aws_secretsmanager_secret.connection_string.arn
+        name           = aws_secretsmanager_secret.connection_string.name
+        versionless_id = null
+      }
+      redis_connection = local.redis_enabled ? {
+        kind           = "aws-secrets-manager"
+        id             = aws_secretsmanager_secret.redis_connection[0].arn
+        name           = aws_secretsmanager_secret.redis_connection[0].name
+        versionless_id = null
+      } : null
+      registry_pull = null
+    }
+    object_storage_refs = {
+      enabled              = var.app_storage_enabled
+      kind                 = "aws-s3"
+      bucket_name          = var.app_storage_enabled ? aws_s3_bucket.app_storage[0].bucket : null
+      bucket_arn           = var.app_storage_enabled ? aws_s3_bucket.app_storage[0].arn : null
+      prefix               = var.app_storage_enabled ? local.app_storage_prefix : null
+      storage_account_name = null
+      storage_account_id   = null
+      container_name       = null
+    }
+    health_policy = {
+      kind                      = "http-readiness"
+      telemetry_policy          = "honua-http"
+      readiness_path            = "/healthz/ready"
+      stable_job                = null
+      canary_job                = null
+      progressive_delivery      = false
+      slot_based                = false
+      current_slot              = null
+      desired_slot              = null
+      verification_header_name  = null
+      verification_header_value = null
+    }
+    target = {
+      kind           = "AwsLambda"
+      backend_name   = "honua-gitops-aws-lambda"
+      id             = "${aws_lambda_function.this.function_name}-${aws_lambda_alias.live.name}"
+      name           = aws_lambda_function.this.function_name
+      resource_id    = aws_lambda_alias.live.arn
+      resource_group = null
+      endpoint       = aws_apigatewayv2_api.this.api_endpoint
+    }
+    artifact = {
+      kind    = "container-image"
+      current = var.image
+      desired = var.image
+    }
+    rollout = {
+      current_revision     = aws_lambda_alias.live.function_version
+      desired_revision     = aws_lambda_function.this.version
+      progressive_delivery = false
+      slot_based           = false
+    }
+    telemetry = {
+      policy     = "honua-http"
+      stable_job = null
+      canary_job = null
+    }
+    capabilities = {
+      object_storage = var.app_storage_enabled
+      canary         = false
+      slot           = false
+    }
+    marketplace = {
+      schema_version  = "v1"
+      eligible        = false
+      turnkey_runtime = true
+      bundle_profile  = "operator-only"
+      target_family   = "aws-serverless"
+      blocker_reason  = "Serverless runtime targets are excluded from marketplace-targeted bundles; prefer aws-ecs."
+    }
+  })
+  sensitive = true
 }
 
 output "operations_metadata" {
@@ -165,6 +334,14 @@ output "operations_metadata" {
         name = aws_secretsmanager_secret.redis_connection[0].name
       } : null
     }
+    object_storage = {
+      enabled          = var.app_storage_enabled
+      kind             = "s3"
+      bucket_name      = var.app_storage_enabled ? aws_s3_bucket.app_storage[0].bucket : null
+      bucket_arn       = var.app_storage_enabled ? aws_s3_bucket.app_storage[0].arn : null
+      prefix           = var.app_storage_enabled ? local.app_storage_prefix : null
+      runtime_role_arn = aws_iam_role.lambda.arn
+    }
     secrets = {
       db_connection = {
         arn  = aws_secretsmanager_secret.connection_string.arn
@@ -173,6 +350,10 @@ output "operations_metadata" {
       admin_password = {
         arn  = aws_secretsmanager_secret.admin_password.arn
         name = aws_secretsmanager_secret.admin_password.name
+      }
+      connection_encryption_master_key = {
+        arn  = aws_secretsmanager_secret.connection_encryption_master_key.arn
+        name = aws_secretsmanager_secret.connection_encryption_master_key.name
       }
       redis_connection = local.redis_enabled ? {
         arn  = aws_secretsmanager_secret.redis_connection[0].arn

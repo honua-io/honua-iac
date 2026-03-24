@@ -24,6 +24,30 @@ data "azurerm_client_config" "current" {}
 
 locals {
   scope = var.scope != "" ? var.scope : data.azurerm_subscription.current.id
+  role_actions = [
+    "Microsoft.Resources/subscriptions/read",
+    "Microsoft.Resources/subscriptions/resources/read",
+    "Microsoft.Resources/subscriptions/resourceGroups/read",
+    "Microsoft.Resources/subscriptions/resourceGroups/write",
+    "Microsoft.Resources/subscriptions/resourceGroups/delete",
+    "Microsoft.ContainerService/managedClusters/read",
+    "Microsoft.ContainerService/managedClusters/write",
+    "Microsoft.ContainerService/managedClusters/delete",
+    "Microsoft.ContainerService/managedClusters/agentPools/read",
+    "Microsoft.ContainerService/managedClusters/agentPools/write",
+    "Microsoft.ContainerService/managedClusters/agentPools/delete",
+    "Microsoft.Insights/diagnosticSettings/read",
+    "Microsoft.Insights/diagnosticSettings/write",
+    "Microsoft.Insights/diagnosticSettings/delete",
+    "Microsoft.OperationalInsights/workspaces/read",
+  ]
+}
+
+check "federated_inputs_together" {
+  assert {
+    condition     = (trimspace(var.federated_issuer) == "" && trimspace(var.federated_subject) == "") || (trimspace(var.federated_issuer) != "" && trimspace(var.federated_subject) != "")
+    error_message = "federated_issuer and federated_subject must be configured together."
+  }
 }
 
 resource "azuread_application" "terraform" {
@@ -35,8 +59,18 @@ resource "azuread_service_principal" "terraform" {
 }
 
 resource "azuread_service_principal_password" "terraform" {
+  count                = var.create_client_secret ? 1 : 0
   service_principal_id = azuread_service_principal.terraform.object_id
-  end_date_relative    = "8760h"
+  end_date_relative    = "${var.service_principal_secret_duration_hours}h"
+}
+
+resource "azuread_application_federated_identity_credential" "terraform" {
+  count          = trimspace(var.federated_issuer) != "" && trimspace(var.federated_subject) != "" ? 1 : 0
+  application_id = azuread_application.terraform.id
+  display_name   = var.federated_credential_display_name
+  issuer         = var.federated_issuer
+  subject        = var.federated_subject
+  audiences      = var.federated_audiences
 }
 
 resource "azurerm_role_definition" "terraform" {
@@ -44,28 +78,7 @@ resource "azurerm_role_definition" "terraform" {
   scope = local.scope
 
   permissions {
-    actions = [
-      "Microsoft.Resources/subscriptions/read",
-      "Microsoft.Resources/subscriptions/resources/read",
-      "Microsoft.Resources/subscriptions/resourceGroups/*",
-      "Microsoft.ContainerService/managedClusters/*",
-      "Microsoft.ContainerService/managedClusters/agentPools/*",
-      "Microsoft.Network/virtualNetworks/*",
-      "Microsoft.Network/routeTables/*",
-      "Microsoft.Network/networkSecurityGroups/*",
-      "Microsoft.Network/publicIPAddresses/*",
-      "Microsoft.Network/loadBalancers/*",
-      "Microsoft.Network/networkInterfaces/*",
-      "Microsoft.ManagedIdentity/userAssignedIdentities/*",
-      "Microsoft.Insights/diagnosticSettings/*",
-      "Microsoft.OperationalInsights/workspaces/*",
-      # P1-20: Scoped role assignment actions instead of wildcard.
-      # Note: azurerm_role_definition does not support conditions on individual actions.
-      # Scope is limited by assignable_scopes below.
-      "Microsoft.Authorization/roleAssignments/write",
-      "Microsoft.Authorization/roleAssignments/read",
-      "Microsoft.Authorization/roleAssignments/delete"
-    ]
+    actions     = local.role_actions
     not_actions = []
   }
 

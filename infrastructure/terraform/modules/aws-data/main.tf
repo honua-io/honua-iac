@@ -18,6 +18,13 @@ locals {
   redis_connection     = var.redis_enabled ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true" : ""
 }
 
+check "db_storage_autoscaling_bounds" {
+  assert {
+    condition     = var.db_max_allocated_storage >= var.db_allocated_storage
+    error_message = "db_max_allocated_storage must be greater than or equal to db_allocated_storage."
+  }
+}
+
 resource "random_password" "db" {
   count            = var.db_password == null ? 1 : 0
   length           = 32
@@ -26,17 +33,21 @@ resource "random_password" "db" {
 }
 
 resource "random_password" "redis_auth" {
-  count   = var.redis_enabled && var.redis_auth_token == "" ? 1 : 0
-  length  = 32
-  special = false
+  count            = var.redis_enabled && var.redis_auth_token == "" ? 1 : 0
+  length           = 32
+  special          = true
+  override_special = "#%*()-_=+[]{}:?."
+
+  lifecycle {
+    ignore_changes = [length, special, override_special]
+  }
 }
 
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
 module "vpc" {
   #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
   #checkov:skip=CKV2_AWS_12: Default SG is managed via module inputs.
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 5.0"
+  source = "../vendor/aws-vpc"
 
   name = "${local.name}-vpc"
   cidr = var.vpc_cidr
@@ -199,7 +210,7 @@ module "rds" {
   multi_az            = var.db_multi_az
 
   backup_retention_period = var.environment == "prod" ? 7 : 3
-  maintenance_window      = "Sun:04:00-Sun:05:00"
+  maintenance_window      = var.db_maintenance_window
 
   tags = local.tags
 }
@@ -233,24 +244,30 @@ resource "aws_secretsmanager_secret_version" "redis_connection" {
 }
 
 resource "postgresql_extension" "postgis" {
-  count    = var.enable_postgis ? 1 : 0
-  provider = postgresql.honua
-  name     = "postgis"
-  schema   = "public"
+  count        = var.enable_postgis ? 1 : 0
+  provider     = postgresql.honua
+  name         = "postgis"
+  schema       = "public"
+  drop_cascade = true
 
   depends_on = [
     module.rds,
+    aws_security_group.rds,
+    module.vpc,
   ]
 }
 
 resource "postgresql_extension" "postgis_raster" {
-  count    = var.enable_postgis ? 1 : 0
-  provider = postgresql.honua
-  name     = "postgis_raster"
-  schema   = "public"
+  count        = var.enable_postgis ? 1 : 0
+  provider     = postgresql.honua
+  name         = "postgis_raster"
+  schema       = "public"
+  drop_cascade = true
 
   depends_on = [
     module.rds,
+    aws_security_group.rds,
+    module.vpc,
     postgresql_extension.postgis,
   ]
 }

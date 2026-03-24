@@ -54,7 +54,8 @@ module "honua" {
   redis_capacity = 2
 
   # Networking
-  enable_ingress        = true
+  enable_ingress          = true
+  ingress_allowed_cidrs   = ["203.0.113.10/32"]
   db_public_network_access = false  # Use private access in production
 
   # Key Vault
@@ -96,7 +97,8 @@ module "honua" {
 | `redis_connection_string` | `""` | Reuse an existing Redis instance instead of provisioning one. |
 | `redis_sku_name` | `Standard` | Redis SKU (Basic, Standard, Premium). |
 | `key_vault_default_action` | `Deny` | Key Vault network ACL default. |
-| `enable_ingress` | true | Expose Container App via external ingress. |
+| `enable_ingress` | false | Expose Container App via external ingress. |
+| `ingress_allowed_cidrs` | `[]` | CIDR ranges allowed to reach the Container App ingress when enabled. |
 | `log_analytics_enabled` | true | Enable Log Analytics workspace. |
 
 See `variables.tf` for the complete list.
@@ -104,6 +106,10 @@ See `variables.tf` for the complete list.
 ## Key Vault networking
 
 Key Vault network ACLs default to `Deny`. Adjust `key_vault_ip_rules` to allowlist your CI/CD runner IPs, or supply private endpoints outside the module.
+
+## Ingress networking
+
+Container App ingress is private-by-default at the module boundary. Set `enable_ingress = true` together with `ingress_allowed_cidrs` to publish an allowlisted public endpoint.
 
 ## Private container registry
 

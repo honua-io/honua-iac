@@ -33,10 +33,20 @@ check "existing_vpc_inputs" {
   }
 }
 
+check "managed_node_group_bounds" {
+  assert {
+    condition = (
+      var.node_max_size >= var.node_min_size &&
+      var.node_desired_size >= var.node_min_size &&
+      var.node_desired_size <= var.node_max_size
+    )
+    error_message = "node_min_size, node_desired_size, and node_max_size must satisfy node_min_size <= node_desired_size <= node_max_size."
+  }
+}
+
 module "vpc" {
-  count   = local.use_existing_vpc ? 0 : 1
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 5.0"
+  count  = local.use_existing_vpc ? 0 : 1
+  source = "../vendor/aws-vpc"
 
   name = "${local.name}-eks-vpc"
   cidr = var.vpc_cidr

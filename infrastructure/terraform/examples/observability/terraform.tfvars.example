@@ -1,0 +1,3 @@
+# Minimal inputs for the Kubernetes observability add-on root.
+kubeconfig_path      = "~/.kube/config"
+honua_metrics_target = "honua.default.svc.cluster.local:8080"

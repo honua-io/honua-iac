@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://honua.io/terraform/marketplace/schemas/deploy-contract.v2.json",
+  "title": "Honua Terraform Deploy Contract v2",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "backend_name",
+    "target_kind",
+    "target_id",
+    "resource_id",
+    "artifact_reference",
+    "current_revision",
+    "desired_revision",
+    "secret_refs",
+    "object_storage_refs",
+    "health_policy"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "v2"
+    },
+    "backend_name": {
+      "type": "string"
+    },
+    "target_kind": {
+      "type": "string"
+    },
+    "target_id": {
+      "type": "string"
+    },
+    "target_name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "resource_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "resource_group": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "endpoint": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "artifact_reference": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "kind",
+        "current",
+        "desired"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "current": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "desired": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "current_revision": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "desired_revision": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "secret_refs": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "object_storage_refs": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "health_policy": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "telemetry_policy"
+      ],
+      "properties": {
+        "telemetry_policy": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

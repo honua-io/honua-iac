@@ -5,16 +5,21 @@ provider "azurerm" {
 module "aks" {
   source = "../../modules/azure-aks"
 
-  name_prefix          = var.name_prefix
-  environment          = var.environment
-  location             = var.location
-  tags                 = var.tags
-  node_count           = var.node_count
-  node_vm_size         = var.node_vm_size
-  node_os_disk_size_gb = var.node_os_disk_size_gb
-  kubernetes_version   = var.kubernetes_version
-  sku_tier             = var.sku_tier
-  authorized_ip_ranges = var.authorized_ip_ranges
+  name_prefix             = var.name_prefix
+  environment             = var.environment
+  location                = var.location
+  tags                    = var.tags
+  node_count              = var.node_count
+  node_vm_size            = var.node_vm_size
+  node_os_disk_size_gb    = var.node_os_disk_size_gb
+  auto_scaling_enabled    = var.auto_scaling_enabled
+  node_min_count          = var.node_min_count
+  node_max_count          = var.node_max_count
+  kubernetes_version      = var.kubernetes_version
+  sku_tier                = var.sku_tier
+  authorized_ip_ranges    = var.authorized_ip_ranges
+  local_account_disabled  = var.local_account_disabled
+  private_cluster_enabled = var.private_cluster_enabled
 }
 
 locals {
@@ -51,6 +56,7 @@ locals {
         kind                 = "azure-aks"
         resource_group_name  = module.aks.resource_group_name
         authorized_ip_ranges = var.authorized_ip_ranges
+        private_cluster      = var.private_cluster_enabled
       }
     }
   }

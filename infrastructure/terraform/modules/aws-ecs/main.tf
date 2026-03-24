@@ -6,6 +6,8 @@ data "aws_region" "current" {}
 
 data "aws_caller_identity" "current" {}
 
+data "aws_partition" "current" {}
+
 data "aws_elb_service_account" "current" {}
 
 locals {
@@ -30,25 +32,52 @@ locals {
   http_ingress_base = length(var.allow_http_ingress_cidrs) > 0 ? var.allow_http_ingress_cidrs : (
     length(local.https_ingress_cidrs) > 0 ? local.https_ingress_cidrs : (!local.use_https ? local.default_ingress_cidrs : [])
   )
-  http_ingress_cidrs     = local.use_https ? (var.alb_enable_http_redirect ? local.http_ingress_base : []) : local.http_ingress_base
-  redis_enabled          = var.redis_enabled || var.redis_connection_string != ""
-  redis_create           = var.redis_enabled && var.redis_connection_string == ""
-  redis_auth_token       = var.redis_auth_token != "" ? var.redis_auth_token : (local.redis_create ? random_password.redis_auth[0].result : "")
-  redis_connection       = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true" : "")
-  redis_egress_cidrs     = local.redis_create ? [local.vpc_cidr_block] : var.redis_connection_cidrs
-  db_subnet_ids          = var.db_publicly_accessible ? local.public_subnets : local.private_subnets
-  canary_enabled         = var.canary_enabled
-  canary_weight          = local.canary_enabled ? var.canary_weight_percentage : 0
-  primary_weight         = local.canary_enabled ? 100 - local.canary_weight : 100
-  effective_canary_image = trimspace(var.canary_image) != "" ? var.canary_image : var.image
+  http_ingress_cidrs               = local.use_https ? (var.alb_enable_http_redirect ? local.http_ingress_base : []) : local.http_ingress_base
+  redis_enabled                    = var.redis_enabled || var.redis_connection_string != ""
+  redis_create                     = var.redis_enabled && var.redis_connection_string == ""
+  redis_auth_token                 = var.redis_auth_token != "" ? var.redis_auth_token : (local.redis_create ? random_password.redis_auth[0].result : "")
+  redis_connection                 = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true" : "")
+  connection_encryption_master_key = var.connection_encryption_master_key != null ? var.connection_encryption_master_key : random_password.connection_encryption_master_key[0].result
+  redis_egress_cidrs               = local.redis_create ? [local.vpc_cidr_block] : var.redis_connection_cidrs
+  db_subnet_ids                    = var.db_publicly_accessible ? local.public_subnets : local.private_subnets
+  canary_enabled                   = var.canary_enabled
+  canary_weight                    = local.canary_enabled ? var.canary_weight_percentage : 0
+  primary_weight                   = local.canary_enabled ? 100 - local.canary_weight : 100
+  effective_canary_image           = trimspace(var.canary_image) != "" ? var.canary_image : var.image
+  execution_role_image_uris = distinct(compact([
+    trimspace(var.image),
+    local.canary_enabled ? trimspace(local.effective_canary_image) : null
+  ]))
+  execution_role_ecr_image_matches = {
+    for image in local.execution_role_image_uris :
+    image => regex("^([0-9]{12})\\.dkr\\.ecr\\.([a-z0-9-]+)\\.amazonaws\\.com\\/([^@:]+)(?:[:@].+)?$", image)
+    if can(regex("^([0-9]{12})\\.dkr\\.ecr\\.([a-z0-9-]+)\\.amazonaws\\.com\\/([^@:]+)(?:[:@].+)?$", image))
+  }
+  execution_role_ecr_repository_arns = distinct([
+    for image, captures in local.execution_role_ecr_image_matches :
+    "arn:${data.aws_partition.current.partition}:ecr:${captures[1]}:${captures[0]}:repository/${captures[2]}"
+  ])
+  app_storage_prefix = trimprefix(trimsuffix(trimspace(var.app_storage_prefix), "/"), "/")
+  app_storage_bucket_name = var.app_storage_enabled ? (
+    trimspace(var.app_storage_bucket_name) != ""
+    ? lower(trimspace(var.app_storage_bucket_name))
+    : substr(replace(lower("${var.name_prefix}-${var.environment}-app-${random_id.app_storage_suffix[0].hex}"), "_", "-"), 0, 63)
+  ) : null
+  app_storage_environment = var.app_storage_enabled ? {
+    FileStorage__Provider                          = "AwsS3"
+    FileStorage__AwsS3__BucketName                 = local.app_storage_bucket_name
+    FileStorage__AwsS3__Region                     = data.aws_region.current.id
+    FileStorage__AwsS3__KeyPrefix                  = local.app_storage_prefix
+    FileStorage__AwsS3__EnableServerSideEncryption = "true"
+  } : {}
   primary_container_environment = [
-    for key, value in var.additional_env : {
+    for key, value in merge(local.app_storage_environment, var.additional_env) : {
       name  = key
       value = value
     }
   ]
   canary_container_environment = [
-    for key, value in merge(var.additional_env, var.canary_additional_env) : {
+    for key, value in merge(local.app_storage_environment, var.additional_env, var.canary_additional_env) : {
       name  = key
       value = value
     }
@@ -64,7 +93,7 @@ locals {
     },
     {
       name      = "Security__ConnectionEncryption__MasterKey"
-      valueFrom = aws_secretsmanager_secret.admin_password.arn
+      valueFrom = aws_secretsmanager_secret.connection_encryption_master_key.arn
     }
     ], local.redis_enabled ? [
     {
@@ -81,7 +110,7 @@ locals {
     }
   }
   container_health_check = {
-    command     = ["CMD-SHELL", "curl -f http://localhost:8080/healthz/ready || exit 1"]
+    command     = ["CMD-SHELL", "curl -f http://localhost:${var.container_port}${var.health_check_path} || exit 1"]
     interval    = 30
     timeout     = 5
     retries     = 3
@@ -96,6 +125,13 @@ check "existing_db_inputs" {
       (var.existing_db_endpoint != "" && var.existing_db_connection_string != "")
     )
     error_message = "existing_db_endpoint and existing_db_connection_string must both be set or both be empty."
+  }
+}
+
+check "existing_db_reuse_requires_cidrs" {
+  assert {
+    condition     = !local.db_use_existing || length(var.existing_db_cidrs) > 0
+    error_message = "existing_db_cidrs must include at least one trusted CIDR when existing_db_endpoint is set."
   }
 }
 
@@ -123,6 +159,24 @@ check "existing_redis_inputs" {
   }
 }
 
+check "redis_reuse_is_exclusive" {
+  assert {
+    condition     = !(var.redis_enabled && trimspace(var.redis_connection_string) != "")
+    error_message = "Set either redis_enabled = true to provision Redis or redis_connection_string to reuse an existing Redis instance, not both."
+  }
+}
+
+check "ecs_scaling_bounds" {
+  assert {
+    condition = (
+      (var.min_capacity != null ? var.max_capacity >= var.min_capacity : true) &&
+      var.desired_count <= var.max_capacity &&
+      (var.min_capacity != null ? var.desired_count >= var.min_capacity : true)
+    )
+    error_message = "desired_count, min_capacity, and max_capacity must satisfy min_capacity <= desired_count <= max_capacity."
+  }
+}
+
 check "canary_weight_requires_canary" {
   assert {
     condition     = local.canary_enabled || var.canary_weight_percentage == 0
@@ -143,8 +197,7 @@ module "vpc" {
   count = local.use_existing_vpc ? 0 : 1
   #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
   #checkov:skip=CKV2_AWS_12: Default SG is managed via module inputs.
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 5.0"
+  source = "../vendor/aws-vpc"
 
   name = "${local.name}-vpc"
   cidr = var.vpc_cidr
@@ -245,7 +298,7 @@ resource "aws_security_group" "ecs" {
     from_port   = 5432
     to_port     = 5432
     protocol    = "tcp"
-    cidr_blocks = local.db_use_existing ? ["0.0.0.0/0"] : [local.vpc_cidr_block]
+    cidr_blocks = local.db_use_existing ? var.existing_db_cidrs : [local.vpc_cidr_block]
   }
 
   egress {
@@ -308,7 +361,9 @@ resource "aws_security_group" "rds" {
   tags = local.tags
 }
 
+#checkov:skip=CKV2_AWS_5: Security group is attached through the replication group below.
 resource "aws_security_group" "redis" {
+  #checkov:skip=CKV2_AWS_5: Security group is attached through the replication group below.
   count       = local.redis_create ? 1 : 0
   name_prefix = "${local.name}-redis-"
   description = "Redis security group"
@@ -515,6 +570,66 @@ resource "aws_s3_bucket_policy" "alb_logs" {
     ]
   })
 }
+
+#checkov:skip=CKV_AWS_18: Access logging is optional for this application bucket and can be layered on centrally by operators.
+#checkov:skip=CKV2_AWS_62: Event notifications are deployment-specific and not required for baseline runtime storage.
+#checkov:skip=CKV_AWS_145: SSE-S3 avoids widening runtime KMS permissions for the application bucket.
+#checkov:skip=CKV_AWS_144: Cross-region replication is optional and environment-specific for application file storage.
+#checkov:skip=CKV2_AWS_61: Lifecycle policies depend on tenant retention requirements and are managed per environment.
+resource "aws_s3_bucket" "app_storage" {
+  #checkov:skip=CKV_AWS_18: Access logging is optional for this application bucket and can be layered on centrally by operators.
+  #checkov:skip=CKV2_AWS_62: Event notifications are deployment-specific and not required for baseline runtime storage.
+  #checkov:skip=CKV_AWS_145: SSE-S3 avoids widening runtime KMS permissions for the application bucket.
+  #checkov:skip=CKV_AWS_144: Cross-region replication is optional and environment-specific for application file storage.
+  #checkov:skip=CKV2_AWS_61: Lifecycle policies depend on tenant retention requirements and are managed per environment.
+  count = var.app_storage_enabled ? 1 : 0
+
+  bucket        = local.app_storage_bucket_name
+  force_destroy = var.app_storage_force_destroy
+  tags          = local.tags
+}
+
+resource "aws_s3_bucket_public_access_block" "app_storage" {
+  count = var.app_storage_enabled ? 1 : 0
+
+  bucket                  = aws_s3_bucket.app_storage[0].id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_versioning" "app_storage" {
+  count = var.app_storage_enabled ? 1 : 0
+
+  bucket = aws_s3_bucket.app_storage[0].id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "app_storage" {
+  count = var.app_storage_enabled ? 1 : 0
+
+  bucket = aws_s3_bucket.app_storage[0].id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_ownership_controls" "app_storage" {
+  count = var.app_storage_enabled ? 1 : 0
+
+  bucket = aws_s3_bucket.app_storage[0].id
+
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
 #checkov:skip=CKV_AWS_378: Target group uses HTTP for in-VPC traffic.
 resource "aws_lb_target_group" "this" {
   #checkov:skip=CKV_AWS_378: Target group uses HTTP for in-VPC traffic.
@@ -711,9 +826,50 @@ resource "aws_iam_role" "task_execution" {
   tags               = local.tags
 }
 
-resource "aws_iam_role_policy_attachment" "task_execution" {
+data "aws_iam_policy_document" "task_execution_runtime" {
+  statement {
+    sid = "WriteContainerLogs"
+    actions = [
+      "logs:CreateLogStream",
+      "logs:PutLogEvents"
+    ]
+    resources = ["${aws_cloudwatch_log_group.this.arn}:*"]
+  }
+
+  dynamic "statement" {
+    for_each = length(local.execution_role_ecr_repository_arns) > 0 ? [1] : []
+
+    content {
+      sid       = "AuthorizeEcrPull"
+      actions   = ["ecr:GetAuthorizationToken"]
+      resources = ["*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = length(local.execution_role_ecr_repository_arns) > 0 ? [1] : []
+
+    content {
+      sid = "ReadEcrImages"
+      actions = [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer"
+      ]
+      resources = local.execution_role_ecr_repository_arns
+    }
+  }
+}
+
+resource "aws_iam_policy" "task_execution_runtime" {
+  name        = "${local.name}-task-execution-runtime"
+  description = "Least-privilege ECS task execution policy for logs and image pulls"
+  policy      = data.aws_iam_policy_document.task_execution_runtime.json
+}
+
+resource "aws_iam_role_policy_attachment" "task_execution_runtime" {
   role       = aws_iam_role.task_execution.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+  policy_arn = aws_iam_policy.task_execution_runtime.arn
 }
 
 resource "aws_iam_role" "task" {
@@ -735,6 +891,7 @@ resource "aws_iam_policy" "secrets" {
         Resource = compact([
           aws_secretsmanager_secret.db_connection.arn,
           aws_secretsmanager_secret.admin_password.arn,
+          aws_secretsmanager_secret.connection_encryption_master_key.arn,
           local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null
         ])
       },
@@ -752,6 +909,40 @@ resource "aws_iam_role_policy_attachment" "task_secrets" {
   policy_arn = aws_iam_policy.secrets.arn
 }
 
+resource "aws_iam_policy" "task_app_storage" {
+  count = var.app_storage_enabled ? 1 : 0
+
+  name        = "${local.name}-task-app-storage"
+  description = "Allow ECS task to read and write Honua application storage"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket", "s3:GetBucketLocation"]
+        Resource = [aws_s3_bucket.app_storage[0].arn]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject"
+        ]
+        Resource = ["${aws_s3_bucket.app_storage[0].arn}/${local.app_storage_prefix}/*"]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "task_app_storage" {
+  count = var.app_storage_enabled ? 1 : 0
+
+  role       = aws_iam_role.task.name
+  policy_arn = aws_iam_policy.task_app_storage[0].arn
+}
+
 resource "random_password" "db" {
   count            = var.db_password == null && !local.db_use_existing ? 1 : 0
   length           = 32
@@ -763,13 +954,34 @@ resource "random_password" "db" {
   }
 }
 
+resource "random_password" "connection_encryption_master_key" {
+  count            = var.connection_encryption_master_key == null ? 1 : 0
+  length           = 32
+  special          = true
+  override_special = "#%*()-_=+[]{}:?."
+
+  lifecycle {
+    ignore_changes = [length, special, override_special]
+  }
+}
+
 resource "random_password" "redis_auth" {
-  count   = local.redis_create && var.redis_auth_token == "" ? 1 : 0
-  length  = 32
-  special = false
+  count            = local.redis_create && var.redis_auth_token == "" ? 1 : 0
+  length           = 32
+  special          = true
+  override_special = "#%*()-_=+[]{}:?."
+
+  lifecycle {
+    ignore_changes = [length, special, override_special]
+  }
 }
 
 resource "random_id" "alb_logs_suffix" {
+  byte_length = 4
+}
+
+resource "random_id" "app_storage_suffix" {
+  count       = var.app_storage_enabled && trimspace(var.app_storage_bucket_name) == "" ? 1 : 0
   byte_length = 4
 }
 
@@ -880,7 +1092,7 @@ module "rds" {
   multi_az            = var.db_multi_az
 
   backup_retention_period = var.environment == "prod" ? 7 : 3
-  maintenance_window      = "Sun:04:00-Sun:05:00"
+  maintenance_window      = var.db_maintenance_window
 
   tags = local.tags
 }
@@ -919,6 +1131,20 @@ resource "aws_secretsmanager_secret" "admin_password" {
 resource "aws_secretsmanager_secret_version" "admin_password" {
   secret_id     = aws_secretsmanager_secret.admin_password.id
   secret_string = var.admin_password
+}
+
+#checkov:skip=CKV2_AWS_57: Secrets rotation is handled outside the module.
+resource "aws_secretsmanager_secret" "connection_encryption_master_key" {
+  #checkov:skip=CKV2_AWS_57: Secrets rotation is handled outside the module.
+  name_prefix = "${local.name}-master-key-"
+  description = "Honua connection encryption master key"
+  kms_key_id  = local.kms_key_arn
+  tags        = local.tags
+}
+
+resource "aws_secretsmanager_secret_version" "connection_encryption_master_key" {
+  secret_id     = aws_secretsmanager_secret.connection_encryption_master_key.id
+  secret_string = local.connection_encryption_master_key
 }
 
 #checkov:skip=CKV2_AWS_57: Secrets rotation is handled outside the module.
@@ -973,6 +1199,7 @@ resource "aws_ecs_task_definition" "this" {
   depends_on = [
     aws_secretsmanager_secret_version.db_connection,
     aws_secretsmanager_secret_version.admin_password,
+    aws_secretsmanager_secret_version.connection_encryption_master_key,
     aws_secretsmanager_secret_version.redis_connection
   ]
 
@@ -1016,6 +1243,7 @@ resource "aws_ecs_task_definition" "canary" {
   depends_on = [
     aws_secretsmanager_secret_version.db_connection,
     aws_secretsmanager_secret_version.admin_password,
+    aws_secretsmanager_secret_version.connection_encryption_master_key,
     aws_secretsmanager_secret_version.redis_connection
   ]
 
@@ -1087,7 +1315,7 @@ resource "aws_ecs_service" "canary" {
 
 resource "aws_appautoscaling_target" "ecs" {
   max_capacity       = var.max_capacity
-  min_capacity       = var.desired_count
+  min_capacity       = var.min_capacity != null ? var.min_capacity : var.desired_count
   resource_id        = "service/${aws_ecs_cluster.this.name}/${aws_ecs_service.this.name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
@@ -1104,9 +1332,9 @@ resource "aws_appautoscaling_policy" "cpu" {
     predefined_metric_specification {
       predefined_metric_type = "ECSServiceAverageCPUUtilization"
     }
-    target_value       = 70.0
-    scale_in_cooldown  = 300
-    scale_out_cooldown = 60
+    target_value       = var.autoscaling_cpu_target_value
+    scale_in_cooldown  = var.autoscaling_scale_in_cooldown_seconds
+    scale_out_cooldown = var.autoscaling_scale_out_cooldown_seconds
   }
 }
 
@@ -1132,10 +1360,11 @@ data "aws_iam_policy_document" "ecs_task_assume" {
 }
 
 resource "postgresql_extension" "postgis" {
-  count    = var.enable_postgis ? 1 : 0
-  provider = postgresql.honua
-  name     = "postgis"
-  schema   = "public"
+  count        = var.enable_postgis ? 1 : 0
+  provider     = postgresql.honua
+  name         = "postgis"
+  schema       = "public"
+  drop_cascade = true
 
   depends_on = [
     module.rds,
@@ -1143,10 +1372,11 @@ resource "postgresql_extension" "postgis" {
 }
 
 resource "postgresql_extension" "postgis_raster" {
-  count    = var.enable_postgis ? 1 : 0
-  provider = postgresql.honua
-  name     = "postgis_raster"
-  schema   = "public"
+  count        = var.enable_postgis ? 1 : 0
+  provider     = postgresql.honua
+  name         = "postgis_raster"
+  schema       = "public"
+  drop_cascade = true
 
   depends_on = [
     module.rds,

@@ -16,6 +16,47 @@ variable "name_prefix" {
   default     = "honuasl"
 }
 
+variable "install" {
+  description = "Provider-neutral install questionnaire for artifact, database, network, and storage settings. Legacy provider-specific variables remain supported as fallbacks."
+  type = object({
+    artifact = optional(object({
+      image = optional(string)
+      registry = optional(object({
+        server      = optional(string)
+        auth_mode   = optional(string)
+        resource_id = optional(string)
+      }))
+    }))
+    database = optional(object({
+      host                    = optional(string)
+      compute_sku             = optional(string)
+      storage_gb              = optional(number)
+      max_storage_gb          = optional(number)
+      public_access           = optional(bool)
+      postgis_enabled         = optional(bool)
+      readiness_max_attempts  = optional(number)
+      readiness_sleep_seconds = optional(number)
+    }))
+    network = optional(object({
+      id                   = optional(string)
+      cidr                 = optional(string)
+      public_subnet_ids    = optional(list(string))
+      private_subnet_ids   = optional(list(string))
+      public_ingress_cidrs = optional(list(string))
+      http_ingress_cidrs   = optional(list(string))
+      https_ingress_cidrs  = optional(list(string))
+    }))
+    storage = optional(object({
+      enabled        = optional(bool)
+      name           = optional(string)
+      container_name = optional(string)
+      prefix         = optional(string)
+      force_destroy  = optional(bool)
+    }))
+  })
+  default = {}
+}
+
 variable "existing_vpc_id" {
   description = "Existing VPC ID to reuse."
   type        = string
@@ -46,6 +87,13 @@ variable "honua_admin_password" {
   sensitive   = true
 }
 
+variable "connection_encryption_master_key" {
+  description = "Optional override for Security__ConnectionEncryption__MasterKey. Leave null to auto-generate an independent secret."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
 variable "db_password" {
   description = "PostgreSQL admin password used for deterministic integration tests."
   type        = string
@@ -66,9 +114,16 @@ variable "existing_db_connection_string" {
   default     = ""
 }
 
+variable "existing_db_cidrs" {
+  description = "Trusted CIDR ranges allowed for PostgreSQL egress when reusing an existing database endpoint."
+  type        = list(string)
+  default     = []
+}
+
 variable "honua_image_uri" {
   description = "ECR image URI for Honua Lambda image (`*-lambda-aot` preferred; `*-lambda` debug fallback)."
   type        = string
+  default     = null
 }
 
 variable "lambda_architectures" {
@@ -93,6 +148,30 @@ variable "db_publicly_accessible" {
   description = "Expose RDS publicly for integration testing."
   type        = bool
   default     = false
+}
+
+variable "db_instance_class" {
+  description = "RDS instance class."
+  type        = string
+  default     = "db.t3.micro"
+}
+
+variable "db_allocated_storage" {
+  description = "RDS allocated storage in GB."
+  type        = number
+  default     = 20
+}
+
+variable "db_max_allocated_storage" {
+  description = "Maximum allocated storage in GB for RDS autoscaling."
+  type        = number
+  default     = 100
+}
+
+variable "db_maintenance_window" {
+  description = "Preferred RDS maintenance window in Ddd:HH:MM-Ddd:HH:MM format."
+  type        = string
+  default     = "Sun:04:00-Sun:05:00"
 }
 
 variable "db_additional_ingress_cidrs" {
@@ -148,4 +227,28 @@ variable "tags" {
   description = "Additional tags for resources."
   type        = map(string)
   default     = {}
+}
+
+variable "app_storage_enabled" {
+  description = "Provision application S3 storage for validation and object-backed features."
+  type        = bool
+  default     = false
+}
+
+variable "app_storage_bucket_name" {
+  description = "Optional explicit S3 bucket name for application storage."
+  type        = string
+  default     = ""
+}
+
+variable "app_storage_prefix" {
+  description = "S3 key prefix for application storage probes."
+  type        = string
+  default     = "validation"
+}
+
+variable "app_storage_force_destroy" {
+  description = "Force destroy the application S3 bucket when Terraform manages it."
+  type        = bool
+  default     = false
 }

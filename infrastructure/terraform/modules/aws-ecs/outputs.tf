@@ -66,6 +66,11 @@ output "admin_password_secret_arn" {
   value       = aws_secretsmanager_secret.admin_password.arn
 }
 
+output "connection_encryption_master_key_secret_arn" {
+  description = "Secrets Manager ARN for the connection encryption master key."
+  value       = aws_secretsmanager_secret.connection_encryption_master_key.arn
+}
+
 output "certificate_arn" {
   description = "ACM certificate ARN in use (if any)."
   value       = local.certificate_arn != "" ? local.certificate_arn : null
@@ -89,6 +94,26 @@ output "latest_db_snapshot_arn" {
   sensitive   = true
 }
 
+output "app_storage_enabled" {
+  description = "Whether application S3 storage is enabled."
+  value       = var.app_storage_enabled
+}
+
+output "app_storage_bucket_name" {
+  description = "Application S3 bucket name when storage is enabled."
+  value       = var.app_storage_enabled ? aws_s3_bucket.app_storage[0].bucket : null
+}
+
+output "app_storage_bucket_arn" {
+  description = "Application S3 bucket ARN when storage is enabled."
+  value       = var.app_storage_enabled ? aws_s3_bucket.app_storage[0].arn : null
+}
+
+output "app_storage_prefix" {
+  description = "Application S3 key prefix used for validation probes."
+  value       = var.app_storage_enabled ? local.app_storage_prefix : null
+}
+
 # --- Honua control-plane outputs ---
 
 output "control_plane_target_kind" {
@@ -99,6 +124,31 @@ output "control_plane_target_kind" {
 output "control_plane_backend_name" {
   description = "Recommended Honua control-plane backend identifier for this environment."
   value       = "honua-gitops-aws-ecs"
+}
+
+output "control_plane_contract_version" {
+  description = "Schema version for the unified Honua control-plane contract."
+  value       = "v2"
+}
+
+output "control_plane_target_id" {
+  description = "Stable target id for Honua control-plane deploy operations."
+  value       = "${aws_ecs_cluster.this.name}/${aws_ecs_service.this.name}"
+}
+
+output "control_plane_target_name" {
+  description = "Primary workload name used by the Honua deploy target."
+  value       = aws_ecs_service.this.name
+}
+
+output "control_plane_target_resource_id" {
+  description = "Stable AWS resource identifier for the Honua deploy target."
+  value       = aws_ecs_service.this.id
+}
+
+output "control_plane_target_resource_group" {
+  description = "Logical grouping identifier for the deploy target when the cloud exposes one."
+  value       = null
 }
 
 output "control_plane_telemetry_policy" {
@@ -114,6 +164,154 @@ output "control_plane_telemetry_prometheus_job" {
 output "control_plane_telemetry_prometheus_canary_job" {
   description = "Recommended Prometheus job label for canary Honua traffic when wiring control-plane rollback gates."
   value       = var.canary_enabled ? "honua-canary" : null
+}
+
+output "control_plane_current_revision" {
+  description = "Current stable workload revision identifier."
+  value       = aws_ecs_task_definition.this.arn
+}
+
+output "control_plane_desired_revision" {
+  description = "Desired workload revision identifier for deploy orchestration."
+  value       = local.canary_enabled ? aws_ecs_task_definition.canary[0].arn : aws_ecs_task_definition.this.arn
+}
+
+output "control_plane_current_image" {
+  description = "Current stable artifact reference used by the deploy target."
+  value       = var.image
+}
+
+output "control_plane_desired_image" {
+  description = "Desired artifact reference used by the deploy target."
+  value       = local.canary_enabled ? local.effective_canary_image : var.image
+}
+
+output "marketplace_profile" {
+  description = "Machine-readable marketplace deployment support profile."
+  value = {
+    schema_version  = "v1"
+    eligible        = true
+    turnkey_runtime = true
+    bundle_profile  = "marketplace-turnkey"
+    target_family   = "aws-container-runtime"
+    blocker_reason  = null
+  }
+}
+
+output "control_plane_contract" {
+  description = "Unified control-plane contract for deploy automation and marketplace packaging."
+  value = nonsensitive({
+    schema_version = "v2"
+    backend_name   = "honua-gitops-aws-ecs"
+    target_kind    = "AwsEcs"
+    target_id      = "${aws_ecs_cluster.this.name}/${aws_ecs_service.this.name}"
+    target_name    = aws_ecs_service.this.name
+    resource_id    = aws_ecs_service.this.id
+    resource_group = null
+    endpoint       = local.use_https ? "https://${aws_lb.this.dns_name}" : "http://${aws_lb.this.dns_name}"
+    artifact_reference = {
+      kind    = "container-image"
+      current = var.image
+      desired = local.canary_enabled ? local.effective_canary_image : var.image
+    }
+    current_revision = aws_ecs_task_definition.this.arn
+    desired_revision = local.canary_enabled ? aws_ecs_task_definition.canary[0].arn : aws_ecs_task_definition.this.arn
+    secret_refs = {
+      secret_store = {
+        kind           = "aws-secrets-manager"
+        id             = data.aws_region.current.id
+        name           = null
+        versionless_id = null
+      }
+      admin_password = {
+        kind           = "aws-secrets-manager"
+        id             = aws_secretsmanager_secret.admin_password.arn
+        name           = aws_secretsmanager_secret.admin_password.name
+        versionless_id = null
+      }
+      connection_encryption_master_key = {
+        kind           = "aws-secrets-manager"
+        id             = aws_secretsmanager_secret.connection_encryption_master_key.arn
+        name           = aws_secretsmanager_secret.connection_encryption_master_key.name
+        versionless_id = null
+      }
+      database_connection = {
+        kind           = "aws-secrets-manager"
+        id             = aws_secretsmanager_secret.db_connection.arn
+        name           = aws_secretsmanager_secret.db_connection.name
+        versionless_id = null
+      }
+      redis_connection = local.redis_connection != "" ? {
+        kind           = "aws-secrets-manager"
+        id             = aws_secretsmanager_secret.redis_connection[0].arn
+        name           = aws_secretsmanager_secret.redis_connection[0].name
+        versionless_id = null
+      } : null
+      registry_pull = null
+    }
+    object_storage_refs = {
+      enabled              = var.app_storage_enabled
+      kind                 = "aws-s3"
+      bucket_name          = var.app_storage_enabled ? aws_s3_bucket.app_storage[0].bucket : null
+      bucket_arn           = var.app_storage_enabled ? aws_s3_bucket.app_storage[0].arn : null
+      prefix               = var.app_storage_enabled ? local.app_storage_prefix : null
+      storage_account_name = null
+      storage_account_id   = null
+      container_name       = null
+    }
+    health_policy = {
+      kind                      = "http-readiness"
+      telemetry_policy          = var.canary_enabled ? "aws-alb-canary" : "honua-http"
+      readiness_path            = var.health_check_path
+      stable_job                = "honua"
+      canary_job                = var.canary_enabled ? "honua-canary" : null
+      progressive_delivery      = var.canary_enabled
+      slot_based                = false
+      current_slot              = null
+      desired_slot              = null
+      verification_header_name  = var.canary_enabled ? var.canary_header_name : null
+      verification_header_value = var.canary_enabled ? var.canary_header_value : null
+    }
+    target = {
+      kind           = "AwsEcs"
+      backend_name   = "honua-gitops-aws-ecs"
+      id             = "${aws_ecs_cluster.this.name}/${aws_ecs_service.this.name}"
+      name           = aws_ecs_service.this.name
+      resource_id    = aws_ecs_service.this.id
+      resource_group = null
+      endpoint       = local.use_https ? "https://${aws_lb.this.dns_name}" : "http://${aws_lb.this.dns_name}"
+    }
+    artifact = {
+      kind    = "container-image"
+      current = var.image
+      desired = local.canary_enabled ? local.effective_canary_image : var.image
+    }
+    rollout = {
+      current_revision     = aws_ecs_task_definition.this.arn
+      desired_revision     = local.canary_enabled ? aws_ecs_task_definition.canary[0].arn : aws_ecs_task_definition.this.arn
+      progressive_delivery = var.canary_enabled
+      slot_based           = false
+    }
+    telemetry = {
+      policy     = var.canary_enabled ? "aws-alb-canary" : "honua-http"
+      stable_job = "honua"
+      canary_job = var.canary_enabled ? "honua-canary" : null
+    }
+    capabilities = {
+      object_storage = var.app_storage_enabled
+      canary         = var.canary_enabled
+      slot           = false
+    }
+    marketplace = {
+      schema_version  = "v1"
+      eligible        = true
+      turnkey_runtime = true
+      bundle_profile  = "marketplace-turnkey"
+      target_family   = "aws-container-runtime"
+      blocker_reason  = null
+    }
+  })
+  sensitive = true
 }
 
 output "operations_metadata" {
@@ -173,6 +371,14 @@ output "operations_metadata" {
         name = aws_secretsmanager_secret.redis_connection[0].name
       } : null
     }
+    object_storage = {
+      enabled          = var.app_storage_enabled
+      kind             = "s3"
+      bucket_name      = var.app_storage_enabled ? aws_s3_bucket.app_storage[0].bucket : null
+      bucket_arn       = var.app_storage_enabled ? aws_s3_bucket.app_storage[0].arn : null
+      prefix           = var.app_storage_enabled ? local.app_storage_prefix : null
+      runtime_role_arn = aws_iam_role.task.arn
+    }
     secrets = {
       db_connection = {
         arn  = aws_secretsmanager_secret.db_connection.arn
@@ -181,6 +387,10 @@ output "operations_metadata" {
       admin_password = {
         arn  = aws_secretsmanager_secret.admin_password.arn
         name = aws_secretsmanager_secret.admin_password.name
+      }
+      connection_encryption_master_key = {
+        arn  = aws_secretsmanager_secret.connection_encryption_master_key.arn
+        name = aws_secretsmanager_secret.connection_encryption_master_key.name
       }
       redis_connection = local.redis_enabled ? {
         arn  = aws_secretsmanager_secret.redis_connection[0].arn

@@ -61,6 +61,13 @@ resource "azurerm_key_vault_access_policy" "current" {
 
 resource "time_static" "secret_baseline" {}
 
+check "db_public_access_requires_firewall_rule" {
+  assert {
+    condition     = !var.db_public_network_access || (trimspace(var.db_firewall_start_ip) != "" && trimspace(var.db_firewall_end_ip) != "")
+    error_message = "Set db_firewall_start_ip and db_firewall_end_ip when db_public_network_access is true."
+  }
+}
+
 resource "azurerm_key_vault_secret" "db_connection" {
   name            = "honua-db-connection"
   value           = local.db_connection_string
@@ -96,6 +103,10 @@ resource "random_password" "db" {
   length           = 32
   special          = true
   override_special = "#%*()-_=+[]{}:?."
+
+  lifecycle {
+    ignore_changes = [length, special, override_special]
+  }
 }
 
 #checkov:skip=CKV2_AZURE_57: Private endpoints are configured outside this module.
@@ -172,10 +183,11 @@ resource "time_sleep" "postgis_readiness" {
 }
 
 resource "postgresql_extension" "postgis" {
-  count    = var.enable_postgis ? 1 : 0
-  provider = postgresql.honua
-  name     = "postgis"
-  schema   = "public"
+  count        = var.enable_postgis ? 1 : 0
+  provider     = postgresql.honua
+  name         = "postgis"
+  schema       = "public"
+  drop_cascade = true
 
   depends_on = [
     azurerm_postgresql_flexible_server.this,
@@ -186,10 +198,11 @@ resource "postgresql_extension" "postgis" {
 }
 
 resource "postgresql_extension" "postgis_raster" {
-  count    = var.enable_postgis ? 1 : 0
-  provider = postgresql.honua
-  name     = "postgis_raster"
-  schema   = "public"
+  count        = var.enable_postgis ? 1 : 0
+  provider     = postgresql.honua
+  name         = "postgis_raster"
+  schema       = "public"
+  drop_cascade = true
 
   depends_on = [
     azurerm_postgresql_flexible_server.this,

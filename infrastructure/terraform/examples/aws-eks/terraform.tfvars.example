@@ -1,0 +1,9 @@
+# Minimal operator inputs for the AWS EKS cluster root.
+region = "us-east-1"
+
+cluster_endpoint_public_access       = false
+cluster_endpoint_public_access_cidrs = []
+
+tags = {
+  Owner = "platform"
+}

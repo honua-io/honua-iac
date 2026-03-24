@@ -25,6 +25,17 @@ variable "tags" {
 variable "image" {
   description = "Container image. Pin to an immutable release tag or digest. Prefer AOT builds; use JIT images only for debug fallback."
   type        = string
+
+  validation {
+    condition = (
+      trimspace(var.image) != "" &&
+      (
+        can(regex(".+@sha256:[0-9A-Fa-f]{64}$", trimspace(var.image))) ||
+        can(regex(".+:[^/:@]+$", trimspace(var.image)))
+      )
+    )
+    error_message = "image must be a non-empty container reference with either a tag or sha256 digest."
+  }
 }
 
 variable "deployment_slot_enabled" {
@@ -37,6 +48,11 @@ variable "deployment_slot_name" {
   description = "Name of the optional staging deployment slot."
   type        = string
   default     = "staging"
+
+  validation {
+    condition     = trimspace(var.deployment_slot_name) != "" && can(regex("^[A-Za-z0-9-]{1,60}$", var.deployment_slot_name))
+    error_message = "deployment_slot_name must be 1-60 characters of letters, numbers, or hyphens."
+  }
 }
 
 variable "deployment_slot_image" {
@@ -49,6 +65,11 @@ variable "container_port" {
   description = "Container port exposed by Honua Server."
   type        = number
   default     = 8080
+
+  validation {
+    condition     = var.container_port >= 1 && var.container_port <= 65535
+    error_message = "container_port must be between 1 and 65535."
+  }
 }
 
 variable "plan_sku_name" {
@@ -64,7 +85,19 @@ variable "admin_password" {
 
   validation {
     condition     = length(var.admin_password) >= 32
-    error_message = "admin_password must be at least 32 characters (it is also used as Security__ConnectionEncryption__MasterKey)."
+    error_message = "admin_password must be at least 32 characters."
+  }
+}
+
+variable "connection_encryption_master_key" {
+  description = "Optional override for Security__ConnectionEncryption__MasterKey. Leave null to auto-generate an independent secret."
+  type        = string
+  sensitive   = true
+  default     = null
+
+  validation {
+    condition     = var.connection_encryption_master_key == null ? true : length(var.connection_encryption_master_key) >= 32
+    error_message = "connection_encryption_master_key must be null or at least 32 characters."
   }
 }
 
@@ -123,6 +156,11 @@ variable "db_storage_mb" {
   description = "Storage in MB for PostgreSQL Flexible Server."
   type        = number
   default     = 32768
+
+  validation {
+    condition     = var.db_storage_mb >= 32768
+    error_message = "db_storage_mb must be at least 32768 MB."
+  }
 }
 
 variable "db_version" {
@@ -158,7 +196,7 @@ variable "db_geo_redundant_backup_enabled" {
 variable "enable_postgis" {
   description = "Enable PostGIS and PostGIS Raster via Terraform's `postgresql_extension` resources. When reusing a database, also provide `existing_db_admin_password` so Terraform can authenticate."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "postgis_readiness_max_attempts" {
@@ -239,19 +277,36 @@ variable "redis_subnet_id" {
 }
 
 variable "registry_server" {
-  description = "Container registry server (optional)."
+  description = "Container registry server (optional). When set without explicit credentials, the module defaults to managed-identity image pulls."
+  type        = string
+  default     = ""
+}
+
+variable "registry_auth_mode" {
+  description = "Container registry auth mode. Use managed_identity for ACR pull via the Function App user-assigned identity, username_password for a legacy pull secret, or auto to infer from the supplied inputs."
+  type        = string
+  default     = "auto"
+
+  validation {
+    condition     = contains(["auto", "managed_identity", "username_password"], lower(trimspace(var.registry_auth_mode)))
+    error_message = "registry_auth_mode must be one of: auto, managed_identity, username_password."
+  }
+}
+
+variable "registry_resource_id" {
+  description = "Optional Azure Container Registry resource ID. When set with managed_identity auth, the module grants AcrPull to the runtime identity."
   type        = string
   default     = ""
 }
 
 variable "registry_username" {
-  description = "Container registry username (optional)."
+  description = "Container registry username (optional fallback for username_password auth)."
   type        = string
   default     = ""
 }
 
 variable "registry_password" {
-  description = "Container registry password (optional)."
+  description = "Container registry password (optional fallback for username_password auth)."
   type        = string
   default     = ""
   sensitive   = true
@@ -287,6 +342,51 @@ variable "storage_account_replication_type" {
   default     = "LRS"
 }
 
+variable "app_storage_enabled" {
+  description = "Provision a dedicated Blob storage account and container for application storage smoke tests."
+  type        = bool
+  default     = false
+}
+
+variable "app_storage_container_name" {
+  description = "Blob container name used for application storage and validation probes."
+  type        = string
+  default     = "validation"
+
+  validation {
+    condition     = can(regex("^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?$", var.app_storage_container_name))
+    error_message = "app_storage_container_name must be 3-63 characters of lowercase letters, numbers, or hyphens."
+  }
+}
+
+variable "public_network_access_enabled" {
+  description = "Whether the Function App is reachable from public networks."
+  type        = bool
+  default     = false
+}
+
+variable "allowed_ip_cidrs" {
+  description = "CIDR ranges allowed to reach the Function App when public network access is enabled."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for cidr in var.allowed_ip_cidrs : can(cidrnetmask(cidr))])
+    error_message = "allowed_ip_cidrs must contain valid CIDR blocks."
+  }
+}
+
+variable "scm_allowed_ip_cidrs" {
+  description = "Optional CIDR ranges allowed to reach the Kudu/SCM endpoint. Defaults to allowed_ip_cidrs when empty."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for cidr in var.scm_allowed_ip_cidrs : can(cidrnetmask(cidr))])
+    error_message = "scm_allowed_ip_cidrs must contain valid CIDR blocks."
+  }
+}
+
 variable "serve_admin_ui" {
   description = "Enable the Honua admin UI."
   type        = bool
@@ -297,6 +397,47 @@ variable "key_vault_public_network_access_enabled" {
   description = "Whether Key Vault is accessible from public networks."
   type        = bool
   default     = false
+}
+
+variable "key_vault_purge_protection_enabled" {
+  description = "Enable purge protection on the Key Vault."
+  type        = bool
+  default     = true
+}
+
+variable "key_vault_soft_delete_retention_days" {
+  description = "Number of days to retain soft-deleted Key Vault items."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.key_vault_soft_delete_retention_days >= 7 && var.key_vault_soft_delete_retention_days <= 90
+    error_message = "key_vault_soft_delete_retention_days must be between 7 and 90."
+  }
+}
+
+variable "key_vault_default_action" {
+  description = "Key Vault network ACL default action."
+  type        = string
+  default     = "Deny"
+}
+
+variable "key_vault_bypass" {
+  description = "Key Vault network ACL bypass."
+  type        = string
+  default     = "AzureServices"
+}
+
+variable "key_vault_ip_rules" {
+  description = "IP rules allowed to access Key Vault."
+  type        = list(string)
+  default     = []
+}
+
+variable "secret_expiration_days" {
+  description = "Days until Key Vault secrets expire."
+  type        = number
+  default     = 365
 }
 
 variable "db_backup_retention_days" {

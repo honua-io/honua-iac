@@ -57,6 +57,10 @@ module "honua" {
   # Monitoring
   app_insights_enabled = true
 
+  # Networking
+  public_network_access_enabled = true
+  allowed_ip_cidrs              = ["203.0.113.10/32"]
+
   additional_env = {
     HONUA_OBSERVABILITY = "true"
     Public__BaseUrl     = "https://gis.example.com"
@@ -82,6 +86,9 @@ module "honua" {
 | `redis_enabled` | true | Provision Azure Cache for Redis. |
 | `redis_connection_string` | `""` | Reuse an existing Redis instance instead of provisioning one. |
 | `app_insights_enabled` | true | Enable Application Insights. |
+| `public_network_access_enabled` | false | Publish the Function App on a public endpoint. |
+| `allowed_ip_cidrs` | `[]` | CIDR ranges allowed to reach the Function App when public access is enabled. |
+| `scm_allowed_ip_cidrs` | `[]` | Optional CIDR ranges for the Kudu/SCM endpoint. Defaults to `allowed_ip_cidrs` when empty. |
 
 See `variables.tf` for the complete list.
 
@@ -95,6 +102,10 @@ See `variables.tf` for the complete list.
 ## Cold starts
 
 Use AOT images such as `vX.Y.Z-aot` for runtime performance. Use JIT images only for debug fallback.
+
+## Public access
+
+Function App public access is private-by-default at the module boundary. Set `public_network_access_enabled = true` together with `allowed_ip_cidrs` to expose an allowlisted endpoint; leave it disabled when you intend to front the app with private networking.
 
 ## Private container registry
 

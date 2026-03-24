@@ -47,12 +47,22 @@ variable "db_sku_name" {
   description = "SKU name for Azure Database for PostgreSQL Flexible Server."
   type        = string
   default     = "B_Standard_B1ms"
+
+  validation {
+    condition     = trimspace(var.db_sku_name) != ""
+    error_message = "db_sku_name must not be empty."
+  }
 }
 
 variable "db_storage_mb" {
   description = "Storage in MB for PostgreSQL Flexible Server."
   type        = number
   default     = 32768
+
+  validation {
+    condition     = var.db_storage_mb >= 32768
+    error_message = "db_storage_mb must be at least 32768 MB."
+  }
 }
 
 variable "db_version" {
@@ -94,7 +104,7 @@ variable "db_backup_retention_days" {
 variable "enable_postgis" {
   description = "Enable PostGIS and PostGIS Raster via Terraform's `postgresql_extension` resources."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "postgis_readiness_max_attempts" {
@@ -171,8 +181,8 @@ variable "admin_password" {
   sensitive   = true
 
   validation {
-    condition     = length(var.admin_password) >= 12
-    error_message = "admin_password must be at least 12 characters."
+    condition     = length(var.admin_password) >= 32
+    error_message = "admin_password must be at least 32 characters."
   }
 }
 
@@ -196,7 +206,7 @@ variable "key_vault_soft_delete_retention_days" {
 variable "key_vault_public_network_access_enabled" {
   description = "Allow public network access to Key Vault."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "key_vault_default_action" {

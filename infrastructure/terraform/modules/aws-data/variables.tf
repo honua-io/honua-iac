@@ -75,12 +75,33 @@ variable "db_allocated_storage" {
   description = "RDS allocated storage in GB."
   type        = number
   default     = 20
+
+  validation {
+    condition     = var.db_allocated_storage >= 20
+    error_message = "db_allocated_storage must be at least 20 GB."
+  }
 }
 
 variable "db_max_allocated_storage" {
   description = "Maximum allocated storage in GB for RDS autoscaling."
   type        = number
   default     = 100
+
+  validation {
+    condition     = var.db_max_allocated_storage >= 20
+    error_message = "db_max_allocated_storage must be at least 20 GB."
+  }
+}
+
+variable "db_maintenance_window" {
+  description = "Preferred weekly maintenance window for RDS."
+  type        = string
+  default     = "Sun:04:00-Sun:05:00"
+
+  validation {
+    condition     = can(regex("^(Mon|Tue|Wed|Thu|Fri|Sat|Sun):[0-2][0-9]:[0-5][0-9]-(Mon|Tue|Wed|Thu|Fri|Sat|Sun):[0-2][0-9]:[0-5][0-9]$", var.db_maintenance_window))
+    error_message = "db_maintenance_window must match Ddd:HH:MM-Ddd:HH:MM."
+  }
 }
 
 variable "db_engine_version" {
@@ -116,7 +137,7 @@ variable "db_require_ssl" {
 variable "enable_postgis" {
   description = "Enable PostGIS and PostGIS Raster via Terraform's `postgresql_extension` resources."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "postgis_readiness_max_attempts" {

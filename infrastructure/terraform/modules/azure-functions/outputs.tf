@@ -50,6 +50,10 @@ output "admin_password_secret_id" {
   value = azurerm_key_vault_secret.admin_password.id
 }
 
+output "connection_encryption_master_key_secret_id" {
+  value = azurerm_key_vault_secret.connection_encryption_master_key.id
+}
+
 output "redis_connection_string" {
   value     = local.redis_connection
   sensitive = true
@@ -60,6 +64,22 @@ output "redis_connection_secret_id" {
   sensitive = true
 }
 
+output "app_storage_enabled" {
+  value = var.app_storage_enabled
+}
+
+output "app_storage_account_name" {
+  value = var.app_storage_enabled ? azurerm_storage_account.app_storage[0].name : null
+}
+
+output "app_storage_account_id" {
+  value = var.app_storage_enabled ? azurerm_storage_account.app_storage[0].id : null
+}
+
+output "app_storage_container_name" {
+  value = var.app_storage_enabled ? azurerm_storage_container.app_storage[0].name : null
+}
+
 # --- Honua control-plane outputs ---
 
 output "control_plane_target_kind" {
@@ -68,6 +88,11 @@ output "control_plane_target_kind" {
 
 output "control_plane_backend_name" {
   value = "honua-gitops-azure-functions"
+}
+
+output "control_plane_contract_version" {
+  description = "Schema version for the unified Honua control-plane contract."
+  value       = "v2"
 }
 
 output "control_plane_target_id" {
@@ -107,7 +132,140 @@ output "control_plane_current_image" {
 }
 
 output "control_plane_desired_image" {
-  value = var.deployment_slot_enabled ? local.slot_image : null
+  value = var.deployment_slot_enabled ? local.slot_image : var.image
+}
+
+output "marketplace_profile" {
+  description = "Machine-readable marketplace deployment support profile."
+  value = {
+    schema_version  = "v1"
+    eligible        = false
+    turnkey_runtime = true
+    bundle_profile  = "operator-only"
+    target_family   = "azure-serverless"
+    blocker_reason  = "Serverless runtime targets are excluded from marketplace-targeted bundles; prefer azure-aca."
+  }
+}
+
+output "control_plane_contract" {
+  description = "Unified control-plane contract for deploy automation and marketplace packaging."
+  value = nonsensitive({
+    schema_version = "v2"
+    backend_name   = "honua-gitops-azure-functions"
+    target_kind    = "AzureFunctions"
+    target_id      = azurerm_linux_function_app.this.name
+    target_name    = azurerm_linux_function_app.this.name
+    resource_id    = azurerm_linux_function_app.this.id
+    resource_group = azurerm_resource_group.this.name
+    endpoint       = var.public_network_access_enabled ? "https://${azurerm_linux_function_app.this.default_hostname}" : null
+    artifact_reference = {
+      kind    = "container-image"
+      current = var.image
+      desired = var.deployment_slot_enabled ? local.slot_image : var.image
+    }
+    current_revision = var.deployment_slot_enabled ? "production" : null
+    desired_revision = var.deployment_slot_enabled ? var.deployment_slot_name : null
+    secret_refs = {
+      secret_store = {
+        kind           = "azure-key-vault"
+        id             = azurerm_key_vault.this.id
+        name           = azurerm_key_vault.this.name
+        versionless_id = null
+      }
+      admin_password = {
+        kind           = "azure-key-vault-secret"
+        id             = azurerm_key_vault_secret.admin_password.id
+        versionless_id = azurerm_key_vault_secret.admin_password.versionless_id
+        name           = azurerm_key_vault_secret.admin_password.name
+      }
+      connection_encryption_master_key = {
+        kind           = "azure-key-vault-secret"
+        id             = azurerm_key_vault_secret.connection_encryption_master_key.id
+        versionless_id = azurerm_key_vault_secret.connection_encryption_master_key.versionless_id
+        name           = azurerm_key_vault_secret.connection_encryption_master_key.name
+      }
+      database_connection = {
+        kind           = "azure-key-vault-secret"
+        id             = azurerm_key_vault_secret.connection_string.id
+        versionless_id = azurerm_key_vault_secret.connection_string.versionless_id
+        name           = azurerm_key_vault_secret.connection_string.name
+      }
+      redis_connection = local.redis_connection != "" ? {
+        kind           = "azure-key-vault-secret"
+        id             = azurerm_key_vault_secret.redis_connection[0].id
+        versionless_id = azurerm_key_vault_secret.redis_connection[0].versionless_id
+        name           = azurerm_key_vault_secret.redis_connection[0].name
+      } : null
+      registry_pull = local.registry_auth_mode_resolved == "username_password" ? {
+        kind           = "app-service-registry-credential"
+        id             = null
+        name           = local.registry_server_normalized
+        versionless_id = null
+      } : null
+    }
+    object_storage_refs = {
+      enabled              = var.app_storage_enabled
+      kind                 = "azure-blob"
+      bucket_name          = null
+      bucket_arn           = null
+      prefix               = null
+      storage_account_name = var.app_storage_enabled ? azurerm_storage_account.app_storage[0].name : null
+      storage_account_id   = var.app_storage_enabled ? azurerm_storage_account.app_storage[0].id : null
+      container_name       = var.app_storage_enabled ? azurerm_storage_container.app_storage[0].name : null
+    }
+    health_policy = {
+      kind                      = "http-readiness"
+      telemetry_policy          = "honua-http"
+      readiness_path            = "/healthz/ready"
+      stable_job                = null
+      canary_job                = null
+      progressive_delivery      = false
+      slot_based                = var.deployment_slot_enabled
+      current_slot              = var.deployment_slot_enabled ? "production" : null
+      desired_slot              = var.deployment_slot_enabled ? var.deployment_slot_name : null
+      verification_header_name  = null
+      verification_header_value = null
+    }
+    target = {
+      kind           = "AzureFunctions"
+      backend_name   = "honua-gitops-azure-functions"
+      id             = azurerm_linux_function_app.this.name
+      name           = azurerm_linux_function_app.this.name
+      resource_id    = azurerm_linux_function_app.this.id
+      resource_group = azurerm_resource_group.this.name
+      endpoint       = "https://${azurerm_linux_function_app.this.default_hostname}"
+    }
+    artifact = {
+      kind    = "container-image"
+      current = var.image
+      desired = var.deployment_slot_enabled ? local.slot_image : var.image
+    }
+    rollout = {
+      current_revision     = var.deployment_slot_enabled ? "production" : null
+      desired_revision     = var.deployment_slot_enabled ? var.deployment_slot_name : null
+      progressive_delivery = false
+      slot_based           = var.deployment_slot_enabled
+    }
+    telemetry = {
+      policy     = "honua-http"
+      stable_job = null
+      canary_job = null
+    }
+    capabilities = {
+      object_storage = var.app_storage_enabled
+      canary         = false
+      slot           = var.deployment_slot_enabled
+    }
+    marketplace = {
+      schema_version  = "v1"
+      eligible        = false
+      turnkey_runtime = true
+      bundle_profile  = "operator-only"
+      target_family   = "azure-serverless"
+      blocker_reason  = "Serverless runtime targets are excluded from marketplace-targeted bundles; prefer azure-aca."
+    }
+  })
+  sensitive = true
 }
 
 output "operations_metadata" {
@@ -172,6 +330,14 @@ output "operations_metadata" {
         name           = azurerm_key_vault_secret.redis_connection[0].name
       } : null
     }
+    object_storage = {
+      enabled              = var.app_storage_enabled
+      kind                 = "azure-blob"
+      storage_account_name = var.app_storage_enabled ? azurerm_storage_account.app_storage[0].name : null
+      storage_account_id   = var.app_storage_enabled ? azurerm_storage_account.app_storage[0].id : null
+      container_name       = var.app_storage_enabled ? azurerm_storage_container.app_storage[0].name : null
+      principal_id         = azurerm_user_assigned_identity.function.principal_id
+    }
     secret_store = {
       resource_group = azurerm_resource_group.this.name
       id             = azurerm_key_vault.this.id
@@ -183,6 +349,12 @@ output "operations_metadata" {
         versionless_id = azurerm_key_vault_secret.admin_password.versionless_id
         name           = azurerm_key_vault_secret.admin_password.name
         expiration     = azurerm_key_vault_secret.admin_password.expiration_date
+      }
+      connection_encryption_master_key = {
+        id             = azurerm_key_vault_secret.connection_encryption_master_key.id
+        versionless_id = azurerm_key_vault_secret.connection_encryption_master_key.versionless_id
+        name           = azurerm_key_vault_secret.connection_encryption_master_key.name
+        expiration     = azurerm_key_vault_secret.connection_encryption_master_key.expiration_date
       }
       db_connection = {
         id             = azurerm_key_vault_secret.connection_string.id

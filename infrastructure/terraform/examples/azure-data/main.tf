@@ -1,33 +1,43 @@
 provider "azurerm" {
-  features {}
+  features {
+    resource_group {
+      prevent_deletion_if_contains_resources = false
+    }
+  }
 }
 
 # Provision data tier (PostgreSQL + Redis + Key Vault) independently.
 module "data" {
   source = "../../modules/azure-data"
 
-  environment                         = var.environment
-  name_prefix                         = var.name_prefix
-  location                            = var.location
-  admin_password                      = var.honua_admin_password
-  db_admin_password                   = var.db_admin_password
-  db_sku_name                         = var.db_sku_name
-  db_storage_mb                       = var.db_storage_mb
-  db_geo_redundant_backup_enabled     = var.db_geo_redundant_backup_enabled
-  db_backup_retention_days            = var.db_backup_retention_days
-  db_public_network_access            = var.db_public_network_access
-  db_firewall_start_ip                = var.db_firewall_start_ip
-  db_firewall_end_ip                  = var.db_firewall_end_ip
-  enable_postgis                      = var.enable_postgis
-  postgis_readiness_max_attempts      = var.postgis_readiness_max_attempts
-  postgis_readiness_sleep_seconds     = var.postgis_readiness_sleep_seconds
-  redis_enabled                       = var.redis_enabled
-  redis_sku_name                      = var.redis_sku_name
-  redis_family                        = var.redis_family
-  redis_capacity                      = var.redis_capacity
-  redis_public_network_access_enabled = var.redis_public_network_access_enabled
-  key_vault_default_action            = var.key_vault_default_action
-  tags                                = var.tags
+  environment                             = var.environment
+  name_prefix                             = var.name_prefix
+  location                                = var.location
+  admin_password                          = var.honua_admin_password
+  db_admin_password                       = var.db_admin_password
+  db_sku_name                             = var.db_sku_name
+  db_storage_mb                           = var.db_storage_mb
+  db_geo_redundant_backup_enabled         = var.db_geo_redundant_backup_enabled
+  db_backup_retention_days                = var.db_backup_retention_days
+  db_public_network_access                = var.db_public_network_access
+  db_firewall_start_ip                    = var.db_firewall_start_ip
+  db_firewall_end_ip                      = var.db_firewall_end_ip
+  enable_postgis                          = var.enable_postgis
+  postgis_readiness_max_attempts          = var.postgis_readiness_max_attempts
+  postgis_readiness_sleep_seconds         = var.postgis_readiness_sleep_seconds
+  redis_enabled                           = var.redis_enabled
+  redis_sku_name                          = var.redis_sku_name
+  redis_family                            = var.redis_family
+  redis_capacity                          = var.redis_capacity
+  redis_public_network_access_enabled     = var.redis_public_network_access_enabled
+  key_vault_purge_protection_enabled      = var.key_vault_purge_protection_enabled
+  key_vault_soft_delete_retention_days    = var.key_vault_soft_delete_retention_days
+  key_vault_public_network_access_enabled = var.key_vault_public_network_access_enabled
+  key_vault_default_action                = var.key_vault_default_action
+  key_vault_bypass                        = var.key_vault_bypass
+  key_vault_ip_rules                      = var.key_vault_ip_rules
+  secret_expiration_days                  = var.secret_expiration_days
+  tags                                    = var.tags
 }
 
 locals {

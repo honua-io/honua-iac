@@ -4,10 +4,11 @@
 # Usage:
 #   ./scripts/package-customer-dist.sh [--output dist/honua-terraform.tar.gz]
 #
-# The resulting archive contains only what operators need:
+# The resulting archive contains the marketplace/operator install bundle:
 #   modules/          Reusable Terraform modules
 #   examples/         Deployable example stacks
 #   bootstrap/        Least-privilege identity provisioning
+#   marketplace/      Versioned bundle manifests and schema contracts
 #   README.md         Operator documentation
 #
 # Internal CI/CD artifacts (validation/, .github/, scripts/) are excluded.
@@ -31,16 +32,29 @@ trap 'rm -rf "$STAGING"' EXIT
 
 echo "Staging customer distribution..."
 
-# Copy operator-facing directories.
-cp -a "${TF_ROOT}/modules"   "${STAGING}/modules"
-cp -a "${TF_ROOT}/examples"  "${STAGING}/examples"
-cp -a "${TF_ROOT}/bootstrap" "${STAGING}/bootstrap"
-cp    "${TF_ROOT}/README.md" "${STAGING}/README.md"
+sync_tree() {
+  local source_dir="$1"
+  local dest_dir="$2"
 
-# Strip internal-only files from the staging area.
-find "${STAGING}" -name '*.tftest.hcl' -delete
-find "${STAGING}" -name '.terraform' -type d -exec rm -rf {} + 2>/dev/null || true
-find "${STAGING}" -name '.terraform.lock.hcl' -delete 2>/dev/null || true
+  rsync -a \
+    --exclude='.terraform/' \
+    --exclude='.terraform.lock.hcl' \
+    --exclude='*.tftest.hcl' \
+    "$source_dir"/ "$dest_dir"/
+}
+
+# Copy operator-facing directories without initialized working directories or test fixtures.
+mkdir -p "${STAGING}/modules" "${STAGING}/examples" "${STAGING}/bootstrap" "${STAGING}/marketplace"
+sync_tree "${TF_ROOT}/modules" "${STAGING}/modules"
+sync_tree "${TF_ROOT}/examples" "${STAGING}/examples"
+sync_tree "${TF_ROOT}/bootstrap" "${STAGING}/bootstrap"
+sync_tree "${TF_ROOT}/marketplace" "${STAGING}/marketplace"
+cp "${TF_ROOT}/README.md" "${STAGING}/README.md"
+
+if ! find "${STAGING}/marketplace/bundles" -maxdepth 1 -type f -name '*.json' | grep -q .; then
+  echo "Expected marketplace bundle manifests under marketplace/bundles" >&2
+  exit 1
+fi
 
 # Rewrite module source paths.
 # In the repo, examples reference "../../modules/X". In the flat distribution
@@ -54,5 +68,5 @@ tar -czf "$OUTPUT" -C "$STAGING" .
 
 echo "Customer distribution: ${OUTPUT}"
 echo "Contents:"
-tar -tzf "$OUTPUT" | head -30
+tar -tzf "$OUTPUT" | sed -n '1,30p'
 echo "..."

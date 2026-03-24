@@ -8,6 +8,10 @@ module "data" {
   environment                     = var.environment
   name_prefix                     = var.name_prefix
   db_password                     = var.db_password
+  db_instance_class               = var.db_instance_class
+  db_allocated_storage            = var.db_allocated_storage
+  db_max_allocated_storage        = var.db_max_allocated_storage
+  db_maintenance_window           = var.db_maintenance_window
   db_publicly_accessible          = var.db_publicly_accessible
   db_additional_ingress_cidrs     = var.db_additional_ingress_cidrs
   enable_postgis                  = var.enable_postgis

@@ -165,7 +165,7 @@ resolve_aws_ecs_image() {
 }
 
 resolve_aws_serverless_image() {
-  local lambda_tag="latest-lambda-aot"
+  local lambda_tag="latest-lambda-aot-arm64"
   local account_id=""
 
   if [[ -n "$AWS_SERVERLESS_IMAGE" ]]; then
@@ -173,7 +173,7 @@ resolve_aws_serverless_image() {
   fi
 
   if [[ "$USE_AOT" != "true" ]]; then
-    lambda_tag="latest-lambda"
+    lambda_tag="latest-lambda-arm64"
   fi
 
   if [[ -z "$ECR_REGION" ]]; then

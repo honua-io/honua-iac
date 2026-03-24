@@ -22,6 +22,43 @@ run "postgis_readiness_max_attempts_minimum" {
   ]
 }
 
+run "db_allocated_storage_minimum" {
+  command = plan
+
+  variables {
+    db_allocated_storage = 19
+  }
+
+  expect_failures = [
+    var.db_allocated_storage,
+  ]
+}
+
+run "db_max_allocated_storage_must_cover_allocated_storage" {
+  command = plan
+
+  variables {
+    db_allocated_storage     = 50
+    db_max_allocated_storage = 40
+  }
+
+  expect_failures = [
+    check.db_storage_autoscaling_bounds,
+  ]
+}
+
+run "db_maintenance_window_format" {
+  command = plan
+
+  variables {
+    db_maintenance_window = "Sunday-04:00"
+  }
+
+  expect_failures = [
+    var.db_maintenance_window,
+  ]
+}
+
 run "operations_metadata_shape" {
   command = plan
 

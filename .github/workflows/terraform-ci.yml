@@ -45,6 +45,7 @@ concurrency:
 
 env:
   TF_IN_AUTOMATION: true
+  TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
   HONUA_VALIDATION_GHA_VARS_JSON: ${{ toJSON(vars) }}
 
 jobs:
@@ -55,6 +56,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Restore Terraform plugin cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: terraform-plugin-cache-${{ runner.os }}-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            terraform-plugin-cache-${{ runner.os }}-
+
+      - name: Ensure Terraform plugin cache directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -79,6 +94,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Restore Terraform plugin cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: terraform-plugin-cache-${{ runner.os }}-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            terraform-plugin-cache-${{ runner.os }}-
+
+      - name: Ensure Terraform plugin cache directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -108,7 +137,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          python -m pip install checkov==3.2.497
+          python -m pip install checkov==3.2.477
 
       - name: Run Terraform policy gates via typed runner
         shell: bash

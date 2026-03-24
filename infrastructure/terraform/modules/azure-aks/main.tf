@@ -7,6 +7,23 @@ locals {
   }, var.tags)
 }
 
+check "node_pool_scaling_bounds" {
+  assert {
+    condition = (
+      (var.auto_scaling_enabled && var.node_max_count >= var.node_min_count) ||
+      (!var.auto_scaling_enabled)
+    )
+    error_message = "node_max_count must be greater than or equal to node_min_count when auto_scaling_enabled is true."
+  }
+}
+
+check "public_api_requires_authorized_ip_ranges" {
+  assert {
+    condition     = var.private_cluster_enabled || length(var.authorized_ip_ranges) > 0
+    error_message = "Set authorized_ip_ranges when private_cluster_enabled is false."
+  }
+}
+
 resource "azurerm_resource_group" "this" {
   name     = "${local.name}-aks-rg"
   location = var.location
@@ -14,7 +31,7 @@ resource "azurerm_resource_group" "this" {
 }
 
 #checkov:skip=CKV_AZURE_4: Diagnostics are configured separately when a Log Analytics workspace is provided.
-#checkov:skip=CKV_AZURE_115: Private-cluster networking is environment-specific and can be enabled by the caller.
+#checkov:skip=CKV_AZURE_115: Private DNS integration details remain environment-specific even though private API access is the default.
 #checkov:skip=CKV_AZURE_116: Azure Policy enablement is environment-specific and may be layered on later.
 #checkov:skip=CKV_AZURE_117: Disk encryption sets are optional and managed outside this module.
 #checkov:skip=CKV_AZURE_168: Node-pool density is environment-specific and intentionally configurable.
@@ -24,10 +41,9 @@ resource "azurerm_resource_group" "this" {
 #checkov:skip=CKV_AZURE_226: Ephemeral OS disks depend on chosen VM sizes and are not universally available.
 #checkov:skip=CKV_AZURE_227: Host/storage encryption settings are environment-specific and may be layered on later.
 #checkov:skip=CKV_AZURE_232: System-node pod isolation is handled by cluster policy after bootstrap.
-#checkov:skip=CKV_AZURE_141: Local admin stays enabled until managed Azure AD integration is added.
 resource "azurerm_kubernetes_cluster" "this" {
   #checkov:skip=CKV_AZURE_4: Diagnostics are configured separately when a Log Analytics workspace is provided.
-  #checkov:skip=CKV_AZURE_115: Private-cluster networking is environment-specific and can be enabled by the caller.
+  #checkov:skip=CKV_AZURE_115: Private DNS integration details remain environment-specific even though private API access is the default.
   #checkov:skip=CKV_AZURE_116: Azure Policy enablement is environment-specific and may be layered on later.
   #checkov:skip=CKV_AZURE_117: Disk encryption sets are optional and managed outside this module.
   #checkov:skip=CKV_AZURE_168: Node-pool density is environment-specific and intentionally configurable.
@@ -37,7 +53,6 @@ resource "azurerm_kubernetes_cluster" "this" {
   #checkov:skip=CKV_AZURE_226: Ephemeral OS disks depend on chosen VM sizes and are not universally available.
   #checkov:skip=CKV_AZURE_227: Host/storage encryption settings are environment-specific and may be layered on later.
   #checkov:skip=CKV_AZURE_232: System-node pod isolation is handled by cluster policy after bootstrap.
-  #checkov:skip=CKV_AZURE_141: Local admin stays enabled until managed Azure AD integration is added.
   name                = "${local.name}-aks"
   location            = azurerm_resource_group.this.location
   resource_group_name = azurerm_resource_group.this.name
@@ -69,9 +84,10 @@ resource "azurerm_kubernetes_cluster" "this" {
 
   role_based_access_control_enabled = true
   local_account_disabled            = var.local_account_disabled
+  private_cluster_enabled           = var.private_cluster_enabled
 
   dynamic "api_server_access_profile" {
-    for_each = length(var.authorized_ip_ranges) > 0 ? [1] : []
+    for_each = !var.private_cluster_enabled ? [1] : []
 
     content {
       authorized_ip_ranges = var.authorized_ip_ranges

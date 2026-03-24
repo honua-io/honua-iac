@@ -74,30 +74,99 @@ variable "container_port" {
   description = "Container port exposed by Honua Server."
   type        = number
   default     = 8080
+
+  validation {
+    condition     = var.container_port >= 1 && var.container_port <= 65535
+    error_message = "container_port must be between 1 and 65535."
+  }
 }
 
 variable "container_cpu" {
   description = "Fargate task CPU units."
   type        = number
   default     = 512
+
+  validation {
+    condition     = var.container_cpu > 0
+    error_message = "container_cpu must be greater than 0."
+  }
 }
 
 variable "container_memory" {
   description = "Fargate task memory (MiB)."
   type        = number
   default     = 1024
+
+  validation {
+    condition     = var.container_memory > 0
+    error_message = "container_memory must be greater than 0."
+  }
 }
 
 variable "desired_count" {
   description = "Desired number of tasks."
   type        = number
   default     = 1
+
+  validation {
+    condition     = var.desired_count >= 0
+    error_message = "desired_count must be greater than or equal to 0."
+  }
+}
+
+variable "min_capacity" {
+  description = "Minimum number of ECS tasks for auto-scaling. Defaults to desired_count when null."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.min_capacity == null ? true : var.min_capacity >= 0
+    error_message = "min_capacity must be null or greater than or equal to 0."
+  }
 }
 
 variable "max_capacity" {
   description = "Maximum number of ECS tasks for auto-scaling."
   type        = number
   default     = 4
+
+  validation {
+    condition     = var.max_capacity >= 0
+    error_message = "max_capacity must be greater than or equal to 0."
+  }
+}
+
+variable "autoscaling_cpu_target_value" {
+  description = "Target average CPU utilization percentage for ECS service autoscaling."
+  type        = number
+  default     = 70
+
+  validation {
+    condition     = var.autoscaling_cpu_target_value > 0 && var.autoscaling_cpu_target_value <= 100
+    error_message = "autoscaling_cpu_target_value must be greater than 0 and less than or equal to 100."
+  }
+}
+
+variable "autoscaling_scale_in_cooldown_seconds" {
+  description = "Cooldown in seconds after a scale-in event."
+  type        = number
+  default     = 300
+
+  validation {
+    condition     = var.autoscaling_scale_in_cooldown_seconds >= 0
+    error_message = "autoscaling_scale_in_cooldown_seconds must be greater than or equal to 0."
+  }
+}
+
+variable "autoscaling_scale_out_cooldown_seconds" {
+  description = "Cooldown in seconds after a scale-out event."
+  type        = number
+  default     = 60
+
+  validation {
+    condition     = var.autoscaling_scale_out_cooldown_seconds >= 0
+    error_message = "autoscaling_scale_out_cooldown_seconds must be greater than or equal to 0."
+  }
 }
 
 variable "assign_public_ip" {
@@ -109,6 +178,17 @@ variable "assign_public_ip" {
 variable "image" {
   description = "Container image. Pin to an immutable release tag or digest; AOT builds are recommended for faster startup and lower memory."
   type        = string
+
+  validation {
+    condition = (
+      trimspace(var.image) != "" &&
+      (
+        can(regex(".+@sha256:[0-9A-Fa-f]{64}$", trimspace(var.image))) ||
+        can(regex(".+:[^/:@]+$", trimspace(var.image)))
+      )
+    )
+    error_message = "image must be a non-empty container reference with either a tag or sha256 digest."
+  }
 }
 
 variable "task_cpu_architecture" {
@@ -122,6 +202,35 @@ variable "task_cpu_architecture" {
   }
 }
 
+variable "app_storage_enabled" {
+  description = "Provision an application S3 bucket for storage smoke tests and future object-backed features."
+  type        = bool
+  default     = false
+}
+
+variable "app_storage_bucket_name" {
+  description = "Optional explicit S3 bucket name for application storage. Leave empty to auto-generate."
+  type        = string
+  default     = ""
+}
+
+variable "app_storage_prefix" {
+  description = "Object key prefix used for application storage and validation probes."
+  type        = string
+  default     = "validation"
+
+  validation {
+    condition     = trimspace(var.app_storage_prefix) != "" && !startswith(trimspace(var.app_storage_prefix), "/")
+    error_message = "app_storage_prefix must not be empty or start with '/'."
+  }
+}
+
+variable "app_storage_force_destroy" {
+  description = "Force destroy the application S3 bucket when Terraform manages it."
+  type        = bool
+  default     = false
+}
+
 variable "admin_password" {
   description = "Admin API password for Honua (required in non-dev)."
   type        = string
@@ -129,7 +238,19 @@ variable "admin_password" {
 
   validation {
     condition     = length(var.admin_password) >= 32
-    error_message = "admin_password must be at least 32 characters (it is also used as Security__ConnectionEncryption__MasterKey)."
+    error_message = "admin_password must be at least 32 characters."
+  }
+}
+
+variable "connection_encryption_master_key" {
+  description = "Optional override for Security__ConnectionEncryption__MasterKey. Leave null to auto-generate an independent secret."
+  type        = string
+  sensitive   = true
+  default     = null
+
+  validation {
+    condition     = var.connection_encryption_master_key == null ? true : length(var.connection_encryption_master_key) >= 32
+    error_message = "connection_encryption_master_key must be null or at least 32 characters."
   }
 }
 
@@ -169,12 +290,33 @@ variable "db_allocated_storage" {
   description = "RDS allocated storage in GB."
   type        = number
   default     = 20
+
+  validation {
+    condition     = var.db_allocated_storage >= 20
+    error_message = "db_allocated_storage must be at least 20 GB."
+  }
 }
 
 variable "db_max_allocated_storage" {
   description = "Maximum allocated storage in GB for RDS autoscaling."
   type        = number
   default     = 100
+
+  validation {
+    condition     = var.db_max_allocated_storage >= 20
+    error_message = "db_max_allocated_storage must be at least 20 GB."
+  }
+}
+
+variable "db_maintenance_window" {
+  description = "Preferred weekly maintenance window for RDS."
+  type        = string
+  default     = "Sun:04:00-Sun:05:00"
+
+  validation {
+    condition     = can(regex("^(Mon|Tue|Wed|Thu|Fri|Sat|Sun):[0-2][0-9]:[0-5][0-9]-(Mon|Tue|Wed|Thu|Fri|Sat|Sun):[0-2][0-9]:[0-5][0-9]$", var.db_maintenance_window))
+    error_message = "db_maintenance_window must match Ddd:HH:MM-Ddd:HH:MM."
+  }
 }
 
 variable "db_engine_version" {
@@ -218,6 +360,12 @@ variable "existing_db_connection_string" {
   type        = string
   default     = ""
   sensitive   = true
+}
+
+variable "existing_db_cidrs" {
+  description = "Trusted CIDR ranges allowed for PostgreSQL egress when reusing an existing database endpoint."
+  type        = list(string)
+  default     = []
 }
 
 variable "allow_public_ingress_cidrs" {
@@ -444,6 +592,11 @@ variable "health_check_path" {
   description = "Path used by the ALB for health checks."
   type        = string
   default     = "/healthz/ready"
+
+  validation {
+    condition     = startswith(var.health_check_path, "/")
+    error_message = "health_check_path must start with '/'."
+  }
 }
 
 variable "log_retention_days" {
@@ -473,7 +626,7 @@ variable "kms_key_deletion_window_days" {
 variable "enable_postgis" {
   description = "Enable PostGIS and PostGIS Raster via Terraform's `postgresql_extension` resources. When reusing a database, also supply `existing_db_admin_password` so Terraform can authenticate."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "postgis_readiness_max_attempts" {

@@ -28,8 +28,8 @@ ENVIRONMENT="${AZURE_TF_ENVIRONMENT:-it}"
 NAME_PREFIX_BASE="${AZURE_TF_NAME_PREFIX_BASE:-h$(date -u +%m%d%H%M)$((RANDOM % 10))}"
 DEFAULT_HONUA_IMAGE="ghcr.io/honua-io/honua-server:latest"
 DEFAULT_HONUA_AOT_IMAGE="ghcr.io/honua-io/honua-server:latest-aot"
-DEFAULT_HONUA_FUNCTIONS_AOT_IMAGE="${HONUA_DEFAULT_FUNCTIONS_AOT_IMAGE:-ghcr.io/honua-io/honua-server:latest-aot}"
-DEFAULT_HONUA_FUNCTIONS_IMAGE="${HONUA_DEFAULT_FUNCTIONS_IMAGE:-$DEFAULT_HONUA_FUNCTIONS_AOT_IMAGE}"
+DEFAULT_HONUA_FUNCTIONS_AOT_IMAGE="${HONUA_DEFAULT_FUNCTIONS_AOT_IMAGE:-}"
+DEFAULT_HONUA_FUNCTIONS_IMAGE="${HONUA_DEFAULT_FUNCTIONS_IMAGE:-}"
 USE_AOT="${HONUA_USE_AOT:-false}"
 FUNCTIONS_AOT_AUTOSWITCH="${HONUA_AZURE_FUNCTIONS_AOT_AUTOSWITCH:-true}"
 ACA_IMAGE="${HONUA_ACA_IMAGE:-}"
@@ -120,7 +120,7 @@ Options:
   --location <azure-region>           Azure region (default: westus)
   --environment <name>                Environment suffix in names (default: it)
   --name-prefix-base <prefix>         Base prefix for generated resource names
-  --aot                               Use latest-aot for ACA and Functions (override HONUA_DEFAULT_FUNCTIONS_AOT_IMAGE if needed; JIT is debug fallback)
+  --aot                               Use latest-aot for ACA and switch Functions to HONUA_DEFAULT_FUNCTIONS_AOT_IMAGE when provided; JIT is debug fallback
   --aca-image <image>                 ACA image tag
   --functions-image <image>           Functions image tag
   --aca-previous-image <image>        Previous ACA image for upgrade/rollback validation
@@ -225,7 +225,7 @@ validate_requested_images() {
 
   if [[ "$STACK" == "functions" || "$STACK" == "both" ]]; then
     if [[ -z "$FUNCTIONS_IMAGE" ]]; then
-      log_error "Functions image is required. Set HONUA_FUNCTIONS_IMAGE or pass --functions-image."
+      log_error "Functions image is required. Set HONUA_FUNCTIONS_IMAGE, or provide HONUA_DEFAULT_FUNCTIONS_IMAGE/HONUA_DEFAULT_FUNCTIONS_AOT_IMAGE, or configure ACR_LOGIN_SERVER for runner-side image resolution."
       exit 1
     fi
 
@@ -542,7 +542,7 @@ apply_aot_mode() {
     ACA_IMAGE="$DEFAULT_HONUA_AOT_IMAGE"
   fi
 
-  if [[ "$FUNCTIONS_AOT_AUTOSWITCH" == "true" && "$FUNCTIONS_IMAGE" == "$DEFAULT_HONUA_FUNCTIONS_IMAGE" ]]; then
+  if [[ "$FUNCTIONS_AOT_AUTOSWITCH" == "true" && -n "$DEFAULT_HONUA_FUNCTIONS_IMAGE" && -n "$DEFAULT_HONUA_FUNCTIONS_AOT_IMAGE" && "$FUNCTIONS_IMAGE" == "$DEFAULT_HONUA_FUNCTIONS_IMAGE" ]]; then
     FUNCTIONS_IMAGE="$DEFAULT_HONUA_FUNCTIONS_AOT_IMAGE"
   fi
 }
@@ -2061,10 +2061,16 @@ set_aca_tf_vars() {
   export TF_VAR_honua_image="$ACA_IMAGE"
   export TF_VAR_min_replicas="$ACA_MIN_REPLICAS"
   export TF_VAR_max_replicas="$ACA_MAX_REPLICAS"
+  export TF_VAR_enable_ingress="true"
+  export TF_VAR_ingress_allowed_cidrs="[\"${DB_FIREWALL_START_IP}/32\"]"
+  export TF_VAR_key_vault_public_network_access_enabled="true"
   export TF_VAR_key_vault_default_action="Allow"
 
   unset TF_VAR_plan_sku_name
   unset TF_VAR_skip_migrations
+  unset TF_VAR_public_network_access_enabled
+  unset TF_VAR_allowed_ip_cidrs
+  unset TF_VAR_scm_allowed_ip_cidrs
   unset TF_VAR_db_sku_name
   unset TF_VAR_db_storage_mb
   unset TF_VAR_db_geo_redundant_backup_enabled
@@ -2085,10 +2091,15 @@ set_functions_tf_vars() {
   export TF_VAR_deployment_slot_image="$FUNCTIONS_DEPLOYMENT_SLOT_IMAGE"
   export TF_VAR_plan_sku_name="$FUNCTIONS_PLAN_SKU"
   export TF_VAR_skip_migrations="$FUNCTIONS_SKIP_MIGRATIONS"
+  export TF_VAR_public_network_access_enabled="true"
+  export TF_VAR_allowed_ip_cidrs="[\"${DB_FIREWALL_START_IP}/32\"]"
+  export TF_VAR_key_vault_public_network_access_enabled="true"
+  export TF_VAR_key_vault_default_action="Allow"
 
   unset TF_VAR_min_replicas
   unset TF_VAR_max_replicas
-  unset TF_VAR_key_vault_default_action
+  unset TF_VAR_enable_ingress
+  unset TF_VAR_ingress_allowed_cidrs
   unset TF_VAR_db_sku_name
   unset TF_VAR_db_storage_mb
   unset TF_VAR_db_geo_redundant_backup_enabled
@@ -2103,6 +2114,7 @@ set_functions_tf_vars() {
 set_data_tf_vars() {
   set_common_tf_vars
   export TF_VAR_name_prefix="$DATA_NAME_PREFIX"
+  export TF_VAR_key_vault_public_network_access_enabled="true"
   export TF_VAR_key_vault_default_action="Allow"
   export TF_VAR_db_sku_name="$DATA_DB_SKU_NAME"
   export TF_VAR_db_storage_mb="$DATA_DB_STORAGE_MB"
@@ -2119,6 +2131,11 @@ set_data_tf_vars() {
   unset TF_VAR_skip_migrations
   unset TF_VAR_min_replicas
   unset TF_VAR_max_replicas
+  unset TF_VAR_enable_ingress
+  unset TF_VAR_ingress_allowed_cidrs
+  unset TF_VAR_public_network_access_enabled
+  unset TF_VAR_allowed_ip_cidrs
+  unset TF_VAR_scm_allowed_ip_cidrs
 }
 
 apply_data_stack() {

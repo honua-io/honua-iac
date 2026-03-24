@@ -26,3 +26,33 @@ variable "service_principal_secret_duration_hours" {
   description = "Lifetime in hours for the bootstrap service principal secret."
   default     = 720
 }
+
+variable "create_client_secret" {
+  type        = bool
+  description = "Emit a client secret for the Terraform application. Keep false for workload identity/federation-first bootstrap."
+  default     = false
+}
+
+variable "federated_issuer" {
+  type        = string
+  description = "OIDC issuer URL for workload identity federation. Leave empty to skip federated credential creation."
+  default     = ""
+}
+
+variable "federated_subject" {
+  type        = string
+  description = "OIDC subject claim allowed to exchange tokens for the Terraform application."
+  default     = ""
+}
+
+variable "federated_audiences" {
+  type        = list(string)
+  description = "Allowed OIDC audiences for workload identity federation."
+  default     = ["api://AzureADTokenExchange"]
+}
+
+variable "federated_credential_display_name" {
+  type        = string
+  description = "Display name for the optional workload identity federated credential."
+  default     = "terraform-workload"
+}

@@ -67,6 +67,17 @@ variable "enable_nat_gateway" {
 variable "image" {
   description = "Lambda container image URI (ECR). Prefer Honua Lambda AOT tags (`vX.Y.Z-lambda-aot`); JIT tags (`vX.Y.Z-lambda`) are debug fallback."
   type        = string
+
+  validation {
+    condition = (
+      trimspace(var.image) != "" &&
+      (
+        can(regex(".+@sha256:[0-9A-Fa-f]{64}$", trimspace(var.image))) ||
+        can(regex(".+:[^/:@]+$", trimspace(var.image)))
+      )
+    )
+    error_message = "image must be a non-empty container reference with either a tag or sha256 digest."
+  }
 }
 
 variable "lambda_memory_size" {
@@ -120,13 +131,54 @@ variable "lambda_alias_version" {
   }
 }
 
+variable "app_storage_enabled" {
+  description = "Provision an application S3 bucket for storage smoke tests and future object-backed features."
+  type        = bool
+  default     = false
+}
+
+variable "app_storage_bucket_name" {
+  description = "Optional explicit S3 bucket name for application storage. Leave empty to auto-generate."
+  type        = string
+  default     = ""
+}
+
+variable "app_storage_prefix" {
+  description = "Object key prefix used for application storage and validation probes."
+  type        = string
+  default     = "validation"
+
+  validation {
+    condition     = trimspace(var.app_storage_prefix) != "" && !startswith(trimspace(var.app_storage_prefix), "/")
+    error_message = "app_storage_prefix must not be empty or start with '/'."
+  }
+}
+
+variable "app_storage_force_destroy" {
+  description = "Force destroy the application S3 bucket when Terraform manages it."
+  type        = bool
+  default     = false
+}
+
 variable "admin_password" {
   description = "Admin API password for Honua (required in non-dev)."
   type        = string
   sensitive   = true
   validation {
     condition     = length(var.admin_password) >= 32
-    error_message = "admin_password must be at least 32 characters (it is also used as Security__ConnectionEncryption__MasterKey)."
+    error_message = "admin_password must be at least 32 characters."
+  }
+}
+
+variable "connection_encryption_master_key" {
+  description = "Optional override for Security__ConnectionEncryption__MasterKey. Leave null to auto-generate an independent secret."
+  type        = string
+  sensitive   = true
+  default     = null
+
+  validation {
+    condition     = var.connection_encryption_master_key == null ? true : length(var.connection_encryption_master_key) >= 32
+    error_message = "connection_encryption_master_key must be null or at least 32 characters."
   }
 }
 
@@ -165,6 +217,33 @@ variable "db_allocated_storage" {
   description = "RDS allocated storage in GB."
   type        = number
   default     = 20
+
+  validation {
+    condition     = var.db_allocated_storage >= 20
+    error_message = "db_allocated_storage must be at least 20 GB."
+  }
+}
+
+variable "db_max_allocated_storage" {
+  description = "Maximum allocated storage in GB for RDS autoscaling."
+  type        = number
+  default     = 100
+
+  validation {
+    condition     = var.db_max_allocated_storage >= 20
+    error_message = "db_max_allocated_storage must be at least 20 GB."
+  }
+}
+
+variable "db_maintenance_window" {
+  description = "Preferred weekly maintenance window for RDS."
+  type        = string
+  default     = "Sun:04:00-Sun:05:00"
+
+  validation {
+    condition     = can(regex("^(Mon|Tue|Wed|Thu|Fri|Sat|Sun):[0-2][0-9]:[0-5][0-9]-(Mon|Tue|Wed|Thu|Fri|Sat|Sun):[0-2][0-9]:[0-5][0-9]$", var.db_maintenance_window))
+    error_message = "db_maintenance_window must match Ddd:HH:MM-Ddd:HH:MM."
+  }
 }
 
 variable "db_publicly_accessible" {
@@ -204,6 +283,12 @@ variable "existing_db_connection_string" {
   sensitive   = true
 }
 
+variable "existing_db_cidrs" {
+  description = "Trusted CIDR ranges allowed for PostgreSQL egress when reusing an existing database endpoint."
+  type        = list(string)
+  default     = []
+}
+
 variable "existing_db_admin_password" {
   description = "Admin password usable when enabling PostGIS against an existing PostgreSQL instance."
   type        = string
@@ -214,7 +299,7 @@ variable "existing_db_admin_password" {
 variable "enable_postgis" {
   description = "Enable PostGIS and PostGIS Raster via Terraform's `postgresql_extension` resources. When using `existing_db_connection_string`, also supply `existing_db_admin_password` so Terraform can authenticate."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "postgis_readiness_max_attempts" {

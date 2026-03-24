@@ -53,14 +53,14 @@ This directory contains the deployable Terraform roots, reusable modules, bootst
 
 ## Runtime Selection
 
-| Need | Recommended root |
-|---|---|
-| Long-running HTTP service on AWS | `examples/aws` |
-| Serverless HTTP on AWS | `examples/aws-serverless` |
-| Managed container app on Azure | `examples/azure` |
-| Serverless custom container on Azure | `examples/azure-functions` |
-| Managed Kubernetes on AWS | `examples/aws-eks` |
-| Managed Kubernetes on Azure | `examples/azure-aks` |
+| Need | Recommended root | Marketplace-targeted bundle |
+|---|---|---|
+| Long-running HTTP service on AWS | `examples/aws` | Yes |
+| Serverless HTTP on AWS | `examples/aws-serverless` | No |
+| Managed container app on Azure | `examples/azure` | Yes |
+| Serverless custom container on Azure | `examples/azure-functions` | No |
+| Managed Kubernetes on AWS | `examples/aws-eks` | No |
+| Managed Kubernetes on Azure | `examples/azure-aks` | No |
 
 ## Minimal Operator Workflow
 
@@ -73,7 +73,13 @@ terraform -chdir=infrastructure/terraform/examples/<stack> plan
 terraform -chdir=infrastructure/terraform/examples/<stack> apply
 ```
 
-The detailed operator procedures, cross-cloud comparison, registry guidance, backup/restore, and credential rotation steps live in `docs/operator-deployment.md`.
+If you use remote state, also copy `infrastructure/terraform/examples/<stack>/backend.tf.example` to `backend.tf` before `terraform init`.
+
+Deployable runtime roots now expose a provider-neutral `install` input surface and emit normalized
+`install_contract` and `deploy_contract` outputs for bundle automation. The detailed operator
+procedures, cross-cloud comparison, registry guidance, backup/restore, and credential rotation
+steps live in `docs/operator-deployment.md`. Marketplace-targeted bundle metadata lives under
+`infrastructure/terraform/marketplace/`.
 
 ## Validation Boundary
 

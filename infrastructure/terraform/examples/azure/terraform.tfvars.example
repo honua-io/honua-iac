@@ -1,0 +1,38 @@
+# Minimal operator inputs for the Azure Container Apps runtime.
+location = "eastus"
+
+install = {
+  artifact = {
+    image = "honuaprod.azurecr.io/honua-server:v1.0.0"
+    registry = {
+      server      = "honuaprod.azurecr.io"
+      auth_mode   = "managed_identity"
+      resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/honua-shared/providers/Microsoft.ContainerRegistry/registries/honuaprod"
+    }
+  }
+  database = {
+    compute_sku     = "B_Standard_B1ms"
+    storage_mb      = 32768
+    public_access   = true
+    postgis_enabled = true
+  }
+  network = {
+    firewall_start_ip = "0.0.0.0"
+    firewall_end_ip   = "0.0.0.0"
+    public_ingress_cidrs = [
+      "203.0.113.10/32",
+    ]
+  }
+  storage = {
+    enabled        = true
+    name           = "honua"
+    container_name = "honua"
+  }
+}
+
+honua_admin_password = "CHANGE-ME-TO-A-REAL-32-CHAR-PASSWORD"
+db_admin_password    = "CHANGE-ME-TO-A-REAL-32-CHAR-DB-PASSWORD"
+
+tags = {
+  Owner = "platform"
+}

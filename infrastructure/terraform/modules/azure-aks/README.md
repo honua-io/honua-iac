@@ -12,11 +12,12 @@ module "aks" {
   location    = "westus"
 
   sku_tier               = "Free"
-  local_account_disabled = false  # Allow local kubeconfig in dev
+  private_cluster_enabled = false
+  authorized_ip_ranges   = ["203.0.113.10/32"]
 }
 ```
 
-> Leave `authorized_ip_ranges` empty only when you intentionally want a public AKS API endpoint. For persistent environments, set trusted operator CIDRs explicitly.
+> The module defaults to a private AKS API endpoint. If you switch to a public endpoint, set `authorized_ip_ranges` explicitly.
 
 ## Production example
 
@@ -41,7 +42,8 @@ module "aks" {
   node_os_disk_size_gb = 128
 
   # Access
-  local_account_disabled = false
+  local_account_disabled = true
+  private_cluster_enabled = false
   authorized_ip_ranges   = ["203.0.113.0/24"]
 
   # Networking
@@ -70,8 +72,8 @@ Network policy is enforced via the Azure or Calico provider (set `network_policy
 ## Security
 
 - **RBAC**: Kubernetes RBAC is always enabled.
-- **Local accounts**: Enabled by default (`local_account_disabled = false`) unless you add Azure AD integration. Set to `true` only when the cluster is configured for Azure AD authentication.
-- **API server access**: Restrict with `authorized_ip_ranges`. When set, only listed CIDRs can reach the API server.
+- **Local accounts**: Disabled by default (`local_account_disabled = true`) to avoid static admin kubeconfigs.
+- **API server access**: The module defaults to a private API endpoint. If you set `private_cluster_enabled = false`, you must also set `authorized_ip_ranges`.
 - **System-assigned identity**: The cluster uses a system-assigned managed identity for Azure resource operations.
 - **Diagnostics**: When `log_analytics_workspace_id` is provided, API server, audit, controller manager, and scheduler logs are sent to Log Analytics.
 
@@ -90,7 +92,8 @@ Network policy is enforced via the Azure or Calico provider (set `network_policy
 | `node_os_disk_size_gb` | `64` | OS disk size in GB. |
 | `network_plugin` | `"azure"` | Network plugin (`azure` or `kubenet`). |
 | `network_policy` | `"azure"` | Network policy provider (`azure`, `calico`, or `""`). |
-| `local_account_disabled` | `false` | Disable local Kubernetes accounts when Azure AD integration is configured. |
+| `local_account_disabled` | `true` | Disable local Kubernetes accounts to avoid static admin kubeconfigs. |
+| `private_cluster_enabled` | `true` | Provision AKS with a private API endpoint. |
 | `authorized_ip_ranges` | `[]` | CIDR ranges authorized to access the AKS API server. |
 | `log_analytics_workspace_id` | `""` | Log Analytics workspace ID for diagnostic logs. Empty to disable. |
 

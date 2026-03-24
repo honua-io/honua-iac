@@ -3,7 +3,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0"
+      version = "~> 6.30"
     }
   }
 }
@@ -12,11 +12,45 @@ provider "aws" {
   region = var.aws_region
 }
 
+data "aws_caller_identity" "current" {}
+
+data "aws_partition" "current" {}
+
 locals {
-  user_name = var.user_name != "" ? var.user_name : "${var.name_prefix}-${var.environment}"
+  user_name                  = var.user_name != "" ? var.user_name : "${var.name_prefix}-${var.environment}"
+  role_name                  = var.role_name != "" ? var.role_name : "${local.user_name}-federated"
+  oidc_provider_key          = var.oidc_provider_arn != "" ? split("oidc-provider/", var.oidc_provider_arn)[1] : ""
+  managed_name_glob          = "honua*"
+  managed_role_arn           = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${local.managed_name_glob}"
+  managed_policy_arn         = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:policy/${local.managed_name_glob}"
+  managed_bucket_arn         = "arn:${data.aws_partition.current.partition}:s3:::${local.managed_name_glob}"
+  managed_lambda_arn         = "arn:${data.aws_partition.current.partition}:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${local.managed_name_glob}"
+  managed_ecr_repository_arn = "arn:${data.aws_partition.current.partition}:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/${local.managed_name_glob}"
+}
+
+check "bootstrap_identity_surface" {
+  assert {
+    condition     = var.create_iam_user || (trimspace(var.oidc_provider_arn) != "" && length(var.oidc_subjects) > 0)
+    error_message = "Enable create_iam_user or configure oidc_provider_arn with at least one oidc_subject."
+  }
+}
+
+check "access_key_requires_user" {
+  assert {
+    condition     = !var.create_access_key || var.create_iam_user
+    error_message = "create_access_key requires create_iam_user = true."
+  }
+}
+
+check "oidc_inputs_together" {
+  assert {
+    condition     = (trimspace(var.oidc_provider_arn) == "" && length(var.oidc_subjects) == 0) || (trimspace(var.oidc_provider_arn) != "" && length(var.oidc_subjects) > 0)
+    error_message = "oidc_provider_arn and oidc_subjects must be configured together."
+  }
 }
 
 resource "aws_iam_user" "terraform" {
+  count = var.create_iam_user ? 1 : 0
   #checkov:skip=CKV_AWS_273: Bootstrap uses an IAM user for non-SSO automation contexts.
   name = local.user_name
   tags = var.tags
@@ -24,7 +58,7 @@ resource "aws_iam_user" "terraform" {
 
 resource "aws_iam_access_key" "terraform" {
   count = var.create_access_key ? 1 : 0
-  user  = aws_iam_user.terraform.name
+  user  = aws_iam_user.terraform[0].name
 }
 
 data "aws_iam_policy_document" "terraform" {
@@ -41,7 +75,6 @@ data "aws_iam_policy_document" "terraform" {
       "lambda:Create*",
       "lambda:Delete*",
       "lambda:Get*",
-      "lambda:InvokeFunction",
       "lambda:List*",
       "lambda:PublishVersion",
       "lambda:RemovePermission",
@@ -64,6 +97,7 @@ data "aws_iam_policy_document" "terraform" {
       "ec2:Delete*",
       "ec2:Describe*",
       "ec2:DetachInternetGateway",
+      "ec2:DisassociateAddress",
       "ec2:DisassociateRouteTable",
       "ec2:Modify*",
       "ec2:ReplaceRoute",
@@ -131,18 +165,10 @@ data "aws_iam_policy_document" "terraform" {
       "cloudwatch:List*",
       "cloudwatch:Put*",
       "servicequotas:GetServiceQuota",
-      "ecr:BatchGetImage",
-      "ecr:CreateRepository",
-      "ecr:DeleteRepository",
       "ecr:Describe*",
       "ecr:GetAuthorizationToken",
-      "ecr:GetDownloadUrlForLayer",
       "ecr:List*",
-      "ecr:PutImage",
-      "ecr:SetRepositoryPolicy",
-      "tag:GetResources",
-      "ecr:TagResource",
-      "ecr:UntagResource"
+      "tag:GetResources"
     ]
     resources = ["*"]
 
@@ -169,17 +195,49 @@ data "aws_iam_policy_document" "terraform" {
       "s3:PutEncryptionConfiguration",
       "s3:PutObject"
     ]
+    resources = [
+      local.managed_bucket_arn,
+      "${local.managed_bucket_arn}/*"
+    ]
+  }
+
+  statement {
+    sid = "LambdaInvokeManagedFunctions"
+    actions = [
+      "lambda:InvokeFunction"
+    ]
+    resources = [local.managed_lambda_arn]
+  }
+
+  statement {
+    sid = "EcrRepositoryLifecycleForServerless"
+    actions = [
+      "ecr:BatchGetImage",
+      "ecr:CreateRepository",
+      "ecr:DeleteRepository",
+      "ecr:GetDownloadUrlForLayer",
+      "ecr:PutImage",
+      "ecr:SetRepositoryPolicy",
+      "ecr:TagResource",
+      "ecr:UntagResource"
+    ]
+    resources = [local.managed_ecr_repository_arn]
+  }
+
+  statement {
+    sid = "IamReadForLambda"
+    actions = [
+      "iam:ListRoles"
+    ]
     resources = ["*"]
   }
 
   statement {
-    sid = "IamForLambda"
+    sid = "IamRoleLifecycleForLambda"
     actions = [
       "iam:CreateRole",
       "iam:DeleteRole",
       "iam:GetRole",
-      "iam:ListRoles",
-      "iam:PassRole",
       "iam:AttachRolePolicy",
       "iam:DetachRolePolicy",
       "iam:PutRolePolicy",
@@ -187,18 +245,46 @@ data "aws_iam_policy_document" "terraform" {
       "iam:GetRolePolicy",
       "iam:ListAttachedRolePolicies",
       "iam:ListRolePolicies",
+      "iam:ListInstanceProfilesForRole",
+      "iam:TagRole",
+      "iam:UntagRole"
+    ]
+    resources = [local.managed_role_arn]
+  }
+
+  statement {
+    sid = "IamPolicyLifecycleForLambda"
+    actions = [
       "iam:CreatePolicy",
       "iam:DeletePolicy",
       "iam:GetPolicy",
       "iam:GetPolicyVersion",
       "iam:ListPolicyVersions",
-      "iam:ListInstanceProfilesForRole",
       "iam:CreatePolicyVersion",
       "iam:DeletePolicyVersion",
-      "iam:TagRole",
-      "iam:UntagRole",
       "iam:TagPolicy",
-      "iam:UntagPolicy",
+      "iam:UntagPolicy"
+    ]
+    resources = [local.managed_policy_arn]
+  }
+
+  statement {
+    sid = "IamPassManagedRolesForLambda"
+    actions = [
+      "iam:PassRole"
+    ]
+    resources = [local.managed_role_arn]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["lambda.amazonaws.com"]
+    }
+  }
+
+  statement {
+    sid = "IamServiceLinkedRolesForLambda"
+    actions = [
       "iam:CreateServiceLinkedRole"
     ]
     resources = ["*"]
@@ -212,7 +298,48 @@ resource "aws_iam_policy" "terraform" {
 }
 
 resource "aws_iam_user_policy_attachment" "terraform" {
+  count = var.create_iam_user ? 1 : 0
   #checkov:skip=CKV_AWS_40: Bootstrap policy attached directly to the automation user.
-  user       = aws_iam_user.terraform.name
+  user       = aws_iam_user.terraform[0].name
+  policy_arn = aws_iam_policy.terraform.arn
+}
+
+data "aws_iam_policy_document" "terraform_oidc_assume" {
+  count = trimspace(var.oidc_provider_arn) != "" && length(var.oidc_subjects) > 0 ? 1 : 0
+
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [var.oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${local.oidc_provider_key}:aud"
+      values   = var.oidc_audiences
+    }
+
+    condition {
+      test     = "StringLike"
+      variable = "${local.oidc_provider_key}:sub"
+      values   = var.oidc_subjects
+    }
+  }
+}
+
+resource "aws_iam_role" "terraform" {
+  count = trimspace(var.oidc_provider_arn) != "" && length(var.oidc_subjects) > 0 ? 1 : 0
+
+  name               = local.role_name
+  assume_role_policy = data.aws_iam_policy_document.terraform_oidc_assume[0].json
+  tags               = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "terraform" {
+  count = trimspace(var.oidc_provider_arn) != "" && length(var.oidc_subjects) > 0 ? 1 : 0
+
+  role       = aws_iam_role.terraform[0].name
   policy_arn = aws_iam_policy.terraform.arn
 }

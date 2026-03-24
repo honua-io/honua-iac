@@ -18,14 +18,16 @@ flowchart TD
 
 ## Deployable Targets
 
-| Target | Terraform root | Runtime | Edge | Secret store | Built-in data plane |
-|---|---|---|---|---|---|
-| AWS ECS | `infrastructure/terraform/examples/aws` | ECS/Fargate | ALB | AWS Secrets Manager | RDS PostgreSQL + optional ElastiCache |
-| AWS serverless | `infrastructure/terraform/examples/aws-serverless` | Lambda container + API Gateway | HTTP API | AWS Secrets Manager | RDS PostgreSQL + optional ElastiCache |
-| Azure ACA | `infrastructure/terraform/examples/azure` | Azure Container Apps | ACA ingress | Azure Key Vault | PostgreSQL Flexible Server + optional Azure Cache for Redis |
-| Azure Functions | `infrastructure/terraform/examples/azure-functions` | Linux Function App custom container | Function App HTTPS endpoint | Azure Key Vault | PostgreSQL Flexible Server + optional Azure Cache for Redis |
-| AWS EKS | `infrastructure/terraform/examples/aws-eks` | Managed Kubernetes cluster | Bring-your-own Helm/Ingress | Kubernetes + cloud-native integrations | Cluster only; deploy Honua separately |
-| Azure AKS | `infrastructure/terraform/examples/azure-aks` | Managed Kubernetes cluster | Bring-your-own Helm/Ingress | Kubernetes + cloud-native integrations | Cluster only; deploy Honua separately |
+| Target | Terraform root | Runtime | Edge | Secret store | Built-in data plane | Marketplace-targeted bundle |
+|---|---|---|---|---|---|---|
+| AWS ECS | `infrastructure/terraform/examples/aws` | ECS/Fargate | ALB | AWS Secrets Manager | RDS PostgreSQL + optional ElastiCache | Yes |
+| AWS serverless | `infrastructure/terraform/examples/aws-serverless` | Lambda container + API Gateway | HTTP API | AWS Secrets Manager | RDS PostgreSQL + optional ElastiCache | No |
+| Azure ACA | `infrastructure/terraform/examples/azure` | Azure Container Apps | ACA ingress | Azure Key Vault | PostgreSQL Flexible Server + optional Azure Cache for Redis | Yes |
+| Azure Functions | `infrastructure/terraform/examples/azure-functions` | Linux Function App custom container | Function App HTTPS endpoint | Azure Key Vault | PostgreSQL Flexible Server + optional Azure Cache for Redis | No |
+| AWS EKS | `infrastructure/terraform/examples/aws-eks` | Managed Kubernetes cluster | Bring-your-own Helm/Ingress | Kubernetes + cloud-native integrations | Cluster only; deploy Honua separately | No |
+| Azure AKS | `infrastructure/terraform/examples/azure-aks` | Managed Kubernetes cluster | Bring-your-own Helm/Ingress | Kubernetes + cloud-native integrations | Cluster only; deploy Honua separately | No |
+
+Marketplace-targeted bundles in this repo intentionally focus on turnkey container runtimes. Serverless roots remain operator-only, and cluster-only roots remain bring-your-own-deploy orchestration targets. The machine-readable bundle matrix lives in `infrastructure/terraform/marketplace/targets.json`.
 
 ## Cross-Cloud Comparison
 
@@ -42,13 +44,18 @@ flowchart TD
 ## Standard Deployment Workflow
 
 1. Pick a Terraform root from the table above.
-2. Copy the matching `terraform.tfvars.example` to `terraform.tfvars`.
-3. Set at least:
+2. Copy the matching `terraform.tfvars.example` to `terraform.tfvars`. If you use remote state, also copy `backend.tf.example` to `backend.tf`.
+3. Fill the provider-neutral `install = { ... }` questionnaire first:
+   - `artifact.image` for the immutable application image
+   - `database.*` for compute/storage/reuse inputs
+   - `network.*` for reuse and ingress/firewall inputs
+   - `storage.*` for optional object storage
+   Legacy provider-specific variables still work as compatibility fallbacks, but marketplace bundles should treat `install` as the primary customer-facing surface.
+4. Set the remaining secrets and operator metadata:
    - admin password
    - database password or admin password
-   - immutable application image
    - tags, region, and any reuse variables (`existing_*`) if you are attaching to shared infra. When reusing a database while `enable_postgis = true`, include `existing_db_admin_password` so Terraform can authenticate and manage the extensions.
-4. Apply:
+5. Apply:
 
 ```bash
 terraform -chdir=infrastructure/terraform/examples/<stack> init
@@ -56,7 +63,7 @@ terraform -chdir=infrastructure/terraform/examples/<stack> plan
 terraform -chdir=infrastructure/terraform/examples/<stack> apply
 ```
 
-5. Verify the runtime endpoint and database connectivity before handing traffic to the stack.
+6. Verify the runtime endpoint and database connectivity before handing traffic to the stack.
 
 ## Private Registry and Image Pull
 
@@ -68,9 +75,10 @@ terraform -chdir=infrastructure/terraform/examples/<stack> apply
 
 ### ACA and Azure Functions
 
-- Both modules accept `registry_server`, `registry_username`, and `registry_password`.
-- Prefer a dedicated pull identity over an admin registry account.
-- Treat registry credentials as Terraform inputs backed by your secret manager or CI secret store.
+- Both modules now support a provider-neutral registry contract through `install.artifact.registry.*`.
+- Prefer `auth_mode = "managed_identity"` with `resource_id` pointing at the target ACR.
+- Use username/password only as an explicit fallback when managed identity or federation is not available.
+- Treat any registry credentials as secret-manager-backed exceptions, not the default onboarding path.
 - For Functions, use the same registry settings for both the production image and the optional deployment slot image unless you are intentionally splitting promotion lanes.
 
 ### AKS and EKS
@@ -164,15 +172,15 @@ Redis auth token rotation works the same way: update the `redis_auth_token` inpu
 
 ### Registry credentials
 
-1. Create or rotate the pull credential in the registry.
-2. Update `registry_*` inputs for ACA/Functions, or rotate the Kubernetes pull secret for AKS/EKS.
+1. Prefer rotating the pull identity or federated subject that grants registry access.
+2. If ACA/Functions use fallback credentials, update `install.artifact.registry.*` or the legacy `registry_*` inputs. For AKS/EKS, rotate the Kubernetes pull secret.
 3. Re-apply or redeploy the runtime.
 4. Force a fresh pull by deploying a new image tag or restarting the runtime.
 
 ### Bootstrap / CI deployment identities
 
-1. Rotate the credentials in the matching `infrastructure/terraform/bootstrap/*` stack or your central identity platform.
-2. Update CI secrets that feed Terraform validation and deployment.
+1. Prefer rotating the federated trust relationship or workload identity subject in the matching `infrastructure/terraform/bootstrap/*` stack or your central identity platform.
+2. Only if federation is unavailable, rotate the fallback client secret or access key and update CI secrets that feed Terraform validation and deployment.
 3. Run a dry plan or validation scenario before disabling the old credential.
 
 ## Troubleshooting

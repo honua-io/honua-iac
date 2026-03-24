@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "v1",
+  "bundleId": "azure-aca",
+  "targetId": "azure-aca",
+  "bundleProfile": "marketplace-turnkey",
+  "runtime": "azure-container-apps",
+  "marketplaceEligible": true,
+  "installSurface": {
+    "inputVariable": "install",
+    "normalizedOutput": "install_contract",
+    "schema": "../schemas/install-surface.v1.json",
+    "sampleTfvars": "../../examples/azure/terraform.tfvars.example"
+  },
+  "deploySurface": {
+    "output": "deploy_contract",
+    "schema": "../schemas/deploy-contract.v2.json"
+  },
+  "supportedRegions": {
+    "validated": [
+      "westus"
+    ],
+    "notes": "Requires Azure Container Apps, Flexible Server for PostgreSQL, Key Vault, Managed Identity, and Storage support in the selected region."
+  },
+  "requiredPermissions": [
+    "Provision and mutate resource groups, Container Apps, Container Apps environments, Log Analytics, and managed identities",
+    "Provision Flexible Server PostgreSQL, optional Azure Cache for Redis, Key Vault secrets, and storage accounts/containers",
+    "Assign AcrPull and runtime access roles when private registries or managed identities are used"
+  ],
+  "billableComponents": [
+    "Azure Container Apps consumption or dedicated workload",
+    "Log Analytics workspace",
+    "Flexible Server PostgreSQL",
+    "Optional Azure Cache for Redis",
+    "Optional Blob Storage",
+    "Key Vault operations"
+  ],
+  "upgradePath": {
+    "strategy": "Revision-based image rollout within a single Container App",
+    "rollback": "Redeploy the previous image and let ACA shift traffic back to the prior revision",
+    "currentRevisionField": "deploy_contract.current_revision",
+    "desiredRevisionField": "deploy_contract.desired_revision"
+  },
+  "validationScenarioRefs": [
+    {
+      "scenario": "azure-live",
+      "targetDescriptor": "aca"
+    }
+  ]
+}

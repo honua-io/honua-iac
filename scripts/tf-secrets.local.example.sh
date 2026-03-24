@@ -43,6 +43,8 @@ export AWS_SESSION_TOKEN="<session-token-if-applicable>"
 #   HONUA_FUNCTIONS_IMAGE
 #   HONUA_AWS_ECS_IMAGE
 #   HONUA_AWS_SERVERLESS_IMAGE
+# For AWS Lambda validation, prefer the single-arch arm64 tag, for example:
+#   export HONUA_AWS_SERVERLESS_IMAGE="<account>.dkr.ecr.<region>.amazonaws.com/honua-server:latest-lambda-aot-arm64"
 
 # Optional existing AWS data stack reuse
 # export HONUA_AWS_EXISTING_DB_ENDPOINT="<rds-endpoint>"

@@ -12,6 +12,44 @@ run "sku_tier_must_be_valid" {
   ]
 }
 
+run "node_pool_scaling_bounds" {
+  command = plan
+
+  variables {
+    auto_scaling_enabled = true
+    node_min_count       = 4
+    node_max_count       = 3
+  }
+
+  expect_failures = [
+    check.node_pool_scaling_bounds,
+  ]
+}
+
+run "authorized_ip_ranges_must_be_cidr" {
+  command = plan
+
+  variables {
+    authorized_ip_ranges = ["203.0.113.10"]
+  }
+
+  expect_failures = [
+    var.authorized_ip_ranges,
+  ]
+}
+
+run "public_api_requires_authorized_ip_ranges" {
+  command = plan
+
+  variables {
+    private_cluster_enabled = false
+  }
+
+  expect_failures = [
+    check.public_api_requires_authorized_ip_ranges,
+  ]
+}
+
 run "control_plane_outputs_shape" {
   command = plan
 

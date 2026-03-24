@@ -22,10 +22,40 @@ variable "user_name" {
   default     = ""
 }
 
+variable "role_name" {
+  type        = string
+  description = "Override for the federated IAM role name."
+  default     = ""
+}
+
+variable "create_iam_user" {
+  type        = bool
+  description = "Create the legacy IAM user fallback surface. Leave false to prefer OIDC/workload identity federation."
+  default     = false
+}
+
 variable "create_access_key" {
   type        = bool
   description = "Whether to create an access key for the IAM user."
   default     = false
+}
+
+variable "oidc_provider_arn" {
+  type        = string
+  description = "Existing IAM OIDC provider ARN allowed to assume the federated Terraform role."
+  default     = ""
+}
+
+variable "oidc_subjects" {
+  type        = list(string)
+  description = "OIDC subject claims allowed to assume the federated Terraform role."
+  default     = []
+}
+
+variable "oidc_audiences" {
+  type        = list(string)
+  description = "OIDC audience claims allowed to assume the federated Terraform role."
+  default     = ["sts.amazonaws.com"]
 }
 
 variable "tags" {

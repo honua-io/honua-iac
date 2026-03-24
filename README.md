@@ -9,7 +9,7 @@ Operator-focused Terraform for deploying Honua in your own AWS or Azure account.
    - `infrastructure/terraform/examples/azure` (Azure Container Apps)
    - `infrastructure/terraform/examples/aws-serverless` (AWS Lambda)
    - `infrastructure/terraform/examples/azure-functions` (Azure Functions)
-2. Copy the stack's `terraform.tfvars.example` to `terraform.tfvars` and fill in secrets/images.
+2. Copy the stack's `terraform.tfvars.example` to `terraform.tfvars` and fill in secrets/images. If you use remote state, also copy `backend.tf.example` to `backend.tf`.
 3. Run apply:
 
 ```bash
@@ -21,6 +21,12 @@ terraform -chdir=infrastructure/terraform/examples/aws apply
 4. Capture outputs (`honua_url`, DB endpoint/FQDN) and run health checks.
 
 Detailed guide: [docs/operator-deployment.md](docs/operator-deployment.md)
+
+Marketplace-targeted bundles currently focus on the turnkey container runtimes:
+- `infrastructure/terraform/examples/aws`
+- `infrastructure/terraform/examples/azure`
+
+The machine-readable bundle matrix lives in `infrastructure/terraform/marketplace/targets.json`.
 
 ## Repository layout
 

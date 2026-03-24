@@ -847,7 +847,8 @@ internal static partial class ValidationRunner
         AssertRegexPresent(@"ConnectionStrings__DefaultConnection\s*=\s*local\.db_connection_string", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-db-direct-env");
         AssertRegexPresent(@"ConnectionStrings__redis\s*=\s*local\.redis_connection", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-redis-direct-env");
         AssertRegexPresent(@"HONUA_ADMIN_PASSWORD\s*=\s*var\.admin_password", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-admin-password-direct-env");
-        AssertRegexPresent(@"Security__ConnectionEncryption__MasterKey\s*=\s*var\.admin_password", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-master-key-direct-env");
+        AssertRegexPresent(@"Security__ConnectionEncryption__MasterKey\s*=\s*local\.connection_encryption_master_key", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-master-key-direct-env");
+        AssertRegexAbsent(@"Security__ConnectionEncryption__MasterKey\s*=\s*var\.admin_password", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-master-key-not-admin-password");
         AssertRegexAbsent(@"HONUA_SECRET_CONNECTION_STRING_ARN", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-no-db-secret-env");
         AssertRegexAbsent(@"HONUA_SECRET_ADMIN_PASSWORD_ARN", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-no-admin-secret-env");
         AssertRegexAbsent(@"HONUA_SECRET_REDIS_CONNECTION_ARN", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-no-redis-secret-env");
@@ -856,7 +857,8 @@ internal static partial class ValidationRunner
         AssertRegexPresent(@"ConnectionStrings__DefaultConnection\s*=\s*local\.db_connection_string", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-db-direct-env");
         AssertRegexPresent(@"ConnectionStrings__redis\s*=\s*local\.redis_connection", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-redis-direct-env");
         AssertRegexPresent(@"HONUA_ADMIN_PASSWORD\s*=\s*var\.admin_password", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-admin-password-direct-env");
-        AssertRegexPresent(@"Security__ConnectionEncryption__MasterKey\s*=\s*var\.admin_password", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-master-key-direct-env");
+        AssertRegexPresent(@"Security__ConnectionEncryption__MasterKey\s*=\s*local\.connection_encryption_master_key", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-master-key-direct-env");
+        AssertRegexAbsent(@"Security__ConnectionEncryption__MasterKey\s*=\s*var\.admin_password", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-master-key-not-admin-password");
         AssertRegexPresent(@"WEBSITE_WARMUP_PATH\s*=\s*""/admin/host/ping""", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-warmup-path-live");
         AssertRegexPresent(@"WEBSITE_WARMUP_STATUSES\s*=\s*""200""", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-warmup-statuses-200");
         AssertRegexAbsent(@"resource ""azurerm_key_vault_access_policy"" ""function_app""", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-no-runtime-keyvault-policy");

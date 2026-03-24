@@ -40,6 +40,24 @@ variable "node_os_disk_size_gb" {
   default     = 64
 }
 
+variable "auto_scaling_enabled" {
+  description = "Enable cluster autoscaler on the default node pool."
+  type        = bool
+  default     = true
+}
+
+variable "node_min_count" {
+  description = "Minimum node count when auto-scaling is enabled."
+  type        = number
+  default     = 1
+}
+
+variable "node_max_count" {
+  description = "Maximum node count when auto-scaling is enabled."
+  type        = number
+  default     = 5
+}
+
 variable "kubernetes_version" {
   description = "Optional AKS version override."
   type        = string
@@ -53,7 +71,24 @@ variable "sku_tier" {
 }
 
 variable "authorized_ip_ranges" {
-  description = "CIDR ranges allowed to access the AKS API endpoint. Leave empty to keep the endpoint public until you set trusted CIDRs."
+  description = "CIDR ranges allowed to access the AKS API endpoint when private_cluster_enabled is false."
   type        = list(string)
   default     = []
+
+  validation {
+    condition     = alltrue([for cidr in var.authorized_ip_ranges : can(cidrnetmask(cidr))])
+    error_message = "authorized_ip_ranges must contain valid CIDR blocks."
+  }
+}
+
+variable "local_account_disabled" {
+  description = "Disable local Kubernetes admin accounts to avoid static kubeconfigs."
+  type        = bool
+  default     = true
+}
+
+variable "private_cluster_enabled" {
+  description = "Provision AKS with a private API endpoint."
+  type        = bool
+  default     = true
 }

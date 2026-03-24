@@ -1,0 +1,28 @@
+# Minimal operator inputs for the AWS Lambda runtime.
+region = "us-east-1"
+
+install = {
+  artifact = {
+    image = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server:v1.0.0-lambda-aot"
+  }
+  database = {
+    compute_sku     = "db.t4g.micro"
+    storage_gb      = 20
+    max_storage_gb  = 100
+    public_access   = true
+    postgis_enabled = true
+  }
+  storage = {
+    enabled       = true
+    name          = "honua-app-storage-example"
+    prefix        = "runtime"
+    force_destroy = false
+  }
+}
+
+honua_admin_password = "CHANGE-ME-TO-A-REAL-32-CHAR-PASSWORD"
+db_password          = "CHANGE-ME-TO-A-REAL-32-CHAR-DB-PASSWORD"
+
+tags = {
+  Owner = "platform"
+}

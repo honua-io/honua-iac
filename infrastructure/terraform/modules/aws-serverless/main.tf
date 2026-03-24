@@ -13,17 +13,24 @@ locals {
     Environment = var.environment
     ManagedBy   = "terraform"
   }, var.tags)
-  use_existing_vpc   = var.existing_vpc_id != ""
-  vpc_id             = local.use_existing_vpc ? var.existing_vpc_id : module.vpc[0].vpc_id
-  vpc_cidr_block     = local.use_existing_vpc ? var.existing_vpc_cidr : module.vpc[0].vpc_cidr_block
-  public_subnets     = local.use_existing_vpc ? var.existing_public_subnet_ids : module.vpc[0].public_subnets
-  private_subnets    = local.use_existing_vpc ? var.existing_private_subnet_ids : module.vpc[0].private_subnets
-  db_use_existing    = var.existing_db_endpoint != "" && var.existing_db_connection_string != ""
-  redis_enabled      = var.redis_enabled || var.redis_connection_string != ""
-  redis_create       = var.redis_enabled && var.redis_connection_string == ""
-  redis_auth_token   = var.redis_auth_token != "" ? var.redis_auth_token : (local.redis_create ? random_password.redis_auth[0].result : "")
-  redis_connection   = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true" : "")
-  redis_egress_cidrs = local.redis_create ? [local.vpc_cidr_block] : var.redis_connection_cidrs
+  use_existing_vpc                 = var.existing_vpc_id != ""
+  vpc_id                           = local.use_existing_vpc ? var.existing_vpc_id : module.vpc[0].vpc_id
+  vpc_cidr_block                   = local.use_existing_vpc ? var.existing_vpc_cidr : module.vpc[0].vpc_cidr_block
+  public_subnets                   = local.use_existing_vpc ? var.existing_public_subnet_ids : module.vpc[0].public_subnets
+  private_subnets                  = local.use_existing_vpc ? var.existing_private_subnet_ids : module.vpc[0].private_subnets
+  db_use_existing                  = var.existing_db_endpoint != "" && var.existing_db_connection_string != ""
+  redis_enabled                    = var.redis_enabled || var.redis_connection_string != ""
+  redis_create                     = var.redis_enabled && var.redis_connection_string == ""
+  redis_auth_token                 = var.redis_auth_token != "" ? var.redis_auth_token : (local.redis_create ? random_password.redis_auth[0].result : "")
+  redis_connection                 = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true" : "")
+  connection_encryption_master_key = var.connection_encryption_master_key != null ? var.connection_encryption_master_key : random_password.connection_encryption_master_key[0].result
+  redis_egress_cidrs               = local.redis_create ? [local.vpc_cidr_block] : var.redis_connection_cidrs
+  app_storage_prefix               = trimprefix(trimsuffix(trimspace(var.app_storage_prefix), "/"), "/")
+  app_storage_bucket_name = var.app_storage_enabled ? (
+    trimspace(var.app_storage_bucket_name) != ""
+    ? lower(trimspace(var.app_storage_bucket_name))
+    : substr(replace(lower("${var.name_prefix}-${var.environment}-app-${random_id.app_storage_suffix[0].hex}"), "_", "-"), 0, 63)
+  ) : null
 }
 
 check "existing_db_inputs" {
@@ -33,6 +40,13 @@ check "existing_db_inputs" {
       (var.existing_db_endpoint != "" && var.existing_db_connection_string != "")
     )
     error_message = "existing_db_endpoint and existing_db_connection_string must both be set or both be empty."
+  }
+}
+
+check "existing_db_reuse_requires_cidrs" {
+  assert {
+    condition     = !local.db_use_existing || length(var.existing_db_cidrs) > 0
+    error_message = "existing_db_cidrs must include at least one trusted CIDR when existing_db_endpoint is set."
   }
 }
 
@@ -60,18 +74,56 @@ check "existing_redis_inputs" {
   }
 }
 
+check "redis_reuse_is_exclusive" {
+  assert {
+    condition     = !(var.redis_enabled && trimspace(var.redis_connection_string) != "")
+    error_message = "Set either redis_enabled = true to provision Redis or redis_connection_string to reuse an existing Redis instance, not both."
+  }
+}
+
+check "db_storage_autoscaling_bounds" {
+  assert {
+    condition     = var.db_max_allocated_storage >= var.db_allocated_storage
+    error_message = "db_max_allocated_storage must be greater than or equal to db_allocated_storage."
+  }
+}
+
 resource "random_password" "db" {
   count            = var.db_password == null && !local.db_use_existing ? 1 : 0
   length           = 32
   special          = true
-  override_special = "#%*()-_=+[]{}:?"
+  override_special = "#%*()-_=+[]{}:?."
+
+  lifecycle {
+    ignore_changes = [length, special, override_special]
+  }
+}
+
+resource "random_password" "connection_encryption_master_key" {
+  count            = var.connection_encryption_master_key == null ? 1 : 0
+  length           = 32
+  special          = true
+  override_special = "#%*()-_=+[]{}:?."
+
+  lifecycle {
+    ignore_changes = [length, special, override_special]
+  }
 }
 
 resource "random_password" "redis_auth" {
   count            = local.redis_create && var.redis_auth_token == "" ? 1 : 0
   length           = 32
   special          = true
-  override_special = "#%*()-_=+[]{}:?"
+  override_special = "#%*()-_=+[]{}:?."
+
+  lifecycle {
+    ignore_changes = [length, special, override_special]
+  }
+}
+
+resource "random_id" "app_storage_suffix" {
+  count       = var.app_storage_enabled && trimspace(var.app_storage_bucket_name) == "" ? 1 : 0
+  byte_length = 4
 }
 
 locals {
@@ -81,14 +133,22 @@ locals {
   db_connection_string = local.db_use_existing ? var.existing_db_connection_string : "Host=${local.db_endpoint};Port=5432;Database=${var.db_name};Username=${var.db_username};Password=${local.db_password}${local.db_ssl}"
   lambda_function_name = "${local.name}-honua"
   lambda_target_id     = "${local.lambda_function_name}-${var.lambda_alias_name}"
-  redis_secret_environment = local.redis_connection != "" ? {
-    HONUA_SECRET_REDIS_CONNECTION_ARN = aws_secretsmanager_secret.redis_connection[0].arn
+  app_storage_environment = var.app_storage_enabled ? {
+    FileStorage__Provider                          = "AwsS3"
+    FileStorage__AwsS3__BucketName                 = local.app_storage_bucket_name
+    FileStorage__AwsS3__Region                     = data.aws_region.current.id
+    FileStorage__AwsS3__KeyPrefix                  = local.app_storage_prefix
+    FileStorage__AwsS3__EnableServerSideEncryption = "true"
+  } : {}
+  redis_environment = local.redis_connection != "" ? {
+    ConnectionStrings__redis = local.redis_connection
   } : {}
   lambda_environment = merge({
     HONUA_SKIP_MIGRATIONS                                       = var.skip_migrations ? "true" : "false"
-    HostValidation__AllowedHosts__0                             = "*.execute-api.${data.aws_region.current.name}.amazonaws.com"
-    HONUA_SECRET_CONNECTION_STRING_ARN                          = aws_secretsmanager_secret.connection_string.arn
-    HONUA_SECRET_ADMIN_PASSWORD_ARN                             = aws_secretsmanager_secret.admin_password.arn
+    HostValidation__AllowedHosts__0                             = "*.execute-api.${data.aws_region.current.id}.amazonaws.com"
+    ConnectionStrings__DefaultConnection                        = local.db_connection_string
+    HONUA_ADMIN_PASSWORD                                        = var.admin_password
+    Security__ConnectionEncryption__MasterKey                   = local.connection_encryption_master_key
     HONUA_SERVE_ADMIN_UI                                        = var.serve_admin_ui ? "true" : "false"
     HONUA_ADMIN_UI                                              = var.serve_admin_ui ? "true" : "false"
     HONUA_OBSERVABILITY                                         = "true"
@@ -104,8 +164,8 @@ locals {
     ControlPlane__DeployTargets__0__ParameterEntries__1__Key    = "aws.lambda.alias_name"
     ControlPlane__DeployTargets__0__ParameterEntries__1__Value  = var.lambda_alias_name
     ControlPlane__DeployTargets__0__ParameterEntries__2__Key    = "aws.region"
-    ControlPlane__DeployTargets__0__ParameterEntries__2__Value  = data.aws_region.current.name
-  }, var.additional_env, local.redis_secret_environment)
+    ControlPlane__DeployTargets__0__ParameterEntries__2__Value  = data.aws_region.current.id
+  }, local.app_storage_environment, var.additional_env, local.redis_environment)
 }
 
 provider "postgresql" {
@@ -124,8 +184,7 @@ module "vpc" {
   count = local.use_existing_vpc ? 0 : 1
   #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
   #checkov:skip=CKV2_AWS_12: Default SG is managed via module inputs.
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 5.0"
+  source = "../vendor/aws-vpc"
 
   name = "${local.name}-vpc"
   cidr = var.vpc_cidr
@@ -171,7 +230,7 @@ resource "aws_security_group" "lambda" {
       from_port   = 5432
       to_port     = 5432
       protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
+      cidr_blocks = var.existing_db_cidrs
     }
   }
 
@@ -227,7 +286,9 @@ resource "aws_security_group" "rds" {
   tags = local.tags
 }
 
+#checkov:skip=CKV2_AWS_5: Security group is attached through the replication group below.
 resource "aws_security_group" "redis" {
+  #checkov:skip=CKV2_AWS_5: Security group is attached through the replication group below.
   count       = local.redis_create ? 1 : 0
   name_prefix = "${local.name}-redis-"
   description = "Redis security group"
@@ -302,7 +363,7 @@ module "rds" {
   instance_class       = var.db_instance_class
 
   allocated_storage     = var.db_allocated_storage
-  max_allocated_storage = 100
+  max_allocated_storage = var.db_max_allocated_storage
   storage_encrypted     = true
 
   db_name                     = var.db_name
@@ -319,7 +380,7 @@ module "rds" {
   multi_az            = var.db_multi_az
 
   backup_retention_period = var.environment == "prod" ? 7 : 3
-  maintenance_window      = "Sun:04:00-Sun:05:00"
+  maintenance_window      = var.db_maintenance_window
 
   tags = local.tags
 }
@@ -348,40 +409,87 @@ resource "aws_iam_role" "lambda" {
   tags               = local.tags
 }
 
-resource "aws_iam_role_policy_attachment" "lambda_basic" {
-  role       = aws_iam_role.lambda.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+#checkov:skip=CKV_AWS_356: Lambda VPC ENI actions do not support resource-level restriction.
+#checkov:skip=CKV_AWS_111: Lambda VPC ENI actions require wildcard scope and are limited to the documented action set.
+data "aws_iam_policy_document" "lambda_runtime" {
+  #checkov:skip=CKV_AWS_356: Lambda VPC ENI actions do not support resource-level restriction.
+  #checkov:skip=CKV_AWS_111: Lambda VPC ENI actions require wildcard scope and are limited to the documented action set.
+  statement {
+    sid = "WriteFunctionLogs"
+    actions = [
+      "logs:CreateLogStream",
+      "logs:PutLogEvents"
+    ]
+    resources = ["${aws_cloudwatch_log_group.lambda.arn}:*"]
+  }
+
+  statement {
+    sid = "ManageVpcNetworkInterfaces"
+    actions = [
+      "ec2:CreateNetworkInterface",
+      "ec2:DescribeNetworkInterfaces",
+      "ec2:DescribeSubnets",
+      "ec2:DeleteNetworkInterface",
+      "ec2:AssignPrivateIpAddresses",
+      "ec2:UnassignPrivateIpAddresses"
+    ]
+    resources = ["*"]
+  }
 }
 
-resource "aws_iam_role_policy_attachment" "lambda_vpc" {
-  role       = aws_iam_role.lambda.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+resource "aws_iam_policy" "lambda_runtime" {
+  name        = "${local.name}-lambda-runtime"
+  description = "Least-privilege Lambda runtime policy for logs and VPC networking"
+  policy      = data.aws_iam_policy_document.lambda_runtime.json
+  tags        = local.tags
 }
 
-resource "aws_iam_policy" "lambda_secrets" {
-  name = "${local.name}-lambda-secrets"
+resource "aws_iam_role_policy_attachment" "lambda_runtime" {
+  role       = aws_iam_role.lambda.name
+  policy_arn = aws_iam_policy.lambda_runtime.arn
+}
+
+resource "aws_iam_policy" "lambda_app_storage" {
+  count = var.app_storage_enabled ? 1 : 0
+
+  name = "${local.name}-lambda-app-storage"
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket", "s3:GetBucketLocation"]
+        Resource = [aws_s3_bucket.app_storage[0].arn]
+      },
+      {
         Effect = "Allow"
         Action = [
-          "secretsmanager:GetSecretValue"
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject"
         ]
-        Resource = compact([
-          aws_secretsmanager_secret.connection_string.arn,
-          aws_secretsmanager_secret.admin_password.arn,
-          local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null
-        ])
+        Resource = ["${aws_s3_bucket.app_storage[0].arn}/${local.app_storage_prefix}/*"]
       }
     ]
   })
   tags = local.tags
 }
 
-resource "aws_iam_role_policy_attachment" "lambda_secrets" {
+resource "aws_iam_role_policy_attachment" "lambda_app_storage" {
+  count = var.app_storage_enabled ? 1 : 0
+
   role       = aws_iam_role.lambda.name
-  policy_arn = aws_iam_policy.lambda_secrets.arn
+  policy_arn = aws_iam_policy.lambda_app_storage[0].arn
+}
+
+resource "time_sleep" "lambda_role_propagation" {
+  create_duration = "20s"
+
+  depends_on = [
+    aws_iam_role.lambda,
+    aws_iam_role_policy_attachment.lambda_runtime,
+    aws_iam_role_policy_attachment.lambda_app_storage,
+  ]
 }
 
 #checkov:skip=CKV2_AWS_57: Secrets rotation is managed outside this module.
@@ -390,6 +498,56 @@ resource "aws_secretsmanager_secret" "connection_string" {
   name        = "${local.name}/connection-string"
   description = "Database connection string for Honua."
   tags        = local.tags
+}
+
+#checkov:skip=CKV_AWS_18: Access logging is optional for this application bucket and can be layered on centrally by operators.
+#checkov:skip=CKV2_AWS_62: Event notifications are deployment-specific and not required for baseline runtime storage.
+#checkov:skip=CKV_AWS_145: SSE-S3 avoids widening runtime KMS permissions for the application bucket.
+#checkov:skip=CKV_AWS_144: Cross-region replication is optional and environment-specific for application file storage.
+#checkov:skip=CKV2_AWS_61: Lifecycle policies depend on tenant retention requirements and are managed per environment.
+resource "aws_s3_bucket" "app_storage" {
+  #checkov:skip=CKV_AWS_18: Access logging is optional for this application bucket and can be layered on centrally by operators.
+  #checkov:skip=CKV2_AWS_62: Event notifications are deployment-specific and not required for baseline runtime storage.
+  #checkov:skip=CKV_AWS_145: SSE-S3 avoids widening runtime KMS permissions for the application bucket.
+  #checkov:skip=CKV_AWS_144: Cross-region replication is optional and environment-specific for application file storage.
+  #checkov:skip=CKV2_AWS_61: Lifecycle policies depend on tenant retention requirements and are managed per environment.
+  count = var.app_storage_enabled ? 1 : 0
+
+  bucket        = local.app_storage_bucket_name
+  force_destroy = var.app_storage_force_destroy
+  tags          = local.tags
+}
+
+resource "aws_s3_bucket_public_access_block" "app_storage" {
+  count = var.app_storage_enabled ? 1 : 0
+
+  bucket                  = aws_s3_bucket.app_storage[0].id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_versioning" "app_storage" {
+  count = var.app_storage_enabled ? 1 : 0
+
+  bucket = aws_s3_bucket.app_storage[0].id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "app_storage" {
+  count = var.app_storage_enabled ? 1 : 0
+
+  bucket = aws_s3_bucket.app_storage[0].id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
 }
 
 resource "aws_secretsmanager_secret_version" "connection_string" {
@@ -408,6 +566,19 @@ resource "aws_secretsmanager_secret" "admin_password" {
 resource "aws_secretsmanager_secret_version" "admin_password" {
   secret_id     = aws_secretsmanager_secret.admin_password.id
   secret_string = var.admin_password
+}
+
+#checkov:skip=CKV2_AWS_57: Secrets rotation is managed outside this module.
+resource "aws_secretsmanager_secret" "connection_encryption_master_key" {
+  #checkov:skip=CKV2_AWS_57: Secrets rotation is managed outside this module.
+  name        = "${local.name}/connection-encryption-master-key"
+  description = "Honua connection encryption master key."
+  tags        = local.tags
+}
+
+resource "aws_secretsmanager_secret_version" "connection_encryption_master_key" {
+  secret_id     = aws_secretsmanager_secret.connection_encryption_master_key.id
+  secret_string = local.connection_encryption_master_key
 }
 
 #checkov:skip=CKV2_AWS_57: Secrets rotation is managed outside this module.
@@ -472,7 +643,9 @@ resource "aws_lambda_function" "this" {
     aws_cloudwatch_log_group.lambda,
     aws_secretsmanager_secret_version.connection_string,
     aws_secretsmanager_secret_version.admin_password,
-    aws_secretsmanager_secret_version.redis_connection
+    aws_secretsmanager_secret_version.connection_encryption_master_key,
+    aws_secretsmanager_secret_version.redis_connection,
+    time_sleep.lambda_role_propagation,
   ]
 
   tags = local.tags
@@ -603,10 +776,11 @@ resource "aws_lambda_permission" "api_gateway" {
 }
 
 resource "postgresql_extension" "postgis" {
-  count    = var.enable_postgis ? 1 : 0
-  provider = postgresql.honua
-  name     = "postgis"
-  schema   = "public"
+  count        = var.enable_postgis ? 1 : 0
+  provider     = postgresql.honua
+  name         = "postgis"
+  schema       = "public"
+  drop_cascade = true
 
   depends_on = [
     module.rds,
@@ -614,10 +788,11 @@ resource "postgresql_extension" "postgis" {
 }
 
 resource "postgresql_extension" "postgis_raster" {
-  count    = var.enable_postgis ? 1 : 0
-  provider = postgresql.honua
-  name     = "postgis_raster"
-  schema   = "public"
+  count        = var.enable_postgis ? 1 : 0
+  provider     = postgresql.honua
+  name         = "postgis_raster"
+  schema       = "public"
+  drop_cascade = true
 
   depends_on = [
     module.rds,

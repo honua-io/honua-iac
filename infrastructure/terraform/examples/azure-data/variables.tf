@@ -62,7 +62,7 @@ variable "db_public_network_access" {
 variable "enable_postgis" {
   description = "Enable PostGIS and PostGIS Raster during apply when the runner has database reachability."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "postgis_readiness_max_attempts" {
@@ -111,6 +111,42 @@ variable "key_vault_default_action" {
   description = "Key Vault network ACL default action (Allow is useful for local integration tests)."
   type        = string
   default     = "Deny"
+}
+
+variable "key_vault_purge_protection_enabled" {
+  description = "Enable purge protection on the Key Vault."
+  type        = bool
+  default     = true
+}
+
+variable "key_vault_soft_delete_retention_days" {
+  description = "Number of days to retain soft-deleted Key Vault items."
+  type        = number
+  default     = 30
+}
+
+variable "key_vault_public_network_access_enabled" {
+  description = "Allow public network access to Key Vault."
+  type        = bool
+  default     = false
+}
+
+variable "key_vault_bypass" {
+  description = "Key Vault network ACL bypass."
+  type        = string
+  default     = "AzureServices"
+}
+
+variable "key_vault_ip_rules" {
+  description = "IP rules allowed to access Key Vault."
+  type        = list(string)
+  default     = []
+}
+
+variable "secret_expiration_days" {
+  description = "Days until Key Vault secrets expire."
+  type        = number
+  default     = 365
 }
 
 variable "db_firewall_start_ip" {
