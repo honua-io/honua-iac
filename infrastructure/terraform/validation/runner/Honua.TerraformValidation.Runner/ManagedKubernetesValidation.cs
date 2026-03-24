@@ -205,6 +205,7 @@ internal static partial class ValidationRunner
             RequireCommand("aws");
 
             await EnsureAwsSessionAsync(context, credentialsEnvironment);
+            settings = await ValidateManagedEksVpcReuseInputsAsync(context, credentialsEnvironment, settings);
             AssertEstimatedRunCost(
                 nodeCount: settings.NodeDesiredSize,
                 unitCostUsd: 35m,
@@ -269,11 +270,13 @@ internal static partial class ValidationRunner
                 try
                 {
                     var terraformEnvironment = BuildEksTerraformEnvironment(settings, validationEnvironment);
-                    await context.ProcessRunner.RunAsync(
-                        "terraform",
-                        ["-chdir=" + terraformRoot, "destroy", "-input=false", "-auto-approve", "-no-color"],
-                        context.RepoRoot,
-                        terraformEnvironment);
+                    await DestroyAwsTerraformStackAsync(
+                        context,
+                        terraformRoot,
+                        terraformEnvironment,
+                        "eks",
+                        maxAttempts: 3,
+                        timeout: TimeSpan.FromMinutes(30));
                 }
                 catch (Exception exception)
                 {
@@ -652,6 +655,40 @@ internal static partial class ValidationRunner
         return environment;
     }
 
+    private static async Task<ManagedEksSettings> ValidateManagedEksVpcReuseInputsAsync(
+        RunnerContext context,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment,
+        ManagedEksSettings settings)
+    {
+        if (string.IsNullOrWhiteSpace(settings.ExistingVpcId))
+        {
+            return settings;
+        }
+
+        var (isValid, resolvedVpcCidr, failureReason) = await ValidateAwsVpcReuseInputsAsync(
+            context,
+            credentialsEnvironment,
+            settings.ExistingVpcId,
+            settings.ExistingPublicSubnetIdsJson,
+            settings.ExistingPrivateSubnetIdsJson);
+        if (isValid)
+        {
+            return settings with
+            {
+                ExistingVpcCidr = resolvedVpcCidr
+            };
+        }
+
+        Console.WriteLine($"[runner] Existing EKS VPC reuse disabled: {failureReason}; provisioning fresh VPC.");
+        return settings with
+        {
+            ExistingVpcId = null,
+            ExistingVpcCidr = null,
+            ExistingPublicSubnetIdsJson = null,
+            ExistingPrivateSubnetIdsJson = null,
+        };
+    }
+
     private static async Task RunTerraformPlanApplyAsync(
         RunnerContext context,
         string terraformRoot,
@@ -713,6 +750,29 @@ internal static partial class ValidationRunner
         }
         catch (CommandExecutionException exception) when (exception.ExitCode == 2)
         {
+            var planText = exception.Output;
+            if (string.IsNullOrWhiteSpace(planText))
+            {
+                try
+                {
+                    planText = await context.ProcessRunner.CaptureAsync(
+                        "terraform",
+                        ["-chdir=" + terraformRoot, "plan", "-input=false", "-no-color"],
+                        context.RepoRoot,
+                        environment);
+                }
+                catch (CommandExecutionException planException)
+                {
+                    planText = planException.Output;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(planText))
+            {
+                Console.Error.WriteLine($"[runner] Terraform idempotency diff for {terraformRoot}:");
+                Console.Error.WriteLine(planText.TrimEnd());
+            }
+
             throw new ValidationException($"Idempotency check failed for {terraformRoot} (terraform reports pending changes)");
         }
     }
@@ -889,17 +949,26 @@ internal static partial class ValidationRunner
         IReadOnlyList<string> remainingResources = Array.Empty<string>();
         for (var attempt = 1; attempt <= 24; attempt++)
         {
-            var resourcesJson = await context.ProcessRunner.CaptureAsync(
-                "az",
-                [
-                    "resource",
-                    "list",
-                    "--tag", $"ValidationRunId={validationRunId}",
-                    "--query", "[].{id:id,type:type,name:name,provisioningState:properties.provisioningState}",
-                    "-o", "json",
-                ],
-                context.RepoRoot,
-                credentialsEnvironment);
+            string resourcesJson;
+            try
+            {
+                resourcesJson = await context.ProcessRunner.CaptureAsync(
+                    "az",
+                    [
+                        "resource",
+                        "list",
+                        "--tag", $"ValidationRunId={validationRunId}",
+                        "--query", "[].{id:id,type:type,name:name,provisioningState:properties.provisioningState}",
+                        "-o", "json",
+                    ],
+                    context.RepoRoot,
+                    credentialsEnvironment);
+            }
+            catch (CommandExecutionException exception) when (IsAzureTagLeakQueryAuthorizationFailure(exception))
+            {
+                Console.WriteLine($"[runner] Warn: unable to query Azure tagged resources for ValidationRunId={validationRunId}; skipping leak janitor because the configured principal lacks subscription-wide resource-list permissions.");
+                return;
+            }
 
             remainingResources = ClassifyAzureLeakResources(resourcesJson);
             if (remainingResources.Count == 0)
@@ -915,6 +984,13 @@ internal static partial class ValidationRunner
         }
 
         throw new ValidationException($"Leak janitor check failed: resources tagged ValidationRunId={validationRunId} still exist after extended wait: {string.Join(", ", remainingResources.Take(20))}");
+    }
+
+    private static bool IsAzureTagLeakQueryAuthorizationFailure(CommandExecutionException exception)
+    {
+        var output = exception.Output ?? string.Empty;
+        return output.Contains("AuthorizationFailed", StringComparison.OrdinalIgnoreCase) ||
+               output.Contains("does not have authorization", StringComparison.OrdinalIgnoreCase);
     }
 
     private static IReadOnlyList<string> ClassifyAzureLeakResources(string resourcesJson)
@@ -1206,6 +1282,56 @@ internal static partial class ValidationRunner
                 (string.IsNullOrWhiteSpace(attachmentStatus) || string.Equals(attachmentStatus, "detached", StringComparison.OrdinalIgnoreCase)))
             {
                 return $"network interface status {interfaceStatus}";
+            }
+
+            return null;
+        }
+
+        if (resourcePart.StartsWith("security-group/", StringComparison.Ordinal))
+        {
+            var securityGroupId = resourcePart["security-group/".Length..];
+            var groupId = await TryCaptureAwsFieldAsync(
+                context,
+                ["ec2", "describe-security-groups", "--group-ids", securityGroupId, "--query", "SecurityGroups[0].GroupId", "--output", "text"],
+                credentialsEnvironment);
+            if (string.IsNullOrWhiteSpace(groupId))
+            {
+                return "security group not found";
+            }
+
+            return null;
+        }
+
+        if (resourcePart.StartsWith("subnet/", StringComparison.Ordinal))
+        {
+            var subnetId = resourcePart["subnet/".Length..];
+            var subnetState = await TryCaptureAwsFieldAsync(
+                context,
+                ["ec2", "describe-subnets", "--subnet-ids", subnetId, "--query", "Subnets[0].SubnetId", "--output", "text"],
+                credentialsEnvironment);
+            if (string.IsNullOrWhiteSpace(subnetState))
+            {
+                return "subnet not found";
+            }
+
+            return null;
+        }
+
+        if (resourcePart.StartsWith("natgateway/", StringComparison.Ordinal))
+        {
+            var natGatewayId = resourcePart["natgateway/".Length..];
+            var state = await TryCaptureAwsFieldAsync(
+                context,
+                ["ec2", "describe-nat-gateways", "--nat-gateway-ids", natGatewayId, "--query", "NatGateways[0].State", "--output", "text"],
+                credentialsEnvironment);
+            if (string.IsNullOrWhiteSpace(state))
+            {
+                return "nat gateway not found";
+            }
+
+            if (state is "deleting" or "deleted")
+            {
+                return $"nat gateway state {state}";
             }
 
             return null;

@@ -1,4 +1,13 @@
+using Amazon;
+using Amazon.Runtime;
+using Amazon.S3;
+using Amazon.S3.Model;
+using Azure.Core;
+using Azure.Identity;
+using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
 using System.Globalization;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -12,24 +21,28 @@ internal static partial class ValidationRunner
 {
     private const string AzureDataCacheFormat = "v2-base64";
     private const string AwsDataCacheFormat = "v2-base64";
-    private const string DefaultFunctionsAotImage = "ghcr.io/honua-io/honua-server:latest-aot";
 
     private static async Task ExecuteNativeAzureValidationAsync(
         ParsedCommand command,
         RunnerContext context,
+        ScenarioManifest manifest,
         AzureStack stack,
         AzureBootstrapCredentials credentials,
         IReadOnlyDictionary<string, string?> rootCredentialsEnvironment,
         string defaultPlanDir)
     {
         var settings = BuildAzureLiveSettings(command, context, stack, defaultPlanDir);
+        settings.TargetDescriptor = manifest.GetRequiredTargetDescriptor(stack == AzureStack.Aca ? "aca" : "functions");
         var workspace = PrepareTerraformWorkspace(context, $"azure-{stack.ToString().ToLowerInvariant()}");
+        var azureCliConfigDir = Path.Combine(workspace.Root, ".azure");
+        Directory.CreateDirectory(azureCliConfigDir);
         var credentialsEnvironment = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             ["ARM_CLIENT_ID"] = credentials.ClientId,
             ["ARM_CLIENT_SECRET"] = credentials.ClientSecret,
             ["ARM_TENANT_ID"] = credentials.TenantId,
             ["ARM_SUBSCRIPTION_ID"] = credentials.SubscriptionId,
+            ["AZURE_CONFIG_DIR"] = azureCliConfigDir,
         };
         var validationEnvironment = new Dictionary<string, string?>(credentialsEnvironment, StringComparer.Ordinal)
         {
@@ -50,7 +63,7 @@ internal static partial class ValidationRunner
             ValidateCloudAdminPassword(settings.AdminPassword);
 
             await EnsureAzSessionAsync(context, credentialsEnvironment, credentials.SubscriptionId);
-            await ResolveAzureRegistryCredentialsAsync(context, settings, credentialsEnvironment);
+            await ResolveAzureRegistrySettingsAsync(context, settings, credentialsEnvironment);
             AssertAzureCostGuardrail(settings);
             if (!settings.SkipQuotaPreflight)
             {
@@ -65,11 +78,15 @@ internal static partial class ValidationRunner
 
             if (state.HasReusableDataInputs)
             {
-                await EnsureExistingAzureDbFirewallAccessAsync(context, settings, state, credentialsEnvironment);
+                await EnsureExistingAzureDbFirewallAccessAsync(context, settings, state, stack, credentialsEnvironment);
             }
             else
             {
                 await ApplyAzureDataStackAsync(context, settings, state, validationEnvironment, workspace);
+                if (stack == AzureStack.Functions)
+                {
+                    await EnsureExistingAzureDbFirewallAccessAsync(context, settings, state, stack, credentialsEnvironment);
+                }
             }
 
             if (stack == AzureStack.Aca)
@@ -128,11 +145,13 @@ internal static partial class ValidationRunner
     private static async Task ExecuteNativeAwsValidationAsync(
         ParsedCommand command,
         RunnerContext context,
+        ScenarioManifest manifest,
         AwsStack stack,
         AwsBootstrapCredentials credentials,
         string defaultPlanDir)
     {
         var settings = BuildAwsLiveSettings(command, context, stack, defaultPlanDir);
+        settings.TargetDescriptor = manifest.GetRequiredTargetDescriptor(stack == AwsStack.Ecs ? "ecs" : "serverless");
         var workspace = PrepareTerraformWorkspace(context, $"aws-{stack.ToString().ToLowerInvariant()}");
         var credentialsEnvironment = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -170,6 +189,11 @@ internal static partial class ValidationRunner
             await PrepareAwsInputsAsync(context, settings, state);
             if (state.HasReusableDataInputs)
             {
+                await ValidateAwsReusableDataInputsAsync(context, settings, state, credentialsEnvironment);
+            }
+
+            if (state.HasReusableDataInputs)
+            {
                 await EnsureExistingVpcPrivateEgressAsync(context, settings, state, credentialsEnvironment);
                 await AuthorizeExistingAwsDbIngressAsync(context, settings, state, credentialsEnvironment);
             }
@@ -204,22 +228,30 @@ internal static partial class ValidationRunner
 
         if (settings.AutoDestroy)
         {
+            Exception? destroyFailure = null;
             try
             {
                 await DestroyAwsStacksAsync(context, settings, state, validationEnvironment, workspace);
             }
             catch (Exception exception)
             {
-                cleanupFailures.Add(exception);
+                destroyFailure = exception;
+                Console.WriteLine($"[runner] AWS destroy reported failures; deferring final verdict until leak janitor completes: {exception.Message}");
             }
 
             try
             {
                 await VerifyNoAwsLeaksAsync(context, settings.ValidationRunId, credentialsEnvironment);
+                if (destroyFailure is not null)
+                {
+                    Console.WriteLine("[runner] AWS leak janitor confirmed no actionable tagged resources remain after destroy failures; continuing.");
+                }
             }
             catch (Exception exception)
             {
-                cleanupFailures.Add(exception);
+                cleanupFailures.Add(destroyFailure is null
+                    ? exception
+                    : new AggregateException("AWS destroy reported failures and the leak janitor still found actionable resources.", destroyFailure, exception));
             }
         }
         else
@@ -227,7 +259,10 @@ internal static partial class ValidationRunner
             Console.WriteLine($"[runner] Auto-destroy disabled; retained AWS validation workspace at {workspace.Root}");
         }
 
-        TryDeleteWorkspace(workspace.Root, cleanupFailures);
+        if (settings.AutoDestroy)
+        {
+            TryDeleteWorkspace(workspace.Root, cleanupFailures);
+        }
         RethrowIfNeeded(bodyFailure, cleanupFailures);
     }
 
@@ -290,6 +325,58 @@ internal static partial class ValidationRunner
         return $$"""{"ValidationRunId":"{{validationRunId}}","TTLHours":"{{ttlHours.ToString(CultureInfo.InvariantCulture)}}","ExpiresAtUTC":"{{expiresAt}}","Owner":"terraform-validation"}""";
     }
 
+    private static string ResolveAzureFunctionsImage(EnvironmentReader env, bool useAot)
+    {
+        var explicitImage = env.GetOptional("HONUA_FUNCTIONS_IMAGE");
+        if (!string.IsNullOrWhiteSpace(explicitImage))
+        {
+            return RewriteGenericFunctionsImage(env, explicitImage, useAot);
+        }
+
+        var overrideImage = env.GetOptional(useAot ? "HONUA_DEFAULT_FUNCTIONS_AOT_IMAGE" : "HONUA_DEFAULT_FUNCTIONS_IMAGE");
+        if (!string.IsNullOrWhiteSpace(overrideImage))
+        {
+            return overrideImage;
+        }
+
+        var registryServer = env.GetOptional("ACR_LOGIN_SERVER");
+        var repository = env.GetOrDefault("ACR_REPOSITORY", "honua-server");
+        if (!string.IsNullOrWhiteSpace(registryServer))
+        {
+            var tag = useAot ? "latest-functions-aot" : "latest-functions";
+            return $"{registryServer}/{repository}:{tag}";
+        }
+
+        throw new ValidationException(
+            "Azure Functions live validation needs HONUA_FUNCTIONS_IMAGE, HONUA_DEFAULT_FUNCTIONS_IMAGE/HONUA_DEFAULT_FUNCTIONS_AOT_IMAGE, or ACR_LOGIN_SERVER because GHCR latest-functions tags are not published.");
+    }
+
+    private static string RewriteGenericFunctionsImage(EnvironmentReader env, string image, bool useAot)
+    {
+        if (string.Equals(image, DefaultHonuaImage, StringComparison.Ordinal) ||
+            string.Equals(image, DefaultHonuaAotImage, StringComparison.Ordinal))
+        {
+            var overrideImage = env.GetOptional(useAot ? "HONUA_DEFAULT_FUNCTIONS_AOT_IMAGE" : "HONUA_DEFAULT_FUNCTIONS_IMAGE");
+            if (!string.IsNullOrWhiteSpace(overrideImage))
+            {
+                return overrideImage;
+            }
+
+            var registryServer = env.GetOptional("ACR_LOGIN_SERVER");
+            var repository = env.GetOrDefault("ACR_REPOSITORY", "honua-server");
+            if (!string.IsNullOrWhiteSpace(registryServer))
+            {
+                var tag = useAot ? "latest-functions-aot" : "latest-functions";
+                return $"{registryServer}/{repository}:{tag}";
+            }
+
+            throw new ValidationException(
+                "HONUA_FUNCTIONS_IMAGE points at the generic Honua image. Azure Functions live validation needs a Functions-specific image, or HONUA_DEFAULT_FUNCTIONS_IMAGE/HONUA_DEFAULT_FUNCTIONS_AOT_IMAGE, or ACR_LOGIN_SERVER.");
+        }
+
+        return image;
+    }
+
     private static AzureLiveSettings BuildAzureLiveSettings(ParsedCommand command, RunnerContext context, AzureStack stack, string defaultPlanDir)
     {
         var env = context.Environment;
@@ -308,14 +395,8 @@ internal static partial class ValidationRunner
             ? ResolveManagedImage(env.GetRequired("HONUA_ACA_IMAGE"), useAot)
             : string.Empty;
         var functionsImage = stack is AzureStack.Functions
-            ? env.GetRequired("HONUA_FUNCTIONS_IMAGE")
+            ? ResolveAzureFunctionsImage(env, useAot)
             : string.Empty;
-        if (stack is AzureStack.Functions &&
-            useAot &&
-            string.Equals(functionsImage, DefaultHonuaImage, StringComparison.Ordinal))
-        {
-            functionsImage = DefaultFunctionsAotImage;
-        }
 
         var deploymentProfile = ParseDeploymentProfile(command.GetRequiredString("deployment-profile"));
         var reuseDataStack = command.GetBoolean("reuse-data-stack", false);
@@ -330,9 +411,12 @@ internal static partial class ValidationRunner
             FunctionsNamePrefix = $"{normalizedPrefix}fn"[..Math.Min($"{normalizedPrefix}fn".Length, 20)],
             PlanArtifactDir = ResolveManagedPlanArtifactDir(command, Path.Combine(defaultPlanDir, stack == AzureStack.Aca ? "aca" : "functions")),
             ValidationRunId = env.GetOrDefault("HONUA_VALIDATION_RUN_ID", $"gha-{context.GitHubRunId}-azure-{stack.ToString().ToLowerInvariant()}"),
+            ValidationTagsJson = BuildAzureValidationTagsJson(
+                env.GetOrDefault("HONUA_VALIDATION_RUN_ID", $"gha-{context.GitHubRunId}-azure-{stack.ToString().ToLowerInvariant()}"),
+                int.Parse(env.GetOrDefault("HONUA_TTL_HOURS", "8"), CultureInfo.InvariantCulture)),
             AdminPassword = env.GetRequired("HONUA_ADMIN_PASSWORD"),
             DbAdminPassword = env.GetRequired("HONUA_DB_PASSWORD"),
-            MaxRunCostUsd = decimal.Parse(env.GetOrDefault("HONUA_MAX_RUN_COST_USD", "50"), CultureInfo.InvariantCulture),
+            MaxRunCostUsd = decimal.Parse(env.GetOrDefault("HONUA_MAX_RUN_COST_USD", "100"), CultureInfo.InvariantCulture),
             TimeoutSeconds = int.Parse(env.GetOrDefault("HONUA_AZURE_TEST_TIMEOUT_SECONDS", "900"), CultureInfo.InvariantCulture),
             ReadySloSeconds = int.Parse(env.GetOrDefault("HONUA_READY_SLO_SECONDS", "600"), CultureInfo.InvariantCulture),
             MaxLoadErrorRatePercent = decimal.Parse(env.GetOrDefault("HONUA_MAX_LOAD_ERROR_RATE_PERCENT", "0"), CultureInfo.InvariantCulture),
@@ -342,6 +426,7 @@ internal static partial class ValidationRunner
             AllowDestroyPlan = command.GetBoolean("allow-destroy-plan", false),
             AutoDestroy = !command.GetBoolean("no-destroy", false),
             DestroyData = !command.GetBoolean("no-destroy", false) && deploymentProfile == DeploymentProfile.Ephemeral && !reuseDataStack,
+            ReuseDataStack = reuseDataStack,
             SkipQuotaPreflight = env.GetBoolean("HONUA_SKIP_QUOTA_PREFLIGHT"),
             SkipIdempotency = env.GetBoolean("HONUA_SKIP_IDEMPOTENCY"),
             SkipProtocolChecks = env.GetBoolean("HONUA_SKIP_PROTOCOL_CHECKS"),
@@ -359,6 +444,7 @@ internal static partial class ValidationRunner
             AcaMinReplicas = int.Parse(env.GetOrDefault("HONUA_AZURE_ACA_MIN_REPLICAS", "1"), CultureInfo.InvariantCulture),
             AcaMaxReplicas = int.Parse(env.GetOrDefault("HONUA_AZURE_ACA_MAX_REPLICAS", "3"), CultureInfo.InvariantCulture),
             AcaScaleTargetMinReplicas = int.Parse(env.GetOrDefault("HONUA_AZURE_ACA_SCALE_TARGET_MIN_REPLICAS", "2"), CultureInfo.InvariantCulture),
+            RegistryAuthMode = env.GetOrDefault("HONUA_AZURE_REGISTRY_AUTH_MODE", "auto"),
             RegistryResourceId = env.GetOptional("HONUA_AZURE_REGISTRY_RESOURCE_ID"),
             RegistryServer = env.GetOptional("HONUA_AZURE_REGISTRY_SERVER"),
             RegistryUsername = env.GetOptional("HONUA_AZURE_REGISTRY_USERNAME"),
@@ -404,6 +490,9 @@ internal static partial class ValidationRunner
             ServerlessNamePrefix = $"{normalizedPrefix}sl",
             PlanArtifactDir = ResolveManagedPlanArtifactDir(command, Path.Combine(defaultPlanDir, stack == AwsStack.Ecs ? "ecs" : "serverless")),
             ValidationRunId = env.GetOrDefault("HONUA_VALIDATION_RUN_ID", $"gha-{context.GitHubRunId}-aws-{stack.ToString().ToLowerInvariant()}"),
+            ValidationTagsJson = BuildValidationTagsJson(
+                env.GetOrDefault("HONUA_VALIDATION_RUN_ID", $"gha-{context.GitHubRunId}-aws-{stack.ToString().ToLowerInvariant()}"),
+                int.Parse(env.GetOrDefault("HONUA_TTL_HOURS", "8"), CultureInfo.InvariantCulture)),
             AdminPassword = env.GetRequired("HONUA_ADMIN_PASSWORD"),
             DbAdminPassword = env.GetRequired("HONUA_DB_PASSWORD"),
             MaxRunCostUsd = decimal.Parse(env.GetOrDefault("HONUA_MAX_RUN_COST_USD", "50"), CultureInfo.InvariantCulture),
@@ -416,6 +505,7 @@ internal static partial class ValidationRunner
             AllowDestroyPlan = command.GetBoolean("allow-destroy-plan", false),
             AutoDestroy = !command.GetBoolean("no-destroy", false),
             DestroyData = !command.GetBoolean("no-destroy", false) && deploymentProfile == DeploymentProfile.Ephemeral && !reuseDataStack,
+            ReuseDataStack = reuseDataStack,
             SkipQuotaPreflight = env.GetBoolean("HONUA_SKIP_QUOTA_PREFLIGHT"),
             SkipIdempotency = env.GetBoolean("HONUA_SKIP_IDEMPOTENCY"),
             SkipProtocolChecks = env.GetBoolean("HONUA_SKIP_PROTOCOL_CHECKS"),
@@ -455,7 +545,8 @@ internal static partial class ValidationRunner
         state.ExistingDbConnectionString = settings.ExistingDbConnectionString;
         state.ExistingRedisConnectionString = settings.ExistingRedisConnectionString;
 
-        if (!settings.ForceNewDataInfra &&
+        if (settings.ReuseDataStack &&
+            !settings.ForceNewDataInfra &&
             string.IsNullOrWhiteSpace(state.ExistingDbConnectionString) &&
             string.IsNullOrWhiteSpace(state.ExistingRedisConnectionString))
         {
@@ -466,6 +557,13 @@ internal static partial class ValidationRunner
                 state.ExistingDbConnectionString = values.GetValueOrDefault("EXISTING_DB_CONNECTION_STRING");
                 state.ExistingRedisConnectionString = values.GetValueOrDefault("EXISTING_REDIS_CONNECTION_STRING");
             });
+
+            if (!context.DryRun && HasDryRunAzureCacheMarkers(state))
+            {
+                Console.WriteLine("[runner] Ignoring stale Azure dry-run data cache; provisioning fresh data infra.");
+                ClearAzureReusableDataState(state);
+                ClearDataReuseCache(settings.DataCacheFile);
+            }
         }
 
         state.HasReusableDataInputs =
@@ -494,7 +592,9 @@ internal static partial class ValidationRunner
         state.ExistingPublicSubnetIdsJson = settings.ExistingPublicSubnetIdsJson;
         state.ExistingPrivateSubnetIdsJson = settings.ExistingPrivateSubnetIdsJson;
 
-        if (!settings.ForceNewDataInfra && !HasCompleteAwsExistingData(state))
+        if (settings.ReuseDataStack &&
+            !settings.ForceNewDataInfra &&
+            !HasCompleteAwsExistingData(state))
         {
             LoadKeyValueCache(settings.DataCacheFile, AwsDataCacheFormat, values =>
             {
@@ -506,6 +606,13 @@ internal static partial class ValidationRunner
                 state.ExistingPublicSubnetIdsJson = values.GetValueOrDefault("EXISTING_PUBLIC_SUBNET_IDS");
                 state.ExistingPrivateSubnetIdsJson = values.GetValueOrDefault("EXISTING_PRIVATE_SUBNET_IDS");
             });
+
+            if (!context.DryRun && HasDryRunAwsCacheMarkers(state))
+            {
+                Console.WriteLine("[runner] Ignoring stale AWS dry-run data cache; provisioning fresh data infra.");
+                ClearAwsReusableDataState(state);
+                ClearDataReuseCache(settings.DataCacheFile);
+            }
         }
 
         state.HasReusableDataInputs = HasCompleteAwsExistingData(state);
@@ -680,6 +787,7 @@ internal static partial class ValidationRunner
         RunnerContext context,
         AzureLiveSettings settings,
         AzureLiveState state,
+        AzureStack stack,
         IReadOnlyDictionary<string, string?> credentialsEnvironment)
     {
         if (context.DryRun || string.IsNullOrWhiteSpace(state.ExistingDbFqdn) || !state.ExistingDbFqdn.EndsWith(".postgres.database.azure.com", StringComparison.Ordinal))
@@ -705,6 +813,16 @@ internal static partial class ValidationRunner
         await context.ProcessRunner.RunAsync("az", ["postgres", "flexible-server", "firewall-rule", "create", "--resource-group", resourceGroup, "--name", serverName, "--rule-name", ruleName, "--start-ip-address", settings.DbFirewallStartIp!, "--end-ip-address", settings.DbFirewallEndIp!], context.RepoRoot, credentialsEnvironment);
         state.DataResourceGroup = resourceGroup;
         state.RunnerFirewallRules.Add((resourceGroup, serverName, ruleName));
+
+        if (stack == AzureStack.Functions)
+        {
+            // Reused Azure Functions data stacks need a runtime-access rule as well.
+            // The Functions host runs on App Service infrastructure, so the runner IP
+            // alone is not enough for startup-time migrations against a public server.
+            var runtimeRuleName = $"azure-runtime-{runId[..Math.Min(runId.Length, 44)]}";
+            await context.ProcessRunner.RunAsync("az", ["postgres", "flexible-server", "firewall-rule", "create", "--resource-group", resourceGroup, "--name", serverName, "--rule-name", runtimeRuleName, "--start-ip-address", "0.0.0.0", "--end-ip-address", "0.0.0.0"], context.RepoRoot, credentialsEnvironment);
+            state.RunnerFirewallRules.Add((resourceGroup, serverName, runtimeRuleName));
+        }
     }
 
     private static async Task ValidateAzureReusableDataInputsAsync(
@@ -746,6 +864,50 @@ internal static partial class ValidationRunner
         PersistAzureDataReuseCache(settings, state);
     }
 
+    private static async Task ValidateAwsReusableDataInputsAsync(
+        RunnerContext context,
+        AwsLiveSettings settings,
+        AwsLiveState state,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment)
+    {
+        if (!state.HasReusableDataInputs)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(state.ExistingDbEndpoint) &&
+            state.ExistingDbEndpoint.Contains(".rds.amazonaws.com", StringComparison.OrdinalIgnoreCase))
+        {
+            var (dbExists, dbIdentifier) = await context.ProcessRunner.TryCaptureAsync(
+                "aws",
+                ["rds", "describe-db-instances", "--query", $"DBInstances[?Endpoint.Address=='{state.ExistingDbEndpoint}'].DBInstanceIdentifier | [0]", "--output", "text"],
+                context.RepoRoot,
+                credentialsEnvironment);
+            if (!dbExists || IsCliEmptyOrNone(dbIdentifier))
+            {
+                Console.WriteLine($"[runner] Existing AWS data reuse disabled: RDS instance for endpoint {state.ExistingDbEndpoint} was not found; provisioning fresh data infra.");
+                ClearAwsReusableDataInputs(settings, state);
+                return;
+            }
+        }
+
+        var (isValidVpc, resolvedVpcCidr, failureReason) = await ValidateAwsVpcReuseInputsAsync(
+            context,
+            credentialsEnvironment,
+            state.ExistingVpcId,
+            state.ExistingPublicSubnetIdsJson,
+            state.ExistingPrivateSubnetIdsJson);
+        if (!isValidVpc)
+        {
+            Console.WriteLine($"[runner] Existing AWS data reuse disabled: {failureReason}; provisioning fresh data infra.");
+            ClearAwsReusableDataInputs(settings, state);
+            return;
+        }
+
+        state.ExistingVpcCidr = resolvedVpcCidr;
+        PersistAwsDataReuseCache(settings, state);
+    }
+
     private static void ClearAzureReusableDataInputs(AzureLiveState state)
     {
         state.HasReusableDataInputs = false;
@@ -753,6 +915,12 @@ internal static partial class ValidationRunner
         state.ExistingDbFqdn = null;
         state.ExistingDbConnectionString = null;
         state.ExistingRedisConnectionString = null;
+    }
+
+    private static void ClearAwsReusableDataInputs(AwsLiveSettings settings, AwsLiveState state)
+    {
+        ClearAwsReusableDataState(state);
+        ClearDataReuseCache(settings.DataCacheFile);
     }
 
     private static async Task ApplyAzureDataStackAsync(
@@ -776,16 +944,16 @@ internal static partial class ValidationRunner
             state.ExistingDbConnectionString = BuildDryRunConnectionString(state.ExistingDbFqdn);
             state.ExistingRedisConnectionString = $"rediss://:{settings.AdminPassword}@{settings.DataNamePrefix}.redis.cache.windows.net:6380";
             state.HasReusableDataInputs = true;
-            PersistAzureDataReuseCache(settings, state);
+            ClearDataReuseCache(settings.DataCacheFile);
             return;
         }
 
         var outputs = await CaptureTerraformOutputsJsonAsync(context, terraformRoot, terraformEnvironment);
         state.DataCreated = true;
-        state.DataResourceGroup = GetTerraformResourceGroup(outputs);
-        state.ExistingDbFqdn = GetTerraformDatabaseHost(outputs);
-        state.ExistingDbConnectionString = await ReadAzureSecretAsync(context, GetTerraformDatabaseSecretRef(outputs), validationEnvironment);
-        state.ExistingRedisConnectionString = await ReadAzureOptionalSecretAsync(context, GetTerraformCacheSecretRef(outputs), validationEnvironment);
+        state.DataResourceGroup = GetTerraformResourceGroup(outputs, settings.TargetDescriptor);
+        state.ExistingDbFqdn = GetTerraformDatabaseHost(outputs, settings.TargetDescriptor);
+        state.ExistingDbConnectionString = await ReadAzureSecretAsync(context, GetTerraformDatabaseSecretRef(outputs, settings.TargetDescriptor), validationEnvironment);
+        state.ExistingRedisConnectionString = await ReadAzureOptionalSecretAsync(context, GetTerraformCacheSecretRef(outputs, settings.TargetDescriptor), validationEnvironment);
         state.HasReusableDataInputs = true;
         if (!settings.SkipIdempotency)
         {
@@ -813,10 +981,10 @@ internal static partial class ValidationRunner
             var terraformEnvironment = BuildAzureAcaEnvironment(settings, state, validationEnvironment, image, minReplicas);
             await RunTerraformPlanApplyAsync(context, terraformRoot, terraformEnvironment, settings.PlanArtifactDir, $"{label}.tfplan", label, settings.AllowDestroyPlan);
             var outputs = await CaptureOrSynthesizeTerraformOutputsAsync(context, terraformRoot, terraformEnvironment, BuildSyntheticAzureAcaOutputs(settings));
-            state.BaseUrl = NormalizeBaseUrl(GetTerraformBaseUrl(outputs) ?? $"https://{settings.AcaNamePrefix}.example.test");
-            state.DbHost = GetTerraformDatabaseHost(outputs) ?? state.ExistingDbFqdn;
-            state.ResourceGroupName = GetTerraformResourceGroup(outputs) ?? $"{settings.AcaNamePrefix}-{settings.Environment}-rg";
-            state.WorkloadName = GetTerraformWorkloadName(outputs) ?? settings.AcaNamePrefix;
+            state.BaseUrl = NormalizeBaseUrl(GetTerraformBaseUrl(outputs, settings.TargetDescriptor) ?? $"https://{settings.AcaNamePrefix}.example.test");
+            state.DbHost = GetTerraformDatabaseHost(outputs, settings.TargetDescriptor) ?? state.ExistingDbFqdn;
+            state.ResourceGroupName = GetTerraformResourceGroup(outputs, settings.TargetDescriptor) ?? $"{settings.AcaNamePrefix}-{settings.Environment}-rg";
+            state.WorkloadName = GetTerraformWorkloadName(outputs, settings.TargetDescriptor) ?? settings.AcaNamePrefix;
             await EnsureAcaDbFirewallAccessAsync(context, state, credentialsEnvironment);
             await WaitForAzureAcaReplicasAsync(context, credentialsEnvironment, state.ResourceGroupName!, state.WorkloadName!, minReplicas, settings.TimeoutSeconds);
             state.ActiveBaseUrl = await ResolveAzureAcaProbeBaseUrlAsync(context, credentialsEnvironment, state.ResourceGroupName!, state.WorkloadName!, state.BaseUrl);
@@ -832,9 +1000,10 @@ internal static partial class ValidationRunner
                 settings.LoadConcurrency,
                 settings.MaxLoadErrorRatePercent,
                 settings.SkipProtocolChecks);
+            await RunAzureBlobStorageSmokeAsync(context, credentialsEnvironment, outputs, settings.TargetDescriptor);
             if (runPlatformValidation)
             {
-                await RunCloudPlatformValidationAsync(context, validationEnvironment, state.ActiveBaseUrl ?? state.BaseUrl, "azure-container-apps", outputs, state.DbHost!, settings.AdminPassword, settings.DbAdminPassword);
+                await RunCloudPlatformValidationAsync(context, validationEnvironment, state.ActiveBaseUrl ?? state.BaseUrl, "azure-container-apps", outputs, state.DbHost!, settings.AdminPassword, settings.DbAdminPassword, settings.TargetDescriptor);
             }
         }
 
@@ -897,16 +1066,29 @@ internal static partial class ValidationRunner
             var terraformEnvironment = BuildAzureFunctionsEnvironment(settings, state, validationEnvironment, image, slotImage, settings.FunctionsDeploymentSlotEnabled || settings.RunUpgradeRollback);
             await RunTerraformPlanApplyAsync(context, terraformRoot, terraformEnvironment, settings.PlanArtifactDir, $"{label}.tfplan", label, settings.AllowDestroyPlan);
             var outputs = await CaptureOrSynthesizeTerraformOutputsAsync(context, terraformRoot, terraformEnvironment, BuildSyntheticAzureFunctionsOutputs(settings));
-            state.BaseUrl = NormalizeBaseUrl(GetTerraformBaseUrl(outputs) ?? $"https://{settings.FunctionsNamePrefix}.example.test");
-            state.DbHost = GetTerraformDatabaseHost(outputs) ?? state.ExistingDbFqdn;
-            state.ResourceGroupName = GetTerraformResourceGroup(outputs) ?? $"{settings.FunctionsNamePrefix}-{settings.Environment}-rg";
-            state.WorkloadName = GetTerraformWorkloadName(outputs) ?? settings.FunctionsNamePrefix;
-            state.CurrentRevision = GetTerraformCurrentRevision(outputs) ?? "dry-run-current";
-            state.DesiredRevision = GetTerraformDesiredRevision(outputs) ?? "dry-run-desired";
-            await RunCloudHttpChecksAsync(context, settings.AdminPassword, state.BaseUrl, settings.TimeoutSeconds, settings.ReadySloSeconds, settings.LoadRequests, settings.LoadConcurrency, settings.MaxLoadErrorRatePercent, settings.SkipProtocolChecks);
+            state.BaseUrl = NormalizeBaseUrl(GetTerraformBaseUrl(outputs, settings.TargetDescriptor) ?? $"https://{settings.FunctionsNamePrefix}.example.test");
+            state.DbHost = GetTerraformDatabaseHost(outputs, settings.TargetDescriptor) ?? state.ExistingDbFqdn;
+            state.ResourceGroupName = GetTerraformResourceGroup(outputs, settings.TargetDescriptor) ?? $"{settings.FunctionsNamePrefix}-{settings.Environment}-rg";
+            state.WorkloadName = GetTerraformWorkloadName(outputs, settings.TargetDescriptor) ?? settings.FunctionsNamePrefix;
+            state.CurrentRevision = GetTerraformCurrentRevision(outputs, settings.TargetDescriptor) ?? "dry-run-current";
+            state.DesiredRevision = GetTerraformDesiredRevision(outputs, settings.TargetDescriptor) ?? "dry-run-desired";
+            await RunAzureFunctionsHttpChecksWithRecoveryAsync(
+                context,
+                validationEnvironment,
+                state.ResourceGroupName,
+                state.WorkloadName,
+                settings.AdminPassword,
+                state.BaseUrl,
+                settings.TimeoutSeconds,
+                settings.ReadySloSeconds,
+                settings.LoadRequests,
+                settings.LoadConcurrency,
+                settings.MaxLoadErrorRatePercent,
+                settings.SkipProtocolChecks);
+            await RunAzureBlobStorageSmokeAsync(context, validationEnvironment, outputs, settings.TargetDescriptor);
             if (runPlatformValidation)
             {
-                await RunCloudPlatformValidationAsync(context, validationEnvironment, state.BaseUrl, "azure-functions", outputs, state.DbHost!, settings.AdminPassword, settings.DbAdminPassword, currentRevision, desiredRevision, settings.RunUpgradeRollback);
+                await RunCloudPlatformValidationAsync(context, validationEnvironment, state.BaseUrl, "azure-functions", outputs, state.DbHost!, settings.AdminPassword, settings.DbAdminPassword, settings.TargetDescriptor, currentRevision, desiredRevision, settings.RunUpgradeRollback);
             }
         }
 
@@ -979,16 +1161,21 @@ internal static partial class ValidationRunner
             ["TF_VAR_name_prefix"] = settings.DataNamePrefix,
             ["TF_VAR_honua_admin_password"] = settings.AdminPassword,
             ["TF_VAR_db_admin_password"] = settings.DbAdminPassword,
-            ["TF_VAR_enable_postgis"] = "false",
+            // Azure live validation reuses this data stack from ACA / Functions,
+            // so PostGIS must be provisioned here before the app migrations run.
+            ["TF_VAR_enable_postgis"] = "true",
             ["TF_VAR_redis_enabled"] = "false",
             ["TF_VAR_existing_db_fqdn"] = string.Empty,
             ["TF_VAR_existing_db_connection_string"] = string.Empty,
             ["TF_VAR_redis_connection_string"] = string.Empty,
             ["TF_VAR_db_public_network_access"] = "true",
-            ["TF_VAR_db_firewall_start_ip"] = "0.0.0.0",
-            ["TF_VAR_db_firewall_end_ip"] = "0.0.0.0",
+            // The data stack installs PostgreSQL extensions from the local runner,
+            // so it must allow the detected caller IP instead of Azure-services-only access.
+            ["TF_VAR_db_firewall_start_ip"] = settings.DbFirewallStartIp,
+            ["TF_VAR_db_firewall_end_ip"] = settings.DbFirewallEndIp,
+            ["TF_VAR_key_vault_public_network_access_enabled"] = "true",
             ["TF_VAR_key_vault_default_action"] = "Allow",
-            ["TF_VAR_tags"] = BuildAzureValidationTagsJson(settings.ValidationRunId, settings.TtlHours),
+            ["TF_VAR_tags"] = settings.ValidationTagsJson,
         };
     }
 
@@ -999,6 +1186,7 @@ internal static partial class ValidationRunner
         {
             ["HONUA_SKIP_MIGRATIONS"] = "false",
         };
+        var callerIngressCidrsJson = JsonSerializer.Serialize(new[] { $"{settings.DbFirewallStartIp}/32" });
         return new Dictionary<string, string?>(baseEnvironment, StringComparer.Ordinal)
         {
             ["TF_IN_AUTOMATION"] = "true",
@@ -1018,20 +1206,27 @@ internal static partial class ValidationRunner
             ["TF_VAR_db_firewall_start_ip"] = reusingExistingData ? settings.DbFirewallStartIp : "0.0.0.0",
             ["TF_VAR_db_firewall_end_ip"] = reusingExistingData ? settings.DbFirewallEndIp : "0.0.0.0",
             ["TF_VAR_honua_image"] = image,
+            ["TF_VAR_registry_auth_mode"] = settings.RegistryAuthMode,
+            ["TF_VAR_registry_resource_id"] = settings.RegistryResourceId,
             ["TF_VAR_registry_server"] = settings.RegistryServer,
             ["TF_VAR_registry_username"] = settings.RegistryUsername,
             ["TF_VAR_registry_password"] = settings.RegistryPassword,
             ["TF_VAR_min_replicas"] = minReplicas.ToString(CultureInfo.InvariantCulture),
             ["TF_VAR_max_replicas"] = settings.AcaMaxReplicas.ToString(CultureInfo.InvariantCulture),
+            ["TF_VAR_app_storage_enabled"] = "true",
+            ["TF_VAR_enable_ingress"] = "true",
+            ["TF_VAR_ingress_allowed_cidrs"] = callerIngressCidrsJson,
+            ["TF_VAR_key_vault_public_network_access_enabled"] = "true",
             ["TF_VAR_key_vault_default_action"] = "Allow",
             ["TF_VAR_additional_env"] = JsonSerializer.Serialize(additionalEnv),
-            ["TF_VAR_tags"] = BuildAzureValidationTagsJson(settings.ValidationRunId, settings.TtlHours),
+            ["TF_VAR_tags"] = settings.ValidationTagsJson,
         };
     }
 
     private static Dictionary<string, string?> BuildAzureFunctionsEnvironment(AzureLiveSettings settings, AzureLiveState state, IReadOnlyDictionary<string, string?> baseEnvironment, string image, string? slotImage, bool deploymentSlotEnabled)
     {
         var reusingExistingData = !string.IsNullOrWhiteSpace(state.ExistingDbConnectionString);
+        var callerIngressCidrsJson = JsonSerializer.Serialize(new[] { $"{settings.DbFirewallStartIp}/32" });
         return new Dictionary<string, string?>(baseEnvironment, StringComparer.Ordinal)
         {
             ["TF_IN_AUTOMATION"] = "true",
@@ -1048,6 +1243,8 @@ internal static partial class ValidationRunner
             ["TF_VAR_db_firewall_start_ip"] = settings.DbFirewallStartIp,
             ["TF_VAR_db_firewall_end_ip"] = settings.DbFirewallEndIp,
             ["TF_VAR_honua_image"] = image,
+            ["TF_VAR_registry_auth_mode"] = settings.RegistryAuthMode,
+            ["TF_VAR_registry_resource_id"] = settings.RegistryResourceId,
             ["TF_VAR_registry_server"] = settings.RegistryServer,
             ["TF_VAR_registry_username"] = settings.RegistryUsername,
             ["TF_VAR_registry_password"] = settings.RegistryPassword,
@@ -1056,54 +1253,96 @@ internal static partial class ValidationRunner
             ["TF_VAR_deployment_slot_image"] = slotImage ?? settings.FunctionsDeploymentSlotImage ?? image,
             ["TF_VAR_plan_sku_name"] = settings.FunctionsPlanSku,
             ["TF_VAR_skip_migrations"] = settings.FunctionsSkipMigrations.ToString().ToLowerInvariant(),
-            ["TF_VAR_tags"] = BuildAzureValidationTagsJson(settings.ValidationRunId, settings.TtlHours),
+            ["TF_VAR_app_storage_enabled"] = "true",
+            ["TF_VAR_public_network_access_enabled"] = "true",
+            ["TF_VAR_allowed_ip_cidrs"] = callerIngressCidrsJson,
+            ["TF_VAR_key_vault_public_network_access_enabled"] = "true",
+            ["TF_VAR_key_vault_default_action"] = "Allow",
+            ["TF_VAR_tags"] = settings.ValidationTagsJson,
         };
     }
 
-    private static async Task ResolveAzureRegistryCredentialsAsync(
+    private static async Task ResolveAzureRegistrySettingsAsync(
         RunnerContext context,
         AzureLiveSettings settings,
         IReadOnlyDictionary<string, string?> credentialsEnvironment)
     {
-        if (!NeedsAzureRegistryCredentials(settings))
+        if (!NeedsAzureRegistryAuth(settings))
         {
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(settings.RegistryServer) &&
+        settings.RegistryAuthMode = NormalizeAzureRegistryAuthMode(settings.RegistryAuthMode);
+        settings.RegistryServer ??= GetAzureRegistryServerFromImages(settings);
+
+        var hasExplicitCredentials =
             !string.IsNullOrWhiteSpace(settings.RegistryUsername) &&
-            !string.IsNullOrWhiteSpace(settings.RegistryPassword))
+            !string.IsNullOrWhiteSpace(settings.RegistryPassword);
+
+        if (hasExplicitCredentials)
+        {
+            settings.RegistryAuthMode = "username_password";
+            if (string.IsNullOrWhiteSpace(settings.RegistryServer))
+            {
+                settings.RegistryServer = await ResolveAzureRegistryServerAsync(context, settings, credentialsEnvironment);
+            }
+
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(settings.RegistryServer) &&
+            string.Equals(settings.RegistryAuthMode, "managed_identity", StringComparison.Ordinal))
         {
             return;
         }
 
         if (context.DryRun)
         {
-            settings.RegistryServer ??= GetAzureRegistryServerFromImages(settings) ?? "example.azurecr.io";
-            settings.RegistryUsername ??= "<dry-run>";
-            settings.RegistryPassword ??= "<dry-run>";
+            settings.RegistryAuthMode = ResolvePreferredAzureRegistryAuthMode(settings);
+            settings.RegistryServer ??= "example.azurecr.io";
+            if (string.Equals(settings.RegistryAuthMode, "managed_identity", StringComparison.Ordinal) &&
+                string.IsNullOrWhiteSpace(settings.RegistryResourceId))
+            {
+                settings.RegistryResourceId = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/example/providers/Microsoft.ContainerRegistry/registries/example";
+            }
+
+            if (string.Equals(settings.RegistryAuthMode, "username_password", StringComparison.Ordinal))
+            {
+                settings.RegistryUsername ??= "<dry-run>";
+                settings.RegistryPassword ??= "<dry-run>";
+            }
+
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(settings.RegistryResourceId))
+        if ((string.Equals(settings.RegistryAuthMode, "managed_identity", StringComparison.Ordinal) ||
+             string.Equals(settings.RegistryAuthMode, "auto", StringComparison.Ordinal)) &&
+            !string.IsNullOrWhiteSpace(settings.RegistryResourceId))
         {
-            throw new ValidationException("HONUA_AZURE_REGISTRY_RESOURCE_ID is required when Azure live validation uses private registry images without explicit registry credentials.");
+            settings.RegistryAuthMode = "managed_identity";
+            if (string.IsNullOrWhiteSpace(settings.RegistryServer))
+            {
+                settings.RegistryServer = await ResolveAzureRegistryServerAsync(context, settings, credentialsEnvironment);
+            }
+
+            return;
         }
 
-        var registryName = GetAzureResourceName(settings.RegistryResourceId);
+        if (string.Equals(settings.RegistryAuthMode, "managed_identity", StringComparison.Ordinal))
+        {
+            throw new ValidationException("Azure live validation needs HONUA_AZURE_REGISTRY_RESOURCE_ID when HONUA_AZURE_REGISTRY_AUTH_MODE=managed_identity.");
+        }
+
+        var registryName = GetAzureRegistryName(settings);
+        if (string.IsNullOrWhiteSpace(registryName))
+        {
+            throw new ValidationException("Azure live validation needs HONUA_AZURE_REGISTRY_RESOURCE_ID for managed identity auth, or HONUA_AZURE_REGISTRY_SERVER plus explicit HONUA_AZURE_REGISTRY_USERNAME/HONUA_AZURE_REGISTRY_PASSWORD for username/password fallback.");
+        }
+
+        settings.RegistryAuthMode = "username_password";
         if (string.IsNullOrWhiteSpace(settings.RegistryServer))
         {
-            settings.RegistryServer = await context.ProcessRunner.CaptureAsync(
-                "az",
-                ["acr", "show", "--name", registryName, "--query", "loginServer", "-o", "tsv"],
-                context.RepoRoot,
-                credentialsEnvironment);
-        }
-
-        if (!string.IsNullOrWhiteSpace(settings.RegistryUsername) &&
-            !string.IsNullOrWhiteSpace(settings.RegistryPassword))
-        {
-            return;
+            settings.RegistryServer = await ResolveAzureRegistryServerAsync(context, settings, credentialsEnvironment);
         }
 
         var credentialsJson = await context.ProcessRunner.CaptureAsync(
@@ -1125,11 +1364,11 @@ internal static partial class ValidationRunner
             string.IsNullOrWhiteSpace(settings.RegistryUsername) ||
             string.IsNullOrWhiteSpace(settings.RegistryPassword))
         {
-            throw new ValidationException("Failed to resolve Azure Container Registry credentials for azure-live validation.");
+            throw new ValidationException("Failed to resolve Azure Container Registry username/password fallback credentials for azure-live validation.");
         }
     }
 
-    private static bool NeedsAzureRegistryCredentials(AzureLiveSettings settings)
+    private static bool NeedsAzureRegistryAuth(AzureLiveSettings settings)
     {
         return UsesAzureContainerRegistry(settings.AcaImage) ||
                UsesAzureContainerRegistry(settings.FunctionsImage) ||
@@ -1163,6 +1402,80 @@ internal static partial class ValidationRunner
 
         var imageParts = image!.Split('/', 2, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         return imageParts[0];
+    }
+
+    private static string NormalizeAzureRegistryAuthMode(string? registryAuthMode)
+    {
+        return string.IsNullOrWhiteSpace(registryAuthMode)
+            ? "auto"
+            : registryAuthMode.Trim().ToLowerInvariant();
+    }
+
+    private static string ResolvePreferredAzureRegistryAuthMode(AzureLiveSettings settings)
+    {
+        var requestedMode = NormalizeAzureRegistryAuthMode(settings.RegistryAuthMode);
+        if (requestedMode == "managed_identity" || requestedMode == "username_password")
+        {
+            return requestedMode;
+        }
+
+        return !string.IsNullOrWhiteSpace(settings.RegistryResourceId)
+            ? "managed_identity"
+            : "username_password";
+    }
+
+    private static string? GetAzureRegistryName(AzureLiveSettings settings)
+    {
+        if (!string.IsNullOrWhiteSpace(settings.RegistryResourceId))
+        {
+            return GetAzureResourceName(settings.RegistryResourceId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(settings.RegistryServer))
+        {
+            return GetAzureRegistryNameFromServer(settings.RegistryServer);
+        }
+
+        return GetAzureRegistryNameFromServer(GetAzureRegistryServerFromImages(settings));
+    }
+
+    private static string? GetAzureRegistryNameFromServer(string? registryServer)
+    {
+        if (string.IsNullOrWhiteSpace(registryServer))
+        {
+            return null;
+        }
+
+        const string suffix = ".azurecr.io";
+        if (!registryServer.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return registryServer[..^suffix.Length];
+    }
+
+    private static async Task<string?> ResolveAzureRegistryServerAsync(
+        RunnerContext context,
+        AzureLiveSettings settings,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment)
+    {
+        if (!string.IsNullOrWhiteSpace(settings.RegistryServer))
+        {
+            return settings.RegistryServer;
+        }
+
+        var registryName = GetAzureRegistryName(settings);
+        if (string.IsNullOrWhiteSpace(registryName))
+        {
+            return GetAzureRegistryServerFromImages(settings);
+        }
+
+        return await context.ProcessRunner.CaptureAsync(
+            "az",
+            ["acr", "show", "--name", registryName, "--query", "loginServer", "-o", "tsv"],
+            context.RepoRoot,
+            credentialsEnvironment);
     }
 
     private static string GetAzureResourceName(string resourceId)
@@ -1337,6 +1650,125 @@ internal static partial class ValidationRunner
         return null;
     }
 
+    private static async Task<(bool IsValid, string? VpcCidr, string FailureReason)> ValidateAwsVpcReuseInputsAsync(
+        RunnerContext context,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment,
+        string? vpcId,
+        string? publicSubnetIdsJson,
+        string? privateSubnetIdsJson)
+    {
+        if (string.IsNullOrWhiteSpace(vpcId))
+        {
+            return (false, null, "existing VPC id was empty");
+        }
+
+        var publicSubnetIds = ParseJsonStringArray(publicSubnetIdsJson);
+        if (publicSubnetIds.Length == 0)
+        {
+            return (false, null, "existing public subnet ids were empty or not valid JSON");
+        }
+
+        var privateSubnetIds = ParseJsonStringArray(privateSubnetIdsJson);
+        if (privateSubnetIds.Length == 0)
+        {
+            return (false, null, "existing private subnet ids were empty or not valid JSON");
+        }
+
+        var (vpcExists, vpcCidrRaw) = await context.ProcessRunner.TryCaptureAsync(
+            "aws",
+            ["ec2", "describe-vpcs", "--vpc-ids", vpcId, "--query", "Vpcs[0].CidrBlock", "--output", "text"],
+            context.RepoRoot,
+            credentialsEnvironment);
+        if (!vpcExists || IsCliEmptyOrNone(vpcCidrRaw))
+        {
+            return (false, null, $"VPC {vpcId} was not found");
+        }
+
+        var subnetIds = publicSubnetIds
+            .Concat(privateSubnetIds)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var arguments = new List<string> { "ec2", "describe-subnets", "--subnet-ids" };
+        arguments.AddRange(subnetIds);
+        arguments.AddRange(["--query", "Subnets[].{Id:SubnetId,VpcId:VpcId}", "--output", "json"]);
+
+        var (subnetsExist, subnetsRaw) = await context.ProcessRunner.TryCaptureAsync(
+            "aws",
+            arguments,
+            context.RepoRoot,
+            credentialsEnvironment);
+        if (!subnetsExist)
+        {
+            return (false, null, $"subnets configured for VPC {vpcId} could not be described");
+        }
+
+        using var document = JsonDocument.Parse(subnetsRaw);
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
+        {
+            return (false, null, $"subnets configured for VPC {vpcId} returned an unexpected payload");
+        }
+
+        var subnetsById = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var subnet in document.RootElement.EnumerateArray())
+        {
+            if (!subnet.TryGetProperty("Id", out var idElement) || !subnet.TryGetProperty("VpcId", out var subnetVpcIdElement))
+            {
+                continue;
+            }
+
+            var subnetId = idElement.GetString();
+            if (string.IsNullOrWhiteSpace(subnetId))
+            {
+                continue;
+            }
+
+            subnetsById[subnetId] = subnetVpcIdElement.GetString();
+        }
+
+        var missingSubnetIds = subnetIds.Where(static id => !string.IsNullOrWhiteSpace(id))
+            .Where(id => !subnetsById.ContainsKey(id))
+            .ToArray();
+        if (missingSubnetIds.Length > 0)
+        {
+            return (false, null, $"configured subnets were not found: {string.Join(", ", missingSubnetIds)}");
+        }
+
+        foreach (var subnetId in subnetIds)
+        {
+            if (!string.Equals(subnetsById[subnetId], vpcId, StringComparison.Ordinal))
+            {
+                return (false, null, $"subnet {subnetId} does not belong to VPC {vpcId}");
+            }
+        }
+
+        return (true, vpcCidrRaw.Trim(), string.Empty);
+    }
+
+    private static string[] ParseJsonStringArray(string? rawJson)
+    {
+        if (string.IsNullOrWhiteSpace(rawJson))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<string[]>(rawJson)?
+                .Where(static value => !string.IsNullOrWhiteSpace(value))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray() ?? [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static bool IsCliEmptyOrNone(string? value) =>
+        string.IsNullOrWhiteSpace(value) ||
+        string.Equals(value.Trim(), "None", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(value.Trim(), "null", StringComparison.OrdinalIgnoreCase);
+
     private static async Task WaitForAzureAcaReplicasAsync(RunnerContext context, IReadOnlyDictionary<string, string?> credentialsEnvironment, string resourceGroup, string appName, int expectedMinReplicas, int timeoutSeconds)
     {
         if (context.DryRun)
@@ -1432,6 +1864,43 @@ internal static partial class ValidationRunner
         }
 
         await RunLoadProbeAsync(context, baseUrl, loadRequests, loadConcurrency, maxLoadErrorRatePercent);
+    }
+
+    private static async Task RunAzureFunctionsHttpChecksWithRecoveryAsync(
+        RunnerContext context,
+        IReadOnlyDictionary<string, string?> commandEnvironment,
+        string? resourceGroupName,
+        string? workloadName,
+        string adminApiKey,
+        string baseUrl,
+        int timeoutSeconds,
+        int readySloSeconds,
+        int loadRequests,
+        int loadConcurrency,
+        decimal maxLoadErrorRatePercent,
+        bool skipProtocolChecks)
+    {
+        try
+        {
+            await RunCloudHttpChecksAsync(context, adminApiKey, baseUrl, timeoutSeconds, readySloSeconds, loadRequests, loadConcurrency, maxLoadErrorRatePercent, skipProtocolChecks);
+        }
+        catch (ValidationException exception) when (IsAzureFunctionsReadinessRetryable(exception) &&
+                                                   !string.IsNullOrWhiteSpace(resourceGroupName) &&
+                                                   !string.IsNullOrWhiteSpace(workloadName))
+        {
+            Console.WriteLine(
+                $"[runner] Azure Functions readiness failed for {NormalizeBaseUrl(baseUrl)}. " +
+                $"Waiting 180s, restarting Function App {workloadName}, and retrying once. " +
+                $"Failure={TrimForLog(exception.Message)}");
+            await Task.Delay(TimeSpan.FromSeconds(180));
+            await context.ProcessRunner.RunAsync(
+                "az",
+                ["functionapp", "restart", "--resource-group", resourceGroupName!, "--name", workloadName!],
+                context.RepoRoot,
+                commandEnvironment);
+            await Task.Delay(TimeSpan.FromSeconds(30));
+            await RunCloudHttpChecksAsync(context, adminApiKey, baseUrl, timeoutSeconds, readySloSeconds, loadRequests, loadConcurrency, maxLoadErrorRatePercent, skipProtocolChecks);
+        }
     }
 
     private static async Task<string> RunAzureCloudHttpChecksAsync(
@@ -1668,6 +2137,23 @@ internal static partial class ValidationRunner
         return summary.ToString();
     }
 
+    private static bool IsAzureFunctionsReadinessRetryable(ValidationException exception) =>
+        exception.Message.Contains("Timed out waiting for readiness", StringComparison.OrdinalIgnoreCase) ||
+        exception.Message.Contains("Ready SLO failed", StringComparison.OrdinalIgnoreCase);
+
+    private static string GetTrailingLines(string content, int maxLines)
+    {
+        if (string.IsNullOrEmpty(content))
+        {
+            return "<empty>";
+        }
+
+        var normalized = content.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
+        var lines = normalized.Split('\n');
+        var tail = lines.Length <= maxLines ? lines : lines[^maxLines..];
+        return string.Join(Environment.NewLine, tail).TrimEnd();
+    }
+
     private static string? TrimForLog(string? value, int maxLength = 160)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -1701,6 +2187,57 @@ internal static partial class ValidationRunner
         if (string.IsNullOrWhiteSpace(state.ResourceGroupName) || string.IsNullOrWhiteSpace(state.WorkloadName))
         {
             Console.WriteLine("[runner] Azure diagnostics skipped because workload identity is incomplete.");
+            return;
+        }
+
+        if (state.FunctionsApplied)
+        {
+            await TryDumpCommandOutputAsync(
+                context,
+                "az",
+                [
+                    "functionapp",
+                    "show",
+                    "--resource-group", state.ResourceGroupName,
+                    "--name", state.WorkloadName,
+                    "--query", "{name:name,state:state,host:defaultHostName,enabledHostNames:enabledHostNames,lastModifiedTimeUtc:lastModifiedTimeUtc,kind:kind,reserved:reserved}",
+                    "-o", "json",
+                ],
+                credentialsEnvironment,
+                "Azure Function App summary");
+
+            await TryDumpCommandOutputAsync(
+                context,
+                "az",
+                [
+                    "functionapp",
+                    "config",
+                    "container",
+                    "show",
+                    "--resource-group", state.ResourceGroupName,
+                    "--name", state.WorkloadName,
+                    "-o", "json",
+                ],
+                credentialsEnvironment,
+                "Azure Function App container config");
+
+            await TryDumpCommandOutputAsync(
+                context,
+                "az",
+                [
+                    "functionapp",
+                    "config",
+                    "appsettings",
+                    "list",
+                    "--resource-group", state.ResourceGroupName,
+                    "--name", state.WorkloadName,
+                    "--query", "[].name",
+                    "-o", "json",
+                ],
+                credentialsEnvironment,
+                "Azure Function App setting names");
+
+            await TryDumpAzureFunctionLogsAsync(context, state, credentialsEnvironment);
             return;
         }
 
@@ -1762,6 +2299,65 @@ internal static partial class ValidationRunner
             ],
             credentialsEnvironment,
             "Azure container app logs");
+    }
+
+    private static async Task TryDumpAzureFunctionLogsAsync(
+        RunnerContext context,
+        AzureLiveState state,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment)
+    {
+        var zipPath = Path.Combine(Path.GetTempPath(), $"honua-functionapp-logs-{Guid.NewGuid():N}.zip");
+        try
+        {
+            await context.ProcessRunner.RunAsync(
+                "az",
+                ["webapp", "log", "download", "--resource-group", state.ResourceGroupName!, "--name", state.WorkloadName!, "--log-file", zipPath],
+                context.RepoRoot,
+                credentialsEnvironment);
+
+            if (!File.Exists(zipPath))
+            {
+                Console.WriteLine("[runner] Azure Function App log download did not produce an archive.");
+                return;
+            }
+
+            using var archive = ZipFile.OpenRead(zipPath);
+            var logEntry = archive.Entries
+                .Where(static entry => !string.IsNullOrWhiteSpace(entry.Name) &&
+                                       (entry.FullName.EndsWith("_docker.log", StringComparison.OrdinalIgnoreCase) ||
+                                        entry.FullName.EndsWith(".log", StringComparison.OrdinalIgnoreCase)))
+                .OrderByDescending(static entry => entry.LastWriteTime)
+                .FirstOrDefault();
+            if (logEntry is null)
+            {
+                var archiveEntries = string.Join(", ", archive.Entries.Select(static entry => entry.FullName));
+                Console.WriteLine($"[runner] Azure Function App log archive contained no log files. entries={TrimForLog(archiveEntries, 800) ?? "<none>"}");
+                return;
+            }
+
+            using var stream = logEntry.Open();
+            using var reader = new StreamReader(stream);
+            var content = await reader.ReadToEndAsync();
+            Console.WriteLine($"[runner] Azure Function App log tail ({logEntry.FullName}):");
+            Console.WriteLine(GetTrailingLines(content, 120));
+        }
+        catch (Exception exception)
+        {
+            Console.WriteLine($"[runner] Azure Function App logs unavailable: {exception.GetType().Name}: {TrimForLog(exception.Message)}");
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(zipPath))
+                {
+                    File.Delete(zipPath);
+                }
+            }
+            catch
+            {
+            }
+        }
     }
 
     private static async Task TryDumpAwsFailureDiagnosticsAsync(
@@ -2009,6 +2605,330 @@ internal static partial class ValidationRunner
         }
     }
 
+    private static async Task RunAwsObjectStorageSmokeAsync(
+        RunnerContext context,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment,
+        string outputs,
+        TargetDescriptorManifest? targetDescriptor = null)
+    {
+        if (context.DryRun || !GetTerraformObjectStorageEnabled(outputs, targetDescriptor))
+        {
+            return;
+        }
+
+        var bucketName = GetTerraformAwsObjectStorageBucketName(outputs, targetDescriptor);
+        if (string.IsNullOrWhiteSpace(bucketName))
+        {
+            throw new ValidationException("Object storage was enabled but no AWS bucket name was present in Terraform outputs.");
+        }
+
+        var prefix = GetTerraformAwsObjectStoragePrefix(outputs, targetDescriptor);
+        var objectKey = BuildObjectStorageKey(prefix, "smoke.txt");
+        var listingPrefix = GetObjectStorageParentPrefix(objectKey);
+        var payload = $"honua-storage-smoke:{Guid.NewGuid():N}";
+        var payloadBytes = Encoding.UTF8.GetBytes(payload);
+        var metadataKey = "honuavalidationrun";
+        var metadataValue = Guid.NewGuid().ToString("N");
+
+        Console.WriteLine($"[runner] Running AWS object storage SDK validation against s3://{bucketName}/{objectKey}");
+        using var client = CreateAwsS3Client(credentialsEnvironment);
+
+        try
+        {
+            using (var uploadStream = new MemoryStream(payloadBytes, writable: false))
+            {
+                var putRequest = new PutObjectRequest
+                {
+                    BucketName = bucketName,
+                    Key = objectKey,
+                    InputStream = uploadStream,
+                    ContentType = "text/plain; charset=utf-8"
+                };
+                putRequest.Metadata[metadataKey] = metadataValue;
+                await client.PutObjectAsync(putRequest);
+            }
+
+            var metadataResponse = await client.GetObjectMetadataAsync(bucketName, objectKey);
+            var storedMetadata = TryGetAwsMetadataValue(metadataResponse.Metadata, metadataKey);
+            if (!string.Equals(storedMetadata, metadataValue, StringComparison.Ordinal))
+            {
+                throw new ValidationException("AWS object storage SDK validation failed: uploaded metadata was not preserved.");
+            }
+
+            var listResponse = await client.ListObjectsV2Async(new ListObjectsV2Request
+            {
+                BucketName = bucketName,
+                Prefix = listingPrefix,
+                MaxKeys = 1000
+            });
+            if (!listResponse.S3Objects.Any(item => string.Equals(item.Key, objectKey, StringComparison.Ordinal)))
+            {
+                throw new ValidationException($"AWS object storage SDK validation failed: uploaded object {objectKey} was not returned by list operations.");
+            }
+
+            using var getResponse = await client.GetObjectAsync(bucketName, objectKey);
+            using var downloadStream = new MemoryStream();
+            await getResponse.ResponseStream.CopyToAsync(downloadStream);
+
+            var downloadedPayload = Encoding.UTF8.GetString(downloadStream.ToArray());
+            if (!string.Equals(downloadedPayload, payload, StringComparison.Ordinal))
+            {
+                throw new ValidationException("AWS object storage SDK validation failed: downloaded payload did not match the uploaded payload.");
+            }
+        }
+        finally
+        {
+            try
+            {
+                await client.DeleteObjectAsync(bucketName, objectKey);
+            }
+            catch
+            {
+                // Swallow cleanup failures so the main validation error is preserved.
+            }
+        }
+
+        try
+        {
+            await client.GetObjectMetadataAsync(bucketName, objectKey);
+            throw new ValidationException($"AWS object storage SDK validation failed: object cleanup did not remove s3://{bucketName}/{objectKey}.");
+        }
+        catch (AmazonS3Exception exception) when (IsAwsObjectStorageNotFound(exception))
+        {
+            // Expected after cleanup.
+        }
+    }
+
+    private static async Task RunAzureBlobStorageSmokeAsync(
+        RunnerContext context,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment,
+        string outputs,
+        TargetDescriptorManifest? targetDescriptor = null)
+    {
+        if (context.DryRun || !GetTerraformObjectStorageEnabled(outputs, targetDescriptor))
+        {
+            return;
+        }
+
+        var accountName = GetTerraformAzureObjectStorageAccountName(outputs, targetDescriptor);
+        var accountId = GetTerraformAzureObjectStorageAccountId(outputs, targetDescriptor);
+        var containerName = GetTerraformAzureObjectStorageContainerName(outputs, targetDescriptor);
+        if (string.IsNullOrWhiteSpace(accountName) || string.IsNullOrWhiteSpace(accountId) || string.IsNullOrWhiteSpace(containerName))
+        {
+            throw new ValidationException("Object storage was enabled but Azure storage account outputs were incomplete.");
+        }
+
+        var blobName = BuildObjectStorageKey(null, "smoke.txt");
+        var listingPrefix = GetObjectStorageParentPrefix(blobName);
+        var payload = $"honua-storage-smoke:{Guid.NewGuid():N}";
+        var metadataKey = "honuavalidationrun";
+        var metadataValue = Guid.NewGuid().ToString("N");
+
+        Console.WriteLine($"[runner] Running Azure Blob storage SDK validation against https://{accountName}.blob.core.windows.net/{containerName}/{blobName}");
+        var connectionString = await BuildAzureStorageConnectionStringAsync(accountId, accountName, credentialsEnvironment);
+        var containerClient = new BlobContainerClient(connectionString, containerName);
+        var blobClient = containerClient.GetBlobClient(blobName);
+
+        try
+        {
+            using (var uploadStream = new MemoryStream(Encoding.UTF8.GetBytes(payload), writable: false))
+            {
+                var uploadOptions = new BlobUploadOptions
+                {
+                    HttpHeaders = new BlobHttpHeaders
+                    {
+                        ContentType = "text/plain; charset=utf-8"
+                    },
+                    Metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        [metadataKey] = metadataValue
+                    }
+                };
+                await blobClient.UploadAsync(uploadStream, uploadOptions);
+            }
+
+            var properties = await blobClient.GetPropertiesAsync();
+            if (!properties.Value.Metadata.TryGetValue(metadataKey, out var storedMetadata) ||
+                !string.Equals(storedMetadata, metadataValue, StringComparison.Ordinal))
+            {
+                throw new ValidationException("Azure Blob storage SDK validation failed: uploaded metadata was not preserved.");
+            }
+
+            var foundInListing = false;
+            await foreach (var blobItem in containerClient.GetBlobsAsync(BlobTraits.None, BlobStates.None, listingPrefix, CancellationToken.None))
+            {
+                if (string.Equals(blobItem.Name, blobName, StringComparison.Ordinal))
+                {
+                    foundInListing = true;
+                    break;
+                }
+            }
+
+            if (!foundInListing)
+            {
+                throw new ValidationException($"Azure Blob storage SDK validation failed: uploaded blob {blobName} was not returned by list operations.");
+            }
+
+            var download = await blobClient.DownloadContentAsync();
+            if (!string.Equals(download.Value.Content.ToString(), payload, StringComparison.Ordinal))
+            {
+                throw new ValidationException("Azure Blob storage SDK validation failed: downloaded payload did not match the uploaded payload.");
+            }
+        }
+        finally
+        {
+            try
+            {
+                await blobClient.DeleteIfExistsAsync(DeleteSnapshotsOption.IncludeSnapshots);
+            }
+            catch
+            {
+                // Swallow cleanup failures so the main validation error is preserved.
+            }
+        }
+
+        if (await blobClient.ExistsAsync())
+        {
+            throw new ValidationException($"Azure Blob storage SDK validation failed: blob cleanup did not remove {blobName} from {containerName}.");
+        }
+    }
+
+    private static string BuildObjectStorageKey(string? prefix, string fileName)
+    {
+        var normalizedPrefix = string.IsNullOrWhiteSpace(prefix)
+            ? string.Empty
+            : $"{prefix.Trim().Trim('/')}/";
+        return $"{normalizedPrefix}{Guid.NewGuid():N}/{fileName}";
+    }
+
+    private static string GetObjectStorageParentPrefix(string objectKey)
+    {
+        var separatorIndex = objectKey.LastIndexOf('/');
+        return separatorIndex >= 0 ? objectKey[..(separatorIndex + 1)] : objectKey;
+    }
+
+    private static AmazonS3Client CreateAwsS3Client(IReadOnlyDictionary<string, string?> environment)
+    {
+        var accessKeyId = GetRequiredEnvironmentValue(environment, "AWS_ACCESS_KEY_ID");
+        var secretAccessKey = GetRequiredEnvironmentValue(environment, "AWS_SECRET_ACCESS_KEY");
+        var sessionToken = GetOptionalEnvironmentValue(environment, "AWS_SESSION_TOKEN");
+        var region = GetRequiredEnvironmentValue(environment, "AWS_REGION", "AWS_DEFAULT_REGION");
+
+        AWSCredentials credentials = string.IsNullOrWhiteSpace(sessionToken)
+            ? new BasicAWSCredentials(accessKeyId, secretAccessKey)
+            : new SessionAWSCredentials(accessKeyId, secretAccessKey, sessionToken);
+
+        return new AmazonS3Client(credentials, RegionEndpoint.GetBySystemName(region));
+    }
+
+    private static bool IsAwsObjectStorageNotFound(AmazonS3Exception exception)
+    {
+        return exception.StatusCode == HttpStatusCode.NotFound
+               || string.Equals(exception.ErrorCode, "NoSuchKey", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(exception.ErrorCode, "NotFound", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? TryGetAwsMetadataValue(MetadataCollection metadata, string key)
+    {
+        const string metadataPrefix = "x-amz-meta-";
+        foreach (var metadataKey in metadata.Keys)
+        {
+            if (metadataKey is null)
+            {
+                continue;
+            }
+
+            var normalizedKey = metadataKey.StartsWith(metadataPrefix, StringComparison.OrdinalIgnoreCase)
+                ? metadataKey[metadataPrefix.Length..]
+                : metadataKey;
+            if (!string.Equals(normalizedKey, key, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var value = metadata[metadataKey];
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
+
+    private static async Task<string> BuildAzureStorageConnectionStringAsync(
+        string storageAccountId,
+        string accountName,
+        IReadOnlyDictionary<string, string?> environment,
+        CancellationToken cancellationToken = default)
+    {
+        var tenantId = GetRequiredEnvironmentValue(environment, "ARM_TENANT_ID");
+        var clientId = GetRequiredEnvironmentValue(environment, "ARM_CLIENT_ID");
+        var clientSecret = GetRequiredEnvironmentValue(environment, "ARM_CLIENT_SECRET");
+        var credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+        var token = await credential.GetTokenAsync(new TokenRequestContext(["https://management.azure.com/.default"]), cancellationToken);
+
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"https://management.azure.com{storageAccountId}/listKeys?api-version=2023-05-01")
+        {
+            Content = new StringContent("{}", Encoding.UTF8, "application/json")
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
+
+        using var response = await client.SendAsync(request, cancellationToken);
+        var payload = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new ValidationException($"Azure Blob storage SDK validation failed: could not list storage account keys for {storageAccountId}. Status code: {(int)response.StatusCode}.");
+        }
+
+        using var document = JsonDocument.Parse(payload);
+        if (!TryGetJsonPath(document.RootElement, ["keys"], out var keysElement) || keysElement.ValueKind != JsonValueKind.Array)
+        {
+            throw new ValidationException($"Azure Blob storage SDK validation failed: listKeys response for {storageAccountId} did not include storage keys.");
+        }
+
+        foreach (var keyElement in keysElement.EnumerateArray())
+        {
+            if (!TryGetJsonPath(keyElement, ["value"], out var valueElement) || valueElement.ValueKind != JsonValueKind.String)
+            {
+                continue;
+            }
+
+            var accountKey = valueElement.GetString();
+            if (!string.IsNullOrWhiteSpace(accountKey))
+            {
+                return $"DefaultEndpointsProtocol=https;AccountName={accountName};AccountKey={accountKey};EndpointSuffix=core.windows.net";
+            }
+        }
+
+        throw new ValidationException($"Azure Blob storage SDK validation failed: listKeys response for {storageAccountId} did not contain a usable account key.");
+    }
+
+    private static string GetRequiredEnvironmentValue(IReadOnlyDictionary<string, string?> environment, params string[] keys)
+    {
+        var value = GetOptionalEnvironmentValue(environment, keys);
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+
+        throw new ValidationException($"Required validation environment setting missing. Expected one of: {string.Join(", ", keys)}");
+    }
+
+    private static string? GetOptionalEnvironmentValue(IReadOnlyDictionary<string, string?> environment, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            if (environment.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
+
     private static async Task RunCloudPlatformValidationAsync(
         RunnerContext context,
         IReadOnlyDictionary<string, string?> validationEnvironment,
@@ -2018,6 +2938,7 @@ internal static partial class ValidationRunner
         string dbHost,
         string adminApiKey,
         string dbPassword,
+        TargetDescriptorManifest? targetDescriptor = null,
         string? currentRevision = null,
         string? desiredRevision = null,
         bool executeDeployOperation = false)
@@ -2031,22 +2952,36 @@ internal static partial class ValidationRunner
         // not the deprecated internal Terraform shell orchestration path.
         var processEnvironment = new Dictionary<string, string?>(validationEnvironment, StringComparer.Ordinal)
         {
-            ["HONUA_PLATFORM_VALIDATION_PLATFORM"] = defaultPlatform,
-            ["HONUA_PLATFORM_VALIDATION_TERRAFORM_OUTPUT_JSON"] = rawTerraformOutputs,
-            ["HONUA_PLATFORM_VALIDATION_PUBLISH_DB_HOST"] = dbHost,
-            ["HONUA_PLATFORM_VALIDATION_PUBLISH_DB_PORT"] = "5432",
-            ["HONUA_PLATFORM_VALIDATION_PUBLISH_DB_NAME"] = "honua",
-            ["HONUA_PLATFORM_VALIDATION_PUBLISH_DB_USERNAME"] = "honua",
-            ["HONUA_PLATFORM_VALIDATION_PUBLISH_DB_PASSWORD"] = dbPassword,
-            ["HONUA_PLATFORM_VALIDATION_PUBLISH_DB_SSL_MODE"] = "Require",
-            ["HONUA_PLATFORM_VALIDATION_PUBLISH_DB_SSL_REQUIRED"] = "true",
+            ["HONUA_CLOUD_TEST_PLATFORM"] = defaultPlatform,
+            ["HONUA_CLOUD_TEST_PUBLISH_DB_HOST"] = dbHost,
+            ["HONUA_CLOUD_TEST_PUBLISH_DB_PORT"] = "5432",
+            ["HONUA_CLOUD_TEST_PUBLISH_DB_NAME"] = "honua",
+            ["HONUA_CLOUD_TEST_PUBLISH_DB_USERNAME"] = "honua",
+            ["HONUA_CLOUD_TEST_PUBLISH_DB_PASSWORD"] = dbPassword,
+            ["HONUA_CLOUD_TEST_PUBLISH_DB_SSL_MODE"] = "Require",
+            ["HONUA_CLOUD_TEST_PUBLISH_DB_SSL_REQUIRED"] = "true",
             ["HONUA_CLOUD_TEST_BASE_URL"] = baseUrl,
             ["HONUA_CLOUD_TEST_ADMIN_API_KEY"] = adminApiKey,
         };
+        if (validationEnvironment.TryGetValue("HONUA_PLATFORM_VALIDATION_IMPORT_TABLE_PREFIX", out var importTablePrefix) &&
+            !string.IsNullOrWhiteSpace(importTablePrefix))
+        {
+            processEnvironment["HONUA_CLOUD_TEST_IMPORT_TABLE_PREFIX"] = importTablePrefix;
+        }
+
         var deployPlanSupport = GetTerraformValidationCapability(rawTerraformOutputs, "deploy_plan");
         if (!string.IsNullOrWhiteSpace(deployPlanSupport))
         {
             processEnvironment["HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT"] = deployPlanSupport;
+        }
+
+        if (bool.TryParse(deployPlanSupport, out var deployPlanEnabled) && deployPlanEnabled)
+        {
+            var deployTargetId = GetTerraformDeployTargetId(rawTerraformOutputs, targetDescriptor);
+            if (!string.IsNullOrWhiteSpace(deployTargetId))
+            {
+                processEnvironment["HONUA_CLOUD_TEST_DEPLOY_TARGET_ID"] = deployTargetId;
+            }
         }
 
         var mutationSupport = GetTerraformValidationCapability(rawTerraformOutputs, "mutation");
@@ -2055,21 +2990,27 @@ internal static partial class ValidationRunner
             processEnvironment["HONUA_CLOUD_TEST_EXPECT_MUTATION_SUPPORT"] = mutationSupport;
         }
 
-        if (!string.IsNullOrWhiteSpace(currentRevision))
+        var effectiveCurrentRevision = !string.IsNullOrWhiteSpace(currentRevision)
+            ? currentRevision
+            : GetTerraformCurrentRevision(rawTerraformOutputs, targetDescriptor);
+        if (!string.IsNullOrWhiteSpace(effectiveCurrentRevision))
         {
-            processEnvironment["HONUA_PLATFORM_VALIDATION_DEPLOY_CURRENT_REVISION"] = currentRevision;
+            processEnvironment["HONUA_CLOUD_TEST_DEPLOY_CURRENT_REVISION"] = effectiveCurrentRevision;
         }
 
-        if (!string.IsNullOrWhiteSpace(desiredRevision))
+        var effectiveDesiredRevision = !string.IsNullOrWhiteSpace(desiredRevision)
+            ? desiredRevision
+            : GetTerraformDesiredRevision(rawTerraformOutputs, targetDescriptor);
+        if (!string.IsNullOrWhiteSpace(effectiveDesiredRevision))
         {
-            processEnvironment["HONUA_PLATFORM_VALIDATION_DEPLOY_DESIRED_REVISION"] = desiredRevision;
+            processEnvironment["HONUA_CLOUD_TEST_DEPLOY_DESIRED_REVISION"] = effectiveDesiredRevision;
         }
 
         if (executeDeployOperation)
         {
-            processEnvironment["HONUA_PLATFORM_VALIDATION_EXECUTE_DEPLOY_OPERATION"] = "true";
-            processEnvironment["HONUA_PLATFORM_VALIDATION_VERIFY_DEPLOY_ROLLBACK"] = "true";
-            processEnvironment["HONUA_PLATFORM_VALIDATION_DEPLOY_TIMEOUT_SECONDS"] = "240";
+            processEnvironment["HONUA_CLOUD_TEST_EXECUTE_DEPLOY_OPERATION"] = "true";
+            processEnvironment["HONUA_CLOUD_TEST_VERIFY_DEPLOY_ROLLBACK"] = "true";
+            processEnvironment["HONUA_CLOUD_TEST_DEPLOY_TIMEOUT_SECONDS"] = "240";
         }
 
         var scriptDirectory = Path.GetDirectoryName(scriptPath) ?? context.RepoRoot;
@@ -2084,7 +3025,22 @@ internal static partial class ValidationRunner
             throw new ValidationException("Azure secret reference was empty");
         }
 
-        return await context.ProcessRunner.CaptureAsync("az", ["keyvault", "secret", "show", "--id", secretId, "--query", "value", "-o", "tsv"], context.RepoRoot, credentialsEnvironment, redactOutput: true);
+        const int maxAttempts = 12;
+        var command = new[] { "keyvault", "secret", "show", "--id", secretId, "--query", "value", "-o", "tsv" };
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                return await context.ProcessRunner.CaptureAsync("az", command, context.RepoRoot, credentialsEnvironment, redactOutput: true);
+            }
+            catch (CommandExecutionException) when (attempt < maxAttempts)
+            {
+                Console.WriteLine($"[runner] Azure Key Vault secret read attempt {attempt}/{maxAttempts} failed; retrying in 10s");
+                await Task.Delay(TimeSpan.FromSeconds(10));
+            }
+        }
+
+        return await context.ProcessRunner.CaptureAsync("az", command, context.RepoRoot, credentialsEnvironment, redactOutput: true);
     }
 
     private static async Task<string?> ReadAzureOptionalSecretAsync(RunnerContext context, string? secretId, IReadOnlyDictionary<string, string?> credentialsEnvironment)
@@ -2207,6 +3163,42 @@ internal static partial class ValidationRunner
         !string.IsNullOrWhiteSpace(state.ExistingPublicSubnetIdsJson) &&
         !string.IsNullOrWhiteSpace(state.ExistingPrivateSubnetIdsJson);
 
+    private static bool HasDryRunAzureCacheMarkers(AzureLiveState state) =>
+        ContainsDryRunPlaceholder(state.ExistingDbConnectionString) ||
+        ContainsDryRunPlaceholder(state.ExistingRedisConnectionString);
+
+    private static bool HasDryRunAwsCacheMarkers(AwsLiveState state) =>
+        ContainsDryRunPlaceholder(state.ExistingDbConnectionString) ||
+        ContainsDryRunPlaceholder(state.ExistingRedisConnectionString) ||
+        string.Equals(state.ExistingVpcId, "vpc-dryrun", StringComparison.Ordinal) ||
+        string.Equals(state.ExistingPublicSubnetIdsJson, """["subnet-public-a","subnet-public-b"]""", StringComparison.Ordinal) ||
+        string.Equals(state.ExistingPrivateSubnetIdsJson, """["subnet-private-a","subnet-private-b"]""", StringComparison.Ordinal);
+
+    private static bool ContainsDryRunPlaceholder(string? value) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        value.Contains("DryRunPassword", StringComparison.Ordinal);
+
+    private static void ClearAzureReusableDataState(AzureLiveState state)
+    {
+        state.DataResourceGroup = null;
+        state.ExistingDbFqdn = null;
+        state.ExistingDbConnectionString = null;
+        state.ExistingRedisConnectionString = null;
+        state.HasReusableDataInputs = false;
+    }
+
+    private static void ClearAwsReusableDataState(AwsLiveState state)
+    {
+        state.ExistingDbEndpoint = null;
+        state.ExistingDbConnectionString = null;
+        state.ExistingRedisConnectionString = null;
+        state.ExistingVpcId = null;
+        state.ExistingVpcCidr = null;
+        state.ExistingPublicSubnetIdsJson = null;
+        state.ExistingPrivateSubnetIdsJson = null;
+        state.HasReusableDataInputs = false;
+    }
+
     private static string ApplyAwsAotImage(string image, bool useAot, string suffix)
     {
         if (!useAot)
@@ -2230,59 +3222,144 @@ internal static partial class ValidationRunner
     private static Task RunNativeAwsValidationAsync(
         ParsedCommand command,
         RunnerContext context,
+        ScenarioManifest manifest,
         AwsStack stack,
         AwsBootstrapCredentials credentials,
         string defaultPlanDir)
     {
-        return ExecuteNativeAwsValidationAsync(command, context, stack, credentials, defaultPlanDir);
+        return ExecuteNativeAwsValidationAsync(command, context, manifest, stack, credentials, defaultPlanDir);
     }
 
-    private static string? GetTerraformBaseUrl(string rawJson) => GetTerraformOutputString(rawJson,
+    private static string? GetTerraformBaseUrl(string rawJson, TargetDescriptorManifest? targetDescriptor = null) => GetTerraformOutputString(rawJson, CombineCandidatePaths(targetDescriptor, "baseUrl",
+        ["deploy_contract", "value", "endpoint"],
         ["validation_contract", "value", "tests", "base_url"],
         ["deployment_contract", "value", "endpoints", "public_base_url"],
-        ["honua_url", "value"]);
+        ["honua_url", "value"]));
 
-    private static string? GetTerraformDatabaseHost(string rawJson) => GetTerraformOutputString(rawJson,
+    private static string? GetTerraformDatabaseHost(string rawJson, TargetDescriptorManifest? targetDescriptor = null) => GetTerraformOutputString(rawJson, CombineCandidatePaths(targetDescriptor, "databaseHost",
         ["deployment_contract", "value", "dependencies", "database", "host"],
         ["db_endpoint", "value"],
         ["database_fqdn", "value"],
-        ["db_fqdn", "value"]);
+        ["db_fqdn", "value"]));
 
-    private static string? GetTerraformDatabaseSecretRef(string rawJson) => GetTerraformOutputString(rawJson,
+    private static string? GetTerraformDatabaseSecretRef(string rawJson, TargetDescriptorManifest? targetDescriptor = null) => GetTerraformOutputString(rawJson, CombineCandidatePaths(targetDescriptor, "databaseSecretRef",
+        ["deploy_contract", "value", "secret_refs", "database_connection", "id"],
         ["deployment_contract", "value", "dependencies", "database", "secret_ref"],
         ["operations_contract", "value", "secrets", "db_connection_secret"],
         ["db_connection_secret_arn", "value"],
-        ["db_connection_secret_id", "value"]);
+        ["db_connection_secret_id", "value"]));
 
-    private static string? GetTerraformCacheSecretRef(string rawJson) => GetTerraformOutputString(rawJson,
+    private static string? GetTerraformCacheSecretRef(string rawJson, TargetDescriptorManifest? targetDescriptor = null) => GetTerraformOutputString(rawJson, CombineCandidatePaths(targetDescriptor, "cacheSecretRef",
+        ["deploy_contract", "value", "secret_refs", "redis_connection", "id"],
         ["deployment_contract", "value", "dependencies", "cache", "secret_ref"],
         ["operations_contract", "value", "secrets", "redis_connection_secret"],
         ["redis_connection_secret_arn", "value"],
-        ["redis_connection_secret_id", "value"]);
+        ["redis_connection_secret_id", "value"]));
 
-    private static string? GetTerraformResourceGroup(string rawJson) => GetTerraformOutputString(rawJson,
+    private static string? GetTerraformResourceGroup(string rawJson, TargetDescriptorManifest? targetDescriptor = null) => GetTerraformOutputString(rawJson, CombineCandidatePaths(targetDescriptor, "resourceGroup",
+        ["deploy_contract", "value", "resource_group"],
         ["validation_contract", "value", "artifacts", "resource_group"],
         ["operations_contract", "value", "grouping", "resource_group"],
-        ["resource_group_name", "value"]);
+        ["resource_group_name", "value"]));
 
-    private static string? GetTerraformWorkloadName(string rawJson) => GetTerraformOutputString(rawJson,
+    private static string? GetTerraformWorkloadName(string rawJson, TargetDescriptorManifest? targetDescriptor = null) => GetTerraformOutputString(rawJson, CombineCandidatePaths(targetDescriptor, "workloadName",
+        ["deploy_contract", "value", "target_name"],
         ["validation_contract", "value", "artifacts", "workload_name"],
         ["deployment_contract", "value", "workload", "name"],
         ["container_app_name", "value"],
         ["function_app_name", "value"],
         ["ecs_service_name", "value"],
-        ["lambda_function_name", "value"]);
+        ["lambda_function_name", "value"]));
 
-    private static string? GetTerraformCurrentRevision(string rawJson) => GetTerraformOutputString(rawJson,
+    private static string? GetTerraformCurrentRevision(string rawJson, TargetDescriptorManifest? targetDescriptor = null) => GetTerraformOutputString(rawJson, CombineCandidatePaths(targetDescriptor, "currentRevision",
+        ["deploy_contract", "value", "current_revision"],
         ["deployment_contract", "value", "rollout", "current_revision"],
-        ["control_plane_current_revision", "value"]);
+        ["control_plane_current_revision", "value"]));
 
-    private static string? GetTerraformDesiredRevision(string rawJson) => GetTerraformOutputString(rawJson,
+    private static string? GetTerraformDesiredRevision(string rawJson, TargetDescriptorManifest? targetDescriptor = null) => GetTerraformOutputString(rawJson, CombineCandidatePaths(targetDescriptor, "desiredRevision",
+        ["deploy_contract", "value", "desired_revision"],
         ["deployment_contract", "value", "rollout", "desired_revision"],
-        ["control_plane_desired_revision", "value"]);
+        ["control_plane_desired_revision", "value"]));
+
+    private static string? GetTerraformDeployTargetId(string rawJson, TargetDescriptorManifest? targetDescriptor = null) => GetTerraformOutputString(rawJson, CombineCandidatePaths(targetDescriptor, "deployTargetId",
+        ["deploy_contract", "value", "target_id"],
+        ["deployment_contract", "value", "rollout", "target_id"],
+        ["control_plane_target_id", "value"],
+        ["control_plane_target_name", "value"],
+        ["container_app_name", "value"],
+        ["function_app_name", "value"],
+        ["ecs_service_name", "value"],
+        ["lambda_function_name", "value"]));
 
     private static string? GetTerraformValidationCapability(string rawJson, string capability) => GetTerraformOutputString(rawJson,
         ["validation_contract", "value", "platform", "capabilities", capability]);
+
+    private static bool GetTerraformObjectStorageEnabled(string rawJson, TargetDescriptorManifest? targetDescriptor = null) => GetTerraformOutputBoolean(rawJson, CombineCandidatePaths(targetDescriptor, "objectStorageEnabled",
+        ["deploy_contract", "value", "object_storage_refs", "enabled"],
+        ["app_storage_enabled", "value"],
+        ["deployment_contract", "value", "dependencies", "object_storage", "enabled"],
+        ["operations_metadata", "value", "object_storage", "enabled"]));
+
+    private static string? GetTerraformAwsObjectStorageBucketName(string rawJson, TargetDescriptorManifest? targetDescriptor = null) => GetTerraformOutputString(rawJson, CombineCandidatePaths(targetDescriptor, "awsObjectStorageBucketName",
+        ["deploy_contract", "value", "object_storage_refs", "bucket_name"],
+        ["app_storage_bucket_name", "value"],
+        ["deployment_contract", "value", "dependencies", "object_storage", "bucket"],
+        ["operations_metadata", "value", "object_storage", "bucket_name"]));
+
+    private static string? GetTerraformAwsObjectStoragePrefix(string rawJson, TargetDescriptorManifest? targetDescriptor = null) => GetTerraformOutputString(rawJson, CombineCandidatePaths(targetDescriptor, "awsObjectStoragePrefix",
+        ["deploy_contract", "value", "object_storage_refs", "prefix"],
+        ["app_storage_prefix", "value"],
+        ["deployment_contract", "value", "dependencies", "object_storage", "prefix"],
+        ["operations_metadata", "value", "object_storage", "prefix"]));
+
+    private static string? GetTerraformAzureObjectStorageAccountName(string rawJson, TargetDescriptorManifest? targetDescriptor = null) => GetTerraformOutputString(rawJson, CombineCandidatePaths(targetDescriptor, "azureObjectStorageAccountName",
+        ["deploy_contract", "value", "object_storage_refs", "storage_account_name"],
+        ["app_storage_account_name", "value"],
+        ["deployment_contract", "value", "dependencies", "object_storage", "account_name"],
+        ["operations_metadata", "value", "object_storage", "storage_account_name"]));
+
+    private static string? GetTerraformAzureObjectStorageAccountId(string rawJson, TargetDescriptorManifest? targetDescriptor = null) => GetTerraformOutputString(rawJson, CombineCandidatePaths(targetDescriptor, "azureObjectStorageAccountId",
+        ["deploy_contract", "value", "object_storage_refs", "storage_account_id"],
+        ["app_storage_account_id", "value"],
+        ["deployment_contract", "value", "dependencies", "object_storage", "account_id"],
+        ["operations_metadata", "value", "object_storage", "storage_account_id"]));
+
+    private static string? GetTerraformAzureObjectStorageContainerName(string rawJson, TargetDescriptorManifest? targetDescriptor = null) => GetTerraformOutputString(rawJson, CombineCandidatePaths(targetDescriptor, "azureObjectStorageContainerName",
+        ["deploy_contract", "value", "object_storage_refs", "container_name"],
+        ["app_storage_container_name", "value"],
+        ["deployment_contract", "value", "dependencies", "object_storage", "container_name"],
+        ["operations_metadata", "value", "object_storage", "container_name"]));
+
+    private static string[][] CombineCandidatePaths(TargetDescriptorManifest? targetDescriptor, string outputKey, params string[][] fallbackPaths)
+    {
+        var combinedPaths = new List<string[]>(fallbackPaths.Length + 4);
+        var configuredPaths = targetDescriptor?.GetOutputPaths(outputKey);
+        if (configuredPaths is not null)
+        {
+            foreach (var configuredPath in configuredPaths)
+            {
+                var parsedPath = ParseJsonPath(configuredPath);
+                if (parsedPath.Length > 0)
+                {
+                    combinedPaths.Add(parsedPath);
+                }
+            }
+        }
+
+        combinedPaths.AddRange(fallbackPaths);
+        return combinedPaths.ToArray();
+    }
+
+    private static string[] ParseJsonPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return [];
+        }
+
+        return path
+            .Split('.', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+    }
 
     private static string? GetTerraformOutputString(string rawJson, params string[][] candidatePaths)
     {
@@ -2311,6 +3388,30 @@ internal static partial class ValidationRunner
         return null;
     }
 
+    private static bool GetTerraformOutputBoolean(string rawJson, params string[][] candidatePaths)
+    {
+        using var document = JsonDocument.Parse(rawJson);
+        foreach (var path in candidatePaths)
+        {
+            if (!TryGetJsonPath(document.RootElement, path, out var value))
+            {
+                continue;
+            }
+
+            if (value.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                return value.GetBoolean();
+            }
+
+            if (value.ValueKind == JsonValueKind.String && bool.TryParse(value.GetString(), out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return false;
+    }
+
     private static bool TryGetJsonPath(JsonElement element, IReadOnlyList<string> path, out JsonElement value)
     {
         value = element;
@@ -2328,19 +3429,23 @@ internal static partial class ValidationRunner
 
     private static string BuildSyntheticAzureAcaOutputs(AzureLiveSettings settings)
     {
+        var baseUrl = NormalizeBaseUrl($"https://{settings.AcaNamePrefix}.example.test");
         return JsonSerializer.Serialize(new
         {
-            validation_contract = new { value = new { tests = new { base_url = NormalizeBaseUrl($"https://{settings.AcaNamePrefix}.example.test") }, artifacts = new { resource_group = $"{settings.AcaNamePrefix}-{settings.Environment}-rg", workload_name = settings.AcaNamePrefix } } },
-            deployment_contract = new { value = new { endpoints = new { public_base_url = NormalizeBaseUrl($"https://{settings.AcaNamePrefix}.example.test") }, dependencies = new { database = new { host = settings.ExistingDbFqdn ?? "dry-run-db" } } } },
+            deploy_contract = new { value = new { endpoint = baseUrl, target_id = settings.AcaNamePrefix, target_name = settings.AcaNamePrefix, resource_group = $"{settings.AcaNamePrefix}-{settings.Environment}-rg", current_revision = "dry-run-current", desired_revision = "dry-run-desired" } },
+            validation_contract = new { value = new { tests = new { base_url = baseUrl }, artifacts = new { resource_group = $"{settings.AcaNamePrefix}-{settings.Environment}-rg", workload_name = settings.AcaNamePrefix } } },
+            deployment_contract = new { value = new { endpoints = new { public_base_url = baseUrl }, dependencies = new { database = new { host = settings.ExistingDbFqdn ?? "dry-run-db" } } } },
         });
     }
 
     private static string BuildSyntheticAzureFunctionsOutputs(AzureLiveSettings settings)
     {
+        var baseUrl = NormalizeBaseUrl($"https://{settings.FunctionsNamePrefix}.example.test");
         return JsonSerializer.Serialize(new
         {
-            validation_contract = new { value = new { tests = new { base_url = NormalizeBaseUrl($"https://{settings.FunctionsNamePrefix}.example.test") }, artifacts = new { resource_group = $"{settings.FunctionsNamePrefix}-{settings.Environment}-rg", workload_name = settings.FunctionsNamePrefix } } },
-            deployment_contract = new { value = new { endpoints = new { public_base_url = NormalizeBaseUrl($"https://{settings.FunctionsNamePrefix}.example.test") }, dependencies = new { database = new { host = settings.ExistingDbFqdn ?? "dry-run-db" } }, rollout = new { current_revision = "dry-run-current", desired_revision = "dry-run-desired" } } },
+            deploy_contract = new { value = new { endpoint = baseUrl, target_id = settings.FunctionsNamePrefix, target_name = settings.FunctionsNamePrefix, resource_group = $"{settings.FunctionsNamePrefix}-{settings.Environment}-rg", current_revision = "dry-run-current", desired_revision = "dry-run-desired" } },
+            validation_contract = new { value = new { tests = new { base_url = baseUrl }, artifacts = new { resource_group = $"{settings.FunctionsNamePrefix}-{settings.Environment}-rg", workload_name = settings.FunctionsNamePrefix } } },
+            deployment_contract = new { value = new { endpoints = new { public_base_url = baseUrl }, dependencies = new { database = new { host = settings.ExistingDbFqdn ?? "dry-run-db" } }, rollout = new { current_revision = "dry-run-current", desired_revision = "dry-run-desired" } } },
         });
     }
 
@@ -2438,15 +3543,15 @@ internal static partial class ValidationRunner
             state.ExistingPublicSubnetIdsJson = """["subnet-public-a","subnet-public-b"]""";
             state.ExistingPrivateSubnetIdsJson = """["subnet-private-a","subnet-private-b"]""";
             state.HasReusableDataInputs = true;
-            PersistAwsDataReuseCache(settings, state);
+            ClearDataReuseCache(settings.DataCacheFile);
             return;
         }
 
         var outputs = await CaptureTerraformOutputsJsonAsync(context, terraformRoot, terraformEnvironment);
         state.DataCreated = true;
-        state.ExistingDbEndpoint = GetTerraformDatabaseHost(outputs);
-        state.ExistingDbConnectionString = await ReadAwsSecretAsync(context, GetTerraformDatabaseSecretRef(outputs), credentialsEnvironment);
-        state.ExistingRedisConnectionString = await ReadAwsSecretAsync(context, GetTerraformCacheSecretRef(outputs), credentialsEnvironment);
+        state.ExistingDbEndpoint = GetTerraformDatabaseHost(outputs, settings.TargetDescriptor);
+        state.ExistingDbConnectionString = await ReadAwsSecretAsync(context, GetTerraformDatabaseSecretRef(outputs, settings.TargetDescriptor), credentialsEnvironment);
+        state.ExistingRedisConnectionString = await ReadAwsSecretAsync(context, GetTerraformCacheSecretRef(outputs, settings.TargetDescriptor), credentialsEnvironment);
         state.ExistingVpcId = GetTerraformNetworkId(outputs);
         state.ExistingVpcCidr = GetTerraformNetworkCidr(outputs);
         state.ExistingPublicSubnetIdsJson = GetTerraformPublicSubnetIdsJson(outputs);
@@ -2477,20 +3582,21 @@ internal static partial class ValidationRunner
             var terraformEnvironment = BuildAwsEcsEnvironment(settings, state, validationEnvironment, image, desiredCount);
             await RunTerraformPlanApplyAsync(context, terraformRoot, terraformEnvironment, settings.PlanArtifactDir, $"{label}.tfplan", label, settings.AllowDestroyPlan);
             var outputs = await CaptureOrSynthesizeTerraformOutputsAsync(context, terraformRoot, terraformEnvironment, BuildSyntheticAwsEcsOutputs(settings));
-            state.BaseUrl = NormalizeBaseUrl(GetTerraformBaseUrl(outputs) ?? $"https://{settings.EcsNamePrefix}.example.test");
-            state.DbHost = GetTerraformDatabaseHost(outputs) ?? state.ExistingDbEndpoint;
-            state.ClusterName = GetTerraformClusterName(outputs) ?? $"{settings.EcsNamePrefix}-cluster";
-            state.WorkloadName = GetTerraformWorkloadName(outputs) ?? $"{settings.EcsNamePrefix}-service";
+            state.BaseUrl = NormalizeBaseUrl(GetTerraformBaseUrl(outputs, settings.TargetDescriptor) ?? $"https://{settings.EcsNamePrefix}.example.test");
+            state.DbHost = GetTerraformDatabaseHost(outputs, settings.TargetDescriptor) ?? state.ExistingDbEndpoint;
+            state.ClusterName = GetTerraformClusterName(outputs, settings.TargetDescriptor) ?? $"{settings.EcsNamePrefix}-cluster";
+            state.WorkloadName = GetTerraformWorkloadName(outputs, settings.TargetDescriptor) ?? $"{settings.EcsNamePrefix}-service";
             state.CanaryEnabled = settings.EcsCanaryEnabled;
             state.CanaryServiceName = $"{settings.EcsNamePrefix}-canary";
             state.CanaryHeaderName = settings.EcsCanaryHeaderName;
             state.CanaryHeaderValue = settings.EcsCanaryHeaderValue;
             await RunCloudHttpChecksAsync(context, settings.AdminPassword, state.BaseUrl, settings.TimeoutSeconds, settings.ReadySloSeconds, settings.LoadRequests, settings.LoadConcurrency, settings.MaxLoadErrorRatePercent, settings.SkipProtocolChecks);
+            await RunAwsObjectStorageSmokeAsync(context, credentialsEnvironment, outputs, settings.TargetDescriptor);
             if (state.CanaryEnabled && !context.DryRun)
             {
                 await WaitForEcsRunningCountAsync(context, credentialsEnvironment, state.ClusterName!, state.CanaryServiceName!, settings.EcsCanaryDesiredCount, settings.TimeoutSeconds);
             }
-            await RunCloudPlatformValidationAsync(context, validationEnvironment, state.BaseUrl, "aws-ecs", outputs, state.DbHost!, settings.AdminPassword, settings.DbAdminPassword);
+            await RunCloudPlatformValidationAsync(context, validationEnvironment, state.BaseUrl, "aws-ecs", outputs, state.DbHost!, settings.AdminPassword, settings.DbAdminPassword, settings.TargetDescriptor);
         }
 
         if (settings.RunUpgradeRollback)
@@ -2540,16 +3646,17 @@ internal static partial class ValidationRunner
             var terraformEnvironment = BuildAwsServerlessEnvironment(settings, state, validationEnvironment, image, aliasVersion);
             await RunTerraformPlanApplyAsync(context, terraformRoot, terraformEnvironment, settings.PlanArtifactDir, $"{label}.tfplan", label, settings.AllowDestroyPlan);
             var outputs = await CaptureOrSynthesizeTerraformOutputsAsync(context, terraformRoot, terraformEnvironment, BuildSyntheticAwsServerlessOutputs(settings));
-            state.BaseUrl = NormalizeBaseUrl(GetTerraformBaseUrl(outputs) ?? $"https://{settings.ServerlessNamePrefix}.example.test");
-            state.DbHost = GetTerraformDatabaseHost(outputs) ?? state.ExistingDbEndpoint;
-            state.WorkloadName = GetTerraformWorkloadName(outputs) ?? $"{settings.ServerlessNamePrefix}-lambda";
-            state.CurrentRevision = GetTerraformCurrentRevision(outputs) ?? "dry-run-current";
-            state.DesiredRevision = GetTerraformDesiredRevision(outputs) ?? "dry-run-desired";
+            state.BaseUrl = NormalizeBaseUrl(GetTerraformBaseUrl(outputs, settings.TargetDescriptor) ?? $"https://{settings.ServerlessNamePrefix}.example.test");
+            state.DbHost = GetTerraformDatabaseHost(outputs, settings.TargetDescriptor) ?? state.ExistingDbEndpoint;
+            state.WorkloadName = GetTerraformWorkloadName(outputs, settings.TargetDescriptor) ?? $"{settings.ServerlessNamePrefix}-lambda";
+            state.CurrentRevision = GetTerraformCurrentRevision(outputs, settings.TargetDescriptor) ?? "dry-run-current";
+            state.DesiredRevision = GetTerraformDesiredRevision(outputs, settings.TargetDescriptor) ?? "dry-run-desired";
             var readinessTimeoutSeconds = Math.Max(settings.TimeoutSeconds, 1800);
             await RunCloudHttpChecksAsync(context, settings.AdminPassword, state.BaseUrl, readinessTimeoutSeconds, settings.ReadySloSeconds, settings.LoadRequests == 120 ? 40 : settings.LoadRequests, settings.LoadConcurrency == 20 ? 5 : settings.LoadConcurrency, settings.MaxLoadErrorRatePercent, settings.SkipProtocolChecks);
+            await RunAwsObjectStorageSmokeAsync(context, validationEnvironment, outputs, settings.TargetDescriptor);
             if (runPlatformValidation)
             {
-                await RunCloudPlatformValidationAsync(context, validationEnvironment, state.BaseUrl, "aws-lambda", outputs, state.DbHost!, settings.AdminPassword, settings.DbAdminPassword, currentRevision, desiredRevision, settings.RunUpgradeRollback);
+                await RunCloudPlatformValidationAsync(context, validationEnvironment, state.BaseUrl, "aws-lambda", outputs, state.DbHost!, settings.AdminPassword, settings.DbAdminPassword, settings.TargetDescriptor, currentRevision, desiredRevision, settings.RunUpgradeRollback);
             }
         }
 
@@ -2587,21 +3694,275 @@ internal static partial class ValidationRunner
         IReadOnlyDictionary<string, string?> validationEnvironment,
         IsolatedTerraformWorkspace workspace)
     {
+        var cleanupFailures = new List<Exception>();
+
         if (state.EcsApplied)
         {
-            await context.ProcessRunner.RunAsync("terraform", ["-chdir=" + Path.Combine(workspace.TerraformRoot, "examples", "aws"), "destroy", "-input=false", "-auto-approve", "-no-color"], context.RepoRoot, BuildAwsEcsEnvironment(settings, state, validationEnvironment, settings.EcsImage, settings.EcsDesiredCount));
+            try
+            {
+                await DestroyAwsTerraformStackAsync(
+                    context,
+                    Path.Combine(workspace.TerraformRoot, "examples", "aws"),
+                    BuildAwsEcsEnvironment(settings, state, validationEnvironment, settings.EcsImage, settings.EcsDesiredCount),
+                    "ecs");
+            }
+            catch (Exception exception)
+            {
+                cleanupFailures.Add(exception);
+            }
         }
 
         if (state.ServerlessApplied)
         {
-            await context.ProcessRunner.RunAsync("terraform", ["-chdir=" + Path.Combine(workspace.TerraformRoot, "examples", "aws-serverless"), "destroy", "-input=false", "-auto-approve", "-no-color"], context.RepoRoot, BuildAwsServerlessEnvironment(settings, state, validationEnvironment, settings.ServerlessImage, null));
+            var serverlessTerraformRoot = Path.Combine(workspace.TerraformRoot, "examples", "aws-serverless");
+            var serverlessEnvironment = BuildAwsServerlessEnvironment(settings, state, validationEnvironment, settings.ServerlessImage, null);
+            try
+            {
+                await DestroyAwsTerraformStackAsync(
+                    context,
+                    serverlessTerraformRoot,
+                    serverlessEnvironment,
+                    "serverless",
+                    maxAttempts: 1,
+                    timeout: TimeSpan.FromMinutes(12));
+            }
+            catch (Exception exception)
+            {
+                if (string.IsNullOrWhiteSpace(state.WorkloadName))
+                {
+                    cleanupFailures.Add(exception);
+                }
+                else
+                {
+                    try
+                    {
+                        var released = await WaitForAwsLambdaVpcEniReleaseAsync(
+                            context,
+                            state.WorkloadName,
+                            settings.Region,
+                            validationEnvironment,
+                            timeoutSeconds: 900);
+                        if (!released)
+                        {
+                            cleanupFailures.Add(new AggregateException(
+                                exception,
+                                new ValidationException($"Timed out waiting for AWS Lambda ENIs to release for {state.WorkloadName} after a failed serverless destroy.")));
+                        }
+                        else
+                        {
+                            await DestroyAwsTerraformStackAsync(
+                                context,
+                                serverlessTerraformRoot,
+                                serverlessEnvironment,
+                                "serverless-post-eni-release",
+                                maxAttempts: 2,
+                                timeout: TimeSpan.FromMinutes(12));
+                        }
+                    }
+                    catch (Exception retryException)
+                    {
+                        cleanupFailures.Add(new AggregateException(exception, retryException));
+                    }
+                }
+            }
         }
 
         if (state.DataApplied && state.DataCreated && settings.DestroyData)
         {
-            await context.ProcessRunner.RunAsync("terraform", ["-chdir=" + Path.Combine(workspace.TerraformRoot, "examples", "aws-data"), "destroy", "-input=false", "-auto-approve", "-no-color"], context.RepoRoot, BuildAwsDataEnvironment(settings, validationEnvironment));
-            ClearDataReuseCache(settings.DataCacheFile);
+            try
+            {
+                var dataTerraformRoot = Path.Combine(workspace.TerraformRoot, "examples", "aws-data");
+                var dataEnvironment = BuildAwsDataEnvironment(settings, validationEnvironment);
+                await DetachAwsDataPostgisExtensionsAsync(context, dataTerraformRoot, dataEnvironment);
+                await DestroyAwsTerraformStackAsync(
+                    context,
+                    dataTerraformRoot,
+                    dataEnvironment,
+                    "data");
+                ClearDataReuseCache(settings.DataCacheFile);
+            }
+            catch (Exception exception)
+            {
+                cleanupFailures.Add(exception);
+            }
         }
+
+        if (cleanupFailures.Count == 1)
+        {
+            throw cleanupFailures[0];
+        }
+
+        if (cleanupFailures.Count > 1)
+        {
+            throw new AggregateException(cleanupFailures);
+        }
+    }
+
+    private static async Task DestroyAwsTerraformStackAsync(
+        RunnerContext context,
+        string terraformRoot,
+        IReadOnlyDictionary<string, string?> environment,
+        string label,
+        int maxAttempts = 1,
+        TimeSpan? timeout = null)
+    {
+        Exception? lastFailure = null;
+        for (var attempt = 1; attempt <= Math.Max(maxAttempts, 1); attempt++)
+        {
+            try
+            {
+                await context.ProcessRunner.RunAsync(
+                    "terraform",
+                    ["-chdir=" + terraformRoot, "destroy", "-input=false", "-auto-approve", "-no-color"],
+                    context.RepoRoot,
+                    environment,
+                    timeout);
+                return;
+            }
+            catch (Exception exception)
+            {
+                lastFailure = exception;
+                if (attempt >= maxAttempts)
+                {
+                    break;
+                }
+
+                var delaySeconds = Math.Min(60 * attempt, 180);
+                Console.WriteLine($"[runner] AWS {label} destroy attempt {attempt}/{maxAttempts} failed; retrying in {delaySeconds}s");
+                if (!context.DryRun)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+                }
+            }
+        }
+
+        throw lastFailure ?? new ValidationException($"AWS {label} destroy failed without a captured exception.");
+    }
+
+    private static async Task<bool> WaitForAwsLambdaVpcEniReleaseAsync(
+        RunnerContext context,
+        string functionName,
+        string region,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment,
+        int timeoutSeconds)
+    {
+        var startedAt = DateTimeOffset.UtcNow;
+        for (var attempt = 1; ; attempt++)
+        {
+            var raw = await context.ProcessRunner.CaptureAsync(
+                "aws",
+                [
+                    "ec2",
+                    "describe-network-interfaces",
+                    "--region", region,
+                    "--filters", $"Name=description,Values=AWS Lambda VPC ENI-{functionName}",
+                    "--query", "NetworkInterfaces[].{Id:NetworkInterfaceId,Status:Status,Attachment:Attachment.AttachmentId}",
+                    "--output", "json",
+                ],
+                context.RepoRoot,
+                credentialsEnvironment);
+
+            var remainingEnis = new List<(string Id, string Status, string? AttachmentId)>();
+            using (var document = JsonDocument.Parse(raw))
+            {
+                if (document.RootElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var element in document.RootElement.EnumerateArray())
+                    {
+                        if (element.ValueKind == JsonValueKind.Object &&
+                            element.TryGetProperty("Id", out var idProperty) &&
+                            idProperty.ValueKind == JsonValueKind.String)
+                        {
+                            var id = idProperty.GetString();
+                            if (!string.IsNullOrWhiteSpace(id))
+                            {
+                                var status = element.TryGetProperty("Status", out var statusProperty) && statusProperty.ValueKind == JsonValueKind.String
+                                    ? statusProperty.GetString() ?? string.Empty
+                                    : string.Empty;
+                                var attachmentId = element.TryGetProperty("Attachment", out var attachmentProperty) && attachmentProperty.ValueKind == JsonValueKind.String
+                                    ? attachmentProperty.GetString()
+                                    : null;
+                                remainingEnis.Add((id, status, attachmentId));
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (remainingEnis.Count == 0)
+            {
+                return true;
+            }
+
+            var deletableEniIds = remainingEnis
+                .Where(entry => string.Equals(entry.Status, "available", StringComparison.OrdinalIgnoreCase) &&
+                                string.IsNullOrWhiteSpace(entry.AttachmentId))
+                .Select(entry => entry.Id)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+
+            if (deletableEniIds.Length > 0)
+            {
+                Console.WriteLine($"[runner] Deleting released AWS Lambda ENIs for {functionName}: {string.Join(", ", deletableEniIds)}");
+                foreach (var eniId in deletableEniIds)
+                {
+                    await context.ProcessRunner.RunAsync(
+                        "aws",
+                        ["ec2", "delete-network-interface", "--region", region, "--network-interface-id", eniId],
+                        context.RepoRoot,
+                        credentialsEnvironment);
+                }
+
+                continue;
+            }
+
+            if ((DateTimeOffset.UtcNow - startedAt).TotalSeconds > timeoutSeconds)
+            {
+                Console.WriteLine($"[runner] AWS Lambda ENIs still attached for {functionName}: {string.Join(", ", remainingEnis.Select(entry => entry.Id))}");
+                return false;
+            }
+
+            if (attempt == 1 || attempt % 4 == 0)
+            {
+                var preview = string.Join(", ", remainingEnis.Select(entry => entry.Id).Take(3));
+                var suffix = remainingEnis.Count > 3 ? $" (+{remainingEnis.Count - 3} more)" : string.Empty;
+                Console.WriteLine($"[runner] Waiting for AWS Lambda ENIs to release for {functionName}: {preview}{suffix}");
+            }
+
+            if (!context.DryRun)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(15));
+            }
+        }
+    }
+
+    private static async Task DetachAwsDataPostgisExtensionsAsync(
+        RunnerContext context,
+        string terraformRoot,
+        IReadOnlyDictionary<string, string?> environment)
+    {
+        var stateList = await context.ProcessRunner.CaptureAsync(
+            "terraform",
+            ["-chdir=" + terraformRoot, "state", "list"],
+            context.RepoRoot,
+            environment);
+
+        var extensionAddresses = stateList
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(address => address is "module.data.postgresql_extension.postgis[0]" or "module.data.postgresql_extension.postgis_raster[0]")
+            .ToArray();
+
+        if (extensionAddresses.Length == 0)
+        {
+            return;
+        }
+
+        Console.WriteLine("[runner] Removing ephemeral PostGIS extensions from aws-data state before destroy");
+        await context.ProcessRunner.RunAsync(
+            "terraform",
+            ["-chdir=" + terraformRoot, "state", "rm", .. extensionAddresses],
+            context.RepoRoot,
+            environment);
     }
 
     private static Dictionary<string, string?> BuildAwsDataEnvironment(AwsLiveSettings settings, IReadOnlyDictionary<string, string?> baseEnvironment)
@@ -2628,7 +3989,7 @@ internal static partial class ValidationRunner
             ["TF_VAR_db_publicly_accessible"] = "true",
             ["TF_VAR_allow_http_ingress_cidrs"] = JsonSerializer.Serialize(new[] { settings.HttpIngressCidr! }),
             ["TF_VAR_db_additional_ingress_cidrs"] = JsonSerializer.Serialize(new[] { settings.DbIngressCidr! }),
-            ["TF_VAR_tags"] = BuildValidationTagsJson(settings.ValidationRunId, settings.TtlHours),
+            ["TF_VAR_tags"] = settings.ValidationTagsJson,
         };
     }
 
@@ -2656,6 +4017,9 @@ internal static partial class ValidationRunner
             ["TF_VAR_db_password"] = settings.DbAdminPassword,
             ["TF_VAR_existing_db_endpoint"] = state.ExistingDbEndpoint,
             ["TF_VAR_existing_db_connection_string"] = state.ExistingDbConnectionString,
+            ["TF_VAR_existing_db_cidrs"] = string.IsNullOrWhiteSpace(state.ExistingDbConnectionString) || string.IsNullOrWhiteSpace(state.ExistingVpcCidr)
+                ? "[]"
+                : JsonSerializer.Serialize(new[] { state.ExistingVpcCidr }),
             ["TF_VAR_existing_vpc_id"] = state.ExistingVpcId,
             ["TF_VAR_existing_vpc_cidr"] = state.ExistingVpcCidr,
             ["TF_VAR_existing_public_subnet_ids"] = state.ExistingPublicSubnetIdsJson ?? "[]",
@@ -2669,7 +4033,9 @@ internal static partial class ValidationRunner
             ["TF_VAR_db_publicly_accessible"] = "true",
             ["TF_VAR_allow_http_ingress_cidrs"] = JsonSerializer.Serialize(new[] { settings.HttpIngressCidr! }),
             ["TF_VAR_db_additional_ingress_cidrs"] = string.IsNullOrWhiteSpace(state.ExistingDbConnectionString) ? JsonSerializer.Serialize(new[] { settings.DbIngressCidr! }) : "[]",
-            ["TF_VAR_tags"] = BuildValidationTagsJson(settings.ValidationRunId, settings.TtlHours),
+            ["TF_VAR_app_storage_enabled"] = "true",
+            ["TF_VAR_app_storage_force_destroy"] = "true",
+            ["TF_VAR_tags"] = settings.ValidationTagsJson,
         };
 
         if (kind == "serverless")
@@ -2882,11 +4248,11 @@ internal static partial class ValidationRunner
         return actions.Contains("ecr:BatchGetImage") && actions.Contains("ecr:GetDownloadUrlForLayer");
     }
 
-    private static string? GetTerraformClusterName(string rawJson) => GetTerraformOutputString(rawJson,
+    private static string? GetTerraformClusterName(string rawJson, TargetDescriptorManifest? targetDescriptor = null) => GetTerraformOutputString(rawJson, CombineCandidatePaths(targetDescriptor, "clusterName",
         ["validation_contract", "value", "artifacts", "cluster_name"],
         ["deployment_contract", "value", "workload", "cluster_name"],
         ["ecs_cluster_name", "value"],
-        ["cluster_name", "value"]);
+        ["cluster_name", "value"]));
 
     private static string? GetTerraformNetworkId(string rawJson) => GetTerraformOutputString(rawJson, ["vpc_id", "value"]);
 
@@ -2926,19 +4292,23 @@ internal static partial class ValidationRunner
 
     private static string BuildSyntheticAwsEcsOutputs(AwsLiveSettings settings)
     {
+        var baseUrl = NormalizeBaseUrl($"https://{settings.EcsNamePrefix}.example.test");
         return JsonSerializer.Serialize(new
         {
-            validation_contract = new { value = new { tests = new { base_url = NormalizeBaseUrl($"https://{settings.EcsNamePrefix}.example.test") }, artifacts = new { workload_name = $"{settings.EcsNamePrefix}-service", cluster_name = $"{settings.EcsNamePrefix}-cluster" } } },
-            deployment_contract = new { value = new { endpoints = new { public_base_url = NormalizeBaseUrl($"https://{settings.EcsNamePrefix}.example.test") }, dependencies = new { database = new { host = settings.ExistingDbEndpoint ?? "dry-run-db" } } } },
+            deploy_contract = new { value = new { endpoint = baseUrl, target_id = $"{settings.EcsNamePrefix}-cluster/{settings.EcsNamePrefix}-service", target_name = $"{settings.EcsNamePrefix}-service", current_revision = "dry-run-current", desired_revision = "dry-run-desired" } },
+            validation_contract = new { value = new { tests = new { base_url = baseUrl }, artifacts = new { workload_name = $"{settings.EcsNamePrefix}-service", cluster_name = $"{settings.EcsNamePrefix}-cluster" } } },
+            deployment_contract = new { value = new { endpoints = new { public_base_url = baseUrl }, dependencies = new { database = new { host = settings.ExistingDbEndpoint ?? "dry-run-db" } } } },
         });
     }
 
     private static string BuildSyntheticAwsServerlessOutputs(AwsLiveSettings settings)
     {
+        var baseUrl = NormalizeBaseUrl($"https://{settings.ServerlessNamePrefix}.example.test");
         return JsonSerializer.Serialize(new
         {
-            validation_contract = new { value = new { tests = new { base_url = NormalizeBaseUrl($"https://{settings.ServerlessNamePrefix}.example.test") }, artifacts = new { workload_name = $"{settings.ServerlessNamePrefix}-lambda" } } },
-            deployment_contract = new { value = new { endpoints = new { public_base_url = NormalizeBaseUrl($"https://{settings.ServerlessNamePrefix}.example.test") }, dependencies = new { database = new { host = settings.ExistingDbEndpoint ?? "dry-run-db" } }, rollout = new { current_revision = "dry-run-current", desired_revision = "dry-run-desired" } } },
+            deploy_contract = new { value = new { endpoint = baseUrl, target_id = $"{settings.ServerlessNamePrefix}-lambda", target_name = $"{settings.ServerlessNamePrefix}-lambda", current_revision = "dry-run-current", desired_revision = "dry-run-desired" } },
+            validation_contract = new { value = new { tests = new { base_url = baseUrl }, artifacts = new { workload_name = $"{settings.ServerlessNamePrefix}-lambda" } } },
+            deployment_contract = new { value = new { endpoints = new { public_base_url = baseUrl }, dependencies = new { database = new { host = settings.ExistingDbEndpoint ?? "dry-run-db" } }, rollout = new { current_revision = "dry-run-current", desired_revision = "dry-run-desired" } } },
         });
     }
 
@@ -2952,6 +4322,7 @@ internal static partial class ValidationRunner
         public required string FunctionsNamePrefix { get; init; }
         public required string PlanArtifactDir { get; init; }
         public required string ValidationRunId { get; init; }
+        public required string ValidationTagsJson { get; init; }
         public required string AdminPassword { get; init; }
         public required string DbAdminPassword { get; init; }
         public required decimal MaxRunCostUsd { get; init; }
@@ -2964,6 +4335,7 @@ internal static partial class ValidationRunner
         public required bool AllowDestroyPlan { get; init; }
         public required bool AutoDestroy { get; init; }
         public required bool DestroyData { get; init; }
+        public required bool ReuseDataStack { get; init; }
         public required bool SkipQuotaPreflight { get; init; }
         public required bool SkipIdempotency { get; init; }
         public required bool SkipProtocolChecks { get; init; }
@@ -2981,10 +4353,12 @@ internal static partial class ValidationRunner
         public required int AcaMinReplicas { get; init; }
         public required int AcaMaxReplicas { get; init; }
         public required int AcaScaleTargetMinReplicas { get; init; }
+        public string? RegistryAuthMode { get; set; }
         public string? RegistryResourceId { get; set; }
         public string? RegistryServer { get; set; }
         public string? RegistryUsername { get; set; }
         public string? RegistryPassword { get; set; }
+        public TargetDescriptorManifest? TargetDescriptor { get; set; }
         public required string DataCacheFile { get; init; }
         public required bool ForceNewDataInfra { get; init; }
         public string? ExistingDbFqdn { get; set; }
@@ -3005,6 +4379,7 @@ internal static partial class ValidationRunner
         public required string ServerlessNamePrefix { get; init; }
         public required string PlanArtifactDir { get; init; }
         public required string ValidationRunId { get; init; }
+        public required string ValidationTagsJson { get; init; }
         public required string AdminPassword { get; init; }
         public required string DbAdminPassword { get; init; }
         public required decimal MaxRunCostUsd { get; init; }
@@ -3017,6 +4392,7 @@ internal static partial class ValidationRunner
         public required bool AllowDestroyPlan { get; init; }
         public required bool AutoDestroy { get; init; }
         public required bool DestroyData { get; init; }
+        public required bool ReuseDataStack { get; init; }
         public required bool SkipQuotaPreflight { get; init; }
         public required bool SkipIdempotency { get; init; }
         public required bool SkipProtocolChecks { get; init; }
@@ -3037,6 +4413,7 @@ internal static partial class ValidationRunner
         public required string DataCacheFile { get; init; }
         public required bool ForceNewDataInfra { get; init; }
         public required bool AutoRepairVpcEgress { get; init; }
+        public TargetDescriptorManifest? TargetDescriptor { get; set; }
         public string? ExistingDbEndpoint { get; set; }
         public string? ExistingDbConnectionString { get; set; }
         public string? ExistingRedisConnectionString { get; set; }
