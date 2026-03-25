@@ -1746,7 +1746,203 @@ internal static partial class ValidationRunner
             }
         }
 
+        var (routeTablesExist, routeTablesRaw) = await context.ProcessRunner.TryCaptureAsync(
+            "aws",
+            [
+                "ec2",
+                "describe-route-tables",
+                "--filters", $"Name=vpc-id,Values={vpcId}",
+                "--query", "RouteTables[].{RouteTableId:RouteTableId,Associations:Associations[].{SubnetId:SubnetId,Main:Main},Routes:Routes[].{DestinationCidrBlock:DestinationCidrBlock,State:State,GatewayId:GatewayId,NatGatewayId:NatGatewayId,TransitGatewayId:TransitGatewayId,InstanceId:InstanceId,NetworkInterfaceId:NetworkInterfaceId,LocalGatewayId:LocalGatewayId,CarrierGatewayId:CarrierGatewayId,CoreNetworkArn:CoreNetworkArn,EgressOnlyInternetGatewayId:EgressOnlyInternetGatewayId,VpcPeeringConnectionId:VpcPeeringConnectionId}}",
+                "--output", "json",
+            ],
+            context.RepoRoot,
+            credentialsEnvironment);
+        if (!routeTablesExist || string.IsNullOrWhiteSpace(routeTablesRaw))
+        {
+            return (false, null, $"route tables for VPC {vpcId} could not be described");
+        }
+
+        using var routeTablesDocument = JsonDocument.Parse(routeTablesRaw);
+        if (routeTablesDocument.RootElement.ValueKind != JsonValueKind.Array)
+        {
+            return (false, null, $"route tables for VPC {vpcId} returned an unexpected payload");
+        }
+
+        JsonElement mainRouteTable = default;
+        var hasMainRouteTable = false;
+        var routeTablesByAssociatedSubnetId = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        foreach (var routeTable in routeTablesDocument.RootElement.EnumerateArray())
+        {
+            if (!routeTable.TryGetProperty("Associations", out var associationsElement) ||
+                associationsElement.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            foreach (var association in associationsElement.EnumerateArray())
+            {
+                if (association.TryGetProperty("Main", out var mainElement) &&
+                    mainElement.ValueKind is JsonValueKind.True)
+                {
+                    mainRouteTable = routeTable.Clone();
+                    hasMainRouteTable = true;
+                }
+
+                if (!association.TryGetProperty("SubnetId", out var subnetIdElement))
+                {
+                    continue;
+                }
+
+                var associatedSubnetId = subnetIdElement.GetString();
+                if (!string.IsNullOrWhiteSpace(associatedSubnetId))
+                {
+                    routeTablesByAssociatedSubnetId[associatedSubnetId] = routeTable.Clone();
+                }
+            }
+        }
+
+        foreach (var publicSubnetId in publicSubnetIds)
+        {
+            if (!TryGetAwsEffectiveRouteTable(publicSubnetId, routeTablesByAssociatedSubnetId, mainRouteTable, hasMainRouteTable, out var routeTable))
+            {
+                return (false, null, $"public subnet {publicSubnetId} does not have an associated route table");
+            }
+
+            if (!RouteTableHasActiveDefaultRoute(routeTable, HasAwsInternetGatewayDefaultRoute, out var routeTarget))
+            {
+                return (false, null, $"public subnet {publicSubnetId} does not have an active 0.0.0.0/0 route to an internet gateway (found {routeTarget ?? "no default route"})");
+            }
+        }
+
+        foreach (var privateSubnetId in privateSubnetIds)
+        {
+            if (!TryGetAwsEffectiveRouteTable(privateSubnetId, routeTablesByAssociatedSubnetId, mainRouteTable, hasMainRouteTable, out var routeTable))
+            {
+                return (false, null, $"private subnet {privateSubnetId} does not have an associated route table");
+            }
+
+            if (!RouteTableHasActiveDefaultRoute(routeTable, HasAwsPrivateSubnetEgressRoute, out var routeTarget))
+            {
+                return (false, null, $"private subnet {privateSubnetId} does not have an active 0.0.0.0/0 route to a NAT gateway or NAT instance (found {routeTarget ?? "no default route"})");
+            }
+        }
+
         return (true, vpcCidrRaw?.Trim(), string.Empty);
+    }
+
+    private static bool TryGetAwsEffectiveRouteTable(
+        string subnetId,
+        IReadOnlyDictionary<string, JsonElement> routeTablesByAssociatedSubnetId,
+        JsonElement mainRouteTable,
+        bool hasMainRouteTable,
+        out JsonElement routeTable)
+    {
+        if (routeTablesByAssociatedSubnetId.TryGetValue(subnetId, out var associatedRouteTable))
+        {
+            routeTable = associatedRouteTable;
+            return true;
+        }
+
+        if (hasMainRouteTable)
+        {
+            routeTable = mainRouteTable;
+            return true;
+        }
+
+        routeTable = default;
+        return false;
+    }
+
+    private static bool RouteTableHasActiveDefaultRoute(
+        JsonElement routeTable,
+        Func<JsonElement, bool> targetPredicate,
+        out string? routeTarget)
+    {
+        routeTarget = null;
+        if (!routeTable.TryGetProperty("Routes", out var routesElement) ||
+            routesElement.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        foreach (var route in routesElement.EnumerateArray())
+        {
+            var destinationCidr = TryGetJsonString(route, "DestinationCidrBlock");
+            if (!string.Equals(destinationCidr, "0.0.0.0/0", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var state = TryGetJsonString(route, "State");
+            if (!string.Equals(state, "active", StringComparison.OrdinalIgnoreCase))
+            {
+                routeTarget = DescribeAwsRouteTarget(route);
+                continue;
+            }
+
+            routeTarget = DescribeAwsRouteTarget(route);
+            if (targetPredicate(route))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasAwsInternetGatewayDefaultRoute(JsonElement route)
+    {
+        var gatewayId = TryGetJsonString(route, "GatewayId");
+        return !string.IsNullOrWhiteSpace(gatewayId) &&
+               gatewayId.StartsWith("igw-", StringComparison.Ordinal);
+    }
+
+    private static bool HasAwsPrivateSubnetEgressRoute(JsonElement route) =>
+        StartsWithAnyAwsRouteTarget(route, "NatGatewayId", "nat-") ||
+        StartsWithAnyAwsRouteTarget(route, "InstanceId", "i-");
+
+    private static bool StartsWithAnyAwsRouteTarget(JsonElement route, string propertyName, string prefix)
+    {
+        var value = TryGetJsonString(route, propertyName);
+        return !string.IsNullOrWhiteSpace(value) &&
+               value.StartsWith(prefix, StringComparison.Ordinal);
+    }
+
+    private static string? DescribeAwsRouteTarget(JsonElement route)
+    {
+        foreach (var propertyName in new[]
+                 {
+                     "NatGatewayId",
+                     "GatewayId",
+                     "TransitGatewayId",
+                     "InstanceId",
+                     "NetworkInterfaceId",
+                     "LocalGatewayId",
+                     "CarrierGatewayId",
+                     "CoreNetworkArn",
+                     "VpcPeeringConnectionId",
+                     "EgressOnlyInternetGatewayId",
+                 })
+        {
+            var value = TryGetJsonString(route, propertyName);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? TryGetJsonString(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property) ||
+            property.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return null;
+        }
+
+        return property.GetString();
     }
 
     private static string[] ParseJsonStringArray(string? rawJson)

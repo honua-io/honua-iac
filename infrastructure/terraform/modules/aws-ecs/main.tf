@@ -1019,6 +1019,29 @@ data "aws_iam_policy_document" "kms" {
   }
 
   statement {
+    sid       = "AllowElastiCacheUse"
+    actions   = ["kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:DescribeKey", "kms:CreateGrant", "kms:RetireGrant"]
+    resources = ["*"]
+    principals {
+      type        = "AWS"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "kms:CallerAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+    condition {
+      test     = "ForAnyValue:StringEquals"
+      variable = "kms:ViaService"
+      values = [
+        "elasticache.${data.aws_region.current.id}.amazonaws.com",
+        "dax.${data.aws_region.current.id}.amazonaws.com"
+      ]
+    }
+  }
+
+  statement {
     sid       = "AllowEcsTaskExecutionDecrypt"
     actions   = ["kms:Decrypt", "kms:DescribeKey"]
     resources = ["*"]
