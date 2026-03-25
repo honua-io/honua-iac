@@ -3153,7 +3153,6 @@ internal static partial class ValidationRunner
     private static bool HasCompleteAwsExistingData(AwsLiveSettings settings) =>
         !string.IsNullOrWhiteSpace(settings.ExistingDbEndpoint) &&
         !string.IsNullOrWhiteSpace(settings.ExistingDbConnectionString) &&
-        !string.IsNullOrWhiteSpace(settings.ExistingRedisConnectionString) &&
         !string.IsNullOrWhiteSpace(settings.ExistingVpcId) &&
         !string.IsNullOrWhiteSpace(settings.ExistingVpcCidr) &&
         !string.IsNullOrWhiteSpace(settings.ExistingPublicSubnetIdsJson) &&
@@ -3162,7 +3161,6 @@ internal static partial class ValidationRunner
     private static bool HasCompleteAwsExistingData(AwsLiveState state) =>
         !string.IsNullOrWhiteSpace(state.ExistingDbEndpoint) &&
         !string.IsNullOrWhiteSpace(state.ExistingDbConnectionString) &&
-        !string.IsNullOrWhiteSpace(state.ExistingRedisConnectionString) &&
         !string.IsNullOrWhiteSpace(state.ExistingVpcId) &&
         !string.IsNullOrWhiteSpace(state.ExistingVpcCidr) &&
         !string.IsNullOrWhiteSpace(state.ExistingPublicSubnetIdsJson) &&
