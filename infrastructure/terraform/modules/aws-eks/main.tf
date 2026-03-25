@@ -9,11 +9,37 @@ locals {
     Environment = var.environment
     ManagedBy   = "terraform"
   }, var.tags)
+  public_subnet_role_tags = {
+    "kubernetes.io/role/elb" = "1"
+  }
+  private_subnet_role_tags = {
+    "kubernetes.io/role/internal-elb" = "1"
+  }
   use_existing_vpc = var.existing_vpc_id != ""
   vpc_id           = local.use_existing_vpc ? var.existing_vpc_id : module.vpc[0].vpc_id
   vpc_cidr_block   = local.use_existing_vpc ? var.existing_vpc_cidr : module.vpc[0].vpc_cidr_block
   public_subnets   = local.use_existing_vpc ? var.existing_public_subnet_ids : module.vpc[0].public_subnets
   private_subnets  = local.use_existing_vpc ? var.existing_private_subnet_ids : module.vpc[0].private_subnets
+  reused_public_subnet_role_tag_bindings = length(var.existing_public_subnet_ids) == 0 ? {} : merge([
+    for subnet_id in var.existing_public_subnet_ids : {
+      for tag_key, tag_value in local.public_subnet_role_tags :
+      "${subnet_id}:${tag_key}" => {
+        resource_id = subnet_id
+        key         = tag_key
+        value       = tag_value
+      }
+    }
+  ]...)
+  reused_private_subnet_role_tag_bindings = length(var.existing_private_subnet_ids) == 0 ? {} : merge([
+    for subnet_id in var.existing_private_subnet_ids : {
+      for tag_key, tag_value in local.private_subnet_role_tags :
+      "${subnet_id}:${tag_key}" => {
+        resource_id = subnet_id
+        key         = tag_key
+        value       = tag_value
+      }
+    }
+  ]...)
 }
 
 check "public_endpoint_cidrs_required" {
@@ -67,15 +93,27 @@ module "vpc" {
   default_security_group_ingress = []
   default_security_group_egress  = []
 
-  public_subnet_tags = {
-    "kubernetes.io/role/elb" = "1"
-  }
+  public_subnet_tags = local.public_subnet_role_tags
 
-  private_subnet_tags = {
-    "kubernetes.io/role/internal-elb" = "1"
-  }
+  private_subnet_tags = local.private_subnet_role_tags
 
   tags = local.tags
+}
+
+resource "aws_ec2_tag" "existing_public_subnet_role_tags" {
+  for_each = local.use_existing_vpc ? local.reused_public_subnet_role_tag_bindings : {}
+
+  resource_id = each.value.resource_id
+  key         = each.value.key
+  value       = each.value.value
+}
+
+resource "aws_ec2_tag" "existing_private_subnet_role_tags" {
+  for_each = local.use_existing_vpc ? local.reused_private_subnet_role_tag_bindings : {}
+
+  resource_id = each.value.resource_id
+  key         = each.value.key
+  value       = each.value.value
 }
 
 #checkov:skip=CKV2_AWS_64: The default AWS KMS key policy is sufficient for this module's EKS secret encryption key.

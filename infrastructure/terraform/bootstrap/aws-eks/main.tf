@@ -30,6 +30,10 @@ locals {
   managed_instance_profile_arns = [
     for glob in local.managed_name_globs : "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:instance-profile/${glob}"
   ]
+  eks_service_linked_role_arns = [
+    "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/aws-service-role/eks.amazonaws.com/AWSServiceRoleForAmazonEKS",
+    "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/aws-service-role/eks-nodegroup.amazonaws.com/AWSServiceRoleForAmazonEKSNodegroup",
+  ]
 }
 
 check "bootstrap_identity_surface" {
@@ -174,6 +178,14 @@ data "aws_iam_policy_document" "terraform" {
       "iam:ListRoles"
     ]
     resources = ["*"]
+  }
+
+  statement {
+    sid = "IamReadEksServiceLinkedRoles"
+    actions = [
+      "iam:GetRole"
+    ]
+    resources = local.eks_service_linked_role_arns
   }
 
   statement {
