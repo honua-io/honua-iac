@@ -4,9 +4,9 @@ This directory contains the deployable Terraform roots, reusable modules, bootst
 
 ## Start Here
 
-- Operators: `docs/operator-deployment.md`
-- Validation and CI maintainers: `docs/devops/terraform-validation.md`
-- Validation runner internals: `infrastructure/terraform/validation/runner/README.md`
+- Operators: `../../docs/operator-deployment.md`
+- Validation and CI maintainers: `../../docs/devops/terraform-validation.md`
+- Validation runner internals: `validation/runner/README.md`
 
 ## Repository Layout
 

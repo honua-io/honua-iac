@@ -38,12 +38,12 @@ The machine-readable bundle matrix lives in `infrastructure/terraform/marketplac
 
 ## Module docs
 
-- `modules/aws-ecs/README.md`
-- `modules/azure-aca/README.md`
-- `modules/aws-serverless/README.md`
-- `modules/azure-functions/README.md`
-- `modules/aws-eks/README.md`
-- `modules/azure-aks/README.md`
+- `infrastructure/terraform/modules/aws-ecs/README.md`
+- `infrastructure/terraform/modules/azure-aca/README.md`
+- `infrastructure/terraform/modules/aws-serverless/README.md`
+- `infrastructure/terraform/modules/azure-functions/README.md`
+- `infrastructure/terraform/modules/aws-eks/README.md`
+- `infrastructure/terraform/modules/azure-aks/README.md`
 
 ## Validation and platform QA (maintainer path)
 
