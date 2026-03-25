@@ -1239,6 +1239,8 @@ internal static partial class ValidationRunner
         candidates.Add(context.ResolveRepoPath("infrastructure", "helm", "honua"));
         candidates.Add(context.ResolveRepoPath("honua-server", "infrastructure", "helm", "honua"));
         candidates.Add(Path.GetFullPath(Path.Combine(context.RepoRoot, "..", "honua-server", "infrastructure", "helm", "honua")));
+        candidates.Add(context.ResolveRepoPath("honua-server", "tmp", "repo-migrations", "honua-helm", "honua"));
+        candidates.Add(Path.GetFullPath(Path.Combine(context.RepoRoot, "..", "honua-server", "tmp", "repo-migrations", "honua-helm", "honua")));
 
         foreach (var candidate in candidates)
         {
