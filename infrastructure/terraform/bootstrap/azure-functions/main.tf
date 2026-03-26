@@ -48,6 +48,7 @@ locals {
     "Microsoft.Storage/storageAccounts/delete",
     "Microsoft.Storage/storageAccounts/listkeys/action",
     "Microsoft.Storage/storageAccounts/regeneratekey/action",
+    "Microsoft.Storage/storageAccounts/fileServices/read",
     "Microsoft.Storage/storageAccounts/blobServices/read",
     "Microsoft.Storage/storageAccounts/blobServices/write",
     "Microsoft.Storage/storageAccounts/blobServices/containers/read",
