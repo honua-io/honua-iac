@@ -221,7 +221,14 @@ internal static partial class ValidationRunner
                     Console.WriteLine($"[runner] Fixed AWS live name prefix base to '{awsNamePrefixBase}' for bootstrap/runtime consistency");
                 }
 
-                var lease = await BootstrapAwsAsync(context, manifest, stack, bootstrapRoot, rootCredentials, BuildAwsBootstrapManagedNameGlobs(settings, stack));
+                var lease = await BootstrapAwsAsync(
+                    context,
+                    manifest,
+                    stack,
+                    bootstrapRoot,
+                    rootCredentials,
+                    BuildAwsBootstrapManagedNameGlobs(settings, stack),
+                    BuildAwsBootstrapAdditionalEcrRepositoryNames(settings, stack));
                 leases.Add(lease);
                 await RunAwsValidationAsync(command, context, manifest, stack, lease.Credentials, planRoot);
             }
@@ -443,7 +450,8 @@ internal static partial class ValidationRunner
         AwsStack stack,
         string bootstrapRoot,
         IReadOnlyDictionary<string, string?> rootCredentials,
-        IReadOnlyList<string> managedNameGlobs)
+        IReadOnlyList<string> managedNameGlobs,
+        IReadOnlyList<string> additionalEcrRepositoryNames)
     {
         var bootstrapName = stack switch
         {
@@ -476,6 +484,7 @@ internal static partial class ValidationRunner
                 "-var", "create_access_key=true",
                 "-var", $"user_name={userName}",
                 "-var", $"managed_name_globs={JsonSerializer.Serialize(managedNameGlobs)}",
+                "-var", $"additional_ecr_repository_names={JsonSerializer.Serialize(additionalEcrRepositoryNames)}",
             ],
             context.RepoRoot,
             rootCredentials);
@@ -686,6 +695,32 @@ internal static partial class ValidationRunner
     {
         var runtimeNamePrefix = stack == AwsStack.Ecs ? settings.EcsNamePrefix : settings.ServerlessNamePrefix;
         return [$"{runtimeNamePrefix}-{settings.Environment}*"];
+    }
+
+    private static IReadOnlyList<string> BuildAwsBootstrapAdditionalEcrRepositoryNames(AwsLiveSettings settings, AwsStack stack)
+    {
+        if (stack != AwsStack.Serverless)
+        {
+            return [];
+        }
+
+        var repositoryNames = new List<string>();
+        AddAwsBootstrapEcrRepositoryName(repositoryNames, settings.ServerlessImage, settings.Region);
+        AddAwsBootstrapEcrRepositoryName(repositoryNames, settings.ServerlessPreviousImage, settings.Region);
+        return repositoryNames;
+    }
+
+    private static void AddAwsBootstrapEcrRepositoryName(List<string> repositoryNames, string? image, string region)
+    {
+        if (!TryGetEcrRepositoryName(image ?? string.Empty, region, out var repositoryName))
+        {
+            return;
+        }
+
+        if (!repositoryNames.Contains(repositoryName, StringComparer.Ordinal))
+        {
+            repositoryNames.Add(repositoryName);
+        }
     }
 
     private static IReadOnlyList<string> BuildEksBootstrapManagedNameGlobs(ManagedEksSettings settings)

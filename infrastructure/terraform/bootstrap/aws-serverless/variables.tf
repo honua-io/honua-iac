@@ -74,3 +74,14 @@ variable "managed_name_globs" {
     error_message = "managed_name_globs must contain at least one non-empty glob."
   }
 }
+
+variable "additional_ecr_repository_names" {
+  type        = list(string)
+  description = "Specific existing ECR repository names this bootstrap identity may update for Lambda image pull policy setup."
+  default     = []
+
+  validation {
+    condition     = length([for name in var.additional_ecr_repository_names : trimspace(name) if trimspace(name) == ""]) == 0
+    error_message = "additional_ecr_repository_names cannot contain empty repository names."
+  }
+}

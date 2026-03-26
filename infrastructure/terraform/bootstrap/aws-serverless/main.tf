@@ -17,10 +17,11 @@ data "aws_caller_identity" "current" {}
 data "aws_partition" "current" {}
 
 locals {
-  user_name          = var.user_name != "" ? var.user_name : "${var.name_prefix}-${var.environment}"
-  role_name          = var.role_name != "" ? var.role_name : "${local.user_name}-federated"
-  oidc_provider_key  = var.oidc_provider_arn != "" ? split("oidc-provider/", var.oidc_provider_arn)[1] : ""
-  managed_name_globs = distinct(compact([for glob in var.managed_name_globs : trimspace(glob)]))
+  user_name                       = var.user_name != "" ? var.user_name : "${var.name_prefix}-${var.environment}"
+  role_name                       = var.role_name != "" ? var.role_name : "${local.user_name}-federated"
+  oidc_provider_key               = var.oidc_provider_arn != "" ? split("oidc-provider/", var.oidc_provider_arn)[1] : ""
+  managed_name_globs              = distinct(compact([for glob in var.managed_name_globs : trimspace(glob)]))
+  additional_ecr_repository_names = distinct(compact([for name in var.additional_ecr_repository_names : trimspace(name)]))
   managed_role_arns = [
     for glob in local.managed_name_globs : "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${glob}"
   ]
@@ -33,6 +34,9 @@ locals {
   ]
   managed_ecr_repository_arns = [
     for glob in local.managed_name_globs : "arn:${data.aws_partition.current.partition}:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/${glob}"
+  ]
+  additional_ecr_repository_arns = [
+    for name in local.additional_ecr_repository_names : "arn:${data.aws_partition.current.partition}:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/${name}"
   ]
 }
 
@@ -229,7 +233,7 @@ data "aws_iam_policy_document" "terraform" {
       "ecr:TagResource",
       "ecr:UntagResource"
     ]
-    resources = local.managed_ecr_repository_arns
+    resources = distinct(concat(local.managed_ecr_repository_arns, local.additional_ecr_repository_arns))
   }
 
   statement {
