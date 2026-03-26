@@ -46,6 +46,7 @@ concurrency:
 env:
   TF_IN_AUTOMATION: true
   TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   HONUA_VALIDATION_GHA_VARS_JSON: ${{ toJSON(vars) }}
 
 jobs:

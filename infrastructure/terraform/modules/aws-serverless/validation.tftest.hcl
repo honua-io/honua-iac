@@ -137,6 +137,27 @@ run "existing_db_reuse_requires_cidrs" {
   ]
 }
 
+run "existing_db_reuse_deduplicates_postgresql_egress" {
+  command = plan
+
+  variables {
+    existing_db_endpoint          = "db.example.internal"
+    existing_db_connection_string = "Host=db.example.internal;Port=5432;Database=honua;Username=honua;Password=test-password-that-is-at-least-32-chars!;SSL Mode=Require"
+    existing_db_cidrs             = ["10.0.0.0/16", "10.0.0.0/16"]
+    enable_postgis                = false
+  }
+
+  assert {
+    condition     = length([for rule in aws_security_group.lambda.egress : rule if rule.from_port == 5432 && rule.to_port == 5432]) == 1
+    error_message = "Expected a single PostgreSQL egress rule when reusing an existing database."
+  }
+
+  assert {
+    condition     = flatten([for rule in aws_security_group.lambda.egress : rule.cidr_blocks if rule.from_port == 5432 && rule.to_port == 5432]) == ["10.0.0.0/16"]
+    error_message = "Expected PostgreSQL egress CIDRs to be deduplicated for existing database reuse."
+  }
+}
+
 run "redis_reuse_is_exclusive" {
   command = plan
 

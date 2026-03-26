@@ -19,6 +19,7 @@ locals {
   public_subnets                   = local.use_existing_vpc ? var.existing_public_subnet_ids : module.vpc[0].public_subnets
   private_subnets                  = local.use_existing_vpc ? var.existing_private_subnet_ids : module.vpc[0].private_subnets
   db_use_existing                  = var.existing_db_endpoint != "" && var.existing_db_connection_string != ""
+  db_egress_cidrs                  = distinct(local.db_use_existing ? var.existing_db_cidrs : [local.vpc_cidr_block])
   redis_enabled                    = var.redis_enabled || var.redis_connection_string != ""
   redis_create                     = var.redis_enabled && var.redis_connection_string == ""
   redis_auth_token                 = var.redis_auth_token != "" ? var.redis_auth_token : (local.redis_create ? random_password.redis_auth[0].result : "")
@@ -220,7 +221,7 @@ resource "aws_security_group" "lambda" {
     from_port   = 5432
     to_port     = 5432
     protocol    = "tcp"
-    cidr_blocks = distinct(local.db_use_existing ? var.existing_db_cidrs : [local.vpc_cidr_block])
+    cidr_blocks = local.db_egress_cidrs
   }
 
   dynamic "egress" {

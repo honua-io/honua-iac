@@ -76,6 +76,7 @@ concurrency:
 env:
   TF_IN_AUTOMATION: true
   TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   HONUA_VALIDATION_GHA_VARS_JSON: ${{ toJSON(vars) }}
 
 jobs:
@@ -231,6 +232,12 @@ jobs:
           repository: honua-io/honua-server
           path: honua-server
 
+      - name: Ensure Terraform plugin cache directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
@@ -300,6 +307,12 @@ jobs:
           repository: honua-io/honua-server
           path: honua-server
 
+      - name: Ensure Terraform plugin cache directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
@@ -363,6 +376,12 @@ jobs:
           repository: honua-io/honua-server
           path: honua-server
 
+      - name: Ensure Terraform plugin cache directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
@@ -416,6 +435,12 @@ jobs:
         with:
           repository: honua-io/honua-server
           path: honua-server
+
+      - name: Ensure Terraform plugin cache directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -472,6 +497,12 @@ jobs:
           repository: honua-io/honua-server
           path: honua-server
 
+      - name: Ensure Terraform plugin cache directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
@@ -524,6 +555,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Ensure Terraform plugin cache directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
