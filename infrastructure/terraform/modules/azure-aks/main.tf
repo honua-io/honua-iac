@@ -45,6 +45,7 @@ resource "azurerm_resource_group" "this" {
 #checkov:skip=CKV_AZURE_170: Free-tier clusters remain valid for MVP and non-production deployments.
 #checkov:skip=CKV_AZURE_171: Upgrade channels are managed by operators outside this module.
 #checkov:skip=CKV_AZURE_172: Secrets Store autorotation is layered in when CSI integration is enabled.
+#checkov:skip=CKV_AZURE_141: Local admin credentials remain enabled until AKS live validation can use managed Entra auth end-to-end.
 #checkov:skip=CKV_AZURE_226: Ephemeral OS disks depend on chosen VM sizes and are not universally available.
 #checkov:skip=CKV_AZURE_227: Host/storage encryption settings are environment-specific and may be layered on later.
 #checkov:skip=CKV_AZURE_232: System-node pod isolation is handled by cluster policy after bootstrap.
@@ -57,6 +58,7 @@ resource "azurerm_kubernetes_cluster" "this" {
   #checkov:skip=CKV_AZURE_170: Free-tier clusters remain valid for MVP and non-production deployments.
   #checkov:skip=CKV_AZURE_171: Upgrade channels are managed by operators outside this module.
   #checkov:skip=CKV_AZURE_172: Secrets Store autorotation is layered in when CSI integration is enabled.
+  #checkov:skip=CKV_AZURE_141: Local admin credentials remain enabled until AKS live validation can use managed Entra auth end-to-end.
   #checkov:skip=CKV_AZURE_226: Ephemeral OS disks depend on chosen VM sizes and are not universally available.
   #checkov:skip=CKV_AZURE_227: Host/storage encryption settings are environment-specific and may be layered on later.
   #checkov:skip=CKV_AZURE_232: System-node pod isolation is handled by cluster policy after bootstrap.
