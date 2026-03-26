@@ -81,6 +81,13 @@ check "public_access_requires_ip_restriction" {
   }
 }
 
+check "key_vault_diagnostics_requires_workspace" {
+  assert {
+    condition     = !var.key_vault_diagnostics_enabled || trimspace(var.key_vault_diagnostics_workspace_id) != "" || var.app_insights_enabled
+    error_message = "Enable app_insights_enabled or set key_vault_diagnostics_workspace_id when key_vault_diagnostics_enabled is true."
+  }
+}
+
 resource "azurerm_resource_group" "this" {
   name     = "${local.name}-rg"
   location = var.location
@@ -241,6 +248,9 @@ locals {
   redis_create                     = var.redis_enabled && var.redis_connection_string == ""
   redis_connection                 = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? azurerm_redis_cache.this[0].primary_connection_string : "")
   secret_expiration_date           = timeadd(time_static.secret_baseline.rfc3339, format("%dh", var.secret_expiration_days * 24))
+  key_vault_diagnostics_workspace_id = trimspace(var.key_vault_diagnostics_workspace_id) != "" ? trimspace(var.key_vault_diagnostics_workspace_id) : (
+    var.app_insights_enabled ? azurerm_log_analytics_workspace.this[0].id : null
+  )
 }
 
 provider "postgresql" {
@@ -338,6 +348,17 @@ resource "azurerm_application_insights" "this" {
   application_type    = "web"
   workspace_id        = azurerm_log_analytics_workspace.this[0].id
   tags                = local.tags
+}
+
+resource "azurerm_monitor_diagnostic_setting" "key_vault" {
+  count                      = var.key_vault_diagnostics_enabled && (trimspace(var.key_vault_diagnostics_workspace_id) != "" || var.app_insights_enabled) ? 1 : 0
+  name                       = "${local.name}-kv-diagnostics"
+  target_resource_id         = azurerm_key_vault.this.id
+  log_analytics_workspace_id = local.key_vault_diagnostics_workspace_id
+
+  enabled_log {
+    category = "AuditEvent"
+  }
 }
 
 #checkov:skip=CKV_AZURE_109: Key Vault firewall rules are configured outside this module.

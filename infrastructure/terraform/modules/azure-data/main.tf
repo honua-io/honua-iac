@@ -11,6 +11,9 @@ locals {
   db_connection_string   = "Host=${azurerm_postgresql_flexible_server.this.fqdn};Port=5432;Database=${var.db_name};Username=${var.db_admin_username};Password=${local.db_password};SSL Mode=Require;Trust Server Certificate=false"
   redis_connection       = var.redis_enabled ? azurerm_redis_cache.this[0].primary_connection_string : ""
   secret_expiration_date = timeadd(time_static.secret_baseline.rfc3339, format("%dh", var.secret_expiration_days * 24))
+  key_vault_diagnostics_workspace_id = trimspace(var.key_vault_diagnostics_workspace_id) != "" ? trimspace(var.key_vault_diagnostics_workspace_id) : (
+    var.key_vault_diagnostics_enabled ? azurerm_log_analytics_workspace.key_vault[0].id : null
+  )
 }
 
 resource "azurerm_resource_group" "this" {
@@ -60,6 +63,27 @@ resource "azurerm_key_vault_access_policy" "current" {
 }
 
 resource "time_static" "secret_baseline" {}
+
+resource "azurerm_log_analytics_workspace" "key_vault" {
+  count               = var.key_vault_diagnostics_enabled && trimspace(var.key_vault_diagnostics_workspace_id) == "" ? 1 : 0
+  name                = "${local.name}-data-logs"
+  location            = azurerm_resource_group.this.location
+  resource_group_name = azurerm_resource_group.this.name
+  sku                 = "PerGB2018"
+  retention_in_days   = 30
+  tags                = local.tags
+}
+
+resource "azurerm_monitor_diagnostic_setting" "key_vault" {
+  count                      = var.key_vault_diagnostics_enabled ? 1 : 0
+  name                       = "${local.name}-data-kv-diagnostics"
+  target_resource_id         = azurerm_key_vault.this.id
+  log_analytics_workspace_id = local.key_vault_diagnostics_workspace_id
+
+  enabled_log {
+    category = "AuditEvent"
+  }
+}
 
 check "db_public_access_requires_firewall_rule" {
   assert {

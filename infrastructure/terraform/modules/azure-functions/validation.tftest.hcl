@@ -152,6 +152,27 @@ run "key_vault_soft_delete_retention_too_high" {
   ]
 }
 
+run "key_vault_diagnostics_requires_workspace" {
+  command = plan
+
+  variables {
+    app_insights_enabled = false
+  }
+
+  expect_failures = [
+    check.key_vault_diagnostics_requires_workspace,
+  ]
+}
+
+run "operations_metadata_exposes_key_vault_diagnostics" {
+  command = plan
+
+  assert {
+    condition     = output.operations_metadata.secret_store.diagnostics.enabled == true
+    error_message = "Expected Key Vault diagnostics to be enabled by default."
+  }
+}
+
 run "postgis_readiness_max_attempts_minimum" {
   command = plan
 

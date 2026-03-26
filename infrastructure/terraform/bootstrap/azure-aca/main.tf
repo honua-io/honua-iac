@@ -23,21 +23,21 @@ data "azurerm_subscription" "current" {}
 data "azurerm_client_config" "current" {}
 
 locals {
-  scope = var.scope != "" ? var.scope : data.azurerm_subscription.current.id
-  role_actions = [
+  scope                          = var.scope != "" ? var.scope : data.azurerm_subscription.current.id
+  scope_is_resource_group        = can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+$", local.scope))
+  allow_resource_group_lifecycle = var.allow_resource_group_lifecycle != null ? var.allow_resource_group_lifecycle : !local.scope_is_resource_group
+  role_actions = concat([
     "Microsoft.Resources/subscriptions/read",
     "Microsoft.Resources/subscriptions/resources/read",
     "Microsoft.Resources/subscriptions/resourceGroups/read",
-    "Microsoft.Resources/subscriptions/resourceGroups/write",
-    "Microsoft.Resources/subscriptions/resourceGroups/delete",
     "Microsoft.ManagedIdentity/userAssignedIdentities/read",
     "Microsoft.ManagedIdentity/userAssignedIdentities/write",
     "Microsoft.ManagedIdentity/userAssignedIdentities/delete",
-    "Microsoft.Authorization/roleAssignments/read",
-    "Microsoft.Authorization/roleAssignments/write",
-    "Microsoft.Authorization/roleAssignments/delete",
     "Microsoft.ContainerRegistry/registries/read",
     "Microsoft.ContainerRegistry/registries/listCredentials/action",
+    "Microsoft.Insights/diagnosticSettings/read",
+    "Microsoft.Insights/diagnosticSettings/write",
+    "Microsoft.Insights/diagnosticSettings/delete",
     "Microsoft.KeyVault/locations/deletedVaults/read",
     "Microsoft.KeyVault/vaults/read",
     "Microsoft.KeyVault/vaults/write",
@@ -85,7 +85,14 @@ locals {
     "Microsoft.App/containerApps/read",
     "Microsoft.App/containerApps/write",
     "Microsoft.App/containerApps/delete",
-  ]
+    ], local.allow_resource_group_lifecycle ? [
+    "Microsoft.Resources/subscriptions/resourceGroups/write",
+    "Microsoft.Resources/subscriptions/resourceGroups/delete",
+    ] : [], var.allow_role_assignment_management ? [
+    "Microsoft.Authorization/roleAssignments/read",
+    "Microsoft.Authorization/roleAssignments/write",
+    "Microsoft.Authorization/roleAssignments/delete",
+  ] : [])
 }
 
 check "federated_inputs_together" {

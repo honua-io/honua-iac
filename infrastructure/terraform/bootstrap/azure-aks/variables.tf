@@ -21,6 +21,13 @@ variable "scope" {
   }
 }
 
+variable "allow_resource_group_lifecycle" {
+  description = "Whether the Terraform role may create and delete resource groups. Defaults to true at subscription scope and false at resource-group scope."
+  type        = bool
+  default     = null
+  nullable    = true
+}
+
 variable "create_client_secret" {
   type        = bool
   description = "Emit a static client secret for fallback automation. Leave false to prefer workload identity federation."

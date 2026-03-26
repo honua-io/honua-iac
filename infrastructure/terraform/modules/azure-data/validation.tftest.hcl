@@ -107,4 +107,9 @@ run "operations_metadata_shape" {
     condition     = output.operations_metadata.cache.enabled == true
     error_message = "Expected Redis metadata to be enabled by default."
   }
+
+  assert {
+    condition     = output.operations_metadata.secret_store.diagnostics.enabled == true
+    error_message = "Expected Key Vault diagnostics to be enabled by default."
+  }
 }

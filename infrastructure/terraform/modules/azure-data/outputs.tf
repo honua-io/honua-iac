@@ -94,6 +94,11 @@ output "operations_metadata" {
       resource_group = azurerm_resource_group.this.name
       id             = azurerm_key_vault.this.id
       name           = azurerm_key_vault.this.name
+      diagnostics = {
+        enabled                    = var.key_vault_diagnostics_enabled
+        diagnostic_setting_id      = var.key_vault_diagnostics_enabled ? azurerm_monitor_diagnostic_setting.key_vault[0].id : null
+        log_analytics_workspace_id = var.key_vault_diagnostics_enabled ? local.key_vault_diagnostics_workspace_id : null
+      }
     }
     secrets = {
       admin_password = {

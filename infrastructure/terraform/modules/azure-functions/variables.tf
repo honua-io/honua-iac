@@ -434,6 +434,23 @@ variable "key_vault_ip_rules" {
   default     = []
 }
 
+variable "key_vault_diagnostics_enabled" {
+  description = "Enable AuditEvent diagnostics for Key Vault."
+  type        = bool
+  default     = true
+}
+
+variable "key_vault_diagnostics_workspace_id" {
+  description = "Optional Log Analytics workspace resource ID for Key Vault diagnostics. Defaults to the module Log Analytics workspace when Application Insights is enabled."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = trimspace(var.key_vault_diagnostics_workspace_id) == "" || can(regex("^/subscriptions/", trimspace(var.key_vault_diagnostics_workspace_id)))
+    error_message = "key_vault_diagnostics_workspace_id must be empty or a valid Azure resource ID starting with /subscriptions/."
+  }
+}
+
 variable "secret_expiration_days" {
   description = "Days until Key Vault secrets expire."
   type        = number

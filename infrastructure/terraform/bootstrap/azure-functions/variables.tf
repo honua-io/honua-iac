@@ -21,6 +21,19 @@ variable "scope" {
   }
 }
 
+variable "allow_resource_group_lifecycle" {
+  description = "Whether the Terraform role may create and delete resource groups. Defaults to true at subscription scope and false at resource-group scope."
+  type        = bool
+  default     = null
+  nullable    = true
+}
+
+variable "allow_role_assignment_management" {
+  description = "Whether the Terraform role may create and delete RBAC role assignments needed by the runtime modules."
+  type        = bool
+  default     = true
+}
+
 variable "service_principal_secret_duration_hours" {
   type        = number
   description = "Lifetime in hours for the bootstrap service principal secret."

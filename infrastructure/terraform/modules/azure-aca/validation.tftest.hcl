@@ -220,6 +220,27 @@ run "key_vault_soft_delete_retention_too_high" {
   ]
 }
 
+run "key_vault_diagnostics_requires_workspace" {
+  command = plan
+
+  variables {
+    log_analytics_enabled = false
+  }
+
+  expect_failures = [
+    check.key_vault_diagnostics_requires_workspace,
+  ]
+}
+
+run "operations_metadata_exposes_key_vault_diagnostics" {
+  command = plan
+
+  assert {
+    condition     = output.operations_metadata.secret_store.diagnostics.enabled == true
+    error_message = "Expected Key Vault diagnostics to be enabled by default."
+  }
+}
+
 # --- Control-plane output shape tests ---
 
 run "control_plane_outputs_shape" {

@@ -72,6 +72,13 @@ check "ingress_requires_allowed_cidrs" {
   }
 }
 
+check "key_vault_diagnostics_requires_workspace" {
+  assert {
+    condition     = !var.key_vault_diagnostics_enabled || trimspace(var.key_vault_diagnostics_workspace_id) != "" || var.log_analytics_enabled
+    error_message = "Enable log_analytics_enabled or set key_vault_diagnostics_workspace_id when key_vault_diagnostics_enabled is true."
+  }
+}
+
 resource "azurerm_resource_group" "this" {
   name     = "${local.name}-rg"
   location = var.location
@@ -233,6 +240,9 @@ locals {
   redis_create                     = var.redis_enabled && var.redis_connection_string == ""
   redis_connection                 = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? azurerm_redis_cache.this[0].primary_connection_string : "")
   secret_expiration_date           = timeadd(time_static.secret_baseline.rfc3339, format("%dh", var.secret_expiration_days * 24))
+  key_vault_diagnostics_workspace_id = trimspace(var.key_vault_diagnostics_workspace_id) != "" ? trimspace(var.key_vault_diagnostics_workspace_id) : (
+    var.log_analytics_enabled ? azurerm_log_analytics_workspace.this[0].id : null
+  )
 }
 
 provider "postgresql" {
@@ -359,6 +369,17 @@ resource "azurerm_log_analytics_workspace" "this" {
   sku                 = "PerGB2018"
   retention_in_days   = 30
   tags                = local.tags
+}
+
+resource "azurerm_monitor_diagnostic_setting" "key_vault" {
+  count                      = var.key_vault_diagnostics_enabled && (trimspace(var.key_vault_diagnostics_workspace_id) != "" || var.log_analytics_enabled) ? 1 : 0
+  name                       = "${local.name}-kv-diagnostics"
+  target_resource_id         = azurerm_key_vault.this.id
+  log_analytics_workspace_id = local.key_vault_diagnostics_workspace_id
+
+  enabled_log {
+    category = "AuditEvent"
+  }
 }
 
 resource "azurerm_container_app_environment" "this" {

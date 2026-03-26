@@ -23,13 +23,13 @@ data "azurerm_subscription" "current" {}
 data "azurerm_client_config" "current" {}
 
 locals {
-  scope = var.scope != "" ? var.scope : data.azurerm_subscription.current.id
-  role_actions = [
+  scope                          = var.scope != "" ? var.scope : data.azurerm_subscription.current.id
+  scope_is_resource_group        = can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+$", local.scope))
+  allow_resource_group_lifecycle = var.allow_resource_group_lifecycle != null ? var.allow_resource_group_lifecycle : !local.scope_is_resource_group
+  role_actions = concat([
     "Microsoft.Resources/subscriptions/read",
     "Microsoft.Resources/subscriptions/resources/read",
     "Microsoft.Resources/subscriptions/resourceGroups/read",
-    "Microsoft.Resources/subscriptions/resourceGroups/write",
-    "Microsoft.Resources/subscriptions/resourceGroups/delete",
     "Microsoft.ContainerService/managedClusters/read",
     "Microsoft.ContainerService/managedClusters/write",
     "Microsoft.ContainerService/managedClusters/delete",
@@ -40,7 +40,10 @@ locals {
     "Microsoft.Insights/diagnosticSettings/write",
     "Microsoft.Insights/diagnosticSettings/delete",
     "Microsoft.OperationalInsights/workspaces/read",
-  ]
+    ], local.allow_resource_group_lifecycle ? [
+    "Microsoft.Resources/subscriptions/resourceGroups/write",
+    "Microsoft.Resources/subscriptions/resourceGroups/delete",
+  ] : [])
 }
 
 check "federated_inputs_together" {
