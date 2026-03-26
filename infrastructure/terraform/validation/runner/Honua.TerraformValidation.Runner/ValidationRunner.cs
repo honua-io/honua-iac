@@ -471,21 +471,29 @@ internal static partial class ValidationRunner
 
         var userName = bootstrapModule.ExpandUserName(context);
 
+        var applyArguments = new List<string>
+        {
+            "-chdir=" + bootstrapDir,
+            "apply",
+            "-input=false",
+            "-auto-approve",
+            "-no-color",
+            "-var", $"aws_region={context.Environment.GetOrDefaultAny(["AWS_VALIDATION_REGION", "HONUA_AWS_VALIDATION_REGION"], "us-east-1")}",
+            "-var", "create_iam_user=true",
+            "-var", "create_access_key=true",
+            "-var", $"user_name={userName}",
+            "-var", $"managed_name_globs={JsonSerializer.Serialize(managedNameGlobs)}",
+        };
+
+        if (stack == AwsStack.Serverless)
+        {
+            applyArguments.Add("-var");
+            applyArguments.Add($"additional_ecr_repository_names={JsonSerializer.Serialize(additionalEcrRepositoryNames)}");
+        }
+
         await context.ProcessRunner.RunAsync(
             "terraform",
-            [
-                "-chdir=" + bootstrapDir,
-                "apply",
-                "-input=false",
-                "-auto-approve",
-                "-no-color",
-                "-var", $"aws_region={context.Environment.GetOrDefaultAny(["AWS_VALIDATION_REGION", "HONUA_AWS_VALIDATION_REGION"], "us-east-1")}",
-                "-var", "create_iam_user=true",
-                "-var", "create_access_key=true",
-                "-var", $"user_name={userName}",
-                "-var", $"managed_name_globs={JsonSerializer.Serialize(managedNameGlobs)}",
-                "-var", $"additional_ecr_repository_names={JsonSerializer.Serialize(additionalEcrRepositoryNames)}",
-            ],
+            applyArguments,
             context.RepoRoot,
             rootCredentials);
 
