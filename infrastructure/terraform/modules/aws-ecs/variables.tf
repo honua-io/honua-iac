@@ -550,6 +550,14 @@ variable "redis_auth_token" {
   type        = string
   default     = ""
   sensitive   = true
+
+  validation {
+    condition = (
+      var.redis_auth_token == "" ||
+      can(regex("^[0-9A-Za-z!&#$^<>-]{16,128}$", var.redis_auth_token))
+    )
+    error_message = "redis_auth_token must be empty or 16-128 characters using only letters, digits, and !&#$^<>-."
+  }
 }
 
 variable "redis_enabled" {

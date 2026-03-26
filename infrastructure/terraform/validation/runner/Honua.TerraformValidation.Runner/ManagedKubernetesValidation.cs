@@ -321,6 +321,13 @@ internal static partial class ValidationRunner
         IReadOnlyDictionary<string, string?> validationEnvironment,
         bool skipObservability)
     {
+        if (!TryResolveHelmChartPath(context, context.Environment.GetOptional("HONUA_HELM_CHART_PATH"), out var helmChartPath))
+        {
+            Console.WriteLine("[runner] Helm chart not found in honua-server checkout; running managed-cluster smoke validation only.");
+            await RunManagedClusterSmokeChecksAsync(context, clusterName, kubeconfigPath, validationEnvironment);
+            return;
+        }
+
         await ExecuteNativeK8sValidationAsync(
             context,
             BuildK8sSettings(
@@ -332,8 +339,60 @@ internal static partial class ValidationRunner
                     AccessMode: "port-forward",
                     KubeconfigPath: kubeconfigPath,
                     EnvironmentOverrides: validationEnvironment,
+                    HelmChartPath: helmChartPath,
                     SkipObservability: skipObservability,
                     AutoDestroy: !command.GetBoolean("no-destroy", false))));
+    }
+
+    private static async Task RunManagedClusterSmokeChecksAsync(
+        RunnerContext context,
+        string clusterName,
+        string kubeconfigPath,
+        IReadOnlyDictionary<string, string?> validationEnvironment)
+    {
+        RequireCommand("kubectl");
+
+        var kubectlEnvironment = new Dictionary<string, string?>(validationEnvironment, StringComparer.Ordinal)
+        {
+            ["KUBECONFIG"] = kubeconfigPath,
+        };
+
+        await context.ProcessRunner.RunAsync("kubectl", ["cluster-info"], context.RepoRoot, kubectlEnvironment);
+        await context.ProcessRunner.RunAsync("kubectl", ["get", "nodes", "-o", "wide"], context.RepoRoot, kubectlEnvironment);
+
+        var nodesJson = await context.ProcessRunner.CaptureAsync("kubectl", ["get", "nodes", "-o", "json"], context.RepoRoot, kubectlEnvironment);
+        using var nodesDocument = JsonDocument.Parse(nodesJson);
+        var nodes = nodesDocument.RootElement.GetProperty("items").EnumerateArray().ToList();
+        if (nodes.Count == 0)
+        {
+            throw new ValidationException($"Managed cluster {clusterName} reported no schedulable nodes.");
+        }
+
+        var notReadyNodes = new List<string>();
+        foreach (var node in nodes)
+        {
+            var nodeName = node.GetProperty("metadata").GetProperty("name").GetString() ?? "<unknown>";
+            var ready = node.GetProperty("status").GetProperty("conditions").EnumerateArray().Any(condition =>
+                string.Equals(condition.GetProperty("type").GetString(), "Ready", StringComparison.Ordinal) &&
+                string.Equals(condition.GetProperty("status").GetString(), "True", StringComparison.Ordinal));
+            if (!ready)
+            {
+                notReadyNodes.Add(nodeName);
+            }
+        }
+
+        if (notReadyNodes.Count > 0)
+        {
+            throw new ValidationException($"Managed cluster {clusterName} has NotReady nodes: {string.Join(", ", notReadyNodes)}");
+        }
+
+        var readyz = (await context.ProcessRunner.CaptureAsync("kubectl", ["get", "--raw=/readyz"], context.RepoRoot, kubectlEnvironment)).Trim();
+        if (!readyz.Contains("ok", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ValidationException($"Managed cluster {clusterName} API /readyz did not report ok. Response: {readyz}");
+        }
+
+        Console.WriteLine($"[runner] Managed cluster smoke checks passed for {clusterName} with {nodes.Count} Ready node(s).");
     }
 
     private static async Task MaterializeExecEksKubeconfigAsync(

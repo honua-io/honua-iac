@@ -1230,6 +1230,16 @@ internal static partial class ValidationRunner
 
     private static string ResolveHelmChartPath(RunnerContext context, string? configuredPath)
     {
+        if (TryResolveHelmChartPath(context, configuredPath, out var resolvedPath))
+        {
+            return resolvedPath;
+        }
+
+        throw new ValidationException("Could not resolve Helm chart path. Set HONUA_HELM_CHART_PATH or check out honua-server.");
+    }
+
+    private static bool TryResolveHelmChartPath(RunnerContext context, string? configuredPath, out string resolvedPath)
+    {
         var candidates = new List<string>();
         if (!string.IsNullOrWhiteSpace(configuredPath))
         {
@@ -1246,11 +1256,13 @@ internal static partial class ValidationRunner
         {
             if (File.Exists(Path.Combine(candidate, "Chart.yaml")))
             {
-                return candidate;
+                resolvedPath = candidate;
+                return true;
             }
         }
 
-        throw new ValidationException("Could not resolve Helm chart path. Set HONUA_HELM_CHART_PATH or check out honua-server.");
+        resolvedPath = string.Empty;
+        return false;
     }
 
     private static IReadOnlyDictionary<string, string?> BuildKubeEnvironment(K8sScenarioSettings settings)

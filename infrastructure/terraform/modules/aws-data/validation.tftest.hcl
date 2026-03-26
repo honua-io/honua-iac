@@ -59,6 +59,18 @@ run "db_maintenance_window_format" {
   ]
 }
 
+run "redis_auth_token_rejects_unsupported_special_characters" {
+  command = plan
+
+  variables {
+    redis_auth_token = "invalid-redis-token.with-dot"
+  }
+
+  expect_failures = [
+    var.redis_auth_token,
+  ]
+}
+
 run "operations_metadata_shape" {
   command = plan
 

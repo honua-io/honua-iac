@@ -36,7 +36,7 @@ resource "random_password" "redis_auth" {
   count            = var.redis_enabled && var.redis_auth_token == "" ? 1 : 0
   length           = 32
   special          = true
-  override_special = "#%*()-_=+[]{}:?."
+  override_special = "!&#$^<>-"
 
   lifecycle {
     ignore_changes = [length, special, override_special]

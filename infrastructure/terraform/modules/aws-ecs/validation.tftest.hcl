@@ -184,6 +184,18 @@ run "redis_reuse_is_exclusive" {
   ]
 }
 
+run "redis_auth_token_rejects_unsupported_special_characters" {
+  command = plan
+
+  variables {
+    redis_auth_token = "invalid-redis-token.with-dot"
+  }
+
+  expect_failures = [
+    var.redis_auth_token,
+  ]
+}
+
 run "postgis_readiness_max_attempts_minimum" {
   command = plan
 
