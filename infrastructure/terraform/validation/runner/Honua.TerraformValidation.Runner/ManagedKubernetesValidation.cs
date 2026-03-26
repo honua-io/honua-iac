@@ -94,6 +94,7 @@ internal static partial class ValidationRunner
                     "get-credentials",
                     "--resource-group", resourceGroupName,
                     "--name", clusterName,
+                    "--admin",
                     "--file", kubeconfigPath,
                     "--overwrite-existing",
                 ],

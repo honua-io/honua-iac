@@ -33,6 +33,8 @@ locals {
     "Microsoft.ContainerService/managedClusters/read",
     "Microsoft.ContainerService/managedClusters/write",
     "Microsoft.ContainerService/managedClusters/delete",
+    "Microsoft.ContainerService/managedClusters/listClusterAdminCredential/action",
+    "Microsoft.ContainerService/managedClusters/listClusterUserCredential/action",
     "Microsoft.ContainerService/managedClusters/agentPools/read",
     "Microsoft.ContainerService/managedClusters/agentPools/write",
     "Microsoft.ContainerService/managedClusters/agentPools/delete",

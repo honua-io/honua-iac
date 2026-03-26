@@ -24,6 +24,13 @@ check "public_api_requires_authorized_ip_ranges" {
   }
 }
 
+check "local_account_disable_requires_managed_aad" {
+  assert {
+    condition     = !var.local_account_disabled || var.managed_aad_enabled
+    error_message = "Set managed_aad_enabled when local_account_disabled is true."
+  }
+}
+
 resource "azurerm_resource_group" "this" {
   name     = "${local.name}-aks-rg"
   location = var.location
@@ -83,8 +90,16 @@ resource "azurerm_kubernetes_cluster" "this" {
   }
 
   role_based_access_control_enabled = true
-  local_account_disabled            = var.local_account_disabled
-  private_cluster_enabled           = var.private_cluster_enabled
+  dynamic "azure_active_directory_role_based_access_control" {
+    for_each = var.managed_aad_enabled ? [1] : []
+
+    content {
+      azure_rbac_enabled = false
+    }
+  }
+
+  local_account_disabled  = var.local_account_disabled
+  private_cluster_enabled = var.private_cluster_enabled
 
   dynamic "api_server_access_profile" {
     for_each = !var.private_cluster_enabled ? [1] : []

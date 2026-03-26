@@ -18,6 +18,7 @@ module "aks" {
   kubernetes_version      = var.kubernetes_version
   sku_tier                = var.sku_tier
   authorized_ip_ranges    = var.authorized_ip_ranges
+  managed_aad_enabled     = var.managed_aad_enabled
   local_account_disabled  = var.local_account_disabled
   private_cluster_enabled = var.private_cluster_enabled
 }

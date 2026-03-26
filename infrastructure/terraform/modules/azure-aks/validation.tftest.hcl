@@ -50,6 +50,19 @@ run "public_api_requires_authorized_ip_ranges" {
   ]
 }
 
+run "local_account_disable_requires_managed_aad" {
+  command = plan
+
+  variables {
+    local_account_disabled = true
+    managed_aad_enabled    = false
+  }
+
+  expect_failures = [
+    check.local_account_disable_requires_managed_aad,
+  ]
+}
+
 run "control_plane_outputs_shape" {
   command = plan
 

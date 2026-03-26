@@ -76,7 +76,13 @@ variable "authorized_ip_ranges" {
 variable "local_account_disabled" {
   description = "Disable local Kubernetes accounts to avoid static admin kubeconfigs."
   type        = bool
-  default     = true
+  default     = false
+}
+
+variable "managed_aad_enabled" {
+  description = "Enable managed Microsoft Entra ID integration for AKS."
+  type        = bool
+  default     = false
 }
 
 variable "private_cluster_enabled" {
