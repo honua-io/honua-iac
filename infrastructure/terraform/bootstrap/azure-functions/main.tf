@@ -43,7 +43,6 @@ locals {
     "Microsoft.KeyVault/vaults/write",
     "Microsoft.KeyVault/vaults/delete",
     "Microsoft.KeyVault/vaults/accessPolicies/write",
-    "Microsoft.KeyVault/vaults/accessPolicies/delete",
     "Microsoft.KeyVault/vaults/secrets/read",
     "Microsoft.KeyVault/vaults/secrets/write",
     "Microsoft.KeyVault/vaults/secrets/delete",

@@ -23,13 +23,22 @@ internal static partial class ValidationRunner
 
         try
         {
-            await RunHelmStaticValidationAsync(context, settings, kubectlEnvironment);
             await EnsureClusterReadyAsync(context, settings, state, kubectlEnvironment);
-            await RunK8sDeploymentFlowAsync(context, settings, state, kubectlEnvironment);
-
-            if (!settings.SkipObservability)
+            var helmChartAvailable = HasHelmChart(settings.HelmChartPath);
+            if (helmChartAvailable)
             {
-                await ApplyObservabilityStackAsync(context, settings, state, kubectlEnvironment);
+                await RunHelmStaticValidationAsync(context, settings, kubectlEnvironment);
+                await RunK8sDeploymentFlowAsync(context, settings, state, kubectlEnvironment);
+
+                if (!settings.SkipObservability)
+                {
+                    await ApplyObservabilityStackAsync(context, settings, state, kubectlEnvironment);
+                }
+            }
+            else
+            {
+                Console.WriteLine("[runner] Helm chart not found in honua-server checkout; running local cluster smoke validation only.");
+                await RunLocalClusterSmokeChecksAsync(context, kubectlEnvironment);
             }
         }
         catch (Exception exception)
@@ -135,8 +144,16 @@ internal static partial class ValidationRunner
             AutoDestroy: overrides?.AutoDestroy ?? !command.GetBoolean("no-destroy", false),
             AdminPassword: adminPassword,
             MasterKey: masterKey,
-            HelmChartPath: overrides?.HelmChartPath ?? ResolveHelmChartPath(context, env.GetOptional("HONUA_HELM_CHART_PATH")),
+            HelmChartPath: overrides?.HelmChartPath ?? ResolveOptionalHelmChartPath(context, env.GetOptional("HONUA_HELM_CHART_PATH")),
             KubeconformImage: env.GetOrDefault("HONUA_KUBECONFORM_IMAGE", "ghcr.io/yannh/kubeconform:v0.7.0"));
+    }
+
+    private static async Task RunLocalClusterSmokeChecksAsync(
+        RunnerContext context,
+        IReadOnlyDictionary<string, string?> kubectlEnvironment)
+    {
+        await context.ProcessRunner.RunAsync("kubectl", ["cluster-info"], context.RepoRoot, kubectlEnvironment);
+        await context.ProcessRunner.RunAsync("kubectl", ["get", "nodes", "-o", "wide"], context.RepoRoot, kubectlEnvironment);
     }
 
     private static async Task RunK8sDeploymentFlowAsync(
@@ -1236,6 +1253,16 @@ internal static partial class ValidationRunner
         }
 
         throw new ValidationException("Could not resolve Helm chart path. Set HONUA_HELM_CHART_PATH or check out honua-server.");
+    }
+
+    private static string ResolveOptionalHelmChartPath(RunnerContext context, string? configuredPath)
+    {
+        return TryResolveHelmChartPath(context, configuredPath, out var resolvedPath) ? resolvedPath : string.Empty;
+    }
+
+    private static bool HasHelmChart(string chartPath)
+    {
+        return !string.IsNullOrWhiteSpace(chartPath) && File.Exists(Path.Combine(chartPath, "Chart.yaml"));
     }
 
     private static bool TryResolveHelmChartPath(RunnerContext context, string? configuredPath, out string resolvedPath)
