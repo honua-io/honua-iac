@@ -220,18 +220,7 @@ resource "aws_security_group" "lambda" {
     from_port   = 5432
     to_port     = 5432
     protocol    = "tcp"
-    cidr_blocks = [local.vpc_cidr_block]
-  }
-
-  dynamic "egress" {
-    for_each = local.db_use_existing ? [1] : []
-    content {
-      description = "Existing PostgreSQL access"
-      from_port   = 5432
-      to_port     = 5432
-      protocol    = "tcp"
-      cidr_blocks = var.existing_db_cidrs
-    }
+    cidr_blocks = distinct(local.db_use_existing ? var.existing_db_cidrs : [local.vpc_cidr_block])
   }
 
   dynamic "egress" {
