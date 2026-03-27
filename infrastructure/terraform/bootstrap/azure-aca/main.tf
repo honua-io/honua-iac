@@ -82,6 +82,7 @@ locals {
     "Microsoft.App/containerApps/read",
     "Microsoft.App/containerApps/write",
     "Microsoft.App/containerApps/delete",
+    "Microsoft.App/containerApps/listSecrets/action",
     ], local.allow_resource_group_lifecycle ? [
     "Microsoft.Resources/subscriptions/resourceGroups/write",
     "Microsoft.Resources/subscriptions/resourceGroups/delete",
