@@ -1121,8 +1121,21 @@ internal static partial class ValidationRunner
 
     private static async Task ClearAzureFirewallRulesAsync(RunnerContext context, AzureLiveState state, IReadOnlyDictionary<string, string?> credentialsEnvironment)
     {
-        foreach (var (resourceGroup, serverName, ruleName) in state.AcaFirewallRules.Concat(state.RunnerFirewallRules))
+        foreach (var (resourceGroup, serverName, ruleName) in state.AcaFirewallRules
+                     .Concat(state.RunnerFirewallRules)
+                     .Distinct())
         {
+            var (ruleExists, _) = await context.ProcessRunner.TryCaptureAsync(
+                "az",
+                ["postgres", "flexible-server", "firewall-rule", "show", "--resource-group", resourceGroup, "--name", serverName, "--rule-name", ruleName, "-o", "none"],
+                context.RepoRoot,
+                credentialsEnvironment);
+            if (!ruleExists)
+            {
+                Console.WriteLine($"[runner] Azure PostgreSQL firewall rule {ruleName} on server {serverName} was already absent; skipping delete.");
+                continue;
+            }
+
             await context.ProcessRunner.RunAsync("az", ["postgres", "flexible-server", "firewall-rule", "delete", "--resource-group", resourceGroup, "--name", serverName, "--rule-name", ruleName, "--yes"], context.RepoRoot, credentialsEnvironment);
         }
     }
