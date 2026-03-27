@@ -1154,7 +1154,8 @@ internal static partial class ValidationRunner
     {
         return string.Equals(type, "Microsoft.Cache/Redis", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(type, "Microsoft.DBforPostgreSQL/flexibleServers", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(type, "Microsoft.KeyVault/vaults", StringComparison.OrdinalIgnoreCase);
+               string.Equals(type, "Microsoft.KeyVault/vaults", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(type, "Microsoft.OperationalInsights/workspaces", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task EnsureAzSessionAsync(

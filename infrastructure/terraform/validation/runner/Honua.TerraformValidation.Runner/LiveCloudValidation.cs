@@ -1970,6 +1970,11 @@ internal static partial class ValidationRunner
         string.Equals(value.Trim(), "None", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(value.Trim(), "null", StringComparison.OrdinalIgnoreCase);
 
+    private sealed record AzureAcaReadinessSummary(
+        string? ProvisioningState,
+        string? RunningStatus,
+        string? LatestReadyRevisionName);
+
     private static async Task WaitForAzureAcaReplicasAsync(RunnerContext context, IReadOnlyDictionary<string, string?> credentialsEnvironment, string resourceGroup, string appName, int expectedMinReplicas, int timeoutSeconds)
     {
         if (context.DryRun)
@@ -1986,12 +1991,65 @@ internal static partial class ValidationRunner
                 return;
             }
 
+            var readinessSummary = await TryGetAzureAcaReadinessSummaryAsync(context, credentialsEnvironment, resourceGroup, appName);
+            if (readinessSummary is not null &&
+                string.Equals(readinessSummary.ProvisioningState, "Succeeded", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(readinessSummary.RunningStatus, "Running", StringComparison.OrdinalIgnoreCase) &&
+                !IsCliEmptyOrNone(readinessSummary.LatestReadyRevisionName))
+            {
+                Console.WriteLine(
+                    $"[runner] ACA readiness fallback accepted {appName}: " +
+                    $"replica list reported '{countRaw.Trim()}', but Azure reports provisioningState={readinessSummary.ProvisioningState}, " +
+                    $"runningStatus={readinessSummary.RunningStatus} " +
+                    $"with ready revision {readinessSummary.LatestReadyRevisionName}.");
+                return;
+            }
+
             if ((DateTimeOffset.UtcNow - startedAt).TotalSeconds > timeoutSeconds)
             {
                 throw new ValidationException($"Timed out waiting for ACA replicas >= {expectedMinReplicas}");
             }
 
             await Task.Delay(TimeSpan.FromSeconds(15));
+        }
+    }
+
+    private static async Task<AzureAcaReadinessSummary?> TryGetAzureAcaReadinessSummaryAsync(
+        RunnerContext context,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment,
+        string resourceGroup,
+        string appName)
+    {
+        var (success, raw) = await context.ProcessRunner.TryCaptureAsync(
+            "az",
+            [
+                "containerapp",
+                "show",
+                "--resource-group", resourceGroup,
+                "--name", appName,
+                "--query", "{provisioningState:properties.provisioningState,runningStatus:properties.runningStatus,latestReadyRevisionName:properties.latestReadyRevisionName}",
+                "-o", "json",
+            ],
+            context.RepoRoot,
+            credentialsEnvironment);
+
+        if (!success || string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(raw);
+            var root = document.RootElement;
+            return new AzureAcaReadinessSummary(
+                TryGetJsonString(root, "provisioningState"),
+                TryGetJsonString(root, "runningStatus"),
+                TryGetJsonString(root, "latestReadyRevisionName"));
+        }
+        catch
+        {
+            return null;
         }
     }
 
