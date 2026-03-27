@@ -33,6 +33,7 @@ locals {
     "Microsoft.ManagedIdentity/userAssignedIdentities/read",
     "Microsoft.ManagedIdentity/userAssignedIdentities/write",
     "Microsoft.ManagedIdentity/userAssignedIdentities/delete",
+    "Microsoft.ManagedIdentity/userAssignedIdentities/assign/action",
     "Microsoft.ContainerRegistry/registries/read",
     "Microsoft.ContainerRegistry/registries/listCredentials/action",
     "Microsoft.Insights/diagnosticSettings/read",

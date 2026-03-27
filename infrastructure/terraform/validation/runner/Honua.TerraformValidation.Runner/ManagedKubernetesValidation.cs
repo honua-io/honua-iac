@@ -73,6 +73,10 @@ internal static partial class ValidationRunner
                 await RunAksQuotaPreflightAsync(context, credentialsEnvironment, settings);
             }
 
+            settings = settings with
+            {
+                RunnerAccessCidr = settings.RunnerAccessCidr ?? $"{await DetectPublicIpv4Async(context)}/32"
+            };
             var terraformEnvironment = BuildAksTerraformEnvironment(settings, validationEnvironment);
 
             await context.ProcessRunner.RunAsync("terraform", ["-chdir=" + terraformRoot, "init", "-input=false", "-no-color"], context.RepoRoot, terraformEnvironment);
@@ -100,6 +104,7 @@ internal static partial class ValidationRunner
                 ],
                 context.RepoRoot,
                 credentialsEnvironment);
+            await WaitForAksApiAccessAsync(context, clusterName, kubeconfigPath, validationEnvironment, timeoutSeconds: 300);
 
             await RunManagedK8sChecksAsync(
                 command,
@@ -548,6 +553,43 @@ internal static partial class ValidationRunner
         }
     }
 
+    private static async Task WaitForAksApiAccessAsync(
+        RunnerContext context,
+        string clusterName,
+        string kubeconfigPath,
+        IReadOnlyDictionary<string, string?> validationEnvironment,
+        int timeoutSeconds)
+    {
+        var kubectlEnvironment = new Dictionary<string, string?>(validationEnvironment, StringComparer.Ordinal)
+        {
+            ["KUBECONFIG"] = kubeconfigPath,
+        };
+
+        var startedAt = DateTimeOffset.UtcNow;
+        while (true)
+        {
+            var (captured, output) = await context.ProcessRunner.TryCaptureAsync(
+                "kubectl",
+                ["get", "namespace", "default", "--request-timeout=15s", "-o", "name"],
+                context.RepoRoot,
+                kubectlEnvironment);
+            if (captured &&
+                !string.IsNullOrWhiteSpace(output) &&
+                string.Equals(output.Trim(), "namespace/default", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            if ((DateTimeOffset.UtcNow - startedAt).TotalSeconds > timeoutSeconds)
+            {
+                throw new ValidationException($"Timed out waiting for AKS Kubernetes API access on cluster {clusterName}");
+            }
+
+            Console.WriteLine($"[runner] AKS API access not ready for cluster {clusterName}; retrying in 10s");
+            await Task.Delay(TimeSpan.FromSeconds(10));
+        }
+    }
+
     private static async Task EnsureEksClusterAdminAccessAsync(
         RunnerContext context,
         string clusterName,
@@ -628,6 +670,7 @@ internal static partial class ValidationRunner
             ValidationRunId: validationRunId,
             TtlHours: GetIntOption(command, env, "ttl-hours", "HONUA_TTL_HOURS", 8),
             MaxRunCostUsd: GetDecimalOption(command, env, "max-run-cost-usd", "HONUA_MAX_RUN_COST_USD", 100m),
+            RunnerAccessCidr: env.GetOptional("HONUA_AKS_CLUSTER_ENDPOINT_PUBLIC_ACCESS_CIDR"),
             AllowDestroyPlan: command.GetBoolean("allow-destroy-plan", false),
             SkipQuotaPreflight: GetBooleanOption(command, env, "skip-quota-preflight", "HONUA_SKIP_QUOTA_PREFLIGHT"),
             SkipIdempotency: GetBooleanOption(command, env, "skip-idempotency", "HONUA_SKIP_IDEMPOTENCY"),
@@ -683,6 +726,8 @@ internal static partial class ValidationRunner
             ["TF_VAR_name_prefix"] = settings.NamePrefix,
             ["TF_VAR_node_count"] = settings.NodeCount.ToString(CultureInfo.InvariantCulture),
             ["TF_VAR_node_vm_size"] = settings.NodeVmSize,
+            ["TF_VAR_private_cluster_enabled"] = "false",
+            ["TF_VAR_authorized_ip_ranges"] = JsonSerializer.Serialize(new[] { settings.RunnerAccessCidr ?? "0.0.0.0/0" }),
             ["TF_VAR_tags"] = BuildValidationTagsJson(settings.ValidationRunId, settings.TtlHours),
             ["TF_IN_AUTOMATION"] = "true",
         };
@@ -1009,6 +1054,12 @@ internal static partial class ValidationRunner
         {
             Console.WriteLine($"[runner] Dry-run: skipping Azure leak janitor for ValidationRunId={validationRunId}");
             return;
+        }
+
+        if (credentialsEnvironment.TryGetValue("ARM_SUBSCRIPTION_ID", out var subscriptionId) &&
+            !string.IsNullOrWhiteSpace(subscriptionId))
+        {
+            await EnsureAzSessionAsync(context, credentialsEnvironment, subscriptionId);
         }
 
         IReadOnlyList<string> remainingResources = Array.Empty<string>();
@@ -1680,6 +1731,7 @@ internal static partial class ValidationRunner
         string ValidationRunId,
         int TtlHours,
         decimal MaxRunCostUsd,
+        string? RunnerAccessCidr,
         bool AllowDestroyPlan,
         bool SkipQuotaPreflight,
         bool SkipIdempotency,

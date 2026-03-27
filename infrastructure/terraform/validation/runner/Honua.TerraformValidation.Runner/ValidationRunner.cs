@@ -914,6 +914,7 @@ internal static partial class ValidationRunner
         AssertRegexPresent(@"scope\s*=\s*azurerm_storage_container\.app_storage\[0\]\.id", ResolvePathUnderRoot(rootPath, "modules/azure-aca/main.tf"), "azure-aca-app-storage-container-scope");
         AssertRegexPresent(@"scope\s*=\s*azurerm_storage_container\.app_storage\[0\]\.id", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-app-storage-container-scope");
         AssertRegexPresent(@"resource ""azurerm_key_vault_access_policy"" ""identity""[\s\S]*?secret_permissions\s*=\s*\[\s*""Get""\s*\]", ResolvePathUnderRoot(rootPath, "modules/azure-aca/main.tf"), "azure-aca-key-vault-get-only");
+        AssertRegexPresent(@"Microsoft\.ManagedIdentity/userAssignedIdentities/assign/action", ResolvePathUnderRoot(rootPath, "bootstrap/azure-aca/main.tf"), "azure-aca-bootstrap-identity-assign");
 
         AssertRegexAbsent(@"^\s*source\s+""\$DATA_CACHE_FILE""", ResolvePathUnderRoot(rootPath, "validation/scripts/aws/run-aws-terraform-integration.sh"), "aws-cache-source-execution");
         AssertRegexAbsent(@"^\s*source\s+""\$DATA_CACHE_FILE""", ResolvePathUnderRoot(rootPath, "validation/scripts/azure/run-azure-terraform-integration.sh"), "azure-cache-source-execution");
