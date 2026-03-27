@@ -425,6 +425,12 @@ variable "app_storage_container_name" {
   }
 }
 
+variable "app_storage_ip_rules" {
+  description = "Optional IP CIDRs allowed to access the application storage account for validation probes."
+  type        = list(string)
+  default     = []
+}
+
 variable "startup_probe_initial_delay_seconds" {
   description = "Initial delay before ACA startup probes begin, to leave room for cold boot and migrations."
   type        = number

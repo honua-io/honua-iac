@@ -327,6 +327,12 @@ variable "app_storage_enabled" {
   default     = false
 }
 
+variable "app_storage_ip_rules" {
+  description = "Optional IP CIDRs allowed to access the application storage account for validation probes."
+  type        = list(string)
+  default     = []
+}
+
 variable "app_storage_container_name" {
   description = "Blob container name for application storage probes."
   type        = string

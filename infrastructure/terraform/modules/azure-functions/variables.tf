@@ -359,6 +359,12 @@ variable "app_storage_container_name" {
   }
 }
 
+variable "app_storage_ip_rules" {
+  description = "Optional IP CIDRs allowed to access the application storage account for validation probes."
+  type        = list(string)
+  default     = []
+}
+
 variable "public_network_access_enabled" {
   description = "Whether the Function App is reachable from public networks."
   type        = bool
