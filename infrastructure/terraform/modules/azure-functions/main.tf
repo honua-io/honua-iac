@@ -178,7 +178,7 @@ resource "azurerm_storage_account" "app_storage" {
   tags                            = local.tags
 
   network_rules {
-    default_action = "Deny"
+    default_action = var.app_storage_default_action
     bypass         = ["AzureServices"]
     ip_rules       = var.app_storage_ip_rules
   }

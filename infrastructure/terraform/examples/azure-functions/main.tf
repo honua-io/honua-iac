@@ -45,6 +45,7 @@ module "honua" {
   registry_password                       = var.registry_password
   skip_migrations                         = var.skip_migrations
   app_storage_enabled                     = local.install_storage_enabled
+  app_storage_default_action              = var.app_storage_default_action
   app_storage_ip_rules                    = var.app_storage_ip_rules
   app_storage_container_name              = local.install_storage_name
   public_network_access_enabled           = local.install_public_network_access_enabled

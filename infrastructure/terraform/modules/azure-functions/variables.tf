@@ -365,6 +365,17 @@ variable "app_storage_ip_rules" {
   default     = []
 }
 
+variable "app_storage_default_action" {
+  description = "Default network action for the application storage account."
+  type        = string
+  default     = "Deny"
+
+  validation {
+    condition     = contains(["Allow", "Deny"], var.app_storage_default_action)
+    error_message = "app_storage_default_action must be either Allow or Deny."
+  }
+}
+
 variable "public_network_access_enabled" {
   description = "Whether the Function App is reachable from public networks."
   type        = bool

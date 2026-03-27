@@ -333,6 +333,12 @@ variable "app_storage_ip_rules" {
   default     = []
 }
 
+variable "app_storage_default_action" {
+  description = "Default network action for the application storage account."
+  type        = string
+  default     = "Deny"
+}
+
 variable "app_storage_container_name" {
   description = "Blob container name for application storage probes."
   type        = string

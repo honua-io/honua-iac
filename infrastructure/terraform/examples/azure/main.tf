@@ -43,6 +43,7 @@ module "honua" {
   enable_ingress                          = local.install_enable_ingress
   ingress_allowed_cidrs                   = local.install_public_ingress_cidrs
   app_storage_enabled                     = local.install_storage_enabled
+  app_storage_default_action              = var.app_storage_default_action
   app_storage_ip_rules                    = var.app_storage_ip_rules
   app_storage_container_name              = local.install_storage_name
   key_vault_purge_protection_enabled      = var.key_vault_purge_protection_enabled

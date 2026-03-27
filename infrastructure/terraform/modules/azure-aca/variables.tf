@@ -431,6 +431,17 @@ variable "app_storage_ip_rules" {
   default     = []
 }
 
+variable "app_storage_default_action" {
+  description = "Default network action for the application storage account."
+  type        = string
+  default     = "Deny"
+
+  validation {
+    condition     = contains(["Allow", "Deny"], var.app_storage_default_action)
+    error_message = "app_storage_default_action must be either Allow or Deny."
+  }
+}
+
 variable "startup_probe_initial_delay_seconds" {
   description = "Initial delay before ACA startup probes begin, to leave room for cold boot and migrations."
   type        = number
