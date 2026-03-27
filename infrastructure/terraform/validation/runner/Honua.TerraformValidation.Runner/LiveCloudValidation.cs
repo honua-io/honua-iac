@@ -1187,6 +1187,7 @@ internal static partial class ValidationRunner
             ["HONUA_SKIP_MIGRATIONS"] = "false",
         };
         var callerIngressCidrsJson = JsonSerializer.Serialize(new[] { $"{settings.DbFirewallStartIp}/32" });
+        var appStorageIpRulesJson = JsonSerializer.Serialize(new[] { settings.DbFirewallStartIp });
         return new Dictionary<string, string?>(baseEnvironment, StringComparer.Ordinal)
         {
             ["TF_IN_AUTOMATION"] = "true",
@@ -1214,7 +1215,7 @@ internal static partial class ValidationRunner
             ["TF_VAR_min_replicas"] = minReplicas.ToString(CultureInfo.InvariantCulture),
             ["TF_VAR_max_replicas"] = settings.AcaMaxReplicas.ToString(CultureInfo.InvariantCulture),
             ["TF_VAR_app_storage_enabled"] = "true",
-            ["TF_VAR_app_storage_ip_rules"] = callerIngressCidrsJson,
+            ["TF_VAR_app_storage_ip_rules"] = appStorageIpRulesJson,
             ["TF_VAR_enable_ingress"] = "true",
             ["TF_VAR_ingress_allowed_cidrs"] = callerIngressCidrsJson,
             ["TF_VAR_key_vault_public_network_access_enabled"] = "true",
@@ -1228,6 +1229,7 @@ internal static partial class ValidationRunner
     {
         var reusingExistingData = !string.IsNullOrWhiteSpace(state.ExistingDbConnectionString);
         var callerIngressCidrsJson = JsonSerializer.Serialize(new[] { $"{settings.DbFirewallStartIp}/32" });
+        var appStorageIpRulesJson = JsonSerializer.Serialize(new[] { settings.DbFirewallStartIp });
         return new Dictionary<string, string?>(baseEnvironment, StringComparer.Ordinal)
         {
             ["TF_IN_AUTOMATION"] = "true",
@@ -1255,7 +1257,7 @@ internal static partial class ValidationRunner
             ["TF_VAR_plan_sku_name"] = settings.FunctionsPlanSku,
             ["TF_VAR_skip_migrations"] = settings.FunctionsSkipMigrations.ToString().ToLowerInvariant(),
             ["TF_VAR_app_storage_enabled"] = "true",
-            ["TF_VAR_app_storage_ip_rules"] = callerIngressCidrsJson,
+            ["TF_VAR_app_storage_ip_rules"] = appStorageIpRulesJson,
             ["TF_VAR_public_network_access_enabled"] = "true",
             ["TF_VAR_allowed_ip_cidrs"] = callerIngressCidrsJson,
             ["TF_VAR_key_vault_public_network_access_enabled"] = "true",
