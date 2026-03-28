@@ -77,6 +77,7 @@ locals {
     "Microsoft.Insights/components/read",
     "Microsoft.Insights/components/write",
     "Microsoft.Insights/components/delete",
+    "Microsoft.Insights/components/currentbillingfeatures/write",
     "Microsoft.OperationalInsights/workspaces/read",
     "Microsoft.OperationalInsights/workspaces/write",
     "Microsoft.OperationalInsights/workspaces/delete",

@@ -916,6 +916,7 @@ internal static partial class ValidationRunner
         AssertRegexPresent(@"resource ""azurerm_key_vault_access_policy"" ""identity""[\s\S]*?secret_permissions\s*=\s*\[\s*""Get""\s*\]", ResolvePathUnderRoot(rootPath, "modules/azure-aca/main.tf"), "azure-aca-key-vault-get-only");
         AssertRegexPresent(@"Microsoft\.ManagedIdentity/userAssignedIdentities/assign/action", ResolvePathUnderRoot(rootPath, "bootstrap/azure-aca/main.tf"), "azure-aca-bootstrap-identity-assign");
         AssertRegexPresent(@"Microsoft\.App/containerApps/listSecrets/action", ResolvePathUnderRoot(rootPath, "bootstrap/azure-aca/main.tf"), "azure-aca-bootstrap-list-secrets");
+        AssertRegexPresent(@"Microsoft\.Insights/components/currentbillingfeatures/write", ResolvePathUnderRoot(rootPath, "bootstrap/azure-functions/main.tf"), "azure-functions-bootstrap-appinsights-billing");
 
         AssertRegexAbsent(@"^\s*source\s+""\$DATA_CACHE_FILE""", ResolvePathUnderRoot(rootPath, "validation/scripts/aws/run-aws-terraform-integration.sh"), "aws-cache-source-execution");
         AssertRegexAbsent(@"^\s*source\s+""\$DATA_CACHE_FILE""", ResolvePathUnderRoot(rootPath, "validation/scripts/azure/run-azure-terraform-integration.sh"), "azure-cache-source-execution");
