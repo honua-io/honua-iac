@@ -17,6 +17,7 @@ internal static partial class ValidationRunner
         "HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING",
         "HONUA_AZURE_DESTROY_DATA",
         "HONUA_PLATFORM_VALIDATION_SCRIPT",
+        "HONUA_PLATFORM_VALIDATION_ROOT",
         "HONUA_PLATFORM_VALIDATION_IMPORT_TABLE_PREFIX",
     ];
 
@@ -34,6 +35,7 @@ internal static partial class ValidationRunner
         "HONUA_AWS_KEEP_DATA",
         "HONUA_AWS_DESTROY_DATA",
         "HONUA_PLATFORM_VALIDATION_SCRIPT",
+        "HONUA_PLATFORM_VALIDATION_ROOT",
         "HONUA_PLATFORM_VALIDATION_IMPORT_TABLE_PREFIX",
     ];
 
@@ -41,6 +43,7 @@ internal static partial class ValidationRunner
     [
         "HONUA_USE_AOT",
         "HONUA_PLATFORM_VALIDATION_SCRIPT",
+        "HONUA_PLATFORM_VALIDATION_ROOT",
         "HONUA_AWS_EXISTING_VPC_ID",
         "HONUA_AWS_EXISTING_VPC_CIDR",
         "HONUA_AWS_EXISTING_PUBLIC_SUBNET_IDS",
@@ -1527,11 +1530,23 @@ internal static partial class ValidationRunner
     {
         var candidates = new[]
         {
+            context.ResolveRepoPath("infrastructure", "terraform", "validation", "scripts", "shared", "run-cloud-post-apply-validation-wrapper.sh"),
             context.ResolveRepoPath("honua-server", "scripts", "run-cloud-post-apply-validation.sh"),
             Path.GetFullPath(Path.Combine(context.RepoRoot, "..", "honua-server", "scripts", "run-cloud-post-apply-validation.sh")),
         };
 
         return candidates.FirstOrDefault(File.Exists);
+    }
+
+    private static string? TryGetDefaultPlatformValidationRoot(RunnerContext context)
+    {
+        var candidates = new[]
+        {
+            context.ResolveRepoPath("honua-server"),
+            Path.GetFullPath(Path.Combine(context.RepoRoot, "..", "honua-server")),
+        };
+
+        return candidates.FirstOrDefault(Directory.Exists);
     }
 
     private static string? BuildImportTablePrefix(RunnerContext context, ParsedCommand command)

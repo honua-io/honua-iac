@@ -571,6 +571,7 @@ run_honua_platform_post_apply_validation() {
   local base_url="$1"
   local default_platform="${2:-}"
   local validation_runner="${HONUA_PLATFORM_VALIDATION_SCRIPT:-}"
+  local validation_root_override="${HONUA_PLATFORM_VALIDATION_ROOT:-}"
   local validation_root
   local effective_platform
   local include_scale_tests
@@ -594,7 +595,16 @@ run_honua_platform_post_apply_validation() {
     return 1
   fi
 
-  if ! validation_root="$(resolve_platform_validation_root "$validation_runner")"; then
+  validation_runner="$(cd "$(dirname "$validation_runner")" && pwd)/$(basename "$validation_runner")"
+
+  if [[ -n "$validation_root_override" ]]; then
+    if [[ ! -d "$validation_root_override" ]]; then
+      platform_validation_log error "Platform validation root not found: $validation_root_override"
+      return 1
+    fi
+
+    validation_root="$(cd "$validation_root_override" && pwd)"
+  elif ! validation_root="$(resolve_platform_validation_root "$validation_runner")"; then
     platform_validation_log error "Could not determine honua-server repository root from $validation_runner"
     return 1
   fi
@@ -740,6 +750,6 @@ run_honua_platform_post_apply_validation() {
 
     export INCLUDE_SCALE_TESTS="$include_scale_tests"
 
-    bash "./scripts/run-cloud-post-apply-validation.sh" "${runner_args[@]}"
+    bash "$validation_runner" "${runner_args[@]}"
   )
 }

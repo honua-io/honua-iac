@@ -50,6 +50,7 @@ internal static partial class ValidationRunner
         };
         AddConfigEnvironmentVariables(context.Environment, validationEnvironment, AzureAdapterEnvironmentVariables);
         SetDefaultEnvironmentVariable(validationEnvironment, "HONUA_PLATFORM_VALIDATION_SCRIPT", TryGetDefaultPlatformValidationScript(context));
+        SetDefaultEnvironmentVariable(validationEnvironment, "HONUA_PLATFORM_VALIDATION_ROOT", TryGetDefaultPlatformValidationRoot(context));
         SetDefaultEnvironmentVariable(validationEnvironment, "HONUA_PLATFORM_VALIDATION_IMPORT_TABLE_PREFIX", BuildImportTablePrefix(context, command));
 
         var state = new AzureLiveState();
@@ -167,6 +168,7 @@ internal static partial class ValidationRunner
         };
         AddConfigEnvironmentVariables(context.Environment, validationEnvironment, AwsAdapterEnvironmentVariables);
         SetDefaultEnvironmentVariable(validationEnvironment, "HONUA_PLATFORM_VALIDATION_SCRIPT", TryGetDefaultPlatformValidationScript(context));
+        SetDefaultEnvironmentVariable(validationEnvironment, "HONUA_PLATFORM_VALIDATION_ROOT", TryGetDefaultPlatformValidationRoot(context));
         SetDefaultEnvironmentVariable(validationEnvironment, "HONUA_PLATFORM_VALIDATION_IMPORT_TABLE_PREFIX", BuildImportTablePrefix(context, command));
 
         var state = new AwsLiveState();

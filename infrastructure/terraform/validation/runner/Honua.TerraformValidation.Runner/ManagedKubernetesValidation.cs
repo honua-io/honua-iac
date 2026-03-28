@@ -46,6 +46,7 @@ internal static partial class ValidationRunner
         };
         AddConfigEnvironmentVariables(context.Environment, validationEnvironment, ManagedKubernetesAdapterEnvironmentVariables);
         SetDefaultEnvironmentVariable(validationEnvironment, "HONUA_PLATFORM_VALIDATION_SCRIPT", TryGetDefaultPlatformValidationScript(context));
+        SetDefaultEnvironmentVariable(validationEnvironment, "HONUA_PLATFORM_VALIDATION_ROOT", TryGetDefaultPlatformValidationRoot(context));
 
         var bodyFailure = (Exception?)null;
         var cleanupFailures = new List<Exception>();
@@ -197,6 +198,7 @@ internal static partial class ValidationRunner
         };
         AddConfigEnvironmentVariables(context.Environment, validationEnvironment, ManagedKubernetesAdapterEnvironmentVariables);
         SetDefaultEnvironmentVariable(validationEnvironment, "HONUA_PLATFORM_VALIDATION_SCRIPT", TryGetDefaultPlatformValidationScript(context));
+        SetDefaultEnvironmentVariable(validationEnvironment, "HONUA_PLATFORM_VALIDATION_ROOT", TryGetDefaultPlatformValidationRoot(context));
 
         var bodyFailure = (Exception?)null;
         var cleanupFailures = new List<Exception>();
