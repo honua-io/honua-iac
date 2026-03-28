@@ -917,6 +917,8 @@ internal static partial class ValidationRunner
         AssertRegexPresent(@"Microsoft\.ManagedIdentity/userAssignedIdentities/assign/action", ResolvePathUnderRoot(rootPath, "bootstrap/azure-aca/main.tf"), "azure-aca-bootstrap-identity-assign");
         AssertRegexPresent(@"Microsoft\.App/containerApps/listSecrets/action", ResolvePathUnderRoot(rootPath, "bootstrap/azure-aca/main.tf"), "azure-aca-bootstrap-list-secrets");
         AssertRegexPresent(@"Microsoft\.ManagedIdentity/userAssignedIdentities/assign/action", ResolvePathUnderRoot(rootPath, "bootstrap/azure-functions/main.tf"), "azure-functions-bootstrap-identity-assign");
+        AssertRegexPresent(@"Microsoft\.Web/sites/config/list/action", ResolvePathUnderRoot(rootPath, "bootstrap/azure-functions/main.tf"), "azure-functions-bootstrap-config-list");
+        AssertRegexPresent(@"Microsoft\.Web/sites/slots/config/list/action", ResolvePathUnderRoot(rootPath, "bootstrap/azure-functions/main.tf"), "azure-functions-bootstrap-slot-config-list");
         AssertRegexPresent(@"Microsoft\.Insights/components/currentbillingfeatures/write", ResolvePathUnderRoot(rootPath, "bootstrap/azure-functions/main.tf"), "azure-functions-bootstrap-appinsights-billing");
 
         AssertRegexAbsent(@"^\s*source\s+""\$DATA_CACHE_FILE""", ResolvePathUnderRoot(rootPath, "validation/scripts/aws/run-aws-terraform-integration.sh"), "aws-cache-source-execution");
