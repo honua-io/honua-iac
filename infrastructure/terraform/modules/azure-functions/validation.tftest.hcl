@@ -164,6 +164,15 @@ run "key_vault_diagnostics_requires_workspace" {
   ]
 }
 
+run "app_insights_disabled_with_key_vault_diagnostics_disabled" {
+  command = plan
+
+  variables {
+    app_insights_enabled          = false
+    key_vault_diagnostics_enabled = false
+  }
+}
+
 run "operations_metadata_exposes_key_vault_diagnostics" {
   command = plan
 

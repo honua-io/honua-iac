@@ -1270,6 +1270,11 @@ internal static partial class ValidationRunner
             ["TF_VAR_deployment_slot_image"] = slotImage ?? settings.FunctionsDeploymentSlotImage ?? image,
             ["TF_VAR_plan_sku_name"] = settings.FunctionsPlanSku,
             ["TF_VAR_skip_migrations"] = settings.FunctionsSkipMigrations.ToString().ToLowerInvariant(),
+            // Azure currently rejects the provider's Application Insights billing update for
+            // workspace-based components in validation subscriptions. Keep live validation
+            // focused on the Function App path until that control-plane issue is resolved.
+            ["TF_VAR_app_insights_enabled"] = "false",
+            ["TF_VAR_key_vault_diagnostics_enabled"] = "false",
             ["TF_VAR_app_storage_enabled"] = "true",
             ["TF_VAR_app_storage_default_action"] = "Allow",
             ["TF_VAR_app_storage_ip_rules"] = appStorageIpRulesJson,
