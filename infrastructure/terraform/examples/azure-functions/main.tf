@@ -43,6 +43,7 @@ module "honua" {
   registry_resource_id                    = local.install_registry_resource_id
   registry_username                       = var.registry_username
   registry_password                       = var.registry_password
+  app_insights_enabled                    = var.app_insights_enabled
   skip_migrations                         = var.skip_migrations
   app_storage_enabled                     = local.install_storage_enabled
   app_storage_default_action              = var.app_storage_default_action
@@ -57,6 +58,7 @@ module "honua" {
   key_vault_default_action                = var.key_vault_default_action
   key_vault_bypass                        = var.key_vault_bypass
   key_vault_ip_rules                      = var.key_vault_ip_rules
+  key_vault_diagnostics_enabled           = var.key_vault_diagnostics_enabled
   secret_expiration_days                  = var.secret_expiration_days
   tags                                    = var.tags
 

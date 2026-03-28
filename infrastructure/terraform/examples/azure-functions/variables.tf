@@ -135,6 +135,12 @@ variable "registry_password" {
   sensitive   = true
 }
 
+variable "app_insights_enabled" {
+  description = "Enable Application Insights for the Function App."
+  type        = bool
+  default     = true
+}
+
 variable "deployment_slot_enabled" {
   description = "Provision a staging deployment slot for slot-based rollout workflows."
   type        = bool
@@ -300,6 +306,12 @@ variable "key_vault_ip_rules" {
   description = "IP rules allowed to access Key Vault."
   type        = list(string)
   default     = []
+}
+
+variable "key_vault_diagnostics_enabled" {
+  description = "Enable AuditEvent diagnostics for Key Vault."
+  type        = bool
+  default     = true
 }
 
 variable "secret_expiration_days" {
