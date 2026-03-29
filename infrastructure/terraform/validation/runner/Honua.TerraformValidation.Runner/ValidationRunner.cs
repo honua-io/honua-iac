@@ -901,22 +901,22 @@ internal static partial class ValidationRunner
         AssertRegexPresent(@"minimum_tls_version\s*=\s*""1\.2""", ResolvePathUnderRoot(rootPath, "modules/azure-aca/main.tf"), "azure-aca-redis-tls12");
         AssertRegexPresent(@"minimum_tls_version\s*=\s*""1\.2""", ResolvePathUnderRoot(rootPath, "modules/azure-data/main.tf"), "azure-data-redis-tls12");
         AssertRegexPresent(@"minimum_tls_version\s*=\s*""1\.2""", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-redis-tls12");
-        AssertRegexAbsent(@"AmazonECSTaskExecutionRolePolicy", ResolvePathUnderRoot(rootPath, "modules/aws-ecs/main.tf"), "aws-ecs-managed-task-execution-policy");
+        AssertRegexAbsent(@"AmazonECSTaskExecutionRolePolicy", ResolvePathUnderRoot(rootPath, "modules/aws-ecs"), "aws-ecs-managed-task-execution-policy");
         AssertRegexAbsent(@"AWSLambdaBasicExecutionRole", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-managed-basic-policy");
         AssertRegexAbsent(@"AWSLambdaVPCAccessExecutionRole", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-managed-vpc-policy");
-        AssertRegexPresent(@"resource ""aws_iam_policy"" ""task_execution_runtime""", ResolvePathUnderRoot(rootPath, "modules/aws-ecs/main.tf"), "aws-ecs-custom-task-execution-policy");
+        AssertRegexPresentInScope(@"resource ""aws_iam_policy"" ""task_execution_runtime""", ResolvePathUnderRoot(rootPath, "modules/aws-ecs"), "aws-ecs-custom-task-execution-policy");
         AssertRegexPresent(@"resource ""aws_iam_policy"" ""lambda_runtime""", ResolvePathUnderRoot(rootPath, "modules/aws-serverless/main.tf"), "aws-serverless-custom-runtime-policy");
         AssertRegexPresent(@"scope\s*=\s*azurerm_storage_container\.app_storage\[0\]\.id", ResolvePathUnderRoot(rootPath, "modules/azure-aca/main.tf"), "azure-aca-app-storage-container-scope");
         AssertRegexPresent(@"scope\s*=\s*azurerm_storage_container\.app_storage\[0\]\.id", ResolvePathUnderRoot(rootPath, "modules/azure-functions/main.tf"), "azure-functions-app-storage-container-scope");
         AssertRegexPresent(@"resource ""azurerm_key_vault_access_policy"" ""identity""[\s\S]*?secret_permissions\s*=\s*\[\s*""Get""\s*\]", ResolvePathUnderRoot(rootPath, "modules/azure-aca/main.tf"), "azure-aca-key-vault-get-only");
-        AssertRegexPresent(@"Microsoft\.ManagedIdentity/userAssignedIdentities/assign/action", ResolvePathUnderRoot(rootPath, "bootstrap/azure-aca/main.tf"), "azure-aca-bootstrap-identity-assign");
-        AssertRegexPresent(@"Microsoft\.App/containerApps/listSecrets/action", ResolvePathUnderRoot(rootPath, "bootstrap/azure-aca/main.tf"), "azure-aca-bootstrap-list-secrets");
-        AssertRegexPresent(@"Microsoft\.ManagedIdentity/userAssignedIdentities/assign/action", ResolvePathUnderRoot(rootPath, "bootstrap/azure-functions/main.tf"), "azure-functions-bootstrap-identity-assign");
-        AssertRegexPresent(@"Microsoft\.Web/sites/basicPublishingCredentialsPolicies/read", ResolvePathUnderRoot(rootPath, "bootstrap/azure-functions/main.tf"), "azure-functions-bootstrap-basic-publishing-read");
-        AssertRegexPresent(@"Microsoft\.Web/sites/slots/basicPublishingCredentialsPolicies/read", ResolvePathUnderRoot(rootPath, "bootstrap/azure-functions/main.tf"), "azure-functions-bootstrap-slot-basic-publishing-read");
-        AssertRegexPresent(@"Microsoft\.Web/sites/config/list/action", ResolvePathUnderRoot(rootPath, "bootstrap/azure-functions/main.tf"), "azure-functions-bootstrap-config-list");
-        AssertRegexPresent(@"Microsoft\.Web/sites/slots/config/list/action", ResolvePathUnderRoot(rootPath, "bootstrap/azure-functions/main.tf"), "azure-functions-bootstrap-slot-config-list");
-        AssertRegexPresent(@"Microsoft\.Insights/components/currentbillingfeatures/write", ResolvePathUnderRoot(rootPath, "bootstrap/azure-functions/main.tf"), "azure-functions-bootstrap-appinsights-billing");
+        AssertRegexPresent(@"Microsoft\.ManagedIdentity/userAssignedIdentities/assign/action", ResolvePathUnderRoot(rootPath, "bootstrap/shared/azure-bootstrap-role-actions.json"), "azure-aca-bootstrap-identity-assign");
+        AssertRegexPresent(@"Microsoft\.App/containerApps/listSecrets/action", ResolvePathUnderRoot(rootPath, "bootstrap/shared/azure-bootstrap-role-actions.json"), "azure-aca-bootstrap-list-secrets");
+        AssertRegexPresent(@"Microsoft\.ManagedIdentity/userAssignedIdentities/assign/action", ResolvePathUnderRoot(rootPath, "bootstrap/shared/azure-bootstrap-role-actions.json"), "azure-functions-bootstrap-identity-assign");
+        AssertRegexPresent(@"Microsoft\.Web/sites/basicPublishingCredentialsPolicies/read", ResolvePathUnderRoot(rootPath, "bootstrap/shared/azure-bootstrap-role-actions.json"), "azure-functions-bootstrap-basic-publishing-read");
+        AssertRegexPresent(@"Microsoft\.Web/sites/slots/basicPublishingCredentialsPolicies/read", ResolvePathUnderRoot(rootPath, "bootstrap/shared/azure-bootstrap-role-actions.json"), "azure-functions-bootstrap-slot-basic-publishing-read");
+        AssertRegexPresent(@"Microsoft\.Web/sites/config/list/action", ResolvePathUnderRoot(rootPath, "bootstrap/shared/azure-bootstrap-role-actions.json"), "azure-functions-bootstrap-config-list");
+        AssertRegexPresent(@"Microsoft\.Web/sites/slots/config/list/action", ResolvePathUnderRoot(rootPath, "bootstrap/shared/azure-bootstrap-role-actions.json"), "azure-functions-bootstrap-slot-config-list");
+        AssertRegexPresent(@"Microsoft\.Insights/components/currentbillingfeatures/write", ResolvePathUnderRoot(rootPath, "bootstrap/shared/azure-bootstrap-role-actions.json"), "azure-functions-bootstrap-appinsights-billing");
 
         AssertRegexAbsent(@"^\s*source\s+""\$DATA_CACHE_FILE""", ResolvePathUnderRoot(rootPath, "validation/scripts/aws/run-aws-terraform-integration.sh"), "aws-cache-source-execution");
         AssertRegexAbsent(@"^\s*source\s+""\$DATA_CACHE_FILE""", ResolvePathUnderRoot(rootPath, "validation/scripts/azure/run-azure-terraform-integration.sh"), "azure-cache-source-execution");
@@ -971,6 +971,20 @@ internal static partial class ValidationRunner
         {
             throw new ValidationException($"Policy check failed ({label}): expected pattern not found in {filePath}");
         }
+    }
+
+    private static void AssertRegexPresentInScope(string pattern, string scopePath, string label)
+    {
+        var regex = new Regex(pattern, RegexOptions.Multiline | RegexOptions.CultureInvariant);
+        foreach (var filePath in EnumeratePolicyFiles(scopePath))
+        {
+            if (regex.IsMatch(File.ReadAllText(filePath)))
+            {
+                return;
+            }
+        }
+
+        throw new ValidationException($"Policy check failed ({label}): expected pattern not found in {scopePath}");
     }
 
     private static IEnumerable<string> EnumeratePolicyFiles(string scopePath)
