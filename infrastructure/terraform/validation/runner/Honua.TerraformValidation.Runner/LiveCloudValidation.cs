@@ -3299,8 +3299,30 @@ internal static partial class ValidationRunner
         }
 
         var scriptDirectory = Path.GetDirectoryName(scriptPath) ?? context.RepoRoot;
-        var scriptWorkingDirectory = Directory.GetParent(scriptDirectory)?.FullName ?? context.RepoRoot;
+        var scriptWorkingDirectory = ResolvePlatformValidationWorkingDirectory(context, validationEnvironment, scriptDirectory);
         await context.ProcessRunner.RunAsync("bash", [scriptPath], scriptWorkingDirectory, processEnvironment);
+    }
+
+    private static string ResolvePlatformValidationWorkingDirectory(
+        RunnerContext context,
+        IReadOnlyDictionary<string, string?> validationEnvironment,
+        string scriptDirectory)
+    {
+        if (validationEnvironment.TryGetValue("HONUA_PLATFORM_VALIDATION_ROOT", out var validationRoot) &&
+            !string.IsNullOrWhiteSpace(validationRoot))
+        {
+            var resolvedRoot = Path.IsPathRooted(validationRoot)
+                ? Path.GetFullPath(validationRoot)
+                : context.ResolveRepoRelativePath(validationRoot);
+            if (Directory.Exists(resolvedRoot))
+            {
+                return resolvedRoot;
+            }
+
+            throw new ValidationException($"Platform validation root not found: {resolvedRoot}");
+        }
+
+        return Directory.GetParent(scriptDirectory)?.FullName ?? context.RepoRoot;
     }
 
     private static async Task<string> ReadAzureSecretAsync(RunnerContext context, string? secretId, IReadOnlyDictionary<string, string?> credentialsEnvironment)
