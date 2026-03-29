@@ -36,22 +36,14 @@ internal static partial class ValidationRunner
         var workspace = PrepareTerraformWorkspace(context, $"azure-{stack.ToString().ToLowerInvariant()}");
         var azureCliConfigDir = Path.Combine(workspace.Root, ".azure");
         Directory.CreateDirectory(azureCliConfigDir);
-        var credentialsEnvironment = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            ["ARM_CLIENT_ID"] = credentials.ClientId,
-            ["ARM_CLIENT_SECRET"] = credentials.ClientSecret,
-            ["ARM_TENANT_ID"] = credentials.TenantId,
-            ["ARM_SUBSCRIPTION_ID"] = credentials.SubscriptionId,
-            ["AZURE_CONFIG_DIR"] = azureCliConfigDir,
-        };
-        var validationEnvironment = new Dictionary<string, string?>(credentialsEnvironment, StringComparer.Ordinal)
-        {
-            ["HONUA_VALIDATION_RUN_ID"] = settings.ValidationRunId,
-        };
-        AddConfigEnvironmentVariables(context.Environment, validationEnvironment, AzureAdapterEnvironmentVariables);
-        SetDefaultEnvironmentVariable(validationEnvironment, "HONUA_PLATFORM_VALIDATION_SCRIPT", TryGetDefaultPlatformValidationScript(context));
-        SetDefaultEnvironmentVariable(validationEnvironment, "HONUA_PLATFORM_VALIDATION_ROOT", TryGetDefaultPlatformValidationRoot(context));
-        SetDefaultEnvironmentVariable(validationEnvironment, "HONUA_PLATFORM_VALIDATION_IMPORT_TABLE_PREFIX", BuildImportTablePrefix(context, command));
+        var credentialsEnvironment = BuildAzureCredentialsEnvironment(credentials, azureCliConfigDir);
+        var validationEnvironment = BuildValidationEnvironment(
+            context,
+            context.Environment,
+            credentialsEnvironment,
+            settings.ValidationRunId,
+            AzureAdapterEnvironmentVariables,
+            command);
 
         var state = new AzureLiveState();
         Exception? bodyFailure = null;
@@ -162,14 +154,13 @@ internal static partial class ValidationRunner
             ["AWS_REGION"] = settings.Region,
             ["AWS_DEFAULT_REGION"] = settings.Region,
         };
-        var validationEnvironment = new Dictionary<string, string?>(credentialsEnvironment, StringComparer.Ordinal)
-        {
-            ["HONUA_VALIDATION_RUN_ID"] = settings.ValidationRunId,
-        };
-        AddConfigEnvironmentVariables(context.Environment, validationEnvironment, AwsAdapterEnvironmentVariables);
-        SetDefaultEnvironmentVariable(validationEnvironment, "HONUA_PLATFORM_VALIDATION_SCRIPT", TryGetDefaultPlatformValidationScript(context));
-        SetDefaultEnvironmentVariable(validationEnvironment, "HONUA_PLATFORM_VALIDATION_ROOT", TryGetDefaultPlatformValidationRoot(context));
-        SetDefaultEnvironmentVariable(validationEnvironment, "HONUA_PLATFORM_VALIDATION_IMPORT_TABLE_PREFIX", BuildImportTablePrefix(context, command));
+        var validationEnvironment = BuildValidationEnvironment(
+            context,
+            context.Environment,
+            credentialsEnvironment,
+            settings.ValidationRunId,
+            AwsAdapterEnvironmentVariables,
+            command);
 
         var state = new AwsLiveState();
         Exception? bodyFailure = null;
@@ -1188,100 +1179,6 @@ internal static partial class ValidationRunner
             // so it must allow the detected caller IP instead of Azure-services-only access.
             ["TF_VAR_db_firewall_start_ip"] = settings.DbFirewallStartIp,
             ["TF_VAR_db_firewall_end_ip"] = settings.DbFirewallEndIp,
-            ["TF_VAR_key_vault_public_network_access_enabled"] = "true",
-            ["TF_VAR_key_vault_default_action"] = "Allow",
-            ["TF_VAR_tags"] = settings.ValidationTagsJson,
-        };
-    }
-
-    private static Dictionary<string, string?> BuildAzureAcaEnvironment(AzureLiveSettings settings, AzureLiveState state, IReadOnlyDictionary<string, string?> baseEnvironment, string image, int minReplicas)
-    {
-        var reusingExistingData = !string.IsNullOrWhiteSpace(state.ExistingDbConnectionString);
-        var additionalEnv = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["HONUA_SKIP_MIGRATIONS"] = "false",
-        };
-        var callerIngressCidrsJson = JsonSerializer.Serialize(new[] { $"{settings.DbFirewallStartIp}/32" });
-        var appStorageIpRulesJson = JsonSerializer.Serialize(new[] { settings.DbFirewallStartIp });
-        return new Dictionary<string, string?>(baseEnvironment, StringComparer.Ordinal)
-        {
-            ["TF_IN_AUTOMATION"] = "true",
-            ["TF_VAR_location"] = settings.Location,
-            ["TF_VAR_environment"] = settings.Environment,
-            ["TF_VAR_name_prefix"] = settings.AcaNamePrefix,
-            ["TF_VAR_honua_admin_password"] = settings.AdminPassword,
-            ["TF_VAR_db_admin_password"] = settings.DbAdminPassword,
-            ["TF_VAR_enable_postgis"] = (!reusingExistingData).ToString().ToLowerInvariant(),
-            // Azure live validation exercises a single-instance ACA path. Reused Redis has
-            // introduced readiness flakiness without adding signal for the current checks.
-            ["TF_VAR_redis_enabled"] = "false",
-            ["TF_VAR_existing_db_fqdn"] = state.ExistingDbFqdn,
-            ["TF_VAR_existing_db_connection_string"] = state.ExistingDbConnectionString,
-            ["TF_VAR_redis_connection_string"] = string.Empty,
-            ["TF_VAR_db_public_network_access"] = (!reusingExistingData).ToString().ToLowerInvariant(),
-            ["TF_VAR_db_firewall_start_ip"] = reusingExistingData ? settings.DbFirewallStartIp : "0.0.0.0",
-            ["TF_VAR_db_firewall_end_ip"] = reusingExistingData ? settings.DbFirewallEndIp : "0.0.0.0",
-            ["TF_VAR_honua_image"] = image,
-            ["TF_VAR_registry_auth_mode"] = settings.RegistryAuthMode,
-            ["TF_VAR_registry_resource_id"] = settings.RegistryResourceId,
-            ["TF_VAR_registry_server"] = settings.RegistryServer,
-            ["TF_VAR_registry_username"] = settings.RegistryUsername,
-            ["TF_VAR_registry_password"] = settings.RegistryPassword,
-            ["TF_VAR_min_replicas"] = minReplicas.ToString(CultureInfo.InvariantCulture),
-            ["TF_VAR_max_replicas"] = settings.AcaMaxReplicas.ToString(CultureInfo.InvariantCulture),
-            ["TF_VAR_app_storage_enabled"] = "true",
-            ["TF_VAR_app_storage_default_action"] = "Allow",
-            ["TF_VAR_app_storage_ip_rules"] = appStorageIpRulesJson,
-            ["TF_VAR_enable_ingress"] = "true",
-            ["TF_VAR_ingress_allowed_cidrs"] = callerIngressCidrsJson,
-            ["TF_VAR_key_vault_public_network_access_enabled"] = "true",
-            ["TF_VAR_key_vault_default_action"] = "Allow",
-            ["TF_VAR_additional_env"] = JsonSerializer.Serialize(additionalEnv),
-            ["TF_VAR_tags"] = settings.ValidationTagsJson,
-        };
-    }
-
-    private static Dictionary<string, string?> BuildAzureFunctionsEnvironment(AzureLiveSettings settings, AzureLiveState state, IReadOnlyDictionary<string, string?> baseEnvironment, string image, string? slotImage, bool deploymentSlotEnabled)
-    {
-        var reusingExistingData = !string.IsNullOrWhiteSpace(state.ExistingDbConnectionString);
-        var callerIngressCidrsJson = JsonSerializer.Serialize(new[] { $"{settings.DbFirewallStartIp}/32" });
-        var appStorageIpRulesJson = JsonSerializer.Serialize(new[] { settings.DbFirewallStartIp });
-        return new Dictionary<string, string?>(baseEnvironment, StringComparer.Ordinal)
-        {
-            ["TF_IN_AUTOMATION"] = "true",
-            ["TF_VAR_location"] = settings.Location,
-            ["TF_VAR_environment"] = settings.Environment,
-            ["TF_VAR_name_prefix"] = settings.FunctionsNamePrefix,
-            ["TF_VAR_honua_admin_password"] = settings.AdminPassword,
-            ["TF_VAR_db_admin_password"] = settings.DbAdminPassword,
-            ["TF_VAR_enable_postgis"] = (!reusingExistingData).ToString().ToLowerInvariant(),
-            ["TF_VAR_redis_enabled"] = "false",
-            ["TF_VAR_existing_db_fqdn"] = state.ExistingDbFqdn,
-            ["TF_VAR_existing_db_connection_string"] = state.ExistingDbConnectionString,
-            ["TF_VAR_redis_connection_string"] = string.Empty,
-            ["TF_VAR_db_firewall_start_ip"] = settings.DbFirewallStartIp,
-            ["TF_VAR_db_firewall_end_ip"] = settings.DbFirewallEndIp,
-            ["TF_VAR_honua_image"] = image,
-            ["TF_VAR_registry_auth_mode"] = settings.RegistryAuthMode,
-            ["TF_VAR_registry_resource_id"] = settings.RegistryResourceId,
-            ["TF_VAR_registry_server"] = settings.RegistryServer,
-            ["TF_VAR_registry_username"] = settings.RegistryUsername,
-            ["TF_VAR_registry_password"] = settings.RegistryPassword,
-            ["TF_VAR_deployment_slot_enabled"] = deploymentSlotEnabled.ToString().ToLowerInvariant(),
-            ["TF_VAR_deployment_slot_name"] = settings.FunctionsDeploymentSlotName,
-            ["TF_VAR_deployment_slot_image"] = slotImage ?? settings.FunctionsDeploymentSlotImage ?? image,
-            ["TF_VAR_plan_sku_name"] = settings.FunctionsPlanSku,
-            ["TF_VAR_skip_migrations"] = settings.FunctionsSkipMigrations.ToString().ToLowerInvariant(),
-            // Azure currently rejects the provider's Application Insights billing update for
-            // workspace-based components in validation subscriptions. Keep live validation
-            // focused on the Function App path until that control-plane issue is resolved.
-            ["TF_VAR_app_insights_enabled"] = "false",
-            ["TF_VAR_key_vault_diagnostics_enabled"] = "false",
-            ["TF_VAR_app_storage_enabled"] = "true",
-            ["TF_VAR_app_storage_default_action"] = "Allow",
-            ["TF_VAR_app_storage_ip_rules"] = appStorageIpRulesJson,
-            ["TF_VAR_public_network_access_enabled"] = "true",
-            ["TF_VAR_allowed_ip_cidrs"] = callerIngressCidrsJson,
             ["TF_VAR_key_vault_public_network_access_enabled"] = "true",
             ["TF_VAR_key_vault_default_action"] = "Allow",
             ["TF_VAR_tags"] = settings.ValidationTagsJson,
@@ -3301,28 +3198,6 @@ internal static partial class ValidationRunner
         var scriptDirectory = Path.GetDirectoryName(scriptPath) ?? context.RepoRoot;
         var scriptWorkingDirectory = ResolvePlatformValidationWorkingDirectory(context, validationEnvironment, scriptDirectory);
         await context.ProcessRunner.RunAsync("bash", [scriptPath], scriptWorkingDirectory, processEnvironment);
-    }
-
-    private static string ResolvePlatformValidationWorkingDirectory(
-        RunnerContext context,
-        IReadOnlyDictionary<string, string?> validationEnvironment,
-        string scriptDirectory)
-    {
-        if (validationEnvironment.TryGetValue("HONUA_PLATFORM_VALIDATION_ROOT", out var validationRoot) &&
-            !string.IsNullOrWhiteSpace(validationRoot))
-        {
-            var resolvedRoot = Path.IsPathRooted(validationRoot)
-                ? Path.GetFullPath(validationRoot)
-                : context.ResolveRepoRelativePath(validationRoot);
-            if (Directory.Exists(resolvedRoot))
-            {
-                return resolvedRoot;
-            }
-
-            throw new ValidationException($"Platform validation root not found: {resolvedRoot}");
-        }
-
-        return Directory.GetParent(scriptDirectory)?.FullName ?? context.RepoRoot;
     }
 
     private static async Task<string> ReadAzureSecretAsync(RunnerContext context, string? secretId, IReadOnlyDictionary<string, string?> credentialsEnvironment)

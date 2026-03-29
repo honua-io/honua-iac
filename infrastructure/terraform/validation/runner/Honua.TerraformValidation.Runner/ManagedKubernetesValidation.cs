@@ -32,21 +32,13 @@ internal static partial class ValidationRunner
         var kubeconfigPath = Path.Combine(workspace.Root, "kubeconfig", "config");
         Directory.CreateDirectory(Path.GetDirectoryName(kubeconfigPath)!);
 
-        var credentialsEnvironment = new Dictionary<string, string?>
-        {
-            ["ARM_CLIENT_ID"] = credentials.ClientId,
-            ["ARM_CLIENT_SECRET"] = credentials.ClientSecret,
-            ["ARM_TENANT_ID"] = credentials.TenantId,
-            ["ARM_SUBSCRIPTION_ID"] = credentials.SubscriptionId,
-        };
-
-        var validationEnvironment = new Dictionary<string, string?>(credentialsEnvironment, StringComparer.Ordinal)
-        {
-            ["HONUA_VALIDATION_RUN_ID"] = settings.ValidationRunId,
-        };
-        AddConfigEnvironmentVariables(context.Environment, validationEnvironment, ManagedKubernetesAdapterEnvironmentVariables);
-        SetDefaultEnvironmentVariable(validationEnvironment, "HONUA_PLATFORM_VALIDATION_SCRIPT", TryGetDefaultPlatformValidationScript(context));
-        SetDefaultEnvironmentVariable(validationEnvironment, "HONUA_PLATFORM_VALIDATION_ROOT", TryGetDefaultPlatformValidationRoot(context));
+        var credentialsEnvironment = BuildAzureCredentialsEnvironment(credentials);
+        var validationEnvironment = BuildValidationEnvironment(
+            context,
+            context.Environment,
+            credentialsEnvironment,
+            settings.ValidationRunId,
+            ManagedKubernetesAdapterEnvironmentVariables);
 
         var bodyFailure = (Exception?)null;
         var cleanupFailures = new List<Exception>();
@@ -192,13 +184,12 @@ internal static partial class ValidationRunner
             ["AWS_DEFAULT_REGION"] = settings.Region,
         };
 
-        var validationEnvironment = new Dictionary<string, string?>(credentialsEnvironment, StringComparer.Ordinal)
-        {
-            ["HONUA_VALIDATION_RUN_ID"] = settings.ValidationRunId,
-        };
-        AddConfigEnvironmentVariables(context.Environment, validationEnvironment, ManagedKubernetesAdapterEnvironmentVariables);
-        SetDefaultEnvironmentVariable(validationEnvironment, "HONUA_PLATFORM_VALIDATION_SCRIPT", TryGetDefaultPlatformValidationScript(context));
-        SetDefaultEnvironmentVariable(validationEnvironment, "HONUA_PLATFORM_VALIDATION_ROOT", TryGetDefaultPlatformValidationRoot(context));
+        var validationEnvironment = BuildValidationEnvironment(
+            context,
+            context.Environment,
+            credentialsEnvironment,
+            settings.ValidationRunId,
+            ManagedKubernetesAdapterEnvironmentVariables);
 
         var bodyFailure = (Exception?)null;
         var cleanupFailures = new List<Exception>();
@@ -1158,65 +1149,6 @@ internal static partial class ValidationRunner
                string.Equals(type, "Microsoft.DBforPostgreSQL/flexibleServers", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(type, "Microsoft.KeyVault/vaults", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(type, "Microsoft.OperationalInsights/workspaces", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static async Task EnsureAzSessionAsync(
-        RunnerContext context,
-        IReadOnlyDictionary<string, string?> credentialsEnvironment,
-        string subscriptionId)
-    {
-        var maxAttemptsRaw = context.Environment.GetOrDefault("HONUA_AZURE_LOGIN_MAX_ATTEMPTS", "12");
-        var retrySecondsRaw = context.Environment.GetOrDefault("HONUA_AZURE_LOGIN_RETRY_SECONDS", "10");
-        var maxAttempts = int.TryParse(maxAttemptsRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedMaxAttempts)
-            ? Math.Max(parsedMaxAttempts, 1)
-            : 12;
-        var retrySeconds = int.TryParse(retrySecondsRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedRetrySeconds)
-            ? Math.Max(parsedRetrySeconds, 1)
-            : 10;
-
-        Exception? lastFailure = null;
-        for (var attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            try
-            {
-                await context.ProcessRunner.RunAsync(
-                    "az",
-                    [
-                        "login",
-                        "--service-principal",
-                        "--allow-no-subscriptions",
-                        "--username", credentialsEnvironment["ARM_CLIENT_ID"] ?? string.Empty,
-                        // Azure CLI treats secrets that start with '-' as another flag unless the
-                        // password is passed as a single assignment token.
-                        $"--password={credentialsEnvironment["ARM_CLIENT_SECRET"] ?? string.Empty}",
-                        "--tenant", credentialsEnvironment["ARM_TENANT_ID"] ?? string.Empty,
-                    ],
-                    context.RepoRoot,
-                    credentialsEnvironment);
-
-                await context.ProcessRunner.RunAsync(
-                    "az",
-                    ["account", "set", "-s", subscriptionId],
-                    context.RepoRoot,
-                    credentialsEnvironment);
-
-                return;
-            }
-            catch (Exception exception) when (attempt < maxAttempts)
-            {
-                lastFailure = exception;
-                Console.WriteLine($"[runner] Azure session attempt {attempt}/{maxAttempts} failed; retrying in {retrySeconds}s");
-                if (!context.DryRun)
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(retrySeconds));
-                }
-            }
-        }
-
-        if (lastFailure is not null)
-        {
-            throw lastFailure;
-        }
     }
 
     private static async Task VerifyNoAwsLeaksAsync(

@@ -142,13 +142,7 @@ internal static partial class ValidationRunner
         EnsurePersistentApproval(deploymentProfile, command.GetRequiredString("apply-confirmation"));
 
         var env = context.Environment;
-        var rootCredentials = new Dictionary<string, string?>
-        {
-            ["ARM_CLIENT_ID"] = env.GetRequired("BOOTSTRAP_ARM_CLIENT_ID"),
-            ["ARM_CLIENT_SECRET"] = env.GetRequired("BOOTSTRAP_ARM_CLIENT_SECRET"),
-            ["ARM_TENANT_ID"] = env.GetRequired("BOOTSTRAP_ARM_TENANT_ID"),
-            ["ARM_SUBSCRIPTION_ID"] = env.GetRequired("BOOTSTRAP_ARM_SUBSCRIPTION_ID"),
-        };
+        var rootCredentials = BuildAzureRootCredentials(env);
 
         env.GetRequired("HONUA_ADMIN_PASSWORD");
         env.GetRequired("HONUA_DB_PASSWORD");
@@ -258,13 +252,7 @@ internal static partial class ValidationRunner
         EnsurePersistentApproval(deploymentProfile, command.GetRequiredString("apply-confirmation"));
 
         var env = context.Environment;
-        var rootCredentials = new Dictionary<string, string?>
-        {
-            ["ARM_CLIENT_ID"] = env.GetRequired("BOOTSTRAP_ARM_CLIENT_ID"),
-            ["ARM_CLIENT_SECRET"] = env.GetRequired("BOOTSTRAP_ARM_CLIENT_SECRET"),
-            ["ARM_TENANT_ID"] = env.GetRequired("BOOTSTRAP_ARM_TENANT_ID"),
-            ["ARM_SUBSCRIPTION_ID"] = env.GetRequired("BOOTSTRAP_ARM_SUBSCRIPTION_ID"),
-        };
+        var rootCredentials = BuildAzureRootCredentials(env);
 
         env.GetRequired("HONUA_ADMIN_PASSWORD");
         env.GetRequired("HONUA_K8S_IMAGE");
@@ -1524,29 +1512,6 @@ internal static partial class ValidationRunner
         var cacheDirectory = context.ResolveRepoPath(".gha-cache");
         Directory.CreateDirectory(cacheDirectory);
         return Path.Combine(cacheDirectory, fileName);
-    }
-
-    private static string? TryGetDefaultPlatformValidationScript(RunnerContext context)
-    {
-        var candidates = new[]
-        {
-            context.ResolveRepoPath("infrastructure", "terraform", "validation", "scripts", "shared", "run-cloud-post-apply-validation-wrapper.sh"),
-            context.ResolveRepoPath("honua-server", "scripts", "run-cloud-post-apply-validation.sh"),
-            Path.GetFullPath(Path.Combine(context.RepoRoot, "..", "honua-server", "scripts", "run-cloud-post-apply-validation.sh")),
-        };
-
-        return candidates.FirstOrDefault(File.Exists);
-    }
-
-    private static string? TryGetDefaultPlatformValidationRoot(RunnerContext context)
-    {
-        var candidates = new[]
-        {
-            context.ResolveRepoPath("honua-server"),
-            Path.GetFullPath(Path.Combine(context.RepoRoot, "..", "honua-server")),
-        };
-
-        return candidates.FirstOrDefault(Directory.Exists);
     }
 
     private static string? BuildImportTablePrefix(RunnerContext context, ParsedCommand command)
