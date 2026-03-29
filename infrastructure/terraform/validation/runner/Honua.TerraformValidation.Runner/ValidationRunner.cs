@@ -1624,17 +1624,34 @@ internal static partial class ValidationRunner
             throw new ValidationException($"Terraform bootstrap source directory does not exist: {sourceDirectory}");
         }
 
+        Directory.CreateDirectory(targetDirectory);
+
         var terraformFiles = Directory.GetFiles(sourceDirectory, "*.tf", SearchOption.TopDirectoryOnly);
         if (terraformFiles.Length == 0)
         {
             throw new ValidationException($"No Terraform files found in bootstrap source directory: {sourceDirectory}");
         }
 
-        foreach (var file in terraformFiles)
+        foreach (var file in Directory.GetFiles(sourceDirectory, "*", SearchOption.TopDirectoryOnly))
         {
             var destination = Path.Combine(targetDirectory, Path.GetFileName(file));
             File.Copy(file, destination, overwrite: true);
         }
+
+        var sourceParent = Directory.GetParent(sourceDirectory)?.FullName;
+        var targetParent = Directory.GetParent(targetDirectory)?.FullName;
+        if (string.IsNullOrWhiteSpace(sourceParent) || string.IsNullOrWhiteSpace(targetParent))
+        {
+            return;
+        }
+
+        var sharedSourceDirectory = Path.Combine(sourceParent, "shared");
+        if (!Directory.Exists(sharedSourceDirectory))
+        {
+            return;
+        }
+
+        CopyDirectory(sharedSourceDirectory, Path.Combine(targetParent, "shared"));
     }
 }
 
