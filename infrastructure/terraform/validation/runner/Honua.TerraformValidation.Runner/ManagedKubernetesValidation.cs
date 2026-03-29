@@ -1185,8 +1185,10 @@ internal static partial class ValidationRunner
                         "login",
                         "--service-principal",
                         "--allow-no-subscriptions",
-                        "-u", credentialsEnvironment["ARM_CLIENT_ID"] ?? string.Empty,
-                        "-p", credentialsEnvironment["ARM_CLIENT_SECRET"] ?? string.Empty,
+                        "--username", credentialsEnvironment["ARM_CLIENT_ID"] ?? string.Empty,
+                        // Azure CLI treats secrets that start with '-' as another flag unless the
+                        // password is passed as a single assignment token.
+                        $"--password={credentialsEnvironment["ARM_CLIENT_SECRET"] ?? string.Empty}",
                         "--tenant", credentialsEnvironment["ARM_TENANT_ID"] ?? string.Empty,
                     ],
                     context.RepoRoot,
