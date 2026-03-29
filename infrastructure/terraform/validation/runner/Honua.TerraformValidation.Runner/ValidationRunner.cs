@@ -104,6 +104,8 @@ internal static partial class ValidationRunner
                     context.RepoRoot);
             }
         }
+
+        await ValidateMarketplaceAssetsAsync(context);
     }
 
     private static async Task RunPolicyGatesAsync(ParsedCommand command, RunnerContext context, ScenarioManifest manifest)

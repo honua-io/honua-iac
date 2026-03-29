@@ -9,7 +9,7 @@
 - GitHub workflow input validation
 - persistent-apply approval enforcement
 - bootstrap identity lifecycle for Azure and AWS live scenarios
-- runner-native static validation, policy gates, drift detection, live cloud orchestration, and managed-Kubernetes orchestration
+- runner-native static validation, including marketplace contract/package checks, policy gates, drift detection, live cloud orchestration, and managed-Kubernetes orchestration
 
 It does **not** own only the optional external cross-repo platform-validation suite. When `HONUA_PLATFORM_VALIDATION_SCRIPT` is set or auto-discovered, the live scenarios invoke that script after Terraform apply to exercise `honua-server` deployment behavior end to end.
 
@@ -22,6 +22,7 @@ It does **not** own only the optional external cross-repo platform-validation su
 | `Runtime.cs` | repo/temp context, environment reader, process execution helpers |
 | `ScenarioManifest.cs` | JSON manifest loading and validation |
 | `ValidationRunner.cs` | scenario dispatch plus runner-native static/policy/drift/cloud bootstrap logic |
+| `MarketplaceValidationSupport.cs` | marketplace metadata contract and customer distribution validation |
 | `ManagedKubernetesValidation.cs` | runner-native AKS/EKS apply, kubeconfig handoff, destroy, leak checks |
 
 ## Flow

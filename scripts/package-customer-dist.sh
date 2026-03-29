@@ -39,6 +39,15 @@ sync_tree() {
   rsync -a \
     --exclude='.terraform/' \
     --exclude='.terraform.lock.hcl' \
+    --exclude='.terraform.tfstate.lock.info' \
+    --exclude='terraform.tfstate' \
+    --exclude='terraform.tfstate.*' \
+    --exclude='*.tfplan' \
+    --exclude='crash.log' \
+    --exclude='terraform.tfvars' \
+    --exclude='*.auto.tfvars' \
+    --exclude='*.auto.tfvars.json' \
+    --exclude='backend.tf' \
     --exclude='*.tftest.hcl' \
     "$source_dir"/ "$dest_dir"/
 }

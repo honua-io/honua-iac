@@ -21,3 +21,9 @@ Current policy:
 - `examples/aws-serverless` and `examples/azure-functions` remain operator-only bundles.
 - `examples/aws-eks` and `examples/azure-aks` remain cluster-only roots and do not install
   Honua by themselves.
+
+Current submission focus:
+
+- AWS Marketplace container-offer work starts with `aws-ecs` / `examples/aws`.
+- Seller-specific packaging, listing assets, and release automation should live outside this repo
+  and consume a pinned customer distribution artifact from `scripts/package-customer-dist.sh`.

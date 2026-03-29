@@ -5,6 +5,7 @@ This directory contains the deployable Terraform roots, reusable modules, bootst
 ## Start Here
 
 - Operators: `../../docs/operator-deployment.md`
+- AWS Marketplace container-offer work: `../../docs/devops/aws-marketplace-container-offer.md`
 - Validation and CI maintainers: `../../docs/devops/terraform-validation.md`
 - Validation runner internals: `validation/runner/README.md`
 

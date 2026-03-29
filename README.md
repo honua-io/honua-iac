@@ -21,6 +21,7 @@ terraform -chdir=infrastructure/terraform/examples/aws apply
 4. Capture outputs (`honua_url`, DB endpoint/FQDN) and run health checks.
 
 Detailed guide: [docs/operator-deployment.md](docs/operator-deployment.md)
+AWS container-offer plan: [docs/devops/aws-marketplace-container-offer.md](docs/devops/aws-marketplace-container-offer.md)
 
 Marketplace-targeted bundles currently focus on the turnkey container runtimes:
 - `infrastructure/terraform/examples/aws`
