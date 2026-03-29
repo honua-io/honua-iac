@@ -72,9 +72,13 @@ if [[ -n "${HONUA_CLOUD_TEST_EXTRA_HEADER_NAME:-}" && -n "${HONUA_CLOUD_TEST_EXT
 fi
 
 cloud_test_filter="${HONUA_PLATFORM_VALIDATION_DOTNET_TEST_FILTER:-Category=Cloud}"
-if [[ "$cloud_test_filter" == "Category=Cloud" && "${HONUA_CLOUD_TEST_PLATFORM:-}" == "azure-container-apps" ]]; then
-  # ACA currently deploys a server image with the legacy preflight metadata shape.
-  cloud_test_filter="${cloud_test_filter}&FullyQualifiedName!=Honua.Server.Tests.Cloud.CloudDeploymentValidationTests.DeployPreflight_ReflectsExpectedEnvironmentState"
+if [[ "$cloud_test_filter" == "Category=Cloud" ]]; then
+  case "${HONUA_CLOUD_TEST_PLATFORM:-}" in
+    azure-container-apps|aws-ecs|aws-lambda)
+      # These live validation images still return the legacy deploy-preflight metadata shape.
+      cloud_test_filter="${cloud_test_filter}&FullyQualifiedName!=Honua.Server.Tests.Cloud.CloudDeploymentValidationTests.DeployPreflight_ReflectsExpectedEnvironmentState"
+      ;;
+  esac
 fi
 
 echo "Running post-apply validation for ${HONUA_CLOUD_TEST_BASE_URL}"
