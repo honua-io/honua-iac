@@ -1,93 +1,114 @@
 # --- Infrastructure outputs ---
 
 output "environment" {
-  value = var.environment
+  description = "Deployment environment label used for control-plane target IDs."
+  value       = var.environment
 }
 
 output "function_app_name" {
-  value = azurerm_linux_function_app.this.name
+  description = "Name of the primary Linux Function App."
+  value       = azurerm_linux_function_app.this.name
 }
 
 output "function_app_id" {
-  value = azurerm_linux_function_app.this.id
+  description = "Resource ID of the primary Linux Function App."
+  value       = azurerm_linux_function_app.this.id
 }
 
 output "function_app_url" {
-  value = "https://${azurerm_linux_function_app.this.default_hostname}"
+  description = "Primary HTTPS endpoint for the Function App."
+  value       = "https://${azurerm_linux_function_app.this.default_hostname}"
 }
 
 output "function_app_slot_name" {
-  value = var.deployment_slot_enabled ? azurerm_linux_function_app_slot.staging[0].name : null
+  description = "Name of the staging deployment slot when slot-based rollout is enabled."
+  value       = var.deployment_slot_enabled ? azurerm_linux_function_app_slot.staging[0].name : null
 }
 
 output "function_app_slot_id" {
-  value = var.deployment_slot_enabled ? azurerm_linux_function_app_slot.staging[0].id : null
+  description = "Resource ID of the staging deployment slot when slot-based rollout is enabled."
+  value       = var.deployment_slot_enabled ? azurerm_linux_function_app_slot.staging[0].id : null
 }
 
 output "resource_group_name" {
-  value = azurerm_resource_group.this.name
+  description = "Resource group containing the Function App deployment."
+  value       = azurerm_resource_group.this.name
 }
 
 output "key_vault_id" {
-  value = azurerm_key_vault.this.id
+  description = "Resource ID of the Key Vault storing runtime secrets."
+  value       = azurerm_key_vault.this.id
 }
 
 output "db_fqdn" {
-  value     = local.db_server_fqdn
-  sensitive = true
+  description = "Database server FQDN used by the runtime."
+  value       = local.db_server_fqdn
+  sensitive   = true
 }
 
 output "db_connection_string" {
-  value     = local.db_connection_string
-  sensitive = true
+  description = "Resolved runtime PostgreSQL connection string."
+  value       = local.db_connection_string
+  sensitive   = true
 }
 
 output "db_connection_secret_id" {
-  value = azurerm_key_vault_secret.connection_string.id
+  description = "Resource ID of the Key Vault secret storing the runtime database connection string."
+  value       = azurerm_key_vault_secret.connection_string.id
 }
 
 output "admin_password_secret_id" {
-  value = azurerm_key_vault_secret.admin_password.id
+  description = "Resource ID of the Key Vault secret storing the Honua admin password."
+  value       = azurerm_key_vault_secret.admin_password.id
 }
 
 output "connection_encryption_master_key_secret_id" {
-  value = azurerm_key_vault_secret.connection_encryption_master_key.id
+  description = "Resource ID of the Key Vault secret storing the connection encryption master key."
+  value       = azurerm_key_vault_secret.connection_encryption_master_key.id
 }
 
 output "redis_connection_string" {
-  value     = local.redis_connection
-  sensitive = true
+  description = "Resolved Redis connection string when Redis is enabled or reused."
+  value       = local.redis_connection
+  sensitive   = true
 }
 
 output "redis_connection_secret_id" {
-  value     = local.redis_connection != "" ? azurerm_key_vault_secret.redis_connection[0].id : null
-  sensitive = true
+  description = "Resource ID of the Key Vault secret storing the Redis connection string when Redis is enabled."
+  value       = local.redis_connection != "" ? azurerm_key_vault_secret.redis_connection[0].id : null
+  sensitive   = true
 }
 
 output "app_storage_enabled" {
-  value = var.app_storage_enabled
+  description = "Whether application blob storage is enabled."
+  value       = var.app_storage_enabled
 }
 
 output "app_storage_account_name" {
-  value = var.app_storage_enabled ? azurerm_storage_account.app_storage[0].name : null
+  description = "Storage account name used for application blob storage when enabled."
+  value       = var.app_storage_enabled ? azurerm_storage_account.app_storage[0].name : null
 }
 
 output "app_storage_account_id" {
-  value = var.app_storage_enabled ? azurerm_storage_account.app_storage[0].id : null
+  description = "Storage account resource ID used for application blob storage when enabled."
+  value       = var.app_storage_enabled ? azurerm_storage_account.app_storage[0].id : null
 }
 
 output "app_storage_container_name" {
-  value = var.app_storage_enabled ? azurerm_storage_container.app_storage[0].name : null
+  description = "Blob container name used for application storage when enabled."
+  value       = var.app_storage_enabled ? azurerm_storage_container.app_storage[0].name : null
 }
 
 # --- Honua control-plane outputs ---
 
 output "control_plane_target_kind" {
-  value = "AzureFunctions"
+  description = "Honua control-plane deploy target kind for this runtime."
+  value       = "AzureFunctions"
 }
 
 output "control_plane_backend_name" {
-  value = "honua-gitops-azure-functions"
+  description = "Honua control-plane deploy backend name for Azure Functions."
+  value       = "honua-gitops-azure-functions"
 }
 
 output "control_plane_contract_version" {
@@ -96,43 +117,53 @@ output "control_plane_contract_version" {
 }
 
 output "control_plane_target_id" {
-  value = azurerm_linux_function_app.this.name
+  description = "Stable control-plane target identifier for the Function App."
+  value       = azurerm_linux_function_app.this.name
 }
 
 output "control_plane_target_name" {
-  value = azurerm_linux_function_app.this.name
+  description = "Human-readable control-plane target name."
+  value       = azurerm_linux_function_app.this.name
 }
 
 output "control_plane_target_resource_id" {
-  value = azurerm_linux_function_app.this.id
+  description = "Provider resource identifier for the active deploy target."
+  value       = azurerm_linux_function_app.this.id
 }
 
 output "control_plane_target_resource_group" {
-  value = azurerm_resource_group.this.name
+  description = "Resource group containing the control-plane target."
+  value       = azurerm_resource_group.this.name
 }
 
 output "control_plane_telemetry_policy" {
-  value = "honua-http"
+  description = "Default Honua telemetry policy used for deploy health evaluation."
+  value       = "honua-http"
 }
 
 output "control_plane_current_revision" {
-  value = var.deployment_slot_enabled ? "production" : null
+  description = "Currently routed revision label when slot-based rollout is enabled."
+  value       = var.deployment_slot_enabled ? "production" : null
 }
 
 output "control_plane_desired_revision" {
-  value = var.deployment_slot_enabled ? var.deployment_slot_name : null
+  description = "Desired revision label when slot-based rollout is enabled."
+  value       = var.deployment_slot_enabled ? var.deployment_slot_name : null
 }
 
 output "control_plane_slot_name" {
-  value = var.deployment_slot_enabled ? azurerm_linux_function_app_slot.staging[0].name : null
+  description = "Deployment slot name used for the desired revision when slot-based rollout is enabled."
+  value       = var.deployment_slot_enabled ? azurerm_linux_function_app_slot.staging[0].name : null
 }
 
 output "control_plane_current_image" {
-  value = var.image
+  description = "Current container image reference for the live workload."
+  value       = var.image
 }
 
 output "control_plane_desired_image" {
-  value = var.deployment_slot_enabled ? local.slot_image : var.image
+  description = "Desired container image reference for the workload."
+  value       = var.deployment_slot_enabled ? local.slot_image : var.image
 }
 
 output "marketplace_profile" {

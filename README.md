@@ -9,7 +9,7 @@ Operator-focused Terraform for deploying Honua in your own AWS or Azure account.
    - `infrastructure/terraform/examples/azure` (Azure Container Apps)
    - `infrastructure/terraform/examples/aws-serverless` (AWS Lambda)
    - `infrastructure/terraform/examples/azure-functions` (Azure Functions)
-2. Copy the stack's `terraform.tfvars.example` to `terraform.tfvars` and fill in secrets/images. If you use remote state, also copy `backend.tf.example` to `backend.tf`.
+2. Copy the stack's `terraform.tfvars.example` to `terraform.tfvars` and fill in the provider-neutral `install` questionnaire first, especially `install.artifact.image`, then the remaining secrets and operator metadata. For shared or production environments, also copy `backend.tf.example` to `backend.tf` before `terraform init`; local state should be treated as a single-operator dev-only fallback.
 3. Run apply:
 
 ```bash
@@ -37,7 +37,7 @@ The machine-readable bundle matrix lives in `infrastructure/terraform/marketplac
 
 - `infrastructure/terraform/modules/`: reusable Terraform modules
 - `infrastructure/terraform/examples/`: deployable stacks for each runtime target
-- `infrastructure/terraform/bootstrap/`: optional least-privilege identity bootstrap templates
+- `infrastructure/terraform/bootstrap/`: optional service-scoped bootstrap identity templates
 - `infrastructure/terraform/validation/`: maintainer-only validation runner, scenario manifests, compatibility adapters, and runbook helpers
 - `.github/workflows/`: Terraform CI and manual validation workflows
 

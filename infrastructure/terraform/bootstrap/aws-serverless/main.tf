@@ -19,8 +19,10 @@ data "aws_partition" "current" {}
 locals {
   user_name                       = var.user_name != "" ? var.user_name : "${var.name_prefix}-${var.environment}"
   role_name                       = var.role_name != "" ? var.role_name : "${local.user_name}-federated"
-  oidc_provider_key               = var.oidc_provider_arn != "" ? split("oidc-provider/", var.oidc_provider_arn)[1] : ""
+  oidc_provider_match             = trimspace(var.oidc_provider_arn) != "" ? regexall("oidc-provider/(.+)$", trimspace(var.oidc_provider_arn)) : []
+  oidc_provider_key               = length(local.oidc_provider_match) > 0 ? local.oidc_provider_match[0][0] : ""
   managed_name_globs              = distinct(compact([for glob in var.managed_name_globs : trimspace(glob)]))
+  service_linked_role_services    = ["lambda.amazonaws.com", "replicator.lambda.amazonaws.com", "ops.apigateway.amazonaws.com"]
   additional_ecr_repository_names = distinct(compact([for name in var.additional_ecr_repository_names : trimspace(name)]))
   managed_role_arns = [
     for glob in local.managed_name_globs : "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${glob}"
@@ -43,7 +45,7 @@ locals {
 check "bootstrap_identity_surface" {
   assert {
     condition     = var.create_iam_user || (trimspace(var.oidc_provider_arn) != "" && length(var.oidc_subjects) > 0)
-    error_message = "Enable create_iam_user or configure oidc_provider_arn with at least one oidc_subject."
+    error_message = "create_iam_user must be true, or oidc_provider_arn and oidc_subjects must be configured."
   }
 }
 
@@ -58,6 +60,13 @@ check "oidc_inputs_together" {
   assert {
     condition     = (trimspace(var.oidc_provider_arn) == "" && length(var.oidc_subjects) == 0) || (trimspace(var.oidc_provider_arn) != "" && length(var.oidc_subjects) > 0)
     error_message = "oidc_provider_arn and oidc_subjects must be configured together."
+  }
+}
+
+check "oidc_provider_arn_format" {
+  assert {
+    condition     = trimspace(var.oidc_provider_arn) == "" || length(local.oidc_provider_match) > 0
+    error_message = "oidc_provider_arn must include an oidc-provider/<issuer-path> suffix."
   }
 }
 
@@ -237,14 +246,6 @@ data "aws_iam_policy_document" "terraform" {
   }
 
   statement {
-    sid = "IamReadForLambda"
-    actions = [
-      "iam:ListRoles"
-    ]
-    resources = ["*"]
-  }
-
-  statement {
     sid = "IamRoleLifecycleForLambda"
     actions = [
       "iam:CreateRole",
@@ -300,6 +301,12 @@ data "aws_iam_policy_document" "terraform" {
       "iam:CreateServiceLinkedRole"
     ]
     resources = ["*"]
+
+    condition {
+      test     = "StringLike"
+      variable = "iam:AWSServiceName"
+      values   = local.service_linked_role_services
+    }
   }
 }
 

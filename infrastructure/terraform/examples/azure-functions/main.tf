@@ -263,12 +263,13 @@ locals {
 check "install_artifact_image_required" {
   assert {
     condition     = local.install_artifact_image != null && local.install_artifact_image != ""
-    error_message = "Set install.artifact.image or honua_image."
+    error_message = "install.artifact.image or honua_image must be set."
   }
 }
 
 output "honua_url" {
-  value = local.honua_url
+  description = "Resolved base URL for the Honua service."
+  value       = local.honua_url
 }
 
 output "deployment_contract" {
@@ -307,94 +308,117 @@ output "operations_metadata" {
 }
 
 output "app_storage_enabled" {
-  value = module.honua.app_storage_enabled
+  description = "Whether optional application object storage is enabled."
+  value       = module.honua.app_storage_enabled
 }
 
 output "app_storage_account_name" {
-  value = module.honua.app_storage_account_name
+  description = "Storage account name used for application object storage."
+  value       = module.honua.app_storage_account_name
 }
 
 output "app_storage_account_id" {
-  value = module.honua.app_storage_account_id
+  description = "Storage account resource ID used for application object storage."
+  value       = module.honua.app_storage_account_id
 }
 
 output "app_storage_container_name" {
-  value = module.honua.app_storage_container_name
+  description = "Blob container name used for application object storage."
+  value       = module.honua.app_storage_container_name
 }
 
 output "environment" {
-  value = module.honua.environment
+  description = "Deployment environment name."
+  value       = module.honua.environment
 }
 
 output "function_app_name" {
-  value = module.honua.function_app_name
+  description = "Function App name for the Honua workload."
+  value       = module.honua.function_app_name
 }
 
 output "function_app_id" {
-  value = module.honua.function_app_id
+  description = "Function App resource ID for the Honua workload."
+  value       = module.honua.function_app_id
 }
 
 output "control_plane_target_kind" {
-  value = module.honua.control_plane_target_kind
+  description = "Control-plane target kind emitted by the Functions module."
+  value       = module.honua.control_plane_target_kind
 }
 
 output "control_plane_backend_name" {
-  value = module.honua.control_plane_backend_name
+  description = "Control-plane backend name emitted by the Functions module."
+  value       = module.honua.control_plane_backend_name
 }
 
 output "control_plane_target_id" {
-  value = module.honua.control_plane_target_id
+  description = "Control-plane target identifier emitted by the Functions module."
+  value       = module.honua.control_plane_target_id
 }
 
 output "control_plane_target_name" {
-  value = module.honua.control_plane_target_name
+  description = "Control-plane target name emitted by the Functions module."
+  value       = module.honua.control_plane_target_name
 }
 
 output "control_plane_target_resource_id" {
-  value = module.honua.control_plane_target_resource_id
+  description = "Provider resource ID for the Functions control-plane target."
+  value       = module.honua.control_plane_target_resource_id
 }
 
 output "control_plane_target_resource_group" {
-  value = module.honua.control_plane_target_resource_group
+  description = "Azure resource group containing the Function App target."
+  value       = module.honua.control_plane_target_resource_group
 }
 
 output "control_plane_telemetry_policy" {
-  value = module.honua.control_plane_telemetry_policy
+  description = "Telemetry policy advertised by the Functions module."
+  value       = module.honua.control_plane_telemetry_policy
 }
 
 output "control_plane_current_revision" {
-  value = module.honua.control_plane_current_revision
+  description = "Current runtime revision identifier emitted by the Functions module."
+  value       = module.honua.control_plane_current_revision
 }
 
 output "control_plane_desired_revision" {
-  value = module.honua.control_plane_desired_revision
+  description = "Desired runtime revision identifier emitted by the Functions module."
+  value       = module.honua.control_plane_desired_revision
 }
 
 output "control_plane_slot_name" {
-  value = module.honua.control_plane_slot_name
+  description = "Deployment slot name used for staged promotion, when enabled."
+  value       = module.honua.control_plane_slot_name
 }
 
 output "control_plane_current_image" {
-  value = module.honua.control_plane_current_image
+  description = "Current container image reference emitted by the Functions module."
+  value       = module.honua.control_plane_current_image
 }
 
 output "control_plane_desired_image" {
-  value = module.honua.control_plane_desired_image
+  description = "Desired container image reference emitted by the Functions module."
+  value       = module.honua.control_plane_desired_image
 }
 
 output "function_app_slot_name" {
-  value = module.honua.function_app_slot_name
+  description = "Function App deployment slot name, when enabled."
+  value       = module.honua.function_app_slot_name
 }
 
 output "function_app_slot_id" {
-  value = module.honua.function_app_slot_id
+  description = "Function App deployment slot resource ID, when enabled."
+  value       = module.honua.function_app_slot_id
 }
 
 output "db_fqdn" {
-  value     = module.honua.db_fqdn
-  sensitive = true
+  description = "PostgreSQL FQDN used by the Functions deployment."
+  value       = module.honua.db_fqdn
+  sensitive   = true
 }
 
 output "resource_group_name" {
-  value = module.honua.resource_group_name
+  description = "Azure resource group containing the Honua deployment."
+  value       = module.honua.resource_group_name
 }

@@ -3,7 +3,7 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 3.0"
+      version = "~> 4.58"
     }
     azuread = {
       source  = "hashicorp/azuread"
@@ -23,35 +23,25 @@ data "azurerm_subscription" "current" {}
 data "azurerm_client_config" "current" {}
 
 locals {
+  shared_role_actions            = jsondecode(file("${path.module}/../shared/azure-bootstrap-role-actions.json"))
   scope                          = var.scope != "" ? var.scope : data.azurerm_subscription.current.id
   scope_is_resource_group        = can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+$", local.scope))
   allow_resource_group_lifecycle = var.allow_resource_group_lifecycle != null ? var.allow_resource_group_lifecycle : !local.scope_is_resource_group
-  role_actions = concat([
-    "Microsoft.Resources/subscriptions/read",
-    "Microsoft.Resources/subscriptions/resources/read",
-    "Microsoft.Resources/subscriptions/resourceGroups/read",
-    "Microsoft.ContainerService/managedClusters/read",
-    "Microsoft.ContainerService/managedClusters/write",
-    "Microsoft.ContainerService/managedClusters/delete",
-    "Microsoft.ContainerService/managedClusters/listClusterAdminCredential/action",
-    "Microsoft.ContainerService/managedClusters/listClusterUserCredential/action",
-    "Microsoft.ContainerService/managedClusters/agentPools/read",
-    "Microsoft.ContainerService/managedClusters/agentPools/write",
-    "Microsoft.ContainerService/managedClusters/agentPools/delete",
-    "Microsoft.Insights/diagnosticSettings/read",
-    "Microsoft.Insights/diagnosticSettings/write",
-    "Microsoft.Insights/diagnosticSettings/delete",
-    "Microsoft.OperationalInsights/workspaces/read",
-    ], local.allow_resource_group_lifecycle ? [
-    "Microsoft.Resources/subscriptions/resourceGroups/write",
-    "Microsoft.Resources/subscriptions/resourceGroups/delete",
-  ] : [])
+  role_actions = distinct(concat(
+    local.shared_role_actions.subscription_scope_read,
+    local.shared_role_actions.aks,
+    local.shared_role_actions.diagnostic_settings,
+    [
+      "Microsoft.OperationalInsights/workspaces/read"
+    ],
+    local.allow_resource_group_lifecycle ? local.shared_role_actions.resource_group_lifecycle : []
+  ))
 }
 
 check "federated_inputs_together" {
   assert {
     condition     = (trimspace(var.federated_issuer) == "" && trimspace(var.federated_subject) == "") || (trimspace(var.federated_issuer) != "" && trimspace(var.federated_subject) != "")
-    error_message = "federated_issuer and federated_subject must be configured together."
+    error_message = "federated_issuer and federated_subject must be set together."
   }
 }
 

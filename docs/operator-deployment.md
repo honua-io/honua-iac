@@ -49,7 +49,7 @@ already aligned. The machine-readable bundle matrix lives in
 ## Standard Deployment Workflow
 
 1. Pick a Terraform root from the table above.
-2. Copy the matching `terraform.tfvars.example` to `terraform.tfvars`. If you use remote state, also copy `backend.tf.example` to `backend.tf`.
+2. Copy the matching `terraform.tfvars.example` to `terraform.tfvars`. For shared or production environments, also copy `backend.tf.example` to `backend.tf`; local state is acceptable only for isolated operator testing.
 3. Fill the provider-neutral `install = { ... }` questionnaire first:
    - `artifact.image` for the immutable application image
    - `database.*` for compute/storage/reuse inputs
@@ -69,6 +69,42 @@ terraform -chdir=infrastructure/terraform/examples/<stack> apply
 ```
 
 6. Verify the runtime endpoint and database connectivity before handing traffic to the stack.
+
+## Install Questionnaire Reference
+
+Use `install` as the primary operator questionnaire and treat provider-specific legacy variables as
+fallbacks only.
+
+| Install section | Primary keys | Purpose | Typical legacy fallback |
+|---|---|---|---|
+| `artifact` | `image`, `registry.server`, `registry.auth_mode`, `registry.resource_id` | Pins the workload image and registry auth strategy | `honua_image`, `honua_image_uri`, `registry_*` |
+| `database` | create-or-reuse endpoint/FQDN fields, sizing, storage, public access | Decides whether Terraform provisions PostgreSQL/Redis or attaches to an existing service | `existing_db_*`, `db_*`, `redis_*` |
+| `network` | create-or-reuse VPC/VNet fields, subnet IDs, ingress/firewall CIDRs | Controls whether Terraform provisions networking or attaches to an existing network surface | `existing_vpc_*`, `existing_*subnet*`, provider-specific ingress inputs |
+| `storage` | `enabled`, account/bucket name, prefix, IP rules/default action | Enables optional application object storage and its network posture | `app_storage_*` |
+
+Minimal shape:
+
+```hcl
+install = {
+  artifact = {
+    image = "ghcr.io/honua-io/honua-server:1.2.3"
+  }
+
+  database = {
+    enabled = true
+  }
+
+  network = {}
+
+  storage = {
+    enabled = false
+  }
+}
+```
+
+The root resolves this questionnaire into `install_contract`, then emits the provider/runtime
+specific `deploy_contract` and the broader `deployment_contract`, `validation_contract`, and
+`operations_contract` outputs for automation.
 
 ## Structured Outputs
 

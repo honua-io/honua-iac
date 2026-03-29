@@ -258,12 +258,13 @@ locals {
 check "install_artifact_image_required" {
   assert {
     condition     = local.install_artifact_image != null && local.install_artifact_image != ""
-    error_message = "Set install.artifact.image or honua_image."
+    error_message = "install.artifact.image or honua_image must be set."
   }
 }
 
 output "honua_url" {
-  value = local.honua_url
+  description = "Resolved base URL for the Honua service."
+  value       = local.honua_url
 }
 
 output "deployment_contract" {
@@ -302,71 +303,88 @@ output "operations_metadata" {
 }
 
 output "app_storage_enabled" {
-  value = module.honua.app_storage_enabled
+  description = "Whether optional application object storage is enabled."
+  value       = module.honua.app_storage_enabled
 }
 
 output "app_storage_bucket_name" {
-  value = module.honua.app_storage_bucket_name
+  description = "S3 bucket name used for application object storage."
+  value       = module.honua.app_storage_bucket_name
 }
 
 output "app_storage_bucket_arn" {
-  value = module.honua.app_storage_bucket_arn
+  description = "S3 bucket ARN used for application object storage."
+  value       = module.honua.app_storage_bucket_arn
 }
 
 output "app_storage_prefix" {
-  value = module.honua.app_storage_prefix
+  description = "Object key prefix reserved for application storage."
+  value       = module.honua.app_storage_prefix
 }
 
 output "ecs_cluster_name" {
-  value = module.honua.ecs_cluster_name
+  description = "ECS cluster name hosting the Honua service."
+  value       = module.honua.ecs_cluster_name
 }
 
 output "ecs_service_name" {
-  value = module.honua.ecs_service_name
+  description = "ECS service name hosting the Honua workload."
+  value       = module.honua.ecs_service_name
 }
 
 output "canary_enabled" {
-  value = module.honua.canary_enabled
+  description = "Whether ECS canary deployment support is enabled."
+  value       = module.honua.canary_enabled
 }
 
 output "canary_ecs_service_name" {
-  value = module.honua.canary_ecs_service_name
+  description = "ECS service name for the canary workload, when enabled."
+  value       = module.honua.canary_ecs_service_name
 }
 
 output "canary_verification_header_name" {
-  value = module.honua.canary_verification_header_name
+  description = "HTTP header name used to route canary verification traffic."
+  value       = module.honua.canary_verification_header_name
 }
 
 output "canary_verification_header_value" {
-  value = module.honua.canary_verification_header_value
+  description = "HTTP header value used to route canary verification traffic."
+  value       = module.honua.canary_verification_header_value
 }
 
 output "control_plane_target_kind" {
-  value = module.honua.control_plane_target_kind
+  description = "Control-plane target kind emitted by the ECS module."
+  value       = module.honua.control_plane_target_kind
 }
 
 output "control_plane_backend_name" {
-  value = module.honua.control_plane_backend_name
+  description = "Control-plane backend name emitted by the ECS module."
+  value       = module.honua.control_plane_backend_name
 }
 
 output "control_plane_telemetry_policy" {
-  value = module.honua.control_plane_telemetry_policy
+  description = "Telemetry policy advertised by the ECS module."
+  value       = module.honua.control_plane_telemetry_policy
 }
 
 output "control_plane_telemetry_prometheus_job" {
-  value = module.honua.control_plane_telemetry_prometheus_job
+  description = "Prometheus job name for the primary ECS service."
+  value       = module.honua.control_plane_telemetry_prometheus_job
 }
 
 output "control_plane_telemetry_prometheus_canary_job" {
-  value = module.honua.control_plane_telemetry_prometheus_canary_job
+  description = "Prometheus job name for the ECS canary service, when enabled."
+  value       = module.honua.control_plane_telemetry_prometheus_canary_job
 }
 
 output "db_endpoint" {
-  value     = module.honua.db_endpoint
-  sensitive = true
+  description = "PostgreSQL endpoint used by the ECS deployment."
+  value       = module.honua.db_endpoint
+  sensitive   = true
 }
 
 output "redis_primary_endpoint" {
-  value     = module.honua.redis_primary_endpoint
-  sensitive = true
+  description = "Primary Redis endpoint used by the ECS deployment."
+  value       = module.honua.redis_primary_endpoint
+  sensitive   = true
 }

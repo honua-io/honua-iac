@@ -54,7 +54,7 @@ check "existing_db_reuse_requires_cidrs" {
 check "existing_db_admin_password_required" {
   assert {
     condition     = !(local.db_use_existing && var.enable_postgis) || var.existing_db_admin_password != "" || var.db_password != null
-    error_message = "Provide existing_db_admin_password or db_password when enabling PostGIS on an existing database."
+    error_message = "existing_db_admin_password or db_password must be set when enable_postgis is true on an existing database."
   }
 }
 
@@ -78,7 +78,7 @@ check "existing_redis_inputs" {
 check "redis_reuse_is_exclusive" {
   assert {
     condition     = !(var.redis_enabled && trimspace(var.redis_connection_string) != "")
-    error_message = "Set either redis_enabled = true to provision Redis or redis_connection_string to reuse an existing Redis instance, not both."
+    error_message = "redis_enabled and redis_connection_string are mutually exclusive; set only one."
   }
 }
 

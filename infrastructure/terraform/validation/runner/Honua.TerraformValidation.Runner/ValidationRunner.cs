@@ -76,6 +76,8 @@ internal static partial class ValidationRunner
             moduleTestRoots.Add(ResolveRepoRelativePath(context, moduleTestRoot));
         }
 
+        ValidateTerraformConventions(context);
+
         foreach (var formatPath in manifest.FormatPaths ?? [])
         {
             await context.ProcessRunner.RunAsync(

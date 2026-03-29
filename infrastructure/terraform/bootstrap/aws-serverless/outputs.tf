@@ -1,9 +1,11 @@
 output "user_name" {
-  value = try(aws_iam_user.terraform[0].name, null)
+  value       = try(aws_iam_user.terraform[0].name, null)
+  description = "Name of the fallback Terraform IAM user when create_iam_user is enabled."
 }
 
 output "policy_arn" {
-  value = aws_iam_policy.terraform.arn
+  value       = aws_iam_policy.terraform.arn
+  description = "ARN of the bootstrap IAM policy attached to the Terraform identity surface."
 }
 
 output "access_key_id" {
@@ -18,10 +20,12 @@ output "secret_access_key" {
 }
 
 output "role_arn" {
-  value = try(aws_iam_role.terraform[0].arn, null)
+  value       = try(aws_iam_role.terraform[0].arn, null)
+  description = "ARN of the workload-identity Terraform role when OIDC federation is configured."
 }
 
 output "bootstrap_identity_contract" {
+  description = "Structured contract describing the supported authentication surfaces for this bootstrap identity."
   value = {
     schema_version     = "v1"
     auth_mode          = trimspace(var.oidc_provider_arn) != "" && length(var.oidc_subjects) > 0 ? "workload_identity" : (var.create_access_key ? "access_key" : (var.create_iam_user ? "iam_user" : "policy_only"))

@@ -274,7 +274,7 @@ resource "kubernetes_namespace_v1" "this" {
 check "opentelemetry_collector_exporters" {
   assert {
     condition     = !var.opentelemetry_collector_enabled || var.opentelemetry_collector_enable_debug_exporter || var.opentelemetry_collector_otlp_endpoint != ""
-    error_message = "When opentelemetry_collector_enabled is true, configure opentelemetry_collector_otlp_endpoint or keep the debug exporter enabled."
+    error_message = "opentelemetry_collector_enabled requires opentelemetry_collector_otlp_endpoint or opentelemetry_collector_enable_debug_exporter."
   }
 }
 

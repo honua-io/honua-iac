@@ -170,27 +170,33 @@ output "operations_metadata" {
 }
 
 output "db_fqdn" {
-  value = module.data.db_fqdn
+  description = "PostgreSQL FQDN for the shared Azure data plane."
+  value       = module.data.db_fqdn
 }
 
 output "db_connection_string" {
-  value     = module.data.db_connection_string
-  sensitive = true
+  description = "PostgreSQL connection string for the shared Azure data plane."
+  value       = module.data.db_connection_string
+  sensitive   = true
 }
 
 output "redis_connection_string" {
-  value     = module.data.redis_connection_string
-  sensitive = true
+  description = "Redis connection string for the shared Azure data plane."
+  value       = module.data.redis_connection_string
+  sensitive   = true
 }
 
 output "key_vault_id" {
-  value = module.data.key_vault_id
+  description = "Key Vault resource ID holding shared Azure data plane secrets."
+  value       = module.data.key_vault_id
 }
 
 output "key_vault_name" {
-  value = module.data.key_vault_name
+  description = "Key Vault name holding shared Azure data plane secrets."
+  value       = module.data.key_vault_name
 }
 
 output "resource_group_name" {
-  value = module.data.resource_group_name
+  description = "Azure resource group containing the shared data plane."
+  value       = module.data.resource_group_name
 }

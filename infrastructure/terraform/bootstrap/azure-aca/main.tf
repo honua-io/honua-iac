@@ -3,7 +3,7 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 3.0"
+      version = "~> 4.58"
     }
     azuread = {
       source  = "hashicorp/azuread"
@@ -23,74 +23,24 @@ data "azurerm_subscription" "current" {}
 data "azurerm_client_config" "current" {}
 
 locals {
+  shared_role_actions            = jsondecode(file("${path.module}/../shared/azure-bootstrap-role-actions.json"))
   scope                          = var.scope != "" ? var.scope : data.azurerm_subscription.current.id
   scope_is_resource_group        = can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+$", local.scope))
   allow_resource_group_lifecycle = var.allow_resource_group_lifecycle != null ? var.allow_resource_group_lifecycle : !local.scope_is_resource_group
-  role_actions = concat([
-    "Microsoft.Resources/subscriptions/read",
-    "Microsoft.Resources/subscriptions/resources/read",
-    "Microsoft.Resources/subscriptions/resourceGroups/read",
-    "Microsoft.ManagedIdentity/userAssignedIdentities/read",
-    "Microsoft.ManagedIdentity/userAssignedIdentities/write",
-    "Microsoft.ManagedIdentity/userAssignedIdentities/delete",
-    "Microsoft.ManagedIdentity/userAssignedIdentities/assign/action",
-    "Microsoft.ContainerRegistry/registries/read",
-    "Microsoft.ContainerRegistry/registries/listCredentials/action",
-    "Microsoft.Insights/diagnosticSettings/read",
-    "Microsoft.Insights/diagnosticSettings/write",
-    "Microsoft.Insights/diagnosticSettings/delete",
-    "Microsoft.KeyVault/locations/deletedVaults/read",
-    "Microsoft.KeyVault/vaults/read",
-    "Microsoft.KeyVault/vaults/write",
-    "Microsoft.KeyVault/vaults/delete",
-    "Microsoft.KeyVault/vaults/accessPolicies/write",
-    "Microsoft.Storage/storageAccounts/read",
-    "Microsoft.Storage/storageAccounts/write",
-    "Microsoft.Storage/storageAccounts/delete",
-    "Microsoft.Storage/storageAccounts/listkeys/action",
-    "Microsoft.Storage/storageAccounts/regeneratekey/action",
-    "Microsoft.Storage/storageAccounts/fileServices/read",
-    "Microsoft.Storage/storageAccounts/blobServices/read",
-    "Microsoft.Storage/storageAccounts/blobServices/write",
-    "Microsoft.Storage/storageAccounts/blobServices/containers/read",
-    "Microsoft.Storage/storageAccounts/blobServices/containers/write",
-    "Microsoft.Storage/storageAccounts/blobServices/containers/delete",
-    "Microsoft.DBforPostgreSQL/locations/azureAsyncOperation/read",
-    "Microsoft.DBforPostgreSQL/flexibleServers/read",
-    "Microsoft.DBforPostgreSQL/flexibleServers/write",
-    "Microsoft.DBforPostgreSQL/flexibleServers/delete",
-    "Microsoft.DBforPostgreSQL/flexibleServers/databases/read",
-    "Microsoft.DBforPostgreSQL/flexibleServers/databases/write",
-    "Microsoft.DBforPostgreSQL/flexibleServers/databases/delete",
-    "Microsoft.DBforPostgreSQL/flexibleServers/configurations/read",
-    "Microsoft.DBforPostgreSQL/flexibleServers/configurations/write",
-    "Microsoft.DBforPostgreSQL/flexibleServers/firewallRules/read",
-    "Microsoft.DBforPostgreSQL/flexibleServers/firewallRules/write",
-    "Microsoft.DBforPostgreSQL/flexibleServers/firewallRules/delete",
-    "Microsoft.Cache/Redis/read",
-    "Microsoft.Cache/Redis/write",
-    "Microsoft.Cache/Redis/delete",
-    "Microsoft.Cache/Redis/listKeys/action",
-    "Microsoft.OperationalInsights/workspaces/read",
-    "Microsoft.OperationalInsights/workspaces/write",
-    "Microsoft.OperationalInsights/workspaces/delete",
-    "Microsoft.OperationalInsights/workspaces/sharedkeys/action",
-    "Microsoft.App/managedEnvironments/read",
-    "Microsoft.App/managedEnvironments/write",
-    "Microsoft.App/managedEnvironments/delete",
-    "Microsoft.App/managedEnvironments/join/action",
-    "Microsoft.App/containerApps/read",
-    "Microsoft.App/containerApps/write",
-    "Microsoft.App/containerApps/delete",
-    "Microsoft.App/containerApps/listSecrets/action",
-    ], local.allow_resource_group_lifecycle ? [
-    "Microsoft.Resources/subscriptions/resourceGroups/write",
-    "Microsoft.Resources/subscriptions/resourceGroups/delete",
-    ] : [], var.allow_role_assignment_management ? [
-    "Microsoft.Authorization/roleAssignments/read",
-    "Microsoft.Authorization/roleAssignments/write",
-    "Microsoft.Authorization/roleAssignments/delete",
-  ] : [])
+  role_actions = distinct(concat(
+    local.shared_role_actions.subscription_scope_read,
+    local.shared_role_actions.managed_identity,
+    local.shared_role_actions.container_registry_read,
+    local.shared_role_actions.diagnostic_settings,
+    local.shared_role_actions.key_vault,
+    local.shared_role_actions.storage_base,
+    local.shared_role_actions.postgres_flexible_server,
+    local.shared_role_actions.redis,
+    local.shared_role_actions.operational_insights,
+    local.shared_role_actions.container_apps,
+    local.allow_resource_group_lifecycle ? local.shared_role_actions.resource_group_lifecycle : [],
+    var.allow_role_assignment_management ? local.shared_role_actions.role_assignments : []
+  ))
 }
 
 check "federated_inputs_together" {

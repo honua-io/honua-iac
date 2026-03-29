@@ -49,21 +49,21 @@ check "existing_db_inputs" {
 check "existing_postgis_credentials" {
   assert {
     condition     = !(local.db_use_existing && var.enable_postgis) || var.existing_db_admin_password != "" || var.db_admin_password != null
-    error_message = "Provide existing_db_admin_password or db_admin_password when enabling PostGIS on an existing database."
+    error_message = "existing_db_admin_password or db_admin_password must be set when enable_postgis is true on an existing database."
   }
 }
 
 check "db_public_access_requires_firewall_rule" {
   assert {
     condition     = local.db_use_existing || !var.db_public_network_access || (trimspace(var.db_firewall_start_ip) != "" && trimspace(var.db_firewall_end_ip) != "")
-    error_message = "Set db_firewall_start_ip and db_firewall_end_ip when db_public_network_access is true."
+    error_message = "db_firewall_start_ip and db_firewall_end_ip must be set when db_public_network_access is true."
   }
 }
 
 check "redis_reuse_is_exclusive" {
   assert {
     condition     = !(var.redis_enabled && trimspace(var.redis_connection_string) != "")
-    error_message = "Set either redis_enabled = true to provision Redis or redis_connection_string to reuse an existing Redis instance, not both."
+    error_message = "redis_enabled and redis_connection_string are mutually exclusive; set only one."
   }
 }
 
@@ -77,14 +77,14 @@ check "deployment_slot_name_required" {
 check "public_access_requires_ip_restriction" {
   assert {
     condition     = !var.public_network_access_enabled || length(var.allowed_ip_cidrs) > 0
-    error_message = "Set allowed_ip_cidrs when public_network_access_enabled is true."
+    error_message = "allowed_ip_cidrs must be set when public_network_access_enabled is true."
   }
 }
 
 check "key_vault_diagnostics_requires_workspace" {
   assert {
     condition     = !var.key_vault_diagnostics_enabled || trimspace(var.key_vault_diagnostics_workspace_id) != "" || var.app_insights_enabled
-    error_message = "Enable app_insights_enabled or set key_vault_diagnostics_workspace_id when key_vault_diagnostics_enabled is true."
+    error_message = "key_vault_diagnostics_enabled requires app_insights_enabled or key_vault_diagnostics_workspace_id."
   }
 }
 

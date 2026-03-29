@@ -45,6 +45,10 @@ This directory contains the deployable Terraform roots, reusable modules, bootst
 - `bootstrap/azure-functions`
 - `bootstrap/azure-aks`
 
+These bootstrap roots are service-scoped control-plane identities, not generic account/subscription
+admin roles. They intentionally keep a few provider-mandated wildcard or create/list actions where
+AWS/Azure control-plane APIs do not support a tighter resource scope.
+
 ### Validation assets
 
 - `validation/scenarios` - declarative scenario manifests
@@ -77,7 +81,7 @@ terraform -chdir=infrastructure/terraform/examples/<stack> plan
 terraform -chdir=infrastructure/terraform/examples/<stack> apply
 ```
 
-If you use remote state, also copy `infrastructure/terraform/examples/<stack>/backend.tf.example` to `backend.tf` before `terraform init`.
+For shared or production environments, also copy `infrastructure/terraform/examples/<stack>/backend.tf.example` to `backend.tf` before `terraform init`. Local state is intentionally tolerated for isolated operator testing, not recommended as the steady-state team workflow.
 
 Deployable runtime roots now expose a provider-neutral `install` input surface and emit normalized
 `install_contract` and `deploy_contract` outputs for bundle automation. They also emit
@@ -85,6 +89,17 @@ Deployable runtime roots now expose a provider-neutral `install` input surface a
 scenario, and day-2 automation. The detailed operator procedures, cross-cloud comparison, registry
 guidance, backup/restore, and credential rotation steps live in `docs/operator-deployment.md`.
 Marketplace-targeted bundle metadata lives under `infrastructure/terraform/marketplace/`.
+
+Common `install` sections:
+
+- `artifact`: immutable image reference plus optional registry auth contract (`server`, `auth_mode`, `resource_id`, `username`, `password`)
+- `database`: create-or-reuse database settings, sizing, and public-access controls
+- `network`: create-or-reuse network shape plus ingress and firewall allowlists
+- `storage`: optional object storage enablement, naming, prefixes, and cloud-specific network defaults
+
+Runtime roots still expose older provider-specific variables as compatibility fallbacks, but
+operator docs and marketplace bundles should treat `install` as the canonical customer-facing
+surface.
 
 Example-root output conventions:
 

@@ -156,32 +156,39 @@ output "operations_metadata" {
 }
 
 output "vpc_id" {
-  value = module.data.vpc_id
+  description = "VPC ID for the provisioned or reused data plane network."
+  value       = module.data.vpc_id
 }
 
 output "vpc_cidr" {
-  value = module.data.vpc_cidr
+  description = "CIDR block for the provisioned or reused data plane VPC."
+  value       = module.data.vpc_cidr
 }
 
 output "public_subnet_ids" {
-  value = module.data.public_subnet_ids
+  description = "Public subnet IDs available to the shared AWS data plane."
+  value       = module.data.public_subnet_ids
 }
 
 output "private_subnet_ids" {
-  value = module.data.private_subnet_ids
+  description = "Private subnet IDs available to the shared AWS data plane."
+  value       = module.data.private_subnet_ids
 }
 
 output "db_endpoint" {
-  value     = module.data.db_endpoint
-  sensitive = true
+  description = "PostgreSQL endpoint for the shared AWS data plane."
+  value       = module.data.db_endpoint
+  sensitive   = true
 }
 
 output "db_connection_string" {
-  value     = module.data.db_connection_string
-  sensitive = true
+  description = "PostgreSQL connection string for the shared AWS data plane."
+  value       = module.data.db_connection_string
+  sensitive   = true
 }
 
 output "redis_connection_string" {
-  value     = module.data.redis_connection_string
-  sensitive = true
+  description = "Redis connection string for the shared AWS data plane."
+  value       = module.data.redis_connection_string
+  sensitive   = true
 }

@@ -1,75 +1,92 @@
 # --- Infrastructure outputs ---
 
 output "environment" {
-  value = var.environment
+  description = "Deployment environment label used for control-plane target IDs."
+  value       = var.environment
 }
 
 output "aws_region" {
-  value = data.aws_region.current.id
+  description = "AWS region hosting the serverless deployment."
+  value       = data.aws_region.current.id
 }
 
 output "api_endpoint" {
-  value = aws_apigatewayv2_api.this.api_endpoint
+  description = "Base HTTPS endpoint for the deployed API Gateway HTTP API."
+  value       = aws_apigatewayv2_api.this.api_endpoint
 }
 
 output "lambda_function_name" {
-  value = aws_lambda_function.this.function_name
+  description = "Name of the primary Lambda function."
+  value       = aws_lambda_function.this.function_name
 }
 
 output "lambda_function_arn" {
-  value = aws_lambda_function.this.arn
+  description = "ARN of the primary Lambda function."
+  value       = aws_lambda_function.this.arn
 }
 
 output "lambda_function_version" {
-  value = aws_lambda_function.this.version
+  description = "Published version of the current Lambda function deployment package."
+  value       = aws_lambda_function.this.version
 }
 
 output "lambda_alias_name" {
-  value = aws_lambda_alias.live.name
+  description = "Name of the live Lambda alias used for stable traffic routing."
+  value       = aws_lambda_alias.live.name
 }
 
 output "lambda_alias_arn" {
-  value = aws_lambda_alias.live.arn
+  description = "ARN of the live Lambda alias."
+  value       = aws_lambda_alias.live.arn
 }
 
 output "lambda_alias_invoke_arn" {
-  value = aws_lambda_alias.live.invoke_arn
+  description = "Invoke ARN of the live Lambda alias."
+  value       = aws_lambda_alias.live.invoke_arn
 }
 
 output "lambda_alias_function_version" {
-  value = aws_lambda_alias.live.function_version
+  description = "Lambda function version currently targeted by the live alias."
+  value       = aws_lambda_alias.live.function_version
 }
 
 output "db_endpoint" {
-  value     = local.db_endpoint
-  sensitive = true
+  description = "Database endpoint host used by the runtime."
+  value       = local.db_endpoint
+  sensitive   = true
 }
 
 output "db_connection_string" {
-  value     = local.db_connection_string
-  sensitive = true
+  description = "Resolved runtime PostgreSQL connection string."
+  value       = local.db_connection_string
+  sensitive   = true
 }
 
 output "db_connection_secret_arn" {
-  value = aws_secretsmanager_secret.connection_string.arn
+  description = "ARN of the Secrets Manager secret storing the runtime database connection string."
+  value       = aws_secretsmanager_secret.connection_string.arn
 }
 
 output "admin_password_secret_arn" {
-  value = aws_secretsmanager_secret.admin_password.arn
+  description = "ARN of the Secrets Manager secret storing the Honua admin password."
+  value       = aws_secretsmanager_secret.admin_password.arn
 }
 
 output "connection_encryption_master_key_secret_arn" {
-  value = aws_secretsmanager_secret.connection_encryption_master_key.arn
+  description = "ARN of the Secrets Manager secret storing the connection encryption master key."
+  value       = aws_secretsmanager_secret.connection_encryption_master_key.arn
 }
 
 output "redis_connection_string" {
-  value     = local.redis_connection
-  sensitive = true
+  description = "Resolved Redis connection string when Redis is enabled or reused."
+  value       = local.redis_connection
+  sensitive   = true
 }
 
 output "redis_connection_secret_arn" {
-  value     = local.redis_connection != "" ? aws_secretsmanager_secret.redis_connection[0].arn : null
-  sensitive = true
+  description = "ARN of the Secrets Manager secret storing the Redis connection string when Redis is enabled."
+  value       = local.redis_connection != "" ? aws_secretsmanager_secret.redis_connection[0].arn : null
+  sensitive   = true
 }
 
 output "latest_db_snapshot_arn" {
@@ -101,11 +118,13 @@ output "app_storage_prefix" {
 # --- Honua control-plane outputs ---
 
 output "control_plane_target_kind" {
-  value = "AwsLambda"
+  description = "Honua control-plane deploy target kind for this runtime."
+  value       = "AwsLambda"
 }
 
 output "control_plane_backend_name" {
-  value = "honua-gitops-aws-lambda"
+  description = "Honua control-plane deploy backend name for AWS Lambda."
+  value       = "honua-gitops-aws-lambda"
 }
 
 output "control_plane_contract_version" {
@@ -114,39 +133,48 @@ output "control_plane_contract_version" {
 }
 
 output "control_plane_target_id" {
-  value = "${aws_lambda_function.this.function_name}-${aws_lambda_alias.live.name}"
+  description = "Stable control-plane target identifier combining function name and live alias."
+  value       = "${aws_lambda_function.this.function_name}-${aws_lambda_alias.live.name}"
 }
 
 output "control_plane_target_name" {
-  value = aws_lambda_function.this.function_name
+  description = "Human-readable control-plane target name."
+  value       = aws_lambda_function.this.function_name
 }
 
 output "control_plane_target_resource_id" {
-  value = aws_lambda_alias.live.arn
+  description = "Provider resource identifier for the active deploy target."
+  value       = aws_lambda_alias.live.arn
 }
 
 output "control_plane_target_resource_group" {
-  value = null
+  description = "Logical resource group for the target when the provider supports it."
+  value       = null
 }
 
 output "control_plane_telemetry_policy" {
-  value = "honua-http"
+  description = "Default Honua telemetry policy used for deploy health evaluation."
+  value       = "honua-http"
 }
 
 output "control_plane_current_revision" {
-  value = aws_lambda_alias.live.function_version
+  description = "Currently routed Lambda version."
+  value       = aws_lambda_alias.live.function_version
 }
 
 output "control_plane_desired_revision" {
-  value = aws_lambda_function.this.version
+  description = "Desired Lambda version produced by the current apply."
+  value       = aws_lambda_function.this.version
 }
 
 output "control_plane_current_image" {
-  value = var.image
+  description = "Current container image reference for the live workload."
+  value       = var.image
 }
 
 output "control_plane_desired_image" {
-  value = var.image
+  description = "Desired container image reference for the workload."
+  value       = var.image
 }
 
 output "marketplace_profile" {

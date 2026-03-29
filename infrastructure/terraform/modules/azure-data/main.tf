@@ -88,7 +88,7 @@ resource "azurerm_monitor_diagnostic_setting" "key_vault" {
 check "db_public_access_requires_firewall_rule" {
   assert {
     condition     = !var.db_public_network_access || (trimspace(var.db_firewall_start_ip) != "" && trimspace(var.db_firewall_end_ip) != "")
-    error_message = "Set db_firewall_start_ip and db_firewall_end_ip when db_public_network_access is true."
+    error_message = "db_firewall_start_ip and db_firewall_end_ip must be set when db_public_network_access is true."
   }
 }
 

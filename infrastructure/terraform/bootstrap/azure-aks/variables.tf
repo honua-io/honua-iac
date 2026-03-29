@@ -37,7 +37,7 @@ variable "create_client_secret" {
 variable "service_principal_secret_duration_hours" {
   type        = number
   description = "Lifetime of the fallback service principal secret when create_client_secret is true."
-  default     = 8760
+  default     = 720
 }
 
 variable "federated_issuer" {

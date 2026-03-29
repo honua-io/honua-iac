@@ -229,12 +229,13 @@ locals {
 check "install_artifact_image_required" {
   assert {
     condition     = local.install_artifact_image != null && local.install_artifact_image != ""
-    error_message = "Set install.artifact.image or honua_image_uri."
+    error_message = "install.artifact.image or honua_image_uri must be set."
   }
 }
 
 output "honua_url" {
-  value = local.honua_url
+  description = "Resolved base URL for the Honua service."
+  value       = local.honua_url
 }
 
 output "deployment_contract" {
@@ -273,95 +274,118 @@ output "operations_metadata" {
 }
 
 output "app_storage_enabled" {
-  value = module.honua.app_storage_enabled
+  description = "Whether optional application object storage is enabled."
+  value       = module.honua.app_storage_enabled
 }
 
 output "app_storage_bucket_name" {
-  value = module.honua.app_storage_bucket_name
+  description = "S3 bucket name used for application object storage."
+  value       = module.honua.app_storage_bucket_name
 }
 
 output "app_storage_bucket_arn" {
-  value = module.honua.app_storage_bucket_arn
+  description = "S3 bucket ARN used for application object storage."
+  value       = module.honua.app_storage_bucket_arn
 }
 
 output "app_storage_prefix" {
-  value = module.honua.app_storage_prefix
+  description = "Object key prefix reserved for application storage."
+  value       = module.honua.app_storage_prefix
 }
 
 output "environment" {
-  value = module.honua.environment
+  description = "Deployment environment name."
+  value       = module.honua.environment
 }
 
 output "aws_region" {
-  value = module.honua.aws_region
+  description = "AWS region hosting the serverless deployment."
+  value       = module.honua.aws_region
 }
 
 output "lambda_function_name" {
-  value = module.honua.lambda_function_name
+  description = "Lambda function name for the Honua workload."
+  value       = module.honua.lambda_function_name
 }
 
 output "lambda_function_arn" {
-  value = module.honua.lambda_function_arn
+  description = "Lambda function ARN for the Honua workload."
+  value       = module.honua.lambda_function_arn
 }
 
 output "lambda_function_version" {
-  value = module.honua.lambda_function_version
+  description = "Published Lambda function version targeted by the alias."
+  value       = module.honua.lambda_function_version
 }
 
 output "lambda_alias_name" {
-  value = module.honua.lambda_alias_name
+  description = "Lambda alias name serving live traffic."
+  value       = module.honua.lambda_alias_name
 }
 
 output "lambda_alias_arn" {
-  value = module.honua.lambda_alias_arn
+  description = "Lambda alias ARN serving live traffic."
+  value       = module.honua.lambda_alias_arn
 }
 
 output "lambda_alias_invoke_arn" {
-  value = module.honua.lambda_alias_invoke_arn
+  description = "Invoke ARN for the live Lambda alias."
+  value       = module.honua.lambda_alias_invoke_arn
 }
 
 output "lambda_alias_function_version" {
-  value = module.honua.lambda_alias_function_version
+  description = "Function version currently targeted by the live Lambda alias."
+  value       = module.honua.lambda_alias_function_version
 }
 
 output "control_plane_target_kind" {
-  value = module.honua.control_plane_target_kind
+  description = "Control-plane target kind emitted by the serverless module."
+  value       = module.honua.control_plane_target_kind
 }
 
 output "control_plane_backend_name" {
-  value = module.honua.control_plane_backend_name
+  description = "Control-plane backend name emitted by the serverless module."
+  value       = module.honua.control_plane_backend_name
 }
 
 output "control_plane_target_id" {
-  value = module.honua.control_plane_target_id
+  description = "Control-plane target identifier emitted by the serverless module."
+  value       = module.honua.control_plane_target_id
 }
 
 output "control_plane_target_name" {
-  value = module.honua.control_plane_target_name
+  description = "Control-plane target name emitted by the serverless module."
+  value       = module.honua.control_plane_target_name
 }
 
 output "control_plane_target_resource_id" {
-  value = module.honua.control_plane_target_resource_id
+  description = "Provider resource ID for the Lambda control-plane target."
+  value       = module.honua.control_plane_target_resource_id
 }
 
 output "control_plane_telemetry_policy" {
-  value = module.honua.control_plane_telemetry_policy
+  description = "Telemetry policy advertised by the serverless module."
+  value       = module.honua.control_plane_telemetry_policy
 }
 
 output "control_plane_current_revision" {
-  value = module.honua.control_plane_current_revision
+  description = "Current runtime revision identifier emitted by the serverless module."
+  value       = module.honua.control_plane_current_revision
 }
 
 output "control_plane_desired_revision" {
-  value = module.honua.control_plane_desired_revision
+  description = "Desired runtime revision identifier emitted by the serverless module."
+  value       = module.honua.control_plane_desired_revision
 }
 
 output "db_endpoint" {
-  value     = module.honua.db_endpoint
-  sensitive = true
+  description = "PostgreSQL endpoint used by the serverless deployment."
+  value       = module.honua.db_endpoint
+  sensitive   = true
 }
 
 output "redis_connection_string" {
-  value     = module.honua.redis_connection_string
-  sensitive = true
+  description = "Redis connection string used by the serverless deployment."
+  value       = module.honua.redis_connection_string
+  sensitive   = true
 }

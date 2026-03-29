@@ -137,33 +137,41 @@ output "operations_contract" {
 }
 
 output "resource_group_name" {
-  value = module.aks.resource_group_name
+  description = "Azure resource group containing the AKS cluster."
+  value       = module.aks.resource_group_name
 }
 
 output "environment" {
-  value = module.aks.environment
+  description = "Deployment environment name."
+  value       = module.aks.environment
 }
 
 output "cluster_name" {
-  value = module.aks.cluster_name
+  description = "AKS cluster name."
+  value       = module.aks.cluster_name
 }
 
 output "cluster_id" {
-  value = module.aks.cluster_id
+  description = "AKS cluster resource ID."
+  value       = module.aks.cluster_id
 }
 
 output "control_plane_target_kind" {
-  value = module.aks.control_plane_target_kind
+  description = "Control-plane target kind emitted by the AKS module."
+  value       = module.aks.control_plane_target_kind
 }
 
 output "control_plane_backend_name" {
-  value = module.aks.control_plane_backend_name
+  description = "Control-plane backend name emitted by the AKS module."
+  value       = module.aks.control_plane_backend_name
 }
 
 output "control_plane_telemetry_policy" {
-  value = module.aks.control_plane_telemetry_policy
+  description = "Telemetry policy advertised by the AKS module."
+  value       = module.aks.control_plane_telemetry_policy
 }
 
 output "honua_metrics_target" {
-  value = module.aks.honua_metrics_target
+  description = "Prometheus scrape target metadata for Honua on AKS."
+  value       = module.aks.honua_metrics_target
 }

@@ -127,26 +127,26 @@ resource "aws_kms_key" "eks" {
 
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "~> 20.0"
+  version = "~> 21.0"
 
-  cluster_name                              = "${local.name}-eks"
-  cluster_version                           = var.cluster_version
-  iam_role_name                             = "${local.name}-eks-cluster"
-  iam_role_use_name_prefix                  = false
-  cluster_encryption_policy_name            = "${local.name}-eks-cluster-encryption"
-  cluster_encryption_policy_use_name_prefix = false
+  name                              = "${local.name}-eks"
+  kubernetes_version                = var.cluster_version
+  iam_role_name                     = "${local.name}-eks-cluster"
+  iam_role_use_name_prefix          = false
+  encryption_policy_name            = "${local.name}-eks-cluster-encryption"
+  encryption_policy_use_name_prefix = false
 
-  cluster_endpoint_public_access           = var.cluster_endpoint_public_access
-  cluster_endpoint_public_access_cidrs     = var.cluster_endpoint_public_access_cidrs
-  cluster_endpoint_private_access          = true
+  endpoint_public_access                   = var.cluster_endpoint_public_access
+  endpoint_public_access_cidrs             = var.cluster_endpoint_public_access_cidrs
+  endpoint_private_access                  = true
   enable_cluster_creator_admin_permissions = var.enable_cluster_creator_admin_permissions
 
-  cluster_encryption_config = {
+  encryption_config = {
     provider_key_arn = aws_kms_key.eks.arn
     resources        = ["secrets"]
   }
 
-  cluster_addons = {
+  addons = {
     coredns = {
       addon_version = lookup(var.cluster_addon_versions, "coredns", null)
     }
@@ -158,7 +158,7 @@ module "eks" {
     }
   }
 
-  cluster_enabled_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+  enabled_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
 
   vpc_id                   = local.vpc_id
   subnet_ids               = local.private_subnets

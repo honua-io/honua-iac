@@ -20,14 +20,14 @@ check "node_pool_scaling_bounds" {
 check "public_api_requires_authorized_ip_ranges" {
   assert {
     condition     = var.private_cluster_enabled || length(var.authorized_ip_ranges) > 0
-    error_message = "Set authorized_ip_ranges when private_cluster_enabled is false."
+    error_message = "authorized_ip_ranges must be set when private_cluster_enabled is false."
   }
 }
 
 check "local_account_disable_requires_managed_aad" {
   assert {
     condition     = !var.local_account_disabled || var.managed_aad_enabled
-    error_message = "Set managed_aad_enabled when local_account_disabled is true."
+    error_message = "managed_aad_enabled must be true when local_account_disabled is true."
   }
 }
 

@@ -151,41 +151,51 @@ output "operations_metadata" {
 }
 
 output "prometheus_url" {
-  value = module.observability.prometheus_url
+  description = "Prometheus base URL for the observability stack."
+  value       = module.observability.prometheus_url
 }
 
 output "honua_prometheus_job_name" {
-  value = module.observability.honua_prometheus_job_name
+  description = "Prometheus job name used for Honua scrape targets."
+  value       = module.observability.honua_prometheus_job_name
 }
 
 output "honua_prometheus_selector" {
-  value = module.observability.honua_prometheus_selector
+  description = "Prometheus selector used to discover Honua scrape targets."
+  value       = module.observability.honua_prometheus_selector
 }
 
 output "grafana_url" {
-  value = module.observability.grafana_url
+  description = "Grafana base URL for the observability stack."
+  value       = module.observability.grafana_url
 }
 
 output "grafana_admin_secret_name" {
-  value = module.observability.grafana_admin_secret_name
+  description = "Secret name containing the Grafana admin credentials."
+  value       = module.observability.grafana_admin_secret_name
 }
 
 output "opentelemetry_release" {
-  value = module.observability.opentelemetry_release
+  description = "Helm release name for the OpenTelemetry collector."
+  value       = module.observability.opentelemetry_release
 }
 
 output "opentelemetry_collector_service_name" {
-  value = module.observability.opentelemetry_collector_service_name
+  description = "Kubernetes service name for the OpenTelemetry collector."
+  value       = module.observability.opentelemetry_collector_service_name
 }
 
 output "opentelemetry_collector_metrics_endpoint" {
-  value = module.observability.opentelemetry_collector_metrics_endpoint
+  description = "Metrics endpoint exposed by the OpenTelemetry collector."
+  value       = module.observability.opentelemetry_collector_metrics_endpoint
 }
 
 output "opentelemetry_otlp_grpc_endpoint" {
-  value = module.observability.opentelemetry_otlp_grpc_endpoint
+  description = "OTLP gRPC endpoint exposed by the OpenTelemetry collector."
+  value       = module.observability.opentelemetry_otlp_grpc_endpoint
 }
 
 output "opentelemetry_otlp_http_endpoint" {
-  value = module.observability.opentelemetry_otlp_http_endpoint
+  description = "OTLP HTTP endpoint exposed by the OpenTelemetry collector."
+  value       = module.observability.opentelemetry_otlp_http_endpoint
 }
