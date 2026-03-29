@@ -54,14 +54,17 @@ This directory contains the deployable Terraform roots, reusable modules, bootst
 
 ## Runtime Selection
 
-| Need | Recommended root | Marketplace-targeted bundle |
+| Need | Recommended root | Marketplace bundle status |
 |---|---|---|
-| Long-running HTTP service on AWS | `examples/aws` | Yes |
+| Long-running HTTP service on AWS | `examples/aws` | AWS current |
 | Serverless HTTP on AWS | `examples/aws-serverless` | No |
-| Managed container app on Azure | `examples/azure` | Yes |
+| Managed container app on Azure | `examples/azure` | Repo metadata only |
 | Serverless custom container on Azure | `examples/azure-functions` | No |
 | Managed Kubernetes on AWS | `examples/aws-eks` | No |
 | Managed Kubernetes on Azure | `examples/azure-aks` | No |
+
+This column reflects current repo bundle positioning, not equivalent seller-portal readiness across
+all clouds. External marketplace submission work is currently AWS-first.
 
 ## Minimal Operator Workflow
 
@@ -77,10 +80,19 @@ terraform -chdir=infrastructure/terraform/examples/<stack> apply
 If you use remote state, also copy `infrastructure/terraform/examples/<stack>/backend.tf.example` to `backend.tf` before `terraform init`.
 
 Deployable runtime roots now expose a provider-neutral `install` input surface and emit normalized
-`install_contract` and `deploy_contract` outputs for bundle automation. The detailed operator
-procedures, cross-cloud comparison, registry guidance, backup/restore, and credential rotation
-steps live in `docs/operator-deployment.md`. Marketplace-targeted bundle metadata lives under
-`infrastructure/terraform/marketplace/`.
+`install_contract` and `deploy_contract` outputs for bundle automation. They also emit
+`deployment_contract`, `validation_contract`, and `operations_contract` outputs for deploy,
+scenario, and day-2 automation. The detailed operator procedures, cross-cloud comparison, registry
+guidance, backup/restore, and credential rotation steps live in `docs/operator-deployment.md`.
+Marketplace-targeted bundle metadata lives under `infrastructure/terraform/marketplace/`.
+
+Example-root output conventions:
+
+- `install_contract`: provider-neutral questionnaire surface after local fallback/default resolution
+- `deploy_contract`: normalized control-plane handoff emitted by the runtime module
+- `deployment_contract`: root-level bundle describing endpoints, rollout target, and dependencies
+- `validation_contract`: stable scenario metadata for smoke/load/idempotency automation
+- `operations_contract`: structured backup/restore, secret-store, and grouping metadata
 
 ## Validation Boundary
 

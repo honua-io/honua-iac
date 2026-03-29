@@ -176,9 +176,25 @@ If your Prometheus scrape config uses different job names, override the correspo
 
 See `variables.tf` for the complete list.
 
+## Machine-readable outputs
+
+In addition to the provider-specific URLs, ARNs, and connection strings, this module emits three
+structured output families that downstream automation should prefer over bespoke state parsing:
+
+- `marketplace_profile`: runtime classification used by the repo bundle metadata and packaging automation
+- `control_plane_contract`: normalized deploy-target handoff including artifact reference, target identity, health policy, object storage refs, secret refs, rollout state, and capability flags
+- `operations_metadata`: day-2 metadata for workload topology, database backup posture, cache/object-storage refs, and secret-manager references
+
+For ECS specifically:
+
+- `control_plane_contract.health_policy` records the ALB canary verification header when canary is enabled
+- `control_plane_contract.capabilities.canary` tracks whether weighted rollout is configured
+- `operations_metadata.database.postgis` carries the Terraform-managed PostGIS readiness knobs
+- `operations_metadata.database.backup.latest_snapshot_arn` surfaces the latest automated RDS snapshot ARN for restore automation
+
 ## Outputs
 
-See `outputs.tf` for ALB URL, ECS service names, canary routing headers, control-plane telemetry hints, RDS endpoint, secrets ARNs, and connection strings.
+See `outputs.tf` for ALB URL, ECS service names, canary routing headers, control-plane telemetry hints, RDS endpoint, secrets ARNs, connection strings, and the structured contracts described above.
 
 - `latest_db_snapshot_arn` – ARN of the most recent automated PostgreSQL snapshot created by the RDS module.
 - `operations_metadata.database.backup.latest_snapshot_arn` – same ARN surfaced in the structured metadata for backup/restore automation.

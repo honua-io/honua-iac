@@ -17,7 +17,7 @@ Use the files here as the packaging/install boundary:
 Current policy:
 
 - Turnkey marketplace bundles target container runtimes only.
-- `examples/aws` and `examples/azure` are the preferred turnkey marketplace roots.
+- `examples/aws` and `examples/azure` are the preferred turnkey bundle roots in this repo.
 - `examples/aws-serverless` and `examples/azure-functions` remain operator-only bundles.
 - `examples/aws-eks` and `examples/azure-aks` remain cluster-only roots and do not install
   Honua by themselves.
@@ -27,3 +27,5 @@ Current submission focus:
 - AWS Marketplace container-offer work starts with `aws-ecs` / `examples/aws`.
 - Seller-specific packaging, listing assets, and release automation should live outside this repo
   and consume a pinned customer distribution artifact from `scripts/package-customer-dist.sh`.
+- Do not infer current Microsoft Marketplace container-offer readiness from the `azure-aca` bundle
+  metadata alone; the Microsoft seller path is a separate workstream.

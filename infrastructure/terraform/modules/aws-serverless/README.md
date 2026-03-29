@@ -106,6 +106,20 @@ If you want staged Lambda rollout instead of direct alias cutover, add a deploy-
 - **Cold starts**: Use an AOT Lambda image (`vX.Y.Z-lambda-aot`) for faster cold starts. Consider provisioned concurrency for latency-sensitive workloads.
 - **Concurrent migrations**: Multiple Lambda invocations may attempt migrations simultaneously. Always set `skip_migrations = true` in production.
 
+## Machine-readable outputs
+
+This module emits the same structured automation surfaces used by the ECS and Azure runtimes:
+
+- `marketplace_profile`: runtime classification showing that Lambda remains operator-only for bundle purposes
+- `control_plane_contract`: normalized Lambda deploy-target handoff including alias-based rollout identity, artifact reference, secret refs, object storage refs, health policy, and capability flags
+- `operations_metadata`: workload, backup/restore, cache, and secret-manager metadata for day-2 automation
+
+For Lambda specifically:
+
+- `control_plane_contract.current_revision` is the stable alias version
+- `control_plane_contract.desired_revision` is the function version published by the current apply
+- `operations_metadata.workload` records the function version, alias ARN, alias invoke ARN, and API Gateway stage/log groups
+
 ## Outputs
 
 See `outputs.tf` for the API endpoint URL, RDS connection string, and secrets. The module also emits Honua control-plane handoff metadata plus snapshot info:

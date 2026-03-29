@@ -39,7 +39,7 @@ Current status:
 
 | Scenario | Terraform roots covered |
 |---|---|
-| `static-validate` | bootstrap roots, all example roots, all module roots |
+| `static-validate` | bootstrap roots, all example roots, all module roots, plus marketplace metadata and customer distribution packaging checks |
 | `policy-gates` | `infrastructure/terraform/examples/*` and `modules/*` |
 | `azure-live` | `examples/azure`, `examples/azure-functions`, and supporting `examples/azure-data` reuse when configured |
 | `aws-live` | `examples/aws`, `examples/aws-serverless`, and supporting `examples/aws-data` reuse when configured |

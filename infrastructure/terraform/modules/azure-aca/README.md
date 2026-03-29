@@ -97,8 +97,13 @@ module "honua" {
 | `redis_connection_string` | `""` | Reuse an existing Redis instance instead of provisioning one. |
 | `redis_sku_name` | `Standard` | Redis SKU (Basic, Standard, Premium). |
 | `key_vault_default_action` | `Deny` | Key Vault network ACL default. |
+| `key_vault_diagnostics_enabled` | true | Emit Key Vault `AuditEvent` diagnostics. |
+| `key_vault_diagnostics_workspace_id` | `""` | Optional Log Analytics workspace resource ID for Key Vault diagnostics. Defaults to the module workspace when Log Analytics is enabled. |
 | `enable_ingress` | false | Expose Container App via external ingress. |
 | `ingress_allowed_cidrs` | `[]` | CIDR ranges allowed to reach the Container App ingress when enabled. |
+| `app_storage_enabled` | false | Provision Blob storage for object-backed features and validation probes. |
+| `app_storage_ip_rules` | `[]` | Optional IP allowlist for the application storage account. |
+| `app_storage_default_action` | `Deny` | Default network action for the application storage account. |
 | `log_analytics_enabled` | true | Enable Log Analytics workspace. |
 
 See `variables.tf` for the complete list.
@@ -107,9 +112,19 @@ See `variables.tf` for the complete list.
 
 Key Vault network ACLs default to `Deny`. Adjust `key_vault_ip_rules` to allowlist your CI/CD runner IPs, or supply private endpoints outside the module.
 
+When `key_vault_diagnostics_enabled = true`, diagnostics are sent to `key_vault_diagnostics_workspace_id`
+if provided; otherwise the module reuses its Log Analytics workspace when `log_analytics_enabled = true`.
+
 ## Ingress networking
 
 Container App ingress is private-by-default at the module boundary. Set `enable_ingress = true` together with `ingress_allowed_cidrs` to publish an allowlisted public endpoint.
+
+## Application storage networking
+
+When `app_storage_enabled = true`, the module provisions a dedicated Blob container and grants the
+Container App user-assigned identity access to it. Use `app_storage_ip_rules` to allow validation
+or operator probes from specific public IPs, and `app_storage_default_action` to control whether
+the storage account defaults to `Deny` or `Allow`.
 
 ## Private container registry
 
@@ -123,7 +138,14 @@ registry_password = var.acr_password
 
 ## Outputs
 
-See `outputs.tf` for the Container App FQDN, Key Vault secret IDs, and database connection string. The module also emits Honua control-plane handoff metadata:
+See `outputs.tf` for the Container App FQDN, Key Vault secret IDs, and database connection string.
+The module also emits structured automation surfaces:
+
+- `marketplace_profile`: runtime classification used by repo bundle metadata
+- `control_plane_contract`: normalized Container Apps deploy-target handoff including endpoint, artifact reference, Key Vault refs, object storage refs, health policy, and capability flags
+- `operations_metadata`: day-2 metadata for workload topology, PostgreSQL backup posture, cache/object storage refs, and Key Vault diagnostics state
+
+The module also emits Honua control-plane handoff metadata:
 
 - `environment`
 - `container_app_name`
@@ -135,6 +157,13 @@ See `outputs.tf` for the Container App FQDN, Key Vault secret IDs, and database 
 - `control_plane_target_name` and `control_plane_target_resource_id`
 - `control_plane_target_resource_group`
 - `control_plane_telemetry_policy = "honua-http"`
+
+Useful nested automation fields include:
+
+- `operations_metadata.database.firewall_rule_name`
+- `operations_metadata.database.postgis.readiness_max_attempts`
+- `operations_metadata.secret_store.diagnostics.*`
+- `operations_metadata.object_storage.storage_account_name` and `container_name`
 
 ## After apply
 

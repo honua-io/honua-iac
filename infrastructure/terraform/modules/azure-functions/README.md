@@ -86,6 +86,11 @@ module "honua" {
 | `redis_enabled` | true | Provision Azure Cache for Redis. |
 | `redis_connection_string` | `""` | Reuse an existing Redis instance instead of provisioning one. |
 | `app_insights_enabled` | true | Enable Application Insights. |
+| `key_vault_diagnostics_enabled` | true | Emit Key Vault `AuditEvent` diagnostics. |
+| `key_vault_diagnostics_workspace_id` | `""` | Optional Log Analytics workspace resource ID for Key Vault diagnostics. Defaults to the module workspace when Application Insights is enabled. |
+| `app_storage_enabled` | false | Provision Blob storage for object-backed features and validation probes. |
+| `app_storage_ip_rules` | `[]` | Optional IP allowlist for the application storage account. |
+| `app_storage_default_action` | `Deny` | Default network action for the application storage account. |
 | `public_network_access_enabled` | false | Publish the Function App on a public endpoint. |
 | `allowed_ip_cidrs` | `[]` | CIDR ranges allowed to reach the Function App when public access is enabled. |
 | `scm_allowed_ip_cidrs` | `[]` | Optional CIDR ranges for the Kudu/SCM endpoint. Defaults to `allowed_ip_cidrs` when empty. |
@@ -107,6 +112,12 @@ Use AOT images such as `vX.Y.Z-aot` for runtime performance. Use JIT images only
 
 Function App public access is private-by-default at the module boundary. Set `public_network_access_enabled = true` together with `allowed_ip_cidrs` to expose an allowlisted endpoint; leave it disabled when you intend to front the app with private networking.
 
+## Diagnostics and storage
+
+- Set `app_insights_enabled = false` when you want to bring your own application telemetry sink or avoid provisioning the built-in App Insights workspace.
+- When `key_vault_diagnostics_enabled = true`, diagnostics go to `key_vault_diagnostics_workspace_id` if provided; otherwise the module reuses its own workspace when Application Insights is enabled.
+- When `app_storage_enabled = true`, the module provisions a dedicated Blob container and grants the Function App identity data-plane access. Use `app_storage_ip_rules` and `app_storage_default_action` to control network access for validation or operator probes.
+
 ## Private container registry
 
 For ACR or other private registries:
@@ -125,7 +136,13 @@ Operational guidance:
 
 ## Outputs
 
-See `outputs.tf` for the Function App URL, database connection string, and Redis endpoint. The module also emits Honua control-plane handoff metadata:
+See `outputs.tf` for the Function App URL, database connection string, and Redis endpoint. The module also emits structured automation surfaces:
+
+- `marketplace_profile`: runtime classification showing that Functions remains operator-only for repo bundle purposes
+- `control_plane_contract`: normalized Function App deploy-target handoff including slot-aware rollout metadata, Key Vault refs, object storage refs, health policy, and capability flags
+- `operations_metadata`: workload, backup/restore, cache/object-storage, and Key Vault diagnostics metadata for day-2 automation
+
+The module also emits Honua control-plane handoff metadata:
 
 - `environment`
 - `function_app_name`
@@ -140,6 +157,13 @@ See `outputs.tf` for the Function App URL, database connection string, and Redis
 - `control_plane_desired_revision = <slot-name>` when `deployment_slot_enabled = true`
 - `control_plane_current_image` and `control_plane_desired_image` for provider-side slot observation
 - `control_plane_slot_name` plus `function_app_slot_name` / `function_app_slot_id` when `deployment_slot_enabled = true`
+
+Useful nested automation fields include:
+
+- `operations_metadata.workload.deployment_slot_enabled`
+- `operations_metadata.workload.application_insights_id`
+- `operations_metadata.secret_store.diagnostics.*`
+- `operations_metadata.object_storage.storage_account_name` and `container_name`
 
 ## Slot-based rollouts
 

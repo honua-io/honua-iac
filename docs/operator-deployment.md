@@ -18,16 +18,21 @@ flowchart TD
 
 ## Deployable Targets
 
-| Target | Terraform root | Runtime | Edge | Secret store | Built-in data plane | Marketplace-targeted bundle |
+| Target | Terraform root | Runtime | Edge | Secret store | Built-in data plane | Marketplace bundle status |
 |---|---|---|---|---|---|---|
-| AWS ECS | `infrastructure/terraform/examples/aws` | ECS/Fargate | ALB | AWS Secrets Manager | RDS PostgreSQL + optional ElastiCache | Yes |
+| AWS ECS | `infrastructure/terraform/examples/aws` | ECS/Fargate | ALB | AWS Secrets Manager | RDS PostgreSQL + optional ElastiCache | AWS current |
 | AWS serverless | `infrastructure/terraform/examples/aws-serverless` | Lambda container + API Gateway | HTTP API | AWS Secrets Manager | RDS PostgreSQL + optional ElastiCache | No |
-| Azure ACA | `infrastructure/terraform/examples/azure` | Azure Container Apps | ACA ingress | Azure Key Vault | PostgreSQL Flexible Server + optional Azure Cache for Redis | Yes |
+| Azure ACA | `infrastructure/terraform/examples/azure` | Azure Container Apps | ACA ingress | Azure Key Vault | PostgreSQL Flexible Server + optional Azure Cache for Redis | Repo metadata only |
 | Azure Functions | `infrastructure/terraform/examples/azure-functions` | Linux Function App custom container | Function App HTTPS endpoint | Azure Key Vault | PostgreSQL Flexible Server + optional Azure Cache for Redis | No |
 | AWS EKS | `infrastructure/terraform/examples/aws-eks` | Managed Kubernetes cluster | Bring-your-own Helm/Ingress | Kubernetes + cloud-native integrations | Cluster only; deploy Honua separately | No |
 | Azure AKS | `infrastructure/terraform/examples/azure-aks` | Managed Kubernetes cluster | Bring-your-own Helm/Ingress | Kubernetes + cloud-native integrations | Cluster only; deploy Honua separately | No |
 
-Marketplace-targeted bundles in this repo intentionally focus on turnkey container runtimes. Serverless roots remain operator-only, and cluster-only roots remain bring-your-own-deploy orchestration targets. The machine-readable bundle matrix lives in `infrastructure/terraform/marketplace/targets.json`.
+Marketplace-oriented bundle metadata in this repo intentionally focuses on turnkey container
+runtimes. Serverless roots remain operator-only, and cluster-only roots remain
+bring-your-own-deploy orchestration targets. Current external submission work is AWS-first; do not
+read the Azure ACA bundle metadata as proof that the Microsoft Marketplace container path is
+already aligned. The machine-readable bundle matrix lives in
+`infrastructure/terraform/marketplace/targets.json`.
 
 ## Cross-Cloud Comparison
 
@@ -64,6 +69,20 @@ terraform -chdir=infrastructure/terraform/examples/<stack> apply
 ```
 
 6. Verify the runtime endpoint and database connectivity before handing traffic to the stack.
+
+## Structured Outputs
+
+The deployable runtime roots emit stable machine-readable outputs in addition to the provider
+resource IDs you would expect from the underlying modules.
+
+- `install_contract`: normalized operator questionnaire after root-level fallback/default handling
+- `deploy_contract`: provider/runtime control-plane handoff surface emitted by the module
+- `deployment_contract`: root-level view of endpoints, workload identity, rollout target, and core dependencies
+- `validation_contract`: stable smoke/load/idempotency metadata consumed by the validation runner
+- `operations_contract`: day-2 contract for backup/restore, secret rotation, and operator grouping metadata
+- `operations_metadata`: provider-specific nested metadata emitted directly by the runtime module
+
+Use these outputs for automation before scraping ad hoc provider resources from state.
 
 ## Private Registry and Image Pull
 

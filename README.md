@@ -23,9 +23,13 @@ terraform -chdir=infrastructure/terraform/examples/aws apply
 Detailed guide: [docs/operator-deployment.md](docs/operator-deployment.md)
 AWS container-offer plan: [docs/devops/aws-marketplace-container-offer.md](docs/devops/aws-marketplace-container-offer.md)
 
-Marketplace-targeted bundles currently focus on the turnkey container runtimes:
+Current external marketplace submission work is focused on the AWS ECS/Fargate container path:
 - `infrastructure/terraform/examples/aws`
-- `infrastructure/terraform/examples/azure`
+
+The repo still contains marketplace-oriented bundle metadata for other turnkey runtimes, but that
+metadata should not be read as current seller-portal readiness across every cloud. In particular,
+Microsoft Marketplace container offers are currently Kubernetes-application based, so
+`infrastructure/terraform/examples/azure` is not the current Microsoft submission target.
 
 The machine-readable bundle matrix lives in `infrastructure/terraform/marketplace/targets.json`.
 
