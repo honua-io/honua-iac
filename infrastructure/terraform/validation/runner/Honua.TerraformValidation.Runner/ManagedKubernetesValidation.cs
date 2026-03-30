@@ -223,7 +223,18 @@ internal static partial class ValidationRunner
             var terraformEnvironment = BuildEksTerraformEnvironment(settings, validationEnvironment);
 
             await context.ProcessRunner.RunAsync("terraform", ["-chdir=" + terraformRoot, "init", "-input=false", "-no-color"], context.RepoRoot, terraformEnvironment);
-            await RunTerraformPlanApplyAsync(context, terraformRoot, terraformEnvironment, settings.PlanArtifactDir, "eks.tfplan", "eks", settings.AllowDestroyPlan);
+            try
+            {
+                await RunTerraformPlanApplyAsync(context, terraformRoot, terraformEnvironment, settings.PlanArtifactDir, "eks.tfplan", "eks", settings.AllowDestroyPlan);
+            }
+            catch (CommandExecutionException exception) when (IsVpcLimitExceeded(exception) && string.IsNullOrWhiteSpace(settings.ExistingVpcId))
+            {
+                Console.WriteLine("[runner] EKS apply hit VpcLimitExceeded; retrying validation with default VPC reuse.");
+                settings = await TryResolveEksVpcCapacityFallbackAsync(context, credentialsEnvironment, settings, forceDefaultVpcFallback: true);
+                terraformEnvironment = BuildEksTerraformEnvironment(settings, validationEnvironment);
+                await context.ProcessRunner.RunAsync("terraform", ["-chdir=" + terraformRoot, "init", "-input=false", "-no-color"], context.RepoRoot, terraformEnvironment);
+                await RunTerraformPlanApplyAsync(context, terraformRoot, terraformEnvironment, settings.PlanArtifactDir, "eks.tfplan", "eks", settings.AllowDestroyPlan);
+            }
             clusterApplied = true;
 
             clusterName = await CaptureTerraformOutputAsync(context, terraformRoot, "cluster_name", terraformEnvironment);
@@ -795,19 +806,35 @@ internal static partial class ValidationRunner
     private static async Task<ManagedEksSettings> TryResolveEksVpcCapacityFallbackAsync(
         RunnerContext context,
         IReadOnlyDictionary<string, string?> credentialsEnvironment,
-        ManagedEksSettings settings)
+        ManagedEksSettings settings,
+        bool forceDefaultVpcFallback = false)
     {
-        var vpcQuota = await TryGetAwsVpcQuotaAsync(context, credentialsEnvironment);
-        if (vpcQuota is null)
+        int? currentVpcCount;
+        int? vpcQuota = null;
+        if (forceDefaultVpcFallback)
         {
-            return settings;
+            currentVpcCount = await TryGetAwsCurrentVpcCountAsync(context, credentialsEnvironment);
+        }
+        else
+        {
+            vpcQuota = await TryGetAwsVpcQuotaAsync(context, credentialsEnvironment);
+            if (vpcQuota is null)
+            {
+                return settings;
+            }
+
+            currentVpcCount = await TryGetAwsCurrentVpcCountAsync(context, credentialsEnvironment);
+            if (currentVpcCount is null || currentVpcCount < vpcQuota.Value)
+            {
+                return settings;
+            }
         }
 
-        var currentVpcCount = await TryGetAwsCurrentVpcCountAsync(context, credentialsEnvironment);
-        if (currentVpcCount is null || currentVpcCount < vpcQuota.Value)
-        {
-            return settings;
-        }
+        var usageDescription = forceDefaultVpcFallback
+            ? currentVpcCount is int knownCount
+                ? $"current VPC count {knownCount}"
+                : "current VPC count unavailable"
+            : $"VPC usage {currentVpcCount}/{vpcQuota}";
 
         var (defaultVpcSuccess, defaultVpcRaw) = await context.ProcessRunner.TryCaptureAsync(
             "aws",
@@ -822,7 +849,7 @@ internal static partial class ValidationRunner
             credentialsEnvironment);
         if (!defaultVpcSuccess || string.IsNullOrWhiteSpace(defaultVpcRaw) || IsCliEmptyOrNone(defaultVpcRaw))
         {
-            throw new ValidationException($"EKS quota preflight failed: VPC usage {currentVpcCount}/{vpcQuota}; no capacity remains and no default VPC could be discovered for fallback reuse.");
+            throw new ValidationException($"EKS validation could not reuse a default VPC after {usageDescription}; no default VPC could be discovered for fallback reuse.");
         }
 
         using var defaultVpcDocument = JsonDocument.Parse(defaultVpcRaw);
@@ -830,7 +857,7 @@ internal static partial class ValidationRunner
         var defaultVpcCidr = TryGetJsonString(defaultVpcDocument.RootElement, "CidrBlock");
         if (string.IsNullOrWhiteSpace(defaultVpcId) || string.IsNullOrWhiteSpace(defaultVpcCidr))
         {
-            throw new ValidationException($"EKS quota preflight failed: VPC usage {currentVpcCount}/{vpcQuota}; default VPC discovery returned an incomplete payload.");
+            throw new ValidationException($"EKS validation could not reuse a default VPC after {usageDescription}; default VPC discovery returned an incomplete payload.");
         }
 
         var defaultSubnetsRaw = await context.ProcessRunner.CaptureAsync(
@@ -847,11 +874,11 @@ internal static partial class ValidationRunner
         var defaultSubnetIds = ParseJsonStringArray(defaultSubnetsRaw);
         if (defaultSubnetIds.Length < 2)
         {
-            throw new ValidationException($"EKS quota preflight failed: VPC usage {currentVpcCount}/{vpcQuota}; default VPC {defaultVpcId} does not expose at least two reusable default subnets.");
+            throw new ValidationException($"EKS validation could not reuse a default VPC after {usageDescription}; default VPC {defaultVpcId} does not expose at least two reusable default subnets.");
         }
 
         var subnetIdsJson = JsonSerializer.Serialize(defaultSubnetIds);
-        Console.WriteLine($"[runner] EKS VPC quota exhausted ({currentVpcCount}/{vpcQuota}); reusing default VPC {defaultVpcId} with {defaultSubnetIds.Length} default subnets for validation.");
+        Console.WriteLine($"[runner] EKS default-VPC fallback engaged after {usageDescription}; reusing default VPC {defaultVpcId} with {defaultSubnetIds.Length} default subnets for validation.");
         Console.WriteLine("[runner] EKS default-VPC fallback uses the default subnets for both public and private inputs to avoid provisioning another VPC during validation.");
         return settings with
         {
@@ -1089,16 +1116,6 @@ internal static partial class ValidationRunner
         RunnerContext context,
         IReadOnlyDictionary<string, string?> credentialsEnvironment)
     {
-        var accountAttribute = await TryCaptureAwsFieldAsync(
-            context,
-            ["ec2", "describe-account-attributes", "--attribute-names", "max-vpcs", "--query", "AccountAttributes[0].AttributeValues[0].AttributeValue", "--output", "text"],
-            credentialsEnvironment);
-        if (int.TryParse(accountAttribute, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedAccountQuota) &&
-            parsedAccountQuota > 0)
-        {
-            return parsedAccountQuota;
-        }
-
         var quotaRaw = await TryCaptureAwsFieldAsync(
             context,
             ["service-quotas", "list-service-quotas", "--service-code", "vpc", "--query", "Quotas[?QuotaName=='VPCs per Region'] | [0].Value", "--output", "text"],
@@ -1122,6 +1139,13 @@ internal static partial class ValidationRunner
         return int.TryParse(currentVpcCountRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedCount)
             ? parsedCount
             : null;
+    }
+
+    private static bool IsVpcLimitExceeded(CommandExecutionException exception)
+    {
+        var output = exception.Output ?? string.Empty;
+        return output.Contains("VpcLimitExceeded", StringComparison.OrdinalIgnoreCase) ||
+               output.Contains("maximum number of VPCs has been reached", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task VerifyNoAzureLeaksAsync(
