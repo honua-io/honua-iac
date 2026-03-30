@@ -765,7 +765,7 @@ internal static partial class ValidationRunner
     {
         if (string.IsNullOrWhiteSpace(settings.ExistingVpcId))
         {
-            return settings;
+            return await TryResolveEksVpcCapacityFallbackAsync(context, credentialsEnvironment, settings);
         }
 
         var (isValid, resolvedVpcCidr, failureReason) = await ValidateAwsVpcReuseInputsAsync(
@@ -789,6 +789,76 @@ internal static partial class ValidationRunner
             ExistingVpcCidr = null,
             ExistingPublicSubnetIdsJson = null,
             ExistingPrivateSubnetIdsJson = null,
+        };
+    }
+
+    private static async Task<ManagedEksSettings> TryResolveEksVpcCapacityFallbackAsync(
+        RunnerContext context,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment,
+        ManagedEksSettings settings)
+    {
+        var vpcQuota = await TryGetAwsVpcQuotaAsync(context, credentialsEnvironment);
+        if (vpcQuota is null)
+        {
+            return settings;
+        }
+
+        var currentVpcCount = await TryGetAwsCurrentVpcCountAsync(context, credentialsEnvironment);
+        if (currentVpcCount is null || currentVpcCount < vpcQuota.Value)
+        {
+            return settings;
+        }
+
+        var (defaultVpcSuccess, defaultVpcRaw) = await context.ProcessRunner.TryCaptureAsync(
+            "aws",
+            [
+                "ec2",
+                "describe-vpcs",
+                "--filters", "Name=isDefault,Values=true",
+                "--query", "Vpcs[0].{VpcId:VpcId,CidrBlock:CidrBlock}",
+                "--output", "json",
+            ],
+            context.RepoRoot,
+            credentialsEnvironment);
+        if (!defaultVpcSuccess || string.IsNullOrWhiteSpace(defaultVpcRaw) || IsCliEmptyOrNone(defaultVpcRaw))
+        {
+            throw new ValidationException($"EKS quota preflight failed: VPC usage {currentVpcCount}/{vpcQuota}; no capacity remains and no default VPC could be discovered for fallback reuse.");
+        }
+
+        using var defaultVpcDocument = JsonDocument.Parse(defaultVpcRaw);
+        var defaultVpcId = TryGetJsonString(defaultVpcDocument.RootElement, "VpcId");
+        var defaultVpcCidr = TryGetJsonString(defaultVpcDocument.RootElement, "CidrBlock");
+        if (string.IsNullOrWhiteSpace(defaultVpcId) || string.IsNullOrWhiteSpace(defaultVpcCidr))
+        {
+            throw new ValidationException($"EKS quota preflight failed: VPC usage {currentVpcCount}/{vpcQuota}; default VPC discovery returned an incomplete payload.");
+        }
+
+        var defaultSubnetsRaw = await context.ProcessRunner.CaptureAsync(
+            "aws",
+            [
+                "ec2",
+                "describe-subnets",
+                "--filters", $"Name=vpc-id,Values={defaultVpcId}", "Name=default-for-az,Values=true",
+                "--query", "Subnets[].SubnetId",
+                "--output", "json",
+            ],
+            context.RepoRoot,
+            credentialsEnvironment);
+        var defaultSubnetIds = ParseJsonStringArray(defaultSubnetsRaw);
+        if (defaultSubnetIds.Length < 2)
+        {
+            throw new ValidationException($"EKS quota preflight failed: VPC usage {currentVpcCount}/{vpcQuota}; default VPC {defaultVpcId} does not expose at least two reusable default subnets.");
+        }
+
+        var subnetIdsJson = JsonSerializer.Serialize(defaultSubnetIds);
+        Console.WriteLine($"[runner] EKS VPC quota exhausted ({currentVpcCount}/{vpcQuota}); reusing default VPC {defaultVpcId} with {defaultSubnetIds.Length} default subnets for validation.");
+        Console.WriteLine("[runner] EKS default-VPC fallback uses the default subnets for both public and private inputs to avoid provisioning another VPC during validation.");
+        return settings with
+        {
+            ExistingVpcId = defaultVpcId,
+            ExistingVpcCidr = defaultVpcCidr,
+            ExistingPublicSubnetIdsJson = subnetIdsJson,
+            ExistingPrivateSubnetIdsJson = subnetIdsJson,
         };
     }
 
@@ -995,47 +1065,63 @@ internal static partial class ValidationRunner
             return;
         }
 
-        var (vpcQuotaSuccess, vpcQuotaRaw) = await context.ProcessRunner.TryCaptureAsync(
-            "aws",
-            [
-                "service-quotas",
-                "list-service-quotas",
-                "--service-code", "vpc",
-                "--query", "Quotas[?QuotaName=='VPCs per Region'] | [0].Value",
-                "--output", "text",
-            ],
-            context.RepoRoot,
-            credentialsEnvironment);
-
-        if (!vpcQuotaSuccess)
+        var vpcQuota = await TryGetAwsVpcQuotaAsync(context, credentialsEnvironment);
+        if (vpcQuota is null)
         {
             Console.WriteLine("[runner] Warn: unable to query VPC quota; skipping EKS VPC quota preflight.");
             return;
         }
 
-        var (currentVpcCountSuccess, currentVpcCountRaw) = await context.ProcessRunner.TryCaptureAsync(
-            "aws",
-            [
-                "ec2",
-                "describe-vpcs",
-                "--query", "length(Vpcs)",
-                "--output", "text",
-            ],
-            context.RepoRoot,
-            credentialsEnvironment);
-
-        if (!currentVpcCountSuccess)
+        var currentVpcCount = await TryGetAwsCurrentVpcCountAsync(context, credentialsEnvironment);
+        if (currentVpcCount is null)
         {
             Console.WriteLine("[runner] Warn: unable to query current VPC count; skipping EKS VPC quota preflight.");
             return;
         }
 
-        if (decimal.TryParse(vpcQuotaRaw, NumberStyles.Number, CultureInfo.InvariantCulture, out var vpcQuota) &&
-            int.TryParse(currentVpcCountRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var currentVpcCount) &&
-            currentVpcCount >= decimal.ToInt32(decimal.Truncate(vpcQuota)))
+        if (currentVpcCount >= vpcQuota.Value)
         {
             throw new ValidationException($"EKS quota preflight failed: VPC usage {currentVpcCount}/{vpcQuota}; no capacity remains for the validation VPC.");
         }
+    }
+
+    private static async Task<int?> TryGetAwsVpcQuotaAsync(
+        RunnerContext context,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment)
+    {
+        var accountAttribute = await TryCaptureAwsFieldAsync(
+            context,
+            ["ec2", "describe-account-attributes", "--attribute-names", "max-vpcs", "--query", "AccountAttributes[0].AttributeValues[0].AttributeValue", "--output", "text"],
+            credentialsEnvironment);
+        if (int.TryParse(accountAttribute, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedAccountQuota) &&
+            parsedAccountQuota > 0)
+        {
+            return parsedAccountQuota;
+        }
+
+        var quotaRaw = await TryCaptureAwsFieldAsync(
+            context,
+            ["service-quotas", "list-service-quotas", "--service-code", "vpc", "--query", "Quotas[?QuotaName=='VPCs per Region'] | [0].Value", "--output", "text"],
+            credentialsEnvironment);
+        if (decimal.TryParse(quotaRaw, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsedQuota))
+        {
+            return decimal.ToInt32(decimal.Truncate(parsedQuota));
+        }
+
+        return null;
+    }
+
+    private static async Task<int?> TryGetAwsCurrentVpcCountAsync(
+        RunnerContext context,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment)
+    {
+        var currentVpcCountRaw = await TryCaptureAwsFieldAsync(
+            context,
+            ["ec2", "describe-vpcs", "--query", "length(Vpcs)", "--output", "text"],
+            credentialsEnvironment);
+        return int.TryParse(currentVpcCountRaw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedCount)
+            ? parsedCount
+            : null;
     }
 
     private static async Task VerifyNoAzureLeaksAsync(
