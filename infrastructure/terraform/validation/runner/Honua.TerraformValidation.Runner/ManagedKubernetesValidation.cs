@@ -1209,6 +1209,13 @@ internal static partial class ValidationRunner
         var actionableResources = new List<string>(resources.Count);
         foreach (var resourceArn in resources)
         {
+            var cleanupReason = await TryCleanupAwsLingeringResourceAsync(context, resourceArn, credentialsEnvironment);
+            if (cleanupReason is not null)
+            {
+                Console.WriteLine($"[runner]   cleaned lingering AWS resource: {resourceArn} ({cleanupReason})");
+                continue;
+            }
+
             var ignoreReason = await TryGetIgnorableAwsResourceReasonAsync(context, resourceArn, credentialsEnvironment);
             if (ignoreReason is null)
             {
@@ -1221,6 +1228,75 @@ internal static partial class ValidationRunner
 
         actionableResources.Sort(StringComparer.Ordinal);
         return actionableResources;
+    }
+
+    private static async Task<string?> TryCleanupAwsLingeringResourceAsync(
+        RunnerContext context,
+        string resourceArn,
+        IReadOnlyDictionary<string, string?> credentialsEnvironment)
+    {
+        if (resourceArn.Contains(":kms:", StringComparison.Ordinal))
+        {
+            var keyState = await TryCaptureAwsFieldAsync(
+                context,
+                ["kms", "describe-key", "--key-id", resourceArn, "--query", "KeyMetadata.KeyState", "--output", "text"],
+                credentialsEnvironment);
+            if (string.Equals(keyState, "Enabled", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(keyState, "Disabled", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    await context.ProcessRunner.RunAsync(
+                        "aws",
+                        ["kms", "schedule-key-deletion", "--key-id", resourceArn, "--pending-window-in-days", "7"],
+                        context.RepoRoot,
+                        credentialsEnvironment);
+                    return "scheduled KMS key deletion";
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[runner]   warn: unable to schedule tagged KMS key deletion for {resourceArn}: {ex.Message}");
+                }
+            }
+        }
+
+        if (!resourceArn.Contains(":logs:", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var resourcePart = GetAwsArnResourcePart(resourceArn);
+        if (!resourcePart.StartsWith("log-group:", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var logGroupName = resourcePart["log-group:".Length..];
+        var suffixIndex = logGroupName.IndexOf(':');
+        if (suffixIndex >= 0)
+        {
+            logGroupName = logGroupName[..suffixIndex];
+        }
+
+        if (string.IsNullOrWhiteSpace(logGroupName))
+        {
+            return null;
+        }
+
+        try
+        {
+            await context.ProcessRunner.RunAsync(
+                "aws",
+                ["logs", "delete-log-group", "--log-group-name", logGroupName],
+                context.RepoRoot,
+                credentialsEnvironment);
+            return "deleted tagged CloudWatch log group";
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[runner]   warn: unable to delete tagged CloudWatch log group {logGroupName}: {ex.Message}");
+            return null;
+        }
     }
 
     private static async Task<string?> TryGetIgnorableAwsResourceReasonAsync(
