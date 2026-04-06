@@ -505,6 +505,24 @@ run_quota_preflight() {
   fi
 
   log_info "EKS quota preflight passed (EC2 regional vCPU quota=${quota:-unknown}, required=$required)"
+
+  # VPC quota check — the VpcLimitExceeded error is the most common EKS CI failure
+  if [[ -z "$EXISTING_VPC_ID" ]]; then
+    local vpc_quota vpc_count
+    vpc_quota="$(aws service-quotas list-service-quotas --service-code vpc \
+      --query "Quotas[?QuotaName=='VPCs per Region'] | [0].Value" --output text 2>/dev/null || echo '')"
+    vpc_count="$(aws ec2 describe-vpcs --query 'length(Vpcs)' --output text 2>/dev/null || echo '')"
+
+    if [[ -n "$vpc_quota" && "$vpc_quota" != "None" && -n "$vpc_count" && "$vpc_count" != "None" ]]; then
+      if awk -v c="$vpc_count" -v q="$vpc_quota" 'BEGIN { exit !(c >= q) }'; then
+        log_error "EKS VPC quota preflight failed: VPC usage ${vpc_count}/${vpc_quota} — no capacity for a new validation VPC"
+        exit 1
+      fi
+      log_info "EKS VPC quota preflight passed (VPCs ${vpc_count}/${vpc_quota})"
+    else
+      log_warn "Unable to query VPC quota; skipping EKS VPC quota preflight"
+    fi
+  fi
 }
 
 apply_cluster() {

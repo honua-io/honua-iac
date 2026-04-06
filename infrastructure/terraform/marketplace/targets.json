@@ -1,0 +1,84 @@
+{
+  "schemaVersion": "v1",
+  "bundleProfile": "marketplace-turnkey",
+  "targets": [
+    {
+      "id": "aws-ecs",
+      "exampleRoot": "examples/aws",
+      "modulePath": "modules/aws-ecs",
+      "runtime": "ecs-fargate",
+      "turnkeyRuntime": true,
+      "marketplaceEligible": true,
+      "bundleProfile": "marketplace-turnkey",
+      "bundleManifest": "bundles/aws-ecs.v1.json",
+      "installSurfaceOutput": "install_contract",
+      "deploySurfaceOutput": "deploy_contract",
+      "reason": null
+    },
+    {
+      "id": "azure-aca",
+      "exampleRoot": "examples/azure",
+      "modulePath": "modules/azure-aca",
+      "runtime": "azure-container-apps",
+      "turnkeyRuntime": true,
+      "marketplaceEligible": true,
+      "bundleProfile": "marketplace-turnkey",
+      "bundleManifest": "bundles/azure-aca.v1.json",
+      "installSurfaceOutput": "install_contract",
+      "deploySurfaceOutput": "deploy_contract",
+      "reason": null
+    },
+    {
+      "id": "aws-serverless",
+      "exampleRoot": "examples/aws-serverless",
+      "modulePath": "modules/aws-serverless",
+      "runtime": "lambda-api-gateway",
+      "turnkeyRuntime": true,
+      "marketplaceEligible": false,
+      "bundleProfile": "operator-only",
+      "bundleManifest": "bundles/aws-serverless.v1.json",
+      "installSurfaceOutput": "install_contract",
+      "deploySurfaceOutput": "deploy_contract",
+      "reason": "Serverless runtime targets are excluded from marketplace-targeted bundles; prefer aws-ecs."
+    },
+    {
+      "id": "azure-functions",
+      "exampleRoot": "examples/azure-functions",
+      "modulePath": "modules/azure-functions",
+      "runtime": "azure-functions-custom-container",
+      "turnkeyRuntime": true,
+      "marketplaceEligible": false,
+      "bundleProfile": "operator-only",
+      "bundleManifest": "bundles/azure-functions.v1.json",
+      "installSurfaceOutput": "install_contract",
+      "deploySurfaceOutput": "deploy_contract",
+      "reason": "Serverless runtime targets are excluded from marketplace-targeted bundles; prefer azure-aca."
+    },
+    {
+      "id": "aws-eks",
+      "exampleRoot": "examples/aws-eks",
+      "modulePath": "modules/aws-eks",
+      "runtime": "eks-cluster-only",
+      "turnkeyRuntime": false,
+      "marketplaceEligible": false,
+      "bundleProfile": "operator-only",
+      "bundleManifest": null,
+      "installSurfaceOutput": null,
+      "deploySurfaceOutput": null,
+      "reason": "Cluster roots do not install Honua by themselves."
+    },
+    {
+      "id": "azure-aks",
+      "exampleRoot": "examples/azure-aks",
+      "modulePath": "modules/azure-aks",
+      "runtime": "aks-cluster-only",
+      "turnkeyRuntime": false,
+      "marketplaceEligible": false,
+      "bundleProfile": "operator-only",
+      "bundleManifest": null,
+      "installSurfaceOutput": null,
+      "deploySurfaceOutput": null,
+      "reason": "Cluster roots do not install Honua by themselves."
+    }
+  ]
+}

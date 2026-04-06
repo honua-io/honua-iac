@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "v1",
+  "bundleId": "aws-ecs",
+  "targetId": "aws-ecs",
+  "bundleProfile": "marketplace-turnkey",
+  "runtime": "ecs-fargate",
+  "marketplaceEligible": true,
+  "installSurface": {
+    "inputVariable": "install",
+    "normalizedOutput": "install_contract",
+    "schema": "../schemas/install-surface.v1.json",
+    "sampleTfvars": "../../examples/aws/terraform.tfvars.example"
+  },
+  "deploySurface": {
+    "output": "deploy_contract",
+    "schema": "../schemas/deploy-contract.v2.json"
+  },
+  "supportedRegions": {
+    "validated": [
+      "us-east-1"
+    ],
+    "notes": "Requires ECS Fargate, ALB, RDS PostgreSQL, and S3 support in the selected region."
+  },
+  "requiredPermissions": [
+    "Provision and mutate VPC, subnets, route tables, security groups, and load balancers",
+    "Provision ECS clusters, services, task definitions, autoscaling rules, and CloudWatch logs",
+    "Provision RDS PostgreSQL, optional ElastiCache Redis, Secrets Manager secrets, KMS keys, and S3 buckets",
+    "Create and attach IAM roles and policies for runtime identities"
+  ],
+  "billableComponents": [
+    "ECS Fargate tasks",
+    "Application Load Balancer",
+    "RDS PostgreSQL",
+    "Optional ElastiCache Redis",
+    "Optional S3 application storage",
+    "CloudWatch Logs",
+    "Secrets Manager and KMS"
+  ],
+  "upgradePath": {
+    "strategy": "In-place ECS service rollout via task definition revision updates",
+    "rollback": "Reapply the prior image or canary task definition and let the control plane converge",
+    "currentRevisionField": "deploy_contract.current_revision",
+    "desiredRevisionField": "deploy_contract.desired_revision"
+  },
+  "validationScenarioRefs": [
+    {
+      "scenario": "aws-live",
+      "targetDescriptor": "ecs"
+    }
+  ]
+}
