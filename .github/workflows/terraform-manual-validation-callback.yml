@@ -23,6 +23,10 @@ jobs:
         with:
           script: |
             const run = context.payload.workflow_run;
+            if (!run) {
+              core.setFailed("No workflow_run payload — this workflow only runs on workflow_run events, not push.");
+              return;
+            }
             const { data } = await github.rest.actions.listJobsForWorkflowRun({
               owner: context.repo.owner,
               repo: context.repo.repo,
