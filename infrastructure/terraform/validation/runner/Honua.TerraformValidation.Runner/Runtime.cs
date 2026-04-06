@@ -279,6 +279,9 @@ internal sealed class ProcessRunner(bool dryRun)
             return;
         }
 
+        var stdoutBuffer = new StringBuilder();
+        var stderrBuffer = new StringBuilder();
+
         using var process = CreateProcess(
             fileName,
             arguments,
@@ -287,18 +290,20 @@ internal sealed class ProcessRunner(bool dryRun)
             redirectStandardInput: standardInput is not null,
             captureStdout: true,
             captureStderr: true);
-        process.OutputDataReceived += static (_, eventArgs) =>
+        process.OutputDataReceived += (_, eventArgs) =>
         {
             if (eventArgs.Data is not null)
             {
                 Console.WriteLine(eventArgs.Data);
+                stdoutBuffer.AppendLine(eventArgs.Data);
             }
         };
-        process.ErrorDataReceived += static (_, eventArgs) =>
+        process.ErrorDataReceived += (_, eventArgs) =>
         {
             if (eventArgs.Data is not null)
             {
                 Console.Error.WriteLine(eventArgs.Data);
+                stderrBuffer.AppendLine(eventArgs.Data);
             }
         };
 
@@ -318,7 +323,7 @@ internal sealed class ProcessRunner(bool dryRun)
 
         if (process.ExitCode != 0)
         {
-            throw new CommandExecutionException(commandText, process.ExitCode, output: null);
+            throw new CommandExecutionException(commandText, process.ExitCode, BuildOutput(stdoutBuffer.ToString(), stderrBuffer.ToString()));
         }
     }
 
