@@ -58,6 +58,9 @@ Operator guide: `docs/operator-deployment.md`
 - `modules/azure-aks` - AKS for managed Kubernetes
 - `modules/observability-stack` - optional Prometheus + Grafana add-on
 
+Module publishing scope and tier classification (Tier 1 publish-candidate,
+Tier 3 internal-only) are recorded in [`docs/module-publishing-decision.md`](../../docs/module-publishing-decision.md).
+
 ## Examples
 
 - `examples/aws`
