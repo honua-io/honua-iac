@@ -45,3 +45,7 @@ For integration/QA validation flows (policy gates, live applies, drift checks, A
 
 - [infrastructure/terraform/README.md](infrastructure/terraform/README.md)
 - [docs/devops/terraform-validation.md](docs/devops/terraform-validation.md)
+
+## Module publishing scope
+
+Decision and tier classification: [docs/module-publishing-decision.md](docs/module-publishing-decision.md).
