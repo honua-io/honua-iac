@@ -2,6 +2,8 @@
 
 Operator-focused Terraform for deploying Honua in your own AWS or Azure account.
 
+Current infrastructure capabilities are summarized in [docs/features/README.md](docs/features/README.md).
+
 ## Deploy Honua (operator path)
 
 1. Choose a target stack:
