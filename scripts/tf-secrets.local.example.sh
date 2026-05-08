@@ -52,3 +52,29 @@ export AWS_SESSION_TOKEN="<session-token-if-applicable>"
 # export HONUA_AWS_EXISTING_VPC_CIDR="<vpc-cidr>"
 # export HONUA_AWS_EXISTING_PUBLIC_SUBNET_IDS='["subnet-...","subnet-..."]'
 # export HONUA_AWS_EXISTING_PRIVATE_SUBNET_IDS='["subnet-...","subnet-..."]'
+
+# Optional seeded Honua Cloud demo smoke credentials. These are consumed by
+# .github/workflows/cloud-demo-smoke.yml and can be synced with:
+#   scripts/tf-pass-secrets.sh sync-gh --scope cloud-demo --repo honua-io/honua-terraform
+#
+# Shared read credentials for non-browser smoke checks.
+# export HONUA_CLOUD_DEMO_API_KEY="<read-api-key>"
+# export HONUA_CLOUD_DEMO_BEARER_TOKEN="<read-bearer-token>"
+#
+# Guarded writable smoke credentials. Keep reset/write values server-side only;
+# do not create VITE_* reset or write-token variables.
+# export HONUA_CLOUD_DEMO_WRITE_TOKEN="<write-token>"
+# export HONUA_CLOUD_DEMO_RESET_TOKEN="<reset-token>"
+# export HONUA_CLOUD_DEMO_RESET_URL="<reset-url>"
+#
+# Optional browser sample read credentials. When omitted, the workflow falls
+# back to HONUA_CLOUD_DEMO_API_KEY / HONUA_CLOUD_DEMO_BEARER_TOKEN.
+# export VITE_HONUA_QUICKSTART_API_KEY="<quickstart-read-api-key>"
+# export VITE_HONUA_QUICKSTART_BEARER_TOKEN="<quickstart-read-bearer-token>"
+# export VITE_HONUA_SERVICE_EXPLORER_API_KEY="<service-explorer-read-api-key>"
+# export VITE_HONUA_SERVICE_EXPLORER_BEARER_TOKEN="<service-explorer-read-bearer-token>"
+# export VITE_HONUA_25D_API_KEY="<storytelling-read-api-key>"
+# export HONUA_DEMO_API_KEY="<kepler-read-api-key>"
+# export HONUA_DEMO_BEARER_TOKEN="<kepler-read-bearer-token>"
+# export VITE_HONUA_EDIT_WORKFLOW_API_KEY="<edit-workflow-read-api-key>"
+# export VITE_HONUA_EDIT_WORKFLOW_BEARER_TOKEN="<edit-workflow-read-bearer-token>"
