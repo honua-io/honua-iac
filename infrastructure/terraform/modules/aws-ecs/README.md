@@ -109,6 +109,14 @@ domain_name     = "gis.example.com"
 route53_zone_id = "Z1234567890ABC"
 ```
 
+When both values are set, the module also creates a Route 53 alias `A` record for `domain_name` that points at the ALB, and `service_url` uses the custom HTTPS hostname. Disable that DNS record with `domain_alias_record_enabled = false` if another DNS provider owns the public zone; in that case, create the external DNS record yourself and keep using `service_url` as the custom HTTPS endpoint.
+
+For public API hosts, allow HTTPS from the intended client CIDRs:
+
+```hcl
+allow_https_ingress_cidrs = ["0.0.0.0/0"]
+```
+
 ## ALB canary rollout
 
 The module can provision an optional canary ECS service and ALB target group. This is intended for weighted rollouts on AWS without moving rollout logic into Honua itself.

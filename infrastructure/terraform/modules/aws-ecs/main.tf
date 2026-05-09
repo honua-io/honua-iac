@@ -23,6 +23,10 @@ locals {
   db_use_existing       = var.existing_db_endpoint != "" && var.existing_db_connection_string != ""
   use_managed_cert      = var.domain_name != "" && var.route53_zone_id != ""
   use_https             = var.alb_certificate_arn != "" || local.use_managed_cert
+  create_domain_alias   = var.domain_alias_record_enabled && var.domain_name != "" && var.route53_zone_id != ""
+  use_custom_domain     = var.domain_name != "" && local.use_https
+  service_host          = local.use_custom_domain ? var.domain_name : aws_lb.this.dns_name
+  service_scheme        = local.use_https ? "https" : "http"
   default_ingress_cidrs = [local.vpc_cidr_block]
   https_ingress_cidrs = length(var.allow_public_ingress_cidrs) > 0 ? var.allow_public_ingress_cidrs : (
     length(var.allow_https_ingress_cidrs) > 0 ? var.allow_https_ingress_cidrs : (local.use_https ? local.default_ingress_cidrs : [])
@@ -427,6 +431,19 @@ resource "aws_acm_certificate_validation" "this" {
   count                   = local.use_managed_cert ? 1 : 0
   certificate_arn         = aws_acm_certificate.this[0].arn
   validation_record_fqdns = [for record in aws_route53_record.cert_validation : record.fqdn]
+}
+
+resource "aws_route53_record" "service_alias" {
+  count   = local.create_domain_alias ? 1 : 0
+  zone_id = var.route53_zone_id
+  name    = var.domain_name
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.this.dns_name
+    zone_id                = aws_lb.this.zone_id
+    evaluate_target_health = false
+  }
 }
 
 resource "aws_s3_bucket" "alb_logs" {

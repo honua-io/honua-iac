@@ -180,6 +180,36 @@ variable "alb_certificate_arn" {
   default     = ""
 }
 
+variable "domain_name" {
+  description = "Optional custom API hostname for ACM-managed TLS and Route53 ALB alias DNS."
+  type        = string
+  default     = ""
+}
+
+variable "route53_zone_id" {
+  description = "Route53 hosted zone ID that owns domain_name when Terraform should manage certificate validation and ALB alias DNS."
+  type        = string
+  default     = ""
+}
+
+variable "domain_alias_record_enabled" {
+  description = "Create a Route53 alias A record from domain_name to the ALB when domain_name and route53_zone_id are set."
+  type        = bool
+  default     = true
+}
+
+variable "subject_alternative_names" {
+  description = "Subject alternative names for the ACM certificate."
+  type        = list(string)
+  default     = []
+}
+
+variable "allow_https_ingress_cidrs" {
+  description = "CIDRs allowed to reach the ALB over HTTPS during validation."
+  type        = list(string)
+  default     = []
+}
+
 variable "allow_http_ingress_cidrs" {
   description = "CIDRs allowed to reach the ALB over HTTP during validation."
   type        = list(string)
