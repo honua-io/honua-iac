@@ -5,7 +5,17 @@ output "alb_dns_name" {
 
 output "service_url" {
   description = "Convenience URL for the service."
-  value       = local.use_https ? "https://${aws_lb.this.dns_name}" : "http://${aws_lb.this.dns_name}"
+  value       = "${local.service_scheme}://${local.service_host}"
+}
+
+output "service_domain_name" {
+  description = "Custom service domain name when configured for HTTPS."
+  value       = local.use_custom_domain ? var.domain_name : null
+}
+
+output "service_domain_record_fqdn" {
+  description = "FQDN of the Route53 service alias record when managed by this module."
+  value       = local.create_domain_alias ? aws_route53_record.service_alias[0].fqdn : null
 }
 
 output "ecs_cluster_name" {
