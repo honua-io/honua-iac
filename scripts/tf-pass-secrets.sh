@@ -21,7 +21,8 @@ Commands:
   help         Show this help
 
 Common options:
-  --scope <terraform|publish|all>  Secret scope (default: terraform)
+  --scope <terraform|cloud-demo|publish|all>
+                                  Secret scope (default: terraform)
   --prefix <pass-prefix>           pass prefix (default: honua/terraform)
 
 Import options:
@@ -39,6 +40,7 @@ Examples:
   source <(scripts/tf-pass-secrets.sh export)
   scripts/tf-pass-secrets.sh import --env-file scripts/tf-secrets.local.sh --force
   scripts/tf-pass-secrets.sh sync-gh --repo honua-io/honua-terraform
+  scripts/tf-pass-secrets.sh sync-gh --scope cloud-demo --repo honua-io/honua-terraform
   scripts/tf-pass-secrets.sh sync-gh --scope publish --repo honua-io/honua-server
 EOF
 }
