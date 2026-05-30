@@ -26,6 +26,12 @@ concurrency:
 jobs:
   cloud-demo-smoke:
     name: JS Cloud Demo Smoke
+    # Opt-in gate: this smoke validates live cloud-demo wiring, which requires the
+    # HONUA_CLOUD_DEMO_* secrets and a reachable demo target. Until an operator
+    # provisions those and opts in by setting repo variable HONUA_CLOUD_DEMO_ENABLED=true,
+    # the scheduled run is SKIPPED (neutral) rather than failing on missing config.
+    # workflow_dispatch can still force a run for ad-hoc validation once secrets exist.
+    if: ${{ vars.HONUA_CLOUD_DEMO_ENABLED == 'true' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
