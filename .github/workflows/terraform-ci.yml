@@ -81,6 +81,7 @@ jobs:
             "infrastructure/terraform/bootstrap/aws-ecs"
             "infrastructure/terraform/bootstrap/aws-serverless"
             "infrastructure/terraform/bootstrap/aws-eks"
+            "infrastructure/terraform/bootstrap/aws-support-access"
             "infrastructure/terraform/examples/azure"
             "infrastructure/terraform/examples/azure-data"
             "infrastructure/terraform/examples/azure-functions"
