@@ -1,0 +1,24 @@
+# Copy to terraform.tfvars and fill in. Never commit the real file.
+
+aws_region = "us-east-1"
+
+# Trusted Honua support principal(s) you assume these roles from. Honua
+# support provides these ARNs. Cross-account assumption only - no access keys.
+support_principal_arns = [
+  "arn:aws:iam::111122223333:role/honua-support-gateway",
+]
+
+# Per-customer shared secret required on every AssumeRole (confused-deputy
+# guard). Honua support provides this out of band; treat it as a secret.
+external_id = "replace-with-honua-provided-external-id"
+
+# Optional overrides (defaults shown):
+# observe_max_session_duration     = 3600
+# break_glass_max_session_duration = 3600
+# require_mfa                       = true
+# require_session_tags             = true
+
+tags = {
+  ManagedBy = "terraform"
+  Purpose   = "honua-support-access"
+}
