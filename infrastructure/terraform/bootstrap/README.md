@@ -16,6 +16,13 @@ for AWS vs Azure.
   permissions-boundary-capped remediation) for granting Honua scoped,
   ticket-bounded support access. See its `README.md` for the operator workflow
   (approve -> assume -> diagnose/fix -> expire/revoke).
+- `azure-support-access` — least-privilege custom RBAC roles `Honua Support
+  Observe` (read-only diagnostics) and `Honua Support Break-Glass` (short-lived,
+  narrower-than-Contributor remediation) for granting Honua scoped, ticket-bounded
+  support access. Observe is a standing read-only assignment; break-glass is
+  time-bounded via Entra PIM activation per ticket. See its `README.md` for the
+  operator workflow (approve -> activate -> diagnose/fix -> expire/revoke) and the
+  Terraform-vs-PIM automation boundary.
 
 > These are least-privilege *starting points* scoped to the services used by each template,
 > including database (RDS/Postgres) and Redis where applicable. If you disable optional

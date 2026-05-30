@@ -78,6 +78,7 @@ jobs:
             "infrastructure/terraform/bootstrap/azure-aca"
             "infrastructure/terraform/bootstrap/azure-functions"
             "infrastructure/terraform/bootstrap/azure-aks"
+            "infrastructure/terraform/bootstrap/azure-support-access"
             "infrastructure/terraform/bootstrap/aws-ecs"
             "infrastructure/terraform/bootstrap/aws-serverless"
             "infrastructure/terraform/bootstrap/aws-eks"
