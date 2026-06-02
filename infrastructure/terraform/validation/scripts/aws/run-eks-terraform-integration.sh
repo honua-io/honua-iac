@@ -43,6 +43,7 @@ QUICK_SCALE=true
 RUN_UPGRADE_ROLLBACK=false
 RUN_DB_RESILIENCE=true
 RUN_QUOTA_PREFLIGHT=true
+SWEEP_ORPHAN_VPCS="${HONUA_EKS_SWEEP_ORPHAN_VPCS:-true}"
 HELM_STATIC_VALIDATE=true
 MAX_RUN_COST_USD="${HONUA_MAX_RUN_COST_USD:-0}"
 READY_SLO_SECONDS="${HONUA_READY_SLO_SECONDS:-600}"
@@ -88,6 +89,7 @@ Options:
   --skip-db-resilience                 Skip DB backup/restore drill
   --skip-helm-static-validation        Skip helm lint/template/kubeconform checks
   --skip-quota-preflight               Skip AWS quota preflight checks
+  --skip-orphan-vpc-sweep              Skip reclaiming expired orphaned validation VPCs
   --max-run-cost-usd <n>               Max allowed estimated run cost (0 disables cap)
   --max-ready-seconds <n>              Ready SLO threshold (default: 600)
   --max-load-error-rate <percent>      Max allowed load error rate (default: 0)
@@ -241,6 +243,10 @@ parse_args() {
         ;;
       --skip-quota-preflight)
         RUN_QUOTA_PREFLIGHT=false
+        shift
+        ;;
+      --skip-orphan-vpc-sweep)
+        SWEEP_ORPHAN_VPCS=false
         shift
         ;;
       --max-run-cost-usd)
@@ -481,16 +487,186 @@ assert_cost_guardrail() {
   exit 1
 }
 
+# Query a Service Quotas value, preferring the applied quota and falling back to
+# the AWS default quota. Echoes the numeric value, or empty string if neither
+# query succeeds. The applied-quota lookup (get-service-quota) only returns a
+# value when the account has an explicit override, so the default lookup is the
+# common path and must not be treated as an error.
+query_service_quota() {
+  local service_code="$1"
+  local quota_code="$2"
+  local value
+
+  value="$(aws service-quotas get-service-quota \
+    --service-code "$service_code" --quota-code "$quota_code" \
+    --query 'Quota.Value' --output text 2>/dev/null || echo '')"
+  if [[ -n "$value" && "$value" != "None" ]]; then
+    printf '%s' "$value"
+    return 0
+  fi
+
+  value="$(aws service-quotas get-aws-default-service-quota \
+    --service-code "$service_code" --quota-code "$quota_code" \
+    --query 'Quota.Value' --output text 2>/dev/null || echo '')"
+  if [[ -n "$value" && "$value" != "None" ]]; then
+    printf '%s' "$value"
+    return 0
+  fi
+
+  return 1
+}
+
+# Reclaim VPC slots held by orphaned validation runs. Prior runs that crashed
+# before cleanup leave a VPC tagged Owner=terraform-validation with an
+# ExpiresAtUTC in the past. Those expired VPCs are the recurring cause of
+# VpcLimitExceeded, so destroy any whose TTL has elapsed before we preflight the
+# quota. Only runs other than the current one are considered (current run is not
+# yet expired and is not yet applied).
+sweep_orphan_validation_vpcs() {
+  local now_epoch
+  local arns_raw
+  local -a vpc_arns=()
+  local arn
+  local vpc_id
+  local expires_at
+  local run_id
+  local expires_epoch
+  local reclaimed=0
+
+  if [[ "$SWEEP_ORPHAN_VPCS" != "true" ]]; then
+    return 0
+  fi
+
+  now_epoch="$(date -u +%s)"
+
+  arns_raw="$(aws resourcegroupstaggingapi get-resources \
+    --resource-type-filters ec2:vpc \
+    --tag-filters Key=Owner,Values=terraform-validation \
+    --query 'ResourceTagMappingList[].ResourceARN' \
+    --output text 2>/dev/null || echo '')"
+
+  if [[ -z "$arns_raw" || "$arns_raw" == "None" ]]; then
+    return 0
+  fi
+
+  mapfile -t vpc_arns < <(printf '%s' "$arns_raw" | tr '\t' '\n' | sed '/^$/d')
+
+  for arn in "${vpc_arns[@]}"; do
+    vpc_id="${arn##*/}"
+    [[ -z "$vpc_id" ]] && continue
+
+    expires_at="$(aws ec2 describe-tags \
+      --filters "Name=resource-id,Values=$vpc_id" "Name=key,Values=ExpiresAtUTC" \
+      --query 'Tags[0].Value' --output text 2>/dev/null || echo '')"
+    run_id="$(aws ec2 describe-tags \
+      --filters "Name=resource-id,Values=$vpc_id" "Name=key,Values=ValidationRunId" \
+      --query 'Tags[0].Value' --output text 2>/dev/null || echo '')"
+
+    # Never touch the VPC of the run currently executing.
+    if [[ "$run_id" == "$VALIDATION_RUN_ID" ]]; then
+      continue
+    fi
+
+    # Without a parseable expiry we cannot prove the VPC is orphaned; leave it.
+    if [[ -z "$expires_at" || "$expires_at" == "None" ]]; then
+      log_warn "Orphan VPC sweep: $vpc_id has no ExpiresAtUTC tag; leaving in place"
+      continue
+    fi
+
+    expires_epoch="$(date -u -d "$expires_at" +%s 2>/dev/null || echo '')"
+    if [[ -z "$expires_epoch" ]]; then
+      log_warn "Orphan VPC sweep: $vpc_id has unparseable ExpiresAtUTC '$expires_at'; leaving in place"
+      continue
+    fi
+
+    if (( expires_epoch > now_epoch )); then
+      continue
+    fi
+
+    log_warn "Orphan VPC sweep: reclaiming expired validation VPC $vpc_id (run=${run_id:-unknown}, expired=$expires_at)"
+    if delete_orphan_vpc "$vpc_id"; then
+      reclaimed=$(( reclaimed + 1 ))
+    else
+      log_warn "Orphan VPC sweep: could not fully delete $vpc_id; it may have lingering dependencies"
+    fi
+  done
+
+  if (( reclaimed > 0 )); then
+    log_info "Orphan VPC sweep reclaimed $reclaimed expired validation VPC slot(s)"
+  fi
+}
+
+# Best-effort teardown of an orphaned VPC's network dependencies followed by the
+# VPC itself. This only handles the plain network scaffolding the EKS example
+# creates (subnets, route tables, IGW, NAT gateways, released EIPs). If an EKS
+# cluster or instances still reference the VPC, delete-vpc fails and we leave it
+# for the leak janitor / TTL reaper rather than force anything.
+delete_orphan_vpc() {
+  local vpc_id="$1"
+  local id
+
+  # NAT gateways (and release their EIPs) must go before subnets/IGW.
+  for id in $(aws ec2 describe-nat-gateways \
+    --filter "Name=vpc-id,Values=$vpc_id" "Name=state,Values=available,pending" \
+    --query 'NatGateways[].NatGatewayId' --output text 2>/dev/null || true); do
+    [[ -z "$id" || "$id" == "None" ]] && continue
+    aws ec2 delete-nat-gateway --nat-gateway-id "$id" >/dev/null 2>&1 || true
+  done
+
+  for id in $(aws ec2 describe-addresses \
+    --filters "Name=domain,Values=vpc" \
+    --query "Addresses[?Tags[?Key=='ValidationRunId']].AllocationId" --output text 2>/dev/null || true); do
+    [[ -z "$id" || "$id" == "None" ]] && continue
+    aws ec2 release-address --allocation-id "$id" >/dev/null 2>&1 || true
+  done
+
+  for id in $(aws ec2 describe-internet-gateways \
+    --filters "Name=attachment.vpc-id,Values=$vpc_id" \
+    --query 'InternetGateways[].InternetGatewayId' --output text 2>/dev/null || true); do
+    [[ -z "$id" || "$id" == "None" ]] && continue
+    aws ec2 detach-internet-gateway --internet-gateway-id "$id" --vpc-id "$vpc_id" >/dev/null 2>&1 || true
+    aws ec2 delete-internet-gateway --internet-gateway-id "$id" >/dev/null 2>&1 || true
+  done
+
+  for id in $(aws ec2 describe-subnets \
+    --filters "Name=vpc-id,Values=$vpc_id" \
+    --query 'Subnets[].SubnetId' --output text 2>/dev/null || true); do
+    [[ -z "$id" || "$id" == "None" ]] && continue
+    aws ec2 delete-subnet --subnet-id "$id" >/dev/null 2>&1 || true
+  done
+
+  for id in $(aws ec2 describe-route-tables \
+    --filters "Name=vpc-id,Values=$vpc_id" \
+    --query 'RouteTables[?Associations[?Main!=`true`] || length(Associations)==`0`].RouteTableId' \
+    --output text 2>/dev/null || true); do
+    [[ -z "$id" || "$id" == "None" ]] && continue
+    aws ec2 delete-route-table --route-table-id "$id" >/dev/null 2>&1 || true
+  done
+
+  for id in $(aws ec2 describe-security-groups \
+    --filters "Name=vpc-id,Values=$vpc_id" \
+    --query "SecurityGroups[?GroupName!='default'].GroupId" --output text 2>/dev/null || true); do
+    [[ -z "$id" || "$id" == "None" ]] && continue
+    aws ec2 delete-security-group --group-id "$id" >/dev/null 2>&1 || true
+  done
+
+  aws ec2 delete-vpc --vpc-id "$vpc_id" >/dev/null 2>&1
+}
+
 run_quota_preflight() {
   local quota
   local vcpu_per_node
   local required
+  local vpc_quota
+  local vpc_count
+  local vpc_headroom
 
   if [[ "$RUN_QUOTA_PREFLIGHT" != "true" ]]; then
     return
   fi
 
-  quota="$(aws service-quotas get-service-quota --service-code ec2 --quota-code L-1216C47A --query 'Quota.Value' --output text 2>/dev/null || echo '')"
+  # ---- EC2 vCPU regional quota (On-Demand Standard instances) ----
+  quota="$(query_service_quota ec2 L-1216C47A || echo '')"
   vcpu_per_node="$(aws ec2 describe-instance-types --instance-types "$NODE_INSTANCE_TYPE" --query 'InstanceTypes[0].VCpuInfo.DefaultVCpus' --output text 2>/dev/null || echo '')"
 
   if [[ -z "$vcpu_per_node" || "$vcpu_per_node" == "None" ]]; then
@@ -499,12 +675,44 @@ run_quota_preflight() {
 
   required=$(( NODE_DESIRED_SIZE * vcpu_per_node ))
 
-  if [[ -n "$quota" && "$quota" != "None" ]] && awk -v q="$quota" -v r="$required" 'BEGIN { exit !(r > q) }'; then
-    log_error "EKS quota preflight failed: required vCPU $required exceeds EC2 regional quota $quota"
+  if [[ -z "$quota" || "$quota" == "None" ]]; then
+    log_error "EKS quota preflight failed: unable to query EC2 vCPU quota (L-1216C47A) in $REGION."
+    log_error "  Verify the validation role has servicequotas:GetServiceQuota / GetAWSDefaultServiceQuota and ec2:DescribeInstanceTypes."
+    log_error "  Re-run with --skip-quota-preflight only if you have independently confirmed capacity."
     exit 1
   fi
 
-  log_info "EKS quota preflight passed (EC2 regional vCPU quota=${quota:-unknown}, required=$required)"
+  if awk -v q="$quota" -v r="$required" 'BEGIN { exit !(r > q) }'; then
+    log_error "EKS quota preflight failed: required vCPU $required exceeds EC2 regional quota $quota in $REGION"
+    exit 1
+  fi
+
+  # ---- VPCs per Region quota (the recurring VpcLimitExceeded failure) ----
+  vpc_quota="$(query_service_quota vpc L-F678F1CE || echo '')"
+  vpc_count="$(aws ec2 describe-vpcs --query 'length(Vpcs)' --output text 2>/dev/null || echo '')"
+
+  if [[ -z "$vpc_quota" || "$vpc_quota" == "None" ]]; then
+    log_error "EKS quota preflight failed: unable to query the VPCs-per-Region quota (L-F678F1CE) in $REGION."
+    log_error "  This is the check that previously fell back to skip and let VpcLimitExceeded slip through."
+    log_error "  Verify the validation role has servicequotas:GetServiceQuota / GetAWSDefaultServiceQuota for service code 'vpc'."
+    exit 1
+  fi
+
+  if [[ -z "$vpc_count" || "$vpc_count" == "None" ]]; then
+    log_error "EKS quota preflight failed: unable to count existing VPCs in $REGION (ec2:DescribeVpcs)."
+    exit 1
+  fi
+
+  # The EKS example creates exactly one VPC, so we need at least one free slot.
+  vpc_headroom=$(( vpc_quota - vpc_count ))
+  if (( vpc_headroom < 1 )); then
+    log_error "EKS quota preflight failed: $vpc_count/$vpc_quota VPCs already exist in $REGION; no slot for the validation VPC."
+    log_error "  This produces 'VpcLimitExceeded' during apply. The orphan-VPC sweep could not reclaim a slot."
+    log_error "  Remedies: delete unused VPCs in $REGION, stagger ECS/EKS validation jobs, or request a VPCs-per-Region quota increase (out-of-band)."
+    exit 1
+  fi
+
+  log_info "EKS quota preflight passed (EC2 vCPU quota=$quota required=$required; VPCs $vpc_count/$vpc_quota, headroom=$vpc_headroom)"
 }
 
 apply_cluster() {
@@ -820,6 +1028,7 @@ main() {
   configure_runtime_tools
   normalize_identifiers
   assert_cost_guardrail
+  sweep_orphan_validation_vpcs
   run_quota_preflight
   prepare_workspace
 
