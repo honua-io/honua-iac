@@ -2,6 +2,8 @@
 
 Operator-focused Terraform for deploying Honua in your own AWS or Azure account.
 
+Current infrastructure capabilities are summarized in [docs/features/README.md](docs/features/README.md).
+
 ## Deploy Honua (operator path)
 
 1. Choose a target stack:
@@ -45,3 +47,7 @@ For integration/QA validation flows (policy gates, live applies, drift checks, A
 
 - [infrastructure/terraform/README.md](infrastructure/terraform/README.md)
 - [docs/devops/terraform-validation.md](docs/devops/terraform-validation.md)
+
+## Module publishing scope
+
+Decision and tier classification: [docs/module-publishing-decision.md](docs/module-publishing-decision.md).

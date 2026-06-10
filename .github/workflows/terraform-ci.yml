@@ -11,9 +11,13 @@ on:
       - 'scripts/run-k8s-terraform-integration.sh'
       - 'scripts/run-terraform-drift-detection.sh'
       - 'scripts/terraform-policy-gate.sh'
+      - 'scripts/tf-pass-secrets.sh'
+      - 'scripts/lib/tf-secret-catalog.sh'
       - 'scripts/tf-secrets.local.example.sh'
+      - 'scripts/write-cloud-demo-smoke-env-summary.mjs'
       - 'docs/devops/terraform-validation.md'
       - 'docs/devops/examples/**'
+      - '.github/workflows/cloud-demo-smoke.yml'
       - '.github/workflows/terraform-ci.yml'
       - '.github/workflows/terraform-manual-validation.yml'
   push:
@@ -28,9 +32,13 @@ on:
       - 'scripts/run-k8s-terraform-integration.sh'
       - 'scripts/run-terraform-drift-detection.sh'
       - 'scripts/terraform-policy-gate.sh'
+      - 'scripts/tf-pass-secrets.sh'
+      - 'scripts/lib/tf-secret-catalog.sh'
       - 'scripts/tf-secrets.local.example.sh'
+      - 'scripts/write-cloud-demo-smoke-env-summary.mjs'
       - 'docs/devops/terraform-validation.md'
       - 'docs/devops/examples/**'
+      - '.github/workflows/cloud-demo-smoke.yml'
       - '.github/workflows/terraform-ci.yml'
       - '.github/workflows/terraform-manual-validation.yml'
 
@@ -82,9 +90,11 @@ jobs:
             "infrastructure/terraform/bootstrap/azure-aca"
             "infrastructure/terraform/bootstrap/azure-functions"
             "infrastructure/terraform/bootstrap/azure-aks"
+            "infrastructure/terraform/bootstrap/azure-support-access"
             "infrastructure/terraform/bootstrap/aws-ecs"
             "infrastructure/terraform/bootstrap/aws-serverless"
             "infrastructure/terraform/bootstrap/aws-eks"
+            "infrastructure/terraform/bootstrap/aws-support-access"
             "infrastructure/terraform/examples/azure"
             "infrastructure/terraform/examples/azure-data"
             "infrastructure/terraform/examples/azure-functions"

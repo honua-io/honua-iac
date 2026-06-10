@@ -22,6 +22,23 @@ TERRAFORM_OPTIONAL_SECRETS=(
   AWS_SESSION_TOKEN
 )
 
+CLOUD_DEMO_SECRETS=(
+  HONUA_CLOUD_DEMO_API_KEY
+  HONUA_CLOUD_DEMO_BEARER_TOKEN
+  HONUA_CLOUD_DEMO_WRITE_TOKEN
+  HONUA_CLOUD_DEMO_RESET_TOKEN
+  HONUA_CLOUD_DEMO_RESET_URL
+  VITE_HONUA_QUICKSTART_API_KEY
+  VITE_HONUA_QUICKSTART_BEARER_TOKEN
+  VITE_HONUA_SERVICE_EXPLORER_API_KEY
+  VITE_HONUA_SERVICE_EXPLORER_BEARER_TOKEN
+  VITE_HONUA_25D_API_KEY
+  HONUA_DEMO_API_KEY
+  HONUA_DEMO_BEARER_TOKEN
+  VITE_HONUA_EDIT_WORKFLOW_API_KEY
+  VITE_HONUA_EDIT_WORKFLOW_BEARER_TOKEN
+)
+
 PUBLISH_SECRETS=(
   ARM_CLIENT_ID
   ARM_CLIENT_SECRET
@@ -42,6 +59,7 @@ ALL_KNOWN_SECRETS=(
   AWS_SESSION_TOKEN
   HONUA_ADMIN_PASSWORD
   HONUA_DB_PASSWORD
+  "${CLOUD_DEMO_SECRETS[@]}"
 )
 
 tf_secret_contains() {
@@ -65,6 +83,9 @@ tf_secret_scope_keys() {
     terraform)
       printf '%s\n' "${TERRAFORM_ESSENTIAL_SECRETS[@]}" "${TERRAFORM_OPTIONAL_SECRETS[@]}"
       ;;
+    cloud-demo)
+      printf '%s\n' "${CLOUD_DEMO_SECRETS[@]}"
+      ;;
     publish)
       printf '%s\n' "${PUBLISH_SECRETS[@]}"
       ;;
@@ -85,7 +106,7 @@ tf_secret_scope_required_keys() {
     terraform)
       printf '%s\n' "${TERRAFORM_ESSENTIAL_SECRETS[@]}"
       ;;
-    publish|all)
+    cloud-demo|publish|all)
       ;;
     *)
       echo "error: unknown secret scope '$scope'" >&2

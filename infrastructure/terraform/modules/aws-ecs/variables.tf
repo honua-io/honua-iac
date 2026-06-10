@@ -249,6 +249,12 @@ variable "route53_zone_id" {
   default     = ""
 }
 
+variable "domain_alias_record_enabled" {
+  description = "Create a Route53 alias A record from domain_name to the ALB when domain_name and route53_zone_id are set."
+  type        = bool
+  default     = true
+}
+
 variable "subject_alternative_names" {
   description = "Subject alternative names for the ACM certificate."
   type        = list(string)

@@ -34,6 +34,11 @@ module "honua" {
   alb_access_logs_enabled         = var.alb_access_logs_enabled
   alb_access_logs_force_destroy   = var.alb_access_logs_force_destroy
   alb_certificate_arn             = var.alb_certificate_arn
+  domain_name                     = var.domain_name
+  route53_zone_id                 = var.route53_zone_id
+  domain_alias_record_enabled     = var.domain_alias_record_enabled
+  subject_alternative_names       = var.subject_alternative_names
+  allow_https_ingress_cidrs       = var.allow_https_ingress_cidrs
   allow_http_ingress_cidrs        = var.allow_http_ingress_cidrs
   waf_web_acl_arn                 = var.waf_web_acl_arn
   tags                            = var.tags
@@ -47,6 +52,10 @@ module "honua" {
 
 output "honua_url" {
   value = module.honua.service_url
+}
+
+output "service_domain_record_fqdn" {
+  value = module.honua.service_domain_record_fqdn
 }
 
 output "ecs_cluster_name" {

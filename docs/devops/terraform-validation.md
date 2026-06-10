@@ -17,6 +17,7 @@ The workflow and scripts cover:
 - Kubernetes live integration: k3d + Helm + observability Terraform module, Helm static validation (`lint` + `template` + `kubeconform`), PostGIS + raster checks, protocol/admin smoke checks, admin CRUD/query smoke (`create connection -> publish layer -> query`), idempotency, quick scale check, and optional DB resilience drill
 - Managed Kubernetes integration: AKS and EKS Terraform cluster provisioning, then Kubernetes validation flow, then auto-destroy + leak check
 - Cross-repo platform validation: Azure, AWS, AKS, and EKS live jobs also check out `honua-server` and run its post-apply platform suite against the deployed environment before cleanup; this exercises deploy preflight, migration observability, admin OpenAPI, and optional cloud-staged import checks against real cloud infrastructure
+- Seeded JS cloud demo smoke: a scheduled and manually dispatchable lane checks out `honua-sdk-js` and runs `npm run test:cloud-demo:config` plus credential-gated `npm run test:cloud-demo:staging` against the seeded demo tenant from `honua-sdk-js/examples/cloud-demo-services.json`
 - Drift detection: `terraform plan -detailed-exitcode` via `infrastructure/terraform/validation/scripts/shared/run-terraform-drift-detection.sh`
 
 ## Manual GitHub Actions workflow
@@ -44,6 +45,15 @@ Common:
 
 - `HONUA_ADMIN_PASSWORD`
 - `HONUA_DB_PASSWORD`
+
+Seeded cloud demo smoke:
+
+- `HONUA_CLOUD_DEMO_API_KEY`
+- `HONUA_CLOUD_DEMO_BEARER_TOKEN`
+- `HONUA_CLOUD_DEMO_WRITE_TOKEN` (only when writable smoke is enabled)
+- `HONUA_CLOUD_DEMO_RESET_TOKEN` (server-side smoke only; never expose as `VITE_*`)
+- `HONUA_CLOUD_DEMO_RESET_URL` (server-side smoke only; use a secret when it embeds reset credentials)
+- Optional browser read credentials: `VITE_HONUA_QUICKSTART_API_KEY`, `VITE_HONUA_QUICKSTART_BEARER_TOKEN`, `VITE_HONUA_SERVICE_EXPLORER_API_KEY`, `VITE_HONUA_SERVICE_EXPLORER_BEARER_TOKEN`, `VITE_HONUA_25D_API_KEY`, `HONUA_DEMO_API_KEY`, `HONUA_DEMO_BEARER_TOKEN`, `VITE_HONUA_EDIT_WORKFLOW_API_KEY`, and `VITE_HONUA_EDIT_WORKFLOW_BEARER_TOKEN`
 
 Azure live / AKS:
 
@@ -166,6 +176,16 @@ az account show
 - Registry publish config:
   - `AWS_ECR_REGION`, `AWS_ECR_REPOSITORY`
   - `ACR_LOGIN_SERVER`, `ACR_REPOSITORY`
+- Seeded cloud demo smoke:
+  - `HONUA_CLOUD_DEMO_BASE_URL`
+  - `HONUA_CLOUD_DEMO_METADATA_TTL_MS`
+  - `HONUA_CLOUD_DEMO_ALLOW_WRITES` (`false` by default; set `true` only for disposable seeded services with reset credentials)
+  - `VITE_HONUA_QUICKSTART_BASE_URL`, `VITE_HONUA_QUICKSTART_SERVICE_ID`, `VITE_HONUA_QUICKSTART_LAYER_ID`, `VITE_HONUA_QUICKSTART_WHERE`, `VITE_HONUA_QUICKSTART_RESULT_RECORD_COUNT`, `VITE_HONUA_QUICKSTART_BASEMAP_STYLE`
+  - `VITE_HONUA_SERVICE_EXPLORER_BASE_URL`, `VITE_HONUA_SERVICE_EXPLORER_MODE`, `VITE_HONUA_SERVICE_EXPLORER_SERVICE_ID`, `VITE_HONUA_SERVICE_EXPLORER_LAYER_ID`, `VITE_HONUA_SERVICE_EXPLORER_WHERE`, `VITE_HONUA_SERVICE_EXPLORER_RESULT_RECORD_COUNT`, `VITE_HONUA_SERVICE_EXPLORER_MAP_MOVE_DEBOUNCE_MS`, `VITE_HONUA_SERVICE_EXPLORER_SOURCE_ID`
+  - `VITE_HONUA_25D_BASE_URL`, `VITE_HONUA_25D_ASSETS_COLLECTION`, `VITE_HONUA_25D_ROUTE_COLLECTION`, `VITE_HONUA_25D_STOPS_COLLECTION`, `VITE_HONUA_25D_BASEMAP_STYLE`
+  - `HONUA_DEMO_BASE_URL`, `HONUA_DEMO_ENV_LABEL`, `HONUA_DEMO_INCIDENTS_SERVICE_ID`, `HONUA_DEMO_INCIDENTS_LAYER_ID`, `HONUA_DEMO_UNIT_TRACKS_SERVICE_ID`, `HONUA_DEMO_UNIT_TRACKS_LAYER_ID`, `HONUA_DEMO_COVERAGE_ZONES_SERVICE_ID`, `HONUA_DEMO_COVERAGE_ZONES_LAYER_ID`
+  - `VITE_HONUA_INCIDENT_TRANSPORT`, `VITE_HONUA_INCIDENT_STREAM_URL`
+  - `VITE_HONUA_EDIT_WORKFLOW_BASE_URL`, `VITE_HONUA_EDIT_WORKFLOW_SERVICE_ID`, `VITE_HONUA_EDIT_WORKFLOW_LAYER_ID`, `VITE_HONUA_EDIT_WORKFLOW_READONLY_SERVICE_ID`
 - Cost/SLO:
   - `HONUA_MAX_RUN_COST_USD`
   - `HONUA_READY_SLO_SECONDS`
@@ -282,6 +302,52 @@ Local script entry points:
 ./infrastructure/terraform/validation/scripts/shared/terraform-policy-gate.sh
 ./infrastructure/terraform/validation/scripts/shared/run-terraform-drift-detection.sh --root infrastructure/terraform/examples/azure
 ```
+
+## Seeded JS cloud demo smoke
+
+Workflow: `.github/workflows/cloud-demo-smoke.yml`
+
+This workflow validates the seeded Honua Cloud demo service contract owned by
+`honua-sdk-js#128`. It checks out this repo for validation helpers, checks out
+`honua-sdk-js`, writes an environment summary from
+`examples/cloud-demo-services.json`, and runs:
+
+```bash
+npm run test:cloud-demo:config
+npm run test:cloud-demo:staging
+```
+
+It runs daily at 11:17 UTC and can be triggered manually:
+
+```bash
+gh workflow run cloud-demo-smoke.yml \
+  --repo honua-io/honua-terraform \
+  -f sdk_ref=trunk \
+  -f strict_env=true
+```
+
+Secret setup:
+
+```bash
+source <(scripts/tf-pass-secrets.sh export --scope cloud-demo 2>/dev/null)
+scripts/tf-pass-secrets.sh sync-gh --scope cloud-demo --repo honua-io/honua-terraform
+```
+
+`HONUA_CLOUD_DEMO_ALLOW_WRITES` is a repository variable and defaults to
+`false`. Set it to `true` only when `HONUA_CLOUD_DEMO_WRITE_TOKEN`,
+`HONUA_CLOUD_DEMO_RESET_TOKEN`, and `HONUA_CLOUD_DEMO_RESET_URL` are present
+and the target service is disposable seeded data. The summary script fails if
+any reset or write safeguard is exposed through a populated `VITE_*` variable.
+
+The workflow uploads two artifacts when available:
+
+- `cloud-demo-env-summary.json`: repo-variable/secret presence, required
+  profile env status, and write/reset safeguard checks
+- `cloud-demo-smoke.json`: the JS SDK staging smoke summary
+
+The scheduled run is strict by default. Missing seeded profile env or
+credentials should fail the workflow so demo readiness is visible instead of
+falling back silently to fixtures.
 
 ## Notes
 
