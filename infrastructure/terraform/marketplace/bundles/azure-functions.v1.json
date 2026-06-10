@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "v1",
+  "bundleId": "azure-functions",
+  "targetId": "azure-functions",
+  "bundleProfile": "operator-only",
+  "runtime": "azure-functions-custom-container",
+  "marketplaceEligible": false,
+  "installSurface": {
+    "inputVariable": "install",
+    "normalizedOutput": "install_contract",
+    "schema": "../schemas/install-surface.v1.json",
+    "sampleTfvars": "../../examples/azure-functions/terraform.tfvars.example"
+  },
+  "deploySurface": {
+    "output": "deploy_contract",
+    "schema": "../schemas/deploy-contract.v2.json"
+  },
+  "supportedRegions": {
+    "validated": [
+      "westus"
+    ],
+    "notes": "Requires Linux Functions custom container support, Storage, Application Insights, Flexible Server PostgreSQL, and Key Vault support in the selected region."
+  },
+  "requiredPermissions": [
+    "Provision and mutate App Service plans, Linux Function Apps, deployment slots, Storage, and Application Insights",
+    "Provision Flexible Server PostgreSQL, optional Azure Cache for Redis, Key Vault secrets, and storage accounts/containers",
+    "Assign AcrPull and runtime access roles when private registries or managed identities are used"
+  ],
+  "billableComponents": [
+    "Azure Functions plan and executions",
+    "Storage account",
+    "Application Insights and Log Analytics",
+    "Flexible Server PostgreSQL",
+    "Optional Azure Cache for Redis",
+    "Optional Blob Storage",
+    "Key Vault operations"
+  ],
+  "upgradePath": {
+    "strategy": "Image update with optional deployment-slot promotion",
+    "rollback": "Republish the prior image or swap back from the staging slot",
+    "currentRevisionField": "deploy_contract.current_revision",
+    "desiredRevisionField": "deploy_contract.desired_revision"
+  },
+  "validationScenarioRefs": [
+    {
+      "scenario": "azure-live",
+      "targetDescriptor": "functions"
+    }
+  ]
+}

@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://honua.io/terraform/marketplace/schemas/install-surface.v1.json",
+  "title": "Honua Terraform Install Surface v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "artifact"
+  ],
+  "properties": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "image"
+      ],
+      "properties": {
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "registry": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "server": {
+              "type": "string"
+            },
+            "auth_mode": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "managed_identity",
+                "username_password"
+              ]
+            },
+            "resource_id": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "compute_sku": {
+          "type": "string"
+        },
+        "storage_gb": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "storage_mb": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_storage_gb": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "public_access": {
+          "type": "boolean"
+        },
+        "postgis_enabled": {
+          "type": "boolean"
+        },
+        "readiness_max_attempts": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "readiness_sleep_seconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "cidr": {
+          "type": "string"
+        },
+        "public_subnet_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "private_subnet_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "public_ingress_cidrs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "http_ingress_cidrs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "https_ingress_cidrs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "firewall_start_ip": {
+          "type": "string"
+        },
+        "firewall_end_ip": {
+          "type": "string"
+        }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "container_name": {
+          "type": "string"
+        },
+        "prefix": {
+          "type": "string"
+        },
+        "force_destroy": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

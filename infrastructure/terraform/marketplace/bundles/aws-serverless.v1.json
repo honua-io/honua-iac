@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "v1",
+  "bundleId": "aws-serverless",
+  "targetId": "aws-serverless",
+  "bundleProfile": "operator-only",
+  "runtime": "lambda-api-gateway",
+  "marketplaceEligible": false,
+  "installSurface": {
+    "inputVariable": "install",
+    "normalizedOutput": "install_contract",
+    "schema": "../schemas/install-surface.v1.json",
+    "sampleTfvars": "../../examples/aws-serverless/terraform.tfvars.example"
+  },
+  "deploySurface": {
+    "output": "deploy_contract",
+    "schema": "../schemas/deploy-contract.v2.json"
+  },
+  "supportedRegions": {
+    "validated": [
+      "us-east-1"
+    ],
+    "notes": "Requires Lambda container image support, API Gateway HTTP API, RDS PostgreSQL, and optional S3 support in the selected region."
+  },
+  "requiredPermissions": [
+    "Provision and mutate Lambda functions, versions, aliases, API Gateway routes, and CloudWatch logs",
+    "Provision VPC networking, RDS PostgreSQL, Secrets Manager secrets, KMS keys, and optional S3 buckets",
+    "Provision IAM execution roles and ECR read access for container image execution"
+  ],
+  "billableComponents": [
+    "Lambda invocations and provisioned resources",
+    "API Gateway HTTP API",
+    "RDS PostgreSQL",
+    "Optional S3 application storage",
+    "CloudWatch Logs",
+    "Secrets Manager and KMS"
+  ],
+  "upgradePath": {
+    "strategy": "Image-based Lambda version publishing with alias promotion",
+    "rollback": "Repin the live alias to the previous version and reapply",
+    "currentRevisionField": "deploy_contract.current_revision",
+    "desiredRevisionField": "deploy_contract.desired_revision"
+  },
+  "validationScenarioRefs": [
+    {
+      "scenario": "aws-live",
+      "targetDescriptor": "serverless"
+    }
+  ]
+}
