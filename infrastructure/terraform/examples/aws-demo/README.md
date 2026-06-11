@@ -32,15 +32,52 @@ a data-isolation feature for production deployments.
 |---|---|
 | Lambda function | `arm64` (Graviton), 1024 MiB RAM, no provisioned concurrency |
 | Lambda image | `*-lambda-aot` tag (AOT build); cold starts ~200–400 ms |
-| RDS PostgreSQL | `db.t4g.small`, version 15, 20 GB gp3, PostGIS + PostGIS Raster enabled |
+| RDS PostgreSQL | `db.t4g.micro`, version 15, 20 GB gp3, PostGIS + PostGIS Raster enabled |
 | ElastiCache | **Disabled** (`redis_enabled = false`); single Lambda, no distributed cache needed |
 | API Gateway | HTTP API (`protocol_type = "HTTP"`) with `$default` stage |
 | ACM certificate | Auto-provisioned and DNS-validated for `demo.honua.io` |
 | Route53 A record | `demo.honua.io` → API Gateway regional domain (alias) |
 | API Gateway custom domain | `demo.honua.io`, TLS 1.2, regional endpoint |
-| VPC | New VPC with single NAT gateway (cost saving for non-prod) |
+| VPC | New VPC, **no NAT gateway** — VPC endpoints instead (see below) |
+| VPC endpoints | Secrets Manager interface endpoint (single-AZ) + free S3 gateway endpoint |
+| PostGIS bootstrap | One-shot in-VPC Lambda enables `postgis` + `postgis_raster` during apply |
 | CloudWatch Logs | 90-day retention for Lambda and API Gateway |
 | Secrets Manager | DB connection string, admin password, master key |
+
+### No NAT gateway — VPC endpoints instead
+
+A NAT gateway costs ~$33/mo before data charges, and the public demo has no
+OIDC and no outbound integrations, so the Lambda needs **no general internet
+egress**. What it does need at runtime is Secrets Manager (the
+`aws:secretsmanager:` environment references are resolved on cold start), so
+the config provisions:
+
+- **Secrets Manager interface endpoint** (`vpc-endpoints.tf`) — single-AZ on
+  purpose (~$7.30/mo for one ENI); cross-AZ hops from the other private
+  subnets are fine at demo traffic levels.
+- **S3 gateway endpoint** — free, attached to the private route tables, ready
+  for future COG (Cloud-Optimized GeoTIFF) serving from S3.
+
+If the demo ever needs general egress again (e.g. OIDC against an external
+IdP), set `enable_nat_gateway = true` in `main.tf`.
+
+### Database bootstrap and migrations
+
+The RDS instance is in private subnets with no NAT/VPN, so nothing outside
+the VPC can reach it — including the module's `enable_postgis` local-exec
+(psql) path, which this config disables. Instead:
+
+1. **PostGIS** — a one-shot Python Lambda inside the VPC
+   (`postgis-bootstrap.tf`) enables `postgis` + `postgis_raster` as the RDS
+   master user during `terraform apply`. Requires python3 + pip on the apply
+   host (the pure-Python `pg8000` driver is vendored into the zip at apply
+   time).
+2. **Schema migrations** — the module call sets `skip_migrations = false`, so
+   Honua runs its own DbUp migrations on startup (first invoke). After the
+   first successful boot this can be flipped back to `true` (the serverless
+   default) so cold starts skip the migration journal check. The module call
+   also raises `lambda_timeout_seconds` to 60 so a slow first-boot migration
+   run can finish even though API Gateway stops waiting at 30 s.
 
 ### Rate limiting (no WAF)
 
@@ -134,11 +171,10 @@ and update the registrar NS records. Then set `route53_zone_id` to the
 - AWS account with permissions matching the IAM policy in
   `infrastructure/terraform/bootstrap/aws-serverless/` (or equivalent).
 - Terraform >= 1.5 (< 2.0).
-- `psql` available on the machine running `terraform apply` — the `enable_postgis`
-  local-exec provisioner uses it to install the PostGIS and PostGIS Raster
-  extensions on the RDS instance.
-- Network access from the apply host to the RDS endpoint during apply. Use
-  `db_additional_ingress_cidrs` to temporarily allow your CI runner or local IP.
+- `python3` + `pip` on the machine running `terraform apply` — used to vendor
+  the pure-Python `pg8000` driver into the PostGIS bootstrap Lambda zip. No
+  psql and **no network path to RDS** are needed: PostGIS is enabled by the
+  in-VPC bootstrap Lambda (see "Database bootstrap and migrations").
 - A Route53 hosted zone for `demo.honua.io` (see DNS prerequisites above).
 - **ECR repository** — Lambda container images must be in ECR. Push the
   `*-lambda-aot` image from GHCR to your ECR repository before applying.
@@ -149,13 +185,13 @@ and update the registrar NS records. Then set `route53_zone_id` to the
 
 ```bash
 # 1. Push Lambda image to ECR (Lambda cannot pull from GHCR directly)
-aws ecr get-login-password --region us-east-1 | \
-  docker login --username AWS --password-stdin 123456789012.dkr.ecr.us-east-1.amazonaws.com
+aws ecr get-login-password --region us-west-2 | \
+  docker login --username AWS --password-stdin 123456789012.dkr.ecr.us-west-2.amazonaws.com
 
 docker pull ghcr.io/honua-io/honua-server:v1.5.0-lambda-aot
 docker tag ghcr.io/honua-io/honua-server:v1.5.0-lambda-aot \
-  123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server:v1.5.0-lambda-aot
-docker push 123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server:v1.5.0-lambda-aot
+  123456789012.dkr.ecr.us-west-2.amazonaws.com/honua-server:v1.5.0-lambda-aot
+docker push 123456789012.dkr.ecr.us-west-2.amazonaws.com/honua-server:v1.5.0-lambda-aot
 
 # 2. Copy and fill in tfvars
 cp terraform.tfvars.example terraform.tfvars
@@ -181,27 +217,30 @@ curl -f "$API_URL/healthz/ready"
 # Custom domain (once DNS propagates)
 curl -f https://demo.honua.io/healthz/ready
 
-# Confirm PostGIS extensions
-psql "$(terraform output -raw db_endpoint)" \
-  -c "SELECT extname FROM pg_extension WHERE extname IN ('postgis','postgis_raster');"
+# Confirm PostGIS extensions (reported by the in-VPC bootstrap Lambda)
+terraform output postgis_bootstrap_result
 ```
 
-## Estimated monthly cost (us-east-1, June 2026)
+## Estimated monthly cost (us-west-2, June 2026)
 
 | Component | Estimate |
 |---|---|
-| RDS db.t4g.small, 20 GB gp3, single-AZ | ~$25–30 |
-| NAT gateway (single) + data transfer | ~$5–10 (Lambda traffic is light) |
-| Lambda (requests + duration, demo traffic) | ~$0–2 |
+| RDS db.t4g.micro, single-AZ | ~$12 |
+| RDS storage, 20 GB gp3 | ~$2.50 |
+| Secrets Manager interface endpoint (single-AZ) | ~$7.50 |
+| S3 gateway endpoint | $0 (free) |
+| NAT gateway | $0 (**removed** — was ~$33/mo + data) |
+| Lambda (requests + duration, demo traffic) | ~$0–1 |
 | API Gateway HTTP API (requests) | ~$0–1 |
-| CloudWatch Logs (90-day, low volume) | ~$3 |
-| Secrets Manager, ACM | ~$2 |
-| **Total** | **~$35–50 / month** |
+| CloudWatch Logs (90-day, low volume) | ~$1 |
+| Secrets Manager secrets, Route53 zone | ~$1.50 |
+| **Total** | **~$23 / month** |
 
-The RDS instance dominates cost. Lambda + API Gateway are effectively free at
-demo traffic volumes. Compare to the ECS/ALB equivalent (~$120–160/mo) — the
-main saving is eliminating the always-on Fargate task, the ALB (~$20/mo), and
-the associated NAT gateway data-transfer cost.
+The RDS instance and the Secrets Manager endpoint dominate cost. Lambda + API
+Gateway are effectively free at demo traffic volumes. Compare to the ECS/ALB
+equivalent (~$120–160/mo) — the main savings are eliminating the always-on
+Fargate task, the ALB (~$20/mo), and the NAT gateway (~$33/mo) that the
+VPC endpoints replace.
 
 ## Post-deploy: seeding demo data
 

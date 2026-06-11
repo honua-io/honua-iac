@@ -1,7 +1,7 @@
 # Copy to terraform.tfvars and fill in real values.
 # NEVER commit terraform.tfvars — it contains secrets.
 
-region      = "us-east-1"
+region      = "us-west-2"
 environment = "demo"
 name_prefix = "honua-demo"
 
@@ -9,8 +9,8 @@ name_prefix = "honua-demo"
 # The image MUST be pushed to ECR before apply (Lambda requires ECR; GHCR is
 # not supported directly by Lambda). Push the ghcr.io image to your ECR repo.
 # Example after push:
-#   honua_image = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server:v1.5.0-lambda-aot"
-honua_image = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server:v1.5.0-lambda-aot"
+#   honua_image = "123456789012.dkr.ecr.us-west-2.amazonaws.com/honua-server:v1.5.0-lambda-aot"
+honua_image = "123456789012.dkr.ecr.us-west-2.amazonaws.com/honua-server:v1.5.0-lambda-aot"
 
 # Minimum 32 characters — also used as Security__ConnectionEncryption__MasterKey.
 # Generate: openssl rand -hex 32

@@ -15,6 +15,11 @@ locals {
     ManagedBy   = "terraform"
     Purpose     = "public-demo"
   }, var.tags)
+
+  # Declared here (rather than relying on the module default) because it is
+  # also used for the VPC-endpoint security group and the in-VPC PostGIS
+  # bootstrap (see vpc-endpoints.tf / postgis-bootstrap.tf).
+  vpc_cidr = "10.0.0.0/16"
 }
 
 # ---------------------------------------------------------------------------
@@ -29,32 +34,57 @@ module "honua" {
   environment = var.environment
 
   # Lambda container — use the AOT image variant for fast cold starts
-  image              = var.honua_image
+  image                = var.honua_image
   lambda_architectures = ["arm64"] # Graviton — cheaper and faster for .NET AOT
-  lambda_memory_size = var.lambda_memory_size
+  lambda_memory_size   = var.lambda_memory_size
 
   # No provisioned concurrency: cold starts are acceptable for a demo.
   # The AOT image keeps cold start latency short (~200–400 ms typical).
   lambda_reserved_concurrent_executions = null
 
+  # Allow first-boot migrations to run past the API Gateway 30 s response
+  # ceiling: API Gateway gives up at 30 s, but the Lambda keeps executing and
+  # finishes the migration run, so the next request succeeds.
+  lambda_timeout_seconds = 60
+
   # Secrets
   admin_password = var.honua_admin_password
 
-  # Database — db.t4g.small + PostGIS
-  db_instance_class    = "db.t4g.small"
+  # Database — db.t4g.micro + PostGIS (micro is plenty for demo traffic and
+  # roughly halves the RDS bill vs db.t4g.small)
+  db_instance_class    = "db.t4g.micro"
   db_allocated_storage = 20
   db_engine_version    = "15"
   db_password          = var.db_password
   db_require_ssl       = true
   db_multi_az          = false # single-AZ for demo cost
-  enable_postgis       = true  # Required — Honua needs PostGIS + PostGIS Raster
+
+  # PostGIS + PostGIS Raster are required by Honua, but the module's
+  # enable_postgis local-exec needs psql plus a network path to the private
+  # RDS instance — neither exists here (no NAT, no VPN). The extensions are
+  # installed by the in-VPC bootstrap Lambda instead (postgis-bootstrap.tf).
+  enable_postgis = false
+
+  # Run Honua's own schema migrations on startup for the initial deploy.
+  # After the first successful boot this can be flipped back to true
+  # (the serverless default) so cold starts skip the DbUp journal check.
+  skip_migrations = false
+
+  # Let the in-VPC PostGIS bootstrap Lambda (its own security group) reach
+  # PostgreSQL. The VPC is dedicated to this stack, so the VPC CIDR is the
+  # tightest practical bound.
+  vpc_cidr                    = local.vpc_cidr
+  db_additional_ingress_cidrs = [local.vpc_cidr]
 
   # Redis — disabled (single Lambda function, no distributed cache needed)
   redis_enabled = false
 
-  # Networking — single NAT GW for cost savings on non-prod
-  enable_nat_gateway = true
-  single_nat_gateway = true
+  # Networking — no NAT gateway (~$33/mo + data saved). The public demo has
+  # no OIDC and needs no general internet egress; the only AWS services the
+  # Lambda needs at runtime are reached via VPC endpoints instead
+  # (Secrets Manager interface endpoint + S3 gateway endpoint, see
+  # vpc-endpoints.tf).
+  enable_nat_gateway = false
 
   # API Gateway throttling (replaces WAF; HTTP API does not support WAFv2)
   api_throttle_burst_limit = var.api_throttle_burst_limit

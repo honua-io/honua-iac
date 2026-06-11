@@ -70,6 +70,41 @@ output "control_plane_desired_revision" {
   value = aws_lambda_function.this.version
 }
 
+# --- Network outputs (additive) -------------------------------------------
+# Exposed so example roots can attach VPC endpoints (e.g. Secrets Manager
+# interface endpoint, S3 gateway endpoint) and in-VPC helper resources without
+# re-deriving the module's network layout.
+
+output "vpc_id" {
+  description = "ID of the VPC the stack runs in (created or existing)."
+  value       = local.vpc_id
+}
+
+output "vpc_cidr_block" {
+  description = "CIDR block of the VPC the stack runs in."
+  value       = local.vpc_cidr_block
+}
+
+output "private_subnet_ids" {
+  description = "Private subnet IDs used by the Lambda function (and RDS unless db_publicly_accessible)."
+  value       = local.private_subnets
+}
+
+output "private_route_table_ids" {
+  description = "Private route table IDs of the module-managed VPC. Empty when reusing an existing VPC (attach gateway endpoints to your own route tables in that case)."
+  value       = local.use_existing_vpc ? [] : module.vpc[0].private_route_table_ids
+}
+
+output "db_connection_secret_arn" {
+  description = "ARN of the Secrets Manager secret holding the database connection string."
+  value       = aws_secretsmanager_secret.connection_string.arn
+}
+
+output "lambda_security_group_id" {
+  description = "Security group ID attached to the Honua Lambda function."
+  value       = aws_security_group.lambda.id
+}
+
 output "db_endpoint" {
   value     = local.db_endpoint
   sensitive = true
