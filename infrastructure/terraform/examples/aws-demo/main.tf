@@ -33,9 +33,13 @@ module "honua" {
   name_prefix = var.name_prefix
   environment = var.environment
 
-  # Lambda container — use the AOT image variant for fast cold starts
+  # Lambda container — use the AOT image variant for fast cold starts.
+  # x86_64, not Graviton: the demo image is AOT-built on an amd64 workstation
+  # and .NET AOT under QEMU arm64 emulation fails (MSBuild MSB4223 node spawn
+  # error). Function and image architecture must match. Revisit when images
+  # come from CI's native arm64 runners.
   image                = var.honua_image
-  lambda_architectures = ["x86_64"] # amd64 — native build (arm64 cross-build fails NETSDK1004)
+  lambda_architectures = ["x86_64"]
   lambda_memory_size   = var.lambda_memory_size
 
   # No provisioned concurrency: cold starts are acceptable for a demo.
