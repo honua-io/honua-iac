@@ -1,0 +1,30 @@
+# Copy to terraform.tfvars and fill in real values.
+# NEVER commit terraform.tfvars — it contains secrets.
+
+region      = "us-east-1"
+environment = "demo"
+name_prefix = "honua-demo"
+
+# Pin to an immutable ECS AOT release tag or digest from your ECR or GHCR.
+# Example: "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server:v1.5.0-ecs-aot"
+honua_image = "ghcr.io/honua-io/honua-server:v1.5.0-ecs-aot"
+
+# Minimum 32 characters — also used as Security__ConnectionEncryption__MasterKey.
+# Generate: openssl rand -hex 32
+honua_admin_password = "REPLACE_WITH_STRONG_SECRET_MIN_32_CHARS"
+
+# Leave null to let Terraform auto-generate a secure password.
+# db_password = null
+
+# Route53 hosted zone ID for the zone that owns demo.honua.io.
+# See README.md — DNS prerequisites for the required hosted zone setup.
+route53_zone_id = "ZXXXXXXXXXXXXXXXXX"
+
+# WAF rate limits (defaults are suitable for Phase A demo load)
+# waf_api_limit_per_5m   = 2000
+# waf_admin_limit_per_5m = 300
+
+tags = {
+  Owner   = "platform"
+  CostCentre = "demo"
+}
