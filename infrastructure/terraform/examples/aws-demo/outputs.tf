@@ -1,26 +1,41 @@
 output "honua_url" {
   description = "Public URL for the demo environment (https://demo.honua.io once DNS is live)."
-  value       = module.honua.service_url
+  value       = "https://demo.honua.io"
 }
 
-output "service_domain_record_fqdn" {
-  description = "FQDN of the Route53 alias A record created for demo.honua.io."
-  value       = module.honua.service_domain_record_fqdn
+output "api_gateway_endpoint" {
+  description = "Raw API Gateway HTTP API endpoint (use for health checks before Route53 propagates)."
+  value       = module.honua.api_endpoint
 }
 
-output "alb_dns_name" {
-  description = "Raw ALB DNS name (use for CNAME fallback or health checks before Route53 propagates)."
-  value       = module.honua.alb_dns_name
+output "custom_domain_target" {
+  description = "API Gateway regional domain name — the alias target for the Route53 A record."
+  value       = aws_apigatewayv2_domain_name.demo.domain_name_configuration[0].target_domain_name
 }
 
-output "ecs_cluster_name" {
-  description = "ECS cluster name (for aws ecs commands and EventBridge run-task targets)."
-  value       = module.honua.ecs_cluster_name
+output "certificate_arn" {
+  description = "ACM certificate ARN issued for demo.honua.io."
+  value       = aws_acm_certificate.demo.arn
 }
 
-output "ecs_service_name" {
-  description = "ECS service name."
-  value       = module.honua.ecs_service_name
+output "lambda_function_name" {
+  description = "Lambda function name (for aws lambda commands and EventBridge invoke targets)."
+  value       = module.honua.lambda_function_name
+}
+
+output "lambda_function_arn" {
+  description = "Lambda function ARN."
+  value       = module.honua.lambda_function_arn
+}
+
+output "lambda_alias_name" {
+  description = "Stable Lambda alias used by API Gateway."
+  value       = module.honua.lambda_alias_name
+}
+
+output "lambda_alias_arn" {
+  description = "Lambda alias ARN."
+  value       = module.honua.lambda_alias_arn
 }
 
 output "db_endpoint" {
@@ -29,24 +44,10 @@ output "db_endpoint" {
   sensitive   = true
 }
 
-output "db_connection_secret_arn" {
-  description = "Secrets Manager ARN for the database connection string."
-  value       = module.honua.db_connection_secret_arn
-}
-
-output "admin_password_secret_arn" {
-  description = "Secrets Manager ARN for the Honua admin password."
-  value       = module.honua.admin_password_secret_arn
-}
-
-output "certificate_arn" {
-  description = "ACM certificate ARN issued for demo.honua.io."
-  value       = module.honua.certificate_arn
-}
-
-output "waf_web_acl_arn" {
-  description = "ARN of the WAFv2 Web ACL protecting the demo ALB."
-  value       = aws_wafv2_web_acl.demo.arn
+output "db_connection_string" {
+  description = "Database connection string (sensitive)."
+  value       = module.honua.db_connection_string
+  sensitive   = true
 }
 
 output "control_plane_target_kind" {
@@ -57,4 +58,9 @@ output "control_plane_target_kind" {
 output "control_plane_backend_name" {
   description = "Honua control-plane backend identifier hint."
   value       = module.honua.control_plane_backend_name
+}
+
+output "control_plane_target_id" {
+  description = "Honua control-plane target ID."
+  value       = module.honua.control_plane_target_id
 }

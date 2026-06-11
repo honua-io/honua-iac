@@ -17,7 +17,7 @@ variable "name_prefix" {
 }
 
 variable "honua_image" {
-  description = "Container image to deploy to ECS. Pin to an immutable release tag or digest (AOT build recommended)."
+  description = "Lambda container image URI (ECR). Must be a *-lambda-aot tag for AOT performance. Pin to an immutable release tag or digest."
   type        = string
 }
 
@@ -39,16 +39,22 @@ variable "route53_zone_id" {
   type        = string
 }
 
-variable "waf_api_limit_per_5m" {
-  description = "Per-IP request limit per 5-minute window for /rest, /ogc, and /odata API paths."
+variable "lambda_memory_size" {
+  description = "Lambda memory in MB. 1024 MB is the default and sufficient for demo traffic. Increase to 2048 for larger payloads."
   type        = number
-  default     = 2000
+  default     = 1024
 }
 
-variable "waf_admin_limit_per_5m" {
-  description = "Per-IP request limit per 5-minute window for /admin paths."
+variable "api_throttle_burst_limit" {
+  description = "API Gateway burst throttle limit (max concurrent requests). Replaces WAF rate-limiting — HTTP API does not support WAFv2."
   type        = number
-  default     = 300
+  default     = 200
+}
+
+variable "api_throttle_rate_limit" {
+  description = "API Gateway steady-state throttle limit (requests per second). Conservative default for a public demo."
+  type        = number
+  default     = 50
 }
 
 variable "tags" {
