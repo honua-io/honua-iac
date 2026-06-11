@@ -30,7 +30,7 @@ a data-isolation feature for production deployments.
 
 | Resource | Sizing / configuration |
 |---|---|
-| Lambda function | `arm64` (Graviton), 1024 MiB RAM, no provisioned concurrency |
+| Lambda function | `x86_64`, 1024 MiB RAM, no provisioned concurrency (arm64 blocked on cross-build, see main.tf) |
 | Lambda image | `*-lambda-aot` tag (AOT build); cold starts ~200–400 ms |
 | RDS PostgreSQL | `db.t4g.micro`, version 15, 20 GB gp3, PostGIS + PostGIS Raster enabled |
 | ElastiCache | **Disabled** (`redis_enabled = false`); single Lambda, no distributed cache needed |
