@@ -35,7 +35,7 @@ module "honua" {
 
   # Lambda container — use the AOT image variant for fast cold starts
   image                = var.honua_image
-  lambda_architectures = ["arm64"] # Graviton — cheaper and faster for .NET AOT
+  lambda_architectures = ["x86_64"] # amd64 — native build (arm64 cross-build fails NETSDK1004)
   lambda_memory_size   = var.lambda_memory_size
 
   # No provisioned concurrency: cold starts are acceptable for a demo.
