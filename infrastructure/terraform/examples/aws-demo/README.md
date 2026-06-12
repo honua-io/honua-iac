@@ -107,6 +107,17 @@ put CloudFront in front and attach a WAFv2 CLOUDFRONT-scoped ACL.
 | `MultiTenancy__DefaultTenantId` | `public` |
 | `HostValidation__AllowedHosts__1` | `demo.honua.io` |
 
+### Known limitation: /healthz/ready requires Redis in Production
+
+honua-server hard-requires a durable distributed feature-change event store
+(Redis) whenever ASPNETCORE_ENVIRONMENT is Production. With
+`redis_enabled = false` (this config), `/healthz/live` returns 200 and the
+API works normally, but **`/healthz/ready` always returns 503** ("Feature-change
+event storage unavailable"). Nothing probes readiness in the Lambda deployment
+path, so this is cosmetic for the demo - but don't wire `/healthz/ready` into
+external uptime checks until honua-server treats the event store as optional
+for single-node deployments (or Redis is enabled).
+
 ## Lambda → RDS connection management
 
 The module connects Lambda **directly to RDS** within the VPC — there is no
