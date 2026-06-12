@@ -9,8 +9,18 @@ output "api_gateway_endpoint" {
 }
 
 output "custom_domain_target" {
-  description = "API Gateway regional domain name — the alias target for the Route53 A record."
+  description = "API Gateway regional domain name — the demo.honua.io alias target only while route_demo_dns_to_cloudfront=false (steady state points at CloudFront instead)."
   value       = aws_apigatewayv2_domain_name.demo.domain_name_configuration[0].target_domain_name
+}
+
+output "cloudfront_distribution_id" {
+  description = "CloudFront distribution ID (use for cache invalidations after reseeds)."
+  value       = aws_cloudfront_distribution.demo.id
+}
+
+output "cloudfront_domain_name" {
+  description = "CloudFront distribution domain (*.cloudfront.net) — use to validate the CDN before/without the demo.honua.io DNS swap."
+  value       = aws_cloudfront_distribution.demo.domain_name
 }
 
 output "certificate_arn" {

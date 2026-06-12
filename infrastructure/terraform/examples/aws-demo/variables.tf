@@ -57,6 +57,12 @@ variable "api_throttle_rate_limit" {
   default     = 50
 }
 
+variable "route_demo_dns_to_cloudfront" {
+  description = "Point the demo.honua.io A/AAAA alias at the CloudFront distribution (true, steady state) or directly at the API Gateway custom domain (false — used to validate a fresh distribution via its *.cloudfront.net domain before swapping DNS)."
+  type        = bool
+  default     = true
+}
+
 variable "tags" {
   description = "Additional tags applied to all resources."
   type        = map(string)

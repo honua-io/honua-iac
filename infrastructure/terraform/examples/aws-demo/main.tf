@@ -207,14 +207,17 @@ resource "aws_apigatewayv2_api_mapping" "demo" {
   stage       = "$default"
 }
 
+# Alias target switches between the CloudFront distribution (steady state)
+# and the API Gateway custom domain (pre-CDN validation) — see cloudfront.tf
+# for the locals and the DNS swap sequencing notes.
 resource "aws_route53_record" "demo" {
   name    = "demo.honua.io"
   type    = "A"
   zone_id = var.route53_zone_id
 
   alias {
-    name                   = aws_apigatewayv2_domain_name.demo.domain_name_configuration[0].target_domain_name
-    zone_id                = aws_apigatewayv2_domain_name.demo.domain_name_configuration[0].hosted_zone_id
+    name                   = local.demo_alias_name
+    zone_id                = local.demo_alias_zone
     evaluate_target_health = false
   }
 }

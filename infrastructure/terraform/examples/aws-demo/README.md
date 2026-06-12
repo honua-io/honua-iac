@@ -2,7 +2,8 @@
 
 Terraform root config that deploys the **Phase A** hosted demo environment for
 [demo.honua.io](https://demo.honua.io) using the `aws-serverless` module
-(Lambda container + API Gateway HTTP API + RDS PostgreSQL).
+(Lambda container + API Gateway HTTP API + RDS PostgreSQL), fronted by a
+CloudFront distribution that caches tile traffic at the edge (`cloudfront.tf`).
 
 ## Why serverless for the demo
 
@@ -30,19 +31,78 @@ a data-isolation feature for production deployments.
 
 | Resource | Sizing / configuration |
 |---|---|
+| CloudFront distribution | Tile caching at the edge — see "CDN layer" below |
 | Lambda function | `x86_64`, 1024 MiB RAM, no provisioned concurrency (arm64 blocked on cross-build, see main.tf) |
 | Lambda image | `*-lambda-aot` tag (AOT build); cold starts ~200–400 ms |
 | RDS PostgreSQL | `db.t4g.micro`, version 15, 20 GB gp3, PostGIS + PostGIS Raster enabled |
 | ElastiCache | **Disabled** (`redis_enabled = false`); single Lambda, no distributed cache needed |
 | API Gateway | HTTP API (`protocol_type = "HTTP"`) with `$default` stage |
 | ACM certificate | Auto-provisioned and DNS-validated for `demo.honua.io` |
-| Route53 A record | `demo.honua.io` → API Gateway regional domain (alias) |
+| Route53 A/AAAA records | `demo.honua.io` → CloudFront distribution (alias; → API Gateway custom domain and no AAAA while `route_demo_dns_to_cloudfront=false`) |
 | API Gateway custom domain | `demo.honua.io`, TLS 1.2, regional endpoint |
 | VPC | New VPC, **no NAT gateway** — VPC endpoints instead (see below) |
 | VPC endpoints | Secrets Manager interface endpoint (single-AZ) + free S3 gateway endpoint |
 | PostGIS bootstrap | One-shot in-VPC Lambda enables `postgis` + `postgis_raster` during apply |
 | CloudWatch Logs | 90-day retention for Lambda and API Gateway |
 | Secrets Manager | DB connection string, admin password, master key |
+
+### CDN layer — CloudFront tile caching
+
+`cloudfront.tf` puts a CloudFront distribution in front of the API Gateway
+endpoint and repoints the `demo.honua.io` A/AAAA alias at it. Path-scoped
+behaviors split the traffic:
+
+| Routes | Behavior |
+|---|---|
+| `/api/v1/tiles/*` (PMTiles range proxy), `/ogc/tiles/*`, `/rest/services/*/MapServer/tile/*`, `/rest/services/*/ImageServer/tile/*`, `/fonts/*`, `/terrain/*` | Cached 24 h (range requests cached natively); edge CORS response-headers policy |
+| Everything else (queries, OData, admin, `/healthz`) | Pass-through, no caching, all headers/query strings forwarded |
+
+Details that matter when changing this:
+
+- **Origin** is the regional `execute-api` endpoint, *not* `demo.honua.io`
+  (that record now points at CloudFront — using it as origin would loop) and
+  *not* the API Gateway custom-domain target (it only serves the
+  `demo.honua.io` cert, which fails CloudFront's origin TLS validation).
+  The `Host` header is deliberately **not** forwarded to the origin
+  (API Gateway routes by Host); `Managed-AllViewerExceptHostHeader` forwards
+  the rest, including `Range` and `Origin`.
+- **Edge CORS**: a response-headers policy stamps the demo's CORS headers
+  (origins `https://honua.io`, `https://www.honua.io`, `http://localhost:8123`
+  — mirror of `Cors__AllowedOrigins__*` in main.tf) on the cached behaviors,
+  because cached responses are shared across requesting origins. This also
+  masks honua-server#1627 (missing CORS headers on error responses) for the
+  tile routes.
+- **Viewer cert** lives in **us-east-1** (CloudFront requirement, hence the
+  `aws.us_east_1` provider alias). It validates against the same Route53
+  CNAME the regional cert already created — ACM emits identical validation
+  records for the same domain in every region.
+- **DNS swap sequencing** for a fresh distribution: apply with
+  `-var=route_demo_dns_to_cloudfront=false`, validate via the
+  `cloudfront_domain_name` output (tile 200 + `X-Cache: Hit from cloudfront`
+  on the second hit, CORS headers present, `/healthz/live` 200 pass-through),
+  then apply with the default (`true`) to repoint `demo.honua.io`.
+- **HTTP/2 + HTTP/3**, compression on, `PriceClass_100` (NA + EU edges).
+- Transient origin 5xx are only cached for 10 s (`custom_error_response`)
+  so a Lambda cold-start hiccup doesn't pin an error tile for 5 minutes.
+
+**Invalidation after reseeds** — tiles are cached for 24 h, so after
+re-uploading PMTiles archives or reimporting datasets, flush the tile paths:
+
+```bash
+aws cloudfront create-invalidation \
+  --distribution-id "$(terraform output -raw cloudfront_distribution_id)" \
+  --paths "/api/v1/tiles/*" "/ogc/tiles/*" "/rest/services/*" \
+          "/fonts/*" "/terrain/*"
+```
+
+(Or invalidate just the reseeded prefix, e.g.
+`/api/v1/tiles/pmtiles/maui-basemap*`. The first 1,000 invalidation paths
+per month are free; a wildcard counts as one path.)
+
+**Cost**: effectively free at demo traffic — no monthly base fee; pay
+per-request/per-GB only (~$0.085/GB + $0.0075–0.01 per 10k HTTPS requests in
+PriceClass_100, well under a dollar a month at current volumes), and cached
+tile hits *reduce* Lambda/API Gateway/RDS load.
 
 ### No NAT gateway — VPC endpoints instead
 
@@ -93,9 +153,10 @@ stage level via throttle settings:
 These defaults are conservative for a public demo. Adjust in `terraform.tfvars`
 if you need higher throughput.
 
-If WAF-level rate-limiting becomes a hard requirement in future, the migration
-path is to switch from HTTP API to a REST API (API Gateway v1) + ALB, or to
-put CloudFront in front and attach a WAFv2 CLOUDFRONT-scoped ACL.
+If WAF-level rate-limiting becomes a hard requirement in future, the easy
+path is now to attach a WAFv2 CLOUDFRONT-scoped ACL to the existing
+distribution in `cloudfront.tf` (`web_acl_id`); the CDN layer also absorbs
+most tile-burst traffic before it ever reaches the API Gateway throttles.
 
 ### Container/function environment
 
@@ -243,6 +304,7 @@ terraform output postgis_bootstrap_result
 | NAT gateway | $0 (**removed** — was ~$33/mo + data) |
 | Lambda (requests + duration, demo traffic) | ~$0–1 |
 | API Gateway HTTP API (requests) | ~$0–1 |
+| CloudFront (requests + data out, demo traffic) | ~$0–1 (no base fee) |
 | CloudWatch Logs (90-day, low volume) | ~$1 |
 | Secrets Manager secrets, Route53 zone | ~$1.50 |
 | **Total** | **~$23 / month** |
