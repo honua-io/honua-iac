@@ -113,6 +113,7 @@ jobs:
             "infrastructure/terraform/modules/azure-aks"
             "infrastructure/terraform/modules/aws-eks"
             "infrastructure/terraform/modules/observability-stack"
+            "infrastructure/terraform/internal/gtm-forms-router"
             "docs/devops/examples"
           )
 
