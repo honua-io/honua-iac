@@ -94,16 +94,21 @@ resource "aws_acm_certificate_validation" "demo_cloudfront" {
 # ---------------------------------------------------------------------------
 
 # Long cache for immutable tile bytes. Tiles only change on reseed, and the
-# README documents the create-invalidation step for that. min_ttl stays 0 so
-# the origin can still opt out per-response with Cache-Control if it ever
-# needs to; with no Cache-Control header (current behavior) the 24 h default
-# applies. Query strings are part of the cache key (?f=json style format
-# switches on the GeoServices/OGC routes return different bytes).
+# README documents the create-invalidation step for that. min_ttl is pinned
+# to 24 h (2026-06-12): honua-server stamps `Cache-Control: public,
+# max-age=3600` on tile responses, and with min_ttl 0 that origin header
+# silently capped the EDGE cache at 1 hour — every cache-cold pan re-rendered
+# tiles hourly and fanned out into Lambda/DB load (the 53300 burst pattern).
+# min_ttl >= default_ttl makes CloudFront hold tile bytes for the full 24 h
+# regardless of the origin's max-age. Error responses are unaffected
+# (4xx/5xx follow the error-caching TTLs, see custom_error_response).
+# Query strings are part of the cache key (?f=json style format switches on
+# the GeoServices/OGC routes return different bytes).
 resource "aws_cloudfront_cache_policy" "tiles" {
   name    = "${var.name_prefix}-${var.environment}-tiles-24h"
   comment = "24h TTL for Honua demo tile/glyph routes"
 
-  min_ttl     = 0
+  min_ttl     = 86400
   default_ttl = 86400
   max_ttl     = 86400
 
@@ -191,6 +196,22 @@ resource "aws_cloudfront_response_headers_policy" "demo_cors" {
 
     origin_override = true
   }
+
+  # Browser-facing cache contract (2026-06-12). The origin stamps
+  # `Cache-Control: public, max-age=3600`, so browsers re-fetched every tile
+  # hourly — each expiry is a synchronized burst against the edge (and, on
+  # cache misses, the origin). Tiles only change on reseed (README documents
+  # the invalidation), so let browsers keep them for 24 h and serve stale for
+  # another day while revalidating in the background instead of blocking the
+  # pan on a fresh fetch. `override = true` replaces the origin's header on
+  # these cached behaviors only; the uncached default behavior is untouched.
+  custom_headers_config {
+    items {
+      header   = "Cache-Control"
+      value    = "public, max-age=86400, stale-while-revalidate=86400"
+      override = true
+    }
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -208,6 +229,18 @@ resource "aws_cloudfront_distribution" "demo" {
   origin {
     origin_id   = "honua-api-gateway"
     domain_name = local.api_origin_domain
+
+    # Origin Shield (2026-06-12): collapse per-edge cache misses onto one
+    # regional cache in front of the origin. Without it, every CloudFront
+    # regional edge cache misses independently, so one cache-cold map view
+    # can hit the origin from several POPs at once — multiplying the Lambda
+    # scale-out (and its DB connections) for identical tile bytes. us-west-2
+    # = same region as API Gateway/Lambda, the lowest-latency (and free-tier
+    # cheapest) shield placement.
+    origin_shield {
+      enabled              = true
+      origin_shield_region = "us-west-2"
+    }
 
     custom_origin_config {
       origin_protocol_policy = "https-only"
