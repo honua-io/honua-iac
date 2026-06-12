@@ -75,7 +75,7 @@ module "honua" {
   # Run Honua's own schema migrations on startup for the initial deploy.
   # After the first successful boot this can be flipped back to true
   # (the serverless default) so cold starts skip the DbUp journal check.
-  skip_migrations = false
+  skip_migrations = true # runtime never migrates: concurrent cold starts each running migrations crash-looped the demo (2026-06-12); run migrations as a one-off job (set false only for a single first boot)
 
   # Let the in-VPC PostGIS bootstrap Lambda (its own security group) reach
   # PostgreSQL. The VPC is dedicated to this stack, so the VPC CIDR is the
