@@ -54,10 +54,31 @@ behaviors split the traffic:
 
 | Routes | Behavior |
 |---|---|
-| `/api/v1/tiles/*` (PMTiles range proxy), `/ogc/tiles/*`, `/rest/services/*/MapServer/tile/*`, `/rest/services/*/ImageServer/tile/*`, `/fonts/*`, `/terrain/*` | Cached 24 h (range requests cached natively); edge CORS response-headers policy |
+| `/api/v1/tiles/*` (PMTiles range proxy), `/ogc/tiles/*`, `/rest/services/*/MapServer/tile/*`, `/rest/services/*/ImageServer/tile/*`, `/fonts/*`, `/terrain/*` | Cached 24 h **enforced via `min_ttl`** (range requests cached natively); edge CORS response-headers policy; viewer `Cache-Control: public, max-age=86400, stale-while-revalidate=86400` |
 | Everything else (queries, OData, admin, `/healthz`) | Pass-through, no caching, all headers/query strings forwarded |
 
 Details that matter when changing this:
+
+- **`min_ttl = 86400` is load-bearing** (2026-06-12): honua-server stamps
+  `Cache-Control: public, max-age=3600` on tile responses, and with
+  `min_ttl = 0` that origin header silently capped the edge cache at **1
+  hour** — every hour each tile went cache-cold again, and a county-wide pan
+  fanned out into Lambda scale-out + database connection bursts (the 48 h
+  metrics autopsy showed 53300 connection-slot exhaustion behind exactly this
+  pattern). `min_ttl >= default_ttl` makes CloudFront keep tile bytes the
+  full 24 h regardless of the origin's `max-age`. Error responses are not
+  pinned: 4xx/5xx follow the error-caching TTLs (10 s for 5xx via
+  `custom_error_response`).
+- **Viewer caching + stale-while-revalidate**: the response-headers policy
+  overrides the viewer-facing `Cache-Control` on the cached behaviors to
+  `public, max-age=86400, stale-while-revalidate=86400`, so returning
+  visitors render tiles from the browser cache and revalidate in the
+  background instead of re-fetching the whole viewport every hour.
+- **Origin Shield (us-west-2)** is enabled on the API Gateway origin: the
+  regional edge caches collapse their misses onto one shield cache in the
+  origin's own region, so a cache-cold tile is rendered **once**, not once
+  per POP — directly shrinking the Lambda scale-out (and its database
+  connection demand) behind a burst.
 
 - **Origin** is the regional `execute-api` endpoint, *not* `demo.honua.io`
   (that record now points at CloudFront — using it as origin would loop) and
@@ -181,26 +202,45 @@ for single-node deployments (or Redis is enabled).
 
 ## Lambda → RDS connection management
 
-The module connects Lambda **directly to RDS** within the VPC — there is no
-RDS Proxy layer. Lambda's security group allows egress on port 5432 to the VPC
-CIDR, and the RDS security group allows ingress from the Lambda security group.
+The module connects Lambda **directly to RDS** within the VPC. Lambda's
+security group allows egress on port 5432 to the VPC CIDR, and the RDS
+security group allows ingress from the Lambda security group.
 
-Each Lambda invocation opens its own database connection. For a low-traffic
-demo this is fine; connections are released when the Lambda execution environment
-is recycled (typically within minutes of inactivity). At higher concurrency
-(hundreds of simultaneous Lambda instances), direct connections can exhaust
-RDS `max_connections` for `db.t4g.small` (~170 connections). Options at that
-point:
+Each Lambda execution environment runs its own Npgsql pool, so the worst-case
+connection demand is a simple product that MUST stay under the instance's
+slot ceiling (Postgres `max_connections` ≈ `DBInstanceClassMemory / 9531392`
+on RDS — ~112 slots on db.t4g.micro, ~225 on db.t4g.small, minus
+`superuser_reserved_connections` and the bootstrap/maintenance Lambda):
 
-1. **Add RDS Proxy** — reduces connection count to a pool shared across all
-   Lambda instances. The `aws-serverless` module does not currently provision a
-   proxy; you would add it outside the module and pass the proxy endpoint as
-   `existing_db_endpoint` / `existing_db_connection_string`.
-2. **Scale up RDS** — larger instance class → more connections.
-3. **Set `lambda_reserved_concurrent_executions`** — caps Lambda concurrency,
-   bounding worst-case connection count.
+```
+reserved_concurrent_executions × Maximum Pool Size + headroom < max_connections
+```
 
-For Phase A demo traffic, none of these mitigations are required.
+The 48 h metrics autopsy (2026-06-12) showed what happens when this budget is
+unbounded: cache-cold MVT tile bursts → Lambda scale-out → 53300 "remaining
+connection slots reserved" → 33% error rate. Three levers keep it bounded,
+and all three are **encoded in Terraform** so applies stop reverting
+hand-edits:
+
+1. **`lambda_reserved_concurrent_executions`** caps the number of pools.
+2. **Connection-string pool tuning** (`Maximum Pool Size`, short
+   `Connection Idle Lifetime` / `Connection Pruning Interval` so idle slots
+   are released quickly between bursts) — built into the module's
+   connection-string secret; e.g. 30 environments × pool 3 + headroom fits a
+   db.t4g.micro's ~112 slots, 50 × 4 fits a db.t4g.small's ~225.
+3. **Demand reduction in front of the function**: pre-baked PMTiles archives
+   for every demo raster AND vector layer (tile browsing never opens a DB
+   connection), 24 h pinned CloudFront TTLs, and Origin Shield (see the CDN
+   section).
+
+**RDS Proxy gotcha (2026-06-12)**: a proxy in front of RDS is the textbook
+fix here, but honua-server currently cannot speak through it — the server
+sends per-session settings as the Postgres `options` startup parameter
+(Npgsql `Options`), which RDS Proxy rejects with `0A000: Feature not
+supported: RDS Proxy currently doesn't support command-line options`, taking
+**every** DB-backed route down. Do not point the connection-string secret at
+an RDS Proxy endpoint until honua-server moves those settings to a
+physical-connection initializer.
 
 ## DNS prerequisites
 

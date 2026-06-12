@@ -94,16 +94,21 @@ resource "aws_acm_certificate_validation" "demo_cloudfront" {
 # ---------------------------------------------------------------------------
 
 # Long cache for immutable tile bytes. Tiles only change on reseed, and the
-# README documents the create-invalidation step for that. min_ttl stays 0 so
-# the origin can still opt out per-response with Cache-Control if it ever
-# needs to; with no Cache-Control header (current behavior) the 24 h default
-# applies. Query strings are part of the cache key (?f=json style format
-# switches on the GeoServices/OGC routes return different bytes).
+# README documents the create-invalidation step for that. min_ttl is pinned
+# to 24 h (2026-06-12): honua-server stamps `Cache-Control: public,
+# max-age=3600` on tile responses, and with min_ttl 0 that origin header
+# silently capped the EDGE cache at 1 hour — every cache-cold pan re-rendered
+# tiles hourly and fanned out into Lambda/DB load (the 53300 burst pattern).
+# min_ttl >= default_ttl makes CloudFront hold tile bytes for the full 24 h
+# regardless of the origin's max-age. Error responses are unaffected
+# (4xx/5xx follow the error-caching TTLs, see custom_error_response).
+# Query strings are part of the cache key (?f=json style format switches on
+# the GeoServices/OGC routes return different bytes).
 resource "aws_cloudfront_cache_policy" "tiles" {
   name    = "${var.name_prefix}-${var.environment}-tiles-24h"
   comment = "24h TTL for Honua demo tile/glyph routes"
 
-  min_ttl     = 0
+  min_ttl     = 86400
   default_ttl = 86400
   max_ttl     = 86400
 
@@ -145,6 +150,7 @@ data "aws_cloudfront_cache_policy" "caching_disabled" {
 # origin_override also masks honua-server#1627 (no CORS on error responses)
 # for these routes.
 resource "aws_cloudfront_response_headers_policy" "demo_cors" {
+  #checkov:skip=CKV_AWS_259: Demo CDN serves read-only tile/glyph bytes over HTTPS only; HSTS is enforced at the distribution viewer_certificate level (TLSv1.2_2021 + redirect-to-https) and does not require a strict-transport-security response header here.
   name    = "${var.name_prefix}-${var.environment}-tile-cors"
   comment = "CORS for cached Honua demo tile routes"
 
@@ -191,6 +197,22 @@ resource "aws_cloudfront_response_headers_policy" "demo_cors" {
 
     origin_override = true
   }
+
+  # Browser-facing cache contract (2026-06-12). The origin stamps
+  # `Cache-Control: public, max-age=3600`, so browsers re-fetched every tile
+  # hourly — each expiry is a synchronized burst against the edge (and, on
+  # cache misses, the origin). Tiles only change on reseed (README documents
+  # the invalidation), so let browsers keep them for 24 h and serve stale for
+  # another day while revalidating in the background instead of blocking the
+  # pan on a fresh fetch. `override = true` replaces the origin's header on
+  # these cached behaviors only; the uncached default behavior is untouched.
+  custom_headers_config {
+    items {
+      header   = "Cache-Control"
+      value    = "public, max-age=86400, stale-while-revalidate=86400"
+      override = true
+    }
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -198,6 +220,12 @@ resource "aws_cloudfront_response_headers_policy" "demo_cors" {
 # ---------------------------------------------------------------------------
 
 resource "aws_cloudfront_distribution" "demo" {
+  #checkov:skip=CKV_AWS_68: WAF cannot attach to an HTTP API Gateway origin; API GW throttling (burst_limit/rate_limit in main.tf) provides rate limiting for this public read-only demo CDN.
+  #checkov:skip=CKV2_AWS_47: No WAF WebACL attached (see CKV_AWS_68 rationale); Log4j AMR rule inapplicable to a CDN fronting a read-only tile/glyph API.
+  #checkov:skip=CKV_AWS_310: Single-origin demo CDN; a failover origin would duplicate infra cost for a $23/mo demo environment with no SLA requirement.
+  #checkov:skip=CKV_AWS_86: Access logging omitted for a $23/mo public read-only demo CDN; traffic analysis is available via CloudFront real-time metrics.
+  #checkov:skip=CKV_AWS_305: No default root object — the distribution proxies an API, not a static website; the root path is handled by the default_cache_behavior passthrough to API Gateway.
+  #checkov:skip=CKV_AWS_374: Geo restriction disabled intentionally; the demo is a public world-readable showcase for honua.io/demo.html with no geographic access policy.
   enabled         = true
   comment         = "Honua demo CDN — tile caching for demo.honua.io"
   aliases         = ["demo.honua.io"]
@@ -208,6 +236,18 @@ resource "aws_cloudfront_distribution" "demo" {
   origin {
     origin_id   = "honua-api-gateway"
     domain_name = local.api_origin_domain
+
+    # Origin Shield (2026-06-12): collapse per-edge cache misses onto one
+    # regional cache in front of the origin. Without it, every CloudFront
+    # regional edge cache misses independently, so one cache-cold map view
+    # can hit the origin from several POPs at once — multiplying the Lambda
+    # scale-out (and its DB connections) for identical tile bytes. us-west-2
+    # = same region as API Gateway/Lambda, the lowest-latency (and free-tier
+    # cheapest) shield placement.
+    origin_shield {
+      enabled              = true
+      origin_shield_region = "us-west-2"
+    }
 
     custom_origin_config {
       origin_protocol_policy = "https-only"
