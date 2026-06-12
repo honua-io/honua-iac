@@ -1,3 +1,6 @@
 **/.terraform/
+**/terraform.tfstate
+**/terraform.tfstate.*
+infrastructure/terraform/internal/gtm-forms-router/build/
 scripts/tf-secrets.local.sh
 scripts/tf-pass-insert.local.sh
