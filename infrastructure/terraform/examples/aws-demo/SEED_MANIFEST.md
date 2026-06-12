@@ -43,6 +43,7 @@ envelope.
 | maui-flood-hazard | /rest/services/maui-flood-hazard/FeatureServer/4 | 2,014 | Hazards/MapServer/4 "Maui County DFIRM" (FEMA) | FEMA DFIRM | Public domain (FEMA) |
 | maui-sea-level-rise | /rest/services/maui-sea-level-rise/FeatureServer/5 | 3 (island multipolygons: Maui, Molokaʻi, Lānaʻi; Kahoʻolawe not modeled by UH CGG) | Climate/MapServer/45 "SLR Exposure Area - 3.2 Ft. Scenario" (UH/NOAA) | PacIOOS/UH-SOEST SLR viewer | Public domain |
 | maui-place-names | /rest/services/maui-place-names/FeatureServer/6 | 2,328 | HistoricCultural/MapServer/2 "Place Names" (USGS GNIS) | GNIS | Public domain; Hawaiian diacriticals preserved (UTF-8 end to end) |
+| maui-buildings | /rest/services/maui-buildings/FeatureServer/13 | 42,674 | Overture Maps Foundation release 2026-05-20.0, `s3://overturemaps-us-west-2/release/2026-05-20.0/theme=buildings/type=building/` (extracted with the same Maui Nui bbox; seeded 2026-06-12 for /demo-maui-3d.html) | Overture 2026-05-20.0 | **ODbL** — attribution "Overture Maps Foundation · © OpenStreetMap contributors" required; rendered by the demo page's map attribution control |
 
 Processing notes:
 - Flood simplified `-simplify 0.000005`; SLR fetched with server-side
@@ -54,6 +55,31 @@ Processing notes:
   (tmk_txt, zone_code/zone_dist, fullname/streetname, fld_zone,
   feature_name→name/feature_class; SLR carries constant scenario_ft_32=32).
 - MVT source-layer inside tiles is the constant `layer` (PostGIS ST_AsMVT).
+- maui-buildings (Overture → DuckDB → FlatGeobuf, 12.7 MB): downloaded with
+  the `overturemaps` CLI (pyarrow; plain DuckDB-over-S3 hung on a dead
+  connection), converted with DuckDB spatial keeping `height`, `num_floors`
+  (levels), `class`/`subtype`, `names.primary`→`name`, plus a computed
+  `render_height = COALESCE(height, num_floors*3.0, 4.0)` and a
+  `height_source` provenance column (`measured` 12,972 / `floors_x3m` 1,365 /
+  `default_4m` 28,337). Geometries normalized `ST_Multi` →
+  `geometry(MultiPolygon,4326)` (the publish validator requires a concrete
+  geometry type in `geometry_columns`); max 262 vertices/feature.
+- GOTCHA (bootstrap-lambda SQL): the maintenance-mode session's search_path
+  is `"$user", public` and the DB user is `honua` — the same name as Honua's
+  metadata SCHEMA — so unqualified `CREATE TABLE maui_buildings` lands in
+  `honua.maui_buildings`, which table discovery deliberately excludes
+  (metadata schema) → publish fails "not found or does not expose a
+  discoverable geometry column". Always schema-qualify DDL (`public.…`) in
+  bootstrap-lambda statements.
+- Publishing via `POST /api/v1/admin/connections/{id}/layers` materializes
+  `public.features` for the new layer at publish time (42,674 rows verified);
+  the DELETE+INSERT re-sync is only needed after RE-imports. New services
+  default to authenticated access — anonymous read is enabled with
+  `PUT /api/v1/admin/services/{name}/access-policy {"allowAnonymous": true}`.
+- maui-buildings MVT source maxzoom is 14 (buildings need real z14 geometry;
+  measured tile sizes: Kahului z14 176 KB < z13 280 KB < z12 562 KB, so z14
+  is the cheapest deep zoom). CloudFront (`/ogc/tiles/*`, 24 h TTL) absorbs
+  repeats; the three demo scene cameras were pre-warmed after seeding.
 
 ## Raster layers (PostGIS raster, honua.raster_data)
 
@@ -98,9 +124,10 @@ DB-side raster post-processing (postgis-bootstrap Lambda maintenance mode):
 
 - Secure connection `demo-rds` (SecretReference to the stack's
   connection-string secret) — id 4f468b76-9937-4835-9e64-ddc8012b30c1.
-- 9 services (maui-parcels, maui-zoning, maui-roads, maui-flood-hazard,
-  maui-sea-level-rise, maui-place-names, maui-hillshade, maui-terrain,
-  maui-imagery), all with `allowAnonymous: true` read access policies.
+- 10 demo-page services (maui-parcels, maui-zoning, maui-roads,
+  maui-flood-hazard, maui-sea-level-rise, maui-place-names, maui-hillshade,
+  maui-terrain, maui-imagery, maui-buildings), all with
+  `allowAnonymous: true` read access policies.
 
 ## License posture
 
