@@ -150,6 +150,7 @@ data "aws_cloudfront_cache_policy" "caching_disabled" {
 # origin_override also masks honua-server#1627 (no CORS on error responses)
 # for these routes.
 resource "aws_cloudfront_response_headers_policy" "demo_cors" {
+  #checkov:skip=CKV_AWS_259: Demo CDN serves read-only tile/glyph bytes over HTTPS only; HSTS is enforced at the distribution viewer_certificate level (TLSv1.2_2021 + redirect-to-https) and does not require a strict-transport-security response header here.
   name    = "${var.name_prefix}-${var.environment}-tile-cors"
   comment = "CORS for cached Honua demo tile routes"
 
@@ -219,6 +220,12 @@ resource "aws_cloudfront_response_headers_policy" "demo_cors" {
 # ---------------------------------------------------------------------------
 
 resource "aws_cloudfront_distribution" "demo" {
+  #checkov:skip=CKV_AWS_68: WAF cannot attach to an HTTP API Gateway origin; API GW throttling (burst_limit/rate_limit in main.tf) provides rate limiting for this public read-only demo CDN.
+  #checkov:skip=CKV2_AWS_47: No WAF WebACL attached (see CKV_AWS_68 rationale); Log4j AMR rule inapplicable to a CDN fronting a read-only tile/glyph API.
+  #checkov:skip=CKV_AWS_310: Single-origin demo CDN; a failover origin would duplicate infra cost for a $23/mo demo environment with no SLA requirement.
+  #checkov:skip=CKV_AWS_86: Access logging omitted for a $23/mo public read-only demo CDN; traffic analysis is available via CloudFront real-time metrics.
+  #checkov:skip=CKV_AWS_305: No default root object — the distribution proxies an API, not a static website; the root path is handled by the default_cache_behavior passthrough to API Gateway.
+  #checkov:skip=CKV_AWS_374: Geo restriction disabled intentionally; the demo is a public world-readable showcase for honua.io/demo.html with no geographic access policy.
   enabled         = true
   comment         = "Honua demo CDN — tile caching for demo.honua.io"
   aliases         = ["demo.honua.io"]

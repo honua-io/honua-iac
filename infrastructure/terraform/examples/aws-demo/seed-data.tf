@@ -21,6 +21,13 @@ locals {
 }
 
 resource "aws_s3_bucket" "demo_data" {
+  #checkov:skip=CKV_AWS_18: Access logging omitted for the public read-only demo FileStorage bucket; cost and complexity unjustified for a $23/mo demo environment.
+  #checkov:skip=CKV_AWS_21: Versioning disabled; demo data is reseeded via scripts rather than versioned — enabling versioning would accumulate unbounded storage cost on a demo bucket.
+  #checkov:skip=CKV_AWS_144: Cross-region replication not required; demo environment has no DR or SLA requirement.
+  #checkov:skip=CKV_AWS_145: SSE-S3 (AES-256) is applied via aws_s3_bucket_server_side_encryption_configuration; KMS CMK is not required for open-licensed demo glyph/tile data.
+  #checkov:skip=CKV2_AWS_6: Public access block is intentionally partial (see aws_s3_bucket_public_access_block.demo_data) to allow the bucket policy that exposes the fonts/ prefix.
+  #checkov:skip=CKV2_AWS_61: No lifecycle policy; demo bucket contains static seed assets that are replaced wholesale on reseed rather than aged out.
+  #checkov:skip=CKV2_AWS_62: Event notifications not required for a read-only demo FileStorage bucket with no automated downstream processing.
   bucket = local.data_bucket_name
   tags   = local.common_tags
 }
@@ -29,6 +36,8 @@ resource "aws_s3_bucket" "demo_data" {
 # fonts/ prefix (open-licensed glyph PBFs only — everything else in the bucket
 # remains private and is reached through the Lambda role or presigned URLs).
 resource "aws_s3_bucket_public_access_block" "demo_data" {
+  #checkov:skip=CKV_AWS_54: block_public_policy=false is required to allow the aws_s3_bucket_policy that exposes the fonts/ prefix; all other prefixes remain private via the IAM policy.
+  #checkov:skip=CKV_AWS_56: restrict_public_buckets=false is required to serve the fonts/ prefix via the public bucket policy; the policy is scoped to s3:GetObject on fonts/* only.
   bucket                  = aws_s3_bucket.demo_data.id
   block_public_acls       = true
   ignore_public_acls      = true
@@ -52,6 +61,7 @@ resource "aws_s3_bucket_cors_configuration" "demo_data" {
 }
 
 resource "aws_s3_bucket_policy" "demo_data_fonts_public" {
+  #checkov:skip=CKV_AWS_70: Principal="*" is intentional; map glyph PBFs (open-licensed Noto Sans SDF fonts) must be world-readable so MapLibre can load them from any browser without authentication.
   bucket = aws_s3_bucket.demo_data.id
   policy = jsonencode({
     Version = "2012-10-17"
@@ -128,6 +138,7 @@ resource "aws_apigatewayv2_integration" "fonts" {
 }
 
 resource "aws_apigatewayv2_route" "fonts" {
+  #checkov:skip=CKV_AWS_309: Authorization type is intentionally NONE; the /fonts route is a public proxy to open-licensed SDF glyph PBFs that MapLibre fetches unauthenticated from any browser.
   api_id    = local.api_id
   route_key = "GET /fonts/{proxy+}"
   target    = "integrations/${aws_apigatewayv2_integration.fonts.id}"
