@@ -82,14 +82,17 @@ module "honua" {
   db_multi_az          = false # single-AZ for demo cost
   db_apply_immediately = true  # demo: take the short resize outage now, not in the maintenance window
 
-  # RDS Proxy: every Lambda execution environment runs its own Npgsql pool,
-  # so scale-out multiplies database connections until Postgres runs out of
-  # slots. The proxy terminates those per-environment connections and
-  # multiplexes them onto the instance — bursts now queue at the proxy
-  # (connection_borrow_timeout) instead of erroring with 53300. ~$22/mo for
-  # the 2-vCPU target. The proxy reads its auth secret over the existing
-  # Secrets Manager interface endpoint (vpc-endpoints.tf, VPC-CIDR ingress).
-  db_proxy_enabled = true
+  # RDS Proxy: WANTED but BLOCKED by the server (2026-06-12). The proxy went
+  # live and its target registered healthy, but every pooled connection then
+  # failed with "0A000: Feature not supported: RDS Proxy currently doesn't
+  # support command-line options" — Honua's PostgresDataSourceFactory sends
+  # lock/statement/idle timeouts and search_path as Npgsql `Options` (the
+  # Postgres `options` startup parameter), which RDS Proxy rejects. Tracked
+  # in honua-server (move them to a physical-connection initializer); flip
+  # this to true once a fixed image is deployed. Until then the t4g.small
+  # headroom carries the load: 50 environments x Maximum Pool Size 4 = 200
+  # direct connections under the ~225-slot ceiling.
+  db_proxy_enabled = false
   # Encodes the connection-string tuning previously hand-edited into the
   # Secrets Manager secret (an apply used to silently revert it). Pool stays
   # small on purpose: one pool per Lambda environment.
