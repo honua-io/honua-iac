@@ -46,9 +46,12 @@ module "honua" {
   # The AOT image keeps cold start latency short (~200–400 ms typical).
   lambda_reserved_concurrent_executions = null
 
-  # Allow first-boot migrations to run past the API Gateway 30 s response
-  # ceiling: API Gateway gives up at 30 s, but the Lambda keeps executing and
-  # finishes the migration run, so the next request succeeds.
+  # 60 s bounds abandoned work: API Gateway gives up at 30 s, but the Lambda
+  # keeps executing until this timeout. During seeding this was raised to 600
+  # (the county-parcels synchronous import needs ~5 min); steady-state it must
+  # stay LOW — a browser tile burst that outruns the db.t4g.micro otherwise
+  # leaves a pile of orphaned multi-minute queries that starve the database
+  # and 500 every later request. Raise temporarily for future bulk re-seeds.
   lambda_timeout_seconds = 60
 
   # Secrets
@@ -105,6 +108,35 @@ module "honua" {
     MultiTenancy__DefaultTenantId = "public"
     # Allow the API Gateway custom domain as a valid host
     HostValidation__AllowedHosts__1 = "demo.honua.io"
+
+    # FileStorage on S3 (see seed-data.tf): import staging for >10 MB vector
+    # uploads and the PMTiles range proxy both resolve against this bucket.
+    # Credentials are intentionally omitted so the AWS SDK falls back to the
+    # Lambda execution role.
+    FileStorage__Provider              = "AwsS3"
+    FileStorage__AwsS3__BucketName     = local.data_bucket_name
+    FileStorage__AwsS3__Region         = var.region
+    FileStorage__AwsS3__ForcePathStyle = "false"
+    # The demo contract serves the basemap at /api/v1/tiles/pmtiles/maui-basemap,
+    # i.e. the artifact lives at the bucket root. "/" normalizes to an empty
+    # publish prefix so the proxy accepts root-level artifact keys.
+    FileStorage__PMTilesPublish__KeyPrefix = "/"
+
+    # Request budget pairs with lambda_timeout_seconds above. Raise both to
+    # 10 minutes temporarily for bulk synchronous re-seeds (county parcels
+    # needs it); steady-state keep them tight so orphaned tile queries get
+    # cancelled instead of starving db.t4g.micro for minutes after a burst.
+    Limits__Connections__RequestTimeout = "00:01:00"
+
+    # Application-level CORS so https://honua.io/demo.html can call
+    # /rest/*, /ogc/*, and /api/v1/tiles/* (the /fonts route gets its CORS
+    # header from the API Gateway integration mapping in seed-data.tf).
+    Cors__AllowedOrigins__0 = "https://honua.io"
+    Cors__AllowedOrigins__1 = "https://www.honua.io"
+    # Local demo.html development/verification (python -m http.server 8123
+    # in honua-site) — harmless for a public-data demo server.
+    Cors__AllowedOrigins__2 = "http://localhost:8123"
+    Cors__AllowCredentials  = "false"
   }
 
   tags = local.common_tags
