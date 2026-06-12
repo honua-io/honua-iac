@@ -116,23 +116,26 @@ resource "aws_iam_role_policy" "postgis_bootstrap_secret" {
 }
 
 #checkov:skip=CKV_AWS_50: One-shot bootstrap helper; X-Ray adds no value.
+#checkov:skip=CKV_AWS_115: One-shot bootstrap helper; concurrent execution limit set to 1 explicitly below.
 #checkov:skip=CKV_AWS_116: Invoked synchronously by Terraform; a DLQ is meaningless.
 #checkov:skip=CKV_AWS_173: The env var holds a secret ARN, not secret material.
 #checkov:skip=CKV_AWS_272: Code signing is unnecessary for a Terraform-built helper zip.
 resource "aws_lambda_function" "postgis_bootstrap" {
   #checkov:skip=CKV_AWS_50: One-shot bootstrap helper; X-Ray adds no value.
+  #checkov:skip=CKV_AWS_115: One-shot bootstrap helper; concurrent execution limit set to 1 explicitly below.
   #checkov:skip=CKV_AWS_116: Invoked synchronously by Terraform; a DLQ is meaningless.
   #checkov:skip=CKV_AWS_173: The env var holds a secret ARN, not secret material.
   #checkov:skip=CKV_AWS_272: Code signing is unnecessary for a Terraform-built helper zip.
-  function_name    = local.postgis_bootstrap_func_name
-  role             = aws_iam_role.postgis_bootstrap.arn
-  runtime          = "python3.13"
-  handler          = "handler.handler"
-  architectures    = ["arm64"]
-  filename         = data.archive_file.postgis_bootstrap.output_path
-  source_code_hash = data.archive_file.postgis_bootstrap.output_base64sha256
-  timeout          = 120
-  memory_size      = 256
+  function_name                  = local.postgis_bootstrap_func_name
+  role                           = aws_iam_role.postgis_bootstrap.arn
+  runtime                        = "python3.13"
+  handler                        = "handler.handler"
+  architectures                  = ["arm64"]
+  filename                       = data.archive_file.postgis_bootstrap.output_path
+  source_code_hash               = data.archive_file.postgis_bootstrap.output_base64sha256
+  timeout                        = 120
+  memory_size                    = 256
+  reserved_concurrent_executions = 1
 
   vpc_config {
     subnet_ids         = module.honua.private_subnet_ids

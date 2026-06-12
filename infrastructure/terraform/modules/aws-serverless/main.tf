@@ -439,8 +439,10 @@ resource "aws_secretsmanager_secret_version" "redis_connection" {
 }
 
 #checkov:skip=CKV_AWS_158: Log-group KMS integration is optional and supplied by the deployment environment.
+#checkov:skip=CKV_AWS_338: Retention period is caller-configurable; demo environments intentionally use shorter retention to manage cost.
 resource "aws_cloudwatch_log_group" "lambda" {
   #checkov:skip=CKV_AWS_158: Log-group KMS integration is optional and supplied by the deployment environment.
+  #checkov:skip=CKV_AWS_338: Retention period is caller-configurable; demo environments intentionally use shorter retention to manage cost.
   name              = "/aws/lambda/${local.name}-honua"
   retention_in_days = var.log_retention_days
   tags              = local.tags
@@ -500,8 +502,10 @@ resource "aws_lambda_alias" "live" {
 }
 
 #checkov:skip=CKV_AWS_158: Log-group KMS integration is optional and supplied by the deployment environment.
+#checkov:skip=CKV_AWS_338: Retention period is caller-configurable; demo environments intentionally use shorter retention to manage cost.
 resource "aws_cloudwatch_log_group" "api_gateway" {
   #checkov:skip=CKV_AWS_158: Log-group KMS integration is optional and supplied by the deployment environment.
+  #checkov:skip=CKV_AWS_338: Retention period is caller-configurable; demo environments intentionally use shorter retention to manage cost.
   name              = "/aws/apigateway/${local.name}-honua"
   retention_in_days = var.log_retention_days
   tags              = local.tags
