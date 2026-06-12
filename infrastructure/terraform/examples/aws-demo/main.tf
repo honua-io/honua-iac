@@ -44,7 +44,14 @@ module "honua" {
 
   # No provisioned concurrency: cold starts are acceptable for a demo.
   # The AOT image keeps cold start latency short (~200–400 ms typical).
-  lambda_reserved_concurrent_executions = null
+  #
+  # Reserved concurrency 50 (2026-06-12, LIVE): was 20, set out-of-band in
+  # the console as an emergency brake when browser tile bursts exhausted the
+  # micro instance's connection slots (53300) — encoded here so applies stop
+  # reverting it. 50 environments x Maximum Pool Size 4 = 200 direct
+  # connections, under db.t4g.small's ~225-slot ceiling; bursts beyond 50
+  # throttle at Lambda instead of 500ing every in-flight request.
+  lambda_reserved_concurrent_executions = 50
 
   # 60 s bounds abandoned work: API Gateway gives up at 30 s, but the Lambda
   # keeps executing until this timeout. During seeding this was raised to 600
@@ -57,14 +64,25 @@ module "honua" {
   # Secrets
   admin_password = var.honua_admin_password
 
-  # Database — db.t4g.micro + PostGIS (micro is plenty for demo traffic and
-  # roughly halves the RDS bill vs db.t4g.small)
-  db_instance_class    = "db.t4g.micro"
+  # Database — db.t4g.small + PostGIS (upgraded from micro 2026-06-12 with
+  # founder approval, APPLIED LIVE: tile bursts exhausted micro's ~112
+  # connection slots — 4,400+ Npgsql 53300 errors in 48h while CPU never
+  # passed 48%; small doubles memory and the max_connections formula
+  # (~225 slots) for roughly +$12/mo).
+  db_instance_class    = "db.t4g.small"
   db_allocated_storage = 20
   db_engine_version    = "15"
   db_password          = var.db_password
   db_require_ssl       = true
   db_multi_az          = false # single-AZ for demo cost
+  db_apply_immediately = true  # demo: take resize outages now, not in the maintenance window
+
+  # Npgsql pool tuning, LIVE in the connection-string secret since
+  # 2026-06-12 (previously hand-edited there — an apply used to silently
+  # revert it). Pool stays small on purpose: every Lambda execution
+  # environment runs its own pool, so worst case is
+  # reserved_concurrency x Maximum Pool Size connections.
+  db_connection_string_options = "Maximum Pool Size=4;Connection Idle Lifetime=60;Connection Pruning Interval=30"
 
   # PostGIS + PostGIS Raster are required by Honua, but the module's
   # enable_postgis local-exec needs psql plus a network path to the private
