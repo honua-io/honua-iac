@@ -124,3 +124,8 @@ output "redis_connection_secret_arn" {
   value     = local.redis_connection != "" ? aws_secretsmanager_secret.redis_connection[0].arn : null
   sensitive = true
 }
+
+output "db_proxy_endpoint" {
+  description = "RDS Proxy endpoint the application connection string uses (null when the proxy is disabled)."
+  value       = local.db_proxy_enabled ? aws_db_proxy.db[0].endpoint : null
+}

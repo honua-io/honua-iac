@@ -335,3 +335,26 @@ variable "serve_admin_ui" {
   type        = bool
   default     = false
 }
+
+variable "db_proxy_enabled" {
+  description = "Provision an RDS Proxy in front of the module-managed PostgreSQL instance and point the application connection string at it. Lambda scale-out otherwise multiplies Npgsql pools (one per execution environment) until Postgres connection slots are exhausted (SQLSTATE 53300); the proxy pools and multiplexes those connections so bursts queue instead of erroring. Ignored when existing_db_endpoint/existing_db_connection_string are used."
+  type        = bool
+  default     = false
+}
+
+variable "db_connection_string_options" {
+  description = "Extra Npgsql options appended to the generated connection string, e.g. \"Maximum Pool Size=4;Connection Idle Lifetime=60\". A leading separator is added automatically. With many concurrent Lambda environments, keep Maximum Pool Size small — each environment gets its own pool."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = !startswith(var.db_connection_string_options, ";")
+    error_message = "db_connection_string_options must not start with ';' — the separator is added automatically."
+  }
+}
+
+variable "db_apply_immediately" {
+  description = "Apply RDS instance modifications (e.g. instance class changes) immediately instead of waiting for the maintenance window. Causes a short outage on resize; acceptable for non-prod stacks."
+  type        = bool
+  default     = false
+}

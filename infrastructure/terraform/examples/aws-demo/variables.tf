@@ -40,9 +40,9 @@ variable "route53_zone_id" {
 }
 
 variable "lambda_memory_size" {
-  description = "Lambda memory in MB. 1024 MB is the default and sufficient for demo traffic. Increase to 2048 for larger payloads."
+  description = "Lambda memory in MB. 2048 matches the live function (raised out-of-band from 1024 during seeding; Lambda CPU scales with memory and tile rendering is CPU-bound — encoded here 2026-06-12 so applies stop reverting it)."
   type        = number
-  default     = 1024
+  default     = 2048
 }
 
 variable "api_throttle_burst_limit" {

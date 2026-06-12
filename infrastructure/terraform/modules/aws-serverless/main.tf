@@ -71,10 +71,15 @@ resource "random_password" "redis_auth" {
 }
 
 locals {
-  db_password          = var.db_password != null ? var.db_password : (local.db_use_existing ? "" : random_password.db[0].result)
-  db_ssl               = var.db_require_ssl ? ";SSL Mode=Require;Trust Server Certificate=false" : ""
+  db_password = var.db_password != null ? var.db_password : (local.db_use_existing ? "" : random_password.db[0].result)
+  db_ssl      = var.db_require_ssl ? ";SSL Mode=Require;Trust Server Certificate=false" : ""
+  # db_endpoint stays the INSTANCE address (used by enable_postgis and exposed
+  # for out-of-band administration); the application connection string goes
+  # through the RDS Proxy when db_proxy_enabled (see rds-proxy.tf).
   db_endpoint          = local.db_use_existing ? var.existing_db_endpoint : module.rds[0].db_instance_address
-  db_connection_string = local.db_use_existing ? var.existing_db_connection_string : "Host=${local.db_endpoint};Port=5432;Database=${var.db_name};Username=${var.db_username};Password=${local.db_password}${local.db_ssl}"
+  db_app_endpoint      = local.db_proxy_enabled ? aws_db_proxy.db[0].endpoint : local.db_endpoint
+  db_conn_options      = var.db_connection_string_options != "" ? ";${var.db_connection_string_options}" : ""
+  db_connection_string = local.db_use_existing ? var.existing_db_connection_string : "Host=${local.db_app_endpoint};Port=5432;Database=${var.db_name};Username=${var.db_username};Password=${local.db_password}${local.db_ssl}${local.db_conn_options}"
   lambda_function_name = "${local.name}-honua"
   lambda_target_id     = "${local.lambda_function_name}-${var.lambda_alias_name}"
   redis_secret_environment = local.redis_connection != "" ? {
@@ -200,6 +205,19 @@ resource "aws_security_group" "rds" {
     security_groups = [aws_security_group.lambda.id]
   }
 
+  # One-directional reference (proxy SG -> rds SG) on purpose: referencing the
+  # rds SG from the proxy SG's egress as well would create a resource cycle.
+  dynamic "ingress" {
+    for_each = local.db_proxy_enabled ? [1] : []
+    content {
+      description     = "PostgreSQL from RDS Proxy"
+      from_port       = 5432
+      to_port         = 5432
+      protocol        = "tcp"
+      security_groups = [aws_security_group.db_proxy[0].id]
+    }
+  }
+
   dynamic "ingress" {
     for_each = toset(var.db_additional_ingress_cidrs)
     content {
@@ -304,6 +322,7 @@ module "rds" {
 
   publicly_accessible = var.db_publicly_accessible
   multi_az            = var.db_multi_az
+  apply_immediately   = var.db_apply_immediately
 
   backup_retention_period = var.environment == "prod" ? 7 : 3
   maintenance_window      = "Sun:04:00-Sun:05:00"

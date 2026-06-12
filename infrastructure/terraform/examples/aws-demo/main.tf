@@ -44,12 +44,21 @@ module "honua" {
 
   # No provisioned concurrency: cold starts are acceptable for a demo.
   # The AOT image keeps cold start latency short (~200–400 ms typical).
-  lambda_reserved_concurrent_executions = null
+  #
+  # Reserved concurrency 50 (2026-06-12): was 20, set out-of-band in the
+  # console as an emergency brake when browser tile bursts exhausted the
+  # micro instance's connection slots (53300) — encoded here so applies stop
+  # reverting it. With RDS Proxy multiplexing the per-environment Npgsql
+  # pools (db_proxy_enabled below), 50 environments × Maximum Pool Size 4 =
+  # 200 client connections pool safely onto the database; anything beyond 50
+  # throttles at Lambda instead of 500ing every in-flight request, and 50 is
+  # high enough that one visitor's tile burst no longer throttles itself.
+  lambda_reserved_concurrent_executions = 50
 
   # 60 s bounds abandoned work: API Gateway gives up at 30 s, but the Lambda
   # keeps executing until this timeout. During seeding this was raised to 600
   # (the county-parcels synchronous import needs ~5 min); steady-state it must
-  # stay LOW — a browser tile burst that outruns the db.t4g.micro otherwise
+  # stay LOW — a browser tile burst that outruns the database otherwise
   # leaves a pile of orphaned multi-minute queries that starve the database
   # and 500 every later request. Raise temporarily for future bulk re-seeds.
   lambda_timeout_seconds = 60
@@ -57,14 +66,34 @@ module "honua" {
   # Secrets
   admin_password = var.honua_admin_password
 
-  # Database — db.t4g.micro + PostGIS (micro is plenty for demo traffic and
-  # roughly halves the RDS bill vs db.t4g.small)
-  db_instance_class    = "db.t4g.micro"
+  # Database — db.t4g.small + PostGIS, behind RDS Proxy.
+  #
+  # Upgraded micro → small 2026-06-12: 48h of CloudWatch showed map-tile
+  # bursts exhausting micro's ~112 connection slots (4,400+ Npgsql 53300
+  # errors, DatabaseConnections peaking at 110, one-third of all Lambda
+  # invocations erroring) while CPU never passed 48% — connections, not
+  # compute, were the ceiling. small doubles memory and the max_connections
+  # formula (~225 slots) for roughly +$12/mo.
+  db_instance_class    = "db.t4g.small"
   db_allocated_storage = 20
   db_engine_version    = "15"
   db_password          = var.db_password
   db_require_ssl       = true
   db_multi_az          = false # single-AZ for demo cost
+  db_apply_immediately = true  # demo: take the short resize outage now, not in the maintenance window
+
+  # RDS Proxy: every Lambda execution environment runs its own Npgsql pool,
+  # so scale-out multiplies database connections until Postgres runs out of
+  # slots. The proxy terminates those per-environment connections and
+  # multiplexes them onto the instance — bursts now queue at the proxy
+  # (connection_borrow_timeout) instead of erroring with 53300. ~$22/mo for
+  # the 2-vCPU target. The proxy reads its auth secret over the existing
+  # Secrets Manager interface endpoint (vpc-endpoints.tf, VPC-CIDR ingress).
+  db_proxy_enabled = true
+  # Encodes the connection-string tuning previously hand-edited into the
+  # Secrets Manager secret (an apply used to silently revert it). Pool stays
+  # small on purpose: one pool per Lambda environment.
+  db_connection_string_options = "Maximum Pool Size=4;Connection Idle Lifetime=60;Connection Pruning Interval=30"
 
   # PostGIS + PostGIS Raster are required by Honua, but the module's
   # enable_postgis local-exec needs psql plus a network path to the private
@@ -125,7 +154,7 @@ module "honua" {
     # Request budget pairs with lambda_timeout_seconds above. Raise both to
     # 10 minutes temporarily for bulk synchronous re-seeds (county parcels
     # needs it); steady-state keep them tight so orphaned tile queries get
-    # cancelled instead of starving db.t4g.micro for minutes after a burst.
+    # cancelled instead of starving the database for minutes after a burst.
     Limits__Connections__RequestTimeout = "00:01:00"
 
     # Application-level CORS so https://honua.io/demo.html can call
