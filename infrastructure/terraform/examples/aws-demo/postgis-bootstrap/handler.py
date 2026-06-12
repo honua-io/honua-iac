@@ -50,6 +50,27 @@ def handler(event, context):
         timeout=30,
     )
     try:
+        # Maintenance mode: the demo seeding workflow invokes this Lambda with
+        # explicit statements (and an optional trailing query) because the RDS
+        # instance is reachable only from inside the VPC. Invocation is gated
+        # by IAM (lambda:InvokeFunction), the same trust boundary as the
+        # original bootstrap behavior.
+        statements = (event or {}).get("statements")
+        query = (event or {}).get("query")
+        if statements or query:
+            results = []
+            for statement in statements or []:
+                connection.run(statement)
+                results.append({"statement": statement[:120], "ok": True})
+            payload = {"statements": results}
+            if query:
+                rows = connection.run(query)
+                payload["rows"] = [
+                    [None if cell is None else str(cell) for cell in row]
+                    for row in rows[:1000]
+                ]
+            return payload
+
         for extension in ("postgis", "postgis_raster"):
             connection.run(f"CREATE EXTENSION IF NOT EXISTS {extension}")
         rows = connection.run(
