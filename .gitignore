@@ -1,6 +1,12 @@
 **/.terraform/
-**/terraform.tfstate
-**/terraform.tfstate.*
+# Local operator inputs/state — terraform.tfvars contains secrets, never commit.
+**/terraform.tfvars
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfplan
+# Apply-time build artifacts for the aws-demo PostGIS bootstrap Lambda.
+infrastructure/terraform/examples/aws-demo/postgis-bootstrap/build/
+infrastructure/terraform/examples/aws-demo/postgis-bootstrap/bootstrap.zip
 infrastructure/terraform/internal/gtm-forms-router/build/
 scripts/tf-secrets.local.sh
 scripts/tf-pass-insert.local.sh

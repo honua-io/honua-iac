@@ -1,0 +1,37 @@
+# Copy to terraform.tfvars and fill in real values.
+# NEVER commit terraform.tfvars — it contains secrets.
+
+region      = "us-west-2"
+environment = "demo"
+name_prefix = "honua-demo"
+
+# Lambda AOT image — pin to an immutable release tag or digest from ECR.
+# The image MUST be pushed to ECR before apply (Lambda requires ECR; GHCR is
+# not supported directly by Lambda). Push the ghcr.io image to your ECR repo.
+# Example after push:
+#   honua_image = "123456789012.dkr.ecr.us-west-2.amazonaws.com/honua-server:v1.5.0-lambda-aot"
+honua_image = "123456789012.dkr.ecr.us-west-2.amazonaws.com/honua-server:v1.5.0-lambda-aot"
+
+# Minimum 32 characters — also used as Security__ConnectionEncryption__MasterKey.
+# Generate: openssl rand -hex 32
+honua_admin_password = "REPLACE_WITH_STRONG_SECRET_MIN_32_CHARS"
+
+# Leave null to let Terraform auto-generate a secure password.
+# db_password = null
+
+# Route53 hosted zone ID for the zone that owns demo.honua.io.
+# See README.md — DNS prerequisites for the required hosted zone setup.
+route53_zone_id = "ZXXXXXXXXXXXXXXXXX"
+
+# Lambda memory (MB). 1024 is the module default and sensible for demo traffic.
+# Cold starts are acceptable for a demo; the AOT image keeps them short.
+# lambda_memory_size = 1024
+
+# API Gateway throttle limits. Replaces WAF (HTTP API does not support WAFv2).
+# api_throttle_burst_limit = 200   # concurrent burst
+# api_throttle_rate_limit  = 50    # requests/second steady state
+
+tags = {
+  Owner      = "platform"
+  CostCentre = "demo"
+}
