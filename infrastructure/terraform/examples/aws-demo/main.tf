@@ -127,12 +127,20 @@ module "honua" {
     # Allow the API Gateway custom domain as a valid host
     HostValidation__AllowedHosts__1 = "demo.honua.io"
 
-    # Honor X-Forwarded-Host/Proto stamped at the edge (2026-06-12): the
-    # CloudFront viewer-request function in cloudfront.tf injects
-    # `X-Forwarded-Host: demo.honua.io` because the origin is the execute-api
-    # endpoint and the viewer Host header can never pass through. Without
-    # this, absolute URLs in @odata.context and /rest/services self-links
-    # advertised the Lambda Web Adapter's local binding (localhost:8080).
+    # Advertised absolute URLs (2026-06-12). Two lanes, both required:
+    #
+    # 1. Public__BaseUrl — BaseUrlResolver (src/Honua.Hosting/Features/
+    #    Helpers/BaseUrlResolver.cs) NEVER trusts request Host headers for
+    #    link generation; without an explicit public base URL it derives a
+    #    local origin, so /rest/services self-links advertised
+    #    `localhost:8080` (the Lambda Web Adapter binding).
+    # 2. ForwardedHeaders__Enabled — surfaces honoring Request.Host/Scheme
+    #    (@odata.context et al.) need X-Forwarded-Host/Proto applied; the
+    #    CloudFront viewer-request function in cloudfront.tf injects
+    #    `X-Forwarded-Host: demo.honua.io` because the origin is the
+    #    execute-api endpoint and the viewer Host can never pass through
+    #    (API Gateway routes by Host).
+    Public__BaseUrl           = "https://demo.honua.io"
     ForwardedHeaders__Enabled = "true"
 
     # FileStorage on S3 (see seed-data.tf): import staging for >10 MB vector

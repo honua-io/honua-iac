@@ -221,22 +221,25 @@ resource "aws_cloudfront_response_headers_policy" "demo_cors" {
 # the server (API Gateway routes by Host, and the origin-request policy is
 # AllViewerExceptHostHeader). Without it the server falls back to its local
 # binding when building absolute URLs, so @odata.context and /rest/services
-# self-links advertised `localhost:8080`. The server honors X-Forwarded-Host /
-# X-Forwarded-Proto when ForwardedHeaders__Enabled=true (set in main.tf
-# additional_env; src/Honua.Server/Startup/StartupConfigurationHelpers.cs),
-# so stamp the public hostname on every viewer request at the edge.
+# self-links advertised `localhost:8080`. The server honors X-Forwarded-Host
+# when ForwardedHeaders__Enabled=true (set in main.tf additional_env;
+# src/Honua.Server/Startup/StartupConfigurationHelpers.cs), so stamp the
+# public hostname on every viewer request at the edge.
 # ---------------------------------------------------------------------------
 
 resource "aws_cloudfront_function" "forwarded_host" {
   name    = "${var.name_prefix}-${var.environment}-forwarded-host"
   runtime = "cloudfront-js-2.0"
-  comment = "Inject X-Forwarded-Host/Proto for demo.honua.io (origin is API GW; viewer Host cannot pass through)"
+  comment = "Inject X-Forwarded-Host for demo.honua.io (origin is API GW; viewer Host cannot pass through)"
   publish = true
-  code    = <<-EOT
+  # X-Forwarded-Proto is NOT injected here: it is a read-only header for
+  # CloudFront Functions (setting it fails every request at the edge with a
+  # 502 FunctionValidationError). API Gateway stamps X-Forwarded-Proto: https
+  # toward the Lambda anyway, so the server still sees the right scheme.
+  code = <<-EOT
     function handler(event) {
       var request = event.request;
       request.headers['x-forwarded-host'] = { value: 'demo.honua.io' };
-      request.headers['x-forwarded-proto'] = { value: 'https' };
       return request;
     }
   EOT
