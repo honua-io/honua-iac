@@ -127,6 +127,14 @@ module "honua" {
     # Allow the API Gateway custom domain as a valid host
     HostValidation__AllowedHosts__1 = "demo.honua.io"
 
+    # Honor X-Forwarded-Host/Proto stamped at the edge (2026-06-12): the
+    # CloudFront viewer-request function in cloudfront.tf injects
+    # `X-Forwarded-Host: demo.honua.io` because the origin is the execute-api
+    # endpoint and the viewer Host header can never pass through. Without
+    # this, absolute URLs in @odata.context and /rest/services self-links
+    # advertised the Lambda Web Adapter's local binding (localhost:8080).
+    ForwardedHeaders__Enabled = "true"
+
     # FileStorage on S3 (see seed-data.tf): import staging for >10 MB vector
     # uploads and the PMTiles range proxy both resolve against this bucket.
     # Credentials are intentionally omitted so the AWS SDK falls back to the
