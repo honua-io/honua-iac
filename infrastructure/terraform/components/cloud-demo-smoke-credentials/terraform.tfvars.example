@@ -1,0 +1,29 @@
+# Seeded cloud-demo smoke credential store — example inputs (honua-iac#30).
+# Copy to terraform.tfvars and adjust. NO secret VALUES go here: this component
+# provisions the vault + slots; secret material is set with `az keyvault secret
+# set` after apply (see README.md "Operator steps").
+
+name_prefix = "honua-clouddemo"
+environment = "staging"
+location    = "eastus"
+
+# Pin OIDC trust to the exact branch the scheduled smoke runs from.
+github_owner        = "honua-io"
+github_repository   = "honua-iac"
+github_oidc_subject = "repo:honua-io/honua-iac:ref:refs/heads/trunk"
+
+# Lock the Key Vault data plane to the smoke runner egress. For GitHub-hosted
+# runners, prefer a self-hosted runner with a stable egress, or an
+# environment-scoped allowlist; hosted-runner IP ranges are large and rotate.
+key_vault_default_action = "Deny"
+key_vault_ip_rules       = [] # e.g. ["203.0.113.10/32"]
+
+# Non-secret seeded-service wiring (matches cloud-demo-services.json).
+cloud_demo_base_url        = "https://cloud.honua.io"
+cloud_demo_stream_url      = "https://cloud.honua.io/api/v1/realtime/incidents/sse"
+cloud_demo_metadata_ttl_ms = 900000
+
+# Writable lane stays OFF until a disposable writable seeded service + reset
+# endpoint exist (NFR-001 fail-closed). Set both together when enabling.
+enable_writable_lane = false
+cloud_demo_reset_url = ""
