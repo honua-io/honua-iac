@@ -149,21 +149,3 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
-
-variable "enable_dashboard" {
-  description = "Create the CloudWatch serverless dashboard for the demo Lambda."
-  type        = bool
-  default     = false
-}
-
-variable "enable_xray_tracing" {
-  description = "Enable X-Ray active tracing on the Lambda and the matching app-side flag."
-  type        = bool
-  default     = false
-}
-
-variable "enable_lambda_insights" {
-  description = "Attach the CloudWatch Lambda Insights policy and dashboard widgets."
-  type        = bool
-  default     = false
-}
