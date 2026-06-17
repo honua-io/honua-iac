@@ -124,3 +124,20 @@ output "redis_connection_secret_arn" {
   value     = local.redis_connection != "" ? aws_secretsmanager_secret.redis_connection[0].arn : null
   sensitive = true
 }
+
+# --- Serverless observability outputs --------------------------------------
+
+output "dashboard_name" {
+  description = "Name of the CloudWatch serverless dashboard (null when enable_dashboard is false)."
+  value       = var.enable_dashboard ? aws_cloudwatch_dashboard.serverless[0].dashboard_name : null
+}
+
+output "dashboard_url" {
+  description = "Console URL for the CloudWatch serverless dashboard (null when enable_dashboard is false)."
+  value       = var.enable_dashboard ? "https://${data.aws_region.current.name}.console.aws.amazon.com/cloudwatch/home?region=${data.aws_region.current.name}#dashboards:name=${aws_cloudwatch_dashboard.serverless[0].dashboard_name}" : null
+}
+
+output "xray_tracing_enabled" {
+  description = "Whether X-Ray active tracing is enabled on the Lambda function."
+  value       = var.enable_xray_tracing
+}

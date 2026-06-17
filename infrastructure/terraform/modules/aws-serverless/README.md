@@ -86,8 +86,34 @@ module "honua" {
 | `redis_connection_string` | `""` | Reuse an existing Redis connection string instead of provisioning ElastiCache. |
 | `redis_connection_cidrs` | `[]` | Trusted CIDRs for Redis egress when `redis_connection_string` points to an existing endpoint. |
 | `enable_nat_gateway` | true | NAT gateways for outbound access. Required for OIDC. |
+| `enable_dashboard` | false | Create a CloudWatch dashboard (Lambda duration/errors/throttles/concurrency, API Gateway, cold-start, and custom Honua metrics). |
+| `enable_xray_tracing` | false | Enable Lambda X-Ray active tracing, grant least-privilege `xray:PutTraceSegments`/sampling reads, and set the app-side `Tracing__XRay__Enabled` flag. |
+| `enable_lambda_insights` | false | Attach the CloudWatch Lambda Insights managed policy and add the Insights widgets (the Insights extension layer must be present in the image). |
+| `honua_metrics_namespace` | `Honua/Serverless` | CloudWatch namespace the custom Honua metrics (cold-start, init duration) are published to via an ADOT/EMF collector; used by the dashboard's custom widgets. |
 
 See `variables.tf` for the complete list.
+
+## Serverless observability
+
+Three opt-in toggles add observability for the demo Lambda, all default off:
+
+- **`enable_dashboard`** creates `aws_cloudwatch_dashboard.serverless` with Lambda
+  duration (avg/p90/max), errors/throttles/invocations, concurrency, API Gateway
+  request/latency, plus cold-start and Lambda Insights rows when their sources are
+  wired. Outputs `dashboard_name` and `dashboard_url`.
+- **`enable_xray_tracing`** turns on Lambda **Active** tracing, attaches a
+  least-privilege X-Ray policy (`xray:PutTraceSegments`, `PutTelemetryRecords`,
+  and the `GetSampling*` reads), and injects `Tracing__XRay__Enabled=true` so the
+  Honua app emits X-Ray-compatible trace IDs. Spans still export through the
+  existing OTLP path to an ADOT/X-Ray collector, producing a request → PostGIS
+  query → render trace in the X-Ray service map.
+- **`enable_lambda_insights`** attaches the `CloudWatchLambdaInsightsExecutionRolePolicy`
+  managed policy and the Insights dashboard widgets.
+
+The custom Honua cold-start metrics (`honua.lambda.cold_start`,
+`honua.lambda.init_duration_ms`) are emitted by the app through the shared meter;
+they surface on the dashboard when an ADOT/EMF collector publishes them to
+`honua_metrics_namespace`.
 
 ## Alias semantics
 
