@@ -68,3 +68,15 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "enable_gp_batch" {
+  description = "Provision the AWS Batch (Fargate Spot) backend for the demo's geoprocessing/import jobs (the 'GP over Batch' beat). Off by default; flip to true to demo it. Scales to zero between jobs — pay-per-job only."
+  type        = bool
+  default     = false
+}
+
+variable "gp_batch_image" {
+  description = "ECR image URI for the geoprocessing Batch worker. Leave empty to reuse honua_image (single image, branches on HONUA_JOB_KIND)."
+  type        = string
+  default     = ""
+}

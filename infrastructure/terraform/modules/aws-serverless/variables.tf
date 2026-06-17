@@ -352,3 +352,86 @@ variable "db_apply_immediately" {
   type        = bool
   default     = false
 }
+
+# --- GP on AWS Batch (Fargate Spot) ---------------------------------------
+# Optional, off by default. When enabled, provisions a Fargate Spot Batch
+# compute environment + queue + job definition for Honua geoprocessing/import
+# jobs, grants the Lambda execution role scoped batch:SubmitJob/DescribeJobs/
+# TerminateJob, and surfaces the queue/job-definition ARNs to the server as a
+# ControlPlane:ExecutionWorkloads entry (Backend=honua-aws-batch).
+
+variable "enable_gp_batch" {
+  description = "Provision the AWS Batch (Fargate Spot) backend for Honua geoprocessing/import jobs and wire it into the server's ControlPlane execution-workload catalog. Off by default so existing deploys are unchanged."
+  type        = bool
+  default     = false
+}
+
+variable "gp_batch_image" {
+  description = "Container image URI (ECR) for the geoprocessing Batch job. Defaults to the same image as the Lambda when empty."
+  type        = string
+  default     = ""
+}
+
+variable "gp_batch_workload_id" {
+  description = "Stable WorkloadId the server's ControlPlane uses to select this Batch workload (ControlPlane:ExecutionWorkloads)."
+  type        = string
+  default     = "geoprocessing-batch"
+}
+
+variable "gp_batch_workload_name" {
+  description = "Human-friendly workload name surfaced on the execution-workload catalog entry."
+  type        = string
+  default     = "Honua Geoprocessing (AWS Batch)"
+}
+
+variable "gp_batch_vcpus" {
+  description = "Default vCPU for the GP job definition (Fargate task size). Per-job overrides arrive via batch.vcpus. Must be a valid Fargate CPU/memory pairing with gp_batch_memory_mib."
+  type        = number
+  default     = 1
+}
+
+variable "gp_batch_memory_mib" {
+  description = "Default memory (MiB) for the GP job definition. Per-job overrides arrive via batch.memory_mib. Must be a valid Fargate CPU/memory pairing with gp_batch_vcpus."
+  type        = number
+  default     = 2048
+}
+
+variable "gp_batch_cpu_architecture" {
+  description = "CPU architecture for the Fargate GP task (X86_64 or ARM64). ARM64 (Graviton) Fargate Spot is cheaper; match the image build."
+  type        = string
+  default     = "X86_64"
+
+  validation {
+    condition     = contains(["X86_64", "ARM64"], var.gp_batch_cpu_architecture)
+    error_message = "gp_batch_cpu_architecture must be X86_64 or ARM64."
+  }
+}
+
+variable "gp_batch_max_vcpus" {
+  description = "Maximum aggregate vCPUs the GP Fargate Spot compute environment may scale to. Caps concurrent job throughput (and cost). Scales to zero between jobs."
+  type        = number
+  default     = 16
+}
+
+variable "gp_batch_timeout_seconds" {
+  description = "Default per-attempt timeout for a GP Batch job (job-definition level). Per-job overrides arrive via batch.timeout_seconds."
+  type        = number
+  default     = 3600
+}
+
+variable "gp_batch_retry_attempts" {
+  description = "Default retry attempts for a GP Batch job (job-definition level). Per-job overrides arrive via batch.retry_attempts."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.gp_batch_retry_attempts >= 1 && var.gp_batch_retry_attempts <= 10
+    error_message = "gp_batch_retry_attempts must be between 1 and 10 (AWS Batch limit)."
+  }
+}
+
+variable "gp_batch_data_bucket_arn" {
+  description = "Optional S3 bucket ARN the GP job role may read/write (e.g. the FileStorage data bucket). Leave empty to skip granting S3 access."
+  type        = string
+  default     = ""
+}

@@ -124,3 +124,41 @@ output "redis_connection_secret_arn" {
   value     = local.redis_connection != "" ? aws_secretsmanager_secret.redis_connection[0].arn : null
   sensitive = true
 }
+
+# --- GP on AWS Batch (Fargate Spot) outputs --------------------------------
+# Null when enable_gp_batch is false.
+
+output "gp_batch_enabled" {
+  description = "Whether the GP-on-Batch backend was provisioned."
+  value       = local.gp_batch_enabled
+}
+
+output "gp_batch_job_queue_arn" {
+  description = "ARN of the GP Fargate Spot Batch job queue (batch.job_queue_arn)."
+  value       = local.gp_batch_enabled ? aws_batch_job_queue.gp[0].arn : null
+}
+
+output "gp_batch_job_definition_arn" {
+  description = "ARN of the GP Batch job definition, current revision (batch.job_definition_arn)."
+  value       = local.gp_batch_enabled ? aws_batch_job_definition.gp[0].arn : null
+}
+
+output "gp_batch_compute_environment_arn" {
+  description = "ARN of the GP Fargate Spot Batch compute environment."
+  value       = local.gp_batch_enabled ? aws_batch_compute_environment.gp[0].arn : null
+}
+
+output "gp_batch_job_role_arn" {
+  description = "ARN of the IAM role the running GP container assumes."
+  value       = local.gp_batch_enabled ? aws_iam_role.batch_job[0].arn : null
+}
+
+output "gp_batch_workload_id" {
+  description = "ControlPlane:ExecutionWorkloads WorkloadId the server uses to select the Batch backend."
+  value       = local.gp_batch_enabled ? var.gp_batch_workload_id : null
+}
+
+output "gp_batch_control_plane_backend_name" {
+  description = "Backend name the reconciler matches to dispatch to the AWS Batch adapter."
+  value       = local.gp_batch_enabled ? "honua-aws-batch" : null
+}

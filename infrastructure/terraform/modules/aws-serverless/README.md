@@ -99,6 +99,40 @@ The deployed Honua app also self-registers its `AwsLambda` deploy target through
 
 If you want staged Lambda rollout instead of direct alias cutover, add a deploy-target parameter such as `lambda.canary_weight_percentage=10` and a valid `telemetry.connection` in the Honua control-plane configuration. The Lambda backend only promotes or rolls back the alias after telemetry settles.
 
+## GP on AWS Batch (Fargate Spot)
+
+Optional, **off by default**. When `enable_gp_batch = true`, the module provisions an AWS Batch backend so Honua's geoprocessing/import jobs run on Fargate Spot instead of inline in the Lambda. The Honua server's `ExecutionJobReconciler` submits and observes jobs through the built-in `AwsBatchComputeBackend` (no extra server config — the module surfaces everything via environment variables).
+
+```hcl
+module "honua" {
+  source = "../../modules/aws-serverless"
+
+  # ... existing serverless inputs ...
+
+  enable_gp_batch = true
+  gp_batch_image  = var.gp_image_uri   # ECR image for the GP worker; defaults to `image` when empty
+
+  # Optional sizing (defaults shown). vCPU/memory must be a valid Fargate pairing.
+  gp_batch_vcpus            = 1
+  gp_batch_memory_mib       = 2048
+  gp_batch_cpu_architecture = "X86_64"  # or ARM64 (Graviton Spot is cheaper)
+  gp_batch_max_vcpus        = 16         # caps concurrency/cost; scales to zero between jobs
+
+  # Optional: let GP jobs read/write the FileStorage data bucket.
+  gp_batch_data_bucket_arn = aws_s3_bucket.data.arn
+}
+```
+
+What it creates:
+
+- A **Fargate Spot** Batch compute environment (`MANAGED`, scale-to-zero — no `min_vcpus`/`desired_vcpus`, so nothing stays warm), a **job queue**, and a **job definition** for the GP container.
+- IAM: the Lambda execution role gets scoped `batch:SubmitJob` / `batch:TerminateJob` / `batch:CancelJob` on the queue + job-definition (revision wildcard), plus account-wide `batch:DescribeJobs` / `batch:ListJobs` (these do not support resource scoping). The Batch execution role gets ECR pull + CloudWatch Logs; the job role gets the same DB-secret access the Lambda has (and optional S3).
+- A `ControlPlane:ExecutionWorkloads` entry injected into the Lambda env (`Backend=honua-aws-batch`, `TargetKind=AwsBatch`, `Kind=Geoprocessing`) carrying the `batch.job_queue_arn`, `batch.job_definition_arn`, `batch.region`, `batch.vcpus`, and `batch.memory_mib` parameters the backend reads at submit time.
+
+**Cost posture** (budget-tight demo): Fargate Spot is ~70% cheaper than on-demand Fargate; the compute environment scales to zero so you pay only for the seconds a job's container runs (no idle/warm cost). At the 1 vCPU / 2 GB default, a job costs roughly **$0.012/hour** (us-east-1 Fargate Spot ~$0.0096/vCPU-hr + ~$0.00105/GB-hr) — about **$0.012 for a one-hour job, ~$0.003 for a 15-minute job**. Spot interruptions cause Batch to retry per `gp_batch_retry_attempts`.
+
+Outputs: `gp_batch_job_queue_arn`, `gp_batch_job_definition_arn`, `gp_batch_compute_environment_arn`, `gp_batch_job_role_arn`, `gp_batch_workload_id`, `gp_batch_control_plane_backend_name` (all `null` when disabled).
+
 ## Constraints
 
 - **API Gateway timeout**: HTTP API has a 30-second max integration timeout. Keep `lambda_timeout_seconds` in sync.
