@@ -94,6 +94,9 @@ module "honua" {
 | `pro_license_content` | `""` | Signed Pro license envelope JSON (relabeled hyphen-free keyId). Stored in `<name>/license-pro` and referenced by `Licensing__LicenseContentSecretRef`. Required when `enable_pro_license`. |
 | `pro_license_key_id` | `honuademo2026q2` | Hyphen-free license keyId as relabeled in the envelope; used to build the legal env var name `Licensing__TrustedKeys__<keyId>`. |
 | `pro_license_trusted_public_key` | `""` | Ed25519 public key (`base64url:` prefixed) that verifies the license signature. Required when `enable_pro_license`. |
+| `enable_bedrock_ai` | false | Grant the Lambda role `bedrock:InvokeModel`/`InvokeModelWithResponseStream` for the configured Claude model and route the AI studio (WorkflowGeneration) flows to Amazon Bedrock. |
+| `bedrock_ai_model` | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` | Bedrock model id for the AI studio flows (cross-region Claude Sonnet 4.5 inference profile). |
+| `bedrock_ai_region` | `us-west-2` | Region the server invokes Bedrock in. |
 
 See `variables.tf` for the complete list.
 
@@ -126,6 +129,30 @@ module "honua" {
   pro_license_key_id             = "honuademo2026q2"
   pro_license_trusted_public_key = "base64url:Y2XgDBncW5w6n7L3YG-T6HxX51DGybWazt0_gubk30k"
 }
+```
+
+## AI studio on Amazon Bedrock
+
+Optional, **off by default**. When `enable_bedrock_ai = true`, the module grants
+the Lambda execution role a least-privilege `bedrock:InvokeModel` /
+`bedrock:InvokeModelWithResponseStream` policy scoped to the single Claude model
+the server's `WorkflowGeneration` uses, and injects the `WorkflowGeneration__*`
+env so the AI console's workflow / dashboard / report generation route to Bedrock
+(see honua-server#1737). The server authenticates via the AWS credential chain
+(the Lambda execution role) — without this grant the AI console gets
+`AccessDenied`.
+
+The default model is the **cross-region inference profile**
+`us.anthropic.claude-sonnet-4-5-20250929-v1:0`. Invoking through an inference
+profile requires both the **inference-profile ARN** (in `bedrock_ai_region`) and
+the underlying **foundation-model ARNs** in every member region the `us.` profile
+routes to (`us-east-1`/`us-east-2`/`us-west-2`), so the grant covers all four:
+
+```
+arn:aws:bedrock:us-west-2:<account>:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0
+arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0
+arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0
+arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0
 ```
 
 ## Serverless observability

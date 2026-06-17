@@ -479,6 +479,20 @@ variable "enable_pro_license" {
   default     = false
 }
 
+# --- AI studio on Amazon Bedrock ------------------------------------------
+# Optional, off by default. When enabled, grants the Lambda execution role
+# least-privilege bedrock:InvokeModel / InvokeModelWithResponseStream on the
+# Claude model the server's WorkflowGeneration uses, and injects the
+# WorkflowGeneration__* env so the AI studio flows route to Bedrock. The server
+# calls Bedrock via the Lambda execution role (AWS credential chain) — without
+# this grant the AI console gets AccessDenied.
+
+variable "enable_bedrock_ai" {
+  description = "Grant the Lambda execution role bedrock:InvokeModel / InvokeModelWithResponseStream for the configured Claude model and route the server's AI studio (WorkflowGeneration) flows to Amazon Bedrock. Off by default so existing deploys are unchanged."
+  type        = bool
+  default     = false
+}
+
 variable "pro_license_content" {
   description = "The signed Pro license envelope JSON (the relabeled, hyphen-free keyId envelope, e.g. keyId=honuademo2026q2). Stored in a dedicated Secrets Manager secret and referenced by Licensing__LicenseContentSecretRef. Required when enable_pro_license is true."
   type        = string
@@ -501,4 +515,38 @@ variable "pro_license_trusted_public_key" {
   description = "The Ed25519 public key (base64url, with the base64url: prefix) that verifies the Pro license signature. Injected as Licensing__TrustedKeys__<pro_license_key_id>. Required when enable_pro_license is true."
   type        = string
   default     = ""
+}
+
+variable "bedrock_ai_model" {
+  description = "Bedrock model id the server's WorkflowGeneration uses. Defaults to the cross-region Claude Sonnet 4.5 inference profile (the `us.` prefix routes across us-east-1/us-east-2/us-west-2). The IAM grant is scoped to this model's inference-profile + foundation-model ARNs."
+  type        = string
+  default     = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+}
+
+variable "bedrock_ai_region" {
+  description = "AWS region the server invokes Bedrock in (WorkflowGeneration provider Region). Defaults to us-west-2."
+  type        = string
+  default     = "us-west-2"
+}
+
+variable "bedrock_ai_max_tokens" {
+  description = "Max output tokens for Bedrock AI generation (WorkflowGeneration provider MaxTokens)."
+  type        = number
+  default     = 4096
+
+  validation {
+    condition     = var.bedrock_ai_max_tokens >= 256 && var.bedrock_ai_max_tokens <= 32768
+    error_message = "bedrock_ai_max_tokens must be between 256 and 32768 (server-side WorkflowGeneration validation range)."
+  }
+}
+
+variable "bedrock_ai_timeout_seconds" {
+  description = "Per-request timeout for Bedrock AI generation (WorkflowGeneration provider TimeoutSeconds)."
+  type        = number
+  default     = 120
+
+  validation {
+    condition     = var.bedrock_ai_timeout_seconds >= 5 && var.bedrock_ai_timeout_seconds <= 300
+    error_message = "bedrock_ai_timeout_seconds must be between 5 and 300 (server-side WorkflowGeneration validation range)."
+  }
 }

@@ -174,6 +174,12 @@ variable "enable_pro_license" {
   default     = false
 }
 
+variable "enable_bedrock_ai" {
+  description = "Grant the Lambda bedrock:InvokeModel for the configured Claude model and route the AI studio (WorkflowGeneration) flows to Amazon Bedrock."
+  type        = bool
+  default     = false
+}
+
 variable "pro_license_content" {
   description = "Signed Pro license envelope JSON (relabeled hyphen-free keyId). Required when enable_pro_license is true."
   type        = string
@@ -191,4 +197,16 @@ variable "pro_license_trusted_public_key" {
   description = "Ed25519 public key (base64url, with base64url: prefix) that verifies the Pro license signature. Required when enable_pro_license is true."
   type        = string
   default     = ""
+}
+
+variable "bedrock_ai_model" {
+  description = "Bedrock model id for the AI studio flows. Defaults to the cross-region Claude Sonnet 4.5 inference profile."
+  type        = string
+  default     = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+}
+
+variable "bedrock_ai_region" {
+  description = "AWS region the server invokes Bedrock in. Defaults to us-west-2."
+  type        = string
+  default     = "us-west-2"
 }

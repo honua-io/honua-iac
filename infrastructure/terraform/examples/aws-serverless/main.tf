@@ -39,6 +39,10 @@ module "honua" {
   pro_license_key_id             = var.pro_license_key_id
   pro_license_trusted_public_key = var.pro_license_trusted_public_key
 
+  enable_bedrock_ai = var.enable_bedrock_ai
+  bedrock_ai_model  = var.bedrock_ai_model
+  bedrock_ai_region = var.bedrock_ai_region
+
   additional_env = {
     HONUA_SERVE_ADMIN_UI = "true"
     HONUA_ADMIN_UI       = "true"
