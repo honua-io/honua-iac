@@ -82,6 +82,33 @@ locals {
     ConnectionStrings__redis       = "env:HONUA_RUNTIME_REDIS_CONNECTION"
     HONUA_RUNTIME_REDIS_CONNECTION = local.redis_connection
   } : {}
+  # When GP-on-Batch is enabled, surface the queue/job-definition ARNs and
+  # default sizing to the server as a ControlPlane:ExecutionWorkloads entry.
+  # The reconciler selects the AwsBatchComputeBackend by Backend=honua-aws-batch
+  # + TargetKind=AwsBatch; ParameterEntries carry the batch.* keys the backend
+  # reads off ExecutionJobSpec.Parameters at submit time.
+  gp_batch_environment = local.gp_batch_enabled ? {
+    ControlPlane__ExecutionWorkloads__0__WorkloadId                 = var.gp_batch_workload_id
+    ControlPlane__ExecutionWorkloads__0__WorkloadName               = var.gp_batch_workload_name
+    ControlPlane__ExecutionWorkloads__0__TargetKind                 = "AwsBatch"
+    ControlPlane__ExecutionWorkloads__0__Backend                    = "honua-aws-batch"
+    ControlPlane__ExecutionWorkloads__0__Kind                       = "Geoprocessing"
+    ControlPlane__ExecutionWorkloads__0__ArtifactReference          = local.gp_batch_image
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__0__Key   = "batch.job_queue_arn"
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__0__Value = aws_batch_job_queue.gp[0].arn
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__1__Key   = "batch.job_definition_arn"
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__1__Value = aws_batch_job_definition.gp[0].arn
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__2__Key   = "batch.region"
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__2__Value = data.aws_region.current.name
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__3__Key   = "batch.vcpus"
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__3__Value = tostring(var.gp_batch_vcpus)
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__4__Key   = "batch.memory_mib"
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__4__Value = tostring(var.gp_batch_memory_mib)
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__5__Key   = "batch.timeout_seconds"
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__5__Value = tostring(var.gp_batch_timeout_seconds)
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__6__Key   = "batch.retry_attempts"
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__6__Value = tostring(var.gp_batch_retry_attempts)
+  } : {}
   lambda_environment = merge({
     HONUA_SKIP_MIGRATIONS                                       = var.skip_migrations ? "true" : "false"
     HostValidation__AllowedHosts__0                             = "*.execute-api.${data.aws_region.current.name}.amazonaws.com"
@@ -104,7 +131,7 @@ locals {
     ControlPlane__DeployTargets__0__ParameterEntries__1__Value  = var.lambda_alias_name
     ControlPlane__DeployTargets__0__ParameterEntries__2__Key    = "aws.region"
     ControlPlane__DeployTargets__0__ParameterEntries__2__Value  = data.aws_region.current.name
-  }, var.additional_env, local.redis_secret_environment)
+  }, local.gp_batch_environment, var.additional_env, local.redis_secret_environment)
 }
 
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
