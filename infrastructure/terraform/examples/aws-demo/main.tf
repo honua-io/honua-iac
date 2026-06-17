@@ -118,6 +118,16 @@ module "honua" {
   # Log retention — shorter for demo to contain cost
   log_retention_days = 90
 
+  # GP over AWS Batch (Fargate Spot) — off unless var.enable_gp_batch is set.
+  # Scales to zero between jobs; pay only for the seconds a job's container runs.
+  # Architecture matches the demo's x86_64 image (see lambda_architectures note
+  # above). The GP job role gets read/write on the demo data bucket so imports
+  # can stage to S3 the same way the Lambda does.
+  enable_gp_batch           = var.enable_gp_batch
+  gp_batch_image            = var.gp_batch_image
+  gp_batch_cpu_architecture = "X86_64"
+  gp_batch_data_bucket_arn  = aws_s3_bucket.demo_data.arn
+
   # Demo-specific environment variables
   additional_env = {
     HONUA_SERVE_API_DOCS          = "true"

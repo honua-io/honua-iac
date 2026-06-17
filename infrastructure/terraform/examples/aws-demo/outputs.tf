@@ -74,3 +74,18 @@ output "control_plane_target_id" {
   description = "Honua control-plane target ID."
   value       = module.honua.control_plane_target_id
 }
+
+output "gp_batch_enabled" {
+  description = "Whether GP-over-Batch was provisioned for the demo."
+  value       = module.honua.gp_batch_enabled
+}
+
+output "gp_batch_job_queue_arn" {
+  description = "GP Fargate Spot Batch job queue ARN (null unless enable_gp_batch)."
+  value       = module.honua.gp_batch_job_queue_arn
+}
+
+output "gp_batch_job_definition_arn" {
+  description = "GP Batch job definition ARN (null unless enable_gp_batch)."
+  value       = module.honua.gp_batch_job_definition_arn
+}
