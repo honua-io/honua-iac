@@ -30,22 +30,10 @@ module "honua" {
   skip_migrations                 = var.skip_migrations
   tags                            = var.tags
 
-  enable_dashboard       = var.enable_dashboard
-  enable_xray_tracing    = var.enable_xray_tracing
-  enable_lambda_insights = var.enable_lambda_insights
-
   additional_env = {
     HONUA_SERVE_ADMIN_UI = "true"
     HONUA_ADMIN_UI       = "true"
   }
-}
-
-output "dashboard_name" {
-  value = module.honua.dashboard_name
-}
-
-output "dashboard_url" {
-  value = module.honua.dashboard_url
 }
 
 output "honua_url" {

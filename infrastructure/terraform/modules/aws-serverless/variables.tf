@@ -353,12 +353,6 @@ variable "db_apply_immediately" {
   default     = false
 }
 
-# --- Serverless observability ---------------------------------------------
-# CloudWatch dashboard + X-Ray active tracing for the demo Lambda. All default
-# off so existing stacks are unchanged until an operator opts in.
-
-variable "enable_dashboard" {
-  description = "Create a CloudWatch dashboard for the Honua Lambda (duration/errors/throttles/concurrency + cold-start + custom Honua metrics). Default off."
 # --- GP on AWS Batch (Fargate Spot) ---------------------------------------
 # Optional, off by default. When enabled, provisions a Fargate Spot Batch
 # compute environment + queue + job definition for Honua geoprocessing/import
@@ -372,22 +366,6 @@ variable "enable_gp_batch" {
   default     = false
 }
 
-variable "enable_xray_tracing" {
-  description = "Enable AWS X-Ray active tracing on the Lambda function and grant the least-privilege xray:PutTraceSegments / GetSamplingRules permissions. Pairs with the app-side Tracing__XRay__Enabled flag. Default off."
-  type        = bool
-  default     = false
-}
-
-variable "enable_lambda_insights" {
-  description = "Attach the CloudWatch Lambda Insights managed policy and surface the LambdaInsights namespace widgets on the dashboard. The Lambda Insights extension layer must be present in the container image/layer for metrics to flow. Default off."
-  type        = bool
-  default     = false
-}
-
-variable "honua_metrics_namespace" {
-  description = "CloudWatch namespace that the Honua custom metrics (cold-start, custom Honua meters) are published to via an ADOT/EMF collector. Used by the dashboard's custom-metric widgets. Empty disables those widgets."
-  type        = string
-  default     = "Honua/Serverless"
 variable "gp_batch_image" {
   description = "Container image URI (ECR) for the geoprocessing Batch job. Defaults to the same image as the Lambda when empty."
   type        = string

@@ -82,8 +82,6 @@ locals {
     ConnectionStrings__redis       = "env:HONUA_RUNTIME_REDIS_CONNECTION"
     HONUA_RUNTIME_REDIS_CONNECTION = local.redis_connection
   } : {}
-  xray_environment = var.enable_xray_tracing ? {
-    Tracing__XRay__Enabled = "true"
   # When GP-on-Batch is enabled, surface the queue/job-definition ARNs and
   # default sizing to the server as a ControlPlane:ExecutionWorkloads entry.
   # The reconciler selects the AwsBatchComputeBackend by Backend=honua-aws-batch
@@ -133,7 +131,7 @@ locals {
     ControlPlane__DeployTargets__0__ParameterEntries__1__Value  = var.lambda_alias_name
     ControlPlane__DeployTargets__0__ParameterEntries__2__Key    = "aws.region"
     ControlPlane__DeployTargets__0__ParameterEntries__2__Value  = data.aws_region.current.name
-  }, local.gp_batch_environment, var.additional_env, local.redis_secret_environment, local.xray_environment)
+  }, local.gp_batch_environment, var.additional_env, local.redis_secret_environment)
 }
 
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
@@ -508,13 +506,6 @@ resource "aws_lambda_function" "this" {
   vpc_config {
     subnet_ids         = local.private_subnets
     security_group_ids = [aws_security_group.lambda.id]
-  }
-
-  dynamic "tracing_config" {
-    for_each = var.enable_xray_tracing ? [1] : []
-    content {
-      mode = "Active"
-    }
   }
 
   environment {
