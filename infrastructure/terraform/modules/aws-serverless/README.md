@@ -90,8 +90,43 @@ module "honua" {
 | `enable_xray_tracing` | false | Enable Lambda X-Ray active tracing, grant least-privilege `xray:PutTraceSegments`/sampling reads, and set the app-side `Tracing__XRay__Enabled` flag. |
 | `enable_lambda_insights` | false | Attach the CloudWatch Lambda Insights managed policy and add the Insights widgets (the Insights extension layer must be present in the image). |
 | `honua_metrics_namespace` | `Honua/Serverless` | CloudWatch namespace the custom Honua metrics (cold-start, init duration) are published to via an ADOT/EMF collector; used by the dashboard's custom widgets. |
+| `enable_pro_license` | false | Deliver a signed Pro license to the Lambda via Secrets Manager so editing/sync/streaming/geocoding work. When off the server runs Community. |
+| `pro_license_content` | `""` | Signed Pro license envelope JSON (relabeled hyphen-free keyId). Stored in `<name>/license-pro` and referenced by `Licensing__LicenseContentSecretRef`. Required when `enable_pro_license`. |
+| `pro_license_key_id` | `honuademo2026q2` | Hyphen-free license keyId as relabeled in the envelope; used to build the legal env var name `Licensing__TrustedKeys__<keyId>`. |
+| `pro_license_trusted_public_key` | `""` | Ed25519 public key (`base64url:` prefixed) that verifies the license signature. Required when `enable_pro_license`. |
 
 See `variables.tf` for the complete list.
+
+## Pro license (Secrets Manager delivery)
+
+Optional, **off by default**. The signed Pro license envelope (~2KB) does not fit
+Lambda's 4KB total environment-variable budget, so when `enable_pro_license = true`
+the module stores the envelope in a dedicated Secrets Manager secret
+(`<name_prefix>-<environment>/license-pro`), grants the Lambda role
+`secretsmanager:GetSecretValue` on it, and injects:
+
+- `Licensing__LicenseContentSecretRef = aws:secretsmanager:<secret-arn>` — the server
+  resolves and validates the envelope at startup (`Honua.Aws` Secrets Manager resolver).
+- `Licensing__TrustedKeys__<pro_license_key_id> = <pro_license_trusted_public_key>` — the
+  Ed25519 public key that verifies the signature.
+
+The envelope's `keyId` must be **hyphen-free** (e.g. `honuademo2026q2`) because it
+becomes part of the `Licensing__TrustedKeys__<keyId>` env var name; the license
+signature is over the payload only, so relabeling the envelope keyId is safe as long as
+the trusted key still matches. If the secret is unreachable the server degrades to
+Community rather than failing to start. Cost is effectively `$0` (one small secret;
+negligible reads at cold start).
+
+```hcl
+module "honua" {
+  source = "../../modules/aws-serverless"
+  # ...
+  enable_pro_license             = true
+  pro_license_content            = file("license-pro.json") # relabeled hyphen-free keyId
+  pro_license_key_id             = "honuademo2026q2"
+  pro_license_trusted_public_key = "base64url:Y2XgDBncW5w6n7L3YG-T6HxX51DGybWazt0_gubk30k"
+}
+```
 
 ## Serverless observability
 
