@@ -35,6 +35,17 @@ module "honua" {
   skip_migrations                         = var.skip_migrations
   tags                                    = var.tags
 
+  enable_openai_ai       = var.enable_openai_ai
+  openai_account_name    = var.openai_account_name
+  openai_deployment_name = var.openai_deployment_name
+  openai_model           = var.openai_model
+  openai_api_version     = var.openai_api_version
+
+  enable_pro_license             = var.enable_pro_license
+  pro_license_content            = var.pro_license_content
+  pro_license_key_id             = var.pro_license_key_id
+  pro_license_trusted_public_key = var.pro_license_trusted_public_key
+
   additional_env = {
     HONUA_SERVE_ADMIN_UI            = "true"
     HONUA_ADMIN_UI                  = "true"
