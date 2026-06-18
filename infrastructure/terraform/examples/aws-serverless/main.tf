@@ -34,6 +34,11 @@ module "honua" {
   enable_xray_tracing    = var.enable_xray_tracing
   enable_lambda_insights = var.enable_lambda_insights
 
+  enable_pro_license             = var.enable_pro_license
+  pro_license_content            = var.pro_license_content
+  pro_license_key_id             = var.pro_license_key_id
+  pro_license_trusted_public_key = var.pro_license_trusted_public_key
+
   additional_env = {
     HONUA_SERVE_ADMIN_UI = "true"
     HONUA_ADMIN_UI       = "true"
@@ -128,4 +133,12 @@ output "db_endpoint" {
 output "redis_connection_string" {
   value     = module.honua.redis_connection_string
   sensitive = true
+}
+
+output "pro_license_enabled" {
+  value = module.honua.pro_license_enabled
+}
+
+output "pro_license_secret_arn" {
+  value = module.honua.pro_license_secret_arn
 }

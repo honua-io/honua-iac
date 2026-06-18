@@ -167,3 +167,28 @@ variable "enable_lambda_insights" {
   type        = bool
   default     = false
 }
+
+variable "enable_pro_license" {
+  description = "Deliver a signed Pro license to the Lambda via Secrets Manager so editing/sync/streaming/geocoding work. Off by default (Community)."
+  type        = bool
+  default     = false
+}
+
+variable "pro_license_content" {
+  description = "Signed Pro license envelope JSON (relabeled hyphen-free keyId). Required when enable_pro_license is true."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "pro_license_key_id" {
+  description = "Hyphen-free license keyId as relabeled in the envelope (Licensing__TrustedKeys__<keyId>)."
+  type        = string
+  default     = "honuademo2026q2"
+}
+
+variable "pro_license_trusted_public_key" {
+  description = "Ed25519 public key (base64url, with base64url: prefix) that verifies the Pro license signature. Required when enable_pro_license is true."
+  type        = string
+  default     = ""
+}

@@ -463,3 +463,42 @@ variable "gp_batch_data_bucket_arn" {
   type        = string
   default     = ""
 }
+
+# --- Pro license (Secrets Manager delivery) -------------------------------
+# Optional, off by default. When enabled, stores the signed Pro license
+# envelope in a Secrets Manager secret, grants the Lambda role
+# secretsmanager:GetSecretValue on it, and injects
+# Licensing__LicenseContentSecretRef + Licensing__TrustedKeys__<keyId> so the
+# server activates Pro (editing/sync/streaming/geocoding) without the ~2KB
+# envelope having to fit Lambda's 4KB environment-variable limit. The server
+# resolves the reference at startup and falls back to Community if unreachable.
+
+variable "enable_pro_license" {
+  description = "Deliver a signed Pro license to the Lambda via Secrets Manager. Off by default; when off the server runs Community. Requires pro_license_content and pro_license_trusted_public_key when enabled."
+  type        = bool
+  default     = false
+}
+
+variable "pro_license_content" {
+  description = "The signed Pro license envelope JSON (the relabeled, hyphen-free keyId envelope, e.g. keyId=honuademo2026q2). Stored in a dedicated Secrets Manager secret and referenced by Licensing__LicenseContentSecretRef. Required when enable_pro_license is true."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "pro_license_key_id" {
+  description = "The license signing keyId as relabeled in the envelope. Must be hyphen-free so it is a legal Lambda env var name segment (Licensing__TrustedKeys__<keyId>). Defaults to the demo key."
+  type        = string
+  default     = "honuademo2026q2"
+
+  validation {
+    condition     = can(regex("^[A-Za-z_][A-Za-z0-9_]*$", var.pro_license_key_id))
+    error_message = "pro_license_key_id must be a valid environment-variable name segment (letters, digits, underscore; no hyphens)."
+  }
+}
+
+variable "pro_license_trusted_public_key" {
+  description = "The Ed25519 public key (base64url, with the base64url: prefix) that verifies the Pro license signature. Injected as Licensing__TrustedKeys__<pro_license_key_id>. Required when enable_pro_license is true."
+  type        = string
+  default     = ""
+}
