@@ -142,7 +142,7 @@ locals {
     ControlPlane__DeployTargets__0__ParameterEntries__1__Value  = var.lambda_alias_name
     ControlPlane__DeployTargets__0__ParameterEntries__2__Key    = "aws.region"
     ControlPlane__DeployTargets__0__ParameterEntries__2__Value  = data.aws_region.current.name
-  }, local.gp_batch_environment, var.additional_env, local.redis_secret_environment, local.xray_environment, local.pro_license_environment)
+  }, local.gp_batch_environment, local.bedrock_ai_environment, var.additional_env, local.redis_secret_environment, local.xray_environment, local.pro_license_environment)
 }
 
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
