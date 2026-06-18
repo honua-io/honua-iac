@@ -2,7 +2,12 @@
 # Phase-A Honua Demo Environment — demo.honua.io
 #
 # Lambda container (AOT) + API Gateway HTTP API + RDS db.t4g.small + PostGIS.
-# No Redis (single-function, no distributed cache needed for a demo).
+# Optional Pro+AI demo add-ons, all gated off by default (see README → "Pro +
+# AI demo drift"): a Secrets-Manager-delivered Pro license (enable_pro_license),
+# a least-privilege Bedrock InvokeModel grant + WorkflowGeneration env for the
+# AI studio (enable_bedrock_ai, plus the Bedrock VPC endpoint in vpc-endpoints.tf
+# this no-NAT VPC requires), and an in-VPC ElastiCache Redis (enable_redis) for
+# the durable feature-change event store /healthz/ready needs in Production.
 # No WAF: API Gateway HTTP API does not support WAFv2 association; rate-limiting
 # is handled via API Gateway throttle settings (see throttle variables below).
 # See README.md for DNS prerequisites before applying.
@@ -101,8 +106,43 @@ module "honua" {
   vpc_cidr                    = local.vpc_cidr
   db_additional_ingress_cidrs = [local.vpc_cidr]
 
-  # Redis — disabled (single Lambda function, no distributed cache needed)
-  redis_enabled = false
+  # Redis — gated on var.enable_redis (default off). honua-server hard-requires
+  # a durable distributed feature-change event store whenever
+  # ASPNETCORE_ENVIRONMENT=Production, so /healthz/ready returns 503 without it
+  # (see README → "Known limitation"). When enabled the module creates an in-VPC
+  # ElastiCache Redis (cache.t3.micro by default) and — critically — adds the
+  # Lambda's 6379 egress rule as a CIDR rule (the VPC CIDR), NOT a
+  # security-group-reference rule. A SG-reference egress rule did NOT work in
+  # this VPC; the module already does the right thing because redis_create wires
+  # redis_egress_cidrs = [vpc_cidr]. The connection string lands in a dedicated
+  # Secrets Manager secret and is injected as ConnectionStrings__redis.
+  redis_enabled   = var.enable_redis
+  redis_node_type = var.redis_node_type
+  redis_port      = 6379
+
+  # ---- Pro license (Secrets Manager) — gated on var.enable_pro_license -------
+  # Delivers the signed Pro license envelope to the Lambda via a dedicated
+  # Secrets Manager secret (<name>/license-pro), grants the role GetSecretValue
+  # on it, and injects Licensing__LicenseContentSecretRef +
+  # Licensing__TrustedKeys__<key_id>. The secret VALUE is supplied via a
+  # gitignored terraform.tfvars (pro_license_content / pro_license_trusted_public_key)
+  # — never committed. The live demo's <name>/license-pro secret already exists;
+  # adopt it with `terraform import` rather than recreating it (see README →
+  # "Import the existing license-pro secret").
+  enable_pro_license             = var.enable_pro_license
+  pro_license_content            = var.pro_license_content
+  pro_license_key_id             = var.pro_license_key_id
+  pro_license_trusted_public_key = var.pro_license_trusted_public_key
+
+  # ---- Bedrock AI (WorkflowGeneration) — gated on var.enable_bedrock_ai ------
+  # Grants the Lambda role least-privilege bedrock:InvokeModel /
+  # InvokeModelWithResponseStream scoped to the configured Claude model and
+  # routes the AI studio (WorkflowGeneration) to Amazon Bedrock in us-west-2.
+  # The no-NAT VPC reaches Bedrock through the bedrock-runtime interface VPC
+  # endpoint provisioned in vpc-endpoints.tf (also gated on enable_bedrock_ai).
+  enable_bedrock_ai = var.enable_bedrock_ai
+  bedrock_ai_model  = var.bedrock_ai_model
+  bedrock_ai_region = var.bedrock_ai_region
 
   # Networking — no NAT gateway (~$33/mo + data saved). The public demo has
   # no OIDC and needs no general internet egress; the only AWS services the

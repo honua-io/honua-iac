@@ -89,3 +89,28 @@ output "gp_batch_job_definition_arn" {
   description = "GP Batch job definition ARN (null unless enable_gp_batch)."
   value       = module.honua.gp_batch_job_definition_arn
 }
+
+# ---------------------------------------------------------------------------
+# Pro + AI demo add-ons (see README → "Pro + AI demo drift")
+# ---------------------------------------------------------------------------
+
+output "pro_license_enabled" {
+  description = "Whether the demo Lambda is configured to load a signed Pro license from Secrets Manager."
+  value       = module.honua.pro_license_enabled
+}
+
+output "pro_license_secret_arn" {
+  description = "ARN of the Secrets Manager secret holding the signed Pro license envelope (null unless enable_pro_license). Import the existing live secret into this address — do not recreate it."
+  value       = module.honua.pro_license_secret_arn
+}
+
+output "redis_connection_secret_arn" {
+  description = "ARN of the Secrets Manager secret holding the Redis connection string (null unless enable_redis)."
+  value       = module.honua.redis_connection_secret_arn
+  sensitive   = true
+}
+
+output "bedrock_vpc_endpoint_id" {
+  description = "ID of the bedrock-runtime interface VPC endpoint (null unless enable_bedrock_ai). Live id: vpce-003090af73dc835fe — adopt via terraform import."
+  value       = var.enable_bedrock_ai ? aws_vpc_endpoint.bedrock_runtime[0].id : null
+}

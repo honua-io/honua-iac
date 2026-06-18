@@ -31,6 +31,32 @@ route53_zone_id = "ZXXXXXXXXXXXXXXXXX"
 # api_throttle_burst_limit = 200   # concurrent burst
 # api_throttle_rate_limit  = 50    # requests/second steady state
 
+# ---------------------------------------------------------------------------
+# Pro + AI demo add-ons (all OFF by default). The live demo.honua.io runs
+# these ON; see README → "Pro + AI demo drift" for the terraform import
+# sequence that adopts the already-live resources before any plan/apply.
+# ---------------------------------------------------------------------------
+
+# Redis — in-VPC ElastiCache; required for /healthz/ready in Production.
+# enable_redis    = true
+# redis_node_type = "cache.t3.micro"
+
+# Pro license via Secrets Manager. enable_pro_license=true REQUIRES the two
+# values below. NEVER commit them — keep this file's real copy (terraform.tfvars)
+# gitignored. pro_license_content is the signed envelope JSON; the trusted key
+# is the base64url: Ed25519 public key. Both are SECRETS.
+# enable_pro_license             = true
+# pro_license_key_id             = "honuademo2026q2"
+# pro_license_content            = "REPLACE_WITH_SIGNED_LICENSE_ENVELOPE_JSON"     # SECRET — do not commit
+# pro_license_trusted_public_key = "base64url:REPLACE_WITH_ED25519_PUBLIC_KEY"     # SECRET — do not commit
+
+# Bedrock AI (WorkflowGeneration). Provisions the bedrock-runtime VPC endpoint
+# (this no-NAT VPC needs it) and the least-privilege InvokeModel grant.
+# bedrock_ai_region must equal region (the VPC's region).
+# enable_bedrock_ai = true
+# bedrock_ai_model  = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+# bedrock_ai_region = "us-west-2"
+
 tags = {
   Owner      = "platform"
   CostCentre = "demo"
