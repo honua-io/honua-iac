@@ -65,9 +65,11 @@ data "azurerm_cognitive_account" "existing" {
 # token (managed-identity) auth — without it only key auth works.
 #checkov:skip=CKV_AZURE_134: Public network access stays configurable so validation/MVP environments reach the inference endpoint; operators restrict it via network rules outside this module.
 #checkov:skip=CKV2_AZURE_22: Customer-managed keys are optional and managed outside this module.
+#checkov:skip=CKV_AZURE_247: Outbound network access IS restricted (outbound_network_access_restricted = true); the per-environment FQDN data-exfiltration allowlist is operator-specific and layered on outside this module.
 resource "azurerm_cognitive_account" "this" {
   #checkov:skip=CKV_AZURE_134: Public network access stays configurable so validation/MVP environments reach the inference endpoint; operators restrict it via network rules outside this module.
   #checkov:skip=CKV2_AZURE_22: Customer-managed keys are optional and managed outside this module.
+  #checkov:skip=CKV_AZURE_247: Outbound network access IS restricted (outbound_network_access_restricted = true); the per-environment FQDN data-exfiltration allowlist is operator-specific and layered on outside this module.
   count               = local.openai_create ? 1 : 0
   name                = "${local.name}-openai"
   location            = var.openai_region != "" ? var.openai_region : azurerm_resource_group.this.location
