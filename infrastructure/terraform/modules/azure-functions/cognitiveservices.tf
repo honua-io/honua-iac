@@ -79,6 +79,20 @@ resource "azurerm_cognitive_account" "this" {
   # endpoint instead of relying on account keys.
   custom_subdomain_name = "${local.name}-openai"
 
+  # Entra-only data plane: the server authenticates via managed identity (the
+  # function's UAI + the role assignment below), so disable account-key auth
+  # entirely (CKV_AZURE_236). Restrict the account's outbound network access —
+  # inference is inbound-only, nothing should egress from the account
+  # (CKV_AZURE_247 data-loss-prevention).
+  local_auth_enabled                 = false
+  outbound_network_access_restricted = true
+
+  # System-assigned identity on the account itself (CKV_AZURE_238) — available
+  # for customer-managed-key / outbound scenarios layered on by operators.
+  identity {
+    type = "SystemAssigned"
+  }
+
   tags = local.tags
 }
 
