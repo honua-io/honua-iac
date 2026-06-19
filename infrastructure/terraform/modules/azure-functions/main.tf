@@ -307,7 +307,15 @@ locals {
     APPLICATIONINSIGHTS_CONNECTION_STRING = azurerm_application_insights.this[0].connection_string
     APPINSIGHTS_INSTRUMENTATIONKEY        = azurerm_application_insights.this[0].instrumentation_key
   } : {}
-  app_settings = merge(local.base_app_settings, local.control_plane_app_settings, local.redis_secret_settings, local.registry_settings, local.app_insights_settings, var.additional_env)
+  # Both the AI (Azure OpenAI) and Pro-license features authenticate to Azure as
+  # the function app's user-assigned identity, so the server needs AZURE_CLIENT_ID
+  # to select that identity from the managed-identity credential chain. Injected
+  # once when either feature is enabled.
+  managed_identity_settings = (local.openai_ai_enabled || local.pro_license_enabled) ? {
+    AZURE_CLIENT_ID = azurerm_user_assigned_identity.function.client_id
+  } : {}
+
+  app_settings = merge(local.base_app_settings, local.control_plane_app_settings, local.redis_secret_settings, local.registry_settings, local.app_insights_settings, local.openai_ai_environment, local.pro_license_environment, local.managed_identity_settings, var.additional_env)
 
   image_parts         = split("/", var.image)
   image_registry      = local.image_parts[0]
@@ -389,7 +397,9 @@ resource "azurerm_linux_function_app" "this" {
     azurerm_key_vault_access_policy.function_app,
     azurerm_role_assignment.function_storage_blob,
     azurerm_role_assignment.function_storage_queue,
-    azurerm_role_assignment.function_storage_table
+    azurerm_role_assignment.function_storage_table,
+    azurerm_role_assignment.function_openai_user,
+    azurerm_key_vault_secret.pro_license
   ]
 }
 
@@ -445,7 +455,9 @@ resource "azurerm_linux_function_app_slot" "staging" {
     azurerm_key_vault_access_policy.function_app,
     azurerm_role_assignment.function_storage_blob,
     azurerm_role_assignment.function_storage_queue,
-    azurerm_role_assignment.function_storage_table
+    azurerm_role_assignment.function_storage_table,
+    azurerm_role_assignment.function_openai_user,
+    azurerm_key_vault_secret.pro_license
   ]
 }
 

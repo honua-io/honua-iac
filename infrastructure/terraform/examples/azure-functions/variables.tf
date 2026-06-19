@@ -174,3 +174,58 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "enable_openai_ai" {
+  description = "Route the AI studio (WorkflowGeneration) flows to Azure OpenAI via the function's managed identity."
+  type        = bool
+  default     = false
+}
+
+variable "openai_account_name" {
+  description = "Optional existing Azure OpenAI account to reference instead of creating one."
+  type        = string
+  default     = ""
+}
+
+variable "openai_deployment_name" {
+  description = "Azure OpenAI model deployment name (surfaced as the WorkflowGeneration Model)."
+  type        = string
+  default     = "honua-gpt-4o"
+}
+
+variable "openai_model" {
+  description = "Azure OpenAI model id to deploy when creating a new deployment."
+  type        = string
+  default     = "gpt-4o"
+}
+
+variable "openai_api_version" {
+  description = "Azure OpenAI REST API version the server uses."
+  type        = string
+  default     = "2024-10-21"
+}
+
+variable "enable_pro_license" {
+  description = "Deliver a signed Pro license to the function app via Key Vault. Requires pro_license_content and pro_license_trusted_public_key when enabled."
+  type        = bool
+  default     = false
+}
+
+variable "pro_license_content" {
+  description = "Signed Pro license envelope JSON (relabeled hyphen-free keyId). Required when enable_pro_license is true."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "pro_license_key_id" {
+  description = "License signing keyId (hyphen-free). Defaults to the demo key."
+  type        = string
+  default     = "honuademo2026q2"
+}
+
+variable "pro_license_trusted_public_key" {
+  description = "Ed25519 public key (base64url, with base64url: prefix) verifying the license. Required when enable_pro_license is true."
+  type        = string
+  default     = ""
+}

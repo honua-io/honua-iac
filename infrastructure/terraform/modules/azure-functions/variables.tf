@@ -286,3 +286,140 @@ variable "db_backup_retention_days" {
   type        = number
   default     = 14
 }
+
+# --- Azure OpenAI (AI studio / WorkflowGeneration) ------------------------
+# Optional, off by default. The Azure mirror of enable_bedrock_ai: provisions
+# (or references) an Azure OpenAI account + model deployment, grants the
+# function's managed identity the "Cognitive Services OpenAI User" role, and
+# injects the WorkflowGeneration__* env so the AI studio routes to Azure OpenAI
+# via Entra managed-identity auth.
+
+variable "enable_openai_ai" {
+  description = "Provision/reference an Azure OpenAI account + deployment, grant the function's managed identity the Cognitive Services OpenAI User role, and route the server's AI studio (WorkflowGeneration) flows to Azure OpenAI. Off by default so existing deploys are unchanged."
+  type        = bool
+  default     = false
+}
+
+variable "openai_account_name" {
+  description = "Name of an already-provisioned Azure OpenAI (Cognitive Services) account to reference instead of creating one (avoids account-quota friction). Leave empty to create a new account."
+  type        = string
+  default     = ""
+}
+
+variable "openai_account_rg" {
+  description = "Resource group of the existing Azure OpenAI account (when openai_account_name is set). Defaults to the module's resource group when empty."
+  type        = string
+  default     = ""
+}
+
+variable "openai_endpoint" {
+  description = "Optional explicit Azure OpenAI endpoint override (WorkflowGeneration provider Endpoint). When empty the created/referenced account's endpoint is used."
+  type        = string
+  default     = ""
+}
+
+variable "openai_deployment_name" {
+  description = "Azure OpenAI model deployment name. Surfaced to the server as WorkflowGeneration provider Model (Azure OpenAI selects the model by deployment name)."
+  type        = string
+  default     = "honua-gpt-4o"
+}
+
+variable "openai_model" {
+  description = "Azure OpenAI model id to deploy (the underlying OpenAI model name, e.g. gpt-4o). Used when creating a new deployment."
+  type        = string
+  default     = "gpt-4o"
+}
+
+variable "openai_model_version" {
+  description = "Optional Azure OpenAI model version for the created deployment. Empty lets Azure pick the default for the model."
+  type        = string
+  default     = ""
+}
+
+variable "openai_deployment_sku" {
+  description = "SKU name for the Azure OpenAI model deployment (e.g. Standard, GlobalStandard)."
+  type        = string
+  default     = "Standard"
+}
+
+variable "openai_deployment_capacity" {
+  description = "Capacity (thousands of tokens per minute) for the Azure OpenAI model deployment."
+  type        = number
+  default     = 10
+}
+
+variable "openai_api_version" {
+  description = "Azure OpenAI REST API version the server uses (WorkflowGeneration provider ApiVersion)."
+  type        = string
+  default     = "2024-10-21"
+}
+
+variable "openai_sku" {
+  description = "SKU for the Azure OpenAI cognitive account."
+  type        = string
+  default     = "S0"
+}
+
+variable "openai_region" {
+  description = "Azure region for the Azure OpenAI account. Defaults to the module location when empty."
+  type        = string
+  default     = ""
+}
+
+variable "openai_max_tokens" {
+  description = "Max output tokens for Azure OpenAI generation (WorkflowGeneration provider MaxTokens)."
+  type        = number
+  default     = 4096
+
+  validation {
+    condition     = var.openai_max_tokens >= 256 && var.openai_max_tokens <= 128000
+    error_message = "openai_max_tokens must be between 256 and 128000 (server-side WorkflowGeneration validation range)."
+  }
+}
+
+variable "openai_timeout_seconds" {
+  description = "Per-request timeout for Azure OpenAI generation (WorkflowGeneration provider TimeoutSeconds)."
+  type        = number
+  default     = 120
+
+  validation {
+    condition     = var.openai_timeout_seconds >= 5 && var.openai_timeout_seconds <= 300
+    error_message = "openai_timeout_seconds must be between 5 and 300 (server-side WorkflowGeneration validation range)."
+  }
+}
+
+# --- Pro license (Key Vault delivery) -------------------------------------
+# Optional, off by default. The Azure mirror of the aws-serverless Secrets
+# Manager Pro-license path: stores the signed envelope in a Key Vault secret and
+# injects Licensing__LicenseContentSecretRef (server-side resolution) +
+# Licensing__TrustedKeys__<keyId>. When off the server runs Community.
+
+variable "enable_pro_license" {
+  description = "Deliver a signed Pro license to the function app via Key Vault. Off by default; when off the server runs Community. Requires pro_license_content and pro_license_trusted_public_key when enabled."
+  type        = bool
+  default     = false
+}
+
+variable "pro_license_content" {
+  description = "The signed Pro license envelope JSON (the relabeled, hyphen-free keyId envelope, e.g. keyId=honuademo2026q2). Stored in a dedicated Key Vault secret and referenced by Licensing__LicenseContentSecretRef. Required when enable_pro_license is true."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "pro_license_key_id" {
+  description = "The license signing keyId as relabeled in the envelope. Must be hyphen-free so it is a legal env var name segment (Licensing__TrustedKeys__<keyId>). Defaults to the demo key."
+  type        = string
+  default     = "honuademo2026q2"
+
+  validation {
+    condition     = can(regex("^[A-Za-z_][A-Za-z0-9_]*$", var.pro_license_key_id))
+    error_message = "pro_license_key_id must be a valid environment-variable name segment (letters, digits, underscore; no hyphens)."
+  }
+}
+
+variable "pro_license_trusted_public_key" {
+  description = "The Ed25519 public key (base64url, with the base64url: prefix) that verifies the Pro license signature. Injected as Licensing__TrustedKeys__<pro_license_key_id>. Required when enable_pro_license is true."
+  type        = string
+  default     = ""
+}

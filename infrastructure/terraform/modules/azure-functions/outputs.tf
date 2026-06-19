@@ -93,3 +93,29 @@ output "redis_connection_secret_id" {
   value     = local.redis_connection != "" ? azurerm_key_vault_secret.redis_connection[0].id : null
   sensitive = true
 }
+
+output "openai_ai_enabled" {
+  description = "Whether the server is configured to route AI studio (WorkflowGeneration) flows to Azure OpenAI."
+  value       = local.openai_ai_enabled
+}
+
+output "openai_account_id" {
+  description = "Resource ID of the Azure OpenAI account in use (created or referenced; null when disabled)."
+  value       = local.openai_account_id
+}
+
+output "openai_endpoint" {
+  description = "Azure OpenAI endpoint surfaced to the server (empty when disabled)."
+  value       = local.openai_endpoint
+}
+
+output "pro_license_enabled" {
+  description = "Whether the server is configured to load a signed Pro license from Key Vault."
+  value       = local.pro_license_enabled
+}
+
+output "pro_license_secret_id" {
+  description = "ID of the Key Vault secret holding the signed Pro license envelope (null when enable_pro_license is false)."
+  value       = try(azurerm_key_vault_secret.pro_license[0].id, null)
+  sensitive   = true
+}
