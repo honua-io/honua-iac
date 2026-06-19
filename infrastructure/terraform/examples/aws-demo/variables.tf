@@ -80,3 +80,81 @@ variable "gp_batch_image" {
   type        = string
   default     = ""
 }
+
+# ---------------------------------------------------------------------------
+# Redis — in-VPC ElastiCache for the Production feature-change event store.
+# Off by default (matches the original demo). When enabled, the aws-serverless
+# module creates the cluster and wires the Lambda 6379 egress as a CIDR rule
+# (the VPC CIDR) — a SG-reference egress rule did NOT work in this VPC.
+# ---------------------------------------------------------------------------
+
+variable "enable_redis" {
+  description = "Provision an in-VPC ElastiCache Redis (honua-demo-demo-redis) and inject ConnectionStrings__redis. honua-server requires a durable feature-change event store in Production; without Redis /healthz/ready returns 503. The Lambda's 6379 egress rule is added as a CIDR rule (the VPC CIDR) — a SG-reference egress rule does not work in this VPC."
+  type        = bool
+  default     = false
+}
+
+variable "redis_node_type" {
+  description = "ElastiCache node type. The live demo runs cache.t3.micro."
+  type        = string
+  default     = "cache.t3.micro"
+}
+
+# ---------------------------------------------------------------------------
+# Pro license — signed envelope delivered via Secrets Manager.
+# Off by default. When enabled, supply the secret VALUE via a gitignored
+# terraform.tfvars; NEVER commit pro_license_content / the trusted public key.
+# The live demo's <name>/license-pro secret already exists — adopt it with
+# `terraform import` rather than recreating it (see README).
+# ---------------------------------------------------------------------------
+
+variable "enable_pro_license" {
+  description = "Deliver a signed Pro license to the demo Lambda via Secrets Manager (<name>/license-pro). When off the server runs Community. Requires pro_license_content and pro_license_trusted_public_key when enabled — supply them via a gitignored terraform.tfvars."
+  type        = bool
+  default     = false
+}
+
+variable "pro_license_content" {
+  description = "The signed Pro license envelope JSON (hyphen-free keyId envelope, e.g. keyId=honuademo2026q2). Stored in Secrets Manager, referenced by Licensing__LicenseContentSecretRef. Required when enable_pro_license is true. NEVER commit this value — supply via a gitignored terraform.tfvars."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "pro_license_key_id" {
+  description = "The license signing keyId as relabeled in the envelope (hyphen-free so it is a legal Lambda env var name segment: Licensing__TrustedKeys__<keyId>). Defaults to the demo key honuademo2026q2."
+  type        = string
+  default     = "honuademo2026q2"
+}
+
+variable "pro_license_trusted_public_key" {
+  description = "The Ed25519 public key (base64url, with the base64url: prefix) that verifies the Pro license signature. Injected as Licensing__TrustedKeys__<pro_license_key_id>. Required when enable_pro_license is true — supply via a gitignored terraform.tfvars."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+# ---------------------------------------------------------------------------
+# Bedrock AI — WorkflowGeneration via Amazon Bedrock (us-west-2).
+# Off by default. When enabled, grants the Lambda role least-privilege
+# bedrock:InvokeModel for the configured Claude model and provisions the
+# bedrock-runtime VPC interface endpoint this no-NAT VPC needs (vpc-endpoints.tf).
+# ---------------------------------------------------------------------------
+
+variable "enable_bedrock_ai" {
+  description = "Grant the demo Lambda role bedrock:InvokeModel / InvokeModelWithResponseStream for the configured Claude model, route the AI studio (WorkflowGeneration) to Amazon Bedrock, and provision the bedrock-runtime VPC interface endpoint (this no-NAT VPC has no other egress path to Bedrock). Off by default."
+  type        = bool
+  default     = false
+}
+
+variable "bedrock_ai_model" {
+  description = "Bedrock model id the server's WorkflowGeneration uses. Defaults to the cross-region Claude Sonnet 4.5 inference profile (the `us.` prefix routes across us-east-1/us-east-2/us-west-2). The IAM grant is scoped to this model's inference-profile + foundation-model ARNs."
+  type        = string
+  default     = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+}
+
+variable "bedrock_ai_region" {
+  description = "AWS region the server invokes Bedrock in (WorkflowGeneration provider Region) and where the bedrock-runtime VPC interface endpoint is created. Defaults to us-west-2 — keep it equal to var.region (the demo VPC's region) so the interface endpoint resolves."
+  type        = string
+  default     = "us-west-2"
+}
