@@ -1,12 +1,40 @@
 # Module Publishing Decision
 
-Tracks the evaluation requested in honua-io/honua-terraform#10: should the
-Terraform modules under `infrastructure/terraform/modules/` be published to a
-registry, and if so, how.
+Tracks the evaluation requested in honua-io/honua-terraform#10 (now
+honua-io/honua-iac): should the Terraform modules under
+`infrastructure/terraform/modules/` be published to a registry, and if so, how.
 
-This document is the recorded decision. It does not, by itself, ship any
-release automation; the follow-up work in [Follow-up tickets](#follow-up-tickets-if-approved)
-gates the actual rollout.
+This document is the recorded decision.
+
+## Status: decided and adopted (honua-io/honua-iac#39)
+
+The recommendation below is **adopted**. Modules are distributed via **Git
+source at a SemVer tag**, not the public Terraform Registry. The public registry
+is blocked by the Elastic License 2.0 (see
+[Why not the public Terraform Registry](#why-not-the-public-terraform-registry));
+publishing there would require relicensing, which is out of scope.
+
+The `source = "honua-io/honua/aws"` public-registry snippet on
+`honua.io/operations.html` returns 404 because no such registry module exists.
+That snippet is replaced with the resolvable Git-source form documented in
+[`module-versioning.md`](module-versioning.md). The consumable form is:
+
+```hcl
+module "honua" {
+  source = "git::https://github.com/honua-io/honua-iac.git//infrastructure/terraform/modules/aws-ecs?ref=v0.1.0"
+  # ...module inputs...
+}
+```
+
+Operational details (tag scheme, pre-1.0 stance, breaking-change policy, release
+process) live in [`module-versioning.md`](module-versioning.md). The
+`CHANGELOG.md` at the repo root tracks per-release notes. The
+`infrastructure/terraform/examples/registry-pin/` example exercises the
+Git-source consumer contract end-to-end.
+
+Remaining manual step: cut and push the first `v0.1.0` tag and publish the
+matching GitHub Release. Tagging requires push access to the repository and is
+performed by a maintainer; see the release process in `module-versioning.md`.
 
 ## Recommendation
 

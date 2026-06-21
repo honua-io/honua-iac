@@ -5,6 +5,23 @@ Deploys an optional Prometheus + Grafana stack on Kubernetes using Helm.
 This module is intentionally separate from core Honua deployment modules so the
 base platform can run without self-hosted observability components.
 
+## Pin to a release
+
+This is a **Tier 2 add-on**: it is published alongside the Tier 1 runtime
+modules, but its contract may move faster, so expect more frequent minor bumps.
+For a versioned, external pin, consume it by Git source at a SemVer tag. (The
+Honua repos are ELv2-licensed, so the public Terraform Registry is not used —
+see [`docs/module-versioning.md`](../../../../docs/module-versioning.md).)
+
+```hcl
+module "observability" {
+  source = "git::https://github.com/honua-io/honua-iac.git//infrastructure/terraform/modules/observability-stack?ref=v0.1.0"
+  # ...inputs below...
+}
+```
+
+Bump `?ref=` to move to a newer release and run `terraform init -upgrade`.
+
 ## What it provisions
 
 - Prometheus Helm release (`prometheus-community/prometheus`)

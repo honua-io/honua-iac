@@ -2,6 +2,9 @@
 
 Provisions a minimal Amazon EKS cluster and VPC for integration validation flows.
 
+> Internal-only; not part of the published module surface. See
+> [`docs/module-versioning.md`](../../../../docs/module-versioning.md).
+
 ## What it provisions
 
 - VPC with public/private subnets and NAT gateway

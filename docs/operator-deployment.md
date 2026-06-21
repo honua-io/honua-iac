@@ -59,6 +59,30 @@ terraform -chdir=infrastructure/terraform/examples/<stack> destroy
 - Use managed secrets and remote state backend
 - Add mandatory tags (owner, env, cost center)
 
+## Consuming modules at a pinned version
+
+Operators who template their own root module (instead of using the in-repo
+`examples/*` stacks) can pin a Honua module to a released version via Git source:
+
+```hcl
+module "honua" {
+  source = "git::https://github.com/honua-io/honua-iac.git//infrastructure/terraform/modules/aws-ecs?ref=v0.1.0"
+  # ...module inputs...
+}
+```
+
+Swap `aws-ecs` for any Tier 1 / Tier 2 module and `v0.1.0` for the tag you want.
+Run `terraform init` (or `terraform init -upgrade` to move to a newer tag). A
+ready-to-copy example lives at
+`infrastructure/terraform/examples/registry-pin/`.
+
+Modules are not published to the public Terraform Registry: the Honua repos are
+licensed under the Elastic License 2.0 (ELv2), which the public registry does
+not permit. ELv2 still applies to consumers who pull modules via Git source. See
+[`module-versioning.md`](module-versioning.md) and
+[`module-publishing-decision.md`](module-publishing-decision.md) for the full
+distribution policy.
+
 ## Existing infrastructure reuse
 
 All main stacks support reusing existing data/network resources via `existing_*` variables.
