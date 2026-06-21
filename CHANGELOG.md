@@ -14,6 +14,16 @@ module input/output contracts may still change.
 
 ## Unreleased
 
+### tooling
+
+- Added the manual cloud runbook validation procedure
+  (`docs/devops/manual-cloud-runbook-validation.md`), a structured evidence
+  schema (`docs/devops/cloud-runbook-evidence-template.json`), and an evidence
+  capture helper (`scripts/capture-runbook-evidence.sh` ->
+  `infrastructure/terraform/validation/scripts/shared/capture-runbook-evidence.sh`)
+  for recording apply -> smoke -> destroy beta-validation evidence across the
+  AWS/Azure AOT and JIT matrix. No module inputs or outputs changed.
+
 ## v0.1.0
 
 First tagged, version-pinnable release of the Honua Terraform modules. No module

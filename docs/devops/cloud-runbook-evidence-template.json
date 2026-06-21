@@ -1,0 +1,42 @@
+{
+  "schema": "honua.cloud-runbook-evidence/v1",
+  "cloud": "aws",
+  "target": "aws-ecs",
+  "mode": "aot",
+  "launch_class": "must-pass",
+  "environment": "validation",
+  "deployment_profile": "ephemeral",
+  "operator": null,
+  "image_ref": null,
+  "honua_url": null,
+  "workflow_run_url": null,
+  "started_at": null,
+  "captured_at": null,
+  "phases": {
+    "apply": {
+      "result": null,
+      "duration_seconds": null
+    },
+    "smoke": {
+      "readiness": null,
+      "liveness": null,
+      "admin_version": null,
+      "admin_ui": null
+    },
+    "destroy": {
+      "result": null,
+      "duration_seconds": null
+    },
+    "cleanup_verified": null
+  },
+  "retained_resources": null,
+  "checks": [
+    { "name": "apply_succeeded", "verdict": "not-evaluated" },
+    { "name": "smoke_contract_passed", "verdict": "not-evaluated" },
+    { "name": "admin_ui_verified", "verdict": "not-evaluated" },
+    { "name": "destroy_succeeded", "verdict": "not-evaluated" },
+    { "name": "cleanup_verified", "verdict": "not-evaluated" }
+  ],
+  "verdict": "not-evaluated",
+  "notes": null
+}

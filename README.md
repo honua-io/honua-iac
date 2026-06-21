@@ -48,6 +48,13 @@ For integration/QA validation flows (policy gates, live applies, drift checks, A
 - [infrastructure/terraform/README.md](infrastructure/terraform/README.md)
 - [docs/devops/terraform-validation.md](docs/devops/terraform-validation.md)
 
+## Beta cloud validation
+
+Apply -> smoke -> destroy runbook execution and structured evidence capture for
+beta sign-off across the AWS/Azure AOT and JIT matrix:
+
+- [docs/devops/manual-cloud-runbook-validation.md](docs/devops/manual-cloud-runbook-validation.md)
+
 ## Disaster-recovery drills
 
 Backup/restore and failover drill runbooks with RTO/RPO evidence capture:
