@@ -6,6 +6,18 @@ This runbook defines the on-demand Terraform validation flow for Honua across Az
 
 Validation is executed manually when Terraform changes are ready to verify. There is no nightly Terraform apply/destroy schedule in this flow.
 
+## Manual cloud runbook validation + evidence
+
+The operator procedure for executing the apply -> smoke -> destroy runbooks
+against live AWS/Azure accounts and recording structured beta-validation
+evidence lives in
+[`manual-cloud-runbook-validation.md`](manual-cloud-runbook-validation.md):
+
+- Covers the AWS/Azure AOT and JIT matrix cells, pass/fail criteria, admin UI
+  verification, and post-destroy cleanup checks.
+- [`cloud-runbook-evidence-template.json`](cloud-runbook-evidence-template.json): canonical evidence schema per matrix cell.
+- Evidence helper: `scripts/capture-runbook-evidence.sh` -> `infrastructure/terraform/validation/scripts/shared/capture-runbook-evidence.sh`.
+
 ## Disaster-recovery drill runbooks
 
 Reliability drills for the validated managed targets live alongside this runbook:
