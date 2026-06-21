@@ -2,6 +2,9 @@
 
 Provisions a minimal Azure Kubernetes Service (AKS) cluster for integration validation flows.
 
+> Internal-only; not part of the published module surface. See
+> [`docs/module-versioning.md`](../../../../docs/module-versioning.md).
+
 ## What it provisions
 
 - Resource Group

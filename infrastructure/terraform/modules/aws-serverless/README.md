@@ -2,6 +2,22 @@
 
 Deploys Honua Server to AWS Lambda (container image) behind an API Gateway HTTP API, with RDS PostgreSQL and optional ElastiCache Redis.
 
+## Pin to a release
+
+For a versioned, external pin, consume this module by Git source at a SemVer tag
+instead of a relative path. (The Honua repos are ELv2-licensed, so the public
+Terraform Registry is not used — see
+[`docs/module-versioning.md`](../../../../docs/module-versioning.md).)
+
+```hcl
+module "honua" {
+  source = "git::https://github.com/honua-io/honua-iac.git//infrastructure/terraform/modules/aws-serverless?ref=v0.1.0"
+  # ...inputs below...
+}
+```
+
+Bump `?ref=` to move to a newer release and run `terraform init -upgrade`.
+
 ## Quick start
 
 ```hcl
