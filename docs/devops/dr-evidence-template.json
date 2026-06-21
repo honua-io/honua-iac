@@ -1,0 +1,32 @@
+{
+  "schema": "honua.dr-drill-evidence/v1",
+  "drill": "backup-restore",
+  "cloud": "aws",
+  "target": "aws-ecs",
+  "environment": "validation",
+  "operator": null,
+  "db_identifier": null,
+  "started_at": null,
+  "captured_at": null,
+  "measurements": {
+    "backup_method": null,
+    "restore_seconds": null,
+    "restored_table_count": null,
+    "postgis_extension_count": null,
+    "rto_seconds": null,
+    "rpo_seconds": null,
+    "failover_trigger": null,
+    "post_failover_ready": null
+  },
+  "targets": {
+    "rto_target_seconds": null,
+    "rpo_target_seconds": null
+  },
+  "checks": [
+    { "name": "restored_application_tables", "verdict": "not-evaluated" },
+    { "name": "postgis_extensions_present", "verdict": "not-evaluated" },
+    { "name": "restore_within_rto", "verdict": "not-evaluated" }
+  ],
+  "verdict": "not-evaluated",
+  "notes": null
+}

@@ -48,6 +48,13 @@ For integration/QA validation flows (policy gates, live applies, drift checks, A
 - [infrastructure/terraform/README.md](infrastructure/terraform/README.md)
 - [docs/devops/terraform-validation.md](docs/devops/terraform-validation.md)
 
+## Disaster-recovery drills
+
+Backup/restore and failover drill runbooks with RTO/RPO evidence capture:
+
+- [docs/devops/backup-restore-runbook.md](docs/devops/backup-restore-runbook.md)
+- [docs/devops/failover-drill-runbook.md](docs/devops/failover-drill-runbook.md)
+
 ## Module publishing scope
 
 Decision and tier classification: [docs/module-publishing-decision.md](docs/module-publishing-decision.md).
