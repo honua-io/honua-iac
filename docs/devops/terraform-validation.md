@@ -6,6 +6,17 @@ This runbook defines the on-demand Terraform validation flow for Honua across Az
 
 Validation is executed manually when Terraform changes are ready to verify. There is no nightly Terraform apply/destroy schedule in this flow.
 
+## Disaster-recovery drill runbooks
+
+Reliability drills for the validated managed targets live alongside this runbook:
+
+- [`backup-restore-runbook.md`](backup-restore-runbook.md): AWS + Azure database backup/restore drills, post-restore smoke, pass/fail criteria, and failure modes.
+- [`failover-drill-runbook.md`](failover-drill-runbook.md): AWS + Azure failover drills with RTO/RPO measurement.
+- [`dr-evidence-template.json`](dr-evidence-template.json): canonical evidence schema for both drills.
+- Evidence helper: `scripts/capture-dr-drill-evidence.sh` -> `infrastructure/terraform/validation/scripts/shared/capture-dr-drill-evidence.sh`.
+
+The AWS and Azure live integration scripts already exercise an inline `verify_db_backup_restore` drill during validation; the runbooks above are the standalone operator procedures and the evidence contract used for reliability sign-off.
+
 ## What gets validated
 
 The workflow and scripts cover:

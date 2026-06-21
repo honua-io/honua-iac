@@ -8,6 +8,7 @@ This repository owns reusable cloud modules, deployable examples, bootstrap temp
 - Reusable modules for AWS ECS, AWS EKS, AWS serverless, Azure Container Apps, Azure AKS, Azure Functions, and observability stack.
 - Bootstrap templates for least-privilege identities across the supported runtime targets.
 - Validation and platform QA scripts for live applies, policy gates, drift checks, and Kubernetes/serverless/container runtime validation.
+- Disaster-recovery drill runbooks (backup/restore, failover) with RTO/RPO evidence capture for the validated AWS and Azure targets.
 - Module publishing decision docs and operator deployment guide.
 - CI workflows for Terraform formatting, validation, security checks, manual validation, and platform QA.
 
@@ -17,6 +18,7 @@ This repository owns reusable cloud modules, deployable examples, bootstrap temp
 - Bootstrap templates: `infrastructure/terraform/bootstrap/`
 - Validation assets: `infrastructure/terraform/validation/`, `scripts/`
 - Operator docs: `docs/operator-deployment.md`, `docs/devops/terraform-validation.md`, `docs/module-publishing-decision.md`
+- DR drill runbooks: `docs/devops/backup-restore-runbook.md`, `docs/devops/failover-drill-runbook.md`, `docs/devops/dr-evidence-template.json`
 
 ## Boundary
 
