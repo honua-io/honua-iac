@@ -107,6 +107,12 @@ variable "db_multi_az" {
   default     = false
 }
 
+variable "db_deletion_protection" {
+  description = "Enable RDS deletion protection and force a final snapshot on destroy. When null (default), it is auto-enabled for the prod environment and disabled elsewhere so non-prod stacks can be torn down. Set explicitly to true/false to override."
+  type        = bool
+  default     = null
+}
+
 variable "db_require_ssl" {
   description = "Append SSL requirements to the connection string."
   type        = bool

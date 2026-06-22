@@ -186,6 +186,7 @@ If your Prometheus scrape config uses different job names, override the correspo
 | `existing_db_connection_string` | `""` | Reuse an existing PostgreSQL connection string (skips RDS provisioning and PostGIS local-exec). |
 | `db_instance_class` | `db.t3.micro` | RDS instance class. Use `db.r6g.*` for production. |
 | `db_multi_az` | false | Enable Multi-AZ failover. Recommended for production. |
+| `db_deletion_protection` | null | Enable RDS deletion protection and a final snapshot on destroy. `null` auto-enables it when `environment == "prod"` and disables it elsewhere; set `true`/`false` to override. |
 | `db_require_ssl` | true | Append SSL requirements to the connection string. |
 | `redis_enabled` | true | Provision ElastiCache Redis. |
 | `redis_connection_string` | `""` | Reuse an existing Redis connection string instead of provisioning ElastiCache. |

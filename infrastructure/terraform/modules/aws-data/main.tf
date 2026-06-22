@@ -10,6 +10,9 @@ locals {
     ManagedBy   = "terraform"
   }, var.tags)
 
+  # Protect prod data by default; null means auto (protect when environment == prod).
+  db_deletion_protection = var.db_deletion_protection != null ? var.db_deletion_protection : var.environment == "prod"
+
   db_password          = var.db_password != null ? var.db_password : random_password.db[0].result
   db_ssl               = var.db_require_ssl ? ";SSL Mode=Require;Trust Server Certificate=false" : ""
   db_endpoint          = module.rds.db_instance_address
@@ -189,6 +192,10 @@ module "rds" {
 
   backup_retention_period = var.environment == "prod" ? 7 : 3
   maintenance_window      = "Sun:04:00-Sun:05:00"
+
+  deletion_protection              = local.db_deletion_protection
+  skip_final_snapshot              = !local.db_deletion_protection
+  final_snapshot_identifier_prefix = "${local.name}-postgres-final"
 
   tags = local.tags
 }

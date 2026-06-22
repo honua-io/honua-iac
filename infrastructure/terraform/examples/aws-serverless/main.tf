@@ -21,6 +21,7 @@ module "honua" {
   existing_db_connection_string   = var.existing_db_connection_string
   db_publicly_accessible          = var.db_publicly_accessible
   db_additional_ingress_cidrs     = var.db_additional_ingress_cidrs
+  db_deletion_protection          = var.db_deletion_protection
   enable_postgis                  = var.enable_postgis
   postgis_readiness_max_attempts  = var.postgis_readiness_max_attempts
   postgis_readiness_sleep_seconds = var.postgis_readiness_sleep_seconds

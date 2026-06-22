@@ -15,19 +15,21 @@ locals {
     Environment = var.environment
     ManagedBy   = "terraform"
   }, var.tags)
-  use_existing_vpc      = var.existing_vpc_id != ""
-  vpc_id                = local.use_existing_vpc ? var.existing_vpc_id : module.vpc[0].vpc_id
-  vpc_cidr_block        = local.use_existing_vpc ? var.existing_vpc_cidr : module.vpc[0].vpc_cidr_block
-  public_subnets        = local.use_existing_vpc ? var.existing_public_subnet_ids : module.vpc[0].public_subnets
-  private_subnets       = local.use_existing_vpc ? var.existing_private_subnet_ids : module.vpc[0].private_subnets
-  db_use_existing       = var.existing_db_endpoint != "" && var.existing_db_connection_string != ""
-  use_managed_cert      = var.domain_name != "" && var.route53_zone_id != ""
-  use_https             = var.alb_certificate_arn != "" || local.use_managed_cert
-  create_domain_alias   = var.domain_alias_record_enabled && var.domain_name != "" && var.route53_zone_id != ""
-  use_custom_domain     = var.domain_name != "" && local.use_https
-  service_host          = local.use_custom_domain ? var.domain_name : aws_lb.this.dns_name
-  service_scheme        = local.use_https ? "https" : "http"
-  default_ingress_cidrs = [local.vpc_cidr_block]
+  use_existing_vpc = var.existing_vpc_id != ""
+  vpc_id           = local.use_existing_vpc ? var.existing_vpc_id : module.vpc[0].vpc_id
+  vpc_cidr_block   = local.use_existing_vpc ? var.existing_vpc_cidr : module.vpc[0].vpc_cidr_block
+  public_subnets   = local.use_existing_vpc ? var.existing_public_subnet_ids : module.vpc[0].public_subnets
+  private_subnets  = local.use_existing_vpc ? var.existing_private_subnet_ids : module.vpc[0].private_subnets
+  db_use_existing  = var.existing_db_endpoint != "" && var.existing_db_connection_string != ""
+  # Protect prod data by default; null means auto (protect when environment == prod).
+  db_deletion_protection = var.db_deletion_protection != null ? var.db_deletion_protection : var.environment == "prod"
+  use_managed_cert       = var.domain_name != "" && var.route53_zone_id != ""
+  use_https              = var.alb_certificate_arn != "" || local.use_managed_cert
+  create_domain_alias    = var.domain_alias_record_enabled && var.domain_name != "" && var.route53_zone_id != ""
+  use_custom_domain      = var.domain_name != "" && local.use_https
+  service_host           = local.use_custom_domain ? var.domain_name : aws_lb.this.dns_name
+  service_scheme         = local.use_https ? "https" : "http"
+  default_ingress_cidrs  = [local.vpc_cidr_block]
   https_ingress_cidrs = length(var.allow_public_ingress_cidrs) > 0 ? var.allow_public_ingress_cidrs : (
     length(var.allow_https_ingress_cidrs) > 0 ? var.allow_https_ingress_cidrs : (local.use_https ? local.default_ingress_cidrs : [])
   )
@@ -891,6 +893,10 @@ module "rds" {
 
   backup_retention_period = var.environment == "prod" ? 7 : 3
   maintenance_window      = "Sun:04:00-Sun:05:00"
+
+  deletion_protection              = local.db_deletion_protection
+  skip_final_snapshot              = !local.db_deletion_protection
+  final_snapshot_identifier_prefix = "${local.name}-postgres-final"
 
   tags = local.tags
 }

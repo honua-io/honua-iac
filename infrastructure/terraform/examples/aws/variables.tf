@@ -89,6 +89,12 @@ variable "db_additional_ingress_cidrs" {
   default     = []
 }
 
+variable "db_deletion_protection" {
+  description = "Enable RDS deletion protection and force a final snapshot on destroy. Null (default) auto-enables it for prod and disables it elsewhere; set true/false to override."
+  type        = bool
+  default     = null
+}
+
 variable "enable_postgis" {
   description = "Enable PostGIS and PostGIS Raster during apply."
   type        = bool

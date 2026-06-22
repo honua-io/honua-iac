@@ -98,6 +98,7 @@ module "honua" {
 | `skip_migrations` | true | Skip auto-migrations. Run them out-of-band for serverless. |
 | `db_instance_class` | `db.t3.micro` | RDS instance class. |
 | `db_multi_az` | false | Enable Multi-AZ failover. |
+| `db_deletion_protection` | null | Enable RDS deletion protection and a final snapshot on destroy. `null` auto-enables it when `environment == "prod"` and disables it elsewhere; set `true`/`false` to override. |
 | `redis_enabled` | true | Provision ElastiCache Redis. |
 | `redis_connection_string` | `""` | Reuse an existing Redis connection string instead of provisioning ElastiCache. |
 | `redis_connection_cidrs` | `[]` | Trusted CIDRs for Redis egress when `redis_connection_string` points to an existing endpoint. |
