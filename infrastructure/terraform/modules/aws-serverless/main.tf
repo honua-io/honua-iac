@@ -348,6 +348,10 @@ module "rds" {
   backup_retention_period = var.environment == "prod" ? 7 : 3
   maintenance_window      = "Sun:04:00-Sun:05:00"
 
+  deletion_protection              = var.environment == "prod"
+  skip_final_snapshot              = var.environment != "prod"
+  final_snapshot_identifier_prefix = "${local.name}-postgres-final"
+
   tags = local.tags
 }
 
