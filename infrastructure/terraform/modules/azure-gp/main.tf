@@ -139,6 +139,7 @@ resource "azurerm_user_assigned_identity" "gp_task" {
 #checkov:skip=CKV_AZURE_166: Image quarantine is not required for the GP worker image; images are built and pushed by trusted CI, not arbitrary publishers.
 #checkov:skip=CKV_AZURE_167: Retention policy (untagged-manifest cleanup) is a Premium-only feature; the Standard worker-gdal registry relies on operational image hygiene.
 #checkov:skip=CKV_AZURE_233: Zone redundancy is a Premium-only feature; the cost-default Standard registry is single-zone for cert/demo.
+#checkov:skip=CKV_AZURE_237: Dedicated data endpoints are a Premium-only feature; the cost-default Standard worker-gdal registry uses the shared registry data endpoint for cert/demo.
 resource "azurerm_container_registry" "worker_gdal" {
   count = local.gp_enabled && var.create_worker_gdal_acr ? 1 : 0
   #checkov:skip=CKV_AZURE_139: see resource note.
@@ -148,6 +149,7 @@ resource "azurerm_container_registry" "worker_gdal" {
   #checkov:skip=CKV_AZURE_166: see resource note.
   #checkov:skip=CKV_AZURE_167: see resource note.
   #checkov:skip=CKV_AZURE_233: see resource note.
+  #checkov:skip=CKV_AZURE_237: see resource note.
   name                          = local.acr_name
   resource_group_name           = azurerm_resource_group.this[0].name
   location                      = azurerm_resource_group.this[0].location
@@ -173,6 +175,7 @@ resource "azurerm_role_assignment" "gp_task_acr_pull" {
 # azure.storage.output_container_url.
 # ---------------------------------------------------------------------------
 
+#checkov:skip=CKV_AZURE_43: False positive — the account name is computed via substr(replace(lower(...))) to enforce the 3-24 lowercase-alphanumeric rule, which checkov's static regex cannot evaluate; the rule is satisfied at apply time.
 #checkov:skip=CKV_AZURE_33: Queue logging is not required for the GP output blob store (no queues used); operators can layer it on.
 #checkov:skip=CKV_AZURE_59: Public network access stays enabled so scale-to-zero Batch nodes (no fixed egress IP / private endpoint in the MVP) can reach the output container; access is gated by Azure AD RBAC (the task identity's Storage Blob Data Contributor grant), not anonymous access.
 #checkov:skip=CKV_AZURE_190: Blob public access is disabled (allow_nested_items_to_be_public = false); network restriction is layered by operators.
@@ -185,6 +188,7 @@ resource "azurerm_role_assignment" "gp_task_acr_pull" {
 #checkov:skip=CKV2_AZURE_47: Blob anonymous access is disabled (allow_nested_items_to_be_public = false).
 resource "azurerm_storage_account" "gp_output" {
   count = local.count_flag
+  #checkov:skip=CKV_AZURE_43: see resource note.
   #checkov:skip=CKV_AZURE_33: see resource note.
   #checkov:skip=CKV_AZURE_59: see resource note.
   #checkov:skip=CKV_AZURE_190: see resource note.
@@ -247,8 +251,10 @@ resource "azurerm_role_assignment" "gp_task_kv_read" {
 # autoscales to zero.
 # ---------------------------------------------------------------------------
 
+#checkov:skip=CKV_AZURE_76: Customer-managed-key (Key Vault) encryption is omitted for the cost-default cert/demo substrate; the Batch account holds no durable sensitive data (per-job task params are runtime SubmitTask inputs, output staging is the separate AAD-RBAC blob store) and uses Microsoft-managed encryption at rest. CMK requires a dedicated Key Vault + key + identity wiring an operator can layer on for a hardened deploy.
 resource "azurerm_batch_account" "gp" {
-  count                = local.count_flag
+  count = local.count_flag
+  #checkov:skip=CKV_AZURE_76: see resource note.
   name                 = local.batch_account_name
   resource_group_name  = azurerm_resource_group.this[0].name
   location             = azurerm_resource_group.this[0].location
