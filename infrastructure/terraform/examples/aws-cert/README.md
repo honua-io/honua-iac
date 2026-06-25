@@ -2,8 +2,8 @@
 
 A Honua-owned stack that **certifies the serverless + GP-over-Batch path against
 real AWS** (no LocalStack). It mirrors `examples/aws-demo` but is purpose-built
-for certification: GP per-job Batch is **on**, federation is **GitHub OIDC**, and
-a budget guardrail caps spend.
+for certification: the durable GP Batch substrate is **on**, federation is
+**GitHub OIDC**, and a budget guardrail caps spend.
 
 Tracks honua-iac#2164 (cert), honua-server umbrella #2166, GitOps→GP #2165.
 
@@ -12,13 +12,12 @@ Tracks honua-iac#2164 (cert), honua-server umbrella #2166, GitOps→GP #2165.
 - **Serverless everywhere, no standing compute.** The Honua server runs on
   Lambda + API Gateway; GP runs on **AWS Batch Fargate-Spot scale-to-zero**
   (`enable_gp_batch = true`) — nothing stays warm between jobs.
-- **Per-job Batch.** The cert workflow re-applies `modules/aws-serverless` with
-  a per-job `gp_batch_image` / `gp_batch_cpu_architecture` /
-  `gp_batch_ephemeral_storage_gib` profile to mint a **job definition sized to
-  the specific GP job**. vCPU / memory / GPU / timeout / retry are passed by the
-  server's `AwsBatchComputeBackend` as **SubmitJob overrides** at submit time;
-  only the three knobs SubmitJob cannot override (image, CPU architecture,
-  ephemeral storage) are templated by terraform.
+- **Durable tiered substrate.** `modules/aws-serverless` mints a fixed **pool of
+  job-definition size tiers** (`gp-s`/`gp-m`/`gp-l`/`gp-xl`) that differ only by
+  ephemeral storage (the one knob SubmitJob cannot override). vCPU / memory /
+  timeout / retry are applied by the server's `AwsBatchComputeBackend` as
+  **SubmitJob overrides** at run time — there is **no per-job terraform apply**.
+  The server selects a tier and submits against its job-definition ARN.
 - **No long-lived keys.** The dispatched cert workflow assumes an IAM role via
   **GitHub OIDC** (`components/aws-github-oidc`), scoped by `sub` to the cert
   repo/environment and by permission to the `honua-cert-*` surface.
@@ -32,7 +31,7 @@ ARNs, the surface the OIDC role is scoped to.
 
 | Resource | Purpose |
 |---|---|
-| `module.honua` (aws-serverless) | Lambda + API Gateway + RDS + GP Batch (Fargate-Spot, per-job) |
+| `module.honua` (aws-serverless) | Lambda + API Gateway + RDS + GP Batch substrate (Fargate-Spot, tiered job-def pool) |
 | `aws_s3_bucket.cert_artifacts` | Private cert artifact bucket (GP I/O + evidence), versioned, lifecycled |
 | `module.github_oidc` | GitHub OIDC provider + least-privilege cert role |
 | `aws_budgets_budget.cert` + `aws_sns_topic.budget` | Monthly cost ceiling + alerts |
@@ -62,24 +61,24 @@ steps:
       aws-region: us-east-1
 ```
 
-## Per-job apply (devops agent)
+## Runtime contract (devops agent / server)
 
-To certify a specific GP job, the honua-devops agent re-applies with that job's
-profile:
+The cert apply is **once per environment**, not per job. The devops agent and the
+server consume the substrate's exported ARNs as opaque runtime config and submit
+jobs against them with per-job overrides — no terraform re-apply per job:
 
-```bash
-terraform -chdir=infrastructure/terraform/examples/aws-cert apply \
-  -var 'gp_batch_image=<acct>.dkr.ecr.us-east-1.amazonaws.com/honua-cert-cert-worker-gdal:job-1234' \
-  -var 'gp_batch_cpu_architecture=ARM64'
-```
-
-The new job-definition revision's ARN is the `gp_batch_job_definition_arn`
-output; the server submits against it with per-job vCPU/memory/timeout overrides.
+- `gp_job_queue_arn` — the Fargate-Spot job queue.
+- `gp_job_definition_arns` — map `{ s, m, l, xl }` of the size-tier ARNs; the
+  server picks the tier whose ephemeral storage fits the job, then applies
+  vCPU / memory / timeout / retry as `SubmitJob` overrides.
+- `gp_compute_environment_arn`, `gp_job_role_arn`, `gp_execution_role_arn`,
+  `gp_worker_gdal_repository_url`.
 
 ## Notes
 
-- **GP GPU is Fargate-incompatible.** `gp_batch_gpu_count > 0` only applies on an
-  EC2 Batch compute environment; the cert path is Fargate-Spot, so GPU stays 0.
+- **GP GPU is out of scope.** GPU needs an EC2 Batch compute environment; the
+  cert path is Fargate-Spot. The module's `gp_gpu_enabled` flag is a placeholder
+  that provisions nothing — leave it `false`.
 - **State:** uncomment the S3 backend in `versions.tf`
   (`cert/aws-cert/terraform.tfstate`) before the first real apply.
 - **Budget email subscriptions** require each subscriber to confirm via the

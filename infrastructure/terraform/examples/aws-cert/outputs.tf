@@ -13,24 +13,36 @@ output "cert_artifact_bucket_arn" {
   value       = aws_s3_bucket.cert_artifacts.arn
 }
 
-output "gp_batch_job_queue_arn" {
+# --- GP substrate runtime contract (opaque ARNs the devops agent/server read) -
+
+output "gp_job_queue_arn" {
   description = "GP Fargate Spot Batch job queue ARN."
-  value       = module.honua.gp_batch_job_queue_arn
+  value       = module.honua.gp_job_queue_arn
 }
 
-output "gp_batch_job_definition_arn" {
-  description = "GP Batch job definition ARN (current revision)."
-  value       = module.honua.gp_batch_job_definition_arn
+output "gp_job_definition_arns" {
+  description = "Map of GP job-definition size tier => ARN ({ s, m, l, xl })."
+  value       = module.honua.gp_job_definition_arns
 }
 
-output "gp_batch_job_role_arn" {
+output "gp_compute_environment_arn" {
+  description = "GP Fargate Spot Batch compute environment ARN."
+  value       = module.honua.gp_compute_environment_arn
+}
+
+output "gp_job_role_arn" {
   description = "GP Batch job (task) role ARN."
-  value       = module.honua.gp_batch_job_role_arn
+  value       = module.honua.gp_job_role_arn
 }
 
-output "worker_gdal_repository_url" {
+output "gp_execution_role_arn" {
+  description = "GP Fargate task execution role ARN (ECR pull + log writes)."
+  value       = module.honua.gp_execution_role_arn
+}
+
+output "gp_worker_gdal_repository_url" {
   description = "Push/pull URL of the dedicated worker-gdal ECR repository (null unless create_worker_gdal_repo)."
-  value       = module.honua.worker_gdal_repository_url
+  value       = module.honua.gp_worker_gdal_repository_url
 }
 
 output "github_oidc_role_arn" {

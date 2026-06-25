@@ -412,18 +412,6 @@ variable "gp_batch_workload_name" {
   default     = "Honua Geoprocessing (AWS Batch)"
 }
 
-variable "gp_batch_vcpus" {
-  description = "Default vCPU for the GP job definition (Fargate task size). Per-job overrides arrive via batch.vcpus. Must be a valid Fargate CPU/memory pairing with gp_batch_memory_mib."
-  type        = number
-  default     = 1
-}
-
-variable "gp_batch_memory_mib" {
-  description = "Default memory (MiB) for the GP job definition. Per-job overrides arrive via batch.memory_mib. Must be a valid Fargate CPU/memory pairing with gp_batch_vcpus."
-  type        = number
-  default     = 2048
-}
-
 variable "gp_batch_cpu_architecture" {
   description = "CPU architecture for the Fargate GP task (X86_64 or ARM64). ARM64 (Graviton) Fargate Spot is cheaper; match the image build."
   type        = string
@@ -441,62 +429,40 @@ variable "gp_batch_max_vcpus" {
   default     = 16
 }
 
-variable "gp_batch_timeout_seconds" {
-  description = "Default per-attempt timeout for a GP Batch job (job-definition level). Per-job overrides arrive via batch.timeout_seconds."
-  type        = number
-  default     = 3600
-}
-
-variable "gp_batch_retry_attempts" {
-  description = "Default retry attempts for a GP Batch job (job-definition level). Per-job overrides arrive via batch.retry_attempts."
-  type        = number
-  default     = 1
-
-  validation {
-    condition     = var.gp_batch_retry_attempts >= 1 && var.gp_batch_retry_attempts <= 10
-    error_message = "gp_batch_retry_attempts must be between 1 and 10 (AWS Batch limit)."
-  }
-}
-
 variable "gp_batch_data_bucket_arn" {
   description = "Optional S3 bucket ARN the GP job role may read/write (e.g. the FileStorage data bucket). Leave empty to skip granting S3 access."
   type        = string
   default     = ""
 }
 
-# --- Per-job Batch templating -------------------------------------------------
-# The server's AwsBatchComputeBackend overrides vCPU / memory / GPU count /
-# timeout / retry / share-identifier at SubmitJob time via ContainerOverrides +
-# RetryStrategy + Timeout (see AwsBatchJobClient.BuildContainerOverrides). Those
-# stay job-definition DEFAULTS here — the running job picks its own at submit.
+# --- GP job-definition POOL (size tiers) --------------------------------------
+# Terraform provisions a DURABLE per-environment substrate, NOT a unique per-job
+# config. Per-job sizing happens at RUNTIME: the server's AwsBatchComputeBackend
+# overrides vCPU / memory / timeout / retry per job at SubmitJob time
+# (ContainerOverrides + RetryStrategy + Timeout) with zero infra change, so
+# terraform must NOT template those per job.
 #
-# The three knobs AWS Batch SubmitJob canNOT override live ONLY in the job
-# definition, so a UNIQUE-per-GP-job profile must be templated by terraform:
-#   - container image (gp_batch_image)            — already a variable above
-#   - runtime platform / CPU architecture          — gp_batch_cpu_architecture
-#   - ephemeral storage (Fargate task scratch)     — gp_batch_ephemeral_storage_gib
-# The honua-devops AI agent applies this module with a per-job image / arch /
-# ephemeral-storage profile to mint a job definition sized to that GP job.
+# The ONLY job-def knob SubmitJob cannot override is ephemeral (scratch) storage.
+# So the module mints a fixed POOL of 4 job definitions (gp-s/m/l/xl, see
+# local.gp_batch_tiers in batch.tf) differing ONLY by ephemeral storage
+# (20/50/100/200 GiB); the server selects the tier per job. vCPU/memory are just
+# job-def DEFAULTS (1 vCPU / 2048 MiB) the server overrides. There are
+# intentionally NO per-job vcpus/memory/timeout/retry/ephemeral/gpu variables.
 
-variable "gp_batch_ephemeral_storage_gib" {
-  description = "Ephemeral (scratch) storage in GiB for the GP Fargate task. Templated into the job definition because SubmitJob cannot override it; size it to the largest intermediate a GP job stages on local disk. Fargate allows 20-200 GiB. null leaves the Fargate default (20 GiB)."
-  type        = number
-  default     = null
-
-  validation {
-    condition     = var.gp_batch_ephemeral_storage_gib == null || (var.gp_batch_ephemeral_storage_gib >= 21 && var.gp_batch_ephemeral_storage_gib <= 200)
-    error_message = "gp_batch_ephemeral_storage_gib must be null or between 21 and 200 GiB (Fargate only honors values above its 20 GiB default; the ceiling is 200)."
-  }
-}
-
-variable "gp_batch_gpu_count" {
-  description = "Default GPU count for the GP job definition. OPTIONAL and NOT supported on Fargate/Fargate-Spot (GPU requires an EC2 compute environment); leave 0 on the default Fargate-Spot path. Per-job overrides arrive via batch.gpu_count. When >0 the job definition adds a GPU resource requirement default."
-  type        = number
-  default     = 0
+# --- GPU (substrate flag, out of scope) ---------------------------------------
+# GPU is NOT supported on the Fargate-Spot path (GPU requires an EC2 / managed-EC2
+# compute environment with a GPU instance type and an ECS-GPU AMI). Enabling it
+# is a separate, opt-in GPU compute environment, out of scope for this substrate.
+# This flag exists only to make that decision explicit; it provisions NOTHING
+# today (no EC2/GPU resources). Leave false on the default Fargate-Spot path.
+variable "gp_gpu_enabled" {
+  description = "Out-of-scope placeholder for a future opt-in GPU compute environment. GPU is NOT supported on Fargate-Spot and this flag provisions no EC2/GPU resources today; leave false."
+  type        = bool
+  default     = false
 
   validation {
-    condition     = var.gp_batch_gpu_count >= 0 && var.gp_batch_gpu_count <= 16
-    error_message = "gp_batch_gpu_count must be between 0 and 16."
+    condition     = var.gp_gpu_enabled == false
+    error_message = "gp_gpu_enabled is a placeholder only — GPU compute environments are out of scope and not yet implemented. Leave it false."
   }
 }
 

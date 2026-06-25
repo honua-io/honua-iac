@@ -11,9 +11,11 @@ honua_image = "<account-id>.dkr.ecr.us-east-1.amazonaws.com/honua-server:vX.Y.Z-
 # Admin password (>= 32 chars; also the connection-encryption master key).
 honua_admin_password = "REPLACE_WITH_A_32_PLUS_CHAR_SECRET"
 
-# GP per-job Batch. Leave gp_batch_image empty to reuse honua_image via
-# HONUA_JOB_KIND, or point at the dedicated worker-gdal image once pushed.
-# gp_batch_image            = "<account-id>.dkr.ecr.us-east-1.amazonaws.com/honua-cert-cert-worker-gdal:job-XXXX"
+# GP Batch substrate. Leave gp_batch_image empty to reuse honua_image via
+# HONUA_JOB_KIND, or point at the dedicated worker-gdal image once pushed. The
+# module mints a fixed pool of job-def size tiers (gp-s/m/l/xl); per-job
+# vCPU/memory/timeout/retry are runtime SubmitJob overrides, not tfvars.
+# gp_batch_image            = "<account-id>.dkr.ecr.us-east-1.amazonaws.com/honua-cert-cert-worker-gdal:vX.Y.Z"
 gp_batch_cpu_architecture = "X86_64"
 create_worker_gdal_repo   = true
 

@@ -4,9 +4,10 @@
 # A Honua-owned stack that certifies the serverless + GP-over-Batch path against
 # REAL AWS (no LocalStack). It mirrors examples/aws-demo but is purpose-built for
 # certification:
-#   - reuses modules/aws-serverless with enable_gp_batch = true (the per-job
-#     Batch path: the cert workflow re-applies with a per-job image/arch/
-#     ephemeral-storage profile to mint a job definition sized to the GP job);
+#   - reuses modules/aws-serverless with enable_gp_batch = true (the durable
+#     GP substrate: a Fargate-Spot scale-to-zero compute environment, queue, and
+#     a fixed POOL of job-definition size tiers; per-job sizing is a runtime
+#     SubmitJob override, not a terraform re-apply);
 #   - a dedicated cert S3 artifact bucket (honua-cert-* surface);
 #   - GitHub-OIDC federation (components/aws-github-oidc) so the dispatched cert
 #     workflow assumes a least-privilege role with NO long-lived key;
@@ -107,7 +108,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "cert_artifacts" {
 }
 
 # ---------------------------------------------------------------------------
-# Honua serverless module — GP-over-Batch enabled (per-job Batch).
+# Honua serverless module — GP-over-Batch enabled (durable tiered substrate).
 # ---------------------------------------------------------------------------
 
 module "honua" {
@@ -130,24 +131,20 @@ module "honua" {
 
   log_retention_days = 30
 
-  # GP over AWS Batch — per-job Fargate-Spot scale-to-zero. The honua-devops gp
-  # runtime adapter re-applies with a per-job profile (image / arch / vcpus /
-  # memory / ephemeral / timeout / retry / gpu) to mint a job definition sized
-  # to the specific GP job. Every per-job knob the adapter sets is forwarded
-  # here so the sizing is not silently dropped.
-  enable_gp_batch                = true
-  gp_batch_image                 = var.gp_batch_image
-  gp_batch_cpu_architecture      = var.gp_batch_cpu_architecture
-  gp_batch_workload_id           = var.gp_batch_workload_id
-  gp_batch_workload_name         = var.gp_batch_workload_name
-  gp_batch_vcpus                 = var.gp_batch_vcpus
-  gp_batch_memory_mib            = var.gp_batch_memory_mib
-  gp_batch_max_vcpus             = var.gp_batch_max_vcpus
-  gp_batch_timeout_seconds       = var.gp_batch_timeout_seconds
-  gp_batch_retry_attempts        = var.gp_batch_retry_attempts
-  gp_batch_ephemeral_storage_gib = var.gp_batch_ephemeral_storage_gib
-  gp_batch_gpu_count             = var.gp_batch_gpu_count
-  gp_batch_data_bucket_arn       = aws_s3_bucket.cert_artifacts.arn
+  # GP over AWS Batch — DURABLE Fargate-Spot scale-to-zero substrate. The module
+  # mints a fixed POOL of job-definition size tiers (gp-s/m/l/xl) that differ
+  # only by ephemeral storage; per-job vCPU/memory/timeout/retry are applied at
+  # runtime by the server via SubmitJob overrides, so nothing here is per-job.
+  # The honua-devops gp runtime adapter consumes the exported ARNs (queue +
+  # per-tier job definitions) as opaque config — it does NOT re-apply terraform
+  # per job. Only substrate-level inputs (image, arch, repo) are forwarded.
+  enable_gp_batch           = true
+  gp_batch_image            = var.gp_batch_image
+  gp_batch_cpu_architecture = var.gp_batch_cpu_architecture
+  gp_batch_workload_id      = var.gp_batch_workload_id
+  gp_batch_workload_name    = var.gp_batch_workload_name
+  gp_batch_max_vcpus        = var.gp_batch_max_vcpus
+  gp_batch_data_bucket_arn  = aws_s3_bucket.cert_artifacts.arn
 
   # Dedicated worker-gdal ECR repository for the cert GP worker image.
   create_worker_gdal_repo = var.create_worker_gdal_repo
@@ -177,7 +174,7 @@ module "github_oidc" {
   resource_name_prefix     = local.name
   cert_artifact_bucket_arn = aws_s3_bucket.cert_artifacts.arn
   batch_job_role_arns = compact([
-    module.honua.gp_batch_job_role_arn
+    module.honua.gp_job_role_arn
   ])
 
   tags = local.tags
