@@ -426,8 +426,8 @@ resource "aws_iam_role_policy" "lambda_batch_submit" {
 # external KMS key dependency); a lifecycle policy caps retained images.
 # ---------------------------------------------------------------------------
 
-#checkov:skip=CKV_AWS_136: AES256 (Amazon-managed) ECR encryption is used intentionally to avoid a customer-managed KMS key dependency for the GP worker repo; tighten to KMS in regulated deployments.
 resource "aws_ecr_repository" "worker_gdal" {
+  #checkov:skip=CKV_AWS_136: AES256 (Amazon-managed) ECR encryption is used intentionally to avoid a customer-managed KMS key dependency for the GP worker repo; tighten to KMS in regulated deployments.
   count                = var.create_worker_gdal_repo ? 1 : 0
   name                 = local.worker_gdal_repo_name
   image_tag_mutability = var.worker_gdal_repo_image_tag_mutability

@@ -44,12 +44,12 @@ resource "random_id" "bucket_suffix" {
 # Private; reached only by the GP job role and the OIDC cert role.
 # ---------------------------------------------------------------------------
 
-#checkov:skip=CKV_AWS_18: Access logging omitted for the ephemeral certification artifact bucket; not justified for a short-lived cert environment.
-#checkov:skip=CKV_AWS_144: Cross-region replication not required; certification artifacts are reproducible and short-lived.
-#checkov:skip=CKV_AWS_145: SSE-S3 (AES-256) applied via aws_s3_bucket_server_side_encryption_configuration; a customer-managed KMS CMK is not required for cert artifacts.
-#checkov:skip=CKV2_AWS_61: Lifecycle handled by the explicit aws_s3_bucket_lifecycle_configuration below.
-#checkov:skip=CKV2_AWS_62: Event notifications not required for the certification artifact bucket.
 resource "aws_s3_bucket" "cert_artifacts" {
+  #checkov:skip=CKV_AWS_18: Access logging omitted for the ephemeral certification artifact bucket; not justified for a short-lived cert environment.
+  #checkov:skip=CKV_AWS_144: Cross-region replication not required; certification artifacts are reproducible and short-lived.
+  #checkov:skip=CKV_AWS_145: SSE-S3 (AES-256) applied via aws_s3_bucket_server_side_encryption_configuration; a customer-managed KMS CMK is not required for cert artifacts.
+  #checkov:skip=CKV2_AWS_61: Lifecycle handled by the explicit aws_s3_bucket_lifecycle_configuration below.
+  #checkov:skip=CKV2_AWS_62: Event notifications not required for the certification artifact bucket.
   bucket        = local.cert_artifact_bucket_name
   force_destroy = true
   tags          = local.tags
