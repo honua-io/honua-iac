@@ -215,6 +215,7 @@ resource "azurerm_storage_account" "gp_output" {
 }
 
 resource "azurerm_storage_container" "gp_output" {
+  #checkov:skip=CKV2_AZURE_21: Blob read-logging not enabled for the ephemeral GP output container; short-lived job artifacts in a private AAD-RBAC container (shared-key disabled), logging/diagnostic overhead unjustified for transient compute output.
   count                 = local.count_flag
   name                  = var.gp_output_container_name
   storage_account_id    = azurerm_storage_account.gp_output[0].id
