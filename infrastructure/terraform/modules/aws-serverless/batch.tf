@@ -427,7 +427,6 @@ resource "aws_iam_role_policy" "lambda_batch_submit" {
 # ---------------------------------------------------------------------------
 
 resource "aws_ecr_repository" "worker_gdal" {
-  #checkov:skip=CKV_AWS_136: AES256 (Amazon-managed) ECR encryption is used intentionally to avoid a customer-managed KMS key dependency for the GP worker repo; tighten to KMS in regulated deployments.
   count                = var.create_worker_gdal_repo ? 1 : 0
   name                 = local.worker_gdal_repo_name
   image_tag_mutability = var.worker_gdal_repo_image_tag_mutability
@@ -438,7 +437,10 @@ resource "aws_ecr_repository" "worker_gdal" {
   }
 
   encryption_configuration {
-    encryption_type = "AES256"
+    # KMS with the AWS-managed ECR key (no CMK to manage). An inline checkov
+    # skip in this module is not honored when the repo is evaluated through the
+    # examples/aws-cert module instantiation, so use the real KMS setting.
+    encryption_type = "KMS"
   }
 
   tags = local.tags
