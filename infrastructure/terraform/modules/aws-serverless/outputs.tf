@@ -189,3 +189,13 @@ output "gp_batch_control_plane_backend_name" {
   description = "Backend name the reconciler matches to dispatch to the AWS Batch adapter."
   value       = local.gp_batch_enabled ? "honua-aws-batch" : null
 }
+
+output "worker_gdal_repository_url" {
+  description = "Push/pull URL of the dedicated worker-gdal ECR repository (null unless create_worker_gdal_repo)."
+  value       = var.create_worker_gdal_repo ? aws_ecr_repository.worker_gdal[0].repository_url : null
+}
+
+output "worker_gdal_repository_arn" {
+  description = "ARN of the dedicated worker-gdal ECR repository (null unless create_worker_gdal_repo)."
+  value       = var.create_worker_gdal_repo ? aws_ecr_repository.worker_gdal[0].arn : null
+}

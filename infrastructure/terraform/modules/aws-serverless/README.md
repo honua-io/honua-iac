@@ -222,20 +222,56 @@ module "honua" {
   gp_batch_cpu_architecture = "X86_64"  # or ARM64 (Graviton Spot is cheaper)
   gp_batch_max_vcpus        = 16         # caps concurrency/cost; scales to zero between jobs
 
+  # Per-job templating (sized by the honua-devops agent per GP job):
+  gp_batch_ephemeral_storage_gib = 50      # task scratch; SubmitJob cannot override this
+  # gp_batch_gpu_count           = 0       # EC2-only; Fargate rejects GPU (leave 0)
+
+  # Optional: dedicated worker-gdal ECR repository for the GP image.
+  create_worker_gdal_repo = true
+
   # Optional: let GP jobs read/write the FileStorage data bucket.
   gp_batch_data_bucket_arn = aws_s3_bucket.data.arn
 }
 ```
 
+### Per-job Batch: what terraform templates vs. what the server overrides
+
+A GP job's resource profile drives a **unique per-job job definition**, but most
+of the profile is **not** templated — the server's `AwsBatchComputeBackend`
+passes it as `SubmitJob` overrides at submit time (`ContainerOverrides`
+resource requirements + `RetryStrategy` + `Timeout`):
+
+| Knob | Where it lives | Source |
+|---|---|---|
+| vCPU (`batch.vcpus`) | per-submit override | `gp_batch_vcpus` is only the job-def default |
+| memory (`batch.memory_mib`) | per-submit override | `gp_batch_memory_mib` default |
+| GPU count (`batch.gpu_count`) | per-submit override | `gp_batch_gpu_count` default (Fargate rejects GPU) |
+| timeout (`batch.timeout_seconds`) | per-submit override | `gp_batch_timeout_seconds` default |
+| retry (`batch.retry_attempts`) | per-submit override | `gp_batch_retry_attempts` default |
+| share identifier (`batch.share_identifier`) | per-submit override | n/a |
+| **container image** | **job definition (templated)** | `gp_batch_image` |
+| **CPU architecture** | **job definition (templated)** | `gp_batch_cpu_architecture` |
+| **ephemeral storage** | **job definition (templated)** | `gp_batch_ephemeral_storage_gib` |
+
+Image, CPU architecture, and ephemeral storage **cannot** be overridden by
+`SubmitJob`, so a job whose profile differs in any of those needs a **fresh
+job-definition revision** — the honua-devops agent `terraform apply`s with the
+per-job `gp_batch_image` / `gp_batch_cpu_architecture` /
+`gp_batch_ephemeral_storage_gib` to mint it. The new revision's ARN is the
+`gp_batch_job_definition_arn` output.
+
 What it creates:
 
-- A **Fargate Spot** Batch compute environment (`MANAGED`, scale-to-zero — no `min_vcpus`/`desired_vcpus`, so nothing stays warm), a **job queue**, and a **job definition** for the GP container.
+- A **Fargate Spot** Batch compute environment (`MANAGED`, scale-to-zero — no `min_vcpus`/`desired_vcpus`, so nothing stays warm), a **job queue**, and a **job definition** for the GP container (image / arch / ephemeral-storage templated per job).
+- Optionally (`create_worker_gdal_repo = true`) a dedicated **`<name>-worker-gdal` ECR repository** for the GP/GDAL worker image — scan-on-push, AES256 encryption, and a lifecycle policy that retains the most recent `worker_gdal_repo_max_image_count` images. Off by default; GP otherwise reuses the Lambda image via `HONUA_JOB_KIND`. The repo name is stable regardless of the flag, so an operator can pre-create + push, then enable.
 - IAM: the Lambda execution role gets scoped `batch:SubmitJob` / `batch:TerminateJob` / `batch:CancelJob` on the queue + job-definition (revision wildcard), plus account-wide `batch:DescribeJobs` / `batch:ListJobs` (these do not support resource scoping). The Batch execution role gets ECR pull + CloudWatch Logs; the job role gets the same DB-secret access the Lambda has (and optional S3).
 - A `ControlPlane:ExecutionWorkloads` entry injected into the Lambda env (`Backend=honua-aws-batch`, `TargetKind=AwsBatch`, `Kind=Geoprocessing`) carrying the `batch.job_queue_arn`, `batch.job_definition_arn`, `batch.region`, `batch.vcpus`, and `batch.memory_mib` parameters the backend reads at submit time.
 
+> **Deploy identity:** enabling `enable_gp_batch` needs `batch:*` (scoped) + `iam:PassRole` for the Batch/ECS-tasks service roles. The `bootstrap/aws-serverless` deploy identity now grants these; an older bootstrap apply must be refreshed first or the Batch create calls fail.
+
 **Cost posture** (budget-tight demo): Fargate Spot is ~70% cheaper than on-demand Fargate; the compute environment scales to zero so you pay only for the seconds a job's container runs (no idle/warm cost). At the 1 vCPU / 2 GB default, a job costs roughly **$0.012/hour** (us-east-1 Fargate Spot ~$0.0096/vCPU-hr + ~$0.00105/GB-hr) — about **$0.012 for a one-hour job, ~$0.003 for a 15-minute job**. Spot interruptions cause Batch to retry per `gp_batch_retry_attempts`.
 
-Outputs: `gp_batch_job_queue_arn`, `gp_batch_job_definition_arn`, `gp_batch_compute_environment_arn`, `gp_batch_job_role_arn`, `gp_batch_workload_id`, `gp_batch_control_plane_backend_name` (all `null` when disabled).
+Outputs: `gp_batch_job_queue_arn`, `gp_batch_job_definition_arn`, `gp_batch_compute_environment_arn`, `gp_batch_job_role_arn`, `gp_batch_workload_id`, `gp_batch_control_plane_backend_name` (all `null` when disabled), plus `worker_gdal_repository_url` / `worker_gdal_repository_arn` (`null` unless `create_worker_gdal_repo`).
 
 ## Constraints
 

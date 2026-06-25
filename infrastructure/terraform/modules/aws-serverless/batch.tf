@@ -30,6 +30,25 @@ locals {
   # Honua image that branches to the GP worker via HONUA_JOB_KIND env), unless
   # the operator supplies a dedicated GP image.
   gp_batch_image = var.gp_batch_image != "" ? var.gp_batch_image : var.image
+
+  # Per-job resource-requirement DEFAULTS templated into the job definition. The
+  # server overrides VCPU / MEMORY / GPU at SubmitJob time (ContainerOverrides),
+  # so these are only the baseline a bare submit inherits. GPU is appended only
+  # when requested (>0) and is meaningful solely on an EC2 compute environment —
+  # Fargate/Fargate-Spot rejects GPU resource requirements.
+  gp_batch_resource_requirements = concat(
+    [
+      { type = "VCPU", value = tostring(var.gp_batch_vcpus) },
+      { type = "MEMORY", value = tostring(var.gp_batch_memory_mib) },
+    ],
+    var.gp_batch_gpu_count > 0 ? [
+      { type = "GPU", value = tostring(var.gp_batch_gpu_count) },
+    ] : []
+  )
+
+  # worker-gdal ECR repository name is stable whether or not it is created, so an
+  # operator can pre-create + push, then flip create_worker_gdal_repo on.
+  worker_gdal_repo_name = "${local.name}-worker-gdal"
 }
 
 # ---------------------------------------------------------------------------
@@ -283,15 +302,12 @@ resource "aws_batch_job_definition" "gp" {
   type                  = "container"
   platform_capabilities = ["FARGATE"]
 
-  container_properties = jsonencode({
+  container_properties = jsonencode(merge({
     image            = local.gp_batch_image
     jobRoleArn       = aws_iam_role.batch_job[0].arn
     executionRoleArn = aws_iam_role.batch_execution[0].arn
 
-    resourceRequirements = [
-      { type = "VCPU", value = tostring(var.gp_batch_vcpus) },
-      { type = "MEMORY", value = tostring(var.gp_batch_memory_mib) }
-    ]
+    resourceRequirements = local.gp_batch_resource_requirements
 
     networkConfiguration = {
       assignPublicIp = "DISABLED"
@@ -333,7 +349,16 @@ resource "aws_batch_job_definition" "gp" {
         "awslogs-stream-prefix" = "gp"
       }
     }
-  })
+    },
+    # Ephemeral storage cannot be overridden at SubmitJob time, so it is templated
+    # here only when an operator/devops agent sizes it for the job. Omitted (null)
+    # leaves the Fargate 20 GiB default.
+    var.gp_batch_ephemeral_storage_gib == null ? {} : {
+      ephemeralStorage = {
+        sizeInGiB = var.gp_batch_ephemeral_storage_gib
+      }
+    }
+  ))
 
   retry_strategy {
     attempts = var.gp_batch_retry_attempts
@@ -386,6 +411,58 @@ resource "aws_iam_role_policy" "lambda_batch_submit" {
           "batch:ListJobs"
         ]
         Resource = ["*"]
+      }
+    ]
+  })
+}
+
+# ---------------------------------------------------------------------------
+# Dedicated worker-gdal ECR repository (optional).
+# Gives the GP/GDAL worker image its own lifecycle, decoupled from the Honua
+# Lambda image. Off by default (create_worker_gdal_repo = false) because GP
+# defaults to reusing the Lambda image via HONUA_JOB_KIND. The repository name
+# is stable regardless of the flag so an operator can pre-create + push, then
+# flip the flag on. Scan-on-push is enabled; encryption uses AES256 (no
+# external KMS key dependency); a lifecycle policy caps retained images.
+# ---------------------------------------------------------------------------
+
+#checkov:skip=CKV_AWS_136: AES256 (Amazon-managed) ECR encryption is used intentionally to avoid a customer-managed KMS key dependency for the GP worker repo; tighten to KMS in regulated deployments.
+resource "aws_ecr_repository" "worker_gdal" {
+  count                = var.create_worker_gdal_repo ? 1 : 0
+  name                 = local.worker_gdal_repo_name
+  image_tag_mutability = var.worker_gdal_repo_image_tag_mutability
+  force_delete         = var.worker_gdal_repo_force_delete
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "AES256"
+  }
+
+  tags = local.tags
+}
+
+# Expire all but the most-recent N images so the GP worker repo does not
+# accumulate storage cost across job-specific tags.
+resource "aws_ecr_lifecycle_policy" "worker_gdal" {
+  count      = var.create_worker_gdal_repo ? 1 : 0
+  repository = aws_ecr_repository.worker_gdal[0].name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Retain only the most recent ${var.worker_gdal_repo_max_image_count} images."
+        selection = {
+          tagStatus   = "any"
+          countType   = "imageCountMoreThan"
+          countNumber = var.worker_gdal_repo_max_image_count
+        }
+        action = {
+          type = "expire"
+        }
       }
     ]
   })

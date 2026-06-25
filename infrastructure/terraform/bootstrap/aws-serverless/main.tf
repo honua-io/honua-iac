@@ -151,7 +151,44 @@ data "aws_iam_policy_document" "terraform" {
       "ecr:PutImage",
       "ecr:SetRepositoryPolicy",
       "ecr:TagResource",
-      "ecr:UntagResource"
+      "ecr:UntagResource",
+      "ecr:GetLifecyclePolicy",
+      "ecr:PutLifecyclePolicy",
+      "ecr:DeleteLifecyclePolicy",
+      "ecr:PutImageScanningConfiguration"
+    ]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  # --- GP on AWS Batch (Fargate Spot) -------------------------------------
+  # Provisioning + lifecycle of the gated `enable_gp_batch` stack: compute
+  # environment, job queue, job definition, plus the read/describe/tag calls an
+  # apply makes. Without this an operator enabling enable_gp_batch fails at the
+  # first batch:CreateComputeEnvironment. Region-scoped to the deploy region;
+  # Batch resources do not support resource-level scoping at create time, so the
+  # tight bound here is the region condition.
+  statement {
+    #checkov:skip=CKV_AWS_356: Batch create/describe/deregister actions do not support resource-level ARNs at provision time; scoped by aws:RequestedRegion.
+    sid = "GpBatchProvisioning"
+    actions = [
+      "batch:CreateComputeEnvironment",
+      "batch:UpdateComputeEnvironment",
+      "batch:DeleteComputeEnvironment",
+      "batch:CreateJobQueue",
+      "batch:UpdateJobQueue",
+      "batch:DeleteJobQueue",
+      "batch:RegisterJobDefinition",
+      "batch:DeregisterJobDefinition",
+      "batch:Describe*",
+      "batch:List*",
+      "batch:TagResource",
+      "batch:UntagResource"
     ]
     resources = ["*"]
 
@@ -192,6 +229,32 @@ data "aws_iam_policy_document" "terraform" {
       "iam:CreateServiceLinkedRole"
     ]
     resources = ["*"]
+  }
+
+  # --- GP Batch role PassRole (scoped by consuming service) ----------------
+  # The gated enable_gp_batch stack creates three roles — the Batch service
+  # role, the Fargate task-execution role, and the GP job (task) role — and
+  # AWS Batch / ECS must be able to assume them. iam:CreateRole / PutRolePolicy
+  # / AttachRolePolicy for these roles are already covered by IamForLambda
+  # above (resources "*"); this statement adds the PassRole grant, scoped via
+  # iam:PassedToService so the deploy identity can only hand these roles to the
+  # Batch and ECS-tasks principals (not to arbitrary services). Batch also
+  # auto-provisions its service-linked role, covered by CreateServiceLinkedRole.
+  statement {
+    sid = "GpBatchPassRole"
+    actions = [
+      "iam:PassRole"
+    ]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values = [
+        "batch.amazonaws.com",
+        "ecs-tasks.amazonaws.com"
+      ]
+    }
   }
 }
 

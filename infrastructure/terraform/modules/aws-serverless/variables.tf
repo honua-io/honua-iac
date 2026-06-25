@@ -464,6 +464,83 @@ variable "gp_batch_data_bucket_arn" {
   default     = ""
 }
 
+# --- Per-job Batch templating -------------------------------------------------
+# The server's AwsBatchComputeBackend overrides vCPU / memory / GPU count /
+# timeout / retry / share-identifier at SubmitJob time via ContainerOverrides +
+# RetryStrategy + Timeout (see AwsBatchJobClient.BuildContainerOverrides). Those
+# stay job-definition DEFAULTS here — the running job picks its own at submit.
+#
+# The three knobs AWS Batch SubmitJob canNOT override live ONLY in the job
+# definition, so a UNIQUE-per-GP-job profile must be templated by terraform:
+#   - container image (gp_batch_image)            — already a variable above
+#   - runtime platform / CPU architecture          — gp_batch_cpu_architecture
+#   - ephemeral storage (Fargate task scratch)     — gp_batch_ephemeral_storage_gib
+# The honua-devops AI agent applies this module with a per-job image / arch /
+# ephemeral-storage profile to mint a job definition sized to that GP job.
+
+variable "gp_batch_ephemeral_storage_gib" {
+  description = "Ephemeral (scratch) storage in GiB for the GP Fargate task. Templated into the job definition because SubmitJob cannot override it; size it to the largest intermediate a GP job stages on local disk. Fargate allows 20-200 GiB. null leaves the Fargate default (20 GiB)."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.gp_batch_ephemeral_storage_gib == null || (var.gp_batch_ephemeral_storage_gib >= 21 && var.gp_batch_ephemeral_storage_gib <= 200)
+    error_message = "gp_batch_ephemeral_storage_gib must be null or between 21 and 200 GiB (Fargate only honors values above its 20 GiB default; the ceiling is 200)."
+  }
+}
+
+variable "gp_batch_gpu_count" {
+  description = "Default GPU count for the GP job definition. OPTIONAL and NOT supported on Fargate/Fargate-Spot (GPU requires an EC2 compute environment); leave 0 on the default Fargate-Spot path. Per-job overrides arrive via batch.gpu_count. When >0 the job definition adds a GPU resource requirement default."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.gp_batch_gpu_count >= 0 && var.gp_batch_gpu_count <= 16
+    error_message = "gp_batch_gpu_count must be between 0 and 16."
+  }
+}
+
+# --- Dedicated GP worker (GDAL) ECR repository --------------------------------
+# Today GP reuses the Honua Lambda image and branches to the worker via
+# HONUA_JOB_KIND. This optional repo gives the GP/GDAL worker its own image
+# lifecycle (independent of the Lambda image cadence). Off by default so
+# existing deploys are unchanged; the repo name is the same with or without the
+# flag, so an operator can pre-create it, push, then enable.
+
+variable "create_worker_gdal_repo" {
+  description = "Create a dedicated worker-gdal ECR repository for the GP/GDAL worker image (separate from the Honua Lambda image). Off by default; GP defaults to reusing the Lambda image via HONUA_JOB_KIND."
+  type        = bool
+  default     = false
+}
+
+variable "worker_gdal_repo_image_tag_mutability" {
+  description = "Image tag mutability for the worker-gdal ECR repository (MUTABLE or IMMUTABLE). IMMUTABLE is recommended so a pushed cert/job tag can never be silently overwritten."
+  type        = string
+  default     = "IMMUTABLE"
+
+  validation {
+    condition     = contains(["MUTABLE", "IMMUTABLE"], var.worker_gdal_repo_image_tag_mutability)
+    error_message = "worker_gdal_repo_image_tag_mutability must be MUTABLE or IMMUTABLE."
+  }
+}
+
+variable "worker_gdal_repo_max_image_count" {
+  description = "Number of most-recent images the worker-gdal ECR lifecycle policy retains (older untagged/extra images are expired to control storage cost)."
+  type        = number
+  default     = 10
+
+  validation {
+    condition     = var.worker_gdal_repo_max_image_count >= 1
+    error_message = "worker_gdal_repo_max_image_count must be at least 1."
+  }
+}
+
+variable "worker_gdal_repo_force_delete" {
+  description = "Allow terraform destroy to delete the worker-gdal ECR repository even when it still contains images. Convenient for ephemeral cert environments; leave false for anything durable."
+  type        = bool
+  default     = false
+}
+
 # --- Pro license (Secrets Manager delivery) -------------------------------
 # Optional, off by default. When enabled, stores the signed Pro license
 # envelope in a Secrets Manager secret, grants the Lambda role
