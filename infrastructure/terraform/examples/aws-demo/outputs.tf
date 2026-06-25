@@ -80,14 +80,14 @@ output "gp_batch_enabled" {
   value       = module.honua.gp_batch_enabled
 }
 
-output "gp_batch_job_queue_arn" {
+output "gp_job_queue_arn" {
   description = "GP Fargate Spot Batch job queue ARN (null unless enable_gp_batch)."
-  value       = module.honua.gp_batch_job_queue_arn
+  value       = module.honua.gp_job_queue_arn
 }
 
-output "gp_batch_job_definition_arn" {
-  description = "GP Batch job definition ARN (null unless enable_gp_batch)."
-  value       = module.honua.gp_batch_job_definition_arn
+output "gp_job_definition_arns" {
+  description = "Map of GP job-definition size tier => ARN ({ s, m, l, xl }); null unless enable_gp_batch."
+  value       = module.honua.gp_job_definition_arns
 }
 
 # ---------------------------------------------------------------------------

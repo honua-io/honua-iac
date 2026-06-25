@@ -412,18 +412,6 @@ variable "gp_batch_workload_name" {
   default     = "Honua Geoprocessing (AWS Batch)"
 }
 
-variable "gp_batch_vcpus" {
-  description = "Default vCPU for the GP job definition (Fargate task size). Per-job overrides arrive via batch.vcpus. Must be a valid Fargate CPU/memory pairing with gp_batch_memory_mib."
-  type        = number
-  default     = 1
-}
-
-variable "gp_batch_memory_mib" {
-  description = "Default memory (MiB) for the GP job definition. Per-job overrides arrive via batch.memory_mib. Must be a valid Fargate CPU/memory pairing with gp_batch_vcpus."
-  type        = number
-  default     = 2048
-}
-
 variable "gp_batch_cpu_architecture" {
   description = "CPU architecture for the Fargate GP task (X86_64 or ARM64). ARM64 (Graviton) Fargate Spot is cheaper; match the image build."
   type        = string
@@ -441,27 +429,82 @@ variable "gp_batch_max_vcpus" {
   default     = 16
 }
 
-variable "gp_batch_timeout_seconds" {
-  description = "Default per-attempt timeout for a GP Batch job (job-definition level). Per-job overrides arrive via batch.timeout_seconds."
-  type        = number
-  default     = 3600
-}
-
-variable "gp_batch_retry_attempts" {
-  description = "Default retry attempts for a GP Batch job (job-definition level). Per-job overrides arrive via batch.retry_attempts."
-  type        = number
-  default     = 1
-
-  validation {
-    condition     = var.gp_batch_retry_attempts >= 1 && var.gp_batch_retry_attempts <= 10
-    error_message = "gp_batch_retry_attempts must be between 1 and 10 (AWS Batch limit)."
-  }
-}
-
 variable "gp_batch_data_bucket_arn" {
   description = "Optional S3 bucket ARN the GP job role may read/write (e.g. the FileStorage data bucket). Leave empty to skip granting S3 access."
   type        = string
   default     = ""
+}
+
+# --- GP job-definition POOL (size tiers) --------------------------------------
+# Terraform provisions a DURABLE per-environment substrate, NOT a unique per-job
+# config. Per-job sizing happens at RUNTIME: the server's AwsBatchComputeBackend
+# overrides vCPU / memory / timeout / retry per job at SubmitJob time
+# (ContainerOverrides + RetryStrategy + Timeout) with zero infra change, so
+# terraform must NOT template those per job.
+#
+# The ONLY job-def knob SubmitJob cannot override is ephemeral (scratch) storage.
+# So the module mints a fixed POOL of 4 job definitions (gp-s/m/l/xl, see
+# local.gp_batch_tiers in batch.tf) differing ONLY by ephemeral storage
+# (20/50/100/200 GiB); the server selects the tier per job. vCPU/memory are just
+# job-def DEFAULTS (1 vCPU / 2048 MiB) the server overrides. There are
+# intentionally NO per-job vcpus/memory/timeout/retry/ephemeral/gpu variables.
+
+# --- GPU (substrate flag, out of scope) ---------------------------------------
+# GPU is NOT supported on the Fargate-Spot path (GPU requires an EC2 / managed-EC2
+# compute environment with a GPU instance type and an ECS-GPU AMI). Enabling it
+# is a separate, opt-in GPU compute environment, out of scope for this substrate.
+# This flag exists only to make that decision explicit; it provisions NOTHING
+# today (no EC2/GPU resources). Leave false on the default Fargate-Spot path.
+variable "gp_gpu_enabled" {
+  description = "Out-of-scope placeholder for a future opt-in GPU compute environment. GPU is NOT supported on Fargate-Spot and this flag provisions no EC2/GPU resources today; leave false."
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = var.gp_gpu_enabled == false
+    error_message = "gp_gpu_enabled is a placeholder only — GPU compute environments are out of scope and not yet implemented. Leave it false."
+  }
+}
+
+# --- Dedicated GP worker (GDAL) ECR repository --------------------------------
+# Today GP reuses the Honua Lambda image and branches to the worker via
+# HONUA_JOB_KIND. This optional repo gives the GP/GDAL worker its own image
+# lifecycle (independent of the Lambda image cadence). Off by default so
+# existing deploys are unchanged; the repo name is the same with or without the
+# flag, so an operator can pre-create it, push, then enable.
+
+variable "create_worker_gdal_repo" {
+  description = "Create a dedicated worker-gdal ECR repository for the GP/GDAL worker image (separate from the Honua Lambda image). Off by default; GP defaults to reusing the Lambda image via HONUA_JOB_KIND."
+  type        = bool
+  default     = false
+}
+
+variable "worker_gdal_repo_image_tag_mutability" {
+  description = "Image tag mutability for the worker-gdal ECR repository (MUTABLE or IMMUTABLE). IMMUTABLE is recommended so a pushed cert/job tag can never be silently overwritten."
+  type        = string
+  default     = "IMMUTABLE"
+
+  validation {
+    condition     = contains(["MUTABLE", "IMMUTABLE"], var.worker_gdal_repo_image_tag_mutability)
+    error_message = "worker_gdal_repo_image_tag_mutability must be MUTABLE or IMMUTABLE."
+  }
+}
+
+variable "worker_gdal_repo_max_image_count" {
+  description = "Number of most-recent images the worker-gdal ECR lifecycle policy retains (older untagged/extra images are expired to control storage cost)."
+  type        = number
+  default     = 10
+
+  validation {
+    condition     = var.worker_gdal_repo_max_image_count >= 1
+    error_message = "worker_gdal_repo_max_image_count must be at least 1."
+  }
+}
+
+variable "worker_gdal_repo_force_delete" {
+  description = "Allow terraform destroy to delete the worker-gdal ECR repository even when it still contains images. Convenient for ephemeral cert environments; leave false for anything durable."
+  type        = bool
+  default     = false
 }
 
 # --- Pro license (Secrets Manager delivery) -------------------------------

@@ -1,0 +1,32 @@
+# GitHub Actions -> AWS OIDC federation (honua-iac#2164)
+# Copy to terraform.tfvars and adjust. Never commit terraform.tfvars.
+
+name_prefix = "honua-cert"
+environment = "cert"
+
+# Repo whose cert workflow may assume the role.
+github_owner      = "honua-io"
+github_repository = "honua-server"
+
+# Tightest practical scoping: pin to a GitHub Environment (recommended) so only
+# the cert workflow running in that environment can assume the role. Leave empty
+# to fall back to repo-wide (repo:honua-io/honua-server:*).
+# github_oidc_subjects = ["repo:honua-io/honua-server:environment:cert"]
+
+oidc_audience                = "sts.amazonaws.com"
+max_session_duration_seconds = 3600
+
+# honua-cert-* naming prefix (name_prefix-environment of the cert stack).
+resource_name_prefix = "honua-cert-cert"
+
+# Scoped permissions wiring (fill from the cert stack outputs):
+# cert_artifact_bucket_arn = "arn:aws:s3:::honua-cert-cert-artifacts-XXXX"
+# batch_job_role_arns      = ["arn:aws:iam::<account>:role/honua-cert-cert-gp-job-XXXX"]
+
+# If the account already has a GitHub OIDC provider (only one per issuer URL):
+# create_oidc_provider       = false
+# existing_oidc_provider_arn = "arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com"
+
+tags = {
+  CostCenter = "certification"
+}

@@ -1,0 +1,38 @@
+# Honua real-AWS certification tier (examples/aws-cert, honua-iac#2164)
+# Copy to terraform.tfvars and fill in. Never commit terraform.tfvars.
+
+region      = "us-east-1"
+name_prefix = "honua-cert"
+environment = "cert"
+
+# Honua Lambda image — pin to an immutable *-lambda-aot release tag or digest.
+honua_image = "<account-id>.dkr.ecr.us-east-1.amazonaws.com/honua-server:vX.Y.Z-lambda-aot"
+
+# Admin password (>= 32 chars; also the connection-encryption master key).
+honua_admin_password = "REPLACE_WITH_A_32_PLUS_CHAR_SECRET"
+
+# GP Batch substrate. Leave gp_batch_image empty to reuse honua_image via
+# HONUA_JOB_KIND, or point at the dedicated worker-gdal image once pushed. The
+# module mints a fixed pool of job-def size tiers (gp-s/m/l/xl); per-job
+# vCPU/memory/timeout/retry are runtime SubmitJob overrides, not tfvars.
+# gp_batch_image            = "<account-id>.dkr.ecr.us-east-1.amazonaws.com/honua-cert-cert-worker-gdal:vX.Y.Z"
+gp_batch_cpu_architecture = "X86_64"
+create_worker_gdal_repo   = true
+
+# Budget guardrail.
+monthly_budget_usd  = 200
+budget_alert_emails = ["devops@honua.io"]
+
+# GitHub OIDC trust scoping. Tightest practical scope for a dispatched cert
+# workflow is a dedicated GitHub Environment.
+github_owner      = "honua-io"
+github_repository = "honua-server"
+# github_oidc_subjects = ["repo:honua-io/honua-server:environment:cert"]
+
+# If the account already has a GitHub OIDC provider (one per issuer URL):
+# create_oidc_provider       = false
+# existing_oidc_provider_arn = "arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com"
+
+tags = {
+  CostCenter = "certification"
+}
