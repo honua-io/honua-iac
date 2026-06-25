@@ -58,6 +58,66 @@ variable "gp_batch_cpu_architecture" {
   default     = "X86_64"
 }
 
+# Per-job sizing knobs forwarded to the module so the honua-devops gp runtime
+# adapter can re-apply with a profile sized to a specific GP job. The adapter
+# sets these via TF_VAR_gp_batch_*; the defaults mirror the module so the cert
+# stack applies cleanly when a knob is not specified. (vCPU/memory/timeout/retry
+# are also SubmitJob overrides at run time; image/arch/ephemeral/GPU are not, so
+# they must be templated into the job definition here.)
+variable "gp_batch_workload_id" {
+  description = "Stable workload identifier for the per-job GP Batch resources."
+  type        = string
+  default     = "geoprocessing-batch"
+}
+
+variable "gp_batch_workload_name" {
+  description = "Human-readable name for the per-job GP Batch workload."
+  type        = string
+  default     = "Honua Geoprocessing (AWS Batch)"
+}
+
+variable "gp_batch_vcpus" {
+  description = "Default vCPUs for the GP job definition (SubmitJob can override per job)."
+  type        = number
+  default     = 1
+}
+
+variable "gp_batch_memory_mib" {
+  description = "Default memory (MiB) for the GP job definition (SubmitJob can override per job)."
+  type        = number
+  default     = 2048
+}
+
+variable "gp_batch_max_vcpus" {
+  description = "Max vCPUs ceiling for the GP Fargate-Spot compute environment."
+  type        = number
+  default     = 16
+}
+
+variable "gp_batch_timeout_seconds" {
+  description = "Default job timeout (seconds) for the GP job definition."
+  type        = number
+  default     = 3600
+}
+
+variable "gp_batch_retry_attempts" {
+  description = "Default retry attempts for the GP job definition."
+  type        = number
+  default     = 1
+}
+
+variable "gp_batch_ephemeral_storage_gib" {
+  description = "Ephemeral scratch storage (GiB) for the GP Fargate task; templated into the job definition because SubmitJob cannot override it. null leaves the Fargate 20 GiB default; otherwise 21-200."
+  type        = number
+  default     = null
+}
+
+variable "gp_batch_gpu_count" {
+  description = "Default GPU count for the GP job definition. NOT supported on Fargate-Spot (GPU requires an EC2 compute environment); leave 0 on the default path."
+  type        = number
+  default     = 0
+}
+
 variable "create_worker_gdal_repo" {
   description = "Create the dedicated worker-gdal ECR repository for the cert GP worker image."
   type        = bool
