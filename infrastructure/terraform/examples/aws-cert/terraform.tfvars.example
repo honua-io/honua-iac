@@ -19,6 +19,19 @@ honua_admin_password = "REPLACE_WITH_A_32_PLUS_CHAR_SECRET"
 gp_batch_cpu_architecture = "X86_64"
 create_worker_gdal_repo   = true
 
+# Custom-code (UNTRUSTED user code) Batch substrate — SEPARATE + HARDENED.
+# Empty secrets, a minimal task role (scoped to the cert artifact bucket's
+# `customcode/` prefix only — NO DB/secrets reach), a constrained egress
+# allowlist (defaults to the VPC CIDR, no open internet). The scoped
+# HONUA_JOB_TOKEN injected by the server is the trust boundary, not IAM. Off by
+# default; flip on to provision the queue + size-tier pool + worker repo.
+# enable_customcode_batch       = true
+# create_worker_customcode_repo = true
+# customcode_batch_image        = "<account-id>.dkr.ecr.us-east-1.amazonaws.com/honua-cert-cert-worker-customcode-python:vX.Y.Z"
+customcode_batch_cpu_architecture = "X86_64"
+# Tighten egress for MVP to PyPI/GitHub/Honua-API/artifact-S3 CIDRs; empty = VPC CIDR only.
+# customcode_egress_https_cidrs = ["0.0.0.0/0"]
+
 # Budget guardrail.
 monthly_budget_usd  = 200
 budget_alert_emails = ["devops@honua.io"]

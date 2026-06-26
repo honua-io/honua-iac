@@ -207,3 +207,52 @@ output "worker_gdal_repository_arn" {
   description = "ARN of the dedicated worker-gdal ECR repository (null unless create_worker_gdal_repo)."
   value       = var.create_worker_gdal_repo ? aws_ecr_repository.worker_gdal[0].arn : null
 }
+
+# --- Custom-code (untrusted) AWS Batch outputs -----------------------------
+# The cross-repo contract the server consumes for custom-code jobs. The server
+# has no custom-code-specific param keys on trunk yet; it reads the GP batch
+# substrate as opaque ARNs via batch.job_queue_arn / batch.job_definition_arn
+# (AwsBatchComputeBackend), so these mirror that shape — the server selects a
+# size tier and submits against the chosen job-definition ARN with the scoped
+# runtime env (HONUA_JOB_TOKEN, customcode.output_prefix, ...) as overrides.
+# Null when enable_customcode_batch is false.
+
+output "customcode_batch_enabled" {
+  description = "Whether the hardened custom-code Batch substrate was provisioned."
+  value       = local.customcode_batch_enabled
+}
+
+output "customcode_job_queue_arn" {
+  description = "ARN of the custom-code Fargate Spot Batch job queue (separate from the GP queue; batch.job_queue_arn for custom-code jobs)."
+  value       = local.customcode_batch_enabled ? aws_batch_job_queue.customcode[0].arn : null
+}
+
+output "customcode_job_definition_arns" {
+  description = "Map of custom-code job-definition size tier => ARN ({ s, m, l, xl }); tiers differ only by ephemeral storage. The server selects a tier per job and applies vCPU/memory/timeout/retry + scoped runtime env as SubmitJob overrides."
+  value       = local.customcode_batch_enabled ? { for tier, jd in aws_batch_job_definition.customcode : tier => jd.arn } : null
+}
+
+output "customcode_compute_environment_arn" {
+  description = "ARN of the custom-code Fargate Spot Batch compute environment."
+  value       = local.customcode_batch_enabled ? aws_batch_compute_environment.customcode[0].arn : null
+}
+
+output "customcode_task_role_arn" {
+  description = "ARN of the MINIMAL task (job) role the untrusted custom-code container assumes. Grants NO Secrets Manager / DB access — only scoped artifact S3 (when a bucket is supplied). The Honua callback uses the scoped HONUA_JOB_TOKEN, not IAM."
+  value       = local.customcode_batch_enabled ? aws_iam_role.customcode_job[0].arn : null
+}
+
+output "customcode_execution_role_arn" {
+  description = "ARN of the custom-code Fargate task execution role (ECR pull + log writes only)."
+  value       = local.customcode_batch_enabled ? aws_iam_role.customcode_execution[0].arn : null
+}
+
+output "customcode_python_repository_url" {
+  description = "Push/pull URL of the dedicated worker-customcode-python ECR repository (null unless create_worker_customcode_repo)."
+  value       = var.create_worker_customcode_repo ? aws_ecr_repository.worker_customcode[0].repository_url : null
+}
+
+output "customcode_python_repository_arn" {
+  description = "ARN of the dedicated worker-customcode-python ECR repository (null unless create_worker_customcode_repo)."
+  value       = var.create_worker_customcode_repo ? aws_ecr_repository.worker_customcode[0].arn : null
+}
