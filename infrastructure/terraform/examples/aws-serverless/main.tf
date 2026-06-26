@@ -43,10 +43,11 @@ module "honua" {
   bedrock_ai_model  = var.bedrock_ai_model
   bedrock_ai_region = var.bedrock_ai_region
 
-  enable_control_plane_events          = var.enable_control_plane_events
-  control_plane_events_image           = var.control_plane_events_image
-  control_plane_events_memory_size     = var.control_plane_events_memory_size
-  control_plane_events_timeout_seconds = var.control_plane_events_timeout_seconds
+  enable_control_plane_events            = var.enable_control_plane_events
+  control_plane_events_image             = var.control_plane_events_image
+  control_plane_events_memory_size       = var.control_plane_events_memory_size
+  control_plane_events_timeout_seconds   = var.control_plane_events_timeout_seconds
+  control_plane_scheduled_tick_schedules = var.control_plane_scheduled_tick_schedules
 
   additional_env = {
     HONUA_SERVE_ADMIN_UI = "true"
