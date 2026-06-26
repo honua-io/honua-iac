@@ -207,3 +207,13 @@ output "worker_gdal_repository_arn" {
   description = "ARN of the dedicated worker-gdal ECR repository (null unless create_worker_gdal_repo)."
   value       = var.create_worker_gdal_repo ? aws_ecr_repository.worker_gdal[0].arn : null
 }
+
+output "worker_etl_repository_url" {
+  description = "Push/pull URL of the dedicated honua-worker-etl ECR repository (null unless create_worker_etl_repo)."
+  value       = var.create_worker_etl_repo ? aws_ecr_repository.worker_etl[0].repository_url : null
+}
+
+output "worker_etl_repository_arn" {
+  description = "ARN of the dedicated honua-worker-etl ECR repository (null unless create_worker_etl_repo)."
+  value       = var.create_worker_etl_repo ? aws_ecr_repository.worker_etl[0].arn : null
+}
