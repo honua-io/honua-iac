@@ -4,11 +4,23 @@
 #
 # This is a SEPARATE, deliberately HARDENED Batch substrate that PARALLELS the
 # GP substrate in batch.tf but locks it down for running UNTRUSTED user code
-# (the custom-code Python runtime). The custom-code worker pulls a user-authored
-# requirements set (pip/clone), runs the user's script against per-job artifact
+# (the custom-code runtimes). The custom-code worker pulls a user-authored
+# repo at a pinned SHA, resolves its dependencies (pip for python / `dotnet
+# build` for dotnet), runs the user's entrypoint against per-job artifact
 # inputs, and writes outputs to a per-job S3 artifact prefix. The user's code
 # must NEVER see the platform's database, admin password, master key, or any
 # Secrets Manager material.
+#
+# RUNTIMES (the image is the ONLY per-runtime variation; the security posture is
+# runtime-INDEPENDENT). The server accepts customcode.runtime = "python"
+# (honua-server Phase 1) or "dotnet" (honua-server #2196, Phase 2) and the
+# selector flows through the spec parameters; the iac job-def family resolves it
+# to the matching image. Each runtime gets its OWN image + size-tier job-def
+# family (customcode-python-{s,m,l,xl}, customcode-dotnet-{s,m,l,xl}) but SHARES
+# the SAME minimal task role, the SAME execution role, the SAME constrained
+# egress security group, the SAME queue/compute-environment, and the SAME empty
+# secrets/env hardening below. The hardening is defined ONCE and reused across
+# both runtimes — it is NOT duplicated per runtime.
 #
 # Hardening — the deliberate deltas from the GP family (batch.tf):
 #   - NO Secrets Manager env refs on the job definition. The GDAL job-def injects
@@ -45,29 +57,59 @@ locals {
   customcode_batch_default_vcpus  = 1
   customcode_batch_default_memory = 2048
 
-  # The custom-code worker image. Defaults to the worker-customcode-python ECR
-  # repo this module can create; an operator may override with a pre-built image.
-  customcode_batch_image = var.customcode_batch_image != "" ? var.customcode_batch_image : (
-    var.create_worker_customcode_repo ? "${aws_ecr_repository.worker_customcode[0].repository_url}:latest" : var.image
-  )
+  # Per-runtime custom-code worker image. Each runtime defaults to its own
+  # worker-customcode-<runtime> ECR repo this module can create; an operator may
+  # override either with a pre-built image (customcode_batch_image pins python;
+  # customcode_dotnet_batch_image pins dotnet). The runtime selector
+  # (customcode.runtime) the server sends resolves to one of these keys.
+  customcode_batch_images = {
+    python = var.customcode_batch_image != "" ? var.customcode_batch_image : (
+      var.create_worker_customcode_repo ? "${aws_ecr_repository.worker_customcode[0].repository_url}:latest" : var.image
+    )
+    dotnet = var.customcode_dotnet_batch_image != "" ? var.customcode_dotnet_batch_image : (
+      var.create_worker_customcode_dotnet_repo ? "${aws_ecr_repository.worker_customcode_dotnet[0].repository_url}:latest" : var.image
+    )
+  }
+
+  # The runtimes the substrate provisions a job-def family for. The set is fixed
+  # by this module and matches the server's CustomCodeJobContract.SupportedRuntimes
+  # (python | dotnet); both families share the identical hardening below.
+  customcode_runtimes = ["python", "dotnet"]
 
   # Size POOL (contract v1), mirrors the GP tiers: a fixed set of job definitions
   # that differ ONLY by ephemeral (scratch) storage — the knob SubmitJob cannot
   # override. vCPU/memory are DEFAULTS the server overrides per job.
-  #   customcode-s  -> 20 GiB (Fargate default; ephemeralStorage block omitted)
-  #   customcode-m  -> 50 GiB
-  #   customcode-l  -> 100 GiB
-  #   customcode-xl -> 200 GiB
-  customcode_batch_tiers = local.customcode_batch_enabled ? {
+  #   *-s  -> 20 GiB (Fargate default; ephemeralStorage block omitted)
+  #   *-m  -> 50 GiB
+  #   *-l  -> 100 GiB
+  #   *-xl -> 200 GiB
+  customcode_batch_tiers = {
     s  = null
     m  = 50
     l  = 100
     xl = 200
+  }
+
+  # The job-def matrix: one job definition per {runtime}.{tier}. The KEY is
+  # "{runtime}.{tier}" (python.s, dotnet.xl, ...) so the server resolves
+  # customcode.runtime + the selected size tier to a single job-def ARN. Every
+  # entry shares the identical hardened container (same role, same empty
+  # secrets/env); only `image` and `ephemeral_gib` vary.
+  customcode_batch_jobdefs = local.customcode_batch_enabled ? {
+    for pair in setproduct(local.customcode_runtimes, keys(local.customcode_batch_tiers)) :
+    "${pair[0]}.${pair[1]}" => {
+      runtime       = pair[0]
+      tier          = pair[1]
+      image         = local.customcode_batch_images[pair[0]]
+      ephemeral_gib = local.customcode_batch_tiers[pair[1]]
+    }
   } : {}
 
-  # worker-customcode-python ECR repository name is stable whether or not it is
-  # created, so an operator can pre-create + push, then flip the create flag on.
-  worker_customcode_repo_name = "${local.name}-worker-customcode-python"
+  # worker-customcode-<runtime> ECR repository names are stable whether or not
+  # they are created, so an operator can pre-create + push, then flip the create
+  # flag on.
+  worker_customcode_repo_name        = "${local.name}-worker-customcode-python"
+  worker_customcode_dotnet_repo_name = "${local.name}-worker-customcode-dotnet"
 
   # S3 artifact prefix the custom-code task role is scoped to. The server sets
   # customcode.output_prefix per job UNDER this prefix; the role grants
@@ -256,25 +298,28 @@ resource "aws_batch_job_queue" "customcode" {
 }
 
 # ---------------------------------------------------------------------------
-# Job-definition size POOL for the custom-code (untrusted) container.
+# Job-definition POOL for the custom-code (untrusted) container — one job-def
+# per {runtime}.{tier} (customcode-python-{s,m,l,xl}, customcode-dotnet-{s,m,l,xl}).
 #
-# Mirrors the GP pool (customcode-s/m/l/xl differ ONLY by ephemeral storage),
-# but with the HARDENED container: EMPTY environment/secrets, the minimal
-# custom-code task role, and the custom-code worker image. Per-job sizing (vCPU,
-# memory, timeout, retry) and the scoped runtime env (HONUA_JOB_TOKEN,
-# HONUA_API_ENDPOINT, customcode.output_prefix, ...) are applied by the server
-# at SubmitJob time as container overrides — NONE of which are templated here.
+# Mirrors the GP pool (tiers differ ONLY by ephemeral storage), but with the
+# HARDENED container: EMPTY environment/secrets, the SHARED minimal custom-code
+# task role, and the per-RUNTIME worker image — the ONLY thing that varies
+# across runtimes. Per-job sizing (vCPU, memory, timeout, retry) and the scoped
+# runtime env (HONUA_JOB_TOKEN, HONUA_API_ENDPOINT, customcode.output_prefix,
+# ...) are applied by the server at SubmitJob time as container overrides — NONE
+# of which are templated here. The security posture is identical across runtimes
+# because it is sourced from the SAME role/SG/log group, not redefined per family.
 # ---------------------------------------------------------------------------
 
 resource "aws_batch_job_definition" "customcode" {
-  for_each = local.customcode_batch_tiers
+  for_each = local.customcode_batch_jobdefs
 
-  name                  = "${local.customcode_batch_name}-${each.key}"
+  name                  = "${local.customcode_batch_name}-${each.value.runtime}-${each.value.tier}"
   type                  = "container"
   platform_capabilities = ["FARGATE"]
 
   container_properties = jsonencode(merge({
-    image            = local.customcode_batch_image
+    image            = each.value.image
     jobRoleArn       = aws_iam_role.customcode_job[0].arn
     executionRoleArn = aws_iam_role.customcode_execution[0].arn
 
@@ -309,13 +354,13 @@ resource "aws_batch_job_definition" "customcode" {
       options = {
         "awslogs-group"         = aws_cloudwatch_log_group.customcode_batch[0].name
         "awslogs-region"        = data.aws_region.current.name
-        "awslogs-stream-prefix" = "customcode"
+        "awslogs-stream-prefix" = "customcode-${each.value.runtime}"
       }
     }
     },
-    each.value == null ? {} : {
+    each.value.ephemeral_gib == null ? {} : {
       ephemeralStorage = {
-        sizeInGiB = each.value
+        sizeInGiB = each.value.ephemeral_gib
       }
     }
   ))
@@ -412,6 +457,57 @@ resource "aws_ecr_lifecycle_policy" "worker_customcode" {
           tagStatus   = "any"
           countType   = "imageCountMoreThan"
           countNumber = var.worker_customcode_repo_max_image_count
+        }
+        action = {
+          type = "expire"
+        }
+      }
+    ]
+  })
+}
+
+# ---------------------------------------------------------------------------
+# Dedicated worker-customcode-dotnet ECR repository (optional). The .NET sibling
+# of the worker-customcode-python repo above (honua-server #2196's
+# worker-customcode-dotnet image). Same posture: scan-on-push, KMS (AWS-managed
+# key), an image-count lifecycle cap, a stable name so an operator can
+# pre-create + push before flipping the flag on.
+# ---------------------------------------------------------------------------
+
+resource "aws_ecr_repository" "worker_customcode_dotnet" {
+  count                = var.create_worker_customcode_dotnet_repo ? 1 : 0
+  name                 = local.worker_customcode_dotnet_repo_name
+  image_tag_mutability = var.worker_customcode_dotnet_repo_image_tag_mutability
+  force_delete         = var.worker_customcode_dotnet_repo_force_delete
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    # KMS with the AWS-managed ECR key (no CMK to manage). An inline checkov
+    # skip in this module is not honored when the repo is evaluated through the
+    # examples/aws-cert module instantiation, so use the real KMS setting (per
+    # the #70 lesson on the worker-gdal repo).
+    encryption_type = "KMS"
+  }
+
+  tags = local.tags
+}
+
+resource "aws_ecr_lifecycle_policy" "worker_customcode_dotnet" {
+  count      = var.create_worker_customcode_dotnet_repo ? 1 : 0
+  repository = aws_ecr_repository.worker_customcode_dotnet[0].name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Retain only the most recent ${var.worker_customcode_dotnet_repo_max_image_count} images."
+        selection = {
+          tagStatus   = "any"
+          countType   = "imageCountMoreThan"
+          countNumber = var.worker_customcode_dotnet_repo_max_image_count
         }
         action = {
           type = "expire"

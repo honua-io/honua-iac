@@ -53,18 +53,23 @@ output "customcode_job_queue_arn" {
 }
 
 output "customcode_job_definition_arns" {
-  description = "Map of custom-code job-definition size tier => ARN ({ s, m, l, xl })."
+  description = "Map of custom-code job-definition '{runtime}.{tier}' => ARN (python.s..python.xl, dotnet.s..dotnet.xl). The server resolves customcode.runtime + size tier to one ARN."
   value       = module.honua.customcode_job_definition_arns
 }
 
 output "customcode_task_role_arn" {
-  description = "Minimal custom-code task (job) role ARN — NO secrets/DB access, only scoped artifact S3."
+  description = "Minimal custom-code task (job) role ARN — NO secrets/DB access, only scoped artifact S3. Shared by both runtime families."
   value       = module.honua.customcode_task_role_arn
 }
 
 output "customcode_python_repository_url" {
   description = "Push/pull URL of the worker-customcode-python ECR repository (null unless create_worker_customcode_repo)."
   value       = module.honua.customcode_python_repository_url
+}
+
+output "customcode_dotnet_repository_url" {
+  description = "Push/pull URL of the worker-customcode-dotnet ECR repository (null unless create_worker_customcode_dotnet_repo)."
+  value       = module.honua.customcode_dotnet_repository_url
 }
 
 output "github_oidc_role_arn" {

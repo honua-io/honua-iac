@@ -100,7 +100,13 @@ variable "enable_customcode_batch" {
 }
 
 variable "customcode_batch_image" {
-  description = "ECR image URI for the custom-code worker. Defaults to the worker-customcode-python repo (when created) else honua_image."
+  description = "ECR image URI for the PYTHON custom-code worker (customcode.runtime=python). Defaults to the worker-customcode-python repo (when created) else honua_image."
+  type        = string
+  default     = ""
+}
+
+variable "customcode_dotnet_batch_image" {
+  description = "ECR image URI for the DOTNET custom-code worker (customcode.runtime=dotnet; honua-server #2196). Defaults to the worker-customcode-dotnet repo (when created) else honua_image."
   type        = string
   default     = ""
 }
@@ -118,7 +124,13 @@ variable "customcode_batch_max_vcpus" {
 }
 
 variable "create_worker_customcode_repo" {
-  description = "Create the dedicated worker-customcode-python ECR repository for the custom-code worker image."
+  description = "Create the dedicated worker-customcode-python ECR repository for the python custom-code worker image."
+  type        = bool
+  default     = false
+}
+
+variable "create_worker_customcode_dotnet_repo" {
+  description = "Create the dedicated worker-customcode-dotnet ECR repository for the .NET custom-code worker image (honua-server #2196)."
   type        = bool
   default     = false
 }
