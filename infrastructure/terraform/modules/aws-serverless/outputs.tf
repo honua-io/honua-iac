@@ -207,3 +207,43 @@ output "worker_gdal_repository_arn" {
   description = "ARN of the dedicated worker-gdal ECR repository (null unless create_worker_gdal_repo)."
   value       = var.create_worker_gdal_repo ? aws_ecr_repository.worker_gdal[0].arn : null
 }
+
+# --- Custom-code egress isolation (two-phase) ---------------------------------
+# Null unless enable_customcode_egress_isolation. The orchestrator routes the
+# restore job to the provisioning queue/job-def and the user-code job to the
+# execution queue (under the locked-down SG).
+
+output "customcode_egress_isolation_enabled" {
+  description = "True when the two-phase custom-code GP egress-isolation model is provisioned."
+  value       = local.egress_isolation_enabled
+}
+
+output "customcode_provisioning_job_queue_arn" {
+  description = "Batch job queue ARN for the PROVISIONING (dependency-restore) phase (null unless egress isolation enabled)."
+  value       = local.egress_isolation_enabled ? aws_batch_job_queue.gp_provisioning[0].arn : null
+}
+
+output "customcode_execution_job_queue_arn" {
+  description = "Batch job queue ARN for the EXECUTION (locked-down user-code) phase (null unless egress isolation enabled)."
+  value       = local.egress_isolation_enabled ? aws_batch_job_queue.gp_execution[0].arn : null
+}
+
+output "customcode_provisioning_job_definition_arns" {
+  description = "Per-tier PROVISIONING job-definition ARNs (null unless egress isolation enabled)."
+  value       = local.egress_isolation_enabled ? { for tier, jd in aws_batch_job_definition.gp_provisioning : tier => jd.arn } : null
+}
+
+output "customcode_codeartifact_domain_arn" {
+  description = "CodeArtifact domain ARN backing the custom-code pull-through cache (null unless egress isolation enabled)."
+  value       = local.egress_isolation_enabled ? aws_codeartifact_domain.customcode[0].arn : null
+}
+
+output "customcode_codeartifact_pypi_repository_arn" {
+  description = "CodeArtifact PyPI pull-through repository ARN (null unless egress isolation enabled)."
+  value       = local.egress_isolation_enabled ? aws_codeartifact_repository.pypi[0].arn : null
+}
+
+output "customcode_codeartifact_nuget_repository_arn" {
+  description = "CodeArtifact NuGet pull-through repository ARN (null unless egress isolation enabled)."
+  value       = local.egress_isolation_enabled ? aws_codeartifact_repository.nuget[0].arn : null
+}
