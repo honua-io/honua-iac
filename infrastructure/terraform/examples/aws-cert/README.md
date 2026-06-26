@@ -19,8 +19,12 @@ Tracks honua-iac#2164 (cert), honua-server umbrella #2166, GitOps→GP #2165.
   **SubmitJob overrides** at run time — there is **no per-job terraform apply**.
   The server selects a tier and submits against its job-definition ARN.
 - **No long-lived keys.** The dispatched cert workflow assumes an IAM role via
-  **GitHub OIDC** (`components/aws-github-oidc`), scoped by `sub` to the cert
-  repo/environment and by permission to the `honua-cert-*` surface.
+  **GitHub OIDC** (`components/aws-github-oidc`), and by permission to the
+  `honua-cert-*` surface. This stack pins the role's `sub` to the **tightest
+  practical scope** — the `cert` GitHub Environment
+  (`repo:honua-io/honua-server:environment:cert`), set as the default
+  `github_oidc_subjects` — so the dispatched cert workflow **must run in a
+  GitHub Environment named `cert`** or AWS will deny the assume-role.
 - **Cost guardrail.** An `aws_budgets_budget` with SNS email notifications caps
   monthly spend.
 
@@ -48,17 +52,23 @@ terraform -chdir=infrastructure/terraform/examples/aws-cert plan
 # apply creates billable infra — run only intentionally for a cert session.
 ```
 
-Wire the role into the cert workflow:
+Wire the role into the cert workflow. Because this stack pins the role's `sub`
+to the `cert` GitHub Environment, the job **must declare `environment: cert`** —
+the token `sub` only carries `environment:cert` when the job runs in that
+Environment:
 
 ```yaml
 permissions:
   id-token: write
   contents: read
-steps:
-  - uses: aws-actions/configure-aws-credentials@v4
-    with:
-      role-to-assume: ${{ vars.HONUA_CERT_ROLE_ARN }}   # github_oidc_role_arn output
-      aws-region: us-east-1
+jobs:
+  certify:
+    environment: cert   # REQUIRED — the OIDC role trusts only sub=...:environment:cert
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.HONUA_CERT_ROLE_ARN }}   # github_oidc_role_arn output
+          aws-region: us-east-1
 ```
 
 ## Runtime contract (devops agent / server)
