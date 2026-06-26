@@ -37,7 +37,8 @@ ARNs, the surface the OIDC role is scoped to.
 | `aws_budgets_budget.cert` + `aws_sns_topic.budget` | Monthly cost ceiling + alerts |
 | worker-gdal ECR repo (via the module) | Dedicated GP worker image lifecycle |
 | Custom-code Batch substrate (via the module, opt-in) | SEPARATE hardened Fargate-Spot queue + size-tier pool for **untrusted user code** |
-| worker-customcode-python ECR repo (via the module, opt-in) | Dedicated custom-code worker image lifecycle |
+| worker-customcode-python ECR repo (via the module, opt-in) | Dedicated python custom-code worker image lifecycle |
+| worker-customcode-dotnet ECR repo (via the module, opt-in) | Dedicated .NET custom-code worker image lifecycle (honua-server #2196) |
 
 ## Usage
 
@@ -79,10 +80,15 @@ jobs against them with per-job overrides — no terraform re-apply per job:
 ## Custom-code (UNTRUSTED user code) substrate — locked down
 
 `enable_customcode_batch` (off by default) provisions a **SEPARATE, deliberately
-hardened** Batch family for running **untrusted user code** (the custom-code
-Python runtime). It parallels the GP substrate's tiered Fargate-Spot scale-to-zero
-shape (`customcode-s`/`m`/`l`/`xl`, differing only by ephemeral storage) but is
-locked down. The deltas from the GP/GDAL family are the whole point:
+hardened** Batch substrate for running **untrusted user code** (the custom-code
+**python** and **dotnet** runtimes — honua-server #2196). It parallels the GP
+substrate's tiered Fargate-Spot scale-to-zero shape but is locked down. The
+**runtime selector** (`customcode.runtime = python | dotnet`) the server sends
+picks **only the image**: each runtime gets its own size-tier job-def family
+(`customcode-python-{s,m,l,xl}`, `customcode-dotnet-{s,m,l,xl}`, tiers differing
+only by ephemeral storage) sharing the **identical** task role, security group,
+and queue — the security posture is **runtime-independent**. The deltas from the
+GP/GDAL family are the whole point:
 
 - **Empty secrets.** The job definition injects **NO** Secrets Manager env refs —
   no DB connection string, no admin password, no master key. User code never sees
@@ -104,10 +110,12 @@ locked down. The deltas from the GP/GDAL family are the whole point:
   is defense-in-depth.
 
 Outputs (the cross-repo contract the server consumes, opaque ARNs):
-`customcode_job_queue_arn`, `customcode_job_definition_arns` (`{ s, m, l, xl }`),
-`customcode_task_role_arn`, `customcode_python_repository_url`. The server has no
-custom-code-specific param keys on trunk yet, so these mirror the GP
-`batch.job_queue_arn` / `batch.job_definition_arn` shape the
+`customcode_job_queue_arn`, `customcode_job_definition_arns` (keyed
+**`{runtime}.{tier}`** — `python.s`…`python.xl`, `dotnet.s`…`dotnet.xl`),
+`customcode_task_role_arn`, `customcode_python_repository_url`,
+`customcode_dotnet_repository_url`. The server resolves `customcode.runtime` + the
+selected size tier to a single job-def ARN from the keyed map and submits against
+it, mirroring the GP `batch.job_queue_arn` / `batch.job_definition_arn` shape the
 `AwsBatchComputeBackend` already reads.
 
 ## Notes

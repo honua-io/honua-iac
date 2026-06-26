@@ -210,12 +210,15 @@ output "worker_gdal_repository_arn" {
 
 # --- Custom-code (untrusted) AWS Batch outputs -----------------------------
 # The cross-repo contract the server consumes for custom-code jobs. The server
-# has no custom-code-specific param keys on trunk yet; it reads the GP batch
-# substrate as opaque ARNs via batch.job_queue_arn / batch.job_definition_arn
-# (AwsBatchComputeBackend), so these mirror that shape — the server selects a
-# size tier and submits against the chosen job-definition ARN with the scoped
-# runtime env (HONUA_JOB_TOKEN, customcode.output_prefix, ...) as overrides.
-# Null when enable_customcode_batch is false.
+# reads the Batch substrate as opaque ARNs via batch.job_queue_arn /
+# batch.job_definition_arn (AwsBatchComputeBackend). The runtime selector
+# (customcode.runtime = python | dotnet — honua-server CustomCodeJobContract,
+# #2196) chooses ONLY the image, which is baked into the per-runtime job-def
+# family here; the server resolves {runtime}.{tier} to a single job-def ARN from
+# the keyed map below and submits against it with the scoped runtime env
+# (HONUA_JOB_TOKEN, customcode.output_prefix, ...) as overrides. Both runtime
+# families share the SAME queue, task role, and hardening. Null when
+# enable_customcode_batch is false.
 
 output "customcode_batch_enabled" {
   description = "Whether the hardened custom-code Batch substrate was provisioned."
@@ -228,8 +231,13 @@ output "customcode_job_queue_arn" {
 }
 
 output "customcode_job_definition_arns" {
-  description = "Map of custom-code job-definition size tier => ARN ({ s, m, l, xl }); tiers differ only by ephemeral storage. The server selects a tier per job and applies vCPU/memory/timeout/retry + scoped runtime env as SubmitJob overrides."
-  value       = local.customcode_batch_enabled ? { for tier, jd in aws_batch_job_definition.customcode : tier => jd.arn } : null
+  description = "Map of custom-code job-definition '{runtime}.{tier}' => ARN (python.s, python.m, ..., dotnet.s, ..., dotnet.xl). Tiers differ only by ephemeral storage; runtimes differ only by image (same hardened role/SG/queue). The server resolves customcode.runtime + the selected size tier to one ARN and applies vCPU/memory/timeout/retry + scoped runtime env as SubmitJob overrides."
+  value       = local.customcode_batch_enabled ? { for key, jd in aws_batch_job_definition.customcode : key => jd.arn } : null
+}
+
+output "customcode_runtimes" {
+  description = "The custom-code runtimes a job-def family was provisioned for ({runtime} keys in customcode_job_definition_arns). Matches the server's CustomCodeJobContract.SupportedRuntimes."
+  value       = local.customcode_batch_enabled ? local.customcode_runtimes : null
 }
 
 output "customcode_compute_environment_arn" {
@@ -255,4 +263,14 @@ output "customcode_python_repository_url" {
 output "customcode_python_repository_arn" {
   description = "ARN of the dedicated worker-customcode-python ECR repository (null unless create_worker_customcode_repo)."
   value       = var.create_worker_customcode_repo ? aws_ecr_repository.worker_customcode[0].arn : null
+}
+
+output "customcode_dotnet_repository_url" {
+  description = "Push/pull URL of the dedicated worker-customcode-dotnet ECR repository — where the customcode.runtime=dotnet worker image (honua-server #2196) is pushed (null unless create_worker_customcode_dotnet_repo)."
+  value       = var.create_worker_customcode_dotnet_repo ? aws_ecr_repository.worker_customcode_dotnet[0].repository_url : null
+}
+
+output "customcode_dotnet_repository_arn" {
+  description = "ARN of the dedicated worker-customcode-dotnet ECR repository (null unless create_worker_customcode_dotnet_repo)."
+  value       = var.create_worker_customcode_dotnet_repo ? aws_ecr_repository.worker_customcode_dotnet[0].arn : null
 }

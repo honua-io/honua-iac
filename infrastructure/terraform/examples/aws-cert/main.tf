@@ -153,15 +153,19 @@ module "honua" {
   # Empty secrets, a minimal task role (scoped to the cert artifact bucket's
   # `customcode/` prefix only — NO DB/secrets), a constrained egress allowlist.
   # The scoped HONUA_JOB_TOKEN (server-injected env) is the trust boundary, not
-  # IAM. Off by default; flip enable_customcode_batch on to exercise it.
-  enable_customcode_batch           = var.enable_customcode_batch
-  customcode_batch_image            = var.customcode_batch_image
-  customcode_batch_cpu_architecture = var.customcode_batch_cpu_architecture
-  customcode_batch_max_vcpus        = var.customcode_batch_max_vcpus
-  customcode_artifact_bucket_arn    = aws_s3_bucket.cert_artifacts.arn
-  customcode_artifact_prefix        = "customcode"
-  customcode_egress_https_cidrs     = var.customcode_egress_https_cidrs
-  create_worker_customcode_repo     = var.create_worker_customcode_repo
+  # IAM. Off by default; flip enable_customcode_batch on to exercise it. Both
+  # python and dotnet (honua-server #2196) runtime families share this one
+  # hardened substrate; only the per-runtime image + ECR repo differ.
+  enable_customcode_batch              = var.enable_customcode_batch
+  customcode_batch_image               = var.customcode_batch_image
+  customcode_dotnet_batch_image        = var.customcode_dotnet_batch_image
+  customcode_batch_cpu_architecture    = var.customcode_batch_cpu_architecture
+  customcode_batch_max_vcpus           = var.customcode_batch_max_vcpus
+  customcode_artifact_bucket_arn       = aws_s3_bucket.cert_artifacts.arn
+  customcode_artifact_prefix           = "customcode"
+  customcode_egress_https_cidrs        = var.customcode_egress_https_cidrs
+  create_worker_customcode_repo        = var.create_worker_customcode_repo
+  create_worker_customcode_dotnet_repo = var.create_worker_customcode_dotnet_repo
 
   tags = local.tags
 }
