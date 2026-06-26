@@ -250,3 +250,23 @@ output "worker_etl_repository_arn" {
   description = "ARN of the dedicated honua-worker-etl ECR repository (null unless create_worker_etl_repo)."
   value       = var.create_worker_etl_repo ? aws_ecr_repository.worker_etl[0].arn : null
 }
+
+output "control_plane_tick_function_name" {
+  description = "Name of the Phase 3 scheduled-tick Lambda (EventBridge Scheduler target for the PERIODIC ticks, HONUA_CONTROL_PLANE_LAMBDA_HANDLER=scheduled-tick). Null when control-plane events are disabled."
+  value       = local.control_plane_events_enabled ? aws_lambda_function.control_plane_tick[0].function_name : null
+}
+
+output "control_plane_tick_function_arn" {
+  description = "ARN of the Phase 3 scheduled-tick Lambda. Null when control-plane events are disabled."
+  value       = local.control_plane_events_enabled ? aws_lambda_function.control_plane_tick[0].arn : null
+}
+
+output "control_plane_scheduler_group_name" {
+  description = "Name of the EventBridge Scheduler group holding the control-plane backstop + per-kind tick schedules. Null when control-plane events are disabled."
+  value       = local.control_plane_events_enabled ? aws_scheduler_schedule_group.control_plane[0].name : null
+}
+
+output "control_plane_scheduled_tick_schedule_arns" {
+  description = "Map of tick kind -> EventBridge Scheduler schedule ARN for the Phase 3 PERIODIC control-plane ticks. Empty when control-plane events are disabled."
+  value       = { for kind, schedule in aws_scheduler_schedule.control_plane_tick : kind => schedule.arn }
+}
