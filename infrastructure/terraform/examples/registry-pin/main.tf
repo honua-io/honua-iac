@@ -16,6 +16,7 @@ provider "aws" {
 # `trunk` branch so the documented operator path actually resolves and stays
 # CI-validated. Replace `trunk` with the SemVer tag once it is cut.
 module "honua" {
+  #checkov:skip=CKV_TF_2: Pinned to the trunk branch until the first SemVer release tag is cut; the comment above documents bumping ?ref= to an immutable vX.Y.Z tag on release.
   source = "git::https://github.com/honua-io/honua-iac.git//infrastructure/terraform/modules/aws-ecs?ref=trunk"
 
   environment    = var.environment
