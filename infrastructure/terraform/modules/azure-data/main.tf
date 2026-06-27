@@ -158,7 +158,7 @@ resource "null_resource" "enable_postgis" {
     command = <<-EOT
       set -e
       echo "Waiting for PostgreSQL readiness on ${azurerm_postgresql_flexible_server.this.fqdn}"
-      for attempt in $(seq 1 30); do
+      for attempt in $(seq 1 ${var.postgis_readiness_max_attempts}); do
         if PGCONNECT_TIMEOUT=5 psql \
           --host=${azurerm_postgresql_flexible_server.this.fqdn} \
           --username=${var.db_admin_username} \
@@ -166,15 +166,15 @@ resource "null_resource" "enable_postgis" {
           --command="SELECT 1;" >/dev/null 2>&1; then
           break
         fi
-        if [ "$attempt" -eq 30 ]; then
-          echo "PostgreSQL readiness check failed after 30 attempts" >&2
+        if [ "$attempt" -eq ${var.postgis_readiness_max_attempts} ]; then
+          echo "PostgreSQL readiness check failed after ${var.postgis_readiness_max_attempts} attempts" >&2
           exit 1
         fi
-        sleep 10
+        sleep ${var.postgis_readiness_sleep_seconds}
       done
 
       echo "Enabling PostGIS + PostGIS Raster on ${azurerm_postgresql_flexible_server.this.fqdn}"
-      for attempt in $(seq 1 30); do
+      for attempt in $(seq 1 ${var.postgis_readiness_max_attempts}); do
         if PGCONNECT_TIMEOUT=5 psql \
           --host=${azurerm_postgresql_flexible_server.this.fqdn} \
           --username=${var.db_admin_username} \
@@ -185,8 +185,8 @@ resource "null_resource" "enable_postgis" {
           break
         fi
 
-        if [ "$attempt" -eq 30 ]; then
-          echo "PostGIS enablement failed after 30 attempts" >&2
+        if [ "$attempt" -eq ${var.postgis_readiness_max_attempts} ]; then
+          echo "PostGIS enablement failed after ${var.postgis_readiness_max_attempts} attempts" >&2
           PGCONNECT_TIMEOUT=5 psql \
             --host=${azurerm_postgresql_flexible_server.this.fqdn} \
             --username=${var.db_admin_username} \
@@ -196,8 +196,8 @@ resource "null_resource" "enable_postgis" {
           exit 1
         fi
 
-        echo "PostGIS allow-list not ready yet (attempt $attempt/30), retrying in 10s..."
-        sleep 10
+        echo "PostGIS allow-list not ready yet (attempt $attempt/${var.postgis_readiness_max_attempts}), retrying in ${var.postgis_readiness_sleep_seconds}s..."
+        sleep ${var.postgis_readiness_sleep_seconds}
       done
     EOT
 
