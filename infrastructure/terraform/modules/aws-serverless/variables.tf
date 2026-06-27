@@ -16,6 +16,18 @@ variable "tags" {
   default     = {}
 }
 
+variable "alarm_sns_topic_arns" {
+  description = "SNS topic ARNs notified on CloudWatch alarm and OK transitions (Lambda errors, API Gateway 5xx). Empty by default."
+  type        = list(string)
+  default     = []
+}
+
+variable "alarm_email" {
+  description = "If set, the module creates an SNS topic and subscribes this email address to receive Lambda/API Gateway alarm notifications. Leave empty to rely solely on alarm_sns_topic_arns."
+  type        = string
+  default     = ""
+}
+
 variable "vpc_cidr" {
   description = "CIDR block for the VPC."
   type        = string
@@ -126,7 +138,18 @@ variable "admin_password" {
   sensitive   = true
   validation {
     condition     = length(var.admin_password) >= 32
-    error_message = "admin_password must be at least 32 characters (it is also used as Security__ConnectionEncryption__MasterKey)."
+    error_message = "admin_password must be at least 32 characters."
+  }
+}
+
+variable "connection_encryption_master_key" {
+  description = "Master key for Honua connection encryption (Security__ConnectionEncryption__MasterKey). Leave null to auto-generate an independent key; set it to pin/rotate the key out of band. Must not be the admin password."
+  type        = string
+  sensitive   = true
+  default     = null
+  validation {
+    condition     = var.connection_encryption_master_key == null || length(var.connection_encryption_master_key) >= 32
+    error_message = "connection_encryption_master_key must be at least 32 characters when set."
   }
 }
 
@@ -165,6 +188,12 @@ variable "db_allocated_storage" {
   description = "RDS allocated storage in GB."
   type        = number
   default     = 20
+}
+
+variable "db_max_allocated_storage" {
+  description = "Maximum allocated storage in GB for RDS storage autoscaling. Must be >= db_allocated_storage."
+  type        = number
+  default     = 100
 }
 
 variable "db_publicly_accessible" {
