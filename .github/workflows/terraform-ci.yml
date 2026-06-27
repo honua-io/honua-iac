@@ -97,6 +97,15 @@ jobs:
           terraform fmt -check -recursive infrastructure/terraform
           terraform fmt -check -recursive docs/devops/examples
 
+      - name: Configure git to fetch the Git-source module via the workflow token
+        # The registry-pin example consumes the module over https git from this
+        # (private) repo. Anonymous clone fails ("could not read Username"), so
+        # rewrite github.com URLs to use the read-only GITHUB_TOKEN.
+        env:
+          GH_WORKFLOW_TOKEN: ${{ github.token }}
+        run: |
+          git config --global url."https://x-access-token:${GH_WORKFLOW_TOKEN}@github.com/".insteadOf "https://github.com/"
+
       - name: Terraform init/validate (selected roots)
         shell: bash
         run: |
