@@ -240,3 +240,13 @@ output "control_plane_batch_event_rule_arn" {
   description = "ARN of the EventBridge rule matching Batch job state changes (drives the reconcile Lambda)."
   value       = local.control_plane_events_enabled ? aws_cloudwatch_event_rule.control_plane_batch_state_change[0].arn : null
 }
+
+output "worker_etl_repository_url" {
+  description = "Push/pull URL of the dedicated honua-worker-etl ECR repository (null unless create_worker_etl_repo)."
+  value       = var.create_worker_etl_repo ? aws_ecr_repository.worker_etl[0].repository_url : null
+}
+
+output "worker_etl_repository_arn" {
+  description = "ARN of the dedicated honua-worker-etl ECR repository (null unless create_worker_etl_repo)."
+  value       = var.create_worker_etl_repo ? aws_ecr_repository.worker_etl[0].arn : null
+}

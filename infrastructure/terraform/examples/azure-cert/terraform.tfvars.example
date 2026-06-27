@@ -1,0 +1,22 @@
+###############################################################################
+# examples/azure-cert — copy to terraform.tfvars and fill in.
+# NEVER commit terraform.tfvars (it is gitignored). No secrets are required:
+# the cert workflow authenticates via OIDC federation (no client secret).
+###############################################################################
+
+location    = "eastus"
+name_prefix = "honua-cert"
+environment = "cert"
+
+# --- GP Batch substrate ----------------------------------------------------
+gp_pool_vm_size          = "Standard_D4s_v3"
+gp_pool_use_low_priority = true # Spot nodes; set false for non-checkpointable long jobs
+gp_pool_max_nodes        = 2
+create_worker_gdal_acr   = true
+worker_gdal_acr_sku      = "Standard"
+
+# --- GitHub OIDC trust scope -----------------------------------------------
+# Pin to a GitHub Environment for the tightest scope.
+github_oidc_subject = "repo:honua-io/honua-server:environment:cert"
+
+# tags = { Owner = "platform" }

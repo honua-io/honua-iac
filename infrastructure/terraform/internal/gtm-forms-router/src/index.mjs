@@ -17,6 +17,12 @@ import {
 const ATTIO_BASE = "https://api.attio.com/v2";
 const LOOPS_CONTACT_CREATE = "https://app.loops.so/api/v1/contacts/create";
 const MAX_BODY_BYTES = 32 * 1024;
+// Outbound HTTP resiliency: bound every upstream call so a hung connection can
+// never stall the Lambda, and retry transient failures (429/5xx/network) with
+// backoff so a momentary upstream blip does not drop a lead.
+const FETCH_TIMEOUT_MS = 5000;
+const FETCH_MAX_ATTEMPTS = 3;
+const FETCH_BACKOFF_MS = 250;
 const HONEYPOT_FIELDS = ["_honey", "_gotcha", "honeypot"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -42,18 +48,60 @@ const ATTRIBUTION_FIELDS = [
 
 const secretsClient = new SecretsManagerClient({});
 let cachedAttioKey;
+let cachedLoopsKey;
+
+async function readSecret(secretArn) {
+  if (!secretArn) return "";
+  const out = await secretsClient.send(
+    new GetSecretValueCommand({ SecretId: secretArn }),
+  );
+  const value = (out.SecretString ?? "").trim();
+  return value === "REPLACE_ME" ? "" : value;
+}
 
 async function getAttioKey() {
   if (cachedAttioKey) return cachedAttioKey;
-  const out = await secretsClient.send(
-    new GetSecretValueCommand({ SecretId: process.env.ATTIO_SECRET_ARN }),
-  );
-  const key = (out.SecretString ?? "").trim();
-  if (!key || key === "REPLACE_ME") {
+  const key = await readSecret(process.env.ATTIO_SECRET_ARN);
+  if (!key) {
     throw new Error("Attio API key secret is not configured");
   }
   cachedAttioKey = key;
   return key;
+}
+
+async function getLoopsKey() {
+  if (cachedLoopsKey !== undefined) return cachedLoopsKey;
+  cachedLoopsKey = await readSecret(process.env.LOOPS_SECRET_ARN);
+  return cachedLoopsKey;
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// fetch wrapper: per-attempt timeout via AbortSignal, plus bounded retry with
+// exponential backoff on 429/5xx and network/timeout errors. Returns the final
+// Response (the caller decides how to treat non-retryable statuses like 4xx).
+async function fetchWithRetry(url, options = {}) {
+  let lastError;
+  for (let attempt = 1; attempt <= FETCH_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const res = await fetch(url, {
+        ...options,
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if ((res.status === 429 || res.status >= 500) && attempt < FETCH_MAX_ATTEMPTS) {
+        await sleep(FETCH_BACKOFF_MS * 2 ** (attempt - 1));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      lastError = err;
+      if (attempt < FETCH_MAX_ATTEMPTS) {
+        await sleep(FETCH_BACKOFF_MS * 2 ** (attempt - 1));
+        continue;
+      }
+    }
+  }
+  throw lastError ?? new Error(`fetch failed after ${FETCH_MAX_ATTEMPTS} attempts`);
 }
 
 function response(statusCode, body) {
@@ -116,7 +164,7 @@ function resolveFormType(event, fields) {
 
 async function attioFetch(method, path, body) {
   const key = await getAttioKey();
-  const res = await fetch(`${ATTIO_BASE}${path}`, {
+  const res = await fetchWithRetry(`${ATTIO_BASE}${path}`, {
     method,
     headers: {
       authorization: `Bearer ${key}`,
@@ -236,14 +284,20 @@ function waitlistEntryValues(fields) {
 }
 
 async function subscribeToLoops(email, fields, formType) {
-  const apiKey = (process.env.LOOPS_API_KEY ?? "").trim();
+  let apiKey;
+  try {
+    apiKey = await getLoopsKey();
+  } catch (err) {
+    console.error(JSON.stringify({ msg: "loops secret read error", error: String(err).slice(0, 300) }));
+    return;
+  }
   if (!apiKey) return;
   try {
     const body = { email, source: `honua.io ${formType}` };
     const name = fields.name ? splitName(fields.name) : null;
     if (name?.first_name) body.firstName = name.first_name;
     if (name?.last_name) body.lastName = name.last_name;
-    const res = await fetch(LOOPS_CONTACT_CREATE, {
+    const res = await fetchWithRetry(LOOPS_CONTACT_CREATE, {
       method: "POST",
       headers: {
         authorization: `Bearer ${apiKey}`,

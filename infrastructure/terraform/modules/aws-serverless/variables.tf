@@ -16,6 +16,18 @@ variable "tags" {
   default     = {}
 }
 
+variable "alarm_sns_topic_arns" {
+  description = "SNS topic ARNs notified on CloudWatch alarm and OK transitions (Lambda errors, API Gateway 5xx). Empty by default."
+  type        = list(string)
+  default     = []
+}
+
+variable "alarm_email" {
+  description = "If set, the module creates an SNS topic and subscribes this email address to receive Lambda/API Gateway alarm notifications. Leave empty to rely solely on alarm_sns_topic_arns."
+  type        = string
+  default     = ""
+}
+
 variable "vpc_cidr" {
   description = "CIDR block for the VPC."
   type        = string
@@ -126,7 +138,18 @@ variable "admin_password" {
   sensitive   = true
   validation {
     condition     = length(var.admin_password) >= 32
-    error_message = "admin_password must be at least 32 characters (it is also used as Security__ConnectionEncryption__MasterKey)."
+    error_message = "admin_password must be at least 32 characters."
+  }
+}
+
+variable "connection_encryption_master_key" {
+  description = "Master key for Honua connection encryption (Security__ConnectionEncryption__MasterKey). Leave null to auto-generate an independent key; set it to pin/rotate the key out of band. Must not be the admin password."
+  type        = string
+  sensitive   = true
+  default     = null
+  validation {
+    condition     = var.connection_encryption_master_key == null || length(var.connection_encryption_master_key) >= 32
+    error_message = "connection_encryption_master_key must be at least 32 characters when set."
   }
 }
 
@@ -165,6 +188,12 @@ variable "db_allocated_storage" {
   description = "RDS allocated storage in GB."
   type        = number
   default     = 20
+}
+
+variable "db_max_allocated_storage" {
+  description = "Maximum allocated storage in GB for RDS storage autoscaling. Must be >= db_allocated_storage."
+  type        = number
+  default     = 100
 }
 
 variable "db_publicly_accessible" {
@@ -503,6 +532,46 @@ variable "worker_gdal_repo_max_image_count" {
 
 variable "worker_gdal_repo_force_delete" {
   description = "Allow terraform destroy to delete the worker-gdal ECR repository even when it still contains images. Convenient for ephemeral cert environments; leave false for anything durable."
+  type        = bool
+  default     = false
+}
+
+# --- honua-worker-etl ECR repository (ADR-0038 roadmap F) -----------------
+# The heavyweight GDAL/PDAL/PROJ ETL worker image's dedicated repository,
+# decoupled from the Honua Lambda image and the worker-gdal image. Off by
+# default; the repository name is stable regardless of the flag so an operator
+# can pre-create + push, then enable. Mirrors the worker-gdal repo variables.
+
+variable "create_worker_etl_repo" {
+  description = "Create a dedicated worker-etl ECR repository for the heavyweight GDAL/PDAL/PROJ ETL worker image (separate from the Honua Lambda image and the worker-gdal image). Off by default."
+  type        = bool
+  default     = false
+}
+
+variable "worker_etl_repo_image_tag_mutability" {
+  description = "Image tag mutability for the worker-etl ECR repository (MUTABLE or IMMUTABLE). IMMUTABLE is recommended so a pushed cert/job tag can never be silently overwritten."
+  type        = string
+  default     = "IMMUTABLE"
+
+  validation {
+    condition     = contains(["MUTABLE", "IMMUTABLE"], var.worker_etl_repo_image_tag_mutability)
+    error_message = "worker_etl_repo_image_tag_mutability must be MUTABLE or IMMUTABLE."
+  }
+}
+
+variable "worker_etl_repo_max_image_count" {
+  description = "Number of most-recent images the worker-etl ECR lifecycle policy retains (older untagged/extra images are expired to control storage cost)."
+  type        = number
+  default     = 10
+
+  validation {
+    condition     = var.worker_etl_repo_max_image_count >= 1
+    error_message = "worker_etl_repo_max_image_count must be at least 1."
+  }
+}
+
+variable "worker_etl_repo_force_delete" {
+  description = "Allow terraform destroy to delete the worker-etl ECR repository even when it still contains images. Convenient for ephemeral cert environments; leave false for anything durable."
   type        = bool
   default     = false
 }

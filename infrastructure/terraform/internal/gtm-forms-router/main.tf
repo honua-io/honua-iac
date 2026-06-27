@@ -33,6 +33,28 @@ resource "aws_secretsmanager_secret_version" "attio_api_key_placeholder" {
 }
 
 # ---------------------------------------------------------------------------
+# Loops.so API key secret. Same out-of-band pattern as the Attio key: Terraform
+# owns the container and a placeholder only; the real value is set with
+# `aws secretsmanager put-secret-value` and never lives in state or VCS. Leaving
+# the placeholder in place disables the Loops code path at runtime.
+# ---------------------------------------------------------------------------
+
+resource "aws_secretsmanager_secret" "loops_api_key" {
+  name        = var.loops_secret_name
+  description = "Loops.so API key for the honua.io lead-capture forms router. Value is managed out of band; placeholder disables Loops."
+  tags        = var.tags
+}
+
+resource "aws_secretsmanager_secret_version" "loops_api_key_placeholder" {
+  secret_id     = aws_secretsmanager_secret.loops_api_key.id
+  secret_string = "REPLACE_ME"
+
+  lifecycle {
+    ignore_changes = [secret_string]
+  }
+}
+
+# ---------------------------------------------------------------------------
 # Lambda execution role
 # ---------------------------------------------------------------------------
 
@@ -62,9 +84,12 @@ data "aws_iam_policy_document" "forms_router" {
   }
 
   statement {
-    sid       = "ReadAttioSecret"
-    actions   = ["secretsmanager:GetSecretValue"]
-    resources = [aws_secretsmanager_secret.attio_api_key.arn]
+    sid     = "ReadFormsRouterSecrets"
+    actions = ["secretsmanager:GetSecretValue"]
+    resources = [
+      aws_secretsmanager_secret.attio_api_key.arn,
+      aws_secretsmanager_secret.loops_api_key.arn,
+    ]
   }
 }
 
@@ -112,7 +137,7 @@ resource "aws_lambda_function" "forms_router" {
       ATTIO_WAITLIST_LIST   = var.attio_waitlist_list
       ATTIO_NEWSLETTER_LIST = var.attio_newsletter_list
       ALLOWED_ORIGIN        = var.allowed_origin
-      LOOPS_API_KEY         = var.loops_api_key
+      LOOPS_SECRET_ARN      = aws_secretsmanager_secret.loops_api_key.arn
     }
   }
 

@@ -229,8 +229,9 @@ run_custom_policy_checks() {
   assert_regex_present 'DATA_CACHE_FORMAT="v2-base64"' "$ROOT/validation/scripts/azure/run-azure-terraform-integration.sh" "azure-cache-format-marker"
 
   assert_regex_absent 'ConnectionStrings__redis[[:space:]]*=[[:space:]]*local\.redis_connection' "$ROOT/modules/aws-serverless/main.tf" "aws-serverless-redis-plaintext-env"
-  assert_regex_present 'ConnectionStrings__redis[[:space:]]*=[[:space:]]*"env:HONUA_RUNTIME_REDIS_CONNECTION"' "$ROOT/modules/aws-serverless/main.tf" "aws-serverless-redis-env-ref"
-  assert_regex_present 'HONUA_RUNTIME_REDIS_CONNECTION[[:space:]]*=[[:space:]]*local\.redis_connection' "$ROOT/modules/aws-serverless/main.tf" "aws-serverless-redis-env-source"
+  assert_regex_absent 'HONUA_RUNTIME_REDIS_CONNECTION[[:space:]]*=[[:space:]]*local\.redis_connection' "$ROOT/modules/aws-serverless/main.tf" "aws-serverless-redis-plaintext-env-source"
+  assert_regex_present 'aws_secretsmanager_secret" "redis_connection"' "$ROOT/modules/aws-serverless/main.tf" "aws-serverless-redis-secret-resource"
+  assert_regex_present 'ConnectionStrings__redis[[:space:]]*=[[:space:]]*"aws:secretsmanager:\$\{aws_secretsmanager_secret\.redis_connection\[0\]\.arn\}"' "$ROOT/modules/aws-serverless/main.tf" "aws-serverless-redis-secretsmanager-reference"
 
   assert_regex_absent 'ConnectionStrings__redis[[:space:]]*=[[:space:]]*local\.redis_connection' "$ROOT/modules/azure-functions/main.tf" "azure-functions-redis-plaintext-env"
   assert_regex_present 'azurerm_key_vault_secret" "redis_connection"' "$ROOT/modules/azure-functions/main.tf" "azure-functions-redis-secret-resource"

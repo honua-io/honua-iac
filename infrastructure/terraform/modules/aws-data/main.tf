@@ -174,6 +174,17 @@ module "rds" {
   max_allocated_storage = var.db_max_allocated_storage
   storage_encrypted     = true
 
+  # Enforce server-side TLS so the database rejects non-SSL connections,
+  # matching the require_secure_transport posture of the Azure data stack.
+  create_db_parameter_group = true
+  parameters = [
+    {
+      name         = "rds.force_ssl"
+      value        = "1"
+      apply_method = "immediate"
+    }
+  ]
+
   db_name                     = var.db_name
   username                    = var.db_username
   password                    = local.db_password
