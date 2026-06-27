@@ -25,8 +25,10 @@ not disambiguate. Requests with a non-empty honeypot field (`_honey`,
 `_gotcha`, `honeypot`) are accepted with `200` and silently dropped. Email is
 required and syntactically validated; bodies over 32 KiB are rejected.
 
-When `LOOPS_API_KEY` is set (via `loops_api_key` — left unset by default),
-waitlist/newsletter emails are also subscribed to Loops.
+When a real Loops.so API key is set in the Loops secret (Terraform manages a
+`REPLACE_ME` placeholder by default, which disables the path), waitlist/newsletter
+emails are also subscribed to Loops. The key is read from Secrets Manager at
+runtime (`LOOPS_SECRET_ARN`), never injected as a plaintext env var.
 
 CORS allows `https://honua.io` only (POST). Reserved concurrency is 10.
 
@@ -45,9 +47,14 @@ key):
 aws secretsmanager put-secret-value \
   --secret-id honua/gtm/attio-api-key \
   --secret-string file:///path/to/attio.key
+
+# Optional: enable the Loops.so subscription path the same way.
+aws secretsmanager put-secret-value \
+  --secret-id honua/gtm/loops-api-key \
+  --secret-string file:///path/to/loops.key
 ```
 
-The Lambda caches the key per execution environment; after rotating the
+The Lambda caches each key per execution environment; after rotating a
 secret, either wait for environments to recycle or update any Lambda
 configuration value to force a refresh.
 

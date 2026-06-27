@@ -70,17 +70,33 @@ resource "random_password" "redis_auth" {
   override_special = "#%*()-_=+[]{}:?"
 }
 
+# Connection-encryption master key. Generated independently of the admin
+# password so admin-password rotation cannot break decryption and the two
+# never share a value. Operators may pin it via connection_encryption_master_key.
+resource "random_password" "master_key" {
+  count            = var.connection_encryption_master_key == null ? 1 : 0
+  length           = 32
+  special          = true
+  override_special = "#%*()-_=+[]{}:?"
+}
+
 locals {
   db_password          = var.db_password != null ? var.db_password : (local.db_use_existing ? "" : random_password.db[0].result)
+  master_key           = var.connection_encryption_master_key != null ? var.connection_encryption_master_key : random_password.master_key[0].result
   db_ssl               = var.db_require_ssl ? ";SSL Mode=Require;Trust Server Certificate=false" : ""
   db_endpoint          = local.db_use_existing ? var.existing_db_endpoint : module.rds[0].db_instance_address
   db_conn_options      = var.db_connection_string_options != "" ? ";${var.db_connection_string_options}" : ""
   db_connection_string = local.db_use_existing ? var.existing_db_connection_string : "Host=${local.db_endpoint};Port=5432;Database=${var.db_name};Username=${var.db_username};Password=${local.db_password}${local.db_ssl}${local.db_conn_options}"
   lambda_function_name = "${local.name}-honua"
   lambda_target_id     = "${local.lambda_function_name}-${var.lambda_alias_name}"
+  # SNS targets for CloudWatch alarm/OK notifications: caller-supplied topic
+  # ARNs plus an optional module-created topic (when alarm_email is set).
+  alarm_action_arns = concat(var.alarm_sns_topic_arns, aws_sns_topic.alarms[*].arn)
+  # Redis connection is delivered via Secrets Manager indirection (matching the
+  # DB connection) so the value is never a plaintext Lambda env var. The secret
+  # exists whenever local.redis_connection is non-empty (redis_enabled is true).
   redis_secret_environment = local.redis_connection != "" ? {
-    ConnectionStrings__redis       = "env:HONUA_RUNTIME_REDIS_CONNECTION"
-    HONUA_RUNTIME_REDIS_CONNECTION = local.redis_connection
+    ConnectionStrings__redis = "aws:secretsmanager:${aws_secretsmanager_secret.redis_connection[0].arn}"
   } : {}
   xray_environment = var.enable_xray_tracing ? {
     Tracing__XRay__Enabled = "true"
@@ -124,7 +140,7 @@ locals {
     HostValidation__AllowedHosts__0                             = "*.execute-api.${data.aws_region.current.name}.amazonaws.com"
     ConnectionStrings__DefaultConnection                        = "aws:secretsmanager:${aws_secretsmanager_secret.connection_string.arn}"
     HONUA_ADMIN_PASSWORD                                        = "aws:secretsmanager:${aws_secretsmanager_secret.admin_password.arn}"
-    Security__ConnectionEncryption__MasterKey                   = "aws:secretsmanager:${aws_secretsmanager_secret.admin_password.arn}"
+    Security__ConnectionEncryption__MasterKey                   = "aws:secretsmanager:${aws_secretsmanager_secret.master_key.arn}"
     HONUA_SERVE_ADMIN_UI                                        = var.serve_admin_ui ? "true" : "false"
     HONUA_ADMIN_UI                                              = var.serve_admin_ui ? "true" : "false"
     HONUA_OBSERVABILITY                                         = "true"
@@ -327,7 +343,7 @@ module "rds" {
   instance_class       = var.db_instance_class
 
   allocated_storage     = var.db_allocated_storage
-  max_allocated_storage = 100
+  max_allocated_storage = var.db_max_allocated_storage
   storage_encrypted     = true
 
   db_name                     = var.db_name
@@ -427,6 +443,7 @@ resource "aws_iam_policy" "lambda_secrets" {
         Resource = compact([
           aws_secretsmanager_secret.connection_string.arn,
           aws_secretsmanager_secret.admin_password.arn,
+          aws_secretsmanager_secret.master_key.arn,
           local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null,
           local.pro_license_enabled ? aws_secretsmanager_secret.pro_license[0].arn : null
         ])
@@ -465,6 +482,19 @@ resource "aws_secretsmanager_secret" "admin_password" {
 resource "aws_secretsmanager_secret_version" "admin_password" {
   secret_id     = aws_secretsmanager_secret.admin_password.id
   secret_string = var.admin_password
+}
+
+#checkov:skip=CKV2_AWS_57: Secrets rotation is managed outside this module.
+resource "aws_secretsmanager_secret" "master_key" {
+  #checkov:skip=CKV2_AWS_57: Secrets rotation is managed outside this module.
+  name        = "${local.name}/connection-encryption-master-key"
+  description = "Connection-encryption master key for Honua (independent of the admin password)."
+  tags        = local.tags
+}
+
+resource "aws_secretsmanager_secret_version" "master_key" {
+  secret_id     = aws_secretsmanager_secret.master_key.id
+  secret_string = local.master_key
 }
 
 #checkov:skip=CKV2_AWS_57: Secrets rotation is managed outside this module.
@@ -554,11 +584,19 @@ resource "aws_lambda_function" "this" {
     variables = local.lambda_environment
   }
 
+  lifecycle {
+    precondition {
+      condition     = var.db_max_allocated_storage >= var.db_allocated_storage
+      error_message = "db_max_allocated_storage must be >= db_allocated_storage."
+    }
+  }
+
   depends_on = [
     aws_ecr_repository_policy.lambda_image_access,
     aws_cloudwatch_log_group.lambda,
     aws_secretsmanager_secret_version.connection_string,
     aws_secretsmanager_secret_version.admin_password,
+    aws_secretsmanager_secret_version.master_key,
     aws_secretsmanager_secret_version.redis_connection,
     aws_secretsmanager_secret_version.pro_license
   ]
@@ -668,6 +706,23 @@ resource "aws_apigatewayv2_stage" "this" {
   tags = local.tags
 }
 
+# Optional SNS topic for alarm notifications. Created only when alarm_email is
+# set; operators may instead pass pre-existing topic ARNs via alarm_sns_topic_arns.
+#checkov:skip=CKV_AWS_26: Alarm notifications carry non-sensitive operational metadata; KMS encryption is optional and caller-configurable.
+resource "aws_sns_topic" "alarms" {
+  #checkov:skip=CKV_AWS_26: Alarm notifications carry non-sensitive operational metadata; KMS encryption is optional and caller-configurable.
+  count = var.alarm_email != "" ? 1 : 0
+  name  = "${local.name}-alarms"
+  tags  = local.tags
+}
+
+resource "aws_sns_topic_subscription" "alarms_email" {
+  count     = var.alarm_email != "" ? 1 : 0
+  topic_arn = aws_sns_topic.alarms[0].arn
+  protocol  = "email"
+  endpoint  = var.alarm_email
+}
+
 resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
   alarm_name          = "${local.name}-lambda-errors"
   comparison_operator = "GreaterThanThreshold"
@@ -681,7 +736,9 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
   dimensions = {
     FunctionName = aws_lambda_function.this.function_name
   }
-  tags = local.tags
+  alarm_actions = local.alarm_action_arns
+  ok_actions    = local.alarm_action_arns
+  tags          = local.tags
 }
 
 resource "aws_cloudwatch_metric_alarm" "api_5xx" {
@@ -697,7 +754,9 @@ resource "aws_cloudwatch_metric_alarm" "api_5xx" {
   dimensions = {
     ApiId = aws_apigatewayv2_api.this.id
   }
-  tags = local.tags
+  alarm_actions = local.alarm_action_arns
+  ok_actions    = local.alarm_action_arns
+  tags          = local.tags
 }
 
 resource "aws_lambda_permission" "api_gateway" {
