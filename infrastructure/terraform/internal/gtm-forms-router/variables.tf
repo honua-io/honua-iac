@@ -34,11 +34,10 @@ variable "attio_newsletter_list" {
   default     = "newsletter"
 }
 
-variable "loops_api_key" {
-  description = "Optional Loops.so API key. When empty the Loops code path is disabled."
+variable "loops_secret_name" {
+  description = "Secrets Manager secret name holding the Loops.so API key. The value is set out of band; Terraform only manages a placeholder. Leaving the placeholder in place disables the Loops code path."
   type        = string
-  default     = ""
-  sensitive   = true
+  default     = "honua/gtm/loops-api-key"
 }
 
 variable "reserved_concurrency" {

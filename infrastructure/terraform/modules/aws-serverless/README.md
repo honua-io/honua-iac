@@ -288,6 +288,17 @@ Optional, **off by default**. When `enable_customcode_batch = true`, the module 
 
 Outputs (cross-repo contract the server consumes; opaque ARNs): `customcode_job_queue_arn`, `customcode_job_definition_arns` (map `{ s, m, l, xl }`), `customcode_compute_environment_arn`, `customcode_task_role_arn`, `customcode_execution_role_arn` (all `null` when disabled), plus `customcode_python_repository_url` / `customcode_python_repository_arn` (`null` unless `create_worker_customcode_repo`). The server has **no** custom-code-specific param keys on trunk yet, so these mirror the GP `batch.job_queue_arn` / `batch.job_definition_arn` shape the `AwsBatchComputeBackend` already reads.
 
+## Control-plane event triggers (TriggerMode=Event)
+
+Optional, **off by default**. When `enable_control_plane_events = true`, the module wires the control plane to reconcile **event-driven** instead of on an in-process timer (which has no always-on host on Lambda). Set `ControlPlane__TriggerMode=Event` is injected automatically. Two extra Lambdas are created, both reusing the server image (`control_plane_events_image`, defaulting to `var.image`) and the API host's DI environment (same DB connection, Redis connection, admin/master-key secret refs, same VPC/subnets/security group so they reach Redis and Postgres):
+
+- **Reconcile Lambda** (`HONUA_CONTROL_PLANE_LAMBDA_HANDLER=batch-event`) — fired by an `aws_cloudwatch_event_rule` matching `source = ["aws.batch"]` / `detail-type = ["Batch Job State Change"]`. The fast path: the moment a GP/import job transitions, the reconciler advances the control plane. EventBridge is granted `lambda:InvokeFunction` via an `aws_lambda_permission` scoped to the rule ARN.
+- **Backstop Lambda** (`HONUA_CONTROL_PLANE_LAMBDA_HANDLER=backstop`) — fired every ~2 minutes by an `aws_scheduler_schedule` (`rate(2 minutes)`, `flexible_time_window { mode = "OFF" }`) through a dedicated scheduler IAM role that may only invoke the backstop Lambda. Catches anything the event path missed (dropped events, jobs with no terminal transition, drift).
+
+The reconcile/backstop execution role mirrors the API Lambda role (`AWSLambdaBasicExecutionRole` + `AWSLambdaVPCAccessExecutionRole`) and adds `batch:DescribeJobs`, the same Secrets Manager reads the API host uses, and KMS `Decrypt`/`GenerateDataKey` for the AWS-managed Secrets Manager key.
+
+Because both handlers live in the same image and are selected by `HONUA_CONTROL_PLANE_LAMBDA_HANDLER`, the image must bundle the `batch-event` and `backstop` entrypoints (provided by the server build). Point `control_plane_events_image` at a tag that includes them if it differs from the API image. Tune `control_plane_events_memory_size` / `control_plane_events_timeout_seconds` (these Lambdas are invoked asynchronously, so they are not bound by the API Gateway 30s ceiling). Outputs: `control_plane_reconcile_function_name`/`_arn`, `control_plane_backstop_function_name`/`_arn`, and `control_plane_batch_event_rule_arn`.
+
 ## Constraints
 
 - **API Gateway timeout**: HTTP API has a 30-second max integration timeout. Keep `lambda_timeout_seconds` in sync.

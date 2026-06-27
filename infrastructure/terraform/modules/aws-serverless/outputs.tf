@@ -256,3 +256,46 @@ output "customcode_python_repository_arn" {
   description = "ARN of the dedicated worker-customcode-python ECR repository (null unless create_worker_customcode_repo)."
   value       = var.create_worker_customcode_repo ? aws_ecr_repository.worker_customcode[0].arn : null
 }
+
+# --- Control-plane event triggers (TriggerMode=Event) outputs --------------
+# Null when enable_control_plane_events is false.
+
+output "control_plane_events_enabled" {
+  description = "Whether the event-driven control-plane reconcile path was provisioned."
+  value       = local.control_plane_events_enabled
+}
+
+output "control_plane_reconcile_function_name" {
+  description = "Name of the reconcile Lambda (EventBridge Batch-state-change target, HONUA_CONTROL_PLANE_LAMBDA_HANDLER=batch-event)."
+  value       = local.control_plane_events_enabled ? aws_lambda_function.control_plane_reconcile[0].function_name : null
+}
+
+output "control_plane_reconcile_function_arn" {
+  description = "ARN of the reconcile Lambda."
+  value       = local.control_plane_events_enabled ? aws_lambda_function.control_plane_reconcile[0].arn : null
+}
+
+output "control_plane_backstop_function_name" {
+  description = "Name of the backstop Lambda (EventBridge Scheduler rate(2 minutes) target, HONUA_CONTROL_PLANE_LAMBDA_HANDLER=backstop)."
+  value       = local.control_plane_events_enabled ? aws_lambda_function.control_plane_backstop[0].function_name : null
+}
+
+output "control_plane_backstop_function_arn" {
+  description = "ARN of the backstop Lambda."
+  value       = local.control_plane_events_enabled ? aws_lambda_function.control_plane_backstop[0].arn : null
+}
+
+output "control_plane_batch_event_rule_arn" {
+  description = "ARN of the EventBridge rule matching Batch job state changes (drives the reconcile Lambda)."
+  value       = local.control_plane_events_enabled ? aws_cloudwatch_event_rule.control_plane_batch_state_change[0].arn : null
+}
+
+output "worker_etl_repository_url" {
+  description = "Push/pull URL of the dedicated honua-worker-etl ECR repository (null unless create_worker_etl_repo)."
+  value       = var.create_worker_etl_repo ? aws_ecr_repository.worker_etl[0].repository_url : null
+}
+
+output "worker_etl_repository_arn" {
+  description = "ARN of the dedicated honua-worker-etl ECR repository (null unless create_worker_etl_repo)."
+  value       = var.create_worker_etl_repo ? aws_ecr_repository.worker_etl[0].arn : null
+}

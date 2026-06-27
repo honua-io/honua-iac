@@ -36,11 +36,17 @@ customcode_batch_cpu_architecture = "X86_64"
 monthly_budget_usd  = 200
 budget_alert_emails = ["devops@honua.io"]
 
-# GitHub OIDC trust scoping. Tightest practical scope for a dispatched cert
-# workflow is a dedicated GitHub Environment.
+# GitHub OIDC trust scoping. The cert stack PINS the OIDC role's `sub` to the
+# `cert` GitHub Environment by default (the tightest practical scope for a
+# dispatched cert workflow). The dispatched cert workflow MUST therefore run in
+# a GitHub Environment named `cert` — otherwise its token `sub` will not match
+# and AssumeRoleWithWebIdentity is denied.
+#
+# github_owner/github_repository are only consulted when github_oidc_subjects is
+# emptied; with the default subject below they are unused for trust scoping.
 github_owner      = "honua-io"
 github_repository = "honua-server"
-# github_oidc_subjects = ["repo:honua-io/honua-server:environment:cert"]
+github_oidc_subjects = ["repo:honua-io/honua-server:environment:cert"]
 
 # If the account already has a GitHub OIDC provider (one per issuer URL):
 # create_oidc_provider       = false

@@ -1,0 +1,32 @@
+# Copy to terraform.tfvars and fill in real values.
+# NEVER commit terraform.tfvars — it contains secrets.
+
+region      = "us-east-1"
+environment = "prod"
+name_prefix = "honua"
+
+# Container image to deploy to ECS/Fargate.
+# Pin to an immutable release tag or digest.
+honua_image = "ghcr.io/honua-io/honua-server:v1.5.0"
+
+# Admin API password (minimum 32 characters).
+# Generate: openssl rand -hex 32
+honua_admin_password = "REPLACE_WITH_STRONG_SECRET_MIN_32_CHARS"
+
+# Leave unset (null) to let Terraform auto-generate the PostgreSQL password.
+# db_password = null
+
+# Optional custom hostname + Route53 zone for ACM-managed TLS and ALB alias DNS.
+# domain_name     = "honua.example.com"
+# route53_zone_id = "ZXXXXXXXXXXXXXXXXX"
+
+# Optional: bring your own ACM certificate instead of Terraform-managed validation.
+# alb_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/REPLACE"
+
+# ElastiCache Redis (enabled by default; required for /healthz/ready in Production).
+# redis_enabled = true
+
+tags = {
+  Owner      = "platform"
+  CostCentre = "honua"
+}

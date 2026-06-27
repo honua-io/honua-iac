@@ -1054,6 +1054,12 @@ resource "aws_ecs_service" "this" {
     container_port   = var.container_port
   }
 
+  # Runtime capacity is owned by Application Auto Scaling (aws_appautoscaling_target.ecs).
+  # Without this, every apply resets desired_count to the floor and fights the autoscaler.
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
+
   depends_on = [aws_lb_listener.https, aws_lb_listener.http, aws_lb_listener.http_redirect]
 
   tags = local.tags
