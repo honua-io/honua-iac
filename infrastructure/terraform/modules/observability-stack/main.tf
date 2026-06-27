@@ -5,6 +5,53 @@ locals {
   honua_dashboard_file     = var.honua_dashboard_file != "" ? var.honua_dashboard_file : local.default_dashboard_file
   alert_rules              = yamldecode(file(local.alert_rules_file))
 
+  # Explicit Alertmanager routing. Without a config, the chart's Alertmanager
+  # starts with a placeholder route that delivers nowhere, so alerts fire into
+  # the void. The default below gives real grouping/route structure and a
+  # single "default" receiver; when alertmanager_receiver_webhook_url is set it
+  # is wired as a live webhook. Operators can override the whole object via
+  # var.alertmanager_config.
+  default_alertmanager_config = {
+    route = {
+      group_by        = ["alertname", "severity"]
+      group_wait      = "30s"
+      group_interval  = "5m"
+      repeat_interval = "3h"
+      receiver        = "default"
+      routes = [
+        {
+          matchers        = ["severity = critical"]
+          receiver        = "default"
+          group_wait      = "10s"
+          repeat_interval = "1h"
+          continue        = false
+        }
+      ]
+    }
+    receivers = [
+      merge(
+        { name = "default" },
+        var.alertmanager_receiver_webhook_url != "" ? {
+          webhook_configs = [
+            {
+              url           = var.alertmanager_receiver_webhook_url
+              send_resolved = true
+            }
+          ]
+        } : {}
+      )
+    ]
+    inhibit_rules = [
+      {
+        source_matchers = ["severity = critical"]
+        target_matchers = ["severity = warning"]
+        equal           = ["alertname"]
+      }
+    ]
+  }
+
+  alertmanager_config = var.alertmanager_config != null ? var.alertmanager_config : local.default_alertmanager_config
+
   honua_scrape_config = merge(
     {
       job_name     = "honua"
@@ -23,19 +70,22 @@ locals {
   )
 
   prometheus_values = {
-    alertmanager = {
-      enabled = var.alertmanager_enabled
-      resources = {
-        requests = {
-          cpu    = "50m"
-          memory = "64Mi"
+    alertmanager = merge(
+      {
+        enabled = var.alertmanager_enabled
+        resources = {
+          requests = {
+            cpu    = "50m"
+            memory = "64Mi"
+          }
+          limits = {
+            cpu    = "200m"
+            memory = "256Mi"
+          }
         }
-        limits = {
-          cpu    = "200m"
-          memory = "256Mi"
-        }
-      }
-    }
+      },
+      var.alertmanager_enabled ? { config = local.alertmanager_config } : {}
+    )
     kube-state-metrics = {
       enabled = false
     }
