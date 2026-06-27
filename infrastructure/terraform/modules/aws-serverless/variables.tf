@@ -662,3 +662,45 @@ variable "bedrock_ai_timeout_seconds" {
     error_message = "bedrock_ai_timeout_seconds must be between 5 and 300 (server-side WorkflowGeneration validation range)."
   }
 }
+
+# --- Control-plane event triggers (TriggerMode=Event) ---------------------
+# Optional, off by default. When enabled, provisions a reconcile Lambda fired by
+# EventBridge on Batch job state changes plus a backstop Lambda fired every ~2
+# minutes by EventBridge Scheduler, so the control plane reconciles event-driven
+# (no always-on in-process timer). Both Lambdas reuse the server image and the
+# API host's DI env, and add ControlPlane__TriggerMode=Event.
+
+variable "enable_control_plane_events" {
+  description = "Provision the event-driven control-plane reconcile path: a reconcile Lambda fired by EventBridge on Batch job state changes and a backstop Lambda fired every ~2 minutes by EventBridge Scheduler, with ControlPlane__TriggerMode=Event. Off by default so existing deploys are unchanged."
+  type        = bool
+  default     = false
+}
+
+variable "control_plane_events_image" {
+  description = "Container image URI (ECR) for the control-plane reconcile/backstop Lambdas. Defaults to the same image as the API Lambda (var.image) when empty; both event handlers are selected at runtime via HONUA_CONTROL_PLANE_LAMBDA_HANDLER, so the image must bundle the batch-event and backstop entrypoints."
+  type        = string
+  default     = ""
+}
+
+variable "control_plane_events_memory_size" {
+  description = "Memory (MB) for the control-plane reconcile/backstop Lambdas."
+  type        = number
+  default     = 1024
+}
+
+variable "control_plane_events_timeout_seconds" {
+  description = "Timeout (seconds) for the control-plane reconcile/backstop Lambdas. Not bound by the API Gateway 30s ceiling since these are invoked asynchronously by EventBridge / EventBridge Scheduler."
+  type        = number
+  default     = 120
+
+  validation {
+    condition     = var.control_plane_events_timeout_seconds >= 10 && var.control_plane_events_timeout_seconds <= 900
+    error_message = "control_plane_events_timeout_seconds must be between 10 and 900 seconds."
+  }
+}
+
+variable "control_plane_events_reserved_concurrent_executions" {
+  description = "Reserved concurrency for the control-plane reconcile/backstop Lambdas (null for unreserved)."
+  type        = number
+  default     = null
+}
