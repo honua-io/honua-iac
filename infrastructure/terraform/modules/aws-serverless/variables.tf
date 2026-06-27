@@ -28,6 +28,48 @@ variable "alarm_email" {
   default     = ""
 }
 
+variable "geoservices_error_alarm_enabled" {
+  description = <<-EOT
+    Create a CloudWatch Logs metric filter + alarm on GeoServices in-band errors
+    (HTTP 200 responses carrying an error envelope). AWS/Lambda Errors only
+    counts handler exceptions, so it is blind to these; the server logs them and
+    this filter turns them into an alarmable custom metric wired to the same SNS
+    actions as the other alarms.
+  EOT
+  type        = bool
+  default     = true
+}
+
+variable "geoservices_error_log_pattern" {
+  description = <<-EOT
+    CloudWatch Logs filter pattern that matches a GeoServices in-band error log
+    line emitted by the server (companion to the honua_geoservices_error_total
+    metric). Default targets the server's structured JSON error event; override
+    to match your log schema. See
+    https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/FilterAndPatternSyntax.html
+  EOT
+  type        = string
+  default     = "{ $.event = \"geoservices_error\" }"
+}
+
+variable "geoservices_error_alarm_threshold" {
+  description = "GeoServices in-band error count within a period that trips the alarm."
+  type        = number
+  default     = 5
+}
+
+variable "geoservices_error_alarm_period" {
+  description = "Evaluation period (seconds) for the GeoServices in-band error alarm."
+  type        = number
+  default     = 300
+}
+
+variable "geoservices_error_alarm_evaluation_periods" {
+  description = "Number of consecutive periods the GeoServices error threshold must be breached before alarming."
+  type        = number
+  default     = 2
+}
+
 variable "vpc_cidr" {
   description = "CIDR block for the VPC."
   type        = string

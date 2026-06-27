@@ -759,6 +759,42 @@ resource "aws_cloudwatch_metric_alarm" "api_5xx" {
   tags          = local.tags
 }
 
+# GeoServices in-band errors (HTTP 200 with an error envelope) are invisible to
+# AWS/Lambda Errors and the API Gateway 5xx metric. The server logs them; this
+# metric filter projects those log lines into a custom CloudWatch metric so the
+# alarm below can page the same SNS targets as the other alarms.
+resource "aws_cloudwatch_log_metric_filter" "geoservices_errors" {
+  count          = var.geoservices_error_alarm_enabled ? 1 : 0
+  name           = "${local.name}-geoservices-errors"
+  log_group_name = aws_cloudwatch_log_group.lambda.name
+  pattern        = var.geoservices_error_log_pattern
+
+  metric_transformation {
+    name          = "GeoServicesErrors"
+    namespace     = "Honua/${local.name}"
+    value         = "1"
+    default_value = "0"
+    unit          = "Count"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "geoservices_errors" {
+  count               = var.geoservices_error_alarm_enabled ? 1 : 0
+  alarm_name          = "${local.name}-geoservices-errors"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = var.geoservices_error_alarm_evaluation_periods
+  metric_name         = aws_cloudwatch_log_metric_filter.geoservices_errors[0].metric_transformation[0].name
+  namespace           = aws_cloudwatch_log_metric_filter.geoservices_errors[0].metric_transformation[0].namespace
+  period              = var.geoservices_error_alarm_period
+  statistic           = "Sum"
+  threshold           = var.geoservices_error_alarm_threshold
+  treat_missing_data  = "notBreaching"
+  alarm_description   = "GeoServices in-band error responses (HTTP 200 with error envelope) are elevated."
+  alarm_actions       = local.alarm_action_arns
+  ok_actions          = local.alarm_action_arns
+  tags                = local.tags
+}
+
 resource "aws_lambda_permission" "api_gateway" {
   statement_id  = "AllowApiGatewayInvoke"
   action        = "lambda:InvokeFunction"

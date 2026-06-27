@@ -81,6 +81,30 @@ variable "alertmanager_enabled" {
   default     = true
 }
 
+variable "alertmanager_config" {
+  description = <<-EOT
+    Alertmanager configuration object (route/receivers/inhibit_rules) rendered
+    into the Prometheus chart's alertmanager.config. Leave null to use the
+    bundled default that groups by alertname+severity and routes critical
+    alerts at a tighter cadence. The default receivers carry no integrations
+    on purpose, so set this (or alertmanager_receiver_webhook_url) to actually
+    deliver notifications. Has no effect when alertmanager_enabled is false.
+  EOT
+  type        = any
+  default     = null
+}
+
+variable "alertmanager_receiver_webhook_url" {
+  description = <<-EOT
+    Convenience: when set (and alertmanager_config is null), the bundled default
+    config wires this webhook URL as the receiver for all alerts (works with
+    Slack/Teams/Opsgenie/PagerDuty generic webhooks or an SNS HTTPS endpoint).
+    Leave empty to ship the structural default with no live integration.
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "prometheus_persistence_enabled" {
   description = "Enable Prometheus persistence."
   type        = bool

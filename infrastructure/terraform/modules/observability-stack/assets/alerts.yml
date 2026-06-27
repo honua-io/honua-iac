@@ -21,6 +21,30 @@ groups:
           description: "5xx error rate > 5% for 10 minutes."
           runbook: "docs/devops/runbooks/high-error-rate.md"
 
+      # GeoServices/OGC handlers can return HTTP 200 with an in-band error
+      # envelope (e.g. an Esri `{"error":{...}}` body), so a status-code-only
+      # 5xx rule is blind to them. These rules alert on the server-emitted
+      # honua_geoservices_error_total counter instead.
+      - alert: HonuaGeoServicesErrorRate
+        expr: sum(rate(honua_geoservices_error_total[5m])) / clamp_min(sum(rate(honua_http_request_total[5m])), 1) > 0.05
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High GeoServices in-band error rate"
+          description: "GeoServices 200-with-error responses exceed 5% of requests for 10 minutes (honua_geoservices_error_total)."
+          runbook: "docs/devops/runbooks/high-error-rate.md"
+
+      - alert: HonuaGeoServicesErrorsPresent
+        expr: sum(rate(honua_geoservices_error_total[5m])) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Sustained GeoServices in-band errors"
+          description: "GeoServices handlers have emitted in-band error responses continuously for 15 minutes (honua_geoservices_error_total)."
+          runbook: "docs/devops/runbooks/high-error-rate.md"
+
       - alert: HonuaHighLatencyP95
         expr: histogram_quantile(0.95, sum(rate(honua_http_request_duration_ms_bucket[5m])) by (le)) > 500
         for: 10m
