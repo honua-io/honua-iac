@@ -37,6 +37,12 @@ locals {
 
   control_plane_reconcile_function_name = "${local.name}-cp-reconcile"
   control_plane_backstop_function_name  = "${local.name}-cp-backstop"
+  control_plane_tick_function_name      = "${local.name}-cp-tick"
+
+  # Phase 3 PERIODIC ticks: one EventBridge Scheduler rule per tick KIND, each invoking the
+  # scheduled-tick Lambda with { kind = "<ScheduledTickKind>" } as its input. Only materialised
+  # when control-plane events are enabled (Event mode); empty otherwise so Poll deploys are unchanged.
+  control_plane_scheduled_tick_schedules = local.control_plane_events_enabled ? var.control_plane_scheduled_tick_schedules : {}
 
   # Both event handlers compose DI exactly like the API host (local.lambda_environment),
   # then flip the server to event-driven reconciliation (TriggerMode=Event) and
@@ -50,6 +56,15 @@ locals {
   })
   control_plane_backstop_environment = merge(local.control_plane_events_base_environment, {
     HONUA_CONTROL_PLANE_LAMBDA_HANDLER = "backstop"
+  })
+
+  # Phase 3 scheduled-tick handler: same image + DI as the other event handlers; the
+  # scheduled-tick selector tells the image to read the tick KIND from the invocation event
+  # ({ "kind": "<ScheduledTickKind>" }, supplied per-schedule below) and drive that tick once via
+  # the server's IScheduledTickDispatcher (the token-guarded /internal/control-plane/scheduled-tick
+  # surface). One function serves every kind; the kind is data on the event, not a separate function.
+  control_plane_tick_environment = merge(local.control_plane_events_base_environment, {
+    HONUA_CONTROL_PLANE_LAMBDA_HANDLER = "scheduled-tick"
   })
 }
 
@@ -282,6 +297,81 @@ resource "aws_lambda_function" "control_plane_backstop" {
 }
 
 # ---------------------------------------------------------------------------
+# Scheduled-tick Lambda (Phase 3) — the EventBridge Scheduler target for the
+# PERIODIC (bucket-b) control-plane ticks
+# (HONUA_CONTROL_PLANE_LAMBDA_HANDLER=scheduled-tick). Same image, VPC, security
+# group, and DI env as the reconcile/backstop Lambdas; the tick KIND is supplied
+# per-schedule as the invocation input rather than baked into the function, so a
+# single function serves every tick kind.
+# ---------------------------------------------------------------------------
+
+#checkov:skip=CKV_AWS_158: Log-group KMS integration is optional and supplied by the deployment environment.
+#checkov:skip=CKV_AWS_338: Retention period is caller-configurable; demo environments intentionally use shorter retention to manage cost.
+resource "aws_cloudwatch_log_group" "control_plane_tick" {
+  count = local.control_plane_events_enabled ? 1 : 0
+  #checkov:skip=CKV_AWS_158: Log-group KMS integration is optional and supplied by the deployment environment.
+  #checkov:skip=CKV_AWS_338: Retention period is caller-configurable; demo environments intentionally use shorter retention to manage cost.
+  name              = "/aws/lambda/${local.control_plane_tick_function_name}"
+  retention_in_days = var.log_retention_days
+  tags              = local.tags
+}
+
+#checkov:skip=CKV_AWS_50: X-Ray tracing is optional and can be enabled by the deployment environment.
+#checkov:skip=CKV_AWS_116: DLQ wiring is environment-specific and not required for every deployment target.
+#checkov:skip=CKV_AWS_173: Secrets are injected through Secrets Manager references rather than plaintext environment values.
+#checkov:skip=CKV_AWS_272: Code signing is optional for private image-based deployments.
+resource "aws_lambda_function" "control_plane_tick" {
+  count = local.control_plane_events_enabled ? 1 : 0
+  #checkov:skip=CKV_AWS_50: X-Ray tracing is optional and can be enabled by the deployment environment.
+  #checkov:skip=CKV_AWS_116: DLQ wiring is environment-specific and not required for every deployment target.
+  #checkov:skip=CKV_AWS_173: Secrets are injected through Secrets Manager references rather than plaintext environment values.
+  #checkov:skip=CKV_AWS_272: Code signing is optional for private image-based deployments.
+  function_name = local.control_plane_tick_function_name
+  role          = aws_iam_role.control_plane_events[0].arn
+  package_type  = "Image"
+  image_uri     = local.control_plane_events_image
+  publish       = true
+
+  memory_size = var.control_plane_events_memory_size
+  timeout     = var.control_plane_events_timeout_seconds
+
+  architectures = var.lambda_architectures
+
+  ephemeral_storage {
+    size = var.lambda_ephemeral_storage_mb
+  }
+
+  reserved_concurrent_executions = var.control_plane_events_reserved_concurrent_executions
+
+  vpc_config {
+    subnet_ids         = local.private_subnets
+    security_group_ids = [aws_security_group.lambda.id]
+  }
+
+  dynamic "tracing_config" {
+    for_each = var.enable_xray_tracing ? [1] : []
+    content {
+      mode = "Active"
+    }
+  }
+
+  environment {
+    variables = local.control_plane_tick_environment
+  }
+
+  depends_on = [
+    aws_ecr_repository_policy.lambda_image_access,
+    aws_cloudwatch_log_group.control_plane_tick,
+    aws_secretsmanager_secret_version.connection_string,
+    aws_secretsmanager_secret_version.admin_password,
+    aws_secretsmanager_secret_version.redis_connection,
+    aws_secretsmanager_secret_version.pro_license
+  ]
+
+  tags = local.tags
+}
+
+# ---------------------------------------------------------------------------
 # EventBridge rule — Batch job state changes -> reconcile Lambda.
 # ---------------------------------------------------------------------------
 
@@ -347,12 +437,17 @@ resource "aws_iam_role_policy" "control_plane_scheduler" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "InvokeBackstopLambda"
+        # The single scheduler role invokes both the backstop Lambda (rate(2 minutes)) and the
+        # Phase 3 scheduled-tick Lambda (one schedule per tick kind). Scoped to exactly these two
+        # functions (and their versions) — least-privilege, no wildcard function ARNs.
+        Sid    = "InvokeControlPlaneScheduledLambdas"
         Effect = "Allow"
         Action = ["lambda:InvokeFunction"]
         Resource = [
           aws_lambda_function.control_plane_backstop[0].arn,
-          "${aws_lambda_function.control_plane_backstop[0].arn}:*"
+          "${aws_lambda_function.control_plane_backstop[0].arn}:*",
+          aws_lambda_function.control_plane_tick[0].arn,
+          "${aws_lambda_function.control_plane_tick[0].arn}:*"
         ]
       }
     ]
@@ -372,8 +467,49 @@ resource "aws_scheduler_schedule" "control_plane_backstop" {
 
   schedule_expression = "rate(2 minutes)"
 
+  group_name = aws_scheduler_schedule_group.control_plane[0].name
+
   target {
     arn      = aws_lambda_function.control_plane_backstop[0].arn
     role_arn = aws_iam_role.control_plane_scheduler[0].arn
+  }
+}
+
+# ---------------------------------------------------------------------------
+# EventBridge Scheduler — PERIODIC (bucket-b) control-plane ticks (Phase 3).
+# One schedule per tick KIND, all in a single scheduler group, each invoking the
+# scheduled-tick Lambda with { "kind": "<ScheduledTickKind>" } as input. The
+# Lambda's scheduled-tick handler reads the kind and drives that tick once via
+# IScheduledTickDispatcher. Cadences come from
+# var.control_plane_scheduled_tick_schedules (defaults mirror the in-process
+# timer intervals). Reuses the same scheduler role + image as the backstop path.
+# ---------------------------------------------------------------------------
+
+resource "aws_scheduler_schedule_group" "control_plane" {
+  count = local.control_plane_events_enabled ? 1 : 0
+  name  = "${local.name}-cp"
+  tags  = local.tags
+}
+
+#checkov:skip=CKV_AWS_297: Schedule payload is a static tick-kind trigger with no sensitive input; CMK encryption of the schedule is optional and supplied by the deployment environment when required.
+resource "aws_scheduler_schedule" "control_plane_tick" {
+  #checkov:skip=CKV_AWS_297: Schedule payload is a static tick-kind trigger with no sensitive input; CMK encryption of the schedule is optional and supplied by the deployment environment when required.
+  for_each = local.control_plane_scheduled_tick_schedules
+
+  name        = "${local.name}-cp-tick-${lower(each.key)}"
+  description = "Drive the Honua control-plane ${each.key} tick on its configured cadence (TriggerMode=Event)."
+
+  group_name = aws_scheduler_schedule_group.control_plane[0].name
+
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  schedule_expression = each.value
+
+  target {
+    arn      = aws_lambda_function.control_plane_tick[0].arn
+    role_arn = aws_iam_role.control_plane_scheduler[0].arn
+    input    = jsonencode({ kind = each.key })
   }
 }

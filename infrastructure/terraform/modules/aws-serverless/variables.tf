@@ -704,3 +704,27 @@ variable "control_plane_events_reserved_concurrent_executions" {
   type        = number
   default     = null
 }
+
+variable "control_plane_scheduled_tick_schedules" {
+  description = <<-EOT
+    EventBridge Scheduler cadences for the PERIODIC (bucket-b) control-plane ticks (Phase 3). Each
+    entry maps a tick KIND (matching Honua's ScheduledTickKind enum) to a schedule_expression
+    (rate(...) or cron(...)). Under ControlPlane__TriggerMode=Event these schedules drive the
+    server's idempotent per-tick bodies through the scheduled-tick Lambda/endpoint instead of an
+    always-on in-process timer; under Poll the server hosts the timers and these are inert (the whole
+    block is gated on enable_control_plane_events). Defaults mirror the in-process timer cadences:
+    WorkflowSchedule ~1min, JobReconciliation ~1min, TileCacheExpiry/Eviction a few minutes, the
+    cleanups hourly/30-min, DigestFlush a few minutes. Override per environment as needed.
+  EOT
+  type        = map(string)
+  default = {
+    WorkflowSchedule     = "rate(1 minute)"
+    JobReconciliation    = "rate(1 minute)"
+    TileCacheExpiry      = "rate(5 minutes)"
+    TileCacheEviction    = "rate(5 minutes)"
+    WorkspaceCleanup     = "rate(1 hour)"
+    FileStorageCleanup   = "rate(1 hour)"
+    TemporaryFileCleanup = "rate(30 minutes)"
+    DigestFlush          = "rate(5 minutes)"
+  }
+}
