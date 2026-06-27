@@ -45,6 +45,28 @@ output "gp_worker_gdal_repository_url" {
   value       = module.honua.gp_worker_gdal_repository_url
 }
 
+# --- Custom-code (untrusted) substrate contract (opaque ARNs) ---------------
+
+output "customcode_job_queue_arn" {
+  description = "Custom-code Fargate Spot Batch job queue ARN (separate from the GP queue)."
+  value       = module.honua.customcode_job_queue_arn
+}
+
+output "customcode_job_definition_arns" {
+  description = "Map of custom-code job-definition size tier => ARN ({ s, m, l, xl })."
+  value       = module.honua.customcode_job_definition_arns
+}
+
+output "customcode_task_role_arn" {
+  description = "Minimal custom-code task (job) role ARN — NO secrets/DB access, only scoped artifact S3."
+  value       = module.honua.customcode_task_role_arn
+}
+
+output "customcode_python_repository_url" {
+  description = "Push/pull URL of the worker-customcode-python ECR repository (null unless create_worker_customcode_repo)."
+  value       = module.honua.customcode_python_repository_url
+}
+
 output "github_oidc_role_arn" {
   description = "Role ARN the GitHub Actions cert workflow assumes via OIDC (role-to-assume in configure-aws-credentials)."
   value       = module.github_oidc.role_arn
