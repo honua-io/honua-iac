@@ -68,4 +68,50 @@ if [ "$missing" -ne 0 ]; then
   exit 1
 fi
 
+# Contract-conformance: every turnkey target with a bundle must actually declare
+# the install input variable and the install_contract/deploy_contract outputs the
+# manifests advertise, otherwise a consumer following the published contract gets
+# nothing back. Assert their presence in the example root's Terraform.
+nonconforming=0
+assert_decl() {
+  local kind="$1" name="$2" root="$3"
+  if ! grep -Rqs "^[[:space:]]*${kind} \"${name}\"" "$root"; then
+    echo "MISSING (${kind} \"${name}\"): not declared in ${root#"${REPO_ROOT}"/}" >&2
+    nonconforming=1
+  fi
+}
+while IFS='|' read -r example_root input_var install_out deploy_out; do
+  [ -z "$example_root" ] && continue
+  root="${TF_ROOT}/${example_root}"
+  [ -n "$input_var" ] && assert_decl "variable" "$input_var" "$root"
+  [ -n "$install_out" ] && assert_decl "output" "$install_out" "$root"
+  [ -n "$deploy_out" ] && assert_decl "output" "$deploy_out" "$root"
+done < <(python3 -c '
+import json, os, sys
+mk = sys.argv[1]
+d = json.load(open(os.path.join(mk, "targets.json")))
+for t in d.get("targets", []):
+    if not t.get("bundleManifest"):
+        continue
+    input_var = ""
+    bundle_path = os.path.join(mk, t["bundleManifest"])
+    try:
+        b = json.load(open(bundle_path))
+        input_var = b.get("installSurface", {}).get("inputVariable", "") or ""
+    except FileNotFoundError:
+        pass
+    print("|".join([
+        t.get("exampleRoot", ""),
+        input_var,
+        t.get("installSurfaceOutput", "") or "",
+        t.get("deploySurfaceOutput", "") or "",
+    ]))
+' "${MARKET}")
+
+if [ "$nonconforming" -ne 0 ]; then
+  echo "Marketplace contract-conformance check FAILED." >&2
+  exit 1
+fi
+
 echo "Marketplace manifest paths OK."
+echo "Marketplace contract conformance OK."

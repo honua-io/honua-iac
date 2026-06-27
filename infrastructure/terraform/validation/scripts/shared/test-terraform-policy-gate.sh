@@ -54,13 +54,16 @@ run_gate() {
   local tflint_code="$2"
   local checkov_code="$3"
   local tfsec_code="$4"
+  # tfsec is disabled by default; opt it in (5th arg) to exercise its path.
+  local tfsec_enabled="${5:-false}"
 
-  GATE_OUTPUT_FILE="$TMP_DIR/policy-gate-${strict}-${tflint_code}-${checkov_code}-${tfsec_code}.log"
+  GATE_OUTPUT_FILE="$TMP_DIR/policy-gate-${strict}-${tflint_code}-${checkov_code}-${tfsec_code}-${tfsec_enabled}.log"
   set +e
   PATH="$FAKE_BIN:$PATH" \
     FAKE_TFLINT_EXIT_CODE="$tflint_code" \
     FAKE_CHECKOV_EXIT_CODE="$checkov_code" \
     FAKE_TFSEC_EXIT_CODE="$tfsec_code" \
+    HONUA_TERRAFORM_ENABLE_TFSEC="$tfsec_enabled" \
     HONUA_TERRAFORM_POLICY_STRICT="$strict" \
     "$POLICY_GATE_SCRIPT" "$ROOT" >"$GATE_OUTPUT_FILE" 2>&1
   GATE_EXIT_CODE=$?
@@ -99,5 +102,24 @@ if [[ "$GATE_EXIT_CODE" -ne 5 ]]; then
   exit 1
 fi
 assert_output_contains 'tflint \(.+\) failed with exit code 5'
+
+# tfsec is disabled by default, so with it off a non-zero tfsec code must be
+# ignored (and the gate must announce that it is disabled).
+run_gate "true" 0 0 9 "false"
+if [[ "$GATE_EXIT_CODE" -ne 0 ]]; then
+  echo "[ERROR] tfsec disabled-by-default should not affect the gate (got $GATE_EXIT_CODE)" >&2
+  cat "$GATE_OUTPUT_FILE" >&2
+  exit 1
+fi
+assert_output_contains 'tfsec is disabled by default'
+
+# When tfsec is explicitly enabled, strict mode must propagate its exit code.
+run_gate "true" 0 0 6 "true"
+if [[ "$GATE_EXIT_CODE" -ne 6 ]]; then
+  echo "[ERROR] Strict mode should propagate tfsec exit code 6 when enabled (got $GATE_EXIT_CODE)" >&2
+  cat "$GATE_OUTPUT_FILE" >&2
+  exit 1
+fi
+assert_output_contains 'tfsec modules failed with exit code 6'
 
 echo "[INFO] terraform-policy-gate strict/non-strict regression tests passed"
