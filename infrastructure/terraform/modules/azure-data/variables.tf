@@ -97,6 +97,28 @@ variable "enable_postgis" {
   default     = false
 }
 
+variable "postgis_readiness_max_attempts" {
+  description = "Maximum readiness attempts before PostGIS enablement fails."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.postgis_readiness_max_attempts >= 1
+    error_message = "postgis_readiness_max_attempts must be at least 1."
+  }
+}
+
+variable "postgis_readiness_sleep_seconds" {
+  description = "Seconds to sleep between PostgreSQL readiness attempts."
+  type        = number
+  default     = 10
+
+  validation {
+    condition     = var.postgis_readiness_sleep_seconds >= 1
+    error_message = "postgis_readiness_sleep_seconds must be at least 1."
+  }
+}
+
 # --- Redis ---
 
 variable "redis_enabled" {
