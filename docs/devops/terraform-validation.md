@@ -47,12 +47,13 @@ The workflow and scripts cover:
 
 Workflow: `.github/workflows/terraform-manual-validation.yml`
 
-Dispatch inputs (10 total, within GitHub limit):
+Dispatch inputs (11 total, within GitHub's 25-input `workflow_dispatch` limit):
 
 - `cloud`: `both|azure|aws`
 - `deployment_profile`: `ephemeral|persistent`
 - `apply_confirmation`: must be `APPROVED` when `deployment_profile=persistent`
 - `run_live`: enable/disable live apply tests
+- `reuse_data_stack`: reuse shared PostGIS/Redis data stacks across runs (default `true`)
 - `run_k8s`: include local k3d Kubernetes validation
 - `run_aks`: include AKS validation
 - `run_eks`: include EKS validation
