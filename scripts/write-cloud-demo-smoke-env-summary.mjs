@@ -44,6 +44,27 @@ function readEnv(name) {
   return trimmed ? trimmed : undefined;
 }
 
+// Validate the manifest shape up front so a contract drift in the upstream SDK
+// manifest fails with a clear, actionable error instead of an opaque
+// "Cannot read properties of undefined" deep inside main().
+function assertManifestShape(manifest, manifestPath) {
+  const fail = (detail) => {
+    throw new Error(`Cloud-demo manifest contract drift in ${manifestPath}: ${detail}`);
+  };
+  if (manifest === null || typeof manifest !== "object" || Array.isArray(manifest)) {
+    fail("expected a JSON object at the top level");
+  }
+  if (!Array.isArray(manifest.profiles)) {
+    fail("`profiles` must be an array");
+  }
+  if (manifest.globalEnv === null || typeof manifest.globalEnv !== "object" || Array.isArray(manifest.globalEnv)) {
+    fail("`globalEnv` must be an object");
+  }
+  if (typeof manifest.globalEnv.baseUrl !== "string" || manifest.globalEnv.baseUrl.trim() === "") {
+    fail("`globalEnv.baseUrl` must be a non-empty string (the base-URL env var name)");
+  }
+}
+
 function collectEnvNames(value, names = new Set()) {
   if (typeof value === "string") {
     if (/^(?:HONUA|VITE)_/.test(value)) {
@@ -117,6 +138,7 @@ function main() {
   const strictRequiredEnv = args.get("--strict-required-env") === true;
 
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  assertManifestShape(manifest, manifestPath);
   const allManifestEnvNames = unique(collectEnvNames(manifest));
   const profiles = (manifest.profiles ?? []).map((profile) => ({
     id: profile.id,

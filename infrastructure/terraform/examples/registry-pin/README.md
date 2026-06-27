@@ -21,19 +21,20 @@ terraform -chdir=infrastructure/terraform/examples/registry-pin plan
 
 ## Pinning to a release
 
-The `module.source` in `main.tf` ends with `?ref=v0.1.0`. `terraform init`
-resolves that against a Git tag in this repository. The tag must exist before
-`init` can fetch the module — until the first `v0.1.0` tag is cut and pushed,
-`init` against the pinned `ref` will fail with a "reference not found" error.
-That is expected pre-release; see `docs/module-versioning.md` for the release
-process.
+`terraform init` resolves `module.source`'s `?ref=` against a Git ref in this
+repository, so the ref must exist before `init` can fetch the module. The
+operator contract is to pin an immutable SemVer **tag** (e.g. `?ref=v0.1.0`) and
+bump it to move to a newer release, then run `terraform init -upgrade`. See
+`docs/module-versioning.md` for the release process.
 
-To move to a newer release, bump the `?ref=` value and run
-`terraform init -upgrade`.
+Until the first SemVer tag is cut, `main.tf` pins `?ref=trunk` so the documented
+operator path actually resolves today. Replace `trunk` with the SemVer tag once
+it is published.
 
-## Why this is not in the blocking CI roots list
+## CI validation
 
-Because the pinned `ref` may not exist yet (tag-availability lag), this root is
-deliberately kept out of the `static-validate` roots in
-`.github/workflows/terraform-ci.yml`. The module subtree it consumes
-(`modules/aws-ecs`) is already validated there directly.
+Because the example now pins an existing ref (`trunk`), this root is included in
+the `static-validate` roots in `.github/workflows/terraform-ci.yml`. `init`
+fetches the `aws-ecs` module from the Git source over the network (unlike the
+other roots, which use relative paths), so this root is the one place CI
+exercises the external git-source consumer contract end to end.

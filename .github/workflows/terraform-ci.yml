@@ -11,6 +11,7 @@ on:
       - 'scripts/run-k8s-terraform-integration.sh'
       - 'scripts/run-terraform-drift-detection.sh'
       - 'scripts/terraform-policy-gate.sh'
+      - 'scripts/check-marketplace-paths.sh'
       - 'scripts/capture-dr-drill-evidence.sh'
       - 'scripts/capture-runbook-evidence.sh'
       - 'scripts/tf-pass-secrets.sh'
@@ -39,6 +40,7 @@ on:
       - 'scripts/run-k8s-terraform-integration.sh'
       - 'scripts/run-terraform-drift-detection.sh'
       - 'scripts/terraform-policy-gate.sh'
+      - 'scripts/check-marketplace-paths.sh'
       - 'scripts/capture-dr-drill-evidence.sh'
       - 'scripts/capture-runbook-evidence.sh'
       - 'scripts/tf-pass-secrets.sh'
@@ -95,6 +97,15 @@ jobs:
           terraform fmt -check -recursive infrastructure/terraform
           terraform fmt -check -recursive docs/devops/examples
 
+      - name: Configure git to fetch the Git-source module via the workflow token
+        # The registry-pin example consumes the module over https git from this
+        # (private) repo. Anonymous clone fails ("could not read Username"), so
+        # rewrite github.com URLs to use the read-only GITHUB_TOKEN.
+        env:
+          GH_WORKFLOW_TOKEN: ${{ github.token }}
+        run: |
+          git config --global url."https://x-access-token:${GH_WORKFLOW_TOKEN}@github.com/".insteadOf "https://github.com/"
+
       - name: Terraform init/validate (selected roots)
         shell: bash
         run: |
@@ -121,6 +132,10 @@ jobs:
             "infrastructure/terraform/examples/azure-aks"
             "infrastructure/terraform/examples/aws-eks"
             "infrastructure/terraform/examples/observability"
+            # Git-source external-consumer example. Unlike the other roots its
+            # module is fetched from the repo over the network at the pinned
+            # ?ref=, so this validates the published consumer contract too.
+            "infrastructure/terraform/examples/registry-pin"
             "infrastructure/terraform/modules/azure-aca"
             "infrastructure/terraform/modules/azure-gp"
             "infrastructure/terraform/modules/azure-data"
@@ -146,6 +161,10 @@ jobs:
             terraform -chdir="$root" validate -no-color
             echo "::endgroup::"
           done
+
+      - name: Marketplace manifest path check
+        shell: bash
+        run: ./scripts/check-marketplace-paths.sh
 
   policy-gates:
     name: Terraform Policy Gates
@@ -180,6 +199,10 @@ jobs:
           set -euo pipefail
           python -m pip install --upgrade pip
           python -m pip install checkov==3.2.497
+
+      - name: Policy-gate regression test (gate pass/fail logic)
+        shell: bash
+        run: ./infrastructure/terraform/validation/scripts/shared/test-terraform-policy-gate.sh
 
       - name: Run Terraform policy gate script
         shell: bash
