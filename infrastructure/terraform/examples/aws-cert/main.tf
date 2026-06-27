@@ -138,13 +138,19 @@ module "honua" {
   # The honua-devops gp runtime adapter consumes the exported ARNs (queue +
   # per-tier job definitions) as opaque config — it does NOT re-apply terraform
   # per job. Only substrate-level inputs (image, arch, repo) are forwarded.
-  enable_gp_batch           = true
-  gp_batch_image            = var.gp_batch_image
-  gp_batch_cpu_architecture = var.gp_batch_cpu_architecture
-  gp_batch_workload_id      = var.gp_batch_workload_id
-  gp_batch_workload_name    = var.gp_batch_workload_name
-  gp_batch_max_vcpus        = var.gp_batch_max_vcpus
-  gp_batch_data_bucket_arn  = aws_s3_bucket.cert_artifacts.arn
+  enable_gp_batch = true
+  # Phase 3 custom-code egress isolation (two-phase provisioning/execution jobs +
+  # CodeArtifact pull-through + locked-down execution SG) is available but OFF in
+  # cert: the cert tier exercises the MVP GP-over-Batch path. Flip to true (and,
+  # if git-sourced deps are needed, set customcode_github_egress_cidrs) to certify
+  # the isolation path. See modules/aws-serverless docs/customcode-egress-isolation.md.
+  enable_customcode_egress_isolation = false
+  gp_batch_image                     = var.gp_batch_image
+  gp_batch_cpu_architecture          = var.gp_batch_cpu_architecture
+  gp_batch_workload_id               = var.gp_batch_workload_id
+  gp_batch_workload_name             = var.gp_batch_workload_name
+  gp_batch_max_vcpus                 = var.gp_batch_max_vcpus
+  gp_batch_data_bucket_arn           = aws_s3_bucket.cert_artifacts.arn
 
   # Dedicated worker-gdal ECR repository for the cert GP worker image.
   create_worker_gdal_repo = var.create_worker_gdal_repo

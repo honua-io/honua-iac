@@ -464,6 +464,41 @@ variable "gp_batch_data_bucket_arn" {
   default     = ""
 }
 
+# --- Custom-code GP egress isolation (two-phase + CodeArtifact) ----------------
+# Phase 3 security hardening for CUSTOM-CODE geoprocessing jobs. The MVP GP Batch
+# path runs dependency-restore (pip/git -> PyPI/GitHub) AND user code in ONE
+# Fargate task with 443 to 0.0.0.0/0 (aws_security_group.batch). When this flag is
+# on, the module provisions a TWO-PHASE separate-job model: a PROVISIONING job
+# (restore via an AWS CodeArtifact pull-through cache reached over VPC endpoints +
+# a tight GitHub allowlist) and a locked-down EXECUTION job (user code, NO
+# dependency-registry / open-internet egress). A Fargate task has one ENI / one
+# SG for its whole life, so the two egress postures MUST be two separate jobs/CEs.
+# Requires enable_gp_batch = true. Off by default — the MVP coarse-allowlist path
+# is unchanged. See infrastructure/terraform/docs/customcode-egress-isolation.md.
+
+variable "enable_customcode_egress_isolation" {
+  description = "Enable the two-phase custom-code GP egress-isolation model (separate PROVISIONING + EXECUTION Batch jobs, AWS CodeArtifact pull-through cache, CodeArtifact/STS/Secrets/S3 VPC endpoints, and locked-down execution SG). Requires enable_gp_batch. Off by default; the MVP coarse-allowlist GP path is unchanged when false. See docs/customcode-egress-isolation.md for the architecture and residual-risk writeup."
+  type        = bool
+  default     = false
+}
+
+variable "customcode_codeartifact_domain_name" {
+  description = "Name of the AWS CodeArtifact domain that fronts the custom-code dependency pull-through cache. Two pull-through repositories are minted under it: <name>-pypi (public:pypi) and <name>-nuget (public:nuget-org). Only used when enable_customcode_egress_isolation is true."
+  type        = string
+  default     = "honua-customcode"
+
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9-]{1,48}[a-z0-9]$", var.customcode_codeartifact_domain_name))
+    error_message = "customcode_codeartifact_domain_name must be 2-50 chars, lowercase alphanumeric or hyphen, and start with a letter (CodeArtifact domain naming)."
+  }
+}
+
+variable "customcode_github_egress_cidrs" {
+  description = "TIGHT HTTPS (443) egress allowlist for the PROVISIONING phase so it can git-clone the pinned dependency SHA from GitHub. EMPTY by default => NO GitHub egress at all (operators that restore purely from CodeArtifact leave it empty). Operators that need git-sourced deps set the GitHub IP ranges explicitly (see https://api.github.com/meta). This list is the documented residual-risk boundary: the provisioning phase can reach exactly these CIDRs and nothing else on the open internet. Only used when enable_customcode_egress_isolation is true."
+  type        = list(string)
+  default     = []
+}
+
 # --- GP job-definition POOL (size tiers) --------------------------------------
 # Terraform provisions a DURABLE per-environment substrate, NOT a unique per-job
 # config. Per-job sizing happens at RUNTIME: the server's AwsBatchComputeBackend
