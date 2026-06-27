@@ -47,7 +47,7 @@ publish-candidate module by Git source at a tag, for example:
 
 ```hcl
 module "honua" {
-  source = "git::https://github.com/honua-io/honua-terraform.git//infrastructure/terraform/modules/aws-ecs?ref=v0.1.0"
+  source = "git::https://github.com/honua-io/honua-iac.git//infrastructure/terraform/modules/aws-ecs?ref=v0.1.0"
   # ...
 }
 ```

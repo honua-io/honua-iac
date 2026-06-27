@@ -1,0 +1,19 @@
+# Copy to terraform.tfvars and fill in real values.
+# NEVER commit terraform.tfvars — it contains secrets.
+
+location    = "eastus"
+environment = "prod"
+name_prefix = "honua"
+
+# Functions-compatible container image. Pin to an immutable release tag or digest.
+# Prefer AOT builds; use JIT images only for debug fallback.
+honua_image = "ghcr.io/honua-io/honua-server:v1.5.0"
+
+# Admin API password (minimum 32 characters).
+# Generate: openssl rand -hex 32
+honua_admin_password = "REPLACE_WITH_STRONG_SECRET_MIN_32_CHARS"
+
+tags = {
+  owner      = "platform"
+  costCentre = "honua"
+}
