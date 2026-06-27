@@ -85,14 +85,6 @@ locals {
   xray_environment = var.enable_xray_tracing ? {
     Tracing__XRay__Enabled = "true"
   } : {}
-  # Pro license delivered via Secrets Manager: the server resolves the ~2KB signed
-  # envelope from the secret reference at startup (it does not fit Lambda's 4KB env
-  # limit inline) and trusts the relabeled, hyphen-free keyId's public key.
-  pro_license_enabled = var.enable_pro_license
-  pro_license_environment = local.pro_license_enabled ? {
-    Licensing__LicenseContentSecretRef                  = "aws:secretsmanager:${aws_secretsmanager_secret.pro_license[0].arn}"
-    "Licensing__TrustedKeys__${var.pro_license_key_id}" = var.pro_license_trusted_public_key
-  } : {}
   # When GP-on-Batch is enabled, surface the queue/job-definition ARNs and
   # default sizing to the server as a ControlPlane:ExecutionWorkloads entry.
   # The reconciler selects the AwsBatchComputeBackend by Backend=honua-aws-batch
@@ -142,7 +134,7 @@ locals {
     ControlPlane__DeployTargets__0__ParameterEntries__1__Value  = var.lambda_alias_name
     ControlPlane__DeployTargets__0__ParameterEntries__2__Key    = "aws.region"
     ControlPlane__DeployTargets__0__ParameterEntries__2__Value  = data.aws_region.current.name
-  }, local.gp_batch_environment, local.bedrock_ai_environment, var.additional_env, local.redis_secret_environment, local.xray_environment, local.pro_license_environment)
+  }, local.gp_batch_environment, local.bedrock_ai_environment, var.additional_env, local.redis_secret_environment, local.xray_environment)
 }
 
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
@@ -424,8 +416,7 @@ resource "aws_iam_policy" "lambda_secrets" {
         Resource = compact([
           aws_secretsmanager_secret.connection_string.arn,
           aws_secretsmanager_secret.admin_password.arn,
-          local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null,
-          local.pro_license_enabled ? aws_secretsmanager_secret.pro_license[0].arn : null
+          local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null
         ])
       }
     ]
@@ -477,26 +468,6 @@ resource "aws_secretsmanager_secret_version" "redis_connection" {
   count         = local.redis_enabled ? 1 : 0
   secret_id     = aws_secretsmanager_secret.redis_connection[0].id
   secret_string = local.redis_connection
-}
-
-# Pro license envelope. Stored in a dedicated secret (rather than inline env) so the
-# ~2KB signed envelope does not consume Lambda's 4KB total-env budget; the server
-# resolves it via Licensing__LicenseContentSecretRef=aws:secretsmanager:<arn> at
-# startup. The envelope must carry the relabeled, hyphen-free keyId (pro_license_key_id)
-# so the matching Licensing__TrustedKeys__<keyId> env var name is legal.
-#checkov:skip=CKV2_AWS_57: Secrets rotation is managed outside this module; the license is rotated by re-issuing the envelope.
-resource "aws_secretsmanager_secret" "pro_license" {
-  #checkov:skip=CKV2_AWS_57: Secrets rotation is managed outside this module; the license is rotated by re-issuing the envelope.
-  count       = local.pro_license_enabled ? 1 : 0
-  name        = "${local.name}/license-pro"
-  description = "Signed Honua Pro license envelope (resolved at startup via Licensing__LicenseContentSecretRef)."
-  tags        = local.tags
-}
-
-resource "aws_secretsmanager_secret_version" "pro_license" {
-  count         = local.pro_license_enabled ? 1 : 0
-  secret_id     = aws_secretsmanager_secret.pro_license[0].id
-  secret_string = var.pro_license_content
 }
 
 #checkov:skip=CKV_AWS_158: Log-group KMS integration is optional and supplied by the deployment environment.
@@ -556,28 +527,10 @@ resource "aws_lambda_function" "this" {
     aws_cloudwatch_log_group.lambda,
     aws_secretsmanager_secret_version.connection_string,
     aws_secretsmanager_secret_version.admin_password,
-    aws_secretsmanager_secret_version.redis_connection,
-    aws_secretsmanager_secret_version.pro_license
+    aws_secretsmanager_secret_version.redis_connection
   ]
 
   tags = local.tags
-}
-
-# Fail the plan early (rather than at runtime) when the Pro license is enabled but the
-# envelope or its trusted public key is missing.
-resource "terraform_data" "pro_license_validation" {
-  count = local.pro_license_enabled ? 1 : 0
-
-  lifecycle {
-    precondition {
-      condition     = trimspace(var.pro_license_content) != ""
-      error_message = "enable_pro_license is true but pro_license_content (the signed license envelope JSON) is empty."
-    }
-    precondition {
-      condition     = trimspace(var.pro_license_trusted_public_key) != ""
-      error_message = "enable_pro_license is true but pro_license_trusted_public_key (the Ed25519 public key) is empty."
-    }
-  }
 }
 
 resource "aws_lambda_alias" "live" {

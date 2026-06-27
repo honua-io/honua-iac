@@ -125,16 +125,6 @@ output "redis_connection_secret_arn" {
   sensitive = true
 }
 
-output "pro_license_enabled" {
-  description = "Whether the server is configured to load a signed Pro license from Secrets Manager."
-  value       = local.pro_license_enabled
-}
-
-output "pro_license_secret_arn" {
-  description = "ARN of the Secrets Manager secret holding the signed Pro license envelope (null when enable_pro_license is false)."
-  value       = local.pro_license_enabled ? aws_secretsmanager_secret.pro_license[0].arn : null
-}
-
 # --- Serverless observability outputs --------------------------------------
 
 output "dashboard_name" {
