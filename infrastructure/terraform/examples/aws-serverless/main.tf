@@ -43,6 +43,12 @@ module "honua" {
   bedrock_ai_model  = var.bedrock_ai_model
   bedrock_ai_region = var.bedrock_ai_region
 
+  enable_control_plane_events            = var.enable_control_plane_events
+  control_plane_events_image             = var.control_plane_events_image
+  control_plane_events_memory_size       = var.control_plane_events_memory_size
+  control_plane_events_timeout_seconds   = var.control_plane_events_timeout_seconds
+  control_plane_scheduled_tick_schedules = var.control_plane_scheduled_tick_schedules
+
   additional_env = {
     HONUA_SERVE_ADMIN_UI = "true"
     HONUA_ADMIN_UI       = "true"
@@ -145,4 +151,28 @@ output "pro_license_enabled" {
 
 output "pro_license_secret_arn" {
   value = module.honua.pro_license_secret_arn
+}
+
+output "control_plane_events_enabled" {
+  value = module.honua.control_plane_events_enabled
+}
+
+output "control_plane_reconcile_function_name" {
+  value = module.honua.control_plane_reconcile_function_name
+}
+
+output "control_plane_reconcile_function_arn" {
+  value = module.honua.control_plane_reconcile_function_arn
+}
+
+output "control_plane_backstop_function_name" {
+  value = module.honua.control_plane_backstop_function_name
+}
+
+output "control_plane_backstop_function_arn" {
+  value = module.honua.control_plane_backstop_function_arn
+}
+
+output "control_plane_batch_event_rule_arn" {
+  value = module.honua.control_plane_batch_event_rule_arn
 }

@@ -210,3 +210,42 @@ variable "bedrock_ai_region" {
   type        = string
   default     = "us-west-2"
 }
+
+variable "enable_control_plane_events" {
+  description = "Provision the event-driven control-plane reconcile path (EventBridge Batch-state-change reconcile Lambda + EventBridge Scheduler backstop Lambda, ControlPlane__TriggerMode=Event). Off by default."
+  type        = bool
+  default     = false
+}
+
+variable "control_plane_events_image" {
+  description = "Optional dedicated image URI for the control-plane reconcile/backstop Lambdas. Defaults to the API image when empty."
+  type        = string
+  default     = ""
+}
+
+variable "control_plane_events_memory_size" {
+  description = "Memory (MB) for the control-plane reconcile/backstop Lambdas."
+  type        = number
+  default     = 1024
+}
+
+variable "control_plane_events_timeout_seconds" {
+  description = "Timeout (seconds) for the control-plane reconcile/backstop Lambdas."
+  type        = number
+  default     = 120
+}
+
+variable "control_plane_scheduled_tick_schedules" {
+  description = "EventBridge Scheduler cadences for the PERIODIC control-plane ticks (Phase 3): map of tick kind -> rate(...)/cron(...) expression. Only used when enable_control_plane_events is true (TriggerMode=Event). Defaults mirror the in-process timer cadences."
+  type        = map(string)
+  default = {
+    WorkflowSchedule     = "rate(1 minute)"
+    JobReconciliation    = "rate(1 minute)"
+    TileCacheExpiry      = "rate(5 minutes)"
+    TileCacheEviction    = "rate(5 minutes)"
+    WorkspaceCleanup     = "rate(1 hour)"
+    FileStorageCleanup   = "rate(1 hour)"
+    TemporaryFileCleanup = "rate(30 minutes)"
+    DigestFlush          = "rate(5 minutes)"
+  }
+}

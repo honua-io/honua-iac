@@ -16,6 +16,18 @@ variable "tags" {
   default     = {}
 }
 
+variable "alarm_sns_topic_arns" {
+  description = "SNS topic ARNs notified on CloudWatch alarm and OK transitions (Lambda errors, API Gateway 5xx). Empty by default."
+  type        = list(string)
+  default     = []
+}
+
+variable "alarm_email" {
+  description = "If set, the module creates an SNS topic and subscribes this email address to receive Lambda/API Gateway alarm notifications. Leave empty to rely solely on alarm_sns_topic_arns."
+  type        = string
+  default     = ""
+}
+
 variable "vpc_cidr" {
   description = "CIDR block for the VPC."
   type        = string
@@ -126,7 +138,18 @@ variable "admin_password" {
   sensitive   = true
   validation {
     condition     = length(var.admin_password) >= 32
-    error_message = "admin_password must be at least 32 characters (it is also used as Security__ConnectionEncryption__MasterKey)."
+    error_message = "admin_password must be at least 32 characters."
+  }
+}
+
+variable "connection_encryption_master_key" {
+  description = "Master key for Honua connection encryption (Security__ConnectionEncryption__MasterKey). Leave null to auto-generate an independent key; set it to pin/rotate the key out of band. Must not be the admin password."
+  type        = string
+  sensitive   = true
+  default     = null
+  validation {
+    condition     = var.connection_encryption_master_key == null || length(var.connection_encryption_master_key) >= 32
+    error_message = "connection_encryption_master_key must be at least 32 characters when set."
   }
 }
 
@@ -165,6 +188,12 @@ variable "db_allocated_storage" {
   description = "RDS allocated storage in GB."
   type        = number
   default     = 20
+}
+
+variable "db_max_allocated_storage" {
+  description = "Maximum allocated storage in GB for RDS storage autoscaling. Must be >= db_allocated_storage."
+  type        = number
+  default     = 100
 }
 
 variable "db_publicly_accessible" {
@@ -542,6 +571,143 @@ variable "worker_gdal_repo_force_delete" {
   default     = false
 }
 
+# --- Custom-code (untrusted user code) AWS Batch substrate --------------------
+# A SEPARATE, deliberately HARDENED Batch family for running untrusted user code
+# (the custom-code Python runtime). Mirrors the GP substrate's tiered, scale-to-
+# zero, Fargate-Spot shape but with: EMPTY secrets/env on the job definition, a
+# MINIMAL task role (no Secrets Manager, no RDS, only scoped artifact S3), and a
+# constrained egress allowlist instead of open 0.0.0.0/0. The scoped
+# HONUA_JOB_TOKEN (server-injected env) is the primary T1/T2 trust boundary; the
+# egress allowlist is defense-in-depth. Full two-phase egress isolation is a Beta
+# hardening (Phase 3). Off by default so existing deploys are unchanged.
+
+variable "enable_customcode_batch" {
+  description = "Provision the SEPARATE, hardened AWS Batch (Fargate Spot) substrate for untrusted custom-code jobs (empty secrets, minimal task role, constrained egress). Off by default; independent of enable_gp_batch."
+  type        = bool
+  default     = false
+}
+
+variable "customcode_batch_image" {
+  description = "Container image URI for the custom-code worker. Defaults to the worker-customcode-python ECR repo (when create_worker_customcode_repo) else the Lambda image. Set explicitly for a pre-built image."
+  type        = string
+  default     = ""
+}
+
+variable "customcode_batch_cpu_architecture" {
+  description = "CPU architecture for the custom-code Fargate task (X86_64 or ARM64). Match the worker image build."
+  type        = string
+  default     = "X86_64"
+
+  validation {
+    condition     = contains(["X86_64", "ARM64"], var.customcode_batch_cpu_architecture)
+    error_message = "customcode_batch_cpu_architecture must be X86_64 or ARM64."
+  }
+}
+
+variable "customcode_batch_max_vcpus" {
+  description = "Maximum aggregate vCPUs the custom-code Fargate Spot compute environment may scale to. Caps concurrent untrusted-job throughput (and cost). Scales to zero between jobs."
+  type        = number
+  default     = 16
+}
+
+variable "customcode_artifact_bucket_arn" {
+  description = "S3 bucket ARN the custom-code task role may read/write — scoped to the per-job artifact prefix only. Leave empty to grant the task role ZERO inline permissions (image pull is on the execution role)."
+  type        = string
+  default     = ""
+}
+
+variable "customcode_artifact_prefix" {
+  description = "S3 key prefix under customcode_artifact_bucket_arn the custom-code task role is scoped to (the server sets customcode.output_prefix per job UNDER this prefix). Get/PutObject is granted only beneath '<prefix>/*'."
+  type        = string
+  default     = "customcode"
+}
+
+variable "customcode_egress_https_cidrs" {
+  description = "CIDR allowlist for HTTPS (443) egress from untrusted custom-code tasks (PyPI/GitHub for pip+clone, the Honua API endpoint, the artifact S3). Empty defaults to the VPC CIDR only (in-VPC endpoints, no open internet). Use a tight allowlist for MVP; full two-phase egress isolation is Beta (Phase 3)."
+  type        = list(string)
+  default     = []
+}
+
+variable "customcode_egress_dns_cidrs" {
+  description = "CIDR allowlist for DNS (UDP 53) egress so pip/clone can resolve allowlisted hosts. Empty defaults to the VPC CIDR (covers the AmazonProvidedDNS resolver). No open 0.0.0.0/0 DNS."
+  type        = list(string)
+  default     = []
+}
+
+variable "create_worker_customcode_repo" {
+  description = "Create a dedicated worker-customcode-python ECR repository for the custom-code worker image (separate from the Lambda and worker-gdal images). Off by default; the repo name is stable so an operator can pre-create + push, then enable."
+  type        = bool
+  default     = false
+}
+
+variable "worker_customcode_repo_image_tag_mutability" {
+  description = "Image tag mutability for the worker-customcode-python ECR repository (MUTABLE or IMMUTABLE). IMMUTABLE is recommended so a pushed worker tag can never be silently overwritten."
+  type        = string
+  default     = "IMMUTABLE"
+
+  validation {
+    condition     = contains(["MUTABLE", "IMMUTABLE"], var.worker_customcode_repo_image_tag_mutability)
+    error_message = "worker_customcode_repo_image_tag_mutability must be MUTABLE or IMMUTABLE."
+  }
+}
+
+variable "worker_customcode_repo_max_image_count" {
+  description = "Number of most-recent images the worker-customcode-python ECR lifecycle policy retains (older images expired to control storage cost)."
+  type        = number
+  default     = 10
+
+  validation {
+    condition     = var.worker_customcode_repo_max_image_count >= 1
+    error_message = "worker_customcode_repo_max_image_count must be at least 1."
+  }
+}
+
+variable "worker_customcode_repo_force_delete" {
+  description = "Allow terraform destroy to delete the worker-customcode-python ECR repository even when it still contains images. Convenient for ephemeral environments; leave false for anything durable."
+  type        = bool
+  default     = false
+}
+
+# --- honua-worker-etl ECR repository (ADR-0038 roadmap F) -----------------
+# The heavyweight GDAL/PDAL/PROJ ETL worker image's dedicated repository,
+# decoupled from the Honua Lambda image and the worker-gdal image. Off by
+# default; the repository name is stable regardless of the flag so an operator
+# can pre-create + push, then enable. Mirrors the worker-gdal repo variables.
+
+variable "create_worker_etl_repo" {
+  description = "Create a dedicated worker-etl ECR repository for the heavyweight GDAL/PDAL/PROJ ETL worker image (separate from the Honua Lambda image and the worker-gdal image). Off by default."
+  type        = bool
+  default     = false
+}
+
+variable "worker_etl_repo_image_tag_mutability" {
+  description = "Image tag mutability for the worker-etl ECR repository (MUTABLE or IMMUTABLE). IMMUTABLE is recommended so a pushed cert/job tag can never be silently overwritten."
+  type        = string
+  default     = "IMMUTABLE"
+
+  validation {
+    condition     = contains(["MUTABLE", "IMMUTABLE"], var.worker_etl_repo_image_tag_mutability)
+    error_message = "worker_etl_repo_image_tag_mutability must be MUTABLE or IMMUTABLE."
+  }
+}
+
+variable "worker_etl_repo_max_image_count" {
+  description = "Number of most-recent images the worker-etl ECR lifecycle policy retains (older untagged/extra images are expired to control storage cost)."
+  type        = number
+  default     = 10
+
+  validation {
+    condition     = var.worker_etl_repo_max_image_count >= 1
+    error_message = "worker_etl_repo_max_image_count must be at least 1."
+  }
+}
+
+variable "worker_etl_repo_force_delete" {
+  description = "Allow terraform destroy to delete the worker-etl ECR repository even when it still contains images. Convenient for ephemeral cert environments; leave false for anything durable."
+  type        = bool
+  default     = false
+}
+
 # --- Pro license (Secrets Manager delivery) -------------------------------
 # Optional, off by default. When enabled, stores the signed Pro license
 # envelope in a Secrets Manager secret, grants the Lambda role
@@ -626,5 +792,71 @@ variable "bedrock_ai_timeout_seconds" {
   validation {
     condition     = var.bedrock_ai_timeout_seconds >= 5 && var.bedrock_ai_timeout_seconds <= 300
     error_message = "bedrock_ai_timeout_seconds must be between 5 and 300 (server-side WorkflowGeneration validation range)."
+  }
+}
+
+# --- Control-plane event triggers (TriggerMode=Event) ---------------------
+# Optional, off by default. When enabled, provisions a reconcile Lambda fired by
+# EventBridge on Batch job state changes plus a backstop Lambda fired every ~2
+# minutes by EventBridge Scheduler, so the control plane reconciles event-driven
+# (no always-on in-process timer). Both Lambdas reuse the server image and the
+# API host's DI env, and add ControlPlane__TriggerMode=Event.
+
+variable "enable_control_plane_events" {
+  description = "Provision the event-driven control-plane reconcile path: a reconcile Lambda fired by EventBridge on Batch job state changes and a backstop Lambda fired every ~2 minutes by EventBridge Scheduler, with ControlPlane__TriggerMode=Event. Off by default so existing deploys are unchanged."
+  type        = bool
+  default     = false
+}
+
+variable "control_plane_events_image" {
+  description = "Container image URI (ECR) for the control-plane reconcile/backstop Lambdas. Defaults to the same image as the API Lambda (var.image) when empty; both event handlers are selected at runtime via HONUA_CONTROL_PLANE_LAMBDA_HANDLER, so the image must bundle the batch-event and backstop entrypoints."
+  type        = string
+  default     = ""
+}
+
+variable "control_plane_events_memory_size" {
+  description = "Memory (MB) for the control-plane reconcile/backstop Lambdas."
+  type        = number
+  default     = 1024
+}
+
+variable "control_plane_events_timeout_seconds" {
+  description = "Timeout (seconds) for the control-plane reconcile/backstop Lambdas. Not bound by the API Gateway 30s ceiling since these are invoked asynchronously by EventBridge / EventBridge Scheduler."
+  type        = number
+  default     = 120
+
+  validation {
+    condition     = var.control_plane_events_timeout_seconds >= 10 && var.control_plane_events_timeout_seconds <= 900
+    error_message = "control_plane_events_timeout_seconds must be between 10 and 900 seconds."
+  }
+}
+
+variable "control_plane_events_reserved_concurrent_executions" {
+  description = "Reserved concurrency for the control-plane reconcile/backstop Lambdas (null for unreserved)."
+  type        = number
+  default     = null
+}
+
+variable "control_plane_scheduled_tick_schedules" {
+  description = <<-EOT
+    EventBridge Scheduler cadences for the PERIODIC (bucket-b) control-plane ticks (Phase 3). Each
+    entry maps a tick KIND (matching Honua's ScheduledTickKind enum) to a schedule_expression
+    (rate(...) or cron(...)). Under ControlPlane__TriggerMode=Event these schedules drive the
+    server's idempotent per-tick bodies through the scheduled-tick Lambda/endpoint instead of an
+    always-on in-process timer; under Poll the server hosts the timers and these are inert (the whole
+    block is gated on enable_control_plane_events). Defaults mirror the in-process timer cadences:
+    WorkflowSchedule ~1min, JobReconciliation ~1min, TileCacheExpiry/Eviction a few minutes, the
+    cleanups hourly/30-min, DigestFlush a few minutes. Override per environment as needed.
+  EOT
+  type        = map(string)
+  default = {
+    WorkflowSchedule     = "rate(1 minute)"
+    JobReconciliation    = "rate(1 minute)"
+    TileCacheExpiry      = "rate(5 minutes)"
+    TileCacheEviction    = "rate(5 minutes)"
+    WorkspaceCleanup     = "rate(1 hour)"
+    FileStorageCleanup   = "rate(1 hour)"
+    TemporaryFileCleanup = "rate(30 minutes)"
+    DigestFlush          = "rate(5 minutes)"
   }
 }

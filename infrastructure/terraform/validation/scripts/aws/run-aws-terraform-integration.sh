@@ -1189,7 +1189,8 @@ verify_protocol_endpoints() {
 
     if [[ "$endpoint_status" == "404" ]]; then
       endpoint_body="$(curl -sS --max-time 20 "$endpoint" || true)"
-      if [[ "$endpoint_body" == *"OData is not enabled for any available service."* ]]; then
+      if [[ "$endpoint_body" == *"OData is not enabled for any available service."* ||
+            "$endpoint_body" == *"No OData-enabled services found"* ]]; then
         log_info "OData endpoint reachable with empty catalog: $endpoint returned HTTP 404"
         return 0
       fi

@@ -86,6 +86,49 @@ variable "create_worker_gdal_repo" {
   default     = true
 }
 
+# --- Custom-code (untrusted) Batch substrate -------------------------------
+# A SEPARATE, hardened Batch family for untrusted user code: empty secrets, a
+# minimal task role (scoped artifact S3 only, no DB/secrets), a constrained
+# egress allowlist. Off by default in cert; the scoped HONUA_JOB_TOKEN is the
+# trust boundary. Only substrate-level inputs live here (per-job sizing is a
+# runtime SubmitJob override; tiers are fixed by the module's size pool).
+
+variable "enable_customcode_batch" {
+  description = "Provision the hardened custom-code (untrusted) Batch substrate in the cert stack. Off by default."
+  type        = bool
+  default     = false
+}
+
+variable "customcode_batch_image" {
+  description = "ECR image URI for the custom-code worker. Defaults to the worker-customcode-python repo (when created) else honua_image."
+  type        = string
+  default     = ""
+}
+
+variable "customcode_batch_cpu_architecture" {
+  description = "CPU architecture for the custom-code Fargate task (X86_64 or ARM64). Must match the worker image build."
+  type        = string
+  default     = "X86_64"
+}
+
+variable "customcode_batch_max_vcpus" {
+  description = "Max vCPUs ceiling for the custom-code Fargate-Spot compute environment."
+  type        = number
+  default     = 16
+}
+
+variable "create_worker_customcode_repo" {
+  description = "Create the dedicated worker-customcode-python ECR repository for the custom-code worker image."
+  type        = bool
+  default     = false
+}
+
+variable "customcode_egress_https_cidrs" {
+  description = "CIDR allowlist for HTTPS egress from untrusted custom-code tasks (PyPI/GitHub/Honua API/artifact S3). Empty defaults to the VPC CIDR only (no open internet)."
+  type        = list(string)
+  default     = []
+}
+
 # --- Certification budget guardrail ----------------------------------------
 
 variable "monthly_budget_usd" {
@@ -126,9 +169,9 @@ variable "github_repository" {
 }
 
 variable "github_oidc_subjects" {
-  description = "Explicit OIDC `sub` patterns allowed to assume the cert role. Overrides github_owner/github_repository when non-empty. Pin to a GitHub Environment for the tightest scope, e.g. [\"repo:honua-io/honua-server:environment:cert\"]."
+  description = "Explicit OIDC `sub` patterns allowed to assume the cert role. Overrides github_owner/github_repository when non-empty. The cert stack defaults to the tightest practical scope — the `cert` GitHub Environment on honua-io/honua-server — so the dispatched cert workflow MUST run in a GitHub Environment named `cert`. Override only to pin a different ref/environment."
   type        = list(string)
-  default     = []
+  default     = ["repo:honua-io/honua-server:environment:cert"]
 }
 
 variable "create_oidc_provider" {

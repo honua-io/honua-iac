@@ -247,3 +247,115 @@ output "customcode_codeartifact_nuget_repository_arn" {
   description = "CodeArtifact NuGet pull-through repository ARN (null unless egress isolation enabled)."
   value       = local.egress_isolation_enabled ? aws_codeartifact_repository.nuget[0].arn : null
 }
+
+# --- Custom-code (untrusted) AWS Batch outputs -----------------------------
+# The cross-repo contract the server consumes for custom-code jobs. The server
+# has no custom-code-specific param keys on trunk yet; it reads the GP batch
+# substrate as opaque ARNs via batch.job_queue_arn / batch.job_definition_arn
+# (AwsBatchComputeBackend), so these mirror that shape — the server selects a
+# size tier and submits against the chosen job-definition ARN with the scoped
+# runtime env (HONUA_JOB_TOKEN, customcode.output_prefix, ...) as overrides.
+# Null when enable_customcode_batch is false.
+
+output "customcode_batch_enabled" {
+  description = "Whether the hardened custom-code Batch substrate was provisioned."
+  value       = local.customcode_batch_enabled
+}
+
+output "customcode_job_queue_arn" {
+  description = "ARN of the custom-code Fargate Spot Batch job queue (separate from the GP queue; batch.job_queue_arn for custom-code jobs)."
+  value       = local.customcode_batch_enabled ? aws_batch_job_queue.customcode[0].arn : null
+}
+
+output "customcode_job_definition_arns" {
+  description = "Map of custom-code job-definition size tier => ARN ({ s, m, l, xl }); tiers differ only by ephemeral storage. The server selects a tier per job and applies vCPU/memory/timeout/retry + scoped runtime env as SubmitJob overrides."
+  value       = local.customcode_batch_enabled ? { for tier, jd in aws_batch_job_definition.customcode : tier => jd.arn } : null
+}
+
+output "customcode_compute_environment_arn" {
+  description = "ARN of the custom-code Fargate Spot Batch compute environment."
+  value       = local.customcode_batch_enabled ? aws_batch_compute_environment.customcode[0].arn : null
+}
+
+output "customcode_task_role_arn" {
+  description = "ARN of the MINIMAL task (job) role the untrusted custom-code container assumes. Grants NO Secrets Manager / DB access — only scoped artifact S3 (when a bucket is supplied). The Honua callback uses the scoped HONUA_JOB_TOKEN, not IAM."
+  value       = local.customcode_batch_enabled ? aws_iam_role.customcode_job[0].arn : null
+}
+
+output "customcode_execution_role_arn" {
+  description = "ARN of the custom-code Fargate task execution role (ECR pull + log writes only)."
+  value       = local.customcode_batch_enabled ? aws_iam_role.customcode_execution[0].arn : null
+}
+
+output "customcode_python_repository_url" {
+  description = "Push/pull URL of the dedicated worker-customcode-python ECR repository (null unless create_worker_customcode_repo)."
+  value       = var.create_worker_customcode_repo ? aws_ecr_repository.worker_customcode[0].repository_url : null
+}
+
+output "customcode_python_repository_arn" {
+  description = "ARN of the dedicated worker-customcode-python ECR repository (null unless create_worker_customcode_repo)."
+  value       = var.create_worker_customcode_repo ? aws_ecr_repository.worker_customcode[0].arn : null
+}
+
+# --- Control-plane event triggers (TriggerMode=Event) outputs --------------
+# Null when enable_control_plane_events is false.
+
+output "control_plane_events_enabled" {
+  description = "Whether the event-driven control-plane reconcile path was provisioned."
+  value       = local.control_plane_events_enabled
+}
+
+output "control_plane_reconcile_function_name" {
+  description = "Name of the reconcile Lambda (EventBridge Batch-state-change target, HONUA_CONTROL_PLANE_LAMBDA_HANDLER=batch-event)."
+  value       = local.control_plane_events_enabled ? aws_lambda_function.control_plane_reconcile[0].function_name : null
+}
+
+output "control_plane_reconcile_function_arn" {
+  description = "ARN of the reconcile Lambda."
+  value       = local.control_plane_events_enabled ? aws_lambda_function.control_plane_reconcile[0].arn : null
+}
+
+output "control_plane_backstop_function_name" {
+  description = "Name of the backstop Lambda (EventBridge Scheduler rate(2 minutes) target, HONUA_CONTROL_PLANE_LAMBDA_HANDLER=backstop)."
+  value       = local.control_plane_events_enabled ? aws_lambda_function.control_plane_backstop[0].function_name : null
+}
+
+output "control_plane_backstop_function_arn" {
+  description = "ARN of the backstop Lambda."
+  value       = local.control_plane_events_enabled ? aws_lambda_function.control_plane_backstop[0].arn : null
+}
+
+output "control_plane_batch_event_rule_arn" {
+  description = "ARN of the EventBridge rule matching Batch job state changes (drives the reconcile Lambda)."
+  value       = local.control_plane_events_enabled ? aws_cloudwatch_event_rule.control_plane_batch_state_change[0].arn : null
+}
+
+output "worker_etl_repository_url" {
+  description = "Push/pull URL of the dedicated honua-worker-etl ECR repository (null unless create_worker_etl_repo)."
+  value       = var.create_worker_etl_repo ? aws_ecr_repository.worker_etl[0].repository_url : null
+}
+
+output "worker_etl_repository_arn" {
+  description = "ARN of the dedicated honua-worker-etl ECR repository (null unless create_worker_etl_repo)."
+  value       = var.create_worker_etl_repo ? aws_ecr_repository.worker_etl[0].arn : null
+}
+
+output "control_plane_tick_function_name" {
+  description = "Name of the Phase 3 scheduled-tick Lambda (EventBridge Scheduler target for the PERIODIC ticks, HONUA_CONTROL_PLANE_LAMBDA_HANDLER=scheduled-tick). Null when control-plane events are disabled."
+  value       = local.control_plane_events_enabled ? aws_lambda_function.control_plane_tick[0].function_name : null
+}
+
+output "control_plane_tick_function_arn" {
+  description = "ARN of the Phase 3 scheduled-tick Lambda. Null when control-plane events are disabled."
+  value       = local.control_plane_events_enabled ? aws_lambda_function.control_plane_tick[0].arn : null
+}
+
+output "control_plane_scheduler_group_name" {
+  description = "Name of the EventBridge Scheduler group holding the control-plane backstop + per-kind tick schedules. Null when control-plane events are disabled."
+  value       = local.control_plane_events_enabled ? aws_scheduler_schedule_group.control_plane[0].name : null
+}
+
+output "control_plane_scheduled_tick_schedule_arns" {
+  description = "Map of tick kind -> EventBridge Scheduler schedule ARN for the Phase 3 PERIODIC control-plane ticks. Empty when control-plane events are disabled."
+  value       = { for kind, schedule in aws_scheduler_schedule.control_plane_tick : kind => schedule.arn }
+}
