@@ -538,13 +538,19 @@ variable "worker_gdal_repo_force_delete" {
 
 # --- Custom-code (untrusted user code) AWS Batch substrate --------------------
 # A SEPARATE, deliberately HARDENED Batch family for running untrusted user code
-# (the custom-code Python runtime). Mirrors the GP substrate's tiered, scale-to-
-# zero, Fargate-Spot shape but with: EMPTY secrets/env on the job definition, a
-# MINIMAL task role (no Secrets Manager, no RDS, only scoped artifact S3), and a
-# constrained egress allowlist instead of open 0.0.0.0/0. The scoped
-# HONUA_JOB_TOKEN (server-injected env) is the primary T1/T2 trust boundary; the
-# egress allowlist is defense-in-depth. Full two-phase egress isolation is a Beta
-# hardening (Phase 3). Off by default so existing deploys are unchanged.
+# (the custom-code python + dotnet runtimes). Mirrors the GP substrate's tiered,
+# scale-to-zero, Fargate-Spot shape but with: EMPTY secrets/env on the job
+# definition, a MINIMAL task role (no Secrets Manager, no RDS, only scoped
+# artifact S3), and a constrained egress allowlist instead of open 0.0.0.0/0. The
+# scoped HONUA_JOB_TOKEN (server-injected env) is the primary T1/T2 trust
+# boundary; the egress allowlist is defense-in-depth. Full two-phase egress
+# isolation is a Beta hardening (Phase 3). Off by default so existing deploys are
+# unchanged.
+#
+# The runtime selector (customcode.runtime = python | dotnet) chooses ONLY the
+# per-job image; both runtimes share the identical role/SG/queue hardening, so
+# only the image inputs (customcode_batch_image / customcode_dotnet_batch_image)
+# and the per-runtime ECR repo flags differ.
 
 variable "enable_customcode_batch" {
   description = "Provision the SEPARATE, hardened AWS Batch (Fargate Spot) substrate for untrusted custom-code jobs (empty secrets, minimal task role, constrained egress). Off by default; independent of enable_gp_batch."
@@ -553,7 +559,13 @@ variable "enable_customcode_batch" {
 }
 
 variable "customcode_batch_image" {
-  description = "Container image URI for the custom-code worker. Defaults to the worker-customcode-python ECR repo (when create_worker_customcode_repo) else the Lambda image. Set explicitly for a pre-built image."
+  description = "Container image URI for the PYTHON custom-code worker (customcode.runtime=python). Defaults to the worker-customcode-python ECR repo (when create_worker_customcode_repo) else the Lambda image. Set explicitly for a pre-built image."
+  type        = string
+  default     = ""
+}
+
+variable "customcode_dotnet_batch_image" {
+  description = "Container image URI for the DOTNET custom-code worker (customcode.runtime=dotnet; honua-server #2196's worker-customcode-dotnet image). Defaults to the worker-customcode-dotnet ECR repo (when create_worker_customcode_dotnet_repo) else the Lambda image. Set explicitly for a pre-built image."
   type        = string
   default     = ""
 }
@@ -669,6 +681,40 @@ variable "worker_etl_repo_max_image_count" {
 
 variable "worker_etl_repo_force_delete" {
   description = "Allow terraform destroy to delete the worker-etl ECR repository even when it still contains images. Convenient for ephemeral cert environments; leave false for anything durable."
+  type        = bool
+  default     = false
+}
+
+variable "create_worker_customcode_dotnet_repo" {
+  description = "Create a dedicated worker-customcode-dotnet ECR repository for the .NET custom-code worker image (honua-server #2196). Separate from the python custom-code, Lambda and worker-gdal images. Off by default; the repo name is stable so an operator can pre-create + push, then enable."
+  type        = bool
+  default     = false
+}
+
+variable "worker_customcode_dotnet_repo_image_tag_mutability" {
+  description = "Image tag mutability for the worker-customcode-dotnet ECR repository (MUTABLE or IMMUTABLE). IMMUTABLE is recommended so a pushed worker tag can never be silently overwritten."
+  type        = string
+  default     = "IMMUTABLE"
+
+  validation {
+    condition     = contains(["MUTABLE", "IMMUTABLE"], var.worker_customcode_dotnet_repo_image_tag_mutability)
+    error_message = "worker_customcode_dotnet_repo_image_tag_mutability must be MUTABLE or IMMUTABLE."
+  }
+}
+
+variable "worker_customcode_dotnet_repo_max_image_count" {
+  description = "Number of most-recent images the worker-customcode-dotnet ECR lifecycle policy retains (older images expired to control storage cost)."
+  type        = number
+  default     = 10
+
+  validation {
+    condition     = var.worker_customcode_dotnet_repo_max_image_count >= 1
+    error_message = "worker_customcode_dotnet_repo_max_image_count must be at least 1."
+  }
+}
+
+variable "worker_customcode_dotnet_repo_force_delete" {
+  description = "Allow terraform destroy to delete the worker-customcode-dotnet ECR repository even when it still contains images. Convenient for ephemeral environments; leave false for anything durable."
   type        = bool
   default     = false
 }

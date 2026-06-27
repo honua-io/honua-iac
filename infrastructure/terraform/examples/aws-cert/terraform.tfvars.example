@@ -24,10 +24,15 @@ create_worker_gdal_repo   = true
 # `customcode/` prefix only — NO DB/secrets reach), a constrained egress
 # allowlist (defaults to the VPC CIDR, no open internet). The scoped
 # HONUA_JOB_TOKEN injected by the server is the trust boundary, not IAM. Off by
-# default; flip on to provision the queue + size-tier pool + worker repo.
-# enable_customcode_batch       = true
-# create_worker_customcode_repo = true
-# customcode_batch_image        = "<account-id>.dkr.ecr.us-east-1.amazonaws.com/honua-cert-cert-worker-customcode-python:vX.Y.Z"
+# default; flip on to provision the queue + per-runtime size-tier pools + worker
+# repos. Both python and dotnet (honua-server #2196) families share the SAME
+# hardened substrate; the runtime selector picks only the image. customcode.runtime
+# = python | dotnet resolves to customcode_job_definition_arns["{runtime}.{tier}"].
+# enable_customcode_batch              = true
+# create_worker_customcode_repo        = true
+# create_worker_customcode_dotnet_repo = true
+# customcode_batch_image               = "<account-id>.dkr.ecr.us-east-1.amazonaws.com/honua-cert-cert-worker-customcode-python:vX.Y.Z"
+# customcode_dotnet_batch_image        = "<account-id>.dkr.ecr.us-east-1.amazonaws.com/honua-cert-cert-worker-customcode-dotnet:vX.Y.Z"
 customcode_batch_cpu_architecture = "X86_64"
 # Tighten egress for MVP to PyPI/GitHub/Honua-API/artifact-S3 CIDRs; empty = VPC CIDR only.
 # customcode_egress_https_cidrs = ["0.0.0.0/0"]
