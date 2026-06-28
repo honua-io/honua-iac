@@ -18,6 +18,10 @@ import ssl
 import boto3
 import pg8000.native
 
+# Amazon RDS global CA bundle, vendored into the deployment zip at build time
+# (see postgis-bootstrap.tf). Sits next to this module at the Lambda task root.
+_RDS_CA_BUNDLE = os.path.join(os.path.dirname(__file__), "rds-global-bundle.pem")
+
 
 def _parse_connection_string(connection_string):
     """Parse an ADO.NET-style 'Key=Value;Key=Value' connection string."""
@@ -34,11 +38,12 @@ def handler(event, context):
     secret = boto3.client("secretsmanager").get_secret_value(SecretId=secret_arn)
     params = _parse_connection_string(secret["SecretString"])
 
-    # RDS PostgreSQL 15 defaults to rds.force_ssl=1. Encrypt the connection;
-    # skip chain verification (the RDS CA bundle is not baked into this zip).
-    ssl_context = ssl.create_default_context()
-    ssl_context.check_hostname = False
-    ssl_context.verify_mode = ssl.CERT_NONE
+    # RDS PostgreSQL 15 defaults to rds.force_ssl=1. Verify the RDS server
+    # certificate (chain + hostname) against the vendored Amazon RDS global CA
+    # bundle so master credentials are never sent over an unverified channel.
+    ssl_context = ssl.create_default_context(cafile=_RDS_CA_BUNDLE)
+    ssl_context.check_hostname = True
+    ssl_context.verify_mode = ssl.CERT_REQUIRED
 
     connection = pg8000.native.Connection(
         user=params["Username"],
