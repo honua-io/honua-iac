@@ -126,8 +126,11 @@ resource "aws_lambda_function" "forms_router" {
   handler       = "index.handler"
   runtime       = "nodejs22.x"
   architectures = ["arm64"]
-  timeout       = 15
-  memory_size   = 256
+  # 29s leaves margin above the handler's 12s shared upstream deadline
+  # (INVOCATION_DEADLINE_MS in src/index.mjs) so the function always returns its
+  # own structured 502 + "lead routing failed" log before Lambda hard-kills it.
+  timeout     = 29
+  memory_size = 256
 
   reserved_concurrent_executions = var.reserved_concurrency
 

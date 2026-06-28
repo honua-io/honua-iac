@@ -20,9 +20,22 @@ const MAX_BODY_BYTES = 32 * 1024;
 // Outbound HTTP resiliency: bound every upstream call so a hung connection can
 // never stall the Lambda, and retry transient failures (429/5xx/network) with
 // backoff so a momentary upstream blip does not drop a lead.
-const FETCH_TIMEOUT_MS = 5000;
+const FETCH_TIMEOUT_MS = 3000;
 const FETCH_MAX_ATTEMPTS = 3;
 const FETCH_BACKOFF_MS = 250;
+// Wall-clock budget shared by every upstream call within a single invocation.
+// The Lambda timeout (main.tf) is 29s, leaving ample margin so the handler
+// always returns its own structured 502 + "lead routing failed" log before
+// Lambda hard-kills the function. A persistently slow/hung upstream therefore
+// aborts the whole chain here -- under our control -- instead of letting the
+// cumulative per-call retry budget (3 sequential chains for /contact, 4 for
+// /waitlist) blow the Lambda deadline mid-retry, which would skip the handler's
+// try/catch and surface a generic Lambda 502 to the client with no log line.
+const INVOCATION_DEADLINE_MS = 12000;
+// Set per invocation in handler(); shared by all fetchWithRetry calls so a
+// single hung upstream cannot exhaust the Lambda deadline. AbortSignal-based,
+// so it composes with the per-attempt timeout via AbortSignal.any().
+let invocationDeadlineSignal;
 const HONEYPOT_FIELDS = ["_honey", "_gotcha", "honeypot"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -78,15 +91,25 @@ async function getLoopsKey() {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // fetch wrapper: per-attempt timeout via AbortSignal, plus bounded retry with
-// exponential backoff on 429/5xx and network/timeout errors. Returns the final
-// Response (the caller decides how to treat non-retryable statuses like 4xx).
+// exponential backoff on 429/5xx and network/timeout errors. Every attempt is
+// also bounded by the shared per-invocation deadline (invocationDeadlineSignal)
+// so the cumulative retry budget can never exceed the Lambda timeout. Returns
+// the final Response (the caller decides how to treat non-retryable statuses
+// like 4xx).
 async function fetchWithRetry(url, options = {}) {
   let lastError;
   for (let attempt = 1; attempt <= FETCH_MAX_ATTEMPTS; attempt += 1) {
+    // Stop before issuing a request we know the invocation deadline has already
+    // passed for, so the handler's catch can run and emit its structured 502.
+    if (invocationDeadlineSignal?.aborted) {
+      throw invocationDeadlineSignal.reason ?? new Error("invocation deadline exceeded");
+    }
+    const signals = [AbortSignal.timeout(FETCH_TIMEOUT_MS)];
+    if (invocationDeadlineSignal) signals.push(invocationDeadlineSignal);
     try {
       const res = await fetch(url, {
         ...options,
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        signal: AbortSignal.any(signals),
       });
       if ((res.status === 429 || res.status >= 500) && attempt < FETCH_MAX_ATTEMPTS) {
         await sleep(FETCH_BACKOFF_MS * 2 ** (attempt - 1));
@@ -95,6 +118,11 @@ async function fetchWithRetry(url, options = {}) {
       return res;
     } catch (err) {
       lastError = err;
+      // The overall deadline fired -- further retries are pointless and would
+      // risk overrunning the Lambda timeout. Surface it to the handler now.
+      if (invocationDeadlineSignal?.aborted) {
+        throw invocationDeadlineSignal.reason ?? err;
+      }
       if (attempt < FETCH_MAX_ATTEMPTS) {
         await sleep(FETCH_BACKOFF_MS * 2 ** (attempt - 1));
         continue;
@@ -315,6 +343,12 @@ async function subscribeToLoops(email, fields, formType) {
 }
 
 export async function handler(event) {
+  // Start the shared wall-clock budget for all upstream calls in this
+  // invocation. Bounding the cumulative retry budget below the Lambda timeout
+  // guarantees the handler's try/catch runs and returns a structured 502
+  // (+ "lead routing failed" log) rather than being hard-killed mid-retry.
+  invocationDeadlineSignal = AbortSignal.timeout(INVOCATION_DEADLINE_MS);
+
   const method = event.requestContext?.http?.method ?? "";
   if (method === "OPTIONS") return response(204, {});
   if (method !== "POST") return response(405, { ok: false, error: "method_not_allowed" });
