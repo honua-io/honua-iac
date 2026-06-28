@@ -35,6 +35,7 @@ const args = process.argv.slice(2);
 const SITE = args.includes("--site") ? args[args.indexOf("--site") + 1] : "https://honua.io";
 const DRY = args.includes("--dry-run");
 const CONCURRENCY = 6;
+const REQUEST_TIMEOUT_MS = 20000; // per-request bound; Node's global fetch has no default timeout
 const VIEWPORT = { w: 1600, h: 1000 }; // generous desktop viewport
 const PER_LAYER_SCENE_CAP = 80;
 const TOTAL_CAP = 800;
@@ -81,7 +82,7 @@ function visibleTiles(camera, z) {
 /* ── build the warm list from the live contracts ────────────────── */
 
 async function fetchJson(url) {
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`${url} → HTTP ${res.status}`);
   return res.json();
 }
@@ -162,7 +163,10 @@ async function worker() {
     const t = queue.shift();
     if (!t) return;
     try {
-      const res = await fetch(t.url, { headers: t.headers ?? {} });
+      const res = await fetch(t.url, {
+        headers: t.headers ?? {},
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
       const cache = res.headers.get("x-cache") ?? "";
       const isHit = /hit/i.test(cache);
       if (res.ok) {

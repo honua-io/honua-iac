@@ -24,11 +24,14 @@ module input/output contracts may still change.
   for recording apply -> smoke -> destroy beta-validation evidence across the
   AWS/Azure AOT and JIT matrix. No module inputs or outputs changed.
 
-## v0.1.0
+## v0.1.0 (planned — not yet tagged)
 
-First tagged, version-pinnable release of the Honua Terraform modules. No module
-inputs or outputs changed in this release; the tag exists so external consumers
-can pin a Git-source `ref`.
+Prepared notes for the first version-pinnable release of the Honua Terraform
+modules. These notes are staged so the release can be cut with a single tag
+push; until `git tag v0.1.0 && git push origin v0.1.0` is run (see the release
+process in [`docs/module-versioning.md`](docs/module-versioning.md)), no
+`v0.1.0` tag exists, so `?ref=v0.1.0` will not resolve — pin `?ref=trunk` in the
+meantime. No module inputs or outputs changed in this release.
 
 ### aws-ecs
 
