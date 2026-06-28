@@ -18,24 +18,39 @@ locals {
   postgis_bootstrap_dir       = "${path.module}/postgis-bootstrap"
   postgis_bootstrap_pg8000    = "1.31.2" # pure-Python PostgreSQL driver, pinned
   postgis_bootstrap_func_name = "${var.name_prefix}-${var.environment}-postgis-bootstrap"
+  # Amazon RDS global CA bundle, vendored into the zip so the Lambda can verify
+  # the RDS server certificate (chain + hostname) instead of trusting any cert.
+  # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.SSL.html
+  postgis_bootstrap_rds_ca_url      = "https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem"
+  postgis_bootstrap_rds_ca_filename = "rds-global-bundle.pem"
 }
 
 resource "terraform_data" "postgis_bootstrap_build" {
   triggers_replace = {
     handler        = filesha256("${local.postgis_bootstrap_dir}/handler.py")
     pg8000_version = local.postgis_bootstrap_pg8000
+    rds_ca_url     = local.postgis_bootstrap_rds_ca_url
   }
 
   provisioner "local-exec" {
     interpreter = ["python", "-c"]
     command     = <<-EOT
-      import pathlib, shutil, subprocess, sys
+      import pathlib, shutil, subprocess, sys, urllib.request
       root = pathlib.Path(r"${local.postgis_bootstrap_dir}")
       build = root / "build"
       shutil.rmtree(build, ignore_errors=True)
+      build.mkdir(parents=True, exist_ok=True)
       subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet",
                              "--target", str(build), "pg8000==${local.postgis_bootstrap_pg8000}"])
       shutil.copy(root / "handler.py", build / "handler.py")
+      # Vendor the Amazon RDS global CA bundle so the Lambda can verify the RDS
+      # server certificate. The build host already requires internet for pip.
+      ca = build / "${local.postgis_bootstrap_rds_ca_filename}"
+      with urllib.request.urlopen("${local.postgis_bootstrap_rds_ca_url}", timeout=30) as r:
+          data = r.read()
+      if b"BEGIN CERTIFICATE" not in data:
+          raise SystemExit("downloaded RDS CA bundle is not a PEM certificate file")
+      ca.write_bytes(data)
     EOT
   }
 }
