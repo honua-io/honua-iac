@@ -135,9 +135,27 @@ main() {
   fi
 
   local root
+  local overall_rc=0
+  local failed_roots=()
   for root in "${ROOTS[@]}"; do
-    run_drift_check_for_root "$root"
+    # Each root must be checked independently: a drift (exit 2) or plan error
+    # in one root must not abort the run, otherwise subsequent roots are never
+    # planned and their drift/errors are silently skipped. Guard the call so
+    # set -e does not terminate the loop, and accumulate the failure instead.
+    if ! run_drift_check_for_root "$root"; then
+      overall_rc=1
+      failed_roots+=("$root")
+    fi
   done
+
+  if [[ "$overall_rc" -ne 0 ]]; then
+    log_error "Terraform drift detection found drift or errors in ${#failed_roots[@]} root(s):"
+    local failed
+    for failed in "${failed_roots[@]}"; do
+      log_error "  - $failed"
+    done
+    return 1
+  fi
 
   log_info "Terraform drift detection completed successfully"
 }
