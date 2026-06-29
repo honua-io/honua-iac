@@ -156,10 +156,12 @@ resource "aws_iam_role_policy" "batch_job_secrets" {
 }
 
 # Optional: S3 access for GP jobs that read/write the FileStorage data bucket.
-# Provided by the caller (the aws-demo root owns the bucket) so the module does
-# not assume a bucket exists.
+# Provided by the caller (the root owns the bucket) so the module does not assume
+# a bucket exists. Gated on the plan-known `gp_batch_data_bucket_enabled` flag —
+# NOT on `gp_batch_data_bucket_arn != ""` — because the caller passes a bucket ARN
+# computed at apply time (aws_s3_bucket.x.arn), which a `count` cannot depend on.
 resource "aws_iam_role_policy" "batch_job_s3" {
-  count = local.gp_batch_enabled && var.gp_batch_data_bucket_arn != "" ? 1 : 0
+  count = local.gp_batch_enabled && var.gp_batch_data_bucket_enabled ? 1 : 0
   name  = "${local.gp_batch_name}-job-s3"
   role  = aws_iam_role.batch_job[0].id
   policy = jsonencode({

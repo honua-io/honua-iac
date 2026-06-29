@@ -501,9 +501,15 @@ variable "gp_batch_max_vcpus" {
 }
 
 variable "gp_batch_data_bucket_arn" {
-  description = "Optional S3 bucket ARN the GP job role may read/write (e.g. the FileStorage data bucket). Leave empty to skip granting S3 access."
+  description = "Optional S3 bucket ARN the GP job role may read/write (e.g. the FileStorage data bucket). Used as the policy resource when gp_batch_data_bucket_enabled is true."
   type        = string
   default     = ""
+}
+
+variable "gp_batch_data_bucket_enabled" {
+  description = "Whether to grant the GP job role S3 access to gp_batch_data_bucket_arn. This is a separate plan-time-known boolean (rather than testing the ARN for emptiness) because callers typically pass a bucket ARN that is computed at apply time (e.g. aws_s3_bucket.x.arn); a count/for_each cannot depend on an apply-unknown value. Set true and provide gp_batch_data_bucket_arn together."
+  type        = bool
+  default     = false
 }
 
 # --- Custom-code GP egress isolation (two-phase + CodeArtifact) ----------------

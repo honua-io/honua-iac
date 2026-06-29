@@ -223,8 +223,10 @@ module "honua" {
   # Optional: dedicated worker-gdal ECR repository for the GP image.
   create_worker_gdal_repo = true
 
-  # Optional: let GP jobs read/write the FileStorage data bucket.
-  gp_batch_data_bucket_arn = aws_s3_bucket.data.arn
+  # Optional: let GP jobs read/write the FileStorage data bucket. Set the
+  # enabled flag (plan-time-known) alongside the ARN, which is computed at apply.
+  gp_batch_data_bucket_arn     = aws_s3_bucket.data.arn
+  gp_batch_data_bucket_enabled = true
 }
 ```
 
