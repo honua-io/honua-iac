@@ -151,6 +151,7 @@ module "honua" {
   gp_batch_workload_name             = var.gp_batch_workload_name
   gp_batch_max_vcpus                 = var.gp_batch_max_vcpus
   gp_batch_data_bucket_arn           = aws_s3_bucket.cert_artifacts.arn
+  gp_batch_data_bucket_enabled       = true
 
   # Dedicated worker-gdal ECR repository for the cert GP worker image.
   create_worker_gdal_repo = var.create_worker_gdal_repo
