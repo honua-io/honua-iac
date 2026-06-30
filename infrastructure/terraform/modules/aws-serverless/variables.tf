@@ -118,6 +118,12 @@ variable "enable_nat_gateway" {
   default     = true
 }
 
+variable "enable_deploy_control_vpc_endpoints" {
+  description = "Create interface VPC endpoints (Lambda control API, STS, CloudWatch metrics/logs) so the in-VPC deploy control plane can manage this function's alias for coordinated deploy/rollback and run the health-gated auto-rollback telemetry path. Only takes effect on the no-NAT path (enable_nat_gateway = false); a NAT gateway already provides this egress, so the endpoints are skipped when NAT is enabled. The lambda:GetAlias/UpdateAlias IAM grant on the execution role is always created regardless of this flag (see deploy-control.tf)."
+  type        = bool
+  default     = true
+}
+
 variable "image" {
   description = "Lambda container image URI (ECR). Prefer Honua Lambda AOT tags (`vX.Y.Z-lambda-aot`); JIT tags (`vX.Y.Z-lambda`) are debug fallback."
   type        = string
