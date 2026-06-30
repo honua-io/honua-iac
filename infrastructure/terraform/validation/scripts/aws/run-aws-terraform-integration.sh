@@ -1150,59 +1150,62 @@ verify_protocol_endpoints() {
   normalized="$(normalize_base_url "$base_url")"
   admin_api_key="${HONUA_ADMIN_PASSWORD}"
 
+  # Retry each probe to tolerate a cold-starting service, and emit a body
+  # preview on final failure. Kept in sync with the Azure copy
+  # (validation/scripts/azure/lib/verification.sh).
   check_endpoint() {
     local endpoint="$1"
     local endpoint_status
+    local authorized_status
+    local attempt
+    local response_file
+    local body_preview
 
-    endpoint_status="$(curl -sS -o /dev/null -w "%{http_code}" --max-time 20 "$endpoint" || true)"
-    if [[ "$endpoint_status" == 2* || "$endpoint_status" == 3* ]]; then
-      return 0
-    fi
+    for attempt in 1 2 3 4 5 6; do
+      response_file="$(mktemp)"
+      endpoint_status="$(curl -sS -o "$response_file" -w "%{http_code}" --max-time 20 "$endpoint" || true)"
 
-    if [[ "$endpoint_status" == "401" || "$endpoint_status" == "403" ]]; then
-      curl -fsSL --max-time 20 \
-        -H "X-API-Key: $admin_api_key" \
-        "$endpoint" >/dev/null
-      return 0
-    fi
-
-    log_error "Protocol smoke endpoint failed: $endpoint returned HTTP $endpoint_status"
-    return 1
-  }
-
-  check_odata_endpoint() {
-    local endpoint="$1"
-    local endpoint_status
-    local endpoint_body
-
-    endpoint_status="$(curl -sS -o /dev/null -w "%{http_code}" --max-time 20 "$endpoint" || true)"
-    if [[ "$endpoint_status" == 2* || "$endpoint_status" == 3* ]]; then
-      return 0
-    fi
-
-    if [[ "$endpoint_status" == "401" || "$endpoint_status" == "403" ]]; then
-      curl -fsSL --max-time 20 \
-        -H "X-API-Key: $admin_api_key" \
-        "$endpoint" >/dev/null
-      return 0
-    fi
-
-    if [[ "$endpoint_status" == "404" ]]; then
-      endpoint_body="$(curl -sS --max-time 20 "$endpoint" || true)"
-      if [[ "$endpoint_body" == *"OData is not enabled for any available service."* ||
-            "$endpoint_body" == *"No OData-enabled services found"* ]]; then
-        log_info "OData endpoint reachable with empty catalog: $endpoint returned HTTP 404"
+      if [[ "$endpoint_status" == 2* || "$endpoint_status" == 3* ]]; then
+        rm -f "$response_file"
         return 0
       fi
-    fi
 
-    log_error "Protocol smoke endpoint failed: $endpoint returned HTTP $endpoint_status"
+      if [[ "$endpoint_status" == "401" || "$endpoint_status" == "403" ]]; then
+        authorized_status="$(curl -sS -o "$response_file" -w "%{http_code}" --max-time 20 \
+          -H "X-API-Key: $admin_api_key" \
+          "$endpoint" || true)"
+        if [[ "$authorized_status" == 2* || "$authorized_status" == 3* ]]; then
+          rm -f "$response_file"
+          return 0
+        fi
+        endpoint_status="$authorized_status"
+      fi
+
+      if [[ "$endpoint" == *"/odata" && "$endpoint_status" == "404" ]] && grep -Eqi "No OData-enabled services found|OData is not enabled for any available service" "$response_file"; then
+        log_info "OData endpoint reachable with empty catalog: $endpoint returned HTTP 404"
+        rm -f "$response_file"
+        return 0
+      fi
+
+      if [[ "$attempt" -lt 6 ]]; then
+        rm -f "$response_file"
+        log_warn "Protocol endpoint not ready yet: $endpoint returned HTTP $endpoint_status (attempt $attempt/6)"
+        sleep 10
+        continue
+      fi
+
+      body_preview="$(tr '\n' ' ' < "$response_file" | sed 's/[[:space:]]\+/ /g' | cut -c1-200)"
+      rm -f "$response_file"
+      log_error "Protocol smoke endpoint failed: $endpoint returned HTTP $endpoint_status (${body_preview:-no-body})"
+      return 1
+    done
+
     return 1
   }
 
   check_endpoint "${normalized}/rest/services?f=pjson"
   check_endpoint "${normalized}/ogc/features"
-  check_odata_endpoint "${normalized}/odata"
+  check_endpoint "${normalized}/odata"
 
   status="$(curl -sSL -o /dev/null -w "%{http_code}" --max-time 20 "${normalized}/api/v1/admin/config")"
   if [[ "$status" != "401" && "$status" != "403" ]]; then

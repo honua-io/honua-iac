@@ -25,6 +25,11 @@ Swap `aws-ecs` for any Tier 1 / Tier 2 module name and `v0.1.0` for the tag you
 want to pin. Run `terraform init` (or `terraform init -upgrade` to move to a
 newer tag).
 
+> No SemVer tag has been cut yet, so `?ref=v0.1.0` will not resolve today. Until
+> the first tag is published (see [Release process](#release-process)), pin
+> `?ref=trunk` — this is what the `examples/registry-pin` consumer example does.
+> Replace `trunk` with the SemVer tag once it is cut.
+
 ## Tag scheme
 
 - Repo-wide `vMAJOR.MINOR.PATCH` tags applied at the repository root.
