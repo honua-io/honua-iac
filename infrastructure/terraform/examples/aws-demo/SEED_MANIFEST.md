@@ -128,6 +128,39 @@ DB-side raster post-processing (postgis-bootstrap Lambda maintenance mode):
   maui-flood-hazard, maui-sea-level-rise, maui-place-names, maui-hillshade,
   maui-terrain, maui-imagery, maui-buildings), all with
   `allowAnonymous: true` read access policies.
+- `test_service` — the SDK client-compat certification target (see below).
+
+## SDK client-compat target — `test_service`
+
+Seeded by `scripts/seed-test-service.sh` for the honua-sdk-python staging
+smoke (honua-sdk-python#53). It is a single Point layer on a dedicated
+`public.test_service_features` table with the client-compat attribute set
+{objectid, name, description, status, count, ratio, uid, active} and 10
+deterministic features, published `allowAnonymous: true`. Additive — it does
+not touch the Maui showcase layers.
+
+| Service | Route | Table | Fields | License |
+|---|---|---|---|---|
+| test_service | /rest/services/test_service/FeatureServer/{layerId} | public.test_service_features | objectid,name,description,status,count,ratio,uid,active (+Point geometry) | synthetic test data |
+
+Notes:
+- **Not** applied from honua-server `tests/seed/client-compat-v1.sql`: that
+  fixture rebuilds the metadata-v2 snapshot as revision 1 from its own shim
+  tables, which on this shared admin-published stack would clobber the live
+  Production snapshot and drop the Maui services. The script instead creates
+  the physical table via the postgis-bootstrap Lambda and PUBLISHES it through
+  the server admin API (`POST /api/v1/admin/connections/{demo-rds}/layers`),
+  which incrementally adds the layer to the activated snapshot (new revision,
+  Maui preserved) and materializes `public.features`.
+- The publish auto-assigns the FeatureServer layer id (a large monotonic id,
+  e.g. 68823 — NOT 0); set `HONUA_LAYER_ID` in the honua-sdk-python `staging`
+  environment to the id printed by the script.
+- **Write smoke:** FeatureServer `applyEdits` requires the Pro
+  `editing.featureserver-edits` entitlement; the demo runs Community edition
+  (`validationState: NoLicenseConfigured`), so anonymous/admin edits return
+  HTTP 402. The SDK write smoke is therefore opt-out on this target
+  (`HONUA_ENABLE_WRITE_SMOKE=false` in the `staging` environment). Read,
+  metadata, and multi-protocol coverage run live.
 
 ## License posture
 
