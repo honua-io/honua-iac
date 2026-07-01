@@ -12,6 +12,8 @@ on:
       - 'scripts/run-terraform-drift-detection.sh'
       - 'scripts/terraform-policy-gate.sh'
       - 'scripts/check-marketplace-paths.sh'
+      - 'scripts/package-customer-dist.sh'
+      - 'scripts/smoke-customer-dist.sh'
       - 'scripts/capture-dr-drill-evidence.sh'
       - 'scripts/capture-runbook-evidence.sh'
       - 'scripts/tf-pass-secrets.sh'
@@ -41,6 +43,8 @@ on:
       - 'scripts/run-terraform-drift-detection.sh'
       - 'scripts/terraform-policy-gate.sh'
       - 'scripts/check-marketplace-paths.sh'
+      - 'scripts/package-customer-dist.sh'
+      - 'scripts/smoke-customer-dist.sh'
       - 'scripts/capture-dr-drill-evidence.sh'
       - 'scripts/capture-runbook-evidence.sh'
       - 'scripts/tf-pass-secrets.sh'
@@ -165,6 +169,10 @@ jobs:
       - name: Marketplace manifest path check
         shell: bash
         run: ./scripts/check-marketplace-paths.sh
+
+      - name: Customer distribution tarball smoke test (terraform init each packaged example)
+        shell: bash
+        run: ./scripts/smoke-customer-dist.sh
 
   policy-gates:
     name: Terraform Policy Gates
