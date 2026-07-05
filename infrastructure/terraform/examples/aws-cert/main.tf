@@ -206,7 +206,11 @@ module "github_oidc" {
   # execution role ride on every submitted job definition.
   batch_job_role_arns = compact([
     module.honua.gp_job_role_arn,
-    module.honua.gp_execution_role_arn
+    module.honua.gp_execution_role_arn,
+    # ecs:UpdateService with a task definition requires iam:PassRole for the
+    # task definition's execution role, so the weighted-cutover cell needs the
+    # cutover substrate's execution role here too (empty when the cell is off).
+    var.enable_ecs_alb_cert ? aws_iam_role.cert_cutover_execution[0].arn : ""
   ])
 
   # ECS/ALB weighted-cutover cell (opt-in): let the cert workflow rewrite the
