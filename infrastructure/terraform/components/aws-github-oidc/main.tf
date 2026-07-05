@@ -8,10 +8,13 @@
 #   - aud     = sts.amazonaws.com
 #   - sub     = repo:<owner>/<repo>:* (or the explicit subjects override)
 # and the permission policy is scoped by Resource/Condition to the
-# honua-cert-* certification surface (Batch submit + job-definition
-# register/deregister/tag + describe/terminate, ECS, Lambda invoke/alias/version
-# management, the cert S3 bucket incl. object tagging, CloudWatch read, and
-# iam:PassRole for the GP job + execution roles).
+# honua-cert-* certification surface (Batch submit against the STANDING pool +
+# job-definition register/deregister/tag scoped to a DISJOINT run-only namespace
+# + describe/terminate, ECS, Lambda invoke/alias/version management, the cert S3
+# bucket incl. object tagging, CloudWatch read, and iam:PassRole for ONLY the
+# ECS/ALB cutover execution role). The submit and register scopes are kept
+# disjoint so the role cannot compose register(role-carrying)+submit into
+# arbitrary-code-as-GP-role; the GP job/execution roles are NOT passable here.
 ###############################################################################
 
 data "aws_caller_identity" "current" {}
@@ -105,8 +108,15 @@ resource "aws_iam_role" "github_actions" {
 # ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "permissions" {
-  # Submit GP Batch jobs. SubmitJob requires BOTH the job-queue and the
-  # job-definition resource types, scoped to the honua-cert-* pool.
+  # Submit GP Batch jobs against the STANDING pool. SubmitJob requires BOTH the
+  # job-queue and the job-definition resource types, scoped to the standing
+  # honua-cert-cert-* pool (resource_name_prefix = <name_prefix>-<environment>).
+  # This is intentionally the STANDING-pool prefix: the execution cell submits the
+  # preconfigured gp-s job definition, which already carries the GP job/execution
+  # roles baked in by terraform. It is a DIFFERENT (and disjoint) prefix from the
+  # register/deregister grant below — an attacker holding this role can submit the
+  # standing definitions but cannot register or modify them, and cannot submit the
+  # ephemeral definitions it is allowed to register (they live in another namespace).
   statement {
     sid    = "BatchSubmitScoped"
     effect = "Allow"
@@ -119,10 +129,15 @@ data "aws_iam_policy_document" "permissions" {
     ]
   }
 
-  # Register / deregister and (un)tag the ephemeral per-run job definitions the
-  # cert tests mint. Scoped to the honua-cert-* job-definition surface — the
-  # tests name their job definitions under this prefix so SubmitJob (above) can
-  # reach them, and tag them with honua-cert-run=<id> for per-run cleanup.
+  # Register / deregister and (un)tag the EPHEMERAL per-run job definitions the
+  # cert tests mint. This is the attacker-relevant statement, so it is scoped to a
+  # DISTINCT run-only namespace (jobdef_lifecycle_name_prefix = "honua-certrun")
+  # that is DISJOINT from the standing submittable pool (resource_name_prefix =
+  # honua-cert-cert-*): the register smoke names its definition honua-certrun-<runid>-*
+  # and tags it honua-cert-run=<id> for per-run cleanup. Because this namespace is
+  # NOT reachable by SubmitJob (above) and the standing pool is NOT reachable by
+  # Register/Deregister (here), the role cannot compose Register(role-carrying)+Submit
+  # into arbitrary-code-as-GP-role, and cannot DeregisterJobDefinition the standing pool.
   statement {
     sid    = "BatchJobDefinitionLifecycleScoped"
     effect = "Allow"
@@ -285,13 +300,19 @@ data "aws_iam_policy_document" "permissions" {
     resources = ["*"]
   }
 
-  # PassRole for the GP job + execution roles so the workflow can submit Batch
-  # jobs that carry them; scoped to the supplied role ARNs and condition-locked
-  # to the batch/ecs-tasks services that consume them.
+  # PassRole scoped to the supplied role ARNs and condition-locked to the
+  # batch/ecs-tasks services that consume them. In the cert stack the ONLY ARN
+  # supplied is the ECS/ALB cutover execution role (ecs:UpdateService requires
+  # iam:PassRole for the task definition's execution role). The GP job/execution
+  # roles are deliberately NOT supplied: SubmitJob against the standing pool rides
+  # the roles terraform baked into those definitions at register time, and the cert
+  # tests never register a role-carrying definition, so no PassRole of the GP roles
+  # is needed — and granting it would reopen the register(role-carrying)+submit
+  # escalation. Empty input grants nothing (optional-grant).
   dynamic "statement" {
     for_each = length(var.batch_job_role_arns) > 0 ? [1] : []
     content {
-      sid       = "PassGpJobRoles"
+      sid       = "PassCertJobRoles"
       effect    = "Allow"
       actions   = ["iam:PassRole"]
       resources = var.batch_job_role_arns

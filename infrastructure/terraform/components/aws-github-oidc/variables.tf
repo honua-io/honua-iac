@@ -118,7 +118,7 @@ variable "cert_artifact_bucket_arn" {
 }
 
 variable "batch_job_role_arns" {
-  description = "Role ARNs the workflow may iam:PassRole when submitting Batch jobs (the GP job + execution roles). Empty grants no PassRole."
+  description = "Role ARNs the workflow may iam:PassRole, condition-locked to batch/ecs-tasks. In the cert stack this is ONLY the ECS/ALB cutover execution role (ecs:UpdateService needs it). The GP job/execution roles are intentionally NOT passed: SubmitJob against the standing pool rides the roles terraform baked in at register time, and passing them would reopen the register(role-carrying)+submit escalation. Empty grants no PassRole."
   type        = list(string)
   default     = []
 }
@@ -136,7 +136,7 @@ variable "extra_invoke_function_arns" {
 }
 
 variable "jobdef_lifecycle_name_prefix" {
-  description = "Name prefix for EPHEMERAL per-run Batch job definitions the certification tests register/deregister/tag (honua-cert-<runid>-*). Defaults to resource_name_prefix; the cert stack passes the shorter run prefix (honua-cert) because per-run names omit the environment segment."
+  description = "Name prefix for EPHEMERAL per-run Batch job definitions the certification tests register/deregister/tag (honua-certrun-<runid>-*). MUST be a namespace DISJOINT from resource_name_prefix (the standing submittable pool) so this register/deregister grant can never touch a standing definition — the cert stack passes \"honua-certrun\", which shares no wildcard-matching prefix with honua-cert-cert-*. Defaults to resource_name_prefix when empty (no separation — only safe when nothing standing shares the prefix)."
   type        = string
   default     = ""
 }
