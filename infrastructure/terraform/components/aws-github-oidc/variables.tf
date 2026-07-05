@@ -134,3 +134,9 @@ variable "extra_invoke_function_arns" {
   type        = list(string)
   default     = []
 }
+
+variable "jobdef_lifecycle_name_prefix" {
+  description = "Name prefix for EPHEMERAL per-run Batch job definitions the certification tests register/deregister/tag (honua-cert-<runid>-*). Defaults to resource_name_prefix; the cert stack passes the shorter run prefix (honua-cert) because per-run names omit the environment segment."
+  type        = string
+  default     = ""
+}

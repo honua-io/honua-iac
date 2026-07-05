@@ -17,6 +17,10 @@ honua_admin_password = "REPLACE_WITH_A_32_PLUS_CHAR_SECRET"
 # vCPU/memory/timeout/retry are runtime SubmitJob overrides, not tfvars.
 # gp_batch_image            = "<account-id>.dkr.ecr.us-east-1.amazonaws.com/honua-cert-cert-worker-gdal:vX.Y.Z"
 gp_batch_cpu_architecture = "X86_64"
+# Certification substrate: job definitions must run a trivially-succeeding container.
+# The *-lambda-aot server image expects the Lambda runtime API and exits immediately in
+# Batch, so point gp_batch_image at a tiny always-succeed image for the cert stack:
+gp_batch_image = "public.ecr.aws/docker/library/busybox:stable"
 create_worker_gdal_repo   = true
 
 # Custom-code (UNTRUSTED user code) Batch substrate — SEPARATE + HARDENED.

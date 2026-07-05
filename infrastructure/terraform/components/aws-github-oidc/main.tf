@@ -133,7 +133,7 @@ data "aws_iam_policy_document" "permissions" {
       "batch:UntagResource"
     ]
     resources = [
-      "${local.batch_arn_prefix}:job-definition/${var.resource_name_prefix}-*"
+      "${local.batch_arn_prefix}:job-definition/${coalesce(var.jobdef_lifecycle_name_prefix != "" ? var.jobdef_lifecycle_name_prefix : null, var.resource_name_prefix)}-*"
     ]
   }
 

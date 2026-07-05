@@ -161,8 +161,14 @@ resource "aws_lambda_function" "postgis_bootstrap" {
   reserved_concurrent_executions = 1
 
   vpc_config {
-    subnet_ids         = module.honua.private_subnet_ids
-    security_group_ids = [aws_security_group.postgis_bootstrap.id]
+    subnet_ids = module.honua.private_subnet_ids
+    security_group_ids = [
+      # The bootstrap SG carries the egress rules; the module's Lambda SG is the
+      # one the RDS security group admits on 5432, so the bootstrap function must
+      # carry it too or the in-VPC connection times out.
+      aws_security_group.postgis_bootstrap.id,
+      module.honua.lambda_security_group_id,
+    ]
   }
 
   environment {
