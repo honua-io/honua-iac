@@ -358,3 +358,47 @@ resource "aws_ecs_service" "cert_cutover" {
 
   tags = local.tags
 }
+
+
+# The weighted-cutover rule the certification cell (and the production
+# AwsEcsAlbDeployBackend) actually modifies. AWS forbids ModifyRule on a
+# listener's DEFAULT rule (OperationNotPermitted), so the weighted forward
+# action must live on a dedicated non-default rule — exactly how a real
+# canary deployment is wired. The default action above stays a stable-only
+# fallback that never changes.
+resource "aws_lb_listener_rule" "cert_cutover" {
+  count = var.enable_ecs_alb_cert ? 1 : 0
+
+  listener_arn = aws_lb_listener.cert_cutover[0].arn
+  priority     = 1
+
+  action {
+    type = "forward"
+
+    forward {
+      target_group {
+        arn    = aws_lb_target_group.cert_cutover_stable[0].arn
+        weight = 100
+      }
+
+      target_group {
+        arn    = aws_lb_target_group.cert_cutover_canary[0].arn
+        weight = 0
+      }
+    }
+  }
+
+  condition {
+    path_pattern {
+      values = ["/*"]
+    }
+  }
+
+  lifecycle {
+    # The certification run shifts these weights mid-flight and restores them in
+    # its finally block; a later apply must not fight an in-flight run.
+    ignore_changes = [action]
+  }
+
+  tags = local.tags
+}
