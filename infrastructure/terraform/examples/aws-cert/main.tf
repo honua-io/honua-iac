@@ -34,6 +34,16 @@ locals {
   }, var.tags)
 
   cert_artifact_bucket_name = "${local.name}-artifacts-${random_id.bucket_suffix.hex}"
+
+  # Distinct namespace for the EPHEMERAL per-run Batch job definitions the
+  # certification tests register/deregister/tag (honua-certrun-<runid>-*). Kept
+  # deliberately DISJOINT from the standing GP job-definition pool prefix
+  # (honua-cert-cert-*, and even the shorter honua-cert-* — "honua-certrun" has no
+  # "-" after "honua-cert", so neither wildcard matches it) so the register/
+  # deregister IAM grant can never touch a standing, submittable definition.
+  # Coordinated BY CONVENTION with the honua-server cert fixture
+  # (RealAwsCertificationFixture.JobDefinitionRunPrefix = "honua-certrun-<runid>").
+  certrun_jobdef_name_prefix = "honua-certrun"
 }
 
 resource "random_id" "bucket_suffix" {
@@ -197,19 +207,22 @@ module "github_oidc" {
   github_oidc_subjects = var.github_oidc_subjects
 
   resource_name_prefix = local.name
-  # Per-run job definitions minted by the certification tests are named
-  # honua-cert-<runid>-* (no environment segment), so the register/deregister
-  # grant scopes to the shorter run prefix.
-  jobdef_lifecycle_name_prefix = var.name_prefix
+  # Per-run job definitions minted by the certification tests live in a DISTINCT
+  # namespace (honua-certrun-<runid>-*) that cannot collide with the standing GP
+  # job-definition pool (honua-cert-cert-gp-*). Scoping the register/deregister/tag
+  # grant to this run-only prefix means the cert role can never register a role-
+  # carrying definition into — or deregister — the standing submittable pool.
+  jobdef_lifecycle_name_prefix = local.certrun_jobdef_name_prefix
   cert_artifact_bucket_arn     = aws_s3_bucket.cert_artifacts.arn
-  # PassRole targets for SubmitJob: both the GP job (task) role and the Fargate
-  # execution role ride on every submitted job definition.
+  # PassRole targets. The GP job/execution roles are deliberately NOT passed here:
+  # the cert tests never RegisterJobDefinition a role-carrying definition (their
+  # register smoke is a no-op busybox with no jobRoleArn), and SubmitJob against
+  # the STANDING pool rides the GP roles that terraform baked into those job
+  # definitions at provision time — iam:PassRole is enforced at RegisterJobDefinition
+  # time, not at SubmitJob, so the cert role needs no PassRole for the GP roles. The
+  # ONLY PassRole target is the ECS/ALB cutover execution role, which ecs:UpdateService
+  # genuinely requires (empty when the cell is off; see honua-iac#112).
   batch_job_role_arns = compact([
-    module.honua.gp_job_role_arn,
-    module.honua.gp_execution_role_arn,
-    # ecs:UpdateService with a task definition requires iam:PassRole for the
-    # task definition's execution role, so the weighted-cutover cell needs the
-    # cutover substrate's execution role here too (empty when the cell is off).
     var.enable_ecs_alb_cert ? aws_iam_role.cert_cutover_execution[0].arn : ""
   ])
 
