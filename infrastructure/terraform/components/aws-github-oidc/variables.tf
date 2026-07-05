@@ -123,6 +123,12 @@ variable "batch_job_role_arns" {
   default     = []
 }
 
+variable "cert_alb_modify_resource_arns" {
+  description = "ELBv2 listener + listener-rule ARNs the cert workflow may ModifyListener/ModifyRule to perform the weighted stable/canary cutover (the ECS/ALB certification cell). Empty grants no ELBv2 modify permission (optional-grant pattern)."
+  type        = list(string)
+  default     = []
+}
+
 variable "extra_invoke_function_arns" {
   description = "Additional Lambda function ARNs the cert workflow may invoke beyond the honua-cert-* prefix (e.g. a demo flip target). Empty adds none."
   type        = list(string)

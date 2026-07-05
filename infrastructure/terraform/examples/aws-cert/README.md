@@ -43,6 +43,7 @@ ARNs, the surface the OIDC role is scoped to.
 | Custom-code Batch substrate (via the module, opt-in) | SEPARATE hardened Fargate-Spot queue + size-tier pool for **untrusted user code** |
 | worker-customcode-python ECR repo (via the module, opt-in) | Dedicated python custom-code worker image lifecycle |
 | worker-customcode-dotnet ECR repo (via the module, opt-in) | Dedicated .NET custom-code worker image lifecycle (honua-server #2196) |
+| ECS/ALB weighted-cutover cell (`ecs-alb-cert.tf`, opt-in) | Internal ALB + weighted stable/canary target groups + one smallest-Fargate service attached to both — certifies the production `AwsEcsAlbDeployBackend` against real ELBv2/ECS APIs |
 
 ## Usage
 
@@ -89,6 +90,17 @@ the `cert` GitHub Environment) → **test env var** the workflow exports.
 | `gp_job_role_arn` | `REALAWS_CERT_JOB_ROLE_ARN` | `HONUA_REALAWS_CERT_JOB_ROLE_ARN` |
 | `gp_execution_role_arn` | `REALAWS_CERT_EXECUTION_ROLE_ARN` | `HONUA_REALAWS_CERT_EXECUTION_ROLE_ARN` |
 | `cert_artifact_bucket` | `REALAWS_CERT_ARTIFACT_BUCKET` | `HONUA_REALAWS_CERT_ARTIFACT_BUCKET` |
+
+ECS/ALB weighted-cutover cell (only populated when `enable_ecs_alb_cert = true`;
+the outputs are `null` otherwise):
+
+| terraform output | honua-server Actions variable | test env var |
+|---|---|---|
+| `cert_ecs_cluster_name` | `REALAWS_CERT_ECS_CLUSTER` | `HONUA_REALAWS_CERT_ECS_CLUSTER` |
+| `cert_ecs_service_name` | `REALAWS_CERT_ECS_SERVICE` | `HONUA_REALAWS_CERT_ECS_SERVICE` |
+| `cert_alb_listener_arn` | `REALAWS_CERT_ALB_LISTENER_ARN` | `HONUA_REALAWS_CERT_ALB_LISTENER_ARN` |
+| `cert_canary_target_group_arn` | `REALAWS_CERT_CANARY_TARGET_GROUP_ARN` | `HONUA_REALAWS_CERT_CANARY_TARGET_GROUP_ARN` |
+| `cert_stable_target_group_arn` | `REALAWS_CERT_STABLE_TARGET_GROUP_ARN` | `HONUA_REALAWS_CERT_STABLE_TARGET_GROUP_ARN` |
 
 The stack's default `region` is **`us-east-1`** (`variable "region"`); the
 honua-server cert workflow aligns its `aws-region` to this value. Read the ARN
@@ -182,6 +194,65 @@ Outputs (the cross-repo contract the server consumes, opaque ARNs):
 selected size tier to a single job-def ARN from the keyed map and submits against
 it, mirroring the GP `batch.job_queue_arn` / `batch.job_definition_arn` shape the
 `AwsBatchComputeBackend` already reads.
+
+## ECS/ALB weighted-cutover certification cell (`enable_ecs_alb_cert`, opt-in)
+
+Off by default. When `enable_ecs_alb_cert = true`, the stack provisions the
+**minimal standing substrate** the server's production `AwsEcsAlbDeployBackend`
+certifies against **real AWS ELBv2 + ECS APIs** (honua-server#2164). The backend
+rewrites the ALB listener's weighted forward action between a **stable** and a
+**canary** target group, calls `ecs UpdateService`, observes deployment
+convergence, then rolls back by restoring the weights.
+
+**What it creates (all `count`-gated on the toggle):**
+
+- One **ECS cluster** (Fargate only — no standing EC2 capacity).
+- One **ECS service** (`desired_count = 1`) running the **smallest Fargate task**
+  (0.25 vCPU / 512 MB).
+- Two **target groups** — `stable` (starts weight 100) and `canary` (starts
+  weight 0).
+- One **internal ALB** with a single **HTTP :80 listener** whose default rule is
+  a **weighted forward** (stable 100 / canary 0).
+- A CloudWatch log group, task-execution role, and two security groups (internal
+  ALB ↔ task on :80; task egress 443 for image pull + DNS).
+
+**Design — single service, dual target group.** One ECS service registers with
+**both** target groups (two `load_balancer` blocks), so both always carry the
+**same healthy tasks**. The weight-shift the backend performs is therefore a
+**pure ALB-level cutover** — it certifies the **weight mechanics + service
+convergence + rollback** without needing two service revisions. The
+two-revision (blue/green with a distinct canary task set) variant is
+**honua-server#2165** territory, not this cell.
+
+**Internal ALB (`internal = true`).** The cert tests drive the AWS
+**control-plane** APIs (ELBv2 `ModifyRule`/`ModifyListener`/`DescribeRules`, ECS
+`UpdateService`/`DescribeServices`), **not** the HTTP data path, so the ALB
+needs **no public exposure** — an internal scheme keeps the cell off the public
+internet.
+
+**Image — `public.ecr.aws/nginx/nginx:stable-alpine`.** A tiny, long-term-stable,
+unauthenticated public image that serves HTTP 200 on `/` at port 80, so the
+target-group health checks pass and the tasks converge to healthy with no Honua
+build. It is pulled over the base cert stack's **existing NAT egress** from the
+module's private subnets (`assign_public_ip = false`).
+
+**VPC.** Reuses `module.honua`'s VPC and **private subnets** (the module's
+`vpc_id` / `private_subnet_ids` / `vpc_cidr_block` outputs). No new VPC, NAT
+gateway, or subnets are minted for the cell.
+
+**Cost when on (default OFF).** Itemized standing cost while `enable_ecs_alb_cert
+= true` (us-east-1, on top of the base cert stack):
+
+- **1 internal Application Load Balancer** — ~**$16.20/mo** hourly
+  ($0.0225/hr × ~720 hr) **plus** LCU charges (negligible for the cert cell's
+  health-check-only traffic, typically well under $1/mo).
+- **1 smallest Fargate task ~24/7** — 0.25 vCPU + 0.5 GB ≈ **$9/mo**
+  (0.25 × $0.04048 + 0.5 × $0.004445, ×~730 hr).
+- CloudWatch logs / ECR pulls — negligible.
+
+≈ **$25–26/mo** standing while enabled. No new NAT gateway (reuses the base
+stack's). **Turn the toggle off** (or run `terraform destroy` after a cert
+session) to drop it to $0.
 
 ## Notes
 

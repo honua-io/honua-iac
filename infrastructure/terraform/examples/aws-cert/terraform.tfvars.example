@@ -37,6 +37,15 @@ customcode_batch_cpu_architecture = "X86_64"
 # Tighten egress for MVP to PyPI/GitHub/Honua-API/artifact-S3 CIDRs; empty = VPC CIDR only.
 # customcode_egress_https_cidrs = ["0.0.0.0/0"]
 
+# ECS/ALB weighted-cutover certification cell (opt-in, BILLABLE while on).
+# Provisions the minimal standing substrate the server's production
+# AwsEcsAlbDeployBackend certifies against real ELBv2 + ECS APIs: an internal
+# ALB with a weighted stable/canary listener rule and one smallest-Fargate
+# (0.25 vCPU/512 MB) service (public nginx image) attached to BOTH target
+# groups. While on it costs ~1 ALB (hourly + LCU) + one Fargate task ~24/7 (see
+# README). Off by default; flip on only for an ECS/ALB cert session.
+# enable_ecs_alb_cert = true
+
 # Budget guardrail.
 monthly_budget_usd  = 200
 budget_alert_emails = ["devops@honua.io"]

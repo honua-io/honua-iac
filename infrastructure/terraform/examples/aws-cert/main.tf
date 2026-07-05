@@ -205,6 +205,14 @@ module "github_oidc" {
     module.honua.gp_execution_role_arn
   ])
 
+  # ECS/ALB weighted-cutover cell (opt-in): let the cert workflow rewrite the
+  # listener's weighted default rule. Scoped to the exact listener ARN plus its
+  # listener-rule namespace; empty when the cell is off.
+  cert_alb_modify_resource_arns = var.enable_ecs_alb_cert ? [
+    aws_lb_listener.cert_cutover[0].arn,
+    "${replace(aws_lb_listener.cert_cutover[0].arn, ":listener/", ":listener-rule/")}/*"
+  ] : []
+
   tags = local.tags
 }
 
