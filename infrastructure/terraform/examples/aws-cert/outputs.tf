@@ -72,6 +72,36 @@ output "customcode_dotnet_repository_url" {
   value       = module.honua.customcode_dotnet_repository_url
 }
 
+# --- ECS/ALB weighted-cutover cell contract (null unless enable_ecs_alb_cert) -
+# Wired into the honua-server cert fixture's HONUA_REALAWS_CERT_ECS_* /
+# _ALB_LISTENER_ARN / _*_TARGET_GROUP_ARN inputs so the production
+# AwsEcsAlbDeployBackend can drive the real ELBv2/ECS APIs.
+
+output "cert_ecs_cluster_name" {
+  description = "ECS cluster name for the weighted-cutover cell (=> HONUA_REALAWS_CERT_ECS_CLUSTER). Null unless enable_ecs_alb_cert."
+  value       = one(aws_ecs_cluster.cert_cutover[*].name)
+}
+
+output "cert_ecs_service_name" {
+  description = "ECS service name for the weighted-cutover cell (=> HONUA_REALAWS_CERT_ECS_SERVICE). Null unless enable_ecs_alb_cert."
+  value       = one(aws_ecs_service.cert_cutover[*].name)
+}
+
+output "cert_alb_listener_arn" {
+  description = "ALB listener ARN whose weighted default rule the backend rewrites (=> HONUA_REALAWS_CERT_ALB_LISTENER_ARN). Null unless enable_ecs_alb_cert."
+  value       = one(aws_lb_listener.cert_cutover[*].arn)
+}
+
+output "cert_stable_target_group_arn" {
+  description = "Stable target-group ARN (starts at weight 100) (=> HONUA_REALAWS_CERT_STABLE_TARGET_GROUP_ARN). Null unless enable_ecs_alb_cert."
+  value       = one(aws_lb_target_group.cert_cutover_stable[*].arn)
+}
+
+output "cert_canary_target_group_arn" {
+  description = "Canary target-group ARN (starts at weight 0) (=> HONUA_REALAWS_CERT_CANARY_TARGET_GROUP_ARN). Null unless enable_ecs_alb_cert."
+  value       = one(aws_lb_target_group.cert_cutover_canary[*].arn)
+}
+
 output "github_oidc_role_arn" {
   description = "Role ARN the GitHub Actions cert workflow assumes via OIDC (role-to-assume in configure-aws-credentials)."
   value       = module.github_oidc.role_arn

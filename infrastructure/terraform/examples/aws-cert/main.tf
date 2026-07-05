@@ -196,14 +196,26 @@ module "github_oidc" {
   github_repository    = var.github_repository
   github_oidc_subjects = var.github_oidc_subjects
 
-  resource_name_prefix     = local.name
-  cert_artifact_bucket_arn = aws_s3_bucket.cert_artifacts.arn
+  resource_name_prefix = local.name
+  # Per-run job definitions minted by the certification tests are named
+  # honua-cert-<runid>-* (no environment segment), so the register/deregister
+  # grant scopes to the shorter run prefix.
+  jobdef_lifecycle_name_prefix = var.name_prefix
+  cert_artifact_bucket_arn     = aws_s3_bucket.cert_artifacts.arn
   # PassRole targets for SubmitJob: both the GP job (task) role and the Fargate
   # execution role ride on every submitted job definition.
   batch_job_role_arns = compact([
     module.honua.gp_job_role_arn,
     module.honua.gp_execution_role_arn
   ])
+
+  # ECS/ALB weighted-cutover cell (opt-in): let the cert workflow rewrite the
+  # listener's weighted default rule. Scoped to the exact listener ARN plus its
+  # listener-rule namespace; empty when the cell is off.
+  cert_alb_modify_resource_arns = var.enable_ecs_alb_cert ? [
+    aws_lb_listener.cert_cutover[0].arn,
+    "${replace(aws_lb_listener.cert_cutover[0].arn, ":listener/", ":listener-rule/")}/*"
+  ] : []
 
   tags = local.tags
 }

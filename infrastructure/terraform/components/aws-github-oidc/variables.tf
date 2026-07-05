@@ -123,8 +123,20 @@ variable "batch_job_role_arns" {
   default     = []
 }
 
+variable "cert_alb_modify_resource_arns" {
+  description = "ELBv2 listener + listener-rule ARNs the cert workflow may ModifyListener/ModifyRule to perform the weighted stable/canary cutover (the ECS/ALB certification cell). Empty grants no ELBv2 modify permission (optional-grant pattern)."
+  type        = list(string)
+  default     = []
+}
+
 variable "extra_invoke_function_arns" {
   description = "Additional Lambda function ARNs the cert workflow may invoke beyond the honua-cert-* prefix (e.g. a demo flip target). Empty adds none."
   type        = list(string)
   default     = []
+}
+
+variable "jobdef_lifecycle_name_prefix" {
+  description = "Name prefix for EPHEMERAL per-run Batch job definitions the certification tests register/deregister/tag (honua-cert-<runid>-*). Defaults to resource_name_prefix; the cert stack passes the shorter run prefix (honua-cert) because per-run names omit the environment segment."
+  type        = string
+  default     = ""
 }

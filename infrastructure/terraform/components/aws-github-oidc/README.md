@@ -30,7 +30,11 @@ honua-iac#2164), but reusable for any repo/workflow → AWS OIDC need.
   on the cert job-definition prefix (for the tests' ephemeral per-run job
   definitions tagged `honua-cert-run=<id>`); `Terminate`/`Cancel` on the
   account/region job namespace (Batch job ARNs are un-prefixable UUIDs);
-  Batch/ECS describe; Lambda `Invoke`/`GetFunction`/`GetAlias`/`UpdateAlias`/`PublishVersion`
+  Batch/ECS/ELBv2 describe; ECS `UpdateService`/`DescribeServices` on the
+  `honua-cert-*` service surface and ELBv2 `ModifyRule`/`ModifyListener` on the
+  passed-in cert listener/rule ARNs (the ECS/ALB weighted-cutover cell, gated on
+  `cert_alb_modify_resource_arns`); Lambda
+  `Invoke`/`GetFunction`/`GetAlias`/`UpdateAlias`/`PublishVersion`
   on `honua-cert-*` functions; S3 read/write **+ object tagging** on the cert
   artifact bucket; CloudWatch Logs/metric read; and `iam:PassRole` (scoped via
   `iam:PassedToService` to batch/ecs-tasks) for the GP job + execution roles.
