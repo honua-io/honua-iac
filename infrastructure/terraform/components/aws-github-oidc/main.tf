@@ -8,9 +8,10 @@
 #   - aud     = sts.amazonaws.com
 #   - sub     = repo:<owner>/<repo>:* (or the explicit subjects override)
 # and the permission policy is scoped by Resource/Condition to the
-# honua-cert-* certification surface (Batch submit/describe/terminate, ECS,
-# Lambda invoke, the cert S3 bucket, CloudWatch read, and iam:PassRole for the
-# GP job roles).
+# honua-cert-* certification surface (Batch submit + job-definition
+# register/deregister/tag + describe/terminate, ECS, Lambda invoke/alias/version
+# management, the cert S3 bucket incl. object tagging, CloudWatch read, and
+# iam:PassRole for the GP job + execution roles).
 ###############################################################################
 
 data "aws_caller_identity" "current" {}
@@ -104,19 +105,51 @@ resource "aws_iam_role" "github_actions" {
 # ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "permissions" {
-  # Submit / observe / terminate GP Batch jobs. Submit/terminate scope to the
-  # cert queue + job definitions; describe/list have no resource-level scoping.
+  # Submit GP Batch jobs. SubmitJob requires BOTH the job-queue and the
+  # job-definition resource types, scoped to the honua-cert-* pool.
   statement {
-    sid    = "BatchSubmitTerminateScoped"
+    sid    = "BatchSubmitScoped"
     effect = "Allow"
     actions = [
-      "batch:SubmitJob",
-      "batch:TerminateJob",
-      "batch:CancelJob"
+      "batch:SubmitJob"
     ]
     resources = [
       "${local.batch_arn_prefix}:job-queue/${var.resource_name_prefix}-*",
       "${local.batch_arn_prefix}:job-definition/${var.resource_name_prefix}-*"
+    ]
+  }
+
+  # Register / deregister and (un)tag the ephemeral per-run job definitions the
+  # cert tests mint. Scoped to the honua-cert-* job-definition surface — the
+  # tests name their job definitions under this prefix so SubmitJob (above) can
+  # reach them, and tag them with honua-cert-run=<id> for per-run cleanup.
+  statement {
+    sid    = "BatchJobDefinitionLifecycleScoped"
+    effect = "Allow"
+    actions = [
+      "batch:RegisterJobDefinition",
+      "batch:DeregisterJobDefinition",
+      "batch:TagResource",
+      "batch:UntagResource"
+    ]
+    resources = [
+      "${local.batch_arn_prefix}:job-definition/${var.resource_name_prefix}-*"
+    ]
+  }
+
+  # Terminate / cancel in-flight jobs. Batch job ARNs carry a server-assigned
+  # UUID that cannot be name-prefixed (TerminateJob's resource type is `job`,
+  # not job-definition), so scope to the account/region job namespace — still
+  # far narrower than "*" and confined to this account+region.
+  statement {
+    sid    = "BatchJobTerminateScoped"
+    effect = "Allow"
+    actions = [
+      "batch:TerminateJob",
+      "batch:CancelJob"
+    ]
+    resources = [
+      "${local.batch_arn_prefix}:job/*"
     ]
   }
 
@@ -137,13 +170,22 @@ data "aws_iam_policy_document" "permissions" {
     resources = ["*"]
   }
 
-  # Invoke cert Lambda(s) — e.g. a certification driver / demo flip target.
+  # Invoke + manage cert Lambda(s). Invoke drives the certification flow; the
+  # get/alias/version actions let the cert tests publish a version and flip the
+  # served alias (blue/green) then read the function + alias state back. Scoped
+  # to the honua-cert-* function surface.
   dynamic "statement" {
     for_each = length(local.invoke_function_arns) > 0 ? [1] : []
     content {
-      sid       = "LambdaInvokeScoped"
-      effect    = "Allow"
-      actions   = ["lambda:InvokeFunction"]
+      sid    = "LambdaInvokeAndManageScoped"
+      effect = "Allow"
+      actions = [
+        "lambda:InvokeFunction",
+        "lambda:GetFunction",
+        "lambda:GetAlias",
+        "lambda:UpdateAlias",
+        "lambda:PublishVersion"
+      ]
       resources = local.invoke_function_arns
     }
   }
@@ -157,7 +199,11 @@ data "aws_iam_policy_document" "permissions" {
       actions = [
         "s3:GetObject",
         "s3:PutObject",
-        "s3:DeleteObject"
+        "s3:DeleteObject",
+        # Per-run artifact identification: stamp honua-cert-run=<id> on objects
+        # and read the tag back for verification/cleanup.
+        "s3:PutObjectTagging",
+        "s3:GetObjectTagging"
       ]
       resources = ["${var.cert_artifact_bucket_arn}/*"]
     }
@@ -201,8 +247,9 @@ data "aws_iam_policy_document" "permissions" {
     resources = ["*"]
   }
 
-  # PassRole for the GP job roles so the workflow can submit Batch jobs that
-  # carry them; scoped to the supplied role ARNs and the consuming services.
+  # PassRole for the GP job + execution roles so the workflow can submit Batch
+  # jobs that carry them; scoped to the supplied role ARNs and condition-locked
+  # to the batch/ecs-tasks services that consume them.
   dynamic "statement" {
     for_each = length(var.batch_job_role_arns) > 0 ? [1] : []
     content {

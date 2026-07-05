@@ -74,6 +74,61 @@ jobs:
           aws-region: us-east-1
 ```
 
+## Cross-repo variable mapping (terraform output → honua-server)
+
+After `terraform apply`, wire the stack's outputs into the honua-server repo so
+the dispatched cert workflow (honua-io/honua-server#2164) can reach this stack.
+Each row is: **terraform output** → **honua-server Actions variable** (set under
+the `cert` GitHub Environment) → **test env var** the workflow exports.
+
+| terraform output | honua-server Actions variable | test env var |
+|---|---|---|
+| `github_oidc_role_arn` | `REALAWS_CERT_ROLE_ARN` | *(workflow `role-to-assume`)* |
+| `gp_job_queue_arn` | `REALAWS_CERT_JOB_QUEUE_ARN` | `HONUA_REALAWS_CERT_JOB_QUEUE_ARN` |
+| `gp_job_definition_arns.s` | `REALAWS_CERT_JOBDEF_ARN_S` | `HONUA_REALAWS_CERT_JOBDEF_ARN_S` |
+| `gp_job_role_arn` | `REALAWS_CERT_JOB_ROLE_ARN` | `HONUA_REALAWS_CERT_JOB_ROLE_ARN` |
+| `gp_execution_role_arn` | `REALAWS_CERT_EXECUTION_ROLE_ARN` | `HONUA_REALAWS_CERT_EXECUTION_ROLE_ARN` |
+| `cert_artifact_bucket` | `REALAWS_CERT_ARTIFACT_BUCKET` | `HONUA_REALAWS_CERT_ARTIFACT_BUCKET` |
+
+The stack's default `region` is **`us-east-1`** (`variable "region"`); the
+honua-server cert workflow aligns its `aws-region` to this value. Read the ARN
+strings from `terraform output -raw <name>` (`gp_job_definition_arns` is a map —
+`terraform output -json gp_job_definition_arns | jq -r .s` for the `s` tier).
+
+### Per-run resource tagging
+
+The cert stack's **standing** resources (the queue, the pooled job definitions,
+the bucket, the role) carry `Purpose = real-aws-certification` (see
+`local.tags`). The honua-server cert tests tag the **ephemeral** resources
+**they** create per run — the registered job definitions and the S3 artifacts —
+with `honua-cert-run=<id>` so a single run's resources can be identified,
+verified, and torn down without disturbing the standing stack. The OIDC role
+grants exactly the tag-write actions this needs on the honua-cert-* surface:
+`batch:RegisterJobDefinition`/`DeregisterJobDefinition`/`TagResource`/`UntagResource`
+on the job-definition prefix and `s3:PutObjectTagging`/`GetObjectTagging` on the
+artifact bucket — no broader tagging or resource creation is permitted.
+
+## Maintainer bootstrap checklist
+
+One-time, per certification account:
+
+1. **Dedicated account + region.** Use an isolated AWS account (blast-radius
+   containment + clean budget attribution); keep `region = us-east-1` unless the
+   honua-server workflow is realigned to match.
+2. **Uncomment the S3 backend** in `versions.tf`
+   (`cert/aws-cert/terraform.tfstate`) so state is durable before the first
+   apply.
+3. **Fill `terraform.tfvars`** from the example — `honua_image`,
+   `honua_admin_password`, `db_password`, `budget_alert_emails`, and OIDC
+   scoping (`github_oidc_subjects` defaults to the `cert` Environment sub).
+4. **`terraform apply`** (creates billable infra — run intentionally).
+5. **Create the GitHub Environment `cert`** in honua-io/honua-server (the OIDC
+   role trusts only `sub=…:environment:cert`).
+6. **Set the repo/Environment variables** from the mapping table above (via
+   `gh variable set <NAME> --env cert --repo honua-io/honua-server`).
+7. **Confirm the SNS budget subscription** — each `budget_alert_emails`
+   recipient must click the AWS-sent confirmation before alerts deliver.
+
 ## Runtime contract (devops agent / server)
 
 The cert apply is **once per environment**, not per job. The devops agent and the
@@ -130,6 +185,12 @@ it, mirroring the GP `batch.job_queue_arn` / `batch.job_definition_arn` shape th
 
 ## Notes
 
+- **Design note — fixed-tier pool, per-job overrides.** The GP substrate is a
+  fixed pool of job-definition size tiers, not a per-job resource. Per-job
+  **vCPUs / memory / timeout / retry ride `SubmitJob` overrides** at run time;
+  **ephemeral storage picks the tier** (`gp-s`/`m`/`l`/`xl`) — the one knob
+  `SubmitJob` cannot override. There is **no per-job terraform apply**, and this
+  run-tagging change does not alter that fixed-tier-vs-per-job-pool design.
 - **GP GPU is out of scope.** GPU needs an EC2 Batch compute environment; the
   cert path is Fargate-Spot. The module's `gp_gpu_enabled` flag is a placeholder
   that provisions nothing — leave it `false`.
