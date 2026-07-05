@@ -198,8 +198,11 @@ module "github_oidc" {
 
   resource_name_prefix     = local.name
   cert_artifact_bucket_arn = aws_s3_bucket.cert_artifacts.arn
+  # PassRole targets for SubmitJob: both the GP job (task) role and the Fargate
+  # execution role ride on every submitted job definition.
   batch_job_role_arns = compact([
-    module.honua.gp_job_role_arn
+    module.honua.gp_job_role_arn,
+    module.honua.gp_execution_role_arn
   ])
 
   tags = local.tags

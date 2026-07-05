@@ -25,11 +25,15 @@ honua-iac#2164), but reusable for any repo/workflow → AWS OIDC need.
     (e.g. `repo:honua-io/honua-server:environment:cert`) via
     `github_oidc_subjects`.
 - A least-privilege inline **permission policy** scoped by Resource/Condition to
-  the `honua-cert-*` surface: Batch submit/terminate on the cert
-  queue/job-definitions, Batch/ECS describe, `lambda:InvokeFunction` on
-  `honua-cert-*` functions, S3 read/write on the cert artifact bucket,
-  CloudWatch Logs/metric read, and `iam:PassRole` (scoped via
-  `iam:PassedToService`) for the GP job roles.
+  the `honua-cert-*` surface: Batch `SubmitJob` on the cert
+  queue/job-definitions; job-definition `Register`/`Deregister`/`Tag`/`Untag`
+  on the cert job-definition prefix (for the tests' ephemeral per-run job
+  definitions tagged `honua-cert-run=<id>`); `Terminate`/`Cancel` on the
+  account/region job namespace (Batch job ARNs are un-prefixable UUIDs);
+  Batch/ECS describe; Lambda `Invoke`/`GetFunction`/`GetAlias`/`UpdateAlias`/`PublishVersion`
+  on `honua-cert-*` functions; S3 read/write **+ object tagging** on the cert
+  artifact bucket; CloudWatch Logs/metric read; and `iam:PassRole` (scoped via
+  `iam:PassedToService` to batch/ecs-tasks) for the GP job + execution roles.
 
 ## Trust scoping
 
