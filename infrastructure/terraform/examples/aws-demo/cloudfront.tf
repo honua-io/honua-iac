@@ -239,6 +239,21 @@ resource "aws_cloudfront_function" "forwarded_host" {
   code = <<-EOT
     function handler(event) {
       var request = event.request;
+      // MCP standalone SSE stream (GET /mcp): this stack cannot serve it —
+      // API Gateway HTTP APIs do not stream responses, so the GET hangs at
+      // the origin until timeout, and the server currently tears down the
+      // MCP session when that stream dies (honua-server GET-stream session
+      // bug), 404ing every later POST on the session. Per the MCP spec a
+      // server that offers no server-initiated stream answers this GET with
+      // 405, which spec-compliant clients (MCP TS SDK) handle by skipping
+      // the stream. Answer at the edge until the server returns 405 itself.
+      if (request.method === 'GET' && request.uri === '/mcp') {
+        return {
+          statusCode: 405,
+          statusDescription: 'Method Not Allowed',
+          headers: { 'allow': { value: 'POST, DELETE' } }
+        };
+      }
       request.headers['x-forwarded-host'] = { value: 'demo.honua.io' };
       return request;
     }
