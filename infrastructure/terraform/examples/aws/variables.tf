@@ -127,9 +127,45 @@ variable "redis_connection_cidrs" {
 }
 
 variable "desired_count" {
-  description = "Desired number of ECS tasks."
+  description = "Minimum number of ECS tasks. Values greater than 1 require the safe MultiNode inputs."
   type        = number
   default     = 1
+}
+
+variable "max_capacity" {
+  description = "Maximum ECS auto-scaling capacity. Values greater than 1 require the safe MultiNode inputs."
+  type        = number
+  default     = 1
+}
+
+variable "deployment_mode" {
+  description = "Honua deployment mode. Use MultiNode only with Redis and shared S3 file storage."
+  type        = string
+  default     = "SingleInstance"
+}
+
+variable "file_storage_provider" {
+  description = "Honua file storage provider (Local or AwsS3)."
+  type        = string
+  default     = "Local"
+}
+
+variable "file_storage_aws_s3_bucket_name" {
+  description = "Existing S3 bucket for shared Honua file storage."
+  type        = string
+  default     = ""
+}
+
+variable "file_storage_aws_s3_region" {
+  description = "S3 bucket region. Leave empty to use region."
+  type        = string
+  default     = ""
+}
+
+variable "file_storage_aws_s3_key_prefix" {
+  description = "Optional key prefix for Honua objects."
+  type        = string
+  default     = "honua"
 }
 
 variable "canary_enabled" {

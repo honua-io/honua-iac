@@ -26,6 +26,12 @@ module "honua" {
   redis_connection_string         = var.redis_connection_string
   redis_connection_cidrs          = var.redis_connection_cidrs
   desired_count                   = var.desired_count
+  max_capacity                    = var.max_capacity
+  deployment_mode                 = var.deployment_mode
+  file_storage_provider           = var.file_storage_provider
+  file_storage_aws_s3_bucket_name = var.file_storage_aws_s3_bucket_name
+  file_storage_aws_s3_region      = var.file_storage_aws_s3_region
+  file_storage_aws_s3_key_prefix  = var.file_storage_aws_s3_key_prefix
   canary_enabled                  = var.canary_enabled
   canary_image                    = var.canary_image
   canary_desired_count            = var.canary_desired_count

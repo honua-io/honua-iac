@@ -56,15 +56,61 @@ variable "container_port" {
 }
 
 variable "min_replicas" {
-  description = "Minimum replicas for Container Apps."
+  description = "Minimum replicas for Container Apps. Values greater than 1 require deployment_mode=MultiNode with Redis and shared Azure Blob file storage."
   type        = number
   default     = 1
 }
 
 variable "max_replicas" {
-  description = "Maximum replicas for Container Apps."
+  description = "Maximum replicas for Container Apps. Values greater than 1 require deployment_mode=MultiNode with Redis and shared Azure Blob file storage."
   type        = number
-  default     = 5
+  default     = 1
+}
+
+variable "deployment_mode" {
+  description = "Honua deployment mode. MultiNode is required whenever Container Apps can run more than one replica."
+  type        = string
+  default     = "SingleInstance"
+
+  validation {
+    condition     = contains(["SingleInstance", "MultiNode"], var.deployment_mode)
+    error_message = "deployment_mode must be SingleInstance or MultiNode."
+  }
+}
+
+variable "file_storage_provider" {
+  description = "Honua file storage provider. MultiNode Container Apps deployments require AzureBlob."
+  type        = string
+  default     = "Local"
+
+  validation {
+    condition     = contains(["Local", "AzureBlob"], var.file_storage_provider)
+    error_message = "file_storage_provider must be Local or AzureBlob for the Azure ACA module."
+  }
+}
+
+variable "file_storage_azure_blob_connection_string" {
+  description = "Connection string for the existing Azure Storage account used by shared Honua file storage."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "file_storage_azure_blob_container_name" {
+  description = "Existing Azure Blob container used for shared Honua file storage when file_storage_provider is AzureBlob."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.file_storage_azure_blob_container_name == "" || can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", var.file_storage_azure_blob_container_name))
+    error_message = "file_storage_azure_blob_container_name must be empty or a valid 3-63 character Azure Blob container name."
+  }
+}
+
+variable "file_storage_azure_blob_prefix" {
+  description = "Optional blob prefix for Honua objects in the shared Azure Blob container."
+  type        = string
+  default     = "honua"
 }
 
 variable "admin_password" {
@@ -162,6 +208,19 @@ variable "additional_env" {
   description = "Additional environment variables for the container."
   type        = map(string)
   default     = {}
+
+  validation {
+    condition = length(setintersection(toset([
+      for key in keys(var.additional_env) : lower(replace(key, ":", "__"))
+      ]), toset([
+      "deployment__mode",
+      "filestorage__provider",
+      "filestorage__azureblob__connectionstring",
+      "filestorage__azureblob__containername",
+      "filestorage__azureblob__blobprefix"
+    ]))) == 0
+    error_message = "Set deployment and file-storage settings through the typed module variables, not additional_env."
+  }
 }
 
 variable "redis_connection_string" {

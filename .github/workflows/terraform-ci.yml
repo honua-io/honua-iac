@@ -170,6 +170,13 @@ jobs:
         shell: bash
         run: ./scripts/check-marketplace-paths.sh
 
+      - name: Multi-node topology contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform -chdir=infrastructure/terraform/modules/aws-ecs test -no-color
+          terraform -chdir=infrastructure/terraform/modules/azure-aca test -no-color
+
       - name: Customer distribution tarball smoke test (terraform init each packaged example)
         shell: bash
         run: ./scripts/smoke-customer-dist.sh
