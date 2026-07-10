@@ -26,6 +26,17 @@ honua_admin_password = "REPLACE_WITH_STRONG_SECRET_MIN_32_CHARS"
 # ElastiCache Redis (enabled by default; required for /healthz/ready in Production).
 # redis_enabled = true
 
+# Safe single-instance is the default. To enable ECS HA or auto-scaling, set all
+# of these together and provide an existing S3 bucket. The module grants its ECS
+# task role access to that bucket; it does not create the bucket.
+# deployment_mode                 = "MultiNode"
+# desired_count                   = 2
+# max_capacity                    = 4
+# redis_enabled                   = true
+# file_storage_provider           = "AwsS3"
+# file_storage_aws_s3_bucket_name = "honua-prod-files"
+# file_storage_aws_s3_region      = "us-east-1"
+
 tags = {
   Owner      = "platform"
   CostCentre = "honua"

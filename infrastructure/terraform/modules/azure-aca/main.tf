@@ -89,12 +89,23 @@ resource "random_password" "db" {
 resource "time_static" "secret_baseline" {}
 
 locals {
-  db_password            = var.db_admin_password != null ? var.db_admin_password : (local.db_use_existing ? "" : random_password.db[0].result)
-  db_server_fqdn         = local.db_use_existing ? var.existing_db_fqdn : azurerm_postgresql_flexible_server.this[0].fqdn
-  db_connection_string   = local.db_use_existing ? var.existing_db_connection_string : "Host=${azurerm_postgresql_flexible_server.this[0].fqdn};Port=5432;Database=${var.db_name};Username=${var.db_admin_username};Password=${local.db_password};SSL Mode=Require;Trust Server Certificate=false"
-  redis_enabled          = var.redis_enabled || var.redis_connection_string != ""
-  redis_create           = var.redis_enabled && var.redis_connection_string == ""
-  redis_connection       = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? azurerm_redis_cache.this[0].primary_connection_string : "")
+  db_password           = var.db_admin_password != null ? var.db_admin_password : (local.db_use_existing ? "" : random_password.db[0].result)
+  db_server_fqdn        = local.db_use_existing ? var.existing_db_fqdn : azurerm_postgresql_flexible_server.this[0].fqdn
+  db_connection_string  = local.db_use_existing ? var.existing_db_connection_string : "Host=${azurerm_postgresql_flexible_server.this[0].fqdn};Port=5432;Database=${var.db_name};Username=${var.db_admin_username};Password=${local.db_password};SSL Mode=Require;Trust Server Certificate=false"
+  redis_enabled         = var.redis_enabled || var.redis_connection_string != ""
+  redis_create          = var.redis_enabled && var.redis_connection_string == ""
+  redis_connection      = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? azurerm_redis_cache.this[0].primary_connection_string : "")
+  multi_replica_enabled = var.min_replicas > 1 || var.max_replicas > 1
+  shared_file_storage_configured = (
+    var.file_storage_provider == "AzureBlob" &&
+    trimspace(var.file_storage_azure_blob_connection_string) != "" &&
+    trimspace(var.file_storage_azure_blob_container_name) != ""
+  )
+  multi_node_topology_ready = (
+    var.deployment_mode == "MultiNode" &&
+    local.redis_enabled &&
+    local.shared_file_storage_configured
+  )
   secret_expiration_date = timeadd(time_static.secret_baseline.rfc3339, format("%dh", var.secret_expiration_days * 24))
 }
 
@@ -194,6 +205,16 @@ resource "azurerm_key_vault_secret" "redis_connection" {
   depends_on      = [azurerm_key_vault_access_policy.identity, azurerm_key_vault_access_policy.current]
 }
 
+resource "azurerm_key_vault_secret" "file_storage_azure_blob_connection" {
+  count           = var.file_storage_provider == "AzureBlob" ? 1 : 0
+  name            = "honua-file-storage-azure-blob-connection"
+  value           = var.file_storage_azure_blob_connection_string
+  content_type    = "connection-string"
+  expiration_date = local.secret_expiration_date
+  key_vault_id    = azurerm_key_vault.this.id
+  depends_on      = [azurerm_key_vault_access_policy.identity, azurerm_key_vault_access_policy.current]
+}
+
 resource "azurerm_log_analytics_workspace" "this" {
   count               = var.log_analytics_enabled ? 1 : 0
   name                = "${local.name}-logs"
@@ -256,6 +277,15 @@ resource "azurerm_container_app" "this" {
   }
 
   dynamic "secret" {
+    for_each = toset(var.file_storage_provider == "AzureBlob" ? ["file-storage-azure-blob"] : [])
+    content {
+      name                = "file-storage-azure-blob-connection"
+      key_vault_secret_id = azurerm_key_vault_secret.file_storage_azure_blob_connection[0].id
+      identity            = azurerm_user_assigned_identity.this.id
+    }
+  }
+
+  dynamic "secret" {
     for_each = toset(var.registry_server != "" ? ["registry"] : [])
     content {
       name  = "registry-password"
@@ -293,11 +323,45 @@ resource "azurerm_container_app" "this" {
         secret_name = "admin-password"
       }
 
+      env {
+        name  = "Deployment__Mode"
+        value = var.deployment_mode
+      }
+
+      env {
+        name  = "FileStorage__Provider"
+        value = var.file_storage_provider
+      }
+
       dynamic "env" {
         for_each = toset(local.redis_enabled ? ["redis"] : [])
         content {
           name        = "ConnectionStrings__redis"
           secret_name = "redis-connection"
+        }
+      }
+
+      dynamic "env" {
+        for_each = toset(var.file_storage_provider == "AzureBlob" ? ["file-storage-azure-blob"] : [])
+        content {
+          name        = "FileStorage__AzureBlob__ConnectionString"
+          secret_name = "file-storage-azure-blob-connection"
+        }
+      }
+
+      dynamic "env" {
+        for_each = toset(var.file_storage_provider == "AzureBlob" ? ["file-storage-azure-blob"] : [])
+        content {
+          name  = "FileStorage__AzureBlob__ContainerName"
+          value = var.file_storage_azure_blob_container_name
+        }
+      }
+
+      dynamic "env" {
+        for_each = toset(var.file_storage_provider == "AzureBlob" ? ["file-storage-azure-blob"] : [])
+        content {
+          name  = "FileStorage__AzureBlob__BlobPrefix"
+          value = var.file_storage_azure_blob_prefix
         }
       }
 
@@ -355,6 +419,23 @@ resource "azurerm_container_app" "this" {
   }
 
   tags = local.tags
+
+  lifecycle {
+    precondition {
+      condition     = !local.multi_replica_enabled || local.multi_node_topology_ready
+      error_message = "Container Apps can run more than one Honua replica only when deployment_mode is MultiNode, Redis is configured, and file_storage_provider is AzureBlob with an existing connection string and container name."
+    }
+
+    precondition {
+      condition     = var.deployment_mode != "MultiNode" || local.multi_node_topology_ready
+      error_message = "deployment_mode=MultiNode requires Redis and shared AzureBlob file storage with a connection string and container name."
+    }
+
+    precondition {
+      condition     = var.file_storage_provider != "AzureBlob" || local.shared_file_storage_configured
+      error_message = "file_storage_provider=AzureBlob requires file_storage_azure_blob_connection_string and file_storage_azure_blob_container_name."
+    }
+  }
 
   depends_on = [
     azurerm_key_vault_access_policy.identity

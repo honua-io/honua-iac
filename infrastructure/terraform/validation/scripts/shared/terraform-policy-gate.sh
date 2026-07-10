@@ -223,6 +223,17 @@ run_custom_policy_checks() {
   assert_regex_present 'minimum_tls_version[[:space:]]*=[[:space:]]*"1\.2"' "$ROOT/modules/azure-data/main.tf" "azure-data-redis-tls12"
   assert_regex_present 'minimum_tls_version[[:space:]]*=[[:space:]]*"1\.2"' "$ROOT/modules/azure-functions/main.tf" "azure-functions-redis-tls12"
 
+  assert_regex_present 'multi_replica_enabled[[:space:]]*=[[:space:]]*var\.desired_count > 1 \|\| var\.max_capacity > 1' "$ROOT/modules/aws-ecs/main.tf" "aws-ecs-multinode-scale-detection"
+  assert_regex_present 'condition[[:space:]]*=[[:space:]]*!local\.multi_replica_enabled \|\| local\.multi_node_topology_ready' "$ROOT/modules/aws-ecs/main.tf" "aws-ecs-multinode-precondition"
+  assert_regex_present 'Deployment__Mode[[:space:]]*=[[:space:]]*var\.deployment_mode' "$ROOT/modules/aws-ecs/main.tf" "aws-ecs-deployment-mode-wiring"
+  assert_regex_present 'aws_iam_role_policy" "file_storage_s3"' "$ROOT/modules/aws-ecs/main.tf" "aws-ecs-s3-task-role-policy"
+
+  assert_regex_present 'multi_replica_enabled[[:space:]]*=[[:space:]]*var\.min_replicas > 1 \|\| var\.max_replicas > 1' "$ROOT/modules/azure-aca/main.tf" "azure-aca-multinode-scale-detection"
+  assert_regex_present 'condition[[:space:]]*=[[:space:]]*!local\.multi_replica_enabled \|\| local\.multi_node_topology_ready' "$ROOT/modules/azure-aca/main.tf" "azure-aca-multinode-precondition"
+  assert_regex_present 'name[[:space:]]*=[[:space:]]*"Deployment__Mode"' "$ROOT/modules/azure-aca/main.tf" "azure-aca-deployment-mode-wiring"
+  assert_regex_present 'azurerm_key_vault_secret" "file_storage_azure_blob_connection"' "$ROOT/modules/azure-aca/main.tf" "azure-aca-blob-keyvault-secret"
+  assert_regex_present 'name[[:space:]]*=[[:space:]]*"FileStorage__AzureBlob__ConnectionString"' "$ROOT/modules/azure-aca/main.tf" "azure-aca-blob-secret-env"
+
   assert_regex_absent '^[[:space:]]*source[[:space:]]+"\$DATA_CACHE_FILE"' "$ROOT/validation/scripts/aws/run-aws-terraform-integration.sh" "aws-cache-source-execution"
   assert_regex_absent '^[[:space:]]*source[[:space:]]+"\$DATA_CACHE_FILE"' "$ROOT/validation/scripts/azure/run-azure-terraform-integration.sh" "azure-cache-source-execution"
   assert_regex_present 'DATA_CACHE_FORMAT="v2-base64"' "$ROOT/validation/scripts/aws/run-aws-terraform-integration.sh" "aws-cache-format-marker"

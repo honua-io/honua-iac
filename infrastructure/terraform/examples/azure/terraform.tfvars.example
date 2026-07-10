@@ -13,6 +13,18 @@ honua_image = "ghcr.io/honua-io/honua-server:v1.5.0"
 # Generate: openssl rand -hex 32
 honua_admin_password = "REPLACE_WITH_STRONG_SECRET_MIN_32_CHARS"
 
+# Safe single-instance is the default. To enable Container Apps HA or
+# auto-scaling, set all of these together and provide an existing Azure Storage
+# account connection string and blob container. The connection string is stored
+# in Key Vault and mounted into the Container App as a secret.
+# deployment_mode                          = "MultiNode"
+# min_replicas                             = 2
+# max_replicas                             = 10
+# redis_enabled                            = true
+# file_storage_provider                    = "AzureBlob"
+# file_storage_azure_blob_connection_string = "DefaultEndpointsProtocol=https;AccountName=..."
+# file_storage_azure_blob_container_name    = "honua-prod-files"
+
 tags = {
   owner      = "platform"
   costCentre = "honua"

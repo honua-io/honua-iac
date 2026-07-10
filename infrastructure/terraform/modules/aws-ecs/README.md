@@ -1,6 +1,6 @@
 # AWS ECS/Fargate Module
 
-Provisions Honua Server on ECS/Fargate with an ALB, RDS PostgreSQL, optional ElastiCache Redis, and supporting infrastructure (VPC, secrets, logging).
+Provisions Honua Server on ECS/Fargate with an ALB, RDS PostgreSQL, optional ElastiCache Redis, and supporting infrastructure (VPC, secrets, logging). The module fails planning when ECS could run multiple Honua tasks without the required MultiNode, Redis, and shared S3 configuration.
 
 ## Pin to a release
 
@@ -54,6 +54,8 @@ module "honua" {
   container_cpu    = 1024   # 1 vCPU
   container_memory = 2048   # 2 GB
   desired_count    = 2      # Minimum 2 for HA
+  max_capacity     = 4
+  deployment_mode  = "MultiNode"
 
   # Database
   admin_password       = var.honua_admin_password
@@ -67,6 +69,11 @@ module "honua" {
   redis_enabled            = true
   redis_node_type          = "cache.r6g.large"
   redis_num_cache_clusters = 2
+
+  # Shared file storage (existing bucket; the module grants task-role access)
+  file_storage_provider           = "AwsS3"
+  file_storage_aws_s3_bucket_name = "honua-prod-files"
+  file_storage_aws_s3_region      = "us-west-2"
 
   # Networking
   vpc_cidr             = "10.0.0.0/16"
@@ -137,6 +144,8 @@ allow_https_ingress_cidrs = ["0.0.0.0/0"]
 
 The module can provision an optional canary ECS service and ALB target group. This is intended for weighted rollouts on AWS without moving rollout logic into Honua itself.
 
+Because the canary and primary services run concurrently, canary rollouts require `deployment_mode = "MultiNode"`, Redis, and shared S3 file storage even when each service has only one task. The same contract applies when either `desired_count` or `max_capacity` is greater than one. A `SingleInstance` service uses ECS deployment percentages that stop the old task before starting its replacement so an ordinary update cannot temporarily create a second server task.
+
 ```hcl
 canary_enabled           = true
 canary_image             = "ghcr.io/honua-io/honua-server:v1.2.4-aot"
@@ -174,7 +183,13 @@ If your Prometheus scrape config uses different job names, override the correspo
 | `task_cpu_architecture` | `ARM64` | Fargate CPU architecture. Honua defaults to Arm on AWS; override to `X86_64` only when required. |
 | `container_cpu` | 512 | Fargate CPU units (256/512/1024/2048/4096). |
 | `container_memory` | 1024 | Fargate memory in MiB. |
-| `desired_count` | 1 | Number of tasks. Use 2+ for production. |
+| `desired_count` | 1 | Minimum number of tasks. Values greater than one require the safe MultiNode topology. |
+| `max_capacity` | 1 | Maximum auto-scaling capacity. Values greater than one require the safe MultiNode topology. |
+| `deployment_mode` | `SingleInstance` | Honua runtime mode. Set `MultiNode` for canary, HA, or auto-scaling. |
+| `file_storage_provider` | `Local` | File storage backend. MultiNode requires `AwsS3`. |
+| `file_storage_aws_s3_bucket_name` | `""` | Existing shared S3 bucket. Required with `AwsS3`; the module grants the ECS task role bucket access but does not create the bucket. |
+| `file_storage_aws_s3_region` | AWS provider region | Region of the shared S3 bucket. |
+| `file_storage_aws_s3_key_prefix` | `honua` | Optional object-key prefix within the shared bucket. |
 | `canary_enabled` | false | Provision a secondary ECS service and ALB target group for canary rollouts. |
 | `canary_image` | `""` | Optional image override for the canary service. Reuses `image` when empty. |
 | `canary_desired_count` | 1 | Number of tasks in the canary ECS service. |

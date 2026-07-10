@@ -89,15 +89,60 @@ variable "container_memory" {
 }
 
 variable "desired_count" {
-  description = "Desired number of tasks."
+  description = "Minimum number of ECS tasks. Values greater than 1 require deployment_mode=MultiNode with Redis and shared S3 file storage."
   type        = number
   default     = 1
 }
 
 variable "max_capacity" {
-  description = "Maximum number of ECS tasks for auto-scaling."
+  description = "Maximum number of ECS tasks for auto-scaling. Values greater than 1 require deployment_mode=MultiNode with Redis and shared S3 file storage."
   type        = number
-  default     = 4
+  default     = 1
+}
+
+variable "deployment_mode" {
+  description = "Honua deployment mode. MultiNode is required whenever ECS can run more than one server task."
+  type        = string
+  default     = "SingleInstance"
+
+  validation {
+    condition     = contains(["SingleInstance", "MultiNode"], var.deployment_mode)
+    error_message = "deployment_mode must be SingleInstance or MultiNode."
+  }
+}
+
+variable "file_storage_provider" {
+  description = "Honua file storage provider. MultiNode ECS deployments require AwsS3."
+  type        = string
+  default     = "Local"
+
+  validation {
+    condition     = contains(["Local", "AwsS3"], var.file_storage_provider)
+    error_message = "file_storage_provider must be Local or AwsS3 for the AWS ECS module."
+  }
+}
+
+variable "file_storage_aws_s3_bucket_name" {
+  description = "Existing S3 bucket used for shared Honua file storage when file_storage_provider is AwsS3."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.file_storage_aws_s3_bucket_name == "" || can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", var.file_storage_aws_s3_bucket_name))
+    error_message = "file_storage_aws_s3_bucket_name must be empty or a valid 3-63 character S3 bucket name."
+  }
+}
+
+variable "file_storage_aws_s3_region" {
+  description = "S3 bucket region. Leave empty to use the module AWS provider region."
+  type        = string
+  default     = ""
+}
+
+variable "file_storage_aws_s3_key_prefix" {
+  description = "Optional key prefix for Honua objects in the shared S3 bucket."
+  type        = string
+  default     = "honua"
 }
 
 variable "assign_public_ip" {
@@ -313,6 +358,19 @@ variable "additional_env" {
   description = "Additional environment variables for the container."
   type        = map(string)
   default     = {}
+
+  validation {
+    condition = length(setintersection(toset([
+      for key in keys(var.additional_env) : lower(replace(key, ":", "__"))
+      ]), toset([
+      "deployment__mode",
+      "filestorage__provider",
+      "filestorage__awss3__bucketname",
+      "filestorage__awss3__region",
+      "filestorage__awss3__keyprefix"
+    ]))) == 0
+    error_message = "Set deployment and file-storage settings through the typed module variables, not additional_env."
+  }
 }
 
 variable "canary_enabled" {
@@ -348,6 +406,19 @@ variable "canary_additional_env" {
   description = "Additional environment variables merged into the canary ECS task definition."
   type        = map(string)
   default     = {}
+
+  validation {
+    condition = length(setintersection(toset([
+      for key in keys(var.canary_additional_env) : lower(replace(key, ":", "__"))
+      ]), toset([
+      "deployment__mode",
+      "filestorage__provider",
+      "filestorage__awss3__bucketname",
+      "filestorage__awss3__region",
+      "filestorage__awss3__keyprefix"
+    ]))) == 0
+    error_message = "Set deployment and file-storage settings through the typed module variables, not canary_additional_env."
+  }
 }
 
 variable "canary_header_name" {

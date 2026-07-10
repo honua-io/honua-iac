@@ -1,6 +1,6 @@
 # Azure Container Apps Module
 
-Deploys Honua Server to Azure Container Apps with PostgreSQL Flexible Server, Key Vault-backed secrets, optional Azure Cache for Redis, and Log Analytics.
+Deploys Honua Server to Azure Container Apps with PostgreSQL Flexible Server, Key Vault-backed secrets, optional Azure Cache for Redis, and Log Analytics. The module fails planning when Container Apps could scale past one Honua replica without the required MultiNode, Redis, and shared Azure Blob configuration.
 
 ## Pin to a release
 
@@ -55,6 +55,7 @@ module "honua" {
   container_memory = "2Gi"
   min_replicas     = 2       # Minimum 2 for HA
   max_replicas     = 10
+  deployment_mode  = "MultiNode"
 
   # Database
   admin_password                = var.honua_admin_password
@@ -68,6 +69,11 @@ module "honua" {
   redis_enabled  = true
   redis_sku_name = "Standard"
   redis_capacity = 2
+
+  # Shared file storage (existing account/container; connection is Key Vault-backed)
+  file_storage_provider                     = "AzureBlob"
+  file_storage_azure_blob_connection_string = var.file_storage_connection_string
+  file_storage_azure_blob_container_name    = "honua-prod-files"
 
   # Networking
   enable_ingress        = true
@@ -101,7 +107,12 @@ module "honua" {
 | `image` | Required | Container image. Pin to an immutable release tag or digest. AOT builds are recommended. |
 | `container_cpu` | 0.5 | CPU cores (0.25, 0.5, 1.0, 2.0, 4.0). |
 | `container_memory` | `"1Gi"` | Memory with `Gi` suffix (for example `1Gi`, `1.5Gi`). |
-| `min_replicas` / `max_replicas` | 1 / 5 | Scaling range. Use min 2 for production. |
+| `min_replicas` / `max_replicas` | 1 / 1 | Scaling range. Any value greater than one requires the safe MultiNode topology. |
+| `deployment_mode` | `SingleInstance` | Honua runtime mode. Set `MultiNode` for HA or auto-scaling. |
+| `file_storage_provider` | `Local` | File storage backend. MultiNode requires `AzureBlob`. |
+| `file_storage_azure_blob_connection_string` | `""` | Existing Azure Storage account connection string. Required with `AzureBlob` and stored in Key Vault. |
+| `file_storage_azure_blob_container_name` | `""` | Existing shared blob container. Required with `AzureBlob`. |
+| `file_storage_azure_blob_prefix` | `honua` | Optional object prefix within the shared container. |
 | `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster extensions. **Set to true.** |
 | `existing_db_connection_string` + `existing_db_fqdn` | `""` | Reuse an existing PostgreSQL server and skip DB creation/bootstrap. |
 | `db_sku_name` | `B_Standard_B1ms` | PostgreSQL SKU. Use `GP_Standard_*` for production. |

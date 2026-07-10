@@ -8,6 +8,8 @@ data "aws_caller_identity" "current" {}
 
 data "aws_elb_service_account" "current" {}
 
+data "aws_partition" "current" {}
+
 locals {
   name = "${var.name_prefix}-${var.environment}"
   tags = merge({
@@ -34,25 +36,44 @@ locals {
   http_ingress_base = length(var.allow_http_ingress_cidrs) > 0 ? var.allow_http_ingress_cidrs : (
     length(local.https_ingress_cidrs) > 0 ? local.https_ingress_cidrs : (!local.use_https ? local.default_ingress_cidrs : [])
   )
-  http_ingress_cidrs     = local.use_https ? (var.alb_enable_http_redirect ? local.http_ingress_base : []) : local.http_ingress_base
-  redis_enabled          = var.redis_enabled || var.redis_connection_string != ""
-  redis_create           = var.redis_enabled && var.redis_connection_string == ""
-  redis_auth_token       = var.redis_auth_token != "" ? var.redis_auth_token : (local.redis_create ? random_password.redis_auth[0].result : "")
-  redis_connection       = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true" : "")
-  redis_egress_cidrs     = local.redis_create ? [local.vpc_cidr_block] : var.redis_connection_cidrs
-  db_subnet_ids          = var.db_publicly_accessible ? local.public_subnets : local.private_subnets
-  canary_enabled         = var.canary_enabled
-  canary_weight          = local.canary_enabled ? var.canary_weight_percentage : 0
-  primary_weight         = local.canary_enabled ? 100 - local.canary_weight : 100
-  effective_canary_image = trimspace(var.canary_image) != "" ? var.canary_image : var.image
+  http_ingress_cidrs    = local.use_https ? (var.alb_enable_http_redirect ? local.http_ingress_base : []) : local.http_ingress_base
+  redis_enabled         = var.redis_enabled || var.redis_connection_string != ""
+  redis_create          = var.redis_enabled && var.redis_connection_string == ""
+  redis_auth_token      = var.redis_auth_token != "" ? var.redis_auth_token : (local.redis_create ? random_password.redis_auth[0].result : "")
+  redis_connection      = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true" : "")
+  redis_egress_cidrs    = local.redis_create ? [local.vpc_cidr_block] : var.redis_connection_cidrs
+  multi_replica_enabled = var.desired_count > 1 || var.max_capacity > 1 || (local.canary_enabled && var.canary_desired_count > 0)
+  shared_file_storage_configured = (
+    var.file_storage_provider == "AwsS3" &&
+    trimspace(var.file_storage_aws_s3_bucket_name) != ""
+  )
+  multi_node_topology_ready = (
+    var.deployment_mode == "MultiNode" &&
+    local.redis_enabled &&
+    local.shared_file_storage_configured
+  )
+  file_storage_aws_s3_region = trimspace(var.file_storage_aws_s3_region) != "" ? var.file_storage_aws_s3_region : data.aws_region.current.region
+  db_subnet_ids              = var.db_publicly_accessible ? local.public_subnets : local.private_subnets
+  canary_enabled             = var.canary_enabled
+  canary_weight              = local.canary_enabled ? var.canary_weight_percentage : 0
+  primary_weight             = local.canary_enabled ? 100 - local.canary_weight : 100
+  effective_canary_image     = trimspace(var.canary_image) != "" ? var.canary_image : var.image
+  runtime_environment = merge({
+    Deployment__Mode      = var.deployment_mode
+    FileStorage__Provider = var.file_storage_provider
+    }, var.file_storage_provider == "AwsS3" ? {
+    FileStorage__AwsS3__BucketName = var.file_storage_aws_s3_bucket_name
+    FileStorage__AwsS3__Region     = local.file_storage_aws_s3_region
+    FileStorage__AwsS3__KeyPrefix  = var.file_storage_aws_s3_key_prefix
+  } : {})
   primary_container_environment = [
-    for key, value in var.additional_env : {
+    for key, value in merge(var.additional_env, local.runtime_environment) : {
       name  = key
       value = value
     }
   ]
   canary_container_environment = [
-    for key, value in merge(var.additional_env, var.canary_additional_env) : {
+    for key, value in merge(var.additional_env, var.canary_additional_env, local.runtime_environment) : {
       name  = key
       value = value
     }
@@ -80,7 +101,7 @@ locals {
     logDriver = "awslogs"
     options = {
       awslogs-group         = aws_cloudwatch_log_group.this.name
-      awslogs-region        = data.aws_region.current.id
+      awslogs-region        = data.aws_region.current.region
       awslogs-stream-prefix = "honua"
     }
   }
@@ -732,6 +753,38 @@ resource "aws_iam_role" "task" {
   tags               = local.tags
 }
 
+resource "aws_iam_role_policy" "file_storage_s3" {
+  count = local.shared_file_storage_configured ? 1 : 0
+  name  = "${local.name}-file-storage-s3"
+  role  = aws_iam_role.task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetBucketLocation",
+          "s3:ListBucket",
+          "s3:ListBucketMultipartUploads"
+        ]
+        Resource = ["arn:${data.aws_partition.current.partition}:s3:::${var.file_storage_aws_s3_bucket_name}"]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:AbortMultipartUpload",
+          "s3:DeleteObject",
+          "s3:GetObject",
+          "s3:ListMultipartUploadParts",
+          "s3:PutObject"
+        ]
+        Resource = ["arn:${data.aws_partition.current.partition}:s3:::${var.file_storage_aws_s3_bucket_name}/*"]
+      }
+    ]
+  })
+}
+
 resource "aws_iam_policy" "secrets" {
   name        = "${local.name}-secrets"
   description = "Allow ECS task to read Honua secrets"
@@ -802,7 +855,7 @@ data "aws_iam_policy_document" "kms" {
     resources = ["*"]
     principals {
       type        = "Service"
-      identifiers = ["logs.${data.aws_region.current.id}.amazonaws.com"]
+      identifiers = ["logs.${data.aws_region.current.region}.amazonaws.com"]
     }
   }
 
@@ -812,7 +865,7 @@ data "aws_iam_policy_document" "kms" {
     resources = ["*"]
     principals {
       type        = "Service"
-      identifiers = ["secretsmanager.${data.aws_region.current.id}.amazonaws.com"]
+      identifiers = ["secretsmanager.${data.aws_region.current.region}.amazonaws.com"]
     }
   }
 
@@ -1049,6 +1102,9 @@ resource "aws_ecs_service" "this" {
   desired_count   = var.desired_count
   launch_type     = "FARGATE"
 
+  deployment_minimum_healthy_percent = var.deployment_mode == "SingleInstance" ? 0 : 100
+  deployment_maximum_percent         = var.deployment_mode == "SingleInstance" ? 100 : 200
+
   deployment_circuit_breaker {
     enable   = true
     rollback = true
@@ -1070,6 +1126,21 @@ resource "aws_ecs_service" "this" {
   # Without this, every apply resets desired_count to the floor and fights the autoscaler.
   lifecycle {
     ignore_changes = [desired_count]
+
+    precondition {
+      condition     = !local.multi_replica_enabled || local.multi_node_topology_ready
+      error_message = "ECS can run more than one Honua task only when deployment_mode is MultiNode, Redis is configured, and file_storage_provider is AwsS3 with an existing bucket name."
+    }
+
+    precondition {
+      condition     = var.deployment_mode != "MultiNode" || local.multi_node_topology_ready
+      error_message = "deployment_mode=MultiNode requires Redis and shared AwsS3 file storage with file_storage_aws_s3_bucket_name set."
+    }
+
+    precondition {
+      condition     = var.file_storage_provider != "AwsS3" || local.shared_file_storage_configured
+      error_message = "file_storage_provider=AwsS3 requires file_storage_aws_s3_bucket_name."
+    }
   }
 
   depends_on = [aws_lb_listener.https, aws_lb_listener.http, aws_lb_listener.http_redirect]
@@ -1102,6 +1173,13 @@ resource "aws_ecs_service" "canary" {
     container_port   = var.container_port
   }
 
+  lifecycle {
+    precondition {
+      condition     = local.multi_node_topology_ready
+      error_message = "The canary ECS service requires deployment_mode=MultiNode, Redis, and shared AwsS3 file storage because it runs alongside the primary service."
+    }
+  }
+
   depends_on = [aws_lb_listener.https, aws_lb_listener.http, aws_lb_listener.http_redirect]
 
   tags = merge(local.tags, {
@@ -1115,6 +1193,13 @@ resource "aws_appautoscaling_target" "ecs" {
   resource_id        = "service/${aws_ecs_cluster.this.name}/${aws_ecs_service.this.name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
+
+  lifecycle {
+    precondition {
+      condition     = var.max_capacity <= 1 || local.multi_node_topology_ready
+      error_message = "ECS auto-scaling above one task requires deployment_mode=MultiNode, Redis, and shared AwsS3 file storage."
+    }
+  }
 }
 
 resource "aws_appautoscaling_policy" "cpu" {
