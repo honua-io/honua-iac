@@ -225,6 +225,16 @@ resource "aws_cloudfront_response_headers_policy" "demo_cors" {
 # when ForwardedHeaders__Enabled=true (set in main.tf additional_env;
 # src/Honua.Server/Startup/StartupConfigurationHelpers.cs), so stamp the
 # public hostname on every viewer request at the edge.
+#
+# This function ALSO short-circuits `GET /mcp` to 405 at the edge. API Gateway
+# HTTP APIs cannot stream, so the MCP standalone SSE stream (a GET) hangs at
+# the origin until timeout and tears down the MCP session (honua-server
+# GET-stream session bug), 404ing every later POST on that session. Per the
+# MCP spec a server offering no server-initiated stream answers this GET with
+# 405, which spec-compliant clients skip. Answered at the edge until the
+# server returns 405 itself. This is deliberate, live-only behavior — it must
+# stay codified here so `terraform apply` never strips it (it would break the
+# MCP certification lane, honua-server#2578).
 # ---------------------------------------------------------------------------
 
 resource "aws_cloudfront_function" "forwarded_host" {
