@@ -86,10 +86,18 @@ resource "random_password" "db" {
   override_special = "#%*()-_=+[]{}:?."
 }
 
+resource "random_password" "master_key" {
+  count            = var.connection_encryption_master_key == null ? 1 : 0
+  length           = 32
+  special          = true
+  override_special = "#%*()-_=+[]{}:?."
+}
+
 resource "time_static" "secret_baseline" {}
 
 locals {
   db_password           = var.db_admin_password != null ? var.db_admin_password : (local.db_use_existing ? "" : random_password.db[0].result)
+  master_key            = var.connection_encryption_master_key != null ? var.connection_encryption_master_key : random_password.master_key[0].result
   db_server_fqdn        = local.db_use_existing ? var.existing_db_fqdn : azurerm_postgresql_flexible_server.this[0].fqdn
   db_connection_string  = local.db_use_existing ? var.existing_db_connection_string : "Host=${azurerm_postgresql_flexible_server.this[0].fqdn};Port=5432;Database=${var.db_name};Username=${var.db_admin_username};Password=${local.db_password};SSL Mode=Require;Trust Server Certificate=false"
   redis_enabled         = var.redis_enabled || var.redis_connection_string != ""
@@ -195,6 +203,15 @@ resource "azurerm_key_vault_secret" "admin_password" {
   depends_on      = [azurerm_key_vault_access_policy.identity, azurerm_key_vault_access_policy.current]
 }
 
+resource "azurerm_key_vault_secret" "master_key" {
+  name            = "honua-connection-encryption-master-key"
+  value           = local.master_key
+  content_type    = "encryption-key"
+  expiration_date = local.secret_expiration_date
+  key_vault_id    = azurerm_key_vault.this.id
+  depends_on      = [azurerm_key_vault_access_policy.identity, azurerm_key_vault_access_policy.current]
+}
+
 resource "azurerm_key_vault_secret" "redis_connection" {
   count           = local.redis_enabled ? 1 : 0
   name            = "honua-redis-connection"
@@ -267,6 +284,12 @@ resource "azurerm_container_app" "this" {
     identity            = azurerm_user_assigned_identity.this.id
   }
 
+  secret {
+    name                = "connection-encryption-master-key"
+    key_vault_secret_id = azurerm_key_vault_secret.master_key.id
+    identity            = azurerm_user_assigned_identity.this.id
+  }
+
   dynamic "secret" {
     for_each = toset(local.redis_enabled ? ["redis"] : [])
     content {
@@ -320,7 +343,7 @@ resource "azurerm_container_app" "this" {
 
       env {
         name        = "Security__ConnectionEncryption__MasterKey"
-        secret_name = "admin-password"
+        secret_name = "connection-encryption-master-key"
       }
 
       env {

@@ -174,7 +174,19 @@ variable "admin_password" {
 
   validation {
     condition     = length(var.admin_password) >= 32
-    error_message = "admin_password must be at least 32 characters (it is also used as Security__ConnectionEncryption__MasterKey)."
+    error_message = "admin_password must be at least 32 characters."
+  }
+}
+
+variable "connection_encryption_master_key" {
+  description = "Master key for Honua connection encryption (Security__ConnectionEncryption__MasterKey). Explicitly set null to auto-generate an independent key for a new deployment. Existing deployments must supply their current key before upgrading; see the module README."
+  type        = string
+  sensitive   = true
+  nullable    = true
+
+  validation {
+    condition     = var.connection_encryption_master_key == null || length(var.connection_encryption_master_key) >= 32
+    error_message = "connection_encryption_master_key must be at least 32 characters when set."
   }
 }
 

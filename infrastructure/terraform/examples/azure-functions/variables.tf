@@ -22,6 +22,13 @@ variable "honua_admin_password" {
   sensitive   = true
 }
 
+variable "honua_connection_encryption_master_key" {
+  description = "Required connection-key decision. Set null only for a new deployment; existing deployments must set their current key before upgrading."
+  type        = string
+  sensitive   = true
+  nullable    = true
+}
+
 variable "db_admin_password" {
   description = "PostgreSQL admin password. Set for deterministic integration tests."
   type        = string

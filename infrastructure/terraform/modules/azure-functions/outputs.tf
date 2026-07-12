@@ -84,6 +84,11 @@ output "db_connection_string" {
   sensitive = true
 }
 
+output "connection_encryption_master_key_secret_id" {
+  description = "ID of the Key Vault secret containing the connection encryption master key."
+  value       = azurerm_key_vault_secret.master_key.id
+}
+
 output "redis_connection_string" {
   value     = local.redis_connection
   sensitive = true

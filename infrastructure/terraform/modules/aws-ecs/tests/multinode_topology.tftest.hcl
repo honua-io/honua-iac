@@ -49,8 +49,9 @@ mock_provider "random" {}
 mock_provider "null" {}
 
 variables {
-  image          = "ghcr.io/honua-io/honua-server:v1.5.0"
-  admin_password = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  image                            = "ghcr.io/honua-io/honua-server:v1.5.0"
+  admin_password                   = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  connection_encryption_master_key = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
   existing_vpc_id             = "vpc-0123456789abcdef0"
   existing_vpc_cidr           = "10.0.0.0/16"
@@ -67,6 +68,29 @@ variables {
 
 run "single_instance_default_is_safe" {
   command = plan
+
+  assert {
+    condition     = aws_secretsmanager_secret_version.master_key.secret_string == var.connection_encryption_master_key
+    error_message = "The connection encryption secret must contain the independent master key."
+  }
+
+  assert {
+    condition     = aws_secretsmanager_secret_version.master_key.secret_string != aws_secretsmanager_secret_version.admin_password.secret_string
+    error_message = "The connection encryption key must not alias the admin password."
+  }
+}
+
+run "connection_encryption_key_is_generated_when_unset" {
+  command = plan
+
+  variables {
+    connection_encryption_master_key = null
+  }
+
+  assert {
+    condition     = length(random_password.master_key) == 1
+    error_message = "An independent connection encryption key must be generated when no key is provided."
+  }
 }
 
 run "reserved_runtime_env_cannot_bypass_typed_inputs" {

@@ -203,5 +203,21 @@ assert_violation_detected 'azure-cache-source-execution' \
 assert_violation_detected 'helm-provider-kubernetes-attribute' \
   'examples/observability/main.tf' "  kubernetes = ${OPEN_BRACE}"
 
+# Connection-encryption key migration must fail closed. Adding a default turns
+# omission into a silent key replacement on upgrade, so the custom contract
+# guard must reject it even when all external scanners report success.
+REQUIRED_KEY_FIXTURE="$TMP_DIR/violation-connection-encryption-key-required-input"
+cp -a "$FIXTURE_ROOT" "$REQUIRED_KEY_FIXTURE"
+sed -i '/variable "connection_encryption_master_key" {/a\  default = null' \
+  "$REQUIRED_KEY_FIXTURE/modules/aws-ecs/variables.tf"
+run_gate "true" 0 0 0 "$REQUIRED_KEY_FIXTURE"
+if [[ "$GATE_EXIT_CODE" -eq 0 ]]; then
+  echo "[ERROR] Policy gate accepted a defaulted connection-encryption key input" >&2
+  cat "$GATE_OUTPUT_FILE" >&2
+  exit 1
+fi
+assert_output_contains 'Policy check failed \(connection-encryption-key-required-input\)'
+rm -rf "$REQUIRED_KEY_FIXTURE"
+
 echo "[INFO] terraform-policy-gate strict/non-strict regression tests passed"
 echo "[INFO] terraform-policy-gate custom security-guard negative tests passed"

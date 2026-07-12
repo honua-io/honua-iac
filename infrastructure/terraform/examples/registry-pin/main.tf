@@ -19,8 +19,9 @@ module "honua" {
   #checkov:skip=CKV_TF_2: Pinned to the trunk branch until the first SemVer release tag is cut; the comment above documents bumping ?ref= to an immutable vX.Y.Z tag on release.
   source = "git::https://github.com/honua-io/honua-iac.git//infrastructure/terraform/modules/aws-ecs?ref=trunk"
 
-  environment    = var.environment
-  image          = var.honua_image
-  admin_password = var.honua_admin_password
-  enable_postgis = true
+  environment                      = var.environment
+  image                            = var.honua_image
+  admin_password                   = var.honua_admin_password
+  connection_encryption_master_key = var.honua_connection_encryption_master_key
+  enable_postgis                   = true
 }

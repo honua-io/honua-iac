@@ -16,14 +16,15 @@ Consume a published module by Git source at a tag:
 
 ```hcl
 module "honua" {
-  source = "git::https://github.com/honua-io/honua-iac.git//infrastructure/terraform/modules/aws-ecs?ref=v0.1.0"
+  source = "git::https://github.com/honua-io/honua-iac.git//infrastructure/terraform/modules/aws-ecs?ref=trunk"
+  connection_encryption_master_key = null # New deployments only; upgrades must supply the current key
   # ...module inputs...
 }
 ```
 
-Swap `aws-ecs` for any Tier 1 / Tier 2 module name and `v0.1.0` for the tag you
-want to pin. Run `terraform init` (or `terraform init -upgrade` to move to a
-newer tag).
+Swap `aws-ecs` for any Tier 1 / Tier 2 module name. Once releases exist,
+replace `trunk` with a tag that contains the required connection-key input. Run
+`terraform init` (or `terraform init -upgrade` to move to a newer tag).
 
 > No SemVer tag has been cut yet, so `?ref=v0.1.0` will not resolve today. Until
 > the first tag is published (see [Release process](#release-process)), pin

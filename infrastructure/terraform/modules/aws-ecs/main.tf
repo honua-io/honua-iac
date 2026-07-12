@@ -58,6 +58,7 @@ locals {
   canary_weight              = local.canary_enabled ? var.canary_weight_percentage : 0
   primary_weight             = local.canary_enabled ? 100 - local.canary_weight : 100
   effective_canary_image     = trimspace(var.canary_image) != "" ? var.canary_image : var.image
+  master_key                 = var.connection_encryption_master_key != null ? var.connection_encryption_master_key : random_password.master_key[0].result
   runtime_environment = merge({
     Deployment__Mode      = var.deployment_mode
     FileStorage__Provider = var.file_storage_provider
@@ -89,7 +90,7 @@ locals {
     },
     {
       name      = "Security__ConnectionEncryption__MasterKey"
-      valueFrom = aws_secretsmanager_secret.admin_password.arn
+      valueFrom = aws_secretsmanager_secret.master_key.arn
     }
     ], local.redis_enabled ? [
     {
@@ -798,6 +799,7 @@ resource "aws_iam_policy" "secrets" {
         Resource = compact([
           aws_secretsmanager_secret.db_connection.arn,
           aws_secretsmanager_secret.admin_password.arn,
+          aws_secretsmanager_secret.master_key.arn,
           local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null
         ])
       },
@@ -824,6 +826,13 @@ resource "random_password" "db" {
   lifecycle {
     ignore_changes = [length, special, override_special]
   }
+}
+
+resource "random_password" "master_key" {
+  count            = var.connection_encryption_master_key == null ? 1 : 0
+  length           = 32
+  special          = true
+  override_special = "#%*()-_=+[]{}:?"
 }
 
 resource "random_password" "redis_auth" {
@@ -992,6 +1001,20 @@ resource "aws_secretsmanager_secret_version" "admin_password" {
   secret_string = var.admin_password
 }
 
+#checkov:skip=CKV2_AWS_57: Secrets rotation is handled through the Honua key-rotation procedure.
+resource "aws_secretsmanager_secret" "master_key" {
+  #checkov:skip=CKV2_AWS_57: Secrets rotation is handled through the Honua key-rotation procedure.
+  name_prefix = "${local.name}-connection-encryption-"
+  description = "Honua connection-encryption master key (independent of the admin password)"
+  kms_key_id  = local.kms_key_arn
+  tags        = local.tags
+}
+
+resource "aws_secretsmanager_secret_version" "master_key" {
+  secret_id     = aws_secretsmanager_secret.master_key.id
+  secret_string = local.master_key
+}
+
 #checkov:skip=CKV2_AWS_57: Secrets rotation is handled outside the module.
 resource "aws_secretsmanager_secret" "redis_connection" {
   #checkov:skip=CKV2_AWS_57: Secrets rotation is handled outside the module.
@@ -1044,6 +1067,7 @@ resource "aws_ecs_task_definition" "this" {
   depends_on = [
     aws_secretsmanager_secret_version.db_connection,
     aws_secretsmanager_secret_version.admin_password,
+    aws_secretsmanager_secret_version.master_key,
     aws_secretsmanager_secret_version.redis_connection
   ]
 
@@ -1087,6 +1111,7 @@ resource "aws_ecs_task_definition" "canary" {
   depends_on = [
     aws_secretsmanager_secret_version.db_connection,
     aws_secretsmanager_secret_version.admin_password,
+    aws_secretsmanager_secret_version.master_key,
     aws_secretsmanager_secret_version.redis_connection
   ]
 

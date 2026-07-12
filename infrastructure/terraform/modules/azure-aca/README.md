@@ -28,6 +28,7 @@ module "honua" {
   location       = "eastus"
   image          = "ghcr.io/honua-io/honua-server:v1.2.3-aot"
   admin_password = var.honua_admin_password
+  connection_encryption_master_key = null # Deliberate auto-generation for this new deployment
   enable_postgis = true  # Required — Honua needs PostGIS + PostGIS Raster
 
   additional_env = {
@@ -58,10 +59,11 @@ module "honua" {
   deployment_mode  = "MultiNode"
 
   # Database
-  admin_password                = var.honua_admin_password
-  db_sku_name                   = "GP_Standard_D2s_v3"   # General Purpose, production-grade
-  db_storage_mb                 = 65536                   # 64 GB
-  db_version                    = "16"
+  admin_password                   = var.honua_admin_password
+  connection_encryption_master_key = var.honua_connection_encryption_master_key
+  db_sku_name                      = "GP_Standard_D2s_v3"   # General Purpose, production-grade
+  db_storage_mb                    = 65536                   # 64 GB
+  db_version                       = "16"
   db_geo_redundant_backup_enabled = true
   enable_postgis                = true
 
@@ -105,6 +107,7 @@ module "honua" {
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `image` | Required | Container image. Pin to an immutable release tag or digest. AOT builds are recommended. |
+| `connection_encryption_master_key` | Required (nullable) | Fail-closed connection-key decision. Set `null` explicitly only for a new deployment; existing deployments must supply their current key as described below. |
 | `container_cpu` | 0.5 | CPU cores (0.25, 0.5, 1.0, 2.0, 4.0). |
 | `container_memory` | `"1Gi"` | Memory with `Gi` suffix (for example `1Gi`, `1.5Gi`). |
 | `min_replicas` / `max_replicas` | 1 / 1 | Scaling range. Any value greater than one requires the safe MultiNode topology. |
@@ -126,6 +129,16 @@ module "honua" {
 | `log_analytics_enabled` | true | Enable Log Analytics workspace. |
 
 See `variables.tf` for the complete list.
+
+## Upgrade from the aliased connection key
+
+Adding this required input is an intentionally breaking-but-safe module contract. Omission fails planning instead of silently replacing a deployed key. Earlier module versions used `admin_password` as `Security__ConnectionEncryption__MasterKey`. To avoid making existing encrypted connection records unreadable:
+
+1. Before the first apply with this module version, set `connection_encryption_master_key` to the deployment's current connection encryption key. For deployments created by an earlier module version, that value is the current `admin_password`.
+2. Apply and verify that the Container App now references the separate Key Vault secret while its value remains unchanged.
+3. Rotate the key only with Honua's supported key rotation and re-encryption procedure. Do not rotate it by changing this Terraform input alone.
+
+Brand-new deployments must set the input explicitly to `null`; Terraform then generates and stores an independent 32-character key. Never use `null` while upgrading an existing deployment.
 
 ## Key Vault networking
 

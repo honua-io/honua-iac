@@ -31,7 +31,15 @@ modules. These notes are staged so the release can be cut with a single tag
 push; until `git tag v0.1.0 && git push origin v0.1.0` is run (see the release
 process in [`docs/module-versioning.md`](docs/module-versioning.md)), no
 `v0.1.0` tag exists, so `?ref=v0.1.0` will not resolve — pin `?ref=trunk` in the
-meantime. No module inputs or outputs changed in this release.
+meantime.
+
+### Breaking changes
+
+- `aws-ecs`, `azure-aca`, and `azure-functions` now require an explicit,
+  nullable `connection_encryption_master_key` input. Set `null` only for a new
+  deployment; existing deployments must pass their current key before upgrade.
+  This fail-closed contract prevents an omitted input from silently replacing
+  the key used to decrypt stored connections.
 
 ### aws-ecs
 

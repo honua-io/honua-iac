@@ -112,8 +112,16 @@ jobs:
 
       - name: Terraform init/validate (selected roots)
         shell: bash
+        env:
+          # Validate the Git-source consumer against the exact PR head (or push
+          # commit), not the older trunk contract that the checked-in operator
+          # example intentionally pins between releases.
+          HONUA_REGISTRY_PIN_VALIDATION_REF: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
+
+          sed -i "/modules\/aws-ecs?ref=/s/ref=trunk/ref=${HONUA_REGISTRY_PIN_VALIDATION_REF}/" \
+            infrastructure/terraform/examples/registry-pin/main.tf
 
           roots=(
             "infrastructure/terraform/bootstrap/azure-aca"

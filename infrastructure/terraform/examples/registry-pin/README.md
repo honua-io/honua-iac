@@ -14,7 +14,7 @@ from the operator `examples/aws` stack (which uses a relative `source` path).
 
 ```bash
 cp terraform.tfvars.example terraform.tfvars
-# edit terraform.tfvars: set honua_image and honua_admin_password
+# edit terraform.tfvars: set the image, admin password, and required connection-key decision
 terraform -chdir=infrastructure/terraform/examples/registry-pin init
 terraform -chdir=infrastructure/terraform/examples/registry-pin plan
 ```

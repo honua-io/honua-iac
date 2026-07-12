@@ -104,6 +104,13 @@ resource "random_password" "db" {
   override_special = "#%*()-_=+[]{}:?"
 }
 
+resource "random_password" "master_key" {
+  count            = var.connection_encryption_master_key == null ? 1 : 0
+  length           = 32
+  special          = true
+  override_special = "#%*()-_=+[]{}:?"
+}
+
 locals {
   db_password          = var.db_admin_password != null ? var.db_admin_password : (local.db_use_existing ? "" : random_password.db[0].result)
   db_server_fqdn       = local.db_use_existing ? var.existing_db_fqdn : azurerm_postgresql_flexible_server.this[0].fqdn
@@ -111,6 +118,7 @@ locals {
   redis_enabled        = var.redis_enabled || var.redis_connection_string != ""
   redis_create         = var.redis_enabled && var.redis_connection_string == ""
   redis_connection     = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? azurerm_redis_cache.this[0].primary_connection_string : "")
+  master_key           = var.connection_encryption_master_key != null ? var.connection_encryption_master_key : random_password.master_key[0].result
 }
 
 #checkov:skip=CKV2_AZURE_57: Private endpoints are configured outside this module.
@@ -250,6 +258,18 @@ resource "azurerm_key_vault_secret" "admin_password" {
 
 #checkov:skip=CKV_AZURE_41: Secret expiration is managed by the deployment environment.
 #checkov:skip=CKV_AZURE_114: Secret content type is not required for runtime resolution.
+resource "azurerm_key_vault_secret" "master_key" {
+  #checkov:skip=CKV_AZURE_41: Secret expiration is managed by the deployment environment.
+  #checkov:skip=CKV_AZURE_114: Secret content type is not required for runtime resolution.
+  name         = "connection-encryption-master-key"
+  value        = local.master_key
+  key_vault_id = azurerm_key_vault.this.id
+
+  depends_on = [azurerm_key_vault_access_policy.terraform]
+}
+
+#checkov:skip=CKV_AZURE_41: Secret expiration is managed by the deployment environment.
+#checkov:skip=CKV_AZURE_114: Secret content type is not required for runtime resolution.
 resource "azurerm_key_vault_secret" "redis_connection" {
   #checkov:skip=CKV_AZURE_41: Secret expiration is managed by the deployment environment.
   #checkov:skip=CKV_AZURE_114: Secret content type is not required for runtime resolution.
@@ -270,7 +290,7 @@ locals {
     AzureWebJobsStorage                       = azurerm_storage_account.this.primary_connection_string
     ConnectionStrings__DefaultConnection      = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.connection_string.versionless_id})"
     HONUA_ADMIN_PASSWORD                      = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.admin_password.versionless_id})"
-    Security__ConnectionEncryption__MasterKey = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.admin_password.versionless_id})"
+    Security__ConnectionEncryption__MasterKey = "@Microsoft.KeyVault(SecretUri=${azurerm_key_vault_secret.master_key.versionless_id})"
     HONUA_SERVE_ADMIN_UI                      = var.serve_admin_ui ? "true" : "false"
     HONUA_ADMIN_UI                            = var.serve_admin_ui ? "true" : "false"
     HONUA_OBSERVABILITY                       = "true"
