@@ -21,7 +21,7 @@ That snippet is replaced with the resolvable Git-source form documented in
 
 ```hcl
 module "honua" {
-  source = "git::https://github.com/honua-io/honua-iac.git//infrastructure/terraform/modules/aws-ecs?ref=v0.1.0"
+  source = "git::https://github.com/honua-io/honua-iac.git//infrastructure/terraform/modules/aws-ecs?ref=trunk"
   connection_encryption_master_key = null # New deployments only; upgrades must supply the current key
   # ...module inputs...
 }
@@ -48,7 +48,7 @@ publish-candidate module by Git source at a tag, for example:
 
 ```hcl
 module "honua" {
-  source = "git::https://github.com/honua-io/honua-iac.git//infrastructure/terraform/modules/aws-ecs?ref=v0.1.0"
+  source = "git::https://github.com/honua-io/honua-iac.git//infrastructure/terraform/modules/aws-ecs?ref=trunk"
   connection_encryption_master_key = null # New deployments only; upgrades must supply the current key
   # ...
 }
