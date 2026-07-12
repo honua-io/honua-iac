@@ -125,10 +125,10 @@ variable "admin_password" {
 }
 
 variable "connection_encryption_master_key" {
-  description = "Master key for Honua connection encryption (Security__ConnectionEncryption__MasterKey). Leave null to auto-generate an independent key for new deployments. Existing deployments must pin their current key before upgrading; see the module README."
+  description = "Master key for Honua connection encryption (Security__ConnectionEncryption__MasterKey). Explicitly set null to auto-generate an independent key for a new deployment. Existing deployments must supply their current key before upgrading; see the module README."
   type        = string
   sensitive   = true
-  default     = null
+  nullable    = true
 
   validation {
     condition     = var.connection_encryption_master_key == null || length(var.connection_encryption_master_key) >= 32

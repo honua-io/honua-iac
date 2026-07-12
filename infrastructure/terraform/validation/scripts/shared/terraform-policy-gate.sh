@@ -186,6 +186,39 @@ assert_regex_present() {
   exit 1
 }
 
+assert_required_nullable_variable() {
+  local file="$1"
+  local variable_name="$2"
+  local label="$3"
+
+  if [[ ! -f "$file" ]]; then
+    log_error "Policy check failed ($label): file not found: $file"
+    exit 1
+  fi
+
+  if awk -v target="$variable_name" '
+    $0 ~ "^[[:space:]]*variable[[:space:]]+\"" target "\"[[:space:]]*\\{" {
+      found = 1
+      in_block = 1
+      next
+    }
+    in_block && /^[[:space:]]*default[[:space:]]*=/ { has_default = 1 }
+    in_block && /^[[:space:]]*nullable[[:space:]]*=[[:space:]]*true[[:space:]]*$/ { nullable_true = 1 }
+    in_block && /^[[:space:]]*}[[:space:]]*$/ {
+      closed = 1
+      in_block = 0
+    }
+    END {
+      exit !(found && closed && nullable_true && !has_default)
+    }
+  ' "$file"; then
+    return 0
+  fi
+
+  log_error "Policy check failed ($label): variable '$variable_name' must be required (no default) and explicitly nullable"
+  exit 1
+}
+
 run_custom_policy_checks() {
   log_info "Running custom policy checks"
 
@@ -222,6 +255,22 @@ run_custom_policy_checks() {
   assert_regex_present 'minimum_tls_version[[:space:]]*=[[:space:]]*"1\.2"' "$ROOT/modules/azure-aca/main.tf" "azure-aca-redis-tls12"
   assert_regex_present 'minimum_tls_version[[:space:]]*=[[:space:]]*"1\.2"' "$ROOT/modules/azure-data/main.tf" "azure-data-redis-tls12"
   assert_regex_present 'minimum_tls_version[[:space:]]*=[[:space:]]*"1\.2"' "$ROOT/modules/azure-functions/main.tf" "azure-functions-redis-tls12"
+
+  local connection_key_contract_files=(
+    "$ROOT/modules/aws-ecs/variables.tf:connection_encryption_master_key"
+    "$ROOT/modules/azure-aca/variables.tf:connection_encryption_master_key"
+    "$ROOT/modules/azure-functions/variables.tf:connection_encryption_master_key"
+    "$ROOT/examples/aws/variables.tf:honua_connection_encryption_master_key"
+    "$ROOT/examples/azure/variables.tf:honua_connection_encryption_master_key"
+    "$ROOT/examples/azure-functions/variables.tf:honua_connection_encryption_master_key"
+    "$ROOT/examples/registry-pin/variables.tf:honua_connection_encryption_master_key"
+  )
+  local contract_entry contract_file contract_variable
+  for contract_entry in "${connection_key_contract_files[@]}"; do
+    contract_file="${contract_entry%:*}"
+    contract_variable="${contract_entry##*:}"
+    assert_required_nullable_variable "$contract_file" "$contract_variable" "connection-encryption-key-required-input"
+  done
 
   assert_regex_present 'multi_replica_enabled[[:space:]]*=[[:space:]]*var\.desired_count > 1 \|\| var\.max_capacity > 1' "$ROOT/modules/aws-ecs/main.tf" "aws-ecs-multinode-scale-detection"
   assert_regex_present 'condition[[:space:]]*=[[:space:]]*!local\.multi_replica_enabled \|\| local\.multi_node_topology_ready' "$ROOT/modules/aws-ecs/main.tf" "aws-ecs-multinode-precondition"

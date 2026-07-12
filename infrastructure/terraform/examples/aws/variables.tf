@@ -47,10 +47,10 @@ variable "honua_admin_password" {
 }
 
 variable "honua_connection_encryption_master_key" {
-  description = "Optional independent connection encryption master key. Leave null for new deployments; existing deployments must set their current key before upgrading."
+  description = "Required connection-key decision. Set null only for a new deployment; existing deployments must set their current key before upgrading."
   type        = string
   sensitive   = true
-  default     = null
+  nullable    = true
 }
 
 variable "db_password" {

@@ -1,5 +1,9 @@
 # Copy to terraform.tfvars and fill in. Never commit terraform.tfvars.
-region               = "us-west-2"
-environment          = "dev"
-honua_image          = "123456789012.dkr.ecr.us-west-2.amazonaws.com/honua-server:v1.2.3-ecs-aot"
-honua_admin_password = "change-me-use-a-strong-password"
+region                                 = "us-west-2"
+environment                            = "dev"
+honua_image                            = "123456789012.dkr.ecr.us-west-2.amazonaws.com/honua-server:v1.2.3-ecs-aot"
+honua_admin_password                   = "change-me-use-a-strong-password"
+
+# Required, fail-closed decision. Use null only for a brand-new deployment.
+# Existing deployments must supply their current connection encryption key.
+honua_connection_encryption_master_key = null

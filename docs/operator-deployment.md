@@ -89,6 +89,7 @@ Operators who template their own root module (instead of using the in-repo
 ```hcl
 module "honua" {
   source = "git::https://github.com/honua-io/honua-iac.git//infrastructure/terraform/modules/aws-ecs?ref=v0.1.0"
+  connection_encryption_master_key = null # New deployments only; upgrades must supply the current key
   # ...module inputs...
 }
 ```
