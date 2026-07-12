@@ -99,6 +99,11 @@ output "admin_password_secret_arn" {
   value       = aws_secretsmanager_secret.admin_password.arn
 }
 
+output "connection_encryption_master_key_secret_arn" {
+  description = "Secrets Manager ARN for the independent connection-encryption master key."
+  value       = aws_secretsmanager_secret.master_key.arn
+}
+
 output "certificate_arn" {
   description = "ACM certificate ARN in use (if any)."
   value       = local.certificate_arn != "" ? local.certificate_arn : null

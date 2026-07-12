@@ -105,6 +105,7 @@ module "honua" {
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `image` | Required | Container image. Pin to an immutable release tag or digest. AOT builds are recommended. |
+| `connection_encryption_master_key` | `null` | Independent key for encrypted Honua connection records. New deployments generate one automatically; existing deployments must follow the upgrade procedure below. |
 | `container_cpu` | 0.5 | CPU cores (0.25, 0.5, 1.0, 2.0, 4.0). |
 | `container_memory` | `"1Gi"` | Memory with `Gi` suffix (for example `1Gi`, `1.5Gi`). |
 | `min_replicas` / `max_replicas` | 1 / 1 | Scaling range. Any value greater than one requires the safe MultiNode topology. |
@@ -126,6 +127,16 @@ module "honua" {
 | `log_analytics_enabled` | true | Enable Log Analytics workspace. |
 
 See `variables.tf` for the complete list.
+
+## Upgrade from the aliased connection key
+
+Earlier module versions used `admin_password` as `Security__ConnectionEncryption__MasterKey`. To avoid making existing encrypted connection records unreadable:
+
+1. Before the first apply with this module version, set `connection_encryption_master_key` to the deployment's current connection encryption key. For deployments created by an earlier module version, that value is the current `admin_password`.
+2. Apply and verify that the Container App now references the separate Key Vault secret while its value remains unchanged.
+3. Rotate the key only with Honua's supported key rotation and re-encryption procedure. Do not rotate it by changing this Terraform input alone.
+
+New deployments can leave the input as `null`; Terraform generates and stores an independent 32-character key.
 
 ## Key Vault networking
 

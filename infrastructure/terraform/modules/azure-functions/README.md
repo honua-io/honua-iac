@@ -85,6 +85,7 @@ module "honua" {
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `image` | Required | Container image. Pin to an immutable release tag or digest. Prefer AOT builds; use JIT images only for debug fallback. |
+| `connection_encryption_master_key` | `null` | Independent key for encrypted Honua connection records. New deployments generate one automatically; existing deployments must follow the upgrade procedure below. |
 | `deployment_slot_enabled` | false | Provision a staging slot for slot-based rollout workflows. |
 | `deployment_slot_name` | `staging` | Name of the optional staging slot. |
 | `deployment_slot_image` | `""` | Optional container image for the staging slot. Defaults to `image` when empty. |
@@ -99,6 +100,16 @@ module "honua" {
 | `app_insights_enabled` | true | Enable Application Insights. |
 
 See `variables.tf` for the complete list.
+
+## Upgrade from the aliased connection key
+
+Earlier module versions used `admin_password` as `Security__ConnectionEncryption__MasterKey`. To avoid making existing encrypted connection records unreadable:
+
+1. Before the first apply with this module version, set `connection_encryption_master_key` to the deployment's current connection encryption key. For deployments created by an earlier module version, that value is the current `admin_password`.
+2. Apply and verify that the Function App now references the separate Key Vault secret while its value remains unchanged.
+3. Rotate the key only with Honua's supported key rotation and re-encryption procedure. Do not rotate it by changing this Terraform input alone.
+
+New deployments can leave the input as `null`; Terraform generates and stores an independent 32-character key.
 
 ## Plan selection
 

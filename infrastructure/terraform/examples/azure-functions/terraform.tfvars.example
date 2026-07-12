@@ -13,6 +13,11 @@ honua_image = "ghcr.io/honua-io/honua-server:v1.5.0"
 # Generate: openssl rand -hex 32
 honua_admin_password = "REPLACE_WITH_STRONG_SECRET_MIN_32_CHARS"
 
+# New deployments can leave this unset so Terraform generates an independent key.
+# IMPORTANT: before upgrading an existing deployment, set this to its current
+# connection encryption key (historically the Honua admin password).
+# honua_connection_encryption_master_key = "REPLACE_WITH_CURRENT_OR_NEW_32_CHAR_KEY"
+
 tags = {
   owner      = "platform"
   costCentre = "honua"

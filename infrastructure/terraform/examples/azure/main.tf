@@ -10,6 +10,7 @@ module "honua" {
   location                                  = var.location
   image                                     = local.install_image
   admin_password                            = var.honua_admin_password
+  connection_encryption_master_key          = var.honua_connection_encryption_master_key
   db_admin_password                         = var.db_admin_password
   existing_db_fqdn                          = local.install_db_host
   existing_db_connection_string             = var.existing_db_connection_string

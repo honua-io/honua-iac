@@ -13,6 +13,7 @@ module "honua" {
   deployment_slot_name                    = var.deployment_slot_name
   deployment_slot_image                   = var.deployment_slot_image
   admin_password                          = var.honua_admin_password
+  connection_encryption_master_key        = var.honua_connection_encryption_master_key
   plan_sku_name                           = var.plan_sku_name
   db_admin_password                       = var.db_admin_password
   existing_db_fqdn                        = local.install_db_host
