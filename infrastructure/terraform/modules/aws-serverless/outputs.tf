@@ -131,8 +131,13 @@ output "pro_license_enabled" {
 }
 
 output "pro_license_secret_arn" {
-  description = "ARN of the Secrets Manager secret holding the signed Pro license envelope (null when enable_pro_license is false)."
-  value       = local.pro_license_enabled ? aws_secretsmanager_secret.pro_license[0].arn : null
+  description = "ARN of the Secrets Manager secret holding the signed Pro license envelope (null when enable_pro_license is false). This is the secret the Lambda resolves at startup, whether the module created it or adopted it via pro_license_secret_arn."
+  value       = local.pro_license_effective_secret_arn
+}
+
+output "pro_license_secret_managed_by_terraform" {
+  description = "Whether Terraform manages the license secret's VALUE. False when the envelope is staged out-of-band (pro_license_secret_arn set, or pro_license_content empty) — in that mode an apply never reads or rewrites the envelope."
+  value       = local.pro_license_manage_version
 }
 
 # --- Serverless observability outputs --------------------------------------

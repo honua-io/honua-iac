@@ -102,36 +102,53 @@ variable "redis_node_type" {
 
 # ---------------------------------------------------------------------------
 # Pro license — signed envelope delivered via Secrets Manager.
-# Off by default. When enabled, supply the secret VALUE via a gitignored
-# terraform.tfvars; NEVER commit pro_license_content / the trusted public key.
-# The live demo's <name>/license-pro secret already exists — adopt it with
-# `terraform import` rather than recreating it (see README).
+#
+# The envelope's VALUE is managed ENTIRELY OUTSIDE TERRAFORM. It is already
+# staged in the demo account at honua-demo-demo/license-pro, and this example
+# adopts that secret by ARN (pro_license_secret_arn): Terraform never receives,
+# reads, writes, or stores the envelope, and there is no terraform.tfvars
+# holding a signed license. Enabling Pro is therefore just
+# `enable_pro_license = true` — no secret material on any workstation.
+#
+# The trusted PUBLIC key is NOT a secret: it only verifies a signature and
+# cannot mint a license. It is a plain default below, which is what makes the
+# "no tfvars" flow possible. The corresponding PRIVATE signing seed lives in
+# honua-demo-demo/license-signing-key and must never be read by this config.
 # ---------------------------------------------------------------------------
 
 variable "enable_pro_license" {
-  description = "Deliver a signed Pro license to the demo Lambda via Secrets Manager (<name>/license-pro). When off the server runs Community. Requires pro_license_content and pro_license_trusted_public_key when enabled — supply them via a gitignored terraform.tfvars."
+  description = "Deliver the signed Pro license to the demo Lambda via Secrets Manager. When off the server runs Community. The envelope itself is staged out-of-band and adopted via pro_license_secret_arn, so enabling Pro needs no secret material in tfvars."
   type        = bool
   default     = false
 }
 
+# Default: the live, out-of-band-staged demo envelope. Terraform only ever
+# learns this ARN — never the envelope behind it.
+variable "pro_license_secret_arn" {
+  description = "ARN of the EXISTING Secrets Manager secret holding the demo's signed Pro license envelope, managed outside Terraform. The module creates no secret and no version for it; it only injects Licensing__LicenseContentSecretRef and grants the Lambda role GetSecretValue on this ARN."
+  type        = string
+  default     = "arn:aws:secretsmanager:us-west-2:585192672263:secret:honua-demo-demo/license-pro-53rTHr"
+}
+
 variable "pro_license_content" {
-  description = "The signed Pro license envelope JSON (hyphen-free keyId envelope, e.g. keyId=honuademo2026q2). Stored in Secrets Manager, referenced by Licensing__LicenseContentSecretRef. Required when enable_pro_license is true. NEVER commit this value — supply via a gitignored terraform.tfvars."
+  description = "ESCAPE HATCH — leave empty. The demo's envelope is staged out-of-band and adopted via pro_license_secret_arn; supplying it here would put a signed license into tfvars/state, which is exactly what the adopt-by-ARN flow exists to avoid. Mutually exclusive with pro_license_secret_arn."
   type        = string
   default     = ""
   sensitive   = true
 }
 
 variable "pro_license_key_id" {
-  description = "The license signing keyId as relabeled in the envelope (hyphen-free so it is a legal Lambda env var name segment: Licensing__TrustedKeys__<keyId>). Defaults to the demo key honuademo2026q2."
+  description = "The license signing keyId as relabeled in the envelope (hyphen-free so it is a legal Lambda env var name segment: Licensing__TrustedKeys__<keyId>). Must match the staged envelope's keyId exactly or the server falls back to Community."
   type        = string
   default     = "honuademo2026q2"
 }
 
+# NOT sensitive: a public key verifies a signature, it cannot create one. Marking
+# it sensitive would only redact it from plan output while protecting nothing.
 variable "pro_license_trusted_public_key" {
-  description = "The Ed25519 public key (base64url, with the base64url: prefix) that verifies the Pro license signature. Injected as Licensing__TrustedKeys__<pro_license_key_id>. Required when enable_pro_license is true — supply via a gitignored terraform.tfvars."
+  description = "The Ed25519 PUBLIC key (base64url, with the base64url: prefix) that verifies the Pro license signature. Injected as Licensing__TrustedKeys__<pro_license_key_id>. Defaults to the demo's published key — safe in config; it is not secret."
   type        = string
-  default     = ""
-  sensitive   = true
+  default     = "base64url:Y2XgDBncW5w6n7L3YG-T6HxX51DGybWazt0_gubk30k"
 }
 
 # ---------------------------------------------------------------------------

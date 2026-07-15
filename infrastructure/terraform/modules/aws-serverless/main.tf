@@ -104,9 +104,35 @@ locals {
   # Pro license delivered via Secrets Manager: the server resolves the ~2KB signed
   # envelope from the secret reference at startup (it does not fit Lambda's 4KB env
   # limit inline) and trusts the relabeled, hyphen-free keyId's public key.
-  pro_license_enabled = var.enable_pro_license
+  #
+  # Ownership of the secret and of its VALUE are decoupled, because a signed
+  # envelope is a credential that should not have to transit a terraform.tfvars,
+  # a plan file, or state to be deployed. Three modes:
+  #
+  #   1. pro_license_secret_arn set  -> ADOPT. The module manages neither the
+  #      secret nor its value; it only wires the reference + IAM grant. The
+  #      envelope is staged out-of-band. Nothing about the license is in state,
+  #      so Terraform cannot delete or rewrite it.
+  #   2. pro_license_content set     -> MANAGE BOTH. The module creates
+  #      <name>/license-pro and writes the envelope as its version (legacy
+  #      behaviour; unchanged for existing callers).
+  #   3. neither set                 -> MANAGE METADATA ONLY. The module owns the
+  #      secret (typically `terraform import`ed) but writes no version, leaving
+  #      the value under out-of-band control.
+  #
+  # In modes 1 and 3 Terraform never reads the envelope: the value is not a
+  # Terraform input, so it cannot leak into state or a plan artifact.
+  pro_license_enabled        = var.enable_pro_license
+  pro_license_adopted        = local.pro_license_enabled && trimspace(var.pro_license_secret_arn) != ""
+  pro_license_manage_secret  = local.pro_license_enabled && !local.pro_license_adopted
+  pro_license_manage_version = local.pro_license_manage_secret && trimspace(var.pro_license_content) != ""
+  pro_license_effective_secret_arn = (
+    local.pro_license_adopted ? trimspace(var.pro_license_secret_arn) :
+    local.pro_license_manage_secret ? aws_secretsmanager_secret.pro_license[0].arn :
+    null
+  )
   pro_license_environment = local.pro_license_enabled ? {
-    Licensing__LicenseContentSecretRef                  = "aws:secretsmanager:${aws_secretsmanager_secret.pro_license[0].arn}"
+    Licensing__LicenseContentSecretRef                  = "aws:secretsmanager:${local.pro_license_effective_secret_arn}"
     "Licensing__TrustedKeys__${var.pro_license_key_id}" = var.pro_license_trusted_public_key
   } : {}
   # When GP-on-Batch is enabled, surface the DURABLE substrate to the server as a
@@ -457,7 +483,7 @@ resource "aws_iam_policy" "lambda_secrets" {
           aws_secretsmanager_secret.admin_password.arn,
           aws_secretsmanager_secret.master_key.arn,
           local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null,
-          local.pro_license_enabled ? aws_secretsmanager_secret.pro_license[0].arn : null
+          local.pro_license_effective_secret_arn
         ])
       }
     ]
@@ -529,17 +555,23 @@ resource "aws_secretsmanager_secret_version" "redis_connection" {
 # resolves it via Licensing__LicenseContentSecretRef=aws:secretsmanager:<arn> at
 # startup. The envelope must carry the relabeled, hyphen-free keyId (pro_license_key_id)
 # so the matching Licensing__TrustedKeys__<keyId> env var name is legal.
+#
+# Not created when pro_license_secret_arn is set: that secret already exists and is
+# managed out-of-band, so the module adopts it by reference only (see locals).
 #checkov:skip=CKV2_AWS_57: Secrets rotation is managed outside this module; the license is rotated by re-issuing the envelope.
 resource "aws_secretsmanager_secret" "pro_license" {
   #checkov:skip=CKV2_AWS_57: Secrets rotation is managed outside this module; the license is rotated by re-issuing the envelope.
-  count       = local.pro_license_enabled ? 1 : 0
+  count       = local.pro_license_manage_secret ? 1 : 0
   name        = "${local.name}/license-pro"
   description = "Signed Honua Pro license envelope (resolved at startup via Licensing__LicenseContentSecretRef)."
   tags        = local.tags
 }
 
+# Only created when the caller hands Terraform the envelope (pro_license_content).
+# When the value is managed outside Terraform this is count 0, so an apply never
+# rewrites — or even reads — the staged envelope.
 resource "aws_secretsmanager_secret_version" "pro_license" {
-  count         = local.pro_license_enabled ? 1 : 0
+  count         = local.pro_license_manage_version ? 1 : 0
   secret_id     = aws_secretsmanager_secret.pro_license[0].id
   secret_string = var.pro_license_content
 }
@@ -616,19 +648,25 @@ resource "aws_lambda_function" "this" {
   tags = local.tags
 }
 
-# Fail the plan early (rather than at runtime) when the Pro license is enabled but the
-# envelope or its trusted public key is missing.
+# Fail the plan early (rather than at runtime) when the Pro license is enabled but
+# misconfigured.
+#
+# There is deliberately NO precondition requiring pro_license_content: an empty
+# envelope means "the value is managed outside Terraform", which is a supported and
+# preferred delivery mode. The trusted public key IS required in every mode — it is
+# not a secret (it only verifies a signature), it is safe in config, and without it
+# the server cannot validate the envelope and silently falls back to Community.
 resource "terraform_data" "pro_license_validation" {
   count = local.pro_license_enabled ? 1 : 0
 
   lifecycle {
     precondition {
-      condition     = trimspace(var.pro_license_content) != ""
-      error_message = "enable_pro_license is true but pro_license_content (the signed license envelope JSON) is empty."
+      condition     = trimspace(var.pro_license_trusted_public_key) != ""
+      error_message = "enable_pro_license is true but pro_license_trusted_public_key (the Ed25519 public key) is empty. The public key is required in every delivery mode; it is not secret and is safe to set in config."
     }
     precondition {
-      condition     = trimspace(var.pro_license_trusted_public_key) != ""
-      error_message = "enable_pro_license is true but pro_license_trusted_public_key (the Ed25519 public key) is empty."
+      condition     = !(local.pro_license_adopted && trimspace(var.pro_license_content) != "")
+      error_message = "pro_license_secret_arn and pro_license_content are mutually exclusive: pro_license_secret_arn adopts a secret whose value is managed outside Terraform, so Terraform must not also be handed the envelope. Supply exactly one."
     }
   }
 }
