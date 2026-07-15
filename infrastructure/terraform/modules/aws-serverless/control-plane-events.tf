@@ -116,7 +116,7 @@ resource "aws_iam_role_policy" "control_plane_events" {
           aws_secretsmanager_secret.connection_string.arn,
           aws_secretsmanager_secret.admin_password.arn,
           local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null,
-          local.pro_license_enabled ? aws_secretsmanager_secret.pro_license[0].arn : null
+          local.pro_license_effective_secret_arn
         ])
       },
       {

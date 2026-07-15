@@ -41,14 +41,17 @@ route53_zone_id = "ZXXXXXXXXXXXXXXXXX"
 # enable_redis    = true
 # redis_node_type = "cache.t3.micro"
 
-# Pro license via Secrets Manager. enable_pro_license=true REQUIRES the two
-# values below. NEVER commit them — keep this file's real copy (terraform.tfvars)
-# gitignored. pro_license_content is the signed envelope JSON; the trusted key
-# is the base64url: Ed25519 public key. Both are SECRETS.
-# enable_pro_license             = true
-# pro_license_key_id             = "honuademo2026q2"
-# pro_license_content            = "REPLACE_WITH_SIGNED_LICENSE_ENVELOPE_JSON"     # SECRET — do not commit
-# pro_license_trusted_public_key = "base64url:REPLACE_WITH_ED25519_PUBLIC_KEY"     # SECRET — do not commit
+# Pro license via Secrets Manager. This is the ONLY line needed: the signed
+# envelope is staged out-of-band in Secrets Manager and adopted by ARN
+# (pro_license_secret_arn defaults to the live demo secret in variables.tf), and
+# the trusted PUBLIC key is a plain default there too — a public key verifies a
+# signature, it cannot mint a license, so it is not a secret.
+#
+# Do NOT set pro_license_content here. It is an escape hatch for callers who want
+# Terraform to own the envelope; supplying it alongside pro_license_secret_arn is
+# rejected by a module precondition, and it would write a signed license into
+# tfvars and state — exactly what adopt-by-ARN exists to prevent.
+# enable_pro_license = true
 
 # Bedrock AI (WorkflowGeneration). Provisions the bedrock-runtime VPC endpoint
 # (this no-NAT VPC needs it) and the least-privilege InvokeModel grant.

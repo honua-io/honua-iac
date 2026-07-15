@@ -121,16 +121,20 @@ module "honua" {
   redis_port      = 6379
 
   # ---- Pro license (Secrets Manager) — gated on var.enable_pro_license -------
-  # Delivers the signed Pro license envelope to the Lambda via a dedicated
-  # Secrets Manager secret (<name>/license-pro), grants the role GetSecretValue
-  # on it, and injects Licensing__LicenseContentSecretRef +
-  # Licensing__TrustedKeys__<key_id>. The secret VALUE is supplied via a
-  # gitignored terraform.tfvars (pro_license_content / pro_license_trusted_public_key)
-  # — never committed. The live demo's <name>/license-pro secret already exists;
-  # adopt it with `terraform import` rather than recreating it (see README →
-  # "Import the existing license-pro secret").
+  # ADOPT-BY-ARN. The signed envelope is staged out-of-band in
+  # honua-demo-demo/license-pro; Terraform is given only that secret's ARN, so it
+  # creates no secret and no secret version and never reads the envelope. All it
+  # does is inject Licensing__LicenseContentSecretRef=aws:secretsmanager:<arn> +
+  # Licensing__TrustedKeys__<key_id> and grant the Lambda role GetSecretValue on
+  # that ARN. Consequently there is no terraform.tfvars holding a signed license,
+  # no envelope in state or in a plan file, and no `terraform import` step — and
+  # a future `enable_pro_license = false` cannot delete the envelope, because the
+  # secret was never in state to begin with.
+  #
+  # pro_license_content is deliberately NOT passed: it is mutually exclusive with
+  # pro_license_secret_arn and the module's precondition rejects supplying both.
   enable_pro_license             = var.enable_pro_license
-  pro_license_content            = var.pro_license_content
+  pro_license_secret_arn         = var.pro_license_secret_arn
   pro_license_key_id             = var.pro_license_key_id
   pro_license_trusted_public_key = var.pro_license_trusted_public_key
 
