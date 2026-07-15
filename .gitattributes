@@ -1,0 +1,17 @@
+# Terraform (and the code it embeds inline, e.g. CloudFront Function heredocs)
+# must check out LF on every platform.
+#
+# Without this, core.autocrlf=true on Windows rewrites .tf to CRLF, and any
+# inline code Terraform ships to a provider carries CRLF with it. That produces
+# a permanent phantom diff against resources created from a LF host (CI): every
+# line reads as changed while being byte-identical apart from the terminator,
+# and Windows/Linux applies flip the resource back and forth forever.
+# Observed on aws_cloudfront_function.forwarded_host (aws-demo).
+*.tf      text eol=lf
+*.tfvars  text eol=lf
+*.tftpl   text eol=lf
+*.hcl     text eol=lf
+*.json    text eol=lf
+*.sh      text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
