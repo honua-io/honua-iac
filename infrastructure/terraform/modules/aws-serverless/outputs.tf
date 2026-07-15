@@ -131,8 +131,20 @@ output "pro_license_enabled" {
 }
 
 output "pro_license_secret_arn" {
-  description = "ARN of the Secrets Manager secret holding the signed Pro license envelope (null when enable_pro_license is false)."
-  value       = local.pro_license_enabled ? aws_secretsmanager_secret.pro_license[0].arn : null
+  description = "ARN of the Secrets Manager secret holding the signed Pro license envelope (null when enable_pro_license is false). This is the secret the Lambda resolves at startup, whether the module created it or adopted it via pro_license_secret_arn."
+  value       = local.pro_license_effective_secret_arn
+}
+
+# nonsensitive() is required and provably safe here. The value derives from
+# var.pro_license_content (sensitive), so Terraform conservatively taints it — but
+# the only operation applied is `!= ""`, so this carries exactly one bit: whether an
+# envelope was supplied to Terraform at all. It reveals nothing about the envelope
+# itself. Marking the output sensitive instead would redact a plain boolean and make
+# it useless to callers, which is the opposite of the point: this output exists so an
+# operator can assert at a glance that Terraform is NOT touching the license value.
+output "pro_license_secret_managed_by_terraform" {
+  description = "Whether Terraform manages the license secret's VALUE. False when the envelope is staged out-of-band (pro_license_secret_arn set, or pro_license_content empty) — in that mode an apply never reads or rewrites the envelope."
+  value       = nonsensitive(local.pro_license_manage_version)
 }
 
 # --- Serverless observability outputs --------------------------------------

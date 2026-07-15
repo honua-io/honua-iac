@@ -149,18 +149,26 @@ IdP), set `enable_nat_gateway = true` in `main.tf`.
 > Pro+AI demo beat and are **all gated off by default** so a stock `aws-demo`
 > apply is unchanged. The live `demo.honua.io` environment runs them **ON**,
 > applied out-of-band via the AWS CLI. The Terraform here codifies that drift;
-> because those resources already exist live, **adopt them with `terraform
-> import` (below) before any plan/apply** — do not let Terraform recreate them.
+> because the Bedrock and Redis resources already exist live, **adopt them with
+> `terraform import` (below) before any plan/apply** — do not let Terraform
+> recreate them. The Pro license secret is the exception: it is adopted **by
+> ARN**, needs no import, and is never owned by Terraform (see
+> "Pro licensing (adopt-by-ARN)").
 
-**No secret values live in Terraform.** The Pro license envelope and its
-trusted public key are supplied via a gitignored `terraform.tfvars`
-(`pro_license_content`, `pro_license_trusted_public_key`); the license is
-delivered to the Lambda by *reference* (`Licensing__LicenseContentSecretRef =
-aws:secretsmanager:<arn>`), never inline.
+**No secret values live in Terraform.** The Pro license envelope is staged
+out-of-band directly in Secrets Manager and adopted **by ARN**
+(`pro_license_secret_arn`): Terraform is handed the secret's *ARN*, never its
+*value*, so the envelope cannot land in `terraform.tfvars`, in a plan file, or
+in state. The license reaches the Lambda by *reference*
+(`Licensing__LicenseContentSecretRef = aws:secretsmanager:<arn>`), never inline.
+The trusted **public** key is a plain default in `variables.tf` — it verifies a
+signature and cannot mint a license, so it is not secret. Enabling Pro is
+therefore just `enable_pro_license = true`, with **no secret material on any
+workstation and no `terraform import` step**.
 
 | Toggle | What it adds | Live values (from the deploy record) |
 |---|---|---|
-| `enable_pro_license` | `<name>/license-pro` Secrets Manager secret; `secretsmanager:GetSecretValue` on it for the Lambda role; injects `Licensing__LicenseContentSecretRef` + `Licensing__TrustedKeys__honuademo2026q2` | secret `honua-demo-demo/license-pro`; keyId `honuademo2026q2` |
+| `enable_pro_license` | `secretsmanager:GetSecretValue` for the Lambda role on the **externally-managed** license secret; injects `Licensing__LicenseContentSecretRef` + `Licensing__TrustedKeys__honuademo2026q2`. Creates **no** secret and **no** secret version. | secret `honua-demo-demo/license-pro` (ARN default in `variables.tf`); keyId `honuademo2026q2` |
 | `enable_bedrock_ai` | least-privilege `bedrock:InvokeModel` (+ `…WithResponseStream`) on the Lambda role scoped to the Claude model's inference-profile + foundation-model ARNs; `WorkflowGeneration__*` env (provider=bedrock, region=us-west-2); the `bedrock-runtime` interface VPC endpoint this no-NAT VPC needs | model `us.anthropic.claude-sonnet-4-5-20250929-v1:0`; region `us-west-2`; endpoint `vpce-003090af73dc835fe`, SG `sg-0ac55474b410c5d34` |
 | `enable_redis` | in-VPC ElastiCache Redis (`cache.t3.micro`, port 6379); `ConnectionStrings__redis`; the Lambda 6379 egress rule | cluster `honua-demo-redis`, SG `sg-0454e3341c5de3068` |
 
@@ -177,23 +185,27 @@ here — but do not "tidy" it into a SG-reference rule.
 
 #### Import the already-live resources (do this BEFORE plan/apply)
 
-The demo's remote tfstate is currently **inaccessible** (the `backend "s3"`
-block is commented out in `versions.tf`), so a meaningful `plan`/`apply`
-against live is not possible from this checkout. When state is restored (or a
-fresh state adopts the live account), run these imports first so Terraform
-adopts the existing resources instead of trying to create duplicates. Run from
+The demo's remote tfstate **is live and readable**: `versions.tf` carries an
+active `backend "s3"` block (bucket `honua-tfstate-585192672263`, key
+`demo/aws-demo/terraform.tfstate`, region `us-east-1` — the BUCKET's region,
+deliberately different from the demo's `us-west-2`), with S3-native locking via
+`use_lockfile`. `terraform init` + `terraform plan` against live work from this
+checkout. (Earlier revisions of this README claimed state was inaccessible
+because the backend was commented out; that has not been true since #122.)
+
+Run the imports below so Terraform adopts the existing resources instead of
+trying to create duplicates. Run from
 `infrastructure/terraform/examples/aws-demo` with the toggles set in
 `terraform.tfvars`:
 
 ```bash
-# --- Pro license secret (item 5) — adopt; never recreate -------------------
-# The module manages the secret resource; import the existing live secret into
-# that address. Import by name (or full ARN). The VALUE stays in Secrets
-# Manager; pro_license_content in tfvars only needs to match it so a future
-# apply does not rewrite the version.
-terraform import \
-  'module.honua.aws_secretsmanager_secret.pro_license[0]' \
-  honua-demo-demo/license-pro
+# --- Pro license secret — NO IMPORT REQUIRED ------------------------------
+# The license secret is deliberately NOT managed by Terraform. The example
+# passes pro_license_secret_arn, so the module creates no secret and no secret
+# version for it and never reads the envelope — it only injects
+# Licensing__LicenseContentSecretRef and grants the Lambda role
+# GetSecretValue on that ARN. Nothing to import; nothing to keep in sync.
+# See "Pro licensing (adopt-by-ARN)" below.
 
 # --- Bedrock runtime VPC endpoint + its SG (item 3) ------------------------
 terraform import 'aws_vpc_endpoint.bedrock_runtime[0]'   vpce-003090af73dc835fe
@@ -223,6 +235,57 @@ Notes:
   the deploy record is `honua-demo-redis`. If the live names differ from what
   the module would generate, import maps the live id into the module address
   regardless — verify the `plan` shows no rename/replace after import.
+
+#### Pro licensing (adopt-by-ARN)
+
+The signed Pro license envelope is **managed entirely outside Terraform**. It is
+already staged in the demo account as `honua-demo-demo/license-pro`, and the
+example passes its ARN to the module via `pro_license_secret_arn`. The module
+therefore creates **no** `aws_secretsmanager_secret` and **no**
+`aws_secretsmanager_secret_version` for the license: it only injects the
+reference and grants the Lambda role `GetSecretValue` on that exact ARN.
+
+Why adopt-by-ARN rather than `terraform import`:
+
+- **The envelope never reaches Terraform.** Import would put the secret in state
+  and still require `pro_license_content` in a `terraform.tfvars` to stop a
+  future apply rewriting the version. Adopt-by-ARN needs no tfvars at all — the
+  ARN is not sensitive.
+- **Terraform cannot destroy the envelope.** The secret is not in state, so
+  `enable_pro_license = false` (or a `destroy`) cannot delete the trust asset.
+  An imported secret would be deleted by either.
+- **No prerequisite state surgery.** Enabling Pro is a plain `plan`/`apply`, so
+  the plan can be reviewed end-to-end before anything touches live.
+
+To enable Pro, set `enable_pro_license = true` in `terraform.tfvars`. Everything
+else defaults correctly in `variables.tf`:
+
+| Variable | Default | Secret? |
+|---|---|---|
+| `pro_license_secret_arn` | live `honua-demo-demo/license-pro` ARN | No — an ARN, not a value |
+| `pro_license_key_id` | `honuademo2026q2` | No |
+| `pro_license_trusted_public_key` | `base64url:Y2Xg…` | **No** — a public key verifies a signature; it cannot mint a license |
+
+The `keyId` is hyphen-free **deliberately**: it becomes the env-var name segment
+`Licensing__TrustedKeys__honuademo2026q2`, and hyphens are illegal there. It must
+match the staged envelope's `keyId` **exactly** — `FileBackedLicenseService` does
+`TrustedKeys.TryGetValue(envelope.KeyId, …)`, and a miss means the server logs a
+warning and **silently serves Community**. Do not "restore" the hyphens.
+
+The private signing seed lives in `honua-demo-demo/license-signing-key`. It is the
+trust root for all Honua licensing: never read, print, or copy it. This config
+does not need it and must never reference it.
+
+Verify Pro actually activated after an apply (the failure mode is silent):
+
+```bash
+# Expect EventId 10014 "License loaded from secret reference."
+# 10010-10013 are the silent-fallback-to-Community failures.
+aws logs filter-log-events --region us-west-2 \
+  --log-group-name /aws/lambda/honua-demo-demo-honua \
+  --start-time "$(($(date +%s) - 900))000" \
+  --filter-pattern '"License"' --query 'events[].message' --output text
+```
 
 ### Database bootstrap and migrations
 

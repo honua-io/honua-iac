@@ -100,7 +100,7 @@ output "pro_license_enabled" {
 }
 
 output "pro_license_secret_arn" {
-  description = "ARN of the Secrets Manager secret holding the signed Pro license envelope (null unless enable_pro_license). Import the existing live secret into this address — do not recreate it."
+  description = "ARN of the Secrets Manager secret holding the signed Pro license envelope (null unless enable_pro_license). The secret is managed OUTSIDE Terraform and adopted by ARN — there is nothing to import, and Terraform never reads or rewrites its value."
   value       = module.honua.pro_license_secret_arn
 }
 

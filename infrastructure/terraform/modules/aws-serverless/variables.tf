@@ -838,10 +838,33 @@ variable "enable_bedrock_ai" {
 }
 
 variable "pro_license_content" {
-  description = "The signed Pro license envelope JSON (the relabeled, hyphen-free keyId envelope, e.g. keyId=honuademo2026q2). Stored in a dedicated Secrets Manager secret and referenced by Licensing__LicenseContentSecretRef. Required when enable_pro_license is true."
+  description = "The signed Pro license envelope JSON (the relabeled, hyphen-free keyId envelope, e.g. keyId=honuademo2026q2). Stored in a dedicated Secrets Manager secret and referenced by Licensing__LicenseContentSecretRef. OPTIONAL: leave empty to keep the envelope's VALUE managed outside Terraform (staged directly in Secrets Manager). When empty, this module never reads or writes the secret's value and no aws_secretsmanager_secret_version is created. Mutually exclusive with pro_license_secret_arn."
   type        = string
   default     = ""
   sensitive   = true
+}
+
+# Adopt-by-ARN: point the module at a Secrets Manager secret that already exists
+# and is managed entirely outside Terraform (created and populated out-of-band).
+# The module then provisions NO secret and NO secret version for the license — it
+# only wires the reference into the Lambda environment
+# (Licensing__LicenseContentSecretRef) and grants the execution role
+# secretsmanager:GetSecretValue on this exact ARN.
+#
+# This is the delivery mode for signed envelopes that must never transit a
+# terraform.tfvars, a plan file, or state: Terraform learns the secret's ARN
+# (not secret) and nothing else. Because the secret is not in state, a later
+# `enable_pro_license = false` — or a `terraform destroy` — cannot delete the
+# envelope. Leave empty to have the module create and own <name>/license-pro.
+variable "pro_license_secret_arn" {
+  description = "ARN of an EXISTING Secrets Manager secret holding the signed Pro license envelope, managed outside Terraform. When set, the module creates no secret and no secret version; it only injects Licensing__LicenseContentSecretRef and grants the Lambda role GetSecretValue on this ARN. Mutually exclusive with pro_license_content. Leave empty to have the module create and own <name>/license-pro."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = trimspace(var.pro_license_secret_arn) == "" || can(regex("^arn:aws[a-zA-Z-]*:secretsmanager:", var.pro_license_secret_arn))
+    error_message = "pro_license_secret_arn must be a Secrets Manager secret ARN (arn:aws:secretsmanager:...) or empty."
+  }
 }
 
 variable "pro_license_key_id" {
