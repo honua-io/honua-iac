@@ -131,10 +131,17 @@ module "honua" {
   # a future `enable_pro_license = false` cannot delete the envelope, because the
   # secret was never in state to begin with.
   #
-  # pro_license_content is deliberately NOT passed: it is mutually exclusive with
-  # pro_license_secret_arn and the module's precondition rejects supplying both.
+  # pro_license_content is forwarded but expected to stay empty. It is mutually
+  # exclusive with pro_license_secret_arn, so setting it while the ARN default is
+  # in place trips the module's precondition and fails the PLAN — loudly, which is
+  # the point. Forwarding it (rather than dropping it) is what makes that failure
+  # loud: an unforwarded variable would be silently ignored, and a signed envelope
+  # quietly doing nothing in tfvars is precisely the failure mode this wiring
+  # exists to prevent. To use Terraform-managed content instead, set
+  # pro_license_secret_arn = "" and supply pro_license_content.
   enable_pro_license             = var.enable_pro_license
   pro_license_secret_arn         = var.pro_license_secret_arn
+  pro_license_content            = var.pro_license_content
   pro_license_key_id             = var.pro_license_key_id
   pro_license_trusted_public_key = var.pro_license_trusted_public_key
 
