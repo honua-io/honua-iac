@@ -130,8 +130,13 @@ variable "pro_license_secret_arn" {
   default     = "arn:aws:secretsmanager:us-west-2:585192672263:secret:honua-demo-demo/license-pro-53rTHr"
 }
 
+# ESCAPE HATCH — leave empty. Setting this while pro_license_secret_arn still
+# holds its default trips the module's mutual-exclusion precondition and fails
+# the plan by design. To hand Terraform the envelope instead, blank the ARN:
+#   pro_license_secret_arn = ""
+#   pro_license_content    = "<envelope json>"   # then it IS in tfvars + state
 variable "pro_license_content" {
-  description = "ESCAPE HATCH — leave empty. The demo's envelope is staged out-of-band and adopted via pro_license_secret_arn; supplying it here would put a signed license into tfvars/state, which is exactly what the adopt-by-ARN flow exists to avoid. Mutually exclusive with pro_license_secret_arn."
+  description = "ESCAPE HATCH — leave empty. The demo's envelope is staged out-of-band and adopted via pro_license_secret_arn; supplying it here puts a signed license into tfvars and state, which is what the adopt-by-ARN flow exists to avoid. Mutually exclusive with pro_license_secret_arn: setting both fails the plan. Use only by also setting pro_license_secret_arn = \"\"."
   type        = string
   default     = ""
   sensitive   = true
