@@ -43,7 +43,7 @@ terraform -chdir=infrastructure/terraform/examples/<stack> apply
 4. Verify:
 
 - Read outputs (`honua_url`, DB endpoint/FQDN)
-- Run readiness check: `curl -f <honua_url>/healthz/ready`
+- Run `HonuaClient(<honua_url>).readiness()` from the supported Python SDK.
 
 5. Destroy when needed:
 

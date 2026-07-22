@@ -73,7 +73,14 @@ HONUA_URL="$(terraform -chdir=infrastructure/terraform/examples/aws output -raw 
 poll_ready() {
   local url="$1"; local fault_epoch="$2"
   while true; do
-    if curl -fsS --max-time 5 "$url/healthz/ready" >/dev/null 2>&1; then
+    if python3 - "$url" <<'PY' >/dev/null 2>&1
+import sys
+from honua_sdk import HonuaClient
+
+with HonuaClient(sys.argv[1], timeout=5, max_retries=0) as client:
+    client.readiness()
+PY
+    then
       echo "rto_seconds=$(( $(date -u +%s) - fault_epoch ))"
       return 0
     fi

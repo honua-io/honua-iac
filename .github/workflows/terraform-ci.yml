@@ -27,6 +27,7 @@ on:
       - 'docs/devops/dr-evidence-template.json'
       - 'docs/devops/cloud-runbook-evidence-template.json'
       - 'docs/devops/examples/**'
+      - 'docs/operator-deployment.md'
       - '.github/workflows/cloud-demo-smoke.yml'
       - '.github/workflows/terraform-ci.yml'
       - '.github/workflows/terraform-manual-validation.yml'
@@ -58,6 +59,7 @@ on:
       - 'docs/devops/dr-evidence-template.json'
       - 'docs/devops/cloud-runbook-evidence-template.json'
       - 'docs/devops/examples/**'
+      - 'docs/operator-deployment.md'
       - '.github/workflows/cloud-demo-smoke.yml'
       - '.github/workflows/terraform-ci.yml'
       - '.github/workflows/terraform-manual-validation.yml'
@@ -81,6 +83,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Enforce maintained documentation command policy
+        run: |
+          if git grep -n -i -w curl -- '*.md' '*.mdx' '*.rst' '*.txt'; then
+            echo "::error::Maintained documentation must use supported SDK, CLI, or API-reference workflows."
+            exit 1
+          fi
 
       - name: Restore Terraform plugin cache
         uses: actions/cache@v4

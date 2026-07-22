@@ -159,7 +159,14 @@ Recommended rollout sequence:
 
 1. Apply with `canary_enabled = true` and `canary_weight_percentage = 0`.
 2. Verify the canary directly through the ALB header route:
-   `curl -H "X-Honua-Canary: always" https://<alb-url>/healthz/ready`
+
+   ```python
+   from honua_sdk import HonuaClient
+
+   with HonuaClient("https://<alb-url>") as client:
+       print(client.readiness(extra_headers={"X-Honua-Canary": "always"}))
+   ```
+
 3. Increase `canary_weight_percentage` gradually in later applies.
 4. Set `canary_weight_percentage = 0` again before tearing down the canary service.
 
@@ -234,5 +241,5 @@ See `outputs.tf` for ALB URL, ECS service names, canary routing headers, control
 ## After apply
 
 1. Verify extensions: `psql $CONNECTION_STRING -c "SELECT PostGIS_Version(); SELECT extname FROM pg_extension WHERE extname IN ('postgis','postgis_raster');"`
-2. Health check: `curl -f https://<alb-url>/healthz/ready`
+2. Readiness check: call `HonuaClient("https://<alb-url>").readiness()` from the supported Python SDK.
 3. If using OIDC, configure env vars per [Security Configuration](../../../../docs/devops/security.md)

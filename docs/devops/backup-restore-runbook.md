@@ -210,9 +210,17 @@ restored endpoint):
 
 ```bash
 HONUA_URL="$(terraform -chdir=infrastructure/terraform/examples/aws output -raw honua_url)"
-curl -fsS "$HONUA_URL/healthz/ready"      # expect HTTP 200
-curl -fsS "$HONUA_URL/healthz/live"       # expect HTTP 200
+python3 - "$HONUA_URL" <<'PY'
+import sys
+from honua_sdk import HonuaClient
+
+with HonuaClient(sys.argv[1]) as client:
+    print(client.readiness())
+PY
 ```
+
+A successful readiness response covers process liveness plus restored database
+and startup dependencies.
 
 For a deeper smoke (admin CRUD: `create connection -> publish layer -> query`),
 the live validation scripts already cover this against the deployed app; reuse
