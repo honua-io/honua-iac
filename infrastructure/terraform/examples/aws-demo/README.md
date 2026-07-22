@@ -471,13 +471,16 @@ After apply, validate:
 ```bash
 # Raw API Gateway endpoint (no custom domain required)
 API_URL=$(terraform output -raw api_gateway_endpoint)
-curl -f "$API_URL/healthz/ready"
+python3 - "$API_URL" https://demo.honua.io <<'PY'
+import sys
+from honua_sdk import HonuaClient
 
-# Custom domain (once DNS propagates)
-curl -f https://demo.honua.io/healthz/ready
+for base_url in sys.argv[1:]:
+    with HonuaClient(base_url) as client:
+        print(base_url, client.readiness())
+PY
 
-# Confirm PostGIS extensions (reported by the in-VPC bootstrap Lambda)
-terraform output postgis_bootstrap_result
+terraform output postgis_bootstrap_result  # reported by the in-VPC bootstrap Lambda
 ```
 
 ## Estimated monthly cost (us-west-2, June 2026)
@@ -506,20 +509,11 @@ VPC endpoints replace.
 
 Demo datasets are loaded via the Honua Admin API import endpoints.
 
-**Initial seed (manual, one-time):**
-
-```bash
-HONUA_URL=https://demo.honua.io
-ADMIN_PASSWORD=$(aws secretsmanager get-secret-value \
-  --secret-id honua-demo-demo/admin-password \
-  --query SecretString --output text)
-
-# Example: import a GeoPackage as tenant "public"
-curl -X POST "$HONUA_URL/admin/datasets/import" \
-  -H "Authorization: Bearer $ADMIN_PASSWORD" \
-  -F "file=@/path/to/demo-data.gpkg" \
-  -F "tenantId=public"
-```
+**Initial seed (manual, one-time):** retrieve the admin credential from Secrets
+Manager, open the deployment's generated API explorer, authorize it, and use
+the documented dataset-import operation. Select `/path/to/demo-data.gpkg` for
+the upload and set `tenantId` to `public`. The explorer preserves the exact
+multipart contract without maintaining a second hand-written HTTP example.
 
 Exact datasets and import parameters are TBD — coordinate with the data team.
 

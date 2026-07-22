@@ -43,7 +43,7 @@ HONUA_SKIP_MIGRATIONS=true INGRESS_CLASS=traefik ./helm-install.sh
 - `INGRESS_CLASS` (default: `nginx`) set `traefik` for k3d.
 - `INGRESS_HOSTNAME` (default: `honua.local`)
 - `INGRESS_PATH` / `INGRESS_PATH_TYPE` (defaults: `/` / `Prefix`)
-- `LOCAL_HTTP_PORT` (default: `8080`) used for the curl hint
+- `LOCAL_HTTP_PORT` (default: `8080`) used for the local readiness hint
 - `POSTGRESQL_ENABLED` (`true`/`false`)
 - `DEFAULT_CONNECTION_STRING` (use when `POSTGRESQL_ENABLED=false`)
 - `POSTGRES_IMAGE_REPOSITORY`, `POSTGRES_IMAGE_TAG`, `POSTGRES_IMAGE_DIGEST`

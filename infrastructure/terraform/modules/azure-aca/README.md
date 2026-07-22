@@ -172,5 +172,5 @@ See `outputs.tf` for the Container App FQDN, Key Vault secret IDs, and database 
 ## After apply
 
 1. Verify extensions: `psql $CONNECTION_STRING -c "SELECT PostGIS_Version(); SELECT extname FROM pg_extension WHERE extname IN ('postgis','postgis_raster');"`
-2. Health check: `curl -f https://<app-fqdn>/healthz/ready`
+2. Readiness check: call `HonuaClient("https://<app-fqdn>").readiness()` from the supported Python SDK.
 3. If using OIDC, configure env vars per [Security Configuration](../../../../docs/devops/security.md)

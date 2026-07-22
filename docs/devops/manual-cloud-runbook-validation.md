@@ -82,7 +82,7 @@ satisfies the AOT/JIT-per-cloud requirement).
    See the Functions tag caveat in
    [`terraform-validation.md`](terraform-validation.md): use `*-functions-aot`
    (generic `latest`/`latest-aot` crash on Functions custom containers).
-3. `jq`, `curl`, and Terraform `>= 1.5` are on `PATH`.
+3. `jq`, Python 3.11 with `honua-sdk`, and Terraform `>= 1.5` are on `PATH`.
 
 ## Execution
 
