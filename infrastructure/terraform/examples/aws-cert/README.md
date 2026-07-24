@@ -1,8 +1,10 @@
 # examples/aws-cert — real-AWS certification tier
 
 A Honua-owned stack that **certifies the serverless + GP-over-Batch path against
-real AWS** (no LocalStack). It mirrors `examples/aws-demo` but is purpose-built
-for certification: the durable GP Batch substrate is **on**, federation is
+real AWS** (no LocalStack). It mirrors the `stacks/aws` root in the private
+[honua-io/honua-demo](https://github.com/honua-io/honua-demo) repo (formerly
+`examples/aws-demo` here — see honua-iac#126) but is purpose-built for
+certification: the durable GP Batch substrate is **on**, federation is
 **GitHub OIDC**, and a budget guardrail caps spend.
 
 Tracks honua-iac#2164 (cert), honua-server umbrella #2166, GitOps→GP #2165.

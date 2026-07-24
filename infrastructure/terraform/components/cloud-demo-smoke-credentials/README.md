@@ -32,8 +32,10 @@ Terraform diff.
 ## What this does NOT do
 
 - It does **not** seed the demo data or stand up the demo API — that is the
-  Honua demo-environment Terraform (`examples/aws-demo`, and the Azure
-  equivalent when it lands) plus the server-side seeding in
+  Honua demo-environment Terraform (extracted to the private
+  [honua-io/honua-demo](https://github.com/honua-io/honua-demo) repo, see
+  honua-iac#126; formerly `examples/aws-demo` here), and the Azure equivalent
+  when it lands, plus the server-side seeding in
   [honua-server#1688](https://github.com/honua-io/honua-server/issues/1688).
 - It does **not** fix the live DNS/TLS (`cloud.honua.io` still CNAMEs to GitHub
   Pages — tracked in honua-iac#37). Until that is corrected the smoke will reach
