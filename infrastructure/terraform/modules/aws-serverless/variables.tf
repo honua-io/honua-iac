@@ -918,6 +918,57 @@ variable "bedrock_ai_timeout_seconds" {
   }
 }
 
+# ---------------------------------------------------------------------------
+# Amazon Location Service geocoding — replaces an external Nominatim provider
+# for VPCs with no NAT/internet-gateway egress (honua-server#2948). Off by
+# default. When enabled, the module provisions an Amazon Location place index,
+# grants the Lambda role least-privilege geo:Search*/DescribePlaceIndex on it,
+# and routes Geocoding__DefaultProvider to amazon-location. The service is
+# reached over AWS's private network via a VPC interface endpoint
+# (com.amazonaws.<region>.geo) — see the calling example root for that
+# endpoint (regional, VPC-specific, so it is not provisioned here).
+# ---------------------------------------------------------------------------
+
+variable "enable_amazon_location_geocoding" {
+  description = "Provision an Amazon Location place index and grant the Lambda role geo:SearchPlaceIndexForText / geo:SearchPlaceIndexForPosition / geo:SearchPlaceIndexForSuggestions / geo:DescribePlaceIndex on it, and route Geocoding__DefaultProvider to amazon-location (Nominatim is explicitly disabled to avoid a double network-timeout failover hazard in no-NAT VPCs). Off by default so existing deploys are unchanged. The caller must separately provision a VPC interface endpoint for com.amazonaws.<region>.geo if the Lambda has no general internet egress (see the aws-demo example's vpc-endpoints.tf for the pattern)."
+  type        = bool
+  default     = false
+}
+
+variable "amazon_location_place_index_name" {
+  description = "Name of the Amazon Location place index to create. Defaults to '<name_prefix>-<environment>-geocode' when empty. Must be unique per account+region."
+  type        = string
+  default     = ""
+}
+
+variable "amazon_location_data_source" {
+  description = "Upstream data provider for the Amazon Location place index: Esri or Here. Determines the results' data licensing/attribution (Esri or HERE, not OpenStreetMap/Nominatim) and Amazon Location's per-request pricing for that provider."
+  type        = string
+  default     = "Esri"
+
+  validation {
+    condition     = contains(["Esri", "Here"], var.amazon_location_data_source)
+    error_message = "amazon_location_data_source must be \"Esri\" or \"Here\"."
+  }
+}
+
+variable "amazon_location_intended_use" {
+  description = "Amazon Location place index DataSourceConfiguration.IntendedUse. \"SingleUse\" (default) permits real-time geocoding/reverse-geocoding without storing or caching results — matches Esri/HERE's terms for ad hoc lookups and is the right choice for the demo's live GeocodeServer proxy. \"Storage\" is required only if results are persisted (e.g. bulk geocode-and-save workflows), and costs more per request."
+  type        = string
+  default     = "SingleUse"
+
+  validation {
+    condition     = contains(["SingleUse", "Storage"], var.amazon_location_intended_use)
+    error_message = "amazon_location_intended_use must be \"SingleUse\" or \"Storage\"."
+  }
+}
+
+variable "amazon_location_max_results" {
+  description = "Default max results the server requests per Amazon Location geocode call (server-side GeocodeProviderCapabilities.MaxResultsPerRequest is already capped at 50 for this provider; this only affects the env-advertised default)."
+  type        = number
+  default     = 10
+}
+
 # --- Control-plane event triggers (TriggerMode=Event) ---------------------
 # Optional, off by default. When enabled, provisions a reconcile Lambda fired by
 # EventBridge on Batch job state changes plus a backstop Lambda fired every ~2

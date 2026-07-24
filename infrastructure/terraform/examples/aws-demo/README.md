@@ -41,7 +41,7 @@ a data-isolation feature for production deployments.
 | Route53 A/AAAA records | `demo.honua.io` → CloudFront distribution (alias; → API Gateway custom domain and no AAAA while `route_demo_dns_to_cloudfront=false`) |
 | API Gateway custom domain | `demo.honua.io`, TLS 1.2, regional endpoint |
 | VPC | New VPC, **no NAT gateway** — VPC endpoints instead (see below) |
-| VPC endpoints | Secrets Manager interface endpoint (single-AZ) + free S3 gateway endpoint + bedrock-runtime interface endpoint (only when `enable_bedrock_ai`) |
+| VPC endpoints | Secrets Manager interface endpoint (single-AZ) + free S3 gateway endpoint + bedrock-runtime interface endpoint (only when `enable_bedrock_ai`) + geo interface endpoint (only when `enable_amazon_location_geocoding`) |
 | PostGIS bootstrap | One-shot in-VPC Lambda enables `postgis` + `postgis_raster` during apply |
 | CloudWatch Logs | 90-day retention for Lambda and API Gateway |
 | Secrets Manager | DB connection string, admin password, master key |
@@ -141,6 +141,59 @@ the config provisions:
 
 If the demo ever needs general egress again (e.g. OIDC against an external
 IdP), set `enable_nat_gateway = true` in `main.tf`.
+
+### Geocoding on Amazon Location Service (honua-server#2948)
+
+> Unlike the "Pro + AI demo drift" toggles below, this one is **not** live —
+> it is a plan awaiting operator approval, not already-applied state to
+> adopt/import.
+
+Off by default (`enable_amazon_location_geocoding = false`). The demo's
+geocoding provider defaults to Nominatim (OpenStreetMap) purely because
+that's the server's compiled-in default (`GeocodingConfiguration.DefaultProvider
+= "nominatim"`, `LocatorName = "World"`) — no env var currently sets either on
+`demo.honua.io`. Nominatim needs general internet egress, which this VPC does
+not have (see "No NAT gateway" above): every forward/reverse geocode call
+fails after a consistent ~15.8s outbound-connect timeout, first call or
+hundredth alike — a categorical network-reachability problem, not a
+cold-start one, and a keep-warm probe would not fix it.
+
+Setting `enable_amazon_location_geocoding = true`:
+
+- Provisions an **Amazon Location place index** (`aws_location_place_index`,
+  data source `Esri` by default) via the `aws-serverless` module.
+- Grants the Lambda role a least-privilege policy scoped to that index:
+  `geo:SearchPlaceIndexForText`, `geo:SearchPlaceIndexForPosition`,
+  `geo:SearchPlaceIndexForSuggestions`, `geo:DescribePlaceIndex` (the latter
+  two beyond forward/reverse geocode because the server's provider class
+  already calls them for its `suggest` operation and health check).
+- Injects `Geocoding__DefaultProvider=amazon-location` +
+  `Geocoding__Providers__AmazonLocation__*` and explicitly
+  `Geocoding__Providers__Nominatim__Enabled=false` (see the module README for
+  why: Nominatim's own default is `Enabled=true`, and failover would
+  otherwise retry it — and hang another ~15.8s — on any Amazon Location
+  error).
+- Provisions a **`com.amazonaws.<region>.geo` VPC interface endpoint**
+  (`vpc-endpoints.tf`), the same no-NAT pattern as the Secrets Manager and
+  Bedrock endpoints above, single-AZ.
+
+**Data source note**: results come from Esri (or HERE if
+`amazon_location_data_source = "Here"`) — not OpenStreetMap. This is a full
+provider swap: coverage, address formatting, and attribution differ from
+Nominatim.
+
+**Cost**: the `geo` interface endpoint costs the same as the Secrets Manager
+endpoint above (single ENI, ~$7–8/month + a small per-GB processed charge).
+The place index itself has no idle charge — cost is per API call under Amazon
+Location's Esri/HERE pricing tier, low single dollars/month at demo traffic
+volumes. No NAT gateway, no new compute.
+
+**This has not been applied.** See the root repo's demo runbook
+(`honua-server` `docs/internal/demo/demo-honua-io-capability-runbook.md`) for
+the full operator-approval remediation plan this PR is one part of, including
+the exact `terraform plan`/`apply` sequence and rollback (repoint
+`Geocoding__DefaultProvider` back to `nominatim` and destroy the place index +
+endpoint — additive, no coupling to the other tracks).
 
 ### Pro + AI demo drift (Pro license, Bedrock AI, Redis)
 
@@ -495,6 +548,15 @@ terraform output postgis_bootstrap_result
 | CloudWatch Logs (90-day, low volume) | ~$1 |
 | Secrets Manager secrets, Route53 zone | ~$1.50 |
 | **Total** | **~$23 / month** |
+
+This total is the **stock** apply (`enable_redis`, `enable_pro_license`,
+`enable_bedrock_ai`, and `enable_amazon_location_geocoding` all default
+`false`); it does not include the "Pro + AI demo drift" or geocoding add-ons
+documented above, which the live demo runs on top of this base. The
+`enable_amazon_location_geocoding` add-on's incremental cost is the `geo`
+interface endpoint (~$7–8/mo, same single-AZ pricing as the Secrets Manager
+endpoint) plus low-single-dollar per-request Amazon Location charges at demo
+traffic volumes — no NAT gateway, no new compute.
 
 The RDS instance and the Secrets Manager endpoint dominate cost. Lambda + API
 Gateway are effectively free at demo traffic volumes. Compare to the ECS/ALB
