@@ -206,8 +206,9 @@ the network path simply does not exist. Amazon Location is reachable over
 AWS's private network via a **VPC interface endpoint**
 (`com.amazonaws.<region>.geo`), so no NAT gateway is needed — but that
 endpoint is VPC-specific and is **not** created by this module; the calling
-example root provisions it (see `examples/aws-demo/vpc-endpoints.tf` for the
-pattern already used for Secrets Manager and Bedrock).
+root provisions it (see `stacks/aws/vpc-endpoints.tf` in the private
+honua-io/honua-demo repo — honua-iac#126 — for the pattern already used for
+Secrets Manager and Bedrock).
 
 **Why Nominatim is force-disabled, not just deprioritized:** `GeocodeCoordinatorService`
 tries the default provider first, then falls back through every other

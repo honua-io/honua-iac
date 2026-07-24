@@ -137,7 +137,6 @@ jobs:
             "infrastructure/terraform/examples/azure-functions"
             "infrastructure/terraform/examples/aws"
             "infrastructure/terraform/examples/aws-serverless"
-            "infrastructure/terraform/examples/aws-demo"
             "infrastructure/terraform/examples/aws-cert"
             "infrastructure/terraform/examples/azure-cert"
             "infrastructure/terraform/examples/aws-data"
