@@ -113,6 +113,10 @@ module "honua" {
 | `enable_bedrock_ai` | false | Grant the Lambda role `bedrock:InvokeModel`/`InvokeModelWithResponseStream` for the configured Claude model and route the AI studio (WorkflowGeneration) flows to Amazon Bedrock. |
 | `bedrock_ai_model` | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` | Bedrock model id for the AI studio flows (cross-region Claude Sonnet 4.5 inference profile). |
 | `bedrock_ai_region` | `us-west-2` | Region the server invokes Bedrock in. |
+| `enable_amazon_location_geocoding` | false | Provision an Amazon Location place index, grant the Lambda role `geo:Search*`/`DescribePlaceIndex` on it, and route `Geocoding:DefaultProvider` to `amazon-location` (Nominatim explicitly disabled). |
+| `amazon_location_place_index_name` | `""` (→ `<name_prefix>-<environment>-geocode`) | Name of the Amazon Location place index. |
+| `amazon_location_data_source` | `Esri` | Upstream data provider for the place index (`Esri` or `Here` — not OpenStreetMap). |
+| `amazon_location_intended_use` | `SingleUse` | `SingleUse` (no result storage) or `Storage`. |
 
 See `variables.tf` for the complete list.
 
@@ -169,6 +173,77 @@ arn:aws:bedrock:us-west-2:<account>:inference-profile/us.anthropic.claude-sonnet
 arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0
 arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0
 arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0
+```
+
+## Geocoding on Amazon Location Service
+
+Optional, **off by default**. When `enable_amazon_location_geocoding = true`, the
+module provisions an Amazon Location **place index** (`aws_location_place_index`),
+grants the Lambda execution role a least-privilege policy scoped to that one
+index (`geo:SearchPlaceIndexForText`, `geo:SearchPlaceIndexForPosition`,
+`geo:SearchPlaceIndexForSuggestions`, `geo:DescribePlaceIndex`), and injects the
+`Geocoding__*` env so the server's built-in `amazon-location` provider
+(`Honua.Geocoding.Features.Geocoding.Providers.AmazonLocationGeocodeProvider`)
+becomes the default:
+
+```
+Geocoding__Enabled                                   = true
+Geocoding__DefaultProvider                           = amazon-location
+Geocoding__Providers__Nominatim__Enabled             = false
+Geocoding__Providers__AmazonLocation__Enabled        = true
+Geocoding__Providers__AmazonLocation__Region         = <module's region>
+Geocoding__Providers__AmazonLocation__PlaceIndexName = <amazon_location_place_index_name>
+Geocoding__Providers__AmazonLocation__UseIamRole     = true
+Geocoding__Providers__AmazonLocation__MaxResults     = <amazon_location_max_results>
+```
+
+**Why this exists (honua-server#2948):** an external Nominatim (OpenStreetMap)
+provider needs general internet egress. A VPC with no NAT/internet gateway
+(this module's `enable_nat_gateway = false` path) cannot reach it — every
+forward/reverse geocode call fails after a consistent outbound-connect
+timeout (observed ~15.8s on demo.honua.io), first call or hundredth, because
+the network path simply does not exist. Amazon Location is reachable over
+AWS's private network via a **VPC interface endpoint**
+(`com.amazonaws.<region>.geo`), so no NAT gateway is needed — but that
+endpoint is VPC-specific and is **not** created by this module; the calling
+example root provisions it (see `examples/aws-demo/vpc-endpoints.tf` for the
+pattern already used for Secrets Manager and Bedrock).
+
+**Why Nominatim is force-disabled, not just deprioritized:** `GeocodeCoordinatorService`
+tries the default provider first, then falls back through every other
+*registered* provider when `EnableFailover` is on (the default).
+`NominatimProviderConfiguration` defaults `Enabled = true` in its own
+constructor, so it stays registered as a failover candidate unless explicitly
+turned off. In a no-NAT VPC, a failover attempt to Nominatim would still incur
+its own ~15.8s connect-timeout before failing — compounding, not fixing,
+latency on any Amazon Location error (e.g. a misconfigured place index). This
+module sets `Geocoding__Providers__Nominatim__Enabled=false` so an
+Amazon-Location-side failure fails fast instead of hanging twice.
+
+**Data source note:** results come from **Esri** (default) or **HERE**, not
+OpenStreetMap — this is a full provider swap. `amazon_location_intended_use`
+defaults to `SingleUse` (real-time lookups, no result storage/caching),
+matching a live GeocodeServer proxy; use `Storage` only if a workflow persists
+geocode results.
+
+**Cost** (`us-west-2`, approximate, in addition to the VPC interface endpoint
+the calling root provisions): the place index itself has no idle charge — you
+pay per API call (`SearchPlaceIndexForText`/`ForPosition`/`ForSuggestions`),
+priced per request under the selected data source's Amazon Location pricing
+tier (a few dollars per 1,000 requests; demo traffic volumes are low single
+dollars/month). The `com.amazonaws.<region>.geo` interface endpoint itself
+costs the same as any other single-AZ interface endpoint in this account
+(~$7–8/month for the ENI + a small per-GB processed charge) — see the example
+root's README for the endpoint-specific cost line.
+
+```hcl
+module "honua" {
+  source = "../../modules/aws-serverless"
+  # ...
+  enable_amazon_location_geocoding = true
+  amazon_location_place_index_name = "honua-demo-demo-geocode"
+  amazon_location_data_source       = "Esri"
+}
 ```
 
 ## Serverless observability

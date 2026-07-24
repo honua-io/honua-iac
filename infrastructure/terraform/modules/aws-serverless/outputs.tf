@@ -164,6 +164,23 @@ output "xray_tracing_enabled" {
   value       = var.enable_xray_tracing
 }
 
+# --- Amazon Location geocoding outputs (honua-server#2948) -----------------
+
+output "amazon_location_geocoding_enabled" {
+  description = "Whether the Amazon Location place index and Lambda IAM grant were provisioned."
+  value       = local.amazon_location_geocoding_enabled
+}
+
+output "amazon_location_place_index_name" {
+  description = "Name of the Amazon Location place index (null when disabled). The caller uses this to name/tag a matching VPC interface endpoint for com.amazonaws.<region>.geo if the Lambda has no general internet egress."
+  value       = local.amazon_location_geocoding_enabled ? local.amazon_location_place_index_name : null
+}
+
+output "amazon_location_place_index_arn" {
+  description = "ARN of the Amazon Location place index (null when disabled)."
+  value       = local.amazon_location_place_index_arn
+}
+
 # --- GP on AWS Batch (Fargate Spot) outputs --------------------------------
 # The durable GP substrate's runtime contract (v1). Consumers (the honua-devops
 # agent / the server) read these ARNs as OPAQUE runtime config — they couple to

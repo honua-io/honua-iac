@@ -155,6 +155,14 @@ module "honua" {
   bedrock_ai_model  = var.bedrock_ai_model
   bedrock_ai_region = var.bedrock_ai_region
 
+  # ---- Geocoding on Amazon Location — gated on var.enable_amazon_location_geocoding
+  # Replaces Nominatim (unreachable from this no-NAT VPC, honua-server#2948) with
+  # the server's built-in amazon-location provider against a place index reached
+  # through the `geo` VPC interface endpoint provisioned in vpc-endpoints.tf.
+  enable_amazon_location_geocoding = var.enable_amazon_location_geocoding
+  amazon_location_place_index_name = var.amazon_location_place_index_name
+  amazon_location_data_source      = var.amazon_location_data_source
+
   # Networking — no NAT gateway (~$33/mo + data saved). The public demo has
   # no OIDC and needs no general internet egress; the only AWS services the
   # Lambda needs at runtime are reached via VPC endpoints instead

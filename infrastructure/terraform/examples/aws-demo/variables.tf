@@ -180,3 +180,31 @@ variable "bedrock_ai_region" {
   type        = string
   default     = "us-west-2"
 }
+
+# ---------------------------------------------------------------------------
+# Geocoding on Amazon Location Service — replaces the Nominatim provider,
+# which this no-NAT VPC cannot reach (honua-server#2948: every geocode call
+# failed after a consistent ~15.8s outbound-connect timeout — a categorical
+# network-egress problem, not a cold-start one). Off by default. When
+# enabled, provisions an Amazon Location place index + Lambda IAM grant (via
+# the aws-serverless module) and the `com.amazonaws.<region>.geo` VPC
+# interface endpoint this no-NAT VPC needs to reach it (vpc-endpoints.tf).
+# ---------------------------------------------------------------------------
+
+variable "enable_amazon_location_geocoding" {
+  description = "Provision an Amazon Location place index, grant the Lambda role geo:Search*/DescribePlaceIndex on it, route Geocoding__DefaultProvider to amazon-location (Nominatim disabled), and provision the geo VPC interface endpoint this no-NAT VPC needs to reach Amazon Location. Off by default."
+  type        = bool
+  default     = false
+}
+
+variable "amazon_location_place_index_name" {
+  description = "Name of the Amazon Location place index. Defaults to '<name_prefix>-<environment>-geocode' when empty."
+  type        = string
+  default     = ""
+}
+
+variable "amazon_location_data_source" {
+  description = "Upstream data provider for the Amazon Location place index: Esri or Here (not OpenStreetMap/Nominatim — this is a full provider swap with different coverage/attribution)."
+  type        = string
+  default     = "Esri"
+}

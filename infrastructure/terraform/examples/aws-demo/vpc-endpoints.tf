@@ -97,3 +97,66 @@ resource "aws_vpc_endpoint" "bedrock_runtime" {
 
   tags = merge(local.common_tags, { Name = "${var.name_prefix}-${var.environment}-bedrock-runtime" })
 }
+
+# ---------------------------------------------------------------------------
+# Amazon Location (geo) interface endpoint — only when Amazon Location
+# geocoding is enabled (honua-server#2948).
+#
+# Same rationale as the Secrets Manager / Bedrock endpoints above: this no-NAT
+# VPC has no default route, so the Lambda cannot reach the public
+# geo.<region>.amazonaws.com endpoint for the Amazon Location Places API
+# (SearchPlaceIndexForText/ForPosition/ForSuggestions, DescribePlaceIndex) that
+# AmazonLocationGeocodeProvider calls. com.amazonaws.<region>.geo as an
+# interface endpoint (with private DNS) makes that hostname resolve to in-VPC
+# ENIs instead. var.region is used directly (not a separate
+# amazon_location_region variable) — a VPC interface endpoint can only front a
+# service in its own region, and the place index the aws-serverless module
+# creates lives in this same region (the module resolves its region from the
+# "aws" provider, i.e. var.region), so there is no other valid choice.
+#
+# NOTE (read-only AWS audit, 2026-07-23): the already-live bedrock-runtime
+# endpoint above is documented here and in main.tf as "single-AZ to save
+# cost", but `aws ec2 describe-vpc-endpoints` shows the deployed
+# vpce-003090af73dc835fe actually spans all three private subnets/AZs — live
+# drift from what this file's `subnet_ids = [module.honua.private_subnet_ids[0]]`
+# describes. (The account's other interface endpoints for
+# com.amazonaws.us-west-2.lambda/.sts/.logs/.monitoring, also observed
+# spanning all three private subnets during the same audit, are NOT drift —
+# they are the module's own deploy-control.tf, gated behind
+# enable_control_plane_events, which intentionally uses all of
+# local.private_subnets rather than a single AZ.) This new `geo` endpoint
+# follows the single-AZ pattern as WRITTEN (matching the Secrets Manager
+# endpoint and the cost this PR documents), not the bedrock endpoint's
+# drifted live shape. Flagging the bedrock discrepancy for a maintainer to
+# reconcile separately — not touched by this change.
+# ---------------------------------------------------------------------------
+
+resource "aws_security_group" "amazon_location_endpoint" {
+  #checkov:skip=CKV2_AWS_5: Attached to the Amazon Location (geo) interface endpoint below.
+  count       = var.enable_amazon_location_geocoding ? 1 : 0
+  name_prefix = "${var.name_prefix}-${var.environment}-geo-vpce-"
+  description = "Allow HTTPS to the Amazon Location (geo) interface VPC endpoint from inside the VPC"
+  vpc_id      = module.honua.vpc_id
+
+  ingress {
+    description = "HTTPS from the VPC"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [local.vpc_cidr]
+  }
+
+  tags = local.common_tags
+}
+
+resource "aws_vpc_endpoint" "geo" {
+  count               = var.enable_amazon_location_geocoding ? 1 : 0
+  vpc_id              = module.honua.vpc_id
+  service_name        = "com.amazonaws.${var.region}.geo"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = [module.honua.private_subnet_ids[0]] # single AZ to save cost, matches the Secrets Manager endpoint's pattern
+  security_group_ids  = [aws_security_group.amazon_location_endpoint[0].id]
+  private_dns_enabled = true
+
+  tags = merge(local.common_tags, { Name = "${var.name_prefix}-${var.environment}-geo" })
+}
