@@ -682,6 +682,11 @@ jobs:
           plan_root="$RUNNER_TEMP/plans/aws"
           mkdir -p "$bootstrap_root" "$plan_root"
 
+          # Tag per-run bootstrap principals so the orphan sweeper can find
+          # and expire them if this job dies before cleanup runs.
+          bootstrap_expires_at="$(date -u -d "+${HONUA_TTL_HOURS} hours" +%Y-%m-%dT%H:%M:%SZ)"
+          bootstrap_tags="{Owner=\"terraform-validation\",ValidationRunId=\"gha-${GITHUB_RUN_ID}-aws-bootstrap\",ExpiresAtUTC=\"${bootstrap_expires_at}\"}"
+
           requested_stack="$AWS_VALIDATION_STACK"
           case "$requested_stack" in
             ecs|serverless|both) ;;
@@ -758,7 +763,8 @@ jobs:
             terraform -chdir="$target_dir" apply -input=false -auto-approve -no-color \
               -var "aws_region=${AWS_VALIDATION_REGION}" \
               -var "create_access_key=true" \
-              -var "user_name=${user_name}"
+              -var "user_name=${user_name}" \
+              -var "tags=${bootstrap_tags}"
           }
 
           read_bootstrap_output() {
@@ -921,6 +927,50 @@ jobs:
         with:
           path: ${{ github.workspace }}/.gha-cache/aws-data-reuse.env
           key: terraform-manual-validation-aws-data-${{ github.ref_name }}-${{ env.AWS_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # The in-step EXIT trap above cannot run to completion when the job is
+      # cancelled or times out, which historically leaked per-run IAM users
+      # with active access keys (#129). This step runs even on cancellation,
+      # re-drives the bootstrap destroy from the state left on disk, and then
+      # purges this run's bootstrap users by name so a crash before the state
+      # file was written cannot strand credentials-bearing principals either.
+      - name: Ensure bootstrap identities are destroyed (always)
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          if [[ -z "${BOOTSTRAP_AWS_ACCESS_KEY_ID:-}" || -z "${BOOTSTRAP_AWS_SECRET_ACCESS_KEY:-}" ]]; then
+            echo "AWS bootstrap credentials not configured; nothing to clean up."
+            exit 0
+          fi
+
+          export AWS_ACCESS_KEY_ID="$BOOTSTRAP_AWS_ACCESS_KEY_ID"
+          export AWS_SECRET_ACCESS_KEY="$BOOTSTRAP_AWS_SECRET_ACCESS_KEY"
+          export AWS_SESSION_TOKEN="$BOOTSTRAP_AWS_SESSION_TOKEN"
+          export AWS_REGION="$AWS_VALIDATION_REGION"
+          export AWS_DEFAULT_REGION="$AWS_VALIDATION_REGION"
+
+          status=0
+
+          for stack in ecs serverless; do
+            dir="$RUNNER_TEMP/bootstrap/aws/$stack"
+            if [[ -f "$dir/terraform.tfstate" ]]; then
+              echo "Ensuring AWS bootstrap identity for stack '$stack' is destroyed"
+              terraform -chdir="$dir" destroy -input=false -auto-approve -no-color || status=1
+            fi
+          done
+
+          ./infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-iam.sh \
+            --user "honua-tf-ecs-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --user "honua-tf-sls-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --protect-run-id "gha-${GITHUB_RUN_ID}-aws-ecs" \
+            --protect-run-id "gha-${GITHUB_RUN_ID}-aws-serverless" \
+            --protect-run-id "gha-${GITHUB_RUN_ID}-aws-bootstrap" \
+            --skip-log-groups \
+            || status=1
+
+          exit "$status"
 
   k8s-live:
     name: Kubernetes Live Validation
@@ -1337,6 +1387,11 @@ jobs:
 
           cp infrastructure/terraform/bootstrap/aws-eks/*.tf "$bootstrap_dir"/
 
+          # Tag the per-run bootstrap principal so the orphan sweeper can find
+          # and expire it if this job dies before cleanup runs.
+          bootstrap_expires_at="$(date -u -d "+${HONUA_TTL_HOURS} hours" +%Y-%m-%dT%H:%M:%SZ)"
+          bootstrap_tags="{Owner=\"terraform-validation\",ValidationRunId=\"gha-${GITHUB_RUN_ID}-eks-bootstrap\",ExpiresAtUTC=\"${bootstrap_expires_at}\"}"
+
           AWS_ACCESS_KEY_ID="$BOOTSTRAP_AWS_ACCESS_KEY_ID" \
           AWS_SECRET_ACCESS_KEY="$BOOTSTRAP_AWS_SECRET_ACCESS_KEY" \
           AWS_SESSION_TOKEN="$BOOTSTRAP_AWS_SESSION_TOKEN" \
@@ -1348,7 +1403,8 @@ jobs:
           terraform -chdir="$bootstrap_dir" apply -input=false -auto-approve -no-color \
             -var "aws_region=${AWS_VALIDATION_REGION}" \
             -var "create_access_key=true" \
-            -var "user_name=honua-tf-eks-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            -var "user_name=honua-tf-eks-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            -var "tags=${bootstrap_tags}"
 
           EKS_AWS_ACCESS_KEY_ID="$(terraform -chdir="$bootstrap_dir" output -raw access_key_id)"
           EKS_AWS_SECRET_ACCESS_KEY="$(terraform -chdir="$bootstrap_dir" output -raw secret_access_key)"
@@ -1426,6 +1482,46 @@ jobs:
           name: eks-plan-artifacts-${{ github.run_id }}
           path: ${{ runner.temp }}/plans/eks
           if-no-files-found: ignore
+
+      # The in-step EXIT trap above cannot run to completion when the job is
+      # cancelled or times out, which historically leaked per-run IAM users
+      # with active access keys (#129). This step runs even on cancellation,
+      # re-drives the bootstrap destroy from the state left on disk, and then
+      # purges this run's bootstrap user by name so a crash before the state
+      # file was written cannot strand a credentials-bearing principal either.
+      - name: Ensure bootstrap identity is destroyed (always)
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          if [[ -z "${BOOTSTRAP_AWS_ACCESS_KEY_ID:-}" || -z "${BOOTSTRAP_AWS_SECRET_ACCESS_KEY:-}" ]]; then
+            echo "AWS bootstrap credentials not configured; nothing to clean up."
+            exit 0
+          fi
+
+          export AWS_ACCESS_KEY_ID="$BOOTSTRAP_AWS_ACCESS_KEY_ID"
+          export AWS_SECRET_ACCESS_KEY="$BOOTSTRAP_AWS_SECRET_ACCESS_KEY"
+          export AWS_SESSION_TOKEN="$BOOTSTRAP_AWS_SESSION_TOKEN"
+          export AWS_REGION="$AWS_VALIDATION_REGION"
+          export AWS_DEFAULT_REGION="$AWS_VALIDATION_REGION"
+
+          status=0
+
+          dir="$RUNNER_TEMP/bootstrap/eks"
+          if [[ -f "$dir/terraform.tfstate" ]]; then
+            echo "Ensuring EKS bootstrap identity is destroyed"
+            terraform -chdir="$dir" destroy -input=false -auto-approve -no-color || status=1
+          fi
+
+          ./infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-iam.sh \
+            --user "honua-tf-eks-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --protect-run-id "gha-${GITHUB_RUN_ID}-eks" \
+            --protect-run-id "gha-${GITHUB_RUN_ID}-eks-bootstrap" \
+            --skip-log-groups \
+            || status=1
+
+          exit "$status"
 
   drift-detect:
     name: Terraform Drift Detection
