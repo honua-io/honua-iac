@@ -272,6 +272,11 @@ run_custom_policy_checks() {
     assert_required_nullable_variable "$contract_file" "$contract_variable" "connection-encryption-key-required-input"
   done
 
+  assert_regex_present 'TF_VAR_honua_connection_encryption_master_key="\$HONUA_ADMIN_PASSWORD"' "$ROOT/validation/scripts/aws/run-aws-terraform-integration.sh" "aws-validation-connection-encryption-key"
+  assert_regex_present 'TF_VAR_honua_connection_encryption_master_key="\$HONUA_ADMIN_PASSWORD"' "$ROOT/validation/scripts/azure/lib/stacks.sh" "azure-validation-connection-encryption-key"
+  assert_regex_present '[[:space:]]-e TF_VAR_honua_connection_encryption_master_key' "$ROOT/validation/scripts/aws/run-aws-terraform-integration.sh" "aws-docker-connection-encryption-key"
+  assert_regex_present '[[:space:]]-e TF_VAR_honua_connection_encryption_master_key' "$ROOT/validation/scripts/azure/lib/runtime.sh" "azure-docker-connection-encryption-key"
+
   assert_regex_present 'multi_replica_enabled[[:space:]]*=[[:space:]]*var\.desired_count > 1 \|\| var\.max_capacity > 1' "$ROOT/modules/aws-ecs/main.tf" "aws-ecs-multinode-scale-detection"
   assert_regex_present 'condition[[:space:]]*=[[:space:]]*!local\.multi_replica_enabled \|\| local\.multi_node_topology_ready' "$ROOT/modules/aws-ecs/main.tf" "aws-ecs-multinode-precondition"
   assert_regex_present 'Deployment__Mode[[:space:]]*=[[:space:]]*var\.deployment_mode' "$ROOT/modules/aws-ecs/main.tf" "aws-ecs-deployment-mode-wiring"

@@ -219,5 +219,26 @@ fi
 assert_output_contains 'Policy check failed \(connection-encryption-key-required-input\)'
 rm -rf "$REQUIRED_KEY_FIXTURE"
 
+# Validation runners must supply the same durable key to Terraform. Removing
+# either the host export or Docker forwarding must fail the custom gate.
+for wiring_case in \
+  'aws-validation-connection-encryption-key:export TF_VAR_honua_connection_encryption_master_key' \
+  'aws-docker-connection-encryption-key:-e TF_VAR_honua_connection_encryption_master_key'; do
+  wiring_label="${wiring_case%%:*}"
+  wiring_pattern="${wiring_case#*:}"
+  WIRING_FIXTURE="$TMP_DIR/violation-$wiring_label"
+  cp -a "$FIXTURE_ROOT" "$WIRING_FIXTURE"
+  sed -i "\\|$wiring_pattern|d" \
+    "$WIRING_FIXTURE/validation/scripts/aws/run-aws-terraform-integration.sh"
+  run_gate "true" 0 0 0 "$WIRING_FIXTURE"
+  if [[ "$GATE_EXIT_CODE" -eq 0 ]]; then
+    echo "[ERROR] Policy gate accepted missing validation wiring: $wiring_label" >&2
+    cat "$GATE_OUTPUT_FILE" >&2
+    exit 1
+  fi
+  assert_output_contains "Policy check failed \\($wiring_label\\): expected pattern not found"
+  rm -rf "$WIRING_FIXTURE"
+done
+
 echo "[INFO] terraform-policy-gate strict/non-strict regression tests passed"
 echo "[INFO] terraform-policy-gate custom security-guard negative tests passed"

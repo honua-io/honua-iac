@@ -806,6 +806,7 @@ run_tf() {
       -e TF_VAR_environment \
       -e TF_VAR_name_prefix \
       -e TF_VAR_honua_admin_password \
+      -e TF_VAR_honua_connection_encryption_master_key \
       -e TF_VAR_db_password \
       -e TF_VAR_existing_db_endpoint \
       -e TF_VAR_existing_db_connection_string \
@@ -2053,6 +2054,7 @@ set_common_tf_vars() {
   export TF_VAR_region="$REGION"
   export TF_VAR_environment="$ENVIRONMENT"
   export TF_VAR_honua_admin_password="$HONUA_ADMIN_PASSWORD"
+  export TF_VAR_honua_connection_encryption_master_key="$HONUA_ADMIN_PASSWORD"
   export TF_VAR_db_password="$HONUA_DB_PASSWORD"
   export TF_VAR_existing_db_endpoint="$EXISTING_DB_ENDPOINT"
   export TF_VAR_existing_db_connection_string="$EXISTING_DB_CONNECTION_STRING"
