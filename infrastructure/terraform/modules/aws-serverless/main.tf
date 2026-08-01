@@ -713,6 +713,7 @@ resource "aws_apigatewayv2_api" "this" {
 resource "aws_apigatewayv2_integration" "lambda" {
   api_id                 = aws_apigatewayv2_api.this.id
   integration_type       = "AWS_PROXY"
+  integration_method     = "POST"
   integration_uri        = aws_lambda_alias.live.invoke_arn
   payload_format_version = "2.0"
   timeout_milliseconds   = min(30000, var.lambda_timeout_seconds * 1000)
@@ -738,6 +739,14 @@ resource "aws_apigatewayv2_stage" "this" {
   api_id      = aws_apigatewayv2_api.this.id
   name        = "$default"
   auto_deploy = true
+
+  # Create the initial auto-deployment only after both routes exist. Without
+  # this dependency, the stage may briefly publish an empty route table and
+  # return API Gateway 404s immediately after terraform apply completes.
+  depends_on = [
+    aws_apigatewayv2_route.root,
+    aws_apigatewayv2_route.proxy,
+  ]
 
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.api_gateway.arn
