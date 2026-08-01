@@ -105,6 +105,16 @@ run "reserved_runtime_env_cannot_bypass_typed_inputs" {
   expect_failures = [var.additional_env]
 }
 
+run "invalid_elasticache_auth_token_is_rejected" {
+  command = plan
+
+  variables {
+    redis_auth_token = "invalid/token/characters"
+  }
+
+  expect_failures = [var.redis_auth_token]
+}
+
 run "single_instance_scale_out_is_rejected" {
   command = plan
 

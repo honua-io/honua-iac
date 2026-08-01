@@ -193,6 +193,20 @@ assert_violation_detected 'aws-serverless-redis-plaintext-env' \
 assert_violation_detected 'azure-functions-redis-plaintext-env' \
   'modules/azure-functions/main.tf' "  ConnectionStrings__redis = local.${RC}"
 
+# Generated ElastiCache AUTH tokens must use only AWS-supported punctuation.
+REDIS_AUTH_FIXTURE="$TMP_DIR/violation-aws-serverless-redis-auth-character-set"
+cp -a "$FIXTURE_ROOT" "$REDIS_AUTH_FIXTURE"
+sed -i '/override_special = "!&#$\^<>-"/d' \
+  "$REDIS_AUTH_FIXTURE/modules/aws-serverless/main.tf"
+run_gate "true" 0 0 0 "$REDIS_AUTH_FIXTURE"
+if [[ "$GATE_EXIT_CODE" -eq 0 ]]; then
+  echo "[ERROR] Policy gate accepted an unbounded ElastiCache AUTH character set" >&2
+  cat "$GATE_OUTPUT_FILE" >&2
+  exit 1
+fi
+assert_output_contains 'Policy check failed \(aws-serverless-redis-auth-character-set\)'
+rm -rf "$REDIS_AUTH_FIXTURE"
+
 # Data-cache files must never be sourced/executed by the integration runners.
 assert_violation_detected 'aws-cache-source-execution' \
   'validation/scripts/aws/run-aws-terraform-integration.sh' "  source ${Q}${DOLLAR}DATA_CACHE_FILE${Q}"

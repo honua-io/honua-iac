@@ -64,10 +64,15 @@ resource "random_password" "db" {
 }
 
 resource "random_password" "redis_auth" {
-  count            = local.redis_create && var.redis_auth_token == "" ? 1 : 0
-  length           = 32
-  special          = true
-  override_special = "#%*()-_=+[]{}:?"
+  count       = local.redis_create && var.redis_auth_token == "" ? 1 : 0
+  length      = 32
+  special     = true
+  min_upper   = 1
+  min_lower   = 1
+  min_numeric = 1
+  min_special = 1
+  # ElastiCache AUTH accepts only this restricted special-character set.
+  override_special = "!&#$^<>-"
 }
 
 # Connection-encryption master key. Generated independently of the admin

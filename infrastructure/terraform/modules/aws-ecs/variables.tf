@@ -480,10 +480,19 @@ variable "redis_connection_cidrs" {
 }
 
 variable "redis_auth_token" {
-  description = "Redis auth token (used when creating Redis). Leave empty to auto-generate."
+  description = "Redis auth token (used when creating Redis). Leave empty to auto-generate. Must be 16-128 characters using letters, digits, or ElastiCache-supported special characters (!&#$^<>-)."
   type        = string
   default     = ""
   sensitive   = true
+
+  validation {
+    condition = var.redis_auth_token == "" || (
+      length(var.redis_auth_token) >= 16 &&
+      length(var.redis_auth_token) <= 128 &&
+      can(regex("^[A-Za-z0-9!&#$^<>-]+$", var.redis_auth_token))
+    )
+    error_message = "redis_auth_token must be 16-128 characters and contain only letters, digits, or !&#$^<>-."
+  }
 }
 
 variable "redis_enabled" {

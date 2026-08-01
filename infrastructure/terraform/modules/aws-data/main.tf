@@ -26,9 +26,12 @@ resource "random_password" "db" {
 }
 
 resource "random_password" "redis_auth" {
-  count   = var.redis_enabled && var.redis_auth_token == "" ? 1 : 0
-  length  = 32
-  special = false
+  count       = var.redis_enabled && var.redis_auth_token == "" ? 1 : 0
+  length      = 32
+  special     = false
+  min_upper   = 1
+  min_lower   = 1
+  min_numeric = 1
 }
 
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
