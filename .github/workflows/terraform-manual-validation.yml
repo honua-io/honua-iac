@@ -3,6 +3,11 @@ name: Terraform Manual Validation
 on:
   workflow_dispatch:
     inputs:
+      candidate_ref:
+        description: "Exact 40-character honua-iac commit SHA to validate"
+        required: false
+        type: string
+        default: ""
       cloud:
         description: "Cloud target"
         required: true
@@ -119,13 +124,36 @@ env:
   HONUA_DRIFT_VAR_FILES: ${{ vars.HONUA_DRIFT_VAR_FILES || '' }}
 
 jobs:
+  resolve-candidate:
+    name: Resolve immutable candidate
+    runs-on: ubuntu-latest
+    outputs:
+      candidate_sha: ${{ steps.resolve.outputs.candidate_sha }}
+    steps:
+      - name: Validate candidate SHA
+        id: resolve
+        env:
+          REQUESTED_REF: ${{ inputs.candidate_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate_sha="${REQUESTED_REF:-$GITHUB_SHA}"
+          if [[ ! "$candidate_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "candidate_ref must be an exact lowercase 40-character commit SHA; received '$candidate_sha'" >&2
+            exit 1
+          fi
+          echo "candidate_sha=$candidate_sha" >> "$GITHUB_OUTPUT"
+
   static-validate:
     name: Static Terraform Validate
+    needs: resolve-candidate
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -180,12 +208,14 @@ jobs:
 
   policy-gates:
     name: Terraform Policy Gates
-    needs: static-validate
+    needs: [resolve-candidate, static-validate]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -238,7 +268,7 @@ jobs:
 
   azure-live:
     name: Azure Live Validation
-    needs: policy-gates
+    needs: [resolve-candidate, policy-gates]
     if: ${{ inputs.run_live && (inputs.cloud == 'both' || inputs.cloud == 'azure') }}
     runs-on: ubuntu-latest
     timeout-minutes: 240
@@ -262,6 +292,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
       - name: Checkout honua-server platform validation suite
         uses: actions/checkout@v4
@@ -282,9 +314,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ github.workspace }}/.gha-cache/azure-data-reuse.env
-          key: terraform-manual-validation-azure-data-${{ github.ref_name }}-${{ env.AZURE_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: terraform-manual-validation-azure-data-${{ needs.resolve-candidate.outputs.candidate_sha }}-${{ env.AZURE_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            terraform-manual-validation-azure-data-${{ github.ref_name }}-${{ env.AZURE_VALIDATION_REGION }}-
+            terraform-manual-validation-azure-data-${{ needs.resolve-candidate.outputs.candidate_sha }}-${{ env.AZURE_VALIDATION_REGION }}-
 
       - name: Validate required credentials (Azure)
         shell: bash
@@ -582,11 +614,11 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ github.workspace }}/.gha-cache/azure-data-reuse.env
-          key: terraform-manual-validation-azure-data-${{ github.ref_name }}-${{ env.AZURE_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: terraform-manual-validation-azure-data-${{ needs.resolve-candidate.outputs.candidate_sha }}-${{ env.AZURE_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
 
   aws-live:
     name: AWS Live Validation
-    needs: policy-gates
+    needs: [resolve-candidate, policy-gates]
     if: ${{ inputs.run_live && (inputs.cloud == 'both' || inputs.cloud == 'aws') }}
     runs-on: ubuntu-latest
     timeout-minutes: 240
@@ -608,6 +640,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
       - name: Checkout honua-server platform validation suite
         uses: actions/checkout@v4
@@ -628,9 +662,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ github.workspace }}/.gha-cache/aws-data-reuse.env
-          key: terraform-manual-validation-aws-data-${{ github.ref_name }}-${{ env.AWS_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: terraform-manual-validation-aws-data-${{ needs.resolve-candidate.outputs.candidate_sha }}-${{ env.AWS_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            terraform-manual-validation-aws-data-${{ github.ref_name }}-${{ env.AWS_VALIDATION_REGION }}-
+            terraform-manual-validation-aws-data-${{ needs.resolve-candidate.outputs.candidate_sha }}-${{ env.AWS_VALIDATION_REGION }}-
 
       - name: Validate required credentials (AWS)
         shell: bash
@@ -926,7 +960,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ github.workspace }}/.gha-cache/aws-data-reuse.env
-          key: terraform-manual-validation-aws-data-${{ github.ref_name }}-${{ env.AWS_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: terraform-manual-validation-aws-data-${{ needs.resolve-candidate.outputs.candidate_sha }}-${{ env.AWS_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # The in-step EXIT trap above cannot run to completion when the job is
       # cancelled or times out, which historically leaked per-run IAM users
@@ -974,7 +1008,7 @@ jobs:
 
   k8s-live:
     name: Kubernetes Live Validation
-    needs: policy-gates
+    needs: [resolve-candidate, policy-gates]
     if: ${{ inputs.run_live && inputs.run_k8s }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -986,6 +1020,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -1086,7 +1122,7 @@ jobs:
 
   aks-live:
     name: AKS Live Validation
-    needs: policy-gates
+    needs: [resolve-candidate, policy-gates]
     if: ${{ inputs.run_live && inputs.run_aks && (inputs.cloud == 'both' || inputs.cloud == 'azure') }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
@@ -1106,6 +1142,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
       - name: Checkout honua-server platform validation suite
         uses: actions/checkout@v4
@@ -1288,7 +1326,7 @@ jobs:
 
   eks-live:
     name: EKS Live Validation
-    needs: policy-gates
+    needs: [resolve-candidate, policy-gates]
     if: ${{ inputs.run_live && inputs.run_eks && (inputs.cloud == 'both' || inputs.cloud == 'aws') }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
@@ -1304,6 +1342,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
       - name: Checkout honua-server platform validation suite
         uses: actions/checkout@v4
@@ -1525,7 +1565,7 @@ jobs:
 
   drift-detect:
     name: Terraform Drift Detection
-    needs: policy-gates
+    needs: [resolve-candidate, policy-gates]
     if: ${{ inputs.run_drift }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -1542,6 +1582,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
