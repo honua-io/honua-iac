@@ -836,9 +836,12 @@ resource "random_password" "master_key" {
 }
 
 resource "random_password" "redis_auth" {
-  count   = local.redis_create && var.redis_auth_token == "" ? 1 : 0
-  length  = 32
-  special = false
+  count       = local.redis_create && var.redis_auth_token == "" ? 1 : 0
+  length      = 32
+  special     = false
+  min_upper   = 1
+  min_lower   = 1
+  min_numeric = 1
 }
 
 resource "random_id" "alb_logs_suffix" {
