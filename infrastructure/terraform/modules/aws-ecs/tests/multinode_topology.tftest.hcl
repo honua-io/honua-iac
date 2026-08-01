@@ -109,7 +109,7 @@ run "invalid_elasticache_auth_token_is_rejected" {
   command = plan
 
   variables {
-    redis_auth_token = "invalid/token/characters"
+    redis_auth_token = "aaaaaaaaaaaaaaa/"
   }
 
   expect_failures = [var.redis_auth_token]
