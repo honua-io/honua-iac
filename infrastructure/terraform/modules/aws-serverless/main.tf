@@ -166,9 +166,12 @@ locals {
     ControlPlane__ExecutionWorkloads__0__ParameterEntries__5__Key   = "batch.job_definition_arn.xl"
     ControlPlane__ExecutionWorkloads__0__ParameterEntries__5__Value = aws_batch_job_definition.gp["xl"].arn
   } : {}
+  # API Gateway is HTTPS-only, but Lambda Web Adapter's final in-process hop is HTTP.
+  # Emit HSTS for that trusted topology instead of suppressing it based on the internal scheme.
   lambda_environment = merge({
     HONUA_SKIP_MIGRATIONS                                       = var.skip_migrations ? "true" : "false"
     HostValidation__AllowedHosts__0                             = "*.execute-api.${data.aws_region.current.name}.amazonaws.com"
+    SecurityHeaders__HstsHttpsOnly                              = "false"
     ConnectionStrings__DefaultConnection                        = "aws:secretsmanager:${aws_secretsmanager_secret.connection_string.arn}"
     HONUA_ADMIN_PASSWORD                                        = "aws:secretsmanager:${aws_secretsmanager_secret.admin_password.arn}"
     Security__ConnectionEncryption__MasterKey                   = "aws:secretsmanager:${aws_secretsmanager_secret.master_key.arn}"
