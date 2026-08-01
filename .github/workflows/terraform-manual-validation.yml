@@ -3,6 +3,11 @@ name: Terraform Manual Validation
 on:
   workflow_dispatch:
     inputs:
+      candidate_ref:
+        description: "Exact honua-iac branch, tag, or commit SHA to validate"
+        required: false
+        type: string
+        default: ""
       cloud:
         description: "Cloud target"
         required: true
@@ -126,6 +131,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_ref || github.sha }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -186,6 +193,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_ref || github.sha }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -262,6 +271,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_ref || github.sha }}
 
       - name: Checkout honua-server platform validation suite
         uses: actions/checkout@v4
@@ -608,6 +619,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_ref || github.sha }}
 
       - name: Checkout honua-server platform validation suite
         uses: actions/checkout@v4
@@ -986,6 +999,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_ref || github.sha }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -1106,6 +1121,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_ref || github.sha }}
 
       - name: Checkout honua-server platform validation suite
         uses: actions/checkout@v4
@@ -1304,6 +1321,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_ref || github.sha }}
 
       - name: Checkout honua-server platform validation suite
         uses: actions/checkout@v4
@@ -1542,6 +1561,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_ref || github.sha }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
