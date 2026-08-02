@@ -75,7 +75,7 @@ Options:
   --region <aws-region>                AWS region (default: AWS_VALIDATION_REGION or us-west-2)
   --environment <name>                 Environment suffix (default: it)
   --name-prefix-base <prefix>          Base prefix for generated resource names
-  --node-instance-type <type>          EKS node instance type (default: t4g.small)
+  --node-instance-type <type>          EKS node instance type (default: t3.medium)
   --node-min-size <n>                  EKS node group min size (default: 1)
   --node-max-size <n>                  EKS node group max size (default: 3)
   --node-desired-size <n>              EKS node group desired size (default: 2)
