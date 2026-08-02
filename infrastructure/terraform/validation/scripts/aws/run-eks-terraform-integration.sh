@@ -25,8 +25,8 @@ fi
 REGION="${AWS_REGION_OVERRIDE:-${AWS_VALIDATION_REGION:-us-west-2}}"
 ENVIRONMENT="${EKS_TF_ENVIRONMENT:-it}"
 NAME_PREFIX_BASE="${EKS_TF_NAME_PREFIX_BASE:-hnu$(date -u +%m%d%H%M)}"
-NODE_INSTANCE_TYPE="${EKS_NODE_INSTANCE_TYPE:-t4g.small}"
-NODE_CPU_ARCHITECTURE="${EKS_NODE_CPU_ARCHITECTURE:-ARM64}"
+NODE_INSTANCE_TYPE="${EKS_NODE_INSTANCE_TYPE:-t3.medium}"
+NODE_CPU_ARCHITECTURE="${EKS_NODE_CPU_ARCHITECTURE:-X86_64}"
 NODE_MIN_SIZE="${EKS_NODE_MIN_SIZE:-1}"
 NODE_MAX_SIZE="${EKS_NODE_MAX_SIZE:-3}"
 NODE_DESIRED_SIZE="${EKS_NODE_DESIRED_SIZE:-2}"
@@ -75,7 +75,7 @@ Options:
   --region <aws-region>                AWS region (default: AWS_VALIDATION_REGION or us-west-2)
   --environment <name>                 Environment suffix (default: it)
   --name-prefix-base <prefix>          Base prefix for generated resource names
-  --node-instance-type <type>          EKS node instance type (default: t4g.small)
+  --node-instance-type <type>          EKS node instance type (default: t3.medium)
   --node-min-size <n>                  EKS node group min size (default: 1)
   --node-max-size <n>                  EKS node group max size (default: 3)
   --node-desired-size <n>              EKS node group desired size (default: 2)

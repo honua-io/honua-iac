@@ -49,13 +49,13 @@ variable "cluster_version" {
 variable "node_instance_types" {
   description = "Managed node group instance types."
   type        = list(string)
-  default     = ["t4g.small"]
+  default     = ["t3.medium"]
 }
 
 variable "node_cpu_architecture" {
-  description = "CPU architecture for the managed node group."
+  description = "CPU architecture for the managed node group. X86_64 is the release-certified default."
   type        = string
-  default     = "ARM64"
+  default     = "X86_64"
 }
 
 variable "node_min_size" {

@@ -79,9 +79,9 @@ variable "honua_image" {
 }
 
 variable "task_cpu_architecture" {
-  description = "Fargate CPU architecture for validation. ARM64 is the default."
+  description = "Fargate CPU architecture. X86_64 is the release-certified default."
   type        = string
-  default     = "ARM64"
+  default     = "X86_64"
 }
 
 variable "db_publicly_accessible" {

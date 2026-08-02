@@ -55,9 +55,9 @@ Notes:
   - Secrets remain in GitHub Secrets. This helper only manages repo variables.
   - ECS/Lambda images are derived from the honua-server ECR publish lane when AWS
     credentials are available in the current shell.
-  - AWS cloud defaults now assume Arm runtimes: ECS resolves to the `*-ecs-aot`
-    image family and Lambda resolves to the `*-lambda-aot` image
-    family, both targeting arm64 by default.
+  - AWS ECS resolves to the `*-ecs-aot` image family and its Terraform default
+    targets x86_64. Lambda resolves to the `*-lambda-aot` image family and
+    targets arm64 by default.
   - ACA/Functions images are derived from ACR when ACR is configured in the
     source repo.
   - Azure Container Apps and Azure Functions should use amd64 cloud images.
