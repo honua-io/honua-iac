@@ -157,9 +157,9 @@ variable "image" {
 }
 
 variable "task_cpu_architecture" {
-  description = "ECS/Fargate CPU architecture. Honua defaults to ARM64 for Graviton-friendly AWS deployments."
+  description = "ECS/Fargate CPU architecture. X86_64 is the release-certified default; use ARM64 only with an independently verified image."
   type        = string
-  default     = "ARM64"
+  default     = "X86_64"
 
   validation {
     condition     = contains(["ARM64", "X86_64"], upper(var.task_cpu_architecture))

@@ -125,7 +125,7 @@ Recommended tag shapes:
 - Azure Container Apps: generic image tag in ACR (`latest-aot` preferred, `latest` debug fallback); ACA runs `amd64`
 - Azure Functions: ACR URI with `*-functions-aot` preferred; `*-functions` is the debug fallback; Functions custom containers are treated as `amd64`
 - AKS: generic multi-arch image tag (`latest-aot` preferred, `latest` debug fallback); Arm node pools should pull the `arm64` variant automatically
-- AWS ECS: ECR URI with `*-ecs-aot` preferred; `*-ecs` is the debug fallback; ECS validation defaults to `ARM64`
+- AWS ECS: ECR URI with `*-ecs-aot` preferred; `*-ecs` is the debug fallback; ECS validation defaults to release-certified `X86_64` (`ARM64` is opt-in and must use an independently verified image)
 - AWS Lambda: ECR URI with concrete `*-lambda-aot-arm64` preferred; `*-lambda-arm64` is the debug fallback; Lambda validation defaults to `arm64`
 
 For local runs, prefer explicit script flags instead of exporting image refs as secrets:

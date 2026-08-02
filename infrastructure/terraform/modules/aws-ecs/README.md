@@ -183,7 +183,7 @@ If your Prometheus scrape config uses different job names, override the correspo
 |----------|---------|-------------|
 | `image` | Required | Container image. Pin to an immutable release tag or digest. AOT builds are recommended. |
 | `connection_encryption_master_key` | Required (nullable) | Fail-closed connection-key decision. Set `null` explicitly only for a new deployment; existing deployments must supply their current key as described below. |
-| `task_cpu_architecture` | `ARM64` | Fargate CPU architecture. Honua defaults to Arm on AWS; override to `X86_64` only when required. |
+| `task_cpu_architecture` | `X86_64` | Fargate CPU architecture. `X86_64` is release-certified; use `ARM64` only with an independently verified image. |
 | `container_cpu` | 512 | Fargate CPU units (256/512/1024/2048/4096). |
 | `container_memory` | 1024 | Fargate memory in MiB. |
 | `desired_count` | 1 | Minimum number of tasks. Values greater than one require the safe MultiNode topology. |
