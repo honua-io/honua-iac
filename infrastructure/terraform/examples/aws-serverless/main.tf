@@ -140,6 +140,11 @@ output "db_endpoint" {
   sensitive = true
 }
 
+output "admin_password_secret_arn" {
+  description = "Secrets Manager ARN for the admin password."
+  value       = module.honua.admin_password_secret_arn
+}
+
 output "redis_connection_string" {
   value     = module.honua.redis_connection_string
   sensitive = true

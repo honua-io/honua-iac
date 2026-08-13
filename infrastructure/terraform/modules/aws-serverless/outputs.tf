@@ -100,6 +100,11 @@ output "db_connection_secret_arn" {
   value       = aws_secretsmanager_secret.connection_string.arn
 }
 
+output "admin_password_secret_arn" {
+  description = "Secrets Manager ARN for the admin password."
+  value       = aws_secretsmanager_secret.admin_password.arn
+}
+
 output "lambda_security_group_id" {
   description = "Security group ID attached to the Honua Lambda function."
   value       = aws_security_group.lambda.id

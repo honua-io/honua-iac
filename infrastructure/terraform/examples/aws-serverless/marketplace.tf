@@ -130,6 +130,7 @@ locals {
     current_revision = module.honua.control_plane_current_revision
     desired_revision = module.honua.control_plane_desired_revision
     secret_refs = { for k, v in {
+      admin_password   = module.honua.admin_password_secret_arn
       db_connection    = module.honua.db_connection_secret_arn
       redis_connection = nonsensitive(module.honua.redis_connection_secret_arn)
       pro_license      = module.honua.pro_license_secret_arn

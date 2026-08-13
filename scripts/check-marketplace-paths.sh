@@ -80,6 +80,33 @@ assert_decl() {
     nonconforming=1
   fi
 }
+
+assert_deploy_secret_ref() {
+  local example_root="$1" key="$2" expected_value="$3"
+  local file="${TF_ROOT}/${example_root}/marketplace.tf"
+  local block
+
+  block="$(awk '
+    /^[[:space:]]*secret_refs[[:space:]]*=/ { capture = 1 }
+    capture { print }
+    capture && /^[[:space:]]*}[[:space:]]*:[[:space:]]*k[[:space:]]*=>[[:space:]]*v[[:space:]]*if[[:space:]]*v[[:space:]]*!=[[:space:]]*null[[:space:]]*}/ { exit }
+  ' "$file")"
+
+  if [ -z "$block" ] || ! printf '%s\n' "$block" | awk -v expected="${key} = ${expected_value}" '
+    {
+      line = $0
+      sub(/#.*/, "", line)
+      gsub(/[[:space:]]+/, " ", line)
+      sub(/^ /, "", line)
+      sub(/ $/, "", line)
+      if (line == expected) found = 1
+    }
+    END { exit(found ? 0 : 1) }
+  '; then
+    echo "MISSING (deploy_contract.secret_refs.${key}): expected ${expected_value} in ${file#"${REPO_ROOT}"/}" >&2
+    nonconforming=1
+  fi
+}
 while IFS='|' read -r example_root input_var install_out deploy_out; do
   [ -z "$example_root" ] && continue
   root="${TF_ROOT}/${example_root}"
@@ -107,6 +134,11 @@ for t in d.get("targets", []):
         t.get("deploySurfaceOutput", "") or "",
     ]))
 ' "${MARKET}")
+
+assert_deploy_secret_ref \
+  "examples/aws-serverless" \
+  "admin_password" \
+  "module.honua.admin_password_secret_arn"
 
 if [ "$nonconforming" -ne 0 ]; then
   echo "Marketplace contract-conformance check FAILED." >&2
