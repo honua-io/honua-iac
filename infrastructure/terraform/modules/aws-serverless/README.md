@@ -390,7 +390,14 @@ Because the handlers live in the same image and are selected by `HONUA_CONTROL_P
 
 ## Outputs
 
-See `outputs.tf` for the API endpoint URL, RDS connection string, and secrets. The module also emits Honua control-plane handoff metadata:
+See `outputs.tf` for the API endpoint URL, RDS connection string, and secret
+references. `admin_password_secret_arn` is the always-present, non-sensitive
+string ARN of the module-managed admin-password secret. Treat it as opaque and
+pass it directly to consumers: AWS appends a random suffix to Secrets Manager
+ARNs, so callers must not derive it from the configured secret name. This
+output does not expose the admin-password value.
+
+The module also emits Honua control-plane handoff metadata:
 
 - `environment`
 - `aws_region`
