@@ -141,6 +141,18 @@ variable "customcode_egress_https_cidrs" {
   default     = []
 }
 
+# --- ECS/ALB weighted-cutover certification cell ---------------------------
+# Opt-in, billable-while-on. Provisions the minimal standing substrate the
+# server's production AwsEcsAlbDeployBackend certifies against real ELBv2 + ECS
+# APIs: an internal ALB with a weighted stable/canary listener rule and one
+# Fargate service attached to both target groups. See ecs-alb-cert.tf.
+
+variable "enable_ecs_alb_cert" {
+  description = "Provision the ECS/ALB weighted-cutover certification cell (internal ALB + weighted stable/canary target groups + one smallest-Fargate service attached to both). OFF by default: while on it costs ~1 ALB (hourly + LCU) plus one 0.25 vCPU/512 MB Fargate task running ~24/7. The cert tests exercise the ELBv2/ECS control-plane APIs, so the ALB is internal (no public exposure)."
+  type        = bool
+  default     = false
+}
+
 # --- Certification budget guardrail ----------------------------------------
 
 variable "monthly_budget_usd" {

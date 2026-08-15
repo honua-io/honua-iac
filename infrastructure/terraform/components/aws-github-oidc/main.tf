@@ -133,7 +133,7 @@ data "aws_iam_policy_document" "permissions" {
       "batch:UntagResource"
     ]
     resources = [
-      "${local.batch_arn_prefix}:job-definition/${var.resource_name_prefix}-*"
+      "${local.batch_arn_prefix}:job-definition/${coalesce(var.jobdef_lifecycle_name_prefix != "" ? var.jobdef_lifecycle_name_prefix : null, var.resource_name_prefix)}-*"
     ]
   }
 
@@ -153,9 +153,9 @@ data "aws_iam_policy_document" "permissions" {
     ]
   }
 
-  #checkov:skip=CKV_AWS_356: Batch/ECS describe + CloudWatch read actions do not support resource-level ARNs; scoped by account/region.
+  #checkov:skip=CKV_AWS_356: Batch/ECS/ELBv2 describe + CloudWatch read actions do not support resource-level ARNs; scoped by account/region.
   statement {
-    sid    = "BatchEcsDescribe"
+    sid    = "BatchEcsElbDescribe"
     effect = "Allow"
     actions = [
       "batch:DescribeJobs",
@@ -165,9 +165,47 @@ data "aws_iam_policy_document" "permissions" {
       "batch:DescribeComputeEnvironments",
       "ecs:DescribeTasks",
       "ecs:ListTasks",
-      "ecs:DescribeTaskDefinition"
+      "ecs:DescribeTaskDefinition",
+      # ECS/ALB weighted-cutover cell: read service + ELBv2 listener/rule/target
+      # state to drive and verify the cutover. These describe actions do not
+      # support resource-level ARNs.
+      "elasticloadbalancing:DescribeRules",
+      "elasticloadbalancing:DescribeListeners",
+      "elasticloadbalancing:DescribeTargetGroups",
+      "elasticloadbalancing:DescribeTargetHealth"
     ]
     resources = ["*"]
+  }
+
+  # ECS/ALB weighted-cutover cell: read + update the cert service so the backend
+  # can trigger a deployment and observe convergence. Scoped to the honua-cert-*
+  # service surface (IAM `*` spans the cluster/service ARN segments).
+  statement {
+    sid    = "EcsCertServiceManageScoped"
+    effect = "Allow"
+    actions = [
+      "ecs:DescribeServices",
+      "ecs:UpdateService"
+    ]
+    resources = [
+      "arn:aws:ecs:${local.region}:${local.account_id}:service/${var.resource_name_prefix}-*"
+    ]
+  }
+
+  # ECS/ALB weighted-cutover cell: rewrite the listener's weighted default rule
+  # (and restore it on rollback). Scoped to the exact listener + listener-rule
+  # ARNs the cert stack passes; empty input grants nothing (optional-grant).
+  dynamic "statement" {
+    for_each = length(var.cert_alb_modify_resource_arns) > 0 ? [1] : []
+    content {
+      sid    = "AlbWeightedCutoverModifyScoped"
+      effect = "Allow"
+      actions = [
+        "elasticloadbalancing:ModifyRule",
+        "elasticloadbalancing:ModifyListener"
+      ]
+      resources = var.cert_alb_modify_resource_arns
+    }
   }
 
   # Invoke + manage cert Lambda(s). Invoke drives the certification flow; the
