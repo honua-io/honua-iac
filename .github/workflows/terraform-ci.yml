@@ -115,6 +115,7 @@ jobs:
             "infrastructure/terraform/examples/aws"
             "infrastructure/terraform/examples/aws-serverless"
             "infrastructure/terraform/examples/aws-demo"
+            "infrastructure/terraform/examples/aws-cert"
             "infrastructure/terraform/examples/aws-data"
             "infrastructure/terraform/examples/azure-aks"
             "infrastructure/terraform/examples/aws-eks"
@@ -129,6 +130,7 @@ jobs:
             "infrastructure/terraform/modules/aws-eks"
             "infrastructure/terraform/modules/observability-stack"
             "infrastructure/terraform/components/cloud-demo-smoke-credentials"
+            "infrastructure/terraform/components/aws-github-oidc"
             "infrastructure/terraform/internal/gtm-forms-router"
             "docs/devops/examples"
           )

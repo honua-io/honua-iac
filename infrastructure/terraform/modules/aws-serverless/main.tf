@@ -93,11 +93,12 @@ locals {
     Licensing__LicenseContentSecretRef                  = "aws:secretsmanager:${aws_secretsmanager_secret.pro_license[0].arn}"
     "Licensing__TrustedKeys__${var.pro_license_key_id}" = var.pro_license_trusted_public_key
   } : {}
-  # When GP-on-Batch is enabled, surface the queue/job-definition ARNs and
-  # default sizing to the server as a ControlPlane:ExecutionWorkloads entry.
-  # The reconciler selects the AwsBatchComputeBackend by Backend=honua-aws-batch
-  # + TargetKind=AwsBatch; ParameterEntries carry the batch.* keys the backend
-  # reads off ExecutionJobSpec.Parameters at submit time.
+  # When GP-on-Batch is enabled, surface the DURABLE substrate to the server as a
+  # ControlPlane:ExecutionWorkloads entry: the queue ARN and the per-TIER
+  # job-definition ARNs (s/m/l/xl). The reconciler selects the
+  # AwsBatchComputeBackend by Backend=honua-aws-batch + TargetKind=AwsBatch,
+  # picks the size tier per job, and applies vCPU/memory/timeout/retry as
+  # SubmitJob overrides at run time — terraform does NOT template those per job.
   gp_batch_environment = local.gp_batch_enabled ? {
     ControlPlane__ExecutionWorkloads__0__WorkloadId                 = var.gp_batch_workload_id
     ControlPlane__ExecutionWorkloads__0__WorkloadName               = var.gp_batch_workload_name
@@ -107,18 +108,16 @@ locals {
     ControlPlane__ExecutionWorkloads__0__ArtifactReference          = local.gp_batch_image
     ControlPlane__ExecutionWorkloads__0__ParameterEntries__0__Key   = "batch.job_queue_arn"
     ControlPlane__ExecutionWorkloads__0__ParameterEntries__0__Value = aws_batch_job_queue.gp[0].arn
-    ControlPlane__ExecutionWorkloads__0__ParameterEntries__1__Key   = "batch.job_definition_arn"
-    ControlPlane__ExecutionWorkloads__0__ParameterEntries__1__Value = aws_batch_job_definition.gp[0].arn
-    ControlPlane__ExecutionWorkloads__0__ParameterEntries__2__Key   = "batch.region"
-    ControlPlane__ExecutionWorkloads__0__ParameterEntries__2__Value = data.aws_region.current.name
-    ControlPlane__ExecutionWorkloads__0__ParameterEntries__3__Key   = "batch.vcpus"
-    ControlPlane__ExecutionWorkloads__0__ParameterEntries__3__Value = tostring(var.gp_batch_vcpus)
-    ControlPlane__ExecutionWorkloads__0__ParameterEntries__4__Key   = "batch.memory_mib"
-    ControlPlane__ExecutionWorkloads__0__ParameterEntries__4__Value = tostring(var.gp_batch_memory_mib)
-    ControlPlane__ExecutionWorkloads__0__ParameterEntries__5__Key   = "batch.timeout_seconds"
-    ControlPlane__ExecutionWorkloads__0__ParameterEntries__5__Value = tostring(var.gp_batch_timeout_seconds)
-    ControlPlane__ExecutionWorkloads__0__ParameterEntries__6__Key   = "batch.retry_attempts"
-    ControlPlane__ExecutionWorkloads__0__ParameterEntries__6__Value = tostring(var.gp_batch_retry_attempts)
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__1__Key   = "batch.region"
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__1__Value = data.aws_region.current.name
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__2__Key   = "batch.job_definition_arn.s"
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__2__Value = aws_batch_job_definition.gp["s"].arn
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__3__Key   = "batch.job_definition_arn.m"
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__3__Value = aws_batch_job_definition.gp["m"].arn
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__4__Key   = "batch.job_definition_arn.l"
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__4__Value = aws_batch_job_definition.gp["l"].arn
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__5__Key   = "batch.job_definition_arn.xl"
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__5__Value = aws_batch_job_definition.gp["xl"].arn
   } : {}
   lambda_environment = merge({
     HONUA_SKIP_MIGRATIONS                                       = var.skip_migrations ? "true" : "false"

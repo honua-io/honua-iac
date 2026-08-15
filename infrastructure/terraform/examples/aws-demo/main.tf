@@ -163,10 +163,11 @@ module "honua" {
   # Architecture matches the demo's x86_64 image (see lambda_architectures note
   # above). The GP job role gets read/write on the demo data bucket so imports
   # can stage to S3 the same way the Lambda does.
-  enable_gp_batch           = var.enable_gp_batch
-  gp_batch_image            = var.gp_batch_image
-  gp_batch_cpu_architecture = "X86_64"
-  gp_batch_data_bucket_arn  = aws_s3_bucket.demo_data.arn
+  enable_gp_batch              = var.enable_gp_batch
+  gp_batch_image               = var.gp_batch_image
+  gp_batch_cpu_architecture    = "X86_64"
+  gp_batch_data_bucket_arn     = aws_s3_bucket.demo_data.arn
+  gp_batch_data_bucket_enabled = true
 
   # Demo-specific environment variables
   additional_env = {

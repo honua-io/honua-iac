@@ -3,16 +3,20 @@
 #
 # "GP over Batch": the Honua server's ExecutionJobReconciler submits and observes
 # geoprocessing/import jobs via the AwsBatchComputeBackend (TargetKind=AwsBatch,
-# Backend=honua-aws-batch). The backend reads the queue ARN, job-definition ARN,
-# and per-job vCPU/memory from ExecutionJobSpec.Parameters (the batch.* keys),
-# which this module surfaces to the Lambda as ControlPlane:ExecutionWorkloads
-# config (see locals.gp_batch_environment in main.tf).
+# Backend=honua-aws-batch). Terraform provisions a DURABLE per-environment GP
+# substrate: one Fargate-Spot scale-to-zero compute environment, one job queue,
+# the IAM roles, the worker-gdal ECR repo, and a small POOL of job definitions
+# that differ ONLY by ephemeral (scratch) storage — the single knob AWS Batch
+# SubmitJob cannot override. Everything else (vCPU, memory, timeout, retry,
+# per-job env) is overridden at SubmitJob time by the server, so terraform does
+# NOT template those per job. The server picks the right size tier (s/m/l/xl)
+# per job and submits against its job-definition ARN with the runtime overrides.
 #
 # Cost posture (budget-tight demo):
 #   - Fargate Spot capacity (~70% cheaper than on-demand Fargate).
 #   - Compute environment scales to zero (min_vcpus = 0): nothing stays warm,
 #     you pay only for the seconds a job's container actually runs.
-#   - Modest default sizing (1 vCPU / 2 GB), parameterized for larger jobs.
+#   - Modest job-def DEFAULT sizing (1 vCPU / 2 GB); the server overrides per job.
 #
 # Toggled off by default (enable_gp_batch = false) so existing deploys are
 # unchanged unless an operator opts in.
@@ -22,14 +26,39 @@ locals {
   gp_batch_enabled = var.enable_gp_batch
 
   # AWS Batch on Fargate requires a vCPU/memory pairing from the supported
-  # Fargate task-size matrix. Defaults (1 vCPU / 2048 MiB) are a valid pairing
-  # and intentionally modest for a demo. Operators tune via the variables.
-  gp_batch_name = "${local.name}-gp"
+  # Fargate task-size matrix. The job-def DEFAULT (1 vCPU / 2048 MiB) is a valid
+  # pairing and intentionally modest; the server overrides VCPU/MEMORY per job at
+  # SubmitJob time, so these are only the baseline a bare submit inherits.
+  gp_batch_name           = "${local.name}-gp"
+  gp_batch_default_vcpus  = 1
+  gp_batch_default_memory = 2048
 
   # GP container image defaults to the same image the Lambda runs (a single
   # Honua image that branches to the GP worker via HONUA_JOB_KIND env), unless
   # the operator supplies a dedicated GP image.
   gp_batch_image = var.gp_batch_image != "" ? var.gp_batch_image : var.image
+
+  # Job-definition size POOL (contract v1). A fixed set of job definitions that
+  # differ ONLY by ephemeral (scratch) storage — the knob SubmitJob cannot
+  # override. vCPU/memory are DEFAULTS the server overrides per job; the tier is
+  # selected per job by the server to pick the disk floor a GP job needs.
+  #   gp-s  -> 20 GiB  (Fargate default; ephemeralStorage block omitted)
+  #   gp-m  -> 50 GiB
+  #   gp-l  -> 100 GiB
+  #   gp-xl -> 200 GiB
+  # 20 GiB is the Fargate default and the minimum the ephemeralStorage block
+  # accepts is 21, so the "s" tier omits the block entirely (null) and lets the
+  # default apply. for_each over this map mints the pool as one resource block.
+  gp_batch_tiers = local.gp_batch_enabled ? {
+    s  = null
+    m  = 50
+    l  = 100
+    xl = 200
+  } : {}
+
+  # worker-gdal ECR repository name is stable whether or not it is created, so an
+  # operator can pre-create + push, then flip create_worker_gdal_repo on.
+  worker_gdal_repo_name = "${local.name}-worker-gdal"
 }
 
 # ---------------------------------------------------------------------------
@@ -127,10 +156,12 @@ resource "aws_iam_role_policy" "batch_job_secrets" {
 }
 
 # Optional: S3 access for GP jobs that read/write the FileStorage data bucket.
-# Provided by the caller (the aws-demo root owns the bucket) so the module does
-# not assume a bucket exists.
+# Provided by the caller (the root owns the bucket) so the module does not assume
+# a bucket exists. Gated on the plan-known `gp_batch_data_bucket_enabled` flag —
+# NOT on `gp_batch_data_bucket_arn != ""` — because the caller passes a bucket ARN
+# computed at apply time (aws_s3_bucket.x.arn), which a `count` cannot depend on.
 resource "aws_iam_role_policy" "batch_job_s3" {
-  count = local.gp_batch_enabled && var.gp_batch_data_bucket_arn != "" ? 1 : 0
+  count = local.gp_batch_enabled && var.gp_batch_data_bucket_enabled ? 1 : 0
   name  = "${local.gp_batch_name}-job-s3"
   role  = aws_iam_role.batch_job[0].id
   policy = jsonencode({
@@ -271,26 +302,36 @@ resource "aws_batch_job_queue" "gp" {
 }
 
 # ---------------------------------------------------------------------------
-# Job definition for the geoprocessing container.
-# vCPU/memory here are the job-definition defaults; per-job overrides arrive via
-# the AwsBatchComputeBackend (batch.vcpus / batch.memory_mib) at submit time.
+# Job-definition size POOL for the geoprocessing container.
+#
+# A fixed pool of job definitions (gp-s / gp-m / gp-l / gp-xl) that differ ONLY
+# by ephemeral (scratch) storage — the one knob AWS Batch SubmitJob CANNOT
+# override. All other per-job sizing (vCPU, memory, timeout, retry) is applied
+# at SubmitJob time by the server's AwsBatchComputeBackend, so the vCPU/memory
+# here are just DEFAULTS, and timeout/retry are job-definition baselines the
+# submit overrides. for_each over local.gp_batch_tiers mints the pool from one
+# block. The server selects a tier per job by its disk floor and submits against
+# that tier's job-definition ARN (see the gp_job_definition_arns output).
 # ---------------------------------------------------------------------------
 
 resource "aws_batch_job_definition" "gp" {
-  count = local.gp_batch_enabled ? 1 : 0
+  for_each = local.gp_batch_tiers
 
-  name                  = "${local.gp_batch_name}-job"
+  name                  = "${local.gp_batch_name}-${each.key}"
   type                  = "container"
   platform_capabilities = ["FARGATE"]
 
-  container_properties = jsonencode({
+  container_properties = jsonencode(merge({
     image            = local.gp_batch_image
     jobRoleArn       = aws_iam_role.batch_job[0].arn
     executionRoleArn = aws_iam_role.batch_execution[0].arn
 
+    # vCPU/MEMORY are job-def DEFAULTS the server overrides per job at SubmitJob
+    # time (ContainerOverrides). GPU is out of scope on the Fargate-Spot path
+    # (see var.gp_gpu_enabled): GPU needs an EC2 compute environment.
     resourceRequirements = [
-      { type = "VCPU", value = tostring(var.gp_batch_vcpus) },
-      { type = "MEMORY", value = tostring(var.gp_batch_memory_mib) }
+      { type = "VCPU", value = tostring(local.gp_batch_default_vcpus) },
+      { type = "MEMORY", value = tostring(local.gp_batch_default_memory) },
     ]
 
     networkConfiguration = {
@@ -333,14 +374,24 @@ resource "aws_batch_job_definition" "gp" {
         "awslogs-stream-prefix" = "gp"
       }
     }
-  })
+    },
+    # Ephemeral storage is the ONLY per-tier difference and the only knob
+    # SubmitJob cannot override. The "s" tier (each.value == null) omits the
+    # block to inherit the Fargate 20 GiB default; m/l/xl pin 50/100/200 GiB.
+    each.value == null ? {} : {
+      ephemeralStorage = {
+        sizeInGiB = each.value
+      }
+    }
+  ))
 
+  # Job-definition baselines; the server overrides both per job at SubmitJob time.
   retry_strategy {
-    attempts = var.gp_batch_retry_attempts
+    attempts = 1
   }
 
   timeout {
-    attempt_duration_seconds = var.gp_batch_timeout_seconds
+    attempt_duration_seconds = 3600
   }
 
   tags = local.tags
@@ -367,13 +418,13 @@ resource "aws_iam_role_policy" "lambda_batch_submit" {
           "batch:TerminateJob",
           "batch:CancelJob"
         ]
-        # SubmitJob authorizes on both the queue and the job definition; the
-        # job-definition ARN is matched with a revision wildcard so new
+        # SubmitJob authorizes on both the queue and the job definition; every
+        # tier's job-definition ARN is matched with a revision wildcard so new
         # revisions from later applies keep working.
-        Resource = [
-          aws_batch_job_queue.gp[0].arn,
-          "${aws_batch_job_definition.gp[0].arn_prefix}:*"
-        ]
+        Resource = concat(
+          [aws_batch_job_queue.gp[0].arn],
+          [for jd in aws_batch_job_definition.gp : "${jd.arn_prefix}:*"]
+        )
       },
       {
         # DescribeJobs and ListJobs do not support resource-level scoping in
@@ -386,6 +437,60 @@ resource "aws_iam_role_policy" "lambda_batch_submit" {
           "batch:ListJobs"
         ]
         Resource = ["*"]
+      }
+    ]
+  })
+}
+
+# ---------------------------------------------------------------------------
+# Dedicated worker-gdal ECR repository (optional).
+# Gives the GP/GDAL worker image its own lifecycle, decoupled from the Honua
+# Lambda image. Off by default (create_worker_gdal_repo = false) because GP
+# defaults to reusing the Lambda image via HONUA_JOB_KIND. The repository name
+# is stable regardless of the flag so an operator can pre-create + push, then
+# flip the flag on. Scan-on-push is enabled; encryption uses AES256 (no
+# external KMS key dependency); a lifecycle policy caps retained images.
+# ---------------------------------------------------------------------------
+
+resource "aws_ecr_repository" "worker_gdal" {
+  count                = var.create_worker_gdal_repo ? 1 : 0
+  name                 = local.worker_gdal_repo_name
+  image_tag_mutability = var.worker_gdal_repo_image_tag_mutability
+  force_delete         = var.worker_gdal_repo_force_delete
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    # KMS with the AWS-managed ECR key (no CMK to manage). An inline checkov
+    # skip in this module is not honored when the repo is evaluated through the
+    # examples/aws-cert module instantiation, so use the real KMS setting.
+    encryption_type = "KMS"
+  }
+
+  tags = local.tags
+}
+
+# Expire all but the most-recent N images so the GP worker repo does not
+# accumulate storage cost across job-specific tags.
+resource "aws_ecr_lifecycle_policy" "worker_gdal" {
+  count      = var.create_worker_gdal_repo ? 1 : 0
+  repository = aws_ecr_repository.worker_gdal[0].name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Retain only the most recent ${var.worker_gdal_repo_max_image_count} images."
+        selection = {
+          tagStatus   = "any"
+          countType   = "imageCountMoreThan"
+          countNumber = var.worker_gdal_repo_max_image_count
+        }
+        action = {
+          type = "expire"
+        }
       }
     ]
   })

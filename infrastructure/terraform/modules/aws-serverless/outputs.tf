@@ -153,31 +153,44 @@ output "xray_tracing_enabled" {
 }
 
 # --- GP on AWS Batch (Fargate Spot) outputs --------------------------------
-# Null when enable_gp_batch is false.
+# The durable GP substrate's runtime contract (v1). Consumers (the honua-devops
+# agent / the server) read these ARNs as OPAQUE runtime config — they couple to
+# the exported ARNs, NOT to terraform variable names. Null when enable_gp_batch
+# is false.
 
 output "gp_batch_enabled" {
   description = "Whether the GP-on-Batch backend was provisioned."
   value       = local.gp_batch_enabled
 }
 
-output "gp_batch_job_queue_arn" {
+output "gp_job_queue_arn" {
   description = "ARN of the GP Fargate Spot Batch job queue (batch.job_queue_arn)."
   value       = local.gp_batch_enabled ? aws_batch_job_queue.gp[0].arn : null
 }
 
-output "gp_batch_job_definition_arn" {
-  description = "ARN of the GP Batch job definition, current revision (batch.job_definition_arn)."
-  value       = local.gp_batch_enabled ? aws_batch_job_definition.gp[0].arn : null
+output "gp_job_definition_arns" {
+  description = "Map of GP job-definition size tier => ARN ({ s, m, l, xl }); tiers differ only by ephemeral storage. The server selects a tier per job and applies vCPU/memory/timeout/retry as SubmitJob overrides."
+  value       = local.gp_batch_enabled ? { for tier, jd in aws_batch_job_definition.gp : tier => jd.arn } : null
 }
 
-output "gp_batch_compute_environment_arn" {
+output "gp_compute_environment_arn" {
   description = "ARN of the GP Fargate Spot Batch compute environment."
   value       = local.gp_batch_enabled ? aws_batch_compute_environment.gp[0].arn : null
 }
 
-output "gp_batch_job_role_arn" {
-  description = "ARN of the IAM role the running GP container assumes."
+output "gp_job_role_arn" {
+  description = "ARN of the IAM role the running GP container assumes (task/job role)."
   value       = local.gp_batch_enabled ? aws_iam_role.batch_job[0].arn : null
+}
+
+output "gp_execution_role_arn" {
+  description = "ARN of the Fargate task execution role the GP job definitions use (ECR pull + log writes)."
+  value       = local.gp_batch_enabled ? aws_iam_role.batch_execution[0].arn : null
+}
+
+output "gp_worker_gdal_repository_url" {
+  description = "Push/pull URL of the dedicated worker-gdal ECR repository (null unless create_worker_gdal_repo)."
+  value       = var.create_worker_gdal_repo ? aws_ecr_repository.worker_gdal[0].repository_url : null
 }
 
 output "gp_batch_workload_id" {
@@ -188,4 +201,9 @@ output "gp_batch_workload_id" {
 output "gp_batch_control_plane_backend_name" {
   description = "Backend name the reconciler matches to dispatch to the AWS Batch adapter."
   value       = local.gp_batch_enabled ? "honua-aws-batch" : null
+}
+
+output "worker_gdal_repository_arn" {
+  description = "ARN of the dedicated worker-gdal ECR repository (null unless create_worker_gdal_repo)."
+  value       = var.create_worker_gdal_repo ? aws_ecr_repository.worker_gdal[0].arn : null
 }
