@@ -263,6 +263,22 @@ run_sweeper "$(resources "$UNEXPIRED")"
 assert_not_planned "unelapsed ExpiresAtUTC is not planned" 'arn:aws:rds:us-west-2:1:db:unexpired'
 assert_no_mutations "unelapsed ExpiresAtUTC triggers no mutating call"
 
+# 5b. The same, on a resource carrying NO Stack tag. The record fields are
+#     internally separated by a unit separator rather than a tab precisely
+#     because tab is IFS whitespace: `IFS=$'\t' read` collapses runs of tabs and
+#     drops the empty field, which would shift ExpiresAtUTC into Stack and skip
+#     the expiry check altogether. A safety check that quietly stops running is
+#     the failure mode worth a dedicated test.
+UNEXPIRED_NO_STACK="$(tagged 'arn:aws:rds:us-west-2:1:db:unexpired-no-stack' 'gha-111-aws-ecs' '' "$FUTURE")"
+run_sweeper "$(resources "$UNEXPIRED_NO_STACK")"
+assert_not_planned "unelapsed ExpiresAtUTC still vetoes when there is no Stack tag" 'arn:aws:rds:us-west-2:1:db:unexpired-no-stack'
+assert_no_mutations "unelapsed ExpiresAtUTC without a Stack tag triggers no mutating call"
+if grep -q "has not elapsed" <<<"$OUT" || grep -q "ExpiresAtUTC" <<<"$OUT"; then
+  check "the skip reason names ExpiresAtUTC, not a mis-parsed Stack" ok
+else
+  check "the skip reason names ExpiresAtUTC, not a mis-parsed Stack" no
+fi
+
 # 6. --protect-run-id wins over everything.
 run_sweeper "$(resources "$REAPABLE")" --protect-run-id gha-111-aws-ecs
 assert_not_planned "protected run id is not planned" 'arn:aws:ecs:us-west-2:1:cluster/honua-it-cluster'

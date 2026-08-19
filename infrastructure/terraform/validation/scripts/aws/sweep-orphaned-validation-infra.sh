@@ -67,6 +67,13 @@
 
 set -euo pipefail
 
+# Field separator for the internal records below. Deliberately NOT a tab: tab is
+# an IFS whitespace character, so `IFS=$'\t' read` collapses runs of tabs and
+# drops empty fields. A resource with no Stack tag would then have its
+# ExpiresAtUTC parsed as its Stack and its expiry check skipped -- a safety
+# check quietly not running is the worst possible failure mode here.
+US=$'\x1f'
+
 log_info() { echo "[INFO] $*"; }
 log_warn() { echo "[WARN] $*" >&2; }
 log_error() { echo "[ERROR] $*" >&2; }
@@ -222,8 +229,8 @@ skip() {
 # select_candidates runs inside a process substitution, i.e. a subshell, so it
 # cannot append to the caller's arrays. It emits tagged records instead and the
 # caller dispatches them; getting this wrong silently loses every skip reason.
-emit_skip() { printf 'SKIP\t%s\t%s\n' "$1" "$2"; }
-emit_fail() { printf 'FAIL\t%s\n' "$1"; }
+emit_skip() { printf 'SKIP%s%s%s%s\n' "$US" "$1" "$US" "$2"; }
+emit_fail() { printf 'FAIL%s%s\n' "$US" "$1"; }
 
 # ---------------------------------------------------------------------------
 # GitHub run state
@@ -285,9 +292,9 @@ validation_runs_active() {
 # ---------------------------------------------------------------------------
 
 # Emits one tagged TSV record per tagged resource:
-#   CAND\t<arn>\t<run id>\t<stack>   reapable
-#   SKIP\t<arn>\t<reason>            not reapable, with the reason
-#   FAIL\t<reason>                    the enumeration itself failed
+#   CAND<US><arn><US><run id><US><stack>   reapable
+#   SKIP<US><arn><US><reason>              not reapable, with the reason
+#   FAIL<US><reason>                       the enumeration itself failed
 select_candidates() {
   local region="$1"
   local payload
@@ -302,7 +309,7 @@ select_candidates() {
 
   local line arn run_id stack expires state status completed_epoch cutoff
 
-  while IFS=$'\t' read -r arn run_id stack expires; do
+  while IFS="$US" read -r arn run_id stack expires; do
     [[ -z "$arn" ]] && continue
 
     if [[ ${#PROTECT_RUN_IDS[@]} -gt 0 ]] && contains "$run_id" "${PROTECT_RUN_IDS[@]}"; then
@@ -331,7 +338,7 @@ select_candidates() {
     if [[ "$THIS_RUN" == "true" ]] && contains "$run_id" "${ONLY_RUN_IDS[@]}"; then
       # The caller is the owning run, ending now. Its own cell is reapable
       # without consulting the API or waiting out a grace window.
-      printf 'CAND\t%s\t%s\t%s\n' "$arn" "$run_id" "$stack"
+      printf 'CAND%s%s%s%s%s%s\n' "$US" "$arn" "$US" "$run_id" "$US" "$stack"
       continue
     fi
 
@@ -368,7 +375,7 @@ select_candidates() {
       fi
     fi
 
-    printf 'CAND\t%s\t%s\t%s\n' "$arn" "$run_id" "$stack"
+    printf 'CAND%s%s%s%s%s%s\n' "$US" "$arn" "$US" "$run_id" "$US" "$stack"
   done < <(jq -r '
     .ResourceTagMappingList[]
     | . as $r
@@ -376,7 +383,7 @@ select_candidates() {
     | ($tags | map(select(.Key == "ValidationRunId")) | first | .Value // "") as $run
     | ($tags | map(select(.Key == "Stack")) | first | .Value // "") as $stack
     | ($tags | map(select(.Key == "ExpiresAtUTC")) | first | .Value // "") as $expires
-    | [$r.ResourceARN, $run, $stack, $expires] | @tsv
+    | [$r.ResourceARN, $run, $stack, $expires] | join("\u001f")
   ' <<<"$payload")
 }
 
@@ -572,7 +579,7 @@ sweep_detached_network_interfaces() {
       --filters "Name=vpc-id,Values=$vpc_id" --output json 2>/dev/null || echo '{}')"
 
     local pending=0
-    while IFS=$'\t' read -r eni status; do
+    while IFS="$US" read -r eni status; do
       [[ -z "$eni" ]] && continue
       if [[ "$status" == "available" ]]; then
         if aws_write ec2 delete-network-interface --region "$region" --network-interface-id "$eni" >/dev/null 2>&1; then
@@ -581,7 +588,7 @@ sweep_detached_network_interfaces() {
       else
         pending=$(( pending + 1 ))
       fi
-    done < <(jq -r '.NetworkInterfaces[]? | [.NetworkInterfaceId, .Status] | @tsv' <<<"$payload")
+    done < <(jq -r '.NetworkInterfaces[]? | [.NetworkInterfaceId, .Status] | join("\u001f")' <<<"$payload")
 
     (( pending == 0 )) && break
     [[ "$DRY_RUN" == "true" ]] && break
@@ -656,7 +663,7 @@ delete_vpc() {
   local rt_payload
   rt_payload="$(aws_read ec2 describe-route-tables --region "$region" \
     --filters "Name=vpc-id,Values=$vpc_id" --output json 2>/dev/null || echo '{}')"
-  while IFS=$'\t' read -r rtb assoc_ids is_main; do
+  while IFS="$US" read -r rtb assoc_ids is_main; do
     [[ -z "$rtb" ]] && continue
     [[ "$is_main" == "true" ]] && continue
     local assoc
@@ -671,7 +678,7 @@ delete_vpc() {
     | [ .RouteTableId,
         ([.Associations[]? | select(.Main != true) | .RouteTableAssociationId] | join(" ")),
         (if ([.Associations[]? | select(.Main == true)] | length) > 0 then "true" else "false" end)
-      ] | @tsv' <<<"$rt_payload")
+      ] | join("\u001f")' <<<"$rt_payload")
 
   aws_write ec2 delete-vpc --region "$region" --vpc-id "$vpc_id" >/dev/null 2>&1 || {
     log_warn "Could not delete VPC $vpc_id"
@@ -829,16 +836,23 @@ main() {
   for region in "${REGIONS[@]}"; do
     while IFS= read -r line; do
       [[ -z "$line" ]] && continue
-      kind="${line%%$'\t'*}"
-      rest="${line#*$'\t'}"
+      kind="${line%%"$US"*}"
+      rest="${line#*"$US"}"
       case "$kind" in
-        CAND) candidates+=("$region"$'\t'"$rest") ;;
-        SKIP) SKIPPED_LINES+=("${rest%%$'\t'*} | ${rest#*$'\t'}") ;;
+        CAND) candidates+=("$region$US$rest") ;;
+        SKIP) SKIPPED_LINES+=("${rest%%"$US"*} | ${rest#*"$US"}") ;;
         FAIL) log_warn "$rest"; FAILURES=1 ;;
         *) log_warn "Unrecognised candidate record: $line" ;;
       esac
     done < <(select_candidates "$region")
   done
+
+  # Print the refusals as well as the plan. "Why was this NOT reaped" is the
+  # question anyone reading this log actually has.
+  if [[ ${#SKIPPED_LINES[@]} -gt 0 ]]; then
+    log_info "Skipped ${#SKIPPED_LINES[@]} tagged resource(s):"
+    printf '  SKIP %s\n' "${SKIPPED_LINES[@]}"
+  fi
 
   if [[ ${#candidates[@]} -eq 0 ]]; then
     log_info "Nothing reapable (${#SKIPPED_LINES[@]} tagged resource(s) skipped)."
@@ -852,13 +866,13 @@ main() {
     ordered+=("$line")
   done < <(
     for line in "${candidates[@]}"; do
-      IFS=$'\t' read -r region arn run_id stack <<<"$line"
+      IFS="$US" read -r region arn run_id stack <<<"$line"
       printf '%s\t%s\n' "$(delete_rank "$arn")" "$line"
     done | sort -n -k1,1 -s | cut -f2-
   )
 
   for line in "${ordered[@]}"; do
-    IFS=$'\t' read -r region arn run_id stack <<<"$line"
+    IFS="$US" read -r region arn run_id stack <<<"$line"
     PLANNED_ARNS+=("$arn")
     echo "PLAN delete $arn (run=$run_id stack=${stack:-<untagged>} region=$region)"
   done
@@ -876,7 +890,7 @@ main() {
   fi
 
   for line in "${ordered[@]}"; do
-    IFS=$'\t' read -r region arn run_id stack <<<"$line"
+    IFS="$US" read -r region arn run_id stack <<<"$line"
     set +e
     delete_arn "$region" "$arn"
     rc=$?
