@@ -361,6 +361,19 @@ else
   check "the VPC is deleted last" no
 fi
 
+# 16. A dry run does not merely skip the delete calls -- it returns before the
+#     deletion loop is entered at all, so the only AWS call it makes is the
+#     read-only enumeration. Nothing downstream has to honour a flag.
+export FAKE_SG_IDS="sg-1	sg-2"
+export FAKE_SUBNET_IDS="subnet-1"
+run_sweeper "$(resources "$VPC")" --dry-run
+unset FAKE_SG_IDS FAKE_SUBNET_IDS
+if [[ "$(wc -l < "$AWS_CALL_LOG")" == "1" ]] && grep -q '^resourcegroupstaggingapi get-resources' "$AWS_CALL_LOG"; then
+  check "a dry-run VPC teardown makes only the read-only enumeration call" ok
+else
+  check "a dry-run VPC teardown makes only the read-only enumeration call" no
+fi
+
 # 16. A summary file records what was left behind.
 SUMMARY="$TMP_DIR/summary.md"
 : > "$SUMMARY"

@@ -196,7 +196,10 @@ aws_read() { aws "$@"; }
 # side-effect free rather than merely intended to be.
 aws_write() {
   if [[ "$DRY_RUN" == "true" ]]; then
-    echo "[dry-run] aws $*"
+    # stderr, not stdout: some callers capture a helper's stdout (the VPC
+    # security-group list, for one) and a dry-run line on stdout would be parsed
+    # as data.
+    echo "[dry-run] aws $*" >&2
     return 0
   fi
   aws "$@"
@@ -266,7 +269,7 @@ run_state() {
 # run that created it, so no per-resource check can prove a currently running
 # cell is not reusing it.
 validation_runs_active() {
-  local payload count
+  local payload count state
   gh_available || return 1
   for state in queued in_progress waiting requested pending; do
     if payload="$(gh api "repos/$REPO/actions/workflows/$WORKFLOW_FILE/runs?status=$state&per_page=1" 2>/dev/null)"; then
