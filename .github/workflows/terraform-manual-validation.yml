@@ -1059,7 +1059,10 @@ jobs:
           # run-scoped reap to the compute stacks is what lets teardown-on-
           # failure and data reuse coexist; the retained data stack is the
           # scheduled reaper's job once its ExpiresAtUTC has elapsed.
-          if [[ "$REUSE_DATA_STACK" == "true" ]]; then
+          # HONUA_AWS_KEEP_DATA is belt and braces: the CLI flag above always
+          # wins in this workflow, but if a repo variable ever turns retention on
+          # behind the flag's back, the reap must still not take the data stack.
+          if [[ "$REUSE_DATA_STACK" == "true" || "${HONUA_AWS_KEEP_DATA:-false}" == "true" ]]; then
             args+=(--stack ecs --stack serverless)
           fi
 
