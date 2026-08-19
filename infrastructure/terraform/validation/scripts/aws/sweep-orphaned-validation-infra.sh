@@ -187,6 +187,7 @@ DELETED_ARNS=()
 SKIPPED_LINES=()
 SURVIVOR_LINES=()
 SURVIVOR_ARNS=()
+SETTLED_ARNS=()
 DEFERRED=false
 
 # ---------------------------------------------------------------------------
@@ -711,6 +712,53 @@ delete_ec2() {
   esac
 }
 
+
+# The Resource Groups Tagging API keeps indexing resources that are already
+# dead: a KMS key spends 7 days in PendingDeletion still tagged, a deleted ECS
+# cluster lingers as INACTIVE, a deleted secret keeps a DeletedDate. Re-issuing
+# the delete on those returns an error, which would make the daily job red for
+# work that is already done. Recognise them and count them as settled instead.
+# (The same predicate the in-run leak janitor uses in
+# run-aws-terraform-integration.sh::is_non_leaking_tagged_arn.)
+already_settled() {
+  local region="$1" arn="$2" state cluster path name
+
+  case "$arn" in
+    arn:aws:kms:*)
+      state="$(aws_read kms describe-key --region "$region" --key-id "$arn" \
+        --query 'KeyMetadata.KeyState' --output text 2>/dev/null || echo MISSING)"
+      [[ "$state" == "PendingDeletion" || "$state" == "PendingReplicaDeletion" || "$state" == "MISSING" ]]
+      ;;
+    arn:aws:secretsmanager:*)
+      state="$(aws_read secretsmanager describe-secret --region "$region" --secret-id "$arn" \
+        --query 'DeletedDate' --output text 2>/dev/null || echo MISSING)"
+      [[ "$state" != "None" ]]
+      ;;
+    arn:aws:ecs:*:cluster/*)
+      cluster="${arn##*/}"
+      state="$(aws_read ecs describe-clusters --region "$region" --clusters "$cluster" \
+        --query 'clusters[0].status' --output text 2>/dev/null || echo MISSING)"
+      [[ "$state" != "ACTIVE" ]]
+      ;;
+    arn:aws:ecs:*:service/*/*)
+      path="${arn#*:service/}"
+      cluster="${path%%/*}"
+      name="${path#*/}"
+      state="$(aws_read ecs describe-services --region "$region" --cluster "$cluster" --services "$name" \
+        --query 'services[0].status' --output text 2>/dev/null || echo MISSING)"
+      [[ "$state" != "ACTIVE" ]]
+      ;;
+    arn:aws:ecs:*:task-definition/*)
+      state="$(aws_read ecs describe-task-definition --region "$region" --task-definition "$arn" \
+        --query 'taskDefinition.status' --output text 2>/dev/null || echo MISSING)"
+      [[ "$state" == "INACTIVE" || "$state" == "MISSING" ]]
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 delete_arn() {
   local region="$1" arn="$2" service rc
   service="$(arn_service "$arn")"
@@ -781,6 +829,7 @@ emit_summary() {
     echo "| --- | --- |"
     echo "| planned | ${#PLANNED_ARNS[@]} |"
     echo "| deleted | ${#DELETED_ARNS[@]} |"
+    echo "| already settled | ${#SETTLED_ARNS[@]} |"
     echo "| skipped | ${#SKIPPED_LINES[@]} |"
     echo "| left behind | ${#SURVIVOR_LINES[@]} |"
     echo
@@ -829,7 +878,7 @@ main() {
     fi
   fi
 
-  local region line arn run_id stack rc
+  local region line arn run_id stack rc settled
   local -a candidates=()
 
   local kind rest
@@ -891,6 +940,17 @@ main() {
 
   for line in "${ordered[@]}"; do
     IFS="$US" read -r region arn run_id stack <<<"$line"
+
+    set +e
+    already_settled "$region" "$arn"
+    settled=$?
+    set -e
+    if [[ "$settled" -eq 0 ]]; then
+      SETTLED_ARNS+=("$arn")
+      log_info "Already settled (tag index lagging): $arn"
+      continue
+    fi
+
     set +e
     delete_arn "$region" "$arn"
     rc=$?
@@ -910,6 +970,7 @@ main() {
       --query 'ResourceTagMappingList[].ResourceARN' --output text 2>/dev/null || echo "")"
     for arn in $remaining; do
       [[ -z "$arn" || "$arn" == "None" ]] && continue
+      contains "$arn" ${SETTLED_ARNS[@]+"${SETTLED_ARNS[@]}"} && continue
       if contains "$arn" ${PLANNED_ARNS[@]+"${PLANNED_ARNS[@]}"} && ! contains "$arn" ${DELETED_ARNS[@]+"${DELETED_ARNS[@]}"}; then
         if ! contains "$arn" ${SURVIVOR_ARNS[@]+"${SURVIVOR_ARNS[@]}"}; then
           SURVIVOR_ARNS+=("$arn")
@@ -919,7 +980,7 @@ main() {
     done
   done
 
-  log_info "Deleted ${#DELETED_ARNS[@]} of ${#PLANNED_ARNS[@]} planned resource(s); ${#SURVIVOR_LINES[@]} left behind."
+  log_info "Deleted ${#DELETED_ARNS[@]} of ${#PLANNED_ARNS[@]} planned resource(s); ${#SETTLED_ARNS[@]} already settled; ${#SURVIVOR_LINES[@]} left behind."
   emit_summary
   exit "$FAILURES"
 }

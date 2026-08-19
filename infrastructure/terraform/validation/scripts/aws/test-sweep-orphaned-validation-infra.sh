@@ -74,6 +74,21 @@ case "$service $operation" in
       echo "$payload"
     fi
     ;;
+  "ecs describe-clusters")
+    echo "${FAKE_ECS_CLUSTER_STATUS:-ACTIVE}"
+    ;;
+  "ecs describe-services")
+    echo "${FAKE_ECS_SERVICE_STATUS:-ACTIVE}"
+    ;;
+  "ecs describe-task-definition")
+    echo "${FAKE_ECS_TASKDEF_STATUS:-ACTIVE}"
+    ;;
+  "kms describe-key")
+    echo "${FAKE_KMS_KEY_STATE:-Enabled}"
+    ;;
+  "secretsmanager describe-secret")
+    echo "${FAKE_SECRET_DELETED_DATE:-None}"
+    ;;
   "ec2 describe-security-groups")
     echo "${FAKE_SG_IDS:-}"
     ;;
@@ -341,6 +356,23 @@ MINE="$(tagged 'arn:aws:ecs:us-west-2:1:cluster/my-cell' 'gha-999-aws-ecs' 'ecs'
 run_sweeper "$(resources "$MINE" "$OTHER")" --this-run --run-id gha-999-aws-ecs --no-defer-on-active
 assert_deleted "--this-run reaps its own cell" 'arn:aws:ecs:us-west-2:1:cluster/my-cell'
 assert_not_planned "--this-run does not reap another run's cell" 'arn:aws:ecs:us-west-2:1:cluster/other-cell'
+
+# 14b. The tag index keeps indexing resources that are already dead -- a KMS key
+#      spends 7 days in PendingDeletion still tagged. Re-issuing the delete would
+#      error and turn the daily job red for work already done, so those are
+#      recognised as settled rather than retried or reported as survivors.
+KEY="$(tagged 'arn:aws:kms:us-west-2:1:key/abc' 'gha-111-aws-ecs' 'ecs' "$PAST")"
+FAKE_KMS_KEY_STATE=PendingDeletion run_sweeper "$(resources "$KEY")"
+if grep -q "Already settled" <<<"$OUT" && [[ "$RC" -eq 0 ]]; then
+  check "a key already in PendingDeletion is settled, not a failure" ok
+else
+  check "a key already in PendingDeletion is settled, not a failure" no
+fi
+if grep -q "schedule-key-deletion" "$AWS_CALL_LOG"; then
+  check "a settled key is not re-deleted" no
+else
+  check "a settled key is not re-deleted" ok
+fi
 
 echo "== teardown order =="
 
