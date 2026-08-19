@@ -226,6 +226,13 @@ jobs:
         shell: bash
         run: ./infrastructure/terraform/validation/scripts/shared/test-terraform-policy-gate.sh
 
+      # The infra reaper deletes live cloud resources, so its refusal rules are
+      # the thing under test: run against a fake AWS + fake gh, no credentials,
+      # no network. See #142.
+      - name: Validation infra reaper regression test (refusal rules)
+        shell: bash
+        run: ./infrastructure/terraform/validation/scripts/aws/test-sweep-orphaned-validation-infra.sh
+
       - name: Run Terraform policy gate script
         shell: bash
         env:
