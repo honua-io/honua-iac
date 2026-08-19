@@ -1,0 +1,100 @@
+name: Terraform Validation Infra Reaper
+
+# Scheduled backstop for the AWS infrastructure terraform-manual-validation
+# strands (#142). The sibling sweeper (terraform-validation-iam-sweeper.yml)
+# reaps the per-run IAM principals; this one reaps the part that costs money --
+# NAT gateways, ALBs, RDS instances, ElastiCache groups, ECS clusters, VPCs.
+#
+# The manual-validation jobs now reap their own cell on every exit path, so most
+# of the time this finds nothing. It exists for the paths no in-job step can
+# cover:
+#
+#   * the runner is cancelled or lost, so nothing on it runs at all;
+#   * the shared data stack that --keep-data deliberately retains for a later
+#     run that never comes. Two of the 28 leaking runs in #142 concluded
+#     `success` -- teardown-on-failure would never have caught them.
+#
+# What stops this from deleting something live is in the script, not here:
+# Owner=terraform-validation is the only way a resource becomes a candidate, its
+# ValidationRunId must name a GitHub run that is `completed`, that run must be
+# outside the grace window, the resource's own ExpiresAtUTC TTL must have
+# elapsed, and the whole sweep defers while any validation run is in progress.
+# infrastructure/terraform/validation/scripts/aws/test-sweep-orphaned-validation-infra.sh
+# exercises each of those refusals against a fake AWS.
+#
+# Note on dispatch: `dry_run` defaults to true for a human poking at it. The
+# schedule supplies no inputs, so the nightly run is a REAL sweep.
+
+on:
+  schedule:
+    - cron: "29 7 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Enumerate and print the plan without deleting anything"
+        required: true
+        type: boolean
+        default: true
+      grace_hours:
+        description: "Hours a run must have been completed before its cell is reapable"
+        required: false
+        type: string
+        default: "4"
+      max_delete:
+        description: "Abandon the sweep if the plan exceeds this many resources"
+        required: false
+        type: string
+        default: "400"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: terraform-validation-infra-reaper
+  cancel-in-progress: false
+
+jobs:
+  reap:
+    name: Reap orphaned validation infrastructure
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      AWS_DEFAULT_REGION: ${{ vars.HONUA_AWS_VALIDATION_REGION || 'us-east-1' }}
+      HONUA_AWS_SWEEP_REGIONS: ${{ vars.HONUA_AWS_SWEEP_REGIONS || 'us-east-1,us-west-2' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Reap orphaned validation infrastructure
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
+            echo "AWS credentials not configured; skipping reap."
+            exit 0
+          fi
+
+          args=(
+            --grace-hours "${{ inputs.grace_hours || '4' }}"
+            --max-delete "${{ inputs.max_delete || '400' }}"
+            --summary-file "$GITHUB_STEP_SUMMARY"
+          )
+
+          IFS=',' read -ra regions <<< "$HONUA_AWS_SWEEP_REGIONS"
+          for region in "${regions[@]}"; do
+            region="$(echo "$region" | xargs)"
+            [[ -z "$region" ]] && continue
+            args+=(--region "$region")
+          done
+
+          if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+            args+=(--dry-run)
+          fi
+
+          ./infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-infra.sh "${args[@]}"

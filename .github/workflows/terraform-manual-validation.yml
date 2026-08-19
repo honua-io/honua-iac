@@ -83,6 +83,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: terraform-manual-validation-${{ github.ref }}-${{ inputs.cloud }}-${{ inputs.deployment_profile }}
@@ -1007,6 +1008,59 @@ jobs:
           path: ${{ github.workspace }}/.gha-cache/aws-data-reuse.env
           key: terraform-manual-validation-aws-data-${{ needs.resolve-candidate.outputs.candidate_sha }}-${{ env.AWS_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
 
+
+      # Teardown on the failure path (#142). The in-script EXIT trap destroys on
+      # a normal failure, but it cannot run at all when the runner is cancelled
+      # or lost, and when terraform's own destroy errors the script only warns:
+      # either way the cell -- NAT gateway, ALB, RDS, ElastiCache, VPC -- keeps
+      # billing. This step runs whatever happened, reaps this run's own cell
+      # straight through the AWS API (revoking security group rules and sweeping
+      # detached ENIs, the two dependencies that make a naive destroy loop stall
+      # on DependencyViolation), and writes whatever survived into the job
+      # summary so nobody has to discover it by tag sweep a fortnight later.
+      #
+      # --this-run waives the run-completed and grace-window checks for exactly
+      # the ids named here: the job knows its own run is over because it is the
+      # one ending. Nothing else in the account is in scope.
+      - name: Reap this run's AWS validation cell (always)
+        if: ${{ always() && inputs.no_destroy == false }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REUSE_DATA_STACK: ${{ inputs.reuse_data_stack }}
+        run: |
+          set -uo pipefail
+
+          if [[ -z "${BOOTSTRAP_AWS_ACCESS_KEY_ID:-}" || -z "${BOOTSTRAP_AWS_SECRET_ACCESS_KEY:-}" ]]; then
+            echo "AWS bootstrap credentials not configured; nothing to reap."
+            exit 0
+          fi
+
+          export AWS_ACCESS_KEY_ID="$BOOTSTRAP_AWS_ACCESS_KEY_ID"
+          export AWS_SECRET_ACCESS_KEY="$BOOTSTRAP_AWS_SECRET_ACCESS_KEY"
+          export AWS_SESSION_TOKEN="$BOOTSTRAP_AWS_SESSION_TOKEN"
+
+          args=(
+            --region "$AWS_VALIDATION_REGION"
+            --this-run
+            --no-defer-on-active
+            --run-id "gha-${GITHUB_RUN_ID}-aws-ecs"
+            --run-id "gha-${GITHUB_RUN_ID}-aws-serverless"
+            --summary-file "$GITHUB_STEP_SUMMARY"
+          )
+
+          # reuse_data_stack keeps the shared PostGIS/Redis data stack alive on
+          # purpose for a later run with the same candidate sha. Restricting the
+          # run-scoped reap to the compute stacks is what lets teardown-on-
+          # failure and data reuse coexist; the retained data stack is the
+          # scheduled reaper's job once its ExpiresAtUTC has elapsed.
+          if [[ "$REUSE_DATA_STACK" == "true" ]]; then
+            args+=(--stack ecs --stack serverless)
+          fi
+
+          ./infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-infra.sh "${args[@]}" \
+            || echo "::warning::Validation cell teardown left resources behind; see the job summary. The scheduled reaper will retry."
+
       # The in-step EXIT trap above cannot run to completion when the job is
       # cancelled or times out, which historically leaked per-run IAM users
       # with active access keys (#129). This step runs even on cancellation,
@@ -1605,6 +1659,40 @@ jobs:
       # The in-step EXIT trap above cannot run to completion when the job is
       # cancelled or times out, which historically leaked per-run IAM users
       # with active access keys (#129). This step runs even on cancellation,
+
+      # Same failure path as the AWS ECS/serverless cell above (#142): an EKS
+      # cell that dies mid-apply, or whose runner is cancelled, keeps its VPC,
+      # NAT gateway and load balancers. The EKS VPC CNI makes it worse -- it
+      # leaves secondary ENIs detached-but-alive after node-group deletion, and
+      # a detached ENI holds its subnet and its security group, so terraform
+      # destroy fails and the whole VPC survives (honua-release#79). The reaper
+      # sweeps those ENIs and revokes cross-referencing security group rules
+      # before deleting anything, which is what makes the teardown terminate.
+      - name: Reap this run's EKS validation cell (always)
+        if: ${{ always() && inputs.no_destroy == false }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+
+          if [[ -z "${BOOTSTRAP_AWS_ACCESS_KEY_ID:-}" || -z "${BOOTSTRAP_AWS_SECRET_ACCESS_KEY:-}" ]]; then
+            echo "AWS bootstrap credentials not configured; nothing to reap."
+            exit 0
+          fi
+
+          export AWS_ACCESS_KEY_ID="$BOOTSTRAP_AWS_ACCESS_KEY_ID"
+          export AWS_SECRET_ACCESS_KEY="$BOOTSTRAP_AWS_SECRET_ACCESS_KEY"
+          export AWS_SESSION_TOKEN="$BOOTSTRAP_AWS_SESSION_TOKEN"
+
+          ./infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-infra.sh \
+            --region "$AWS_VALIDATION_REGION" \
+            --this-run \
+            --no-defer-on-active \
+            --run-id "gha-${GITHUB_RUN_ID}-eks" \
+            --summary-file "$GITHUB_STEP_SUMMARY" \
+            || echo "::warning::EKS cell teardown left resources behind; see the job summary. The scheduled reaper will retry."
+
       # re-drives the bootstrap destroy from the state left on disk, and then
       # purges this run's bootstrap user by name so a crash before the state
       # file was written cannot strand a credentials-bearing principal either.

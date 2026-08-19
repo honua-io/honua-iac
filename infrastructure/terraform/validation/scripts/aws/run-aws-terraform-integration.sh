@@ -2044,6 +2044,12 @@ clear_data_reuse_cache() {
 }
 
 set_common_tf_vars() {
+  # $1 is the stack role this apply belongs to. It becomes a Stack tag so the
+  # reaper can tell the throwaway compute stacks apart from the shared data
+  # stack, which --keep-data deliberately retains for a later run's reuse
+  # (#142). Without it a run-scoped teardown cannot reap its own ECS/serverless
+  # cell without also destroying the data stack it was told to keep.
+  local stack_role="${1:?set_common_tf_vars requires a stack role}"
   EXPIRES_AT_UTC="$(date -u -d "+${TTL_HOURS} hours" +%Y-%m-%dT%H:%M:%SZ)"
 
   ensure_existing_db_connection_string_shape
@@ -2079,12 +2085,12 @@ set_common_tf_vars() {
   else
     export TF_VAR_db_additional_ingress_cidrs="[\"$DB_INGRESS_CIDR\"]"
   fi
-  export TF_VAR_tags="{\"ValidationRunId\":\"$VALIDATION_RUN_ID\",\"TTLHours\":\"$TTL_HOURS\",\"ExpiresAtUTC\":\"$EXPIRES_AT_UTC\",\"Owner\":\"terraform-validation\"}"
+  export TF_VAR_tags="{\"ValidationRunId\":\"$VALIDATION_RUN_ID\",\"TTLHours\":\"$TTL_HOURS\",\"ExpiresAtUTC\":\"$EXPIRES_AT_UTC\",\"Owner\":\"terraform-validation\",\"Stack\":\"$stack_role\"}"
 }
 
 set_ecs_tf_vars() {
   ensure_existing_vpc_private_egress
-  set_common_tf_vars
+  set_common_tf_vars "ecs"
   export TF_VAR_name_prefix="$ECS_NAME_PREFIX"
   export TF_VAR_honua_image="$ECS_IMAGE"
   export TF_VAR_desired_count="$ECS_DESIRED_COUNT"
@@ -2104,7 +2110,7 @@ set_ecs_tf_vars() {
 
 set_serverless_tf_vars() {
   ensure_existing_vpc_private_egress
-  set_common_tf_vars
+  set_common_tf_vars "serverless"
   export TF_VAR_name_prefix="$SERVERLESS_NAME_PREFIX"
   export TF_VAR_honua_image_uri="$SERVERLESS_IMAGE"
   export TF_VAR_skip_migrations="true"
@@ -2121,7 +2127,7 @@ set_serverless_tf_vars() {
 }
 
 set_data_tf_vars() {
-  set_common_tf_vars
+  set_common_tf_vars "data"
   export TF_VAR_name_prefix="$DATA_NAME_PREFIX"
   export TF_VAR_existing_db_endpoint=""
   export TF_VAR_existing_db_connection_string=""

@@ -16,6 +16,15 @@ module input/output contracts may still change.
 
 ### tooling
 
+- Added a scheduled reaper for the AWS infrastructure the manual validation
+  workflow strands (`.github/workflows/terraform-validation-infra-reaper.yml` ->
+  `infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-infra.sh`),
+  plus an `if: always()` run-scoped teardown step in the AWS and EKS live jobs
+  and a job-summary report of anything left behind. Validation resources now
+  also carry a `Stack` tag (`data` | `ecs` | `serverless` | `eks`) so a
+  run-scoped teardown can reap the throwaway compute stacks without destroying
+  a data stack `--keep-data` was told to retain. No module inputs or outputs
+  changed.
 - Added the manual cloud runbook validation procedure
   (`docs/devops/manual-cloud-runbook-validation.md`), a structured evidence
   schema (`docs/devops/cloud-runbook-evidence-template.json`), and an evidence
@@ -23,6 +32,17 @@ module input/output contracts may still change.
   `infrastructure/terraform/validation/scripts/shared/capture-runbook-evidence.sh`)
   for recording apply -> smoke -> destroy beta-validation evidence across the
   AWS/Azure AOT and JIT matrix. No module inputs or outputs changed.
+
+### aws-eks
+
+- Added `cluster_secret_encryption_enabled` (bool, default `true`) and
+  `cluster_secret_encryption_key_arn` (string, default `""`). The default is
+  unchanged production shape: a module-managed CMK encrypts Kubernetes secrets.
+  Ephemeral parity/validation clusters can now set
+  `cluster_secret_encryption_enabled = false` so a throwaway cluster does not
+  strand a CMK on the 7-day deletion window AWS refuses to shorten, or pass a
+  long-lived key ARN to keep the encryption path exercised without minting a key
+  per cluster.
 
 ## v0.1.0 (planned — not yet tagged)
 

@@ -93,3 +93,15 @@ variable "enable_cluster_creator_admin_permissions" {
   type        = bool
   default     = false
 }
+
+variable "cluster_secret_encryption_enabled" {
+  description = "Whether Kubernetes secrets are envelope-encrypted with a KMS CMK. Ephemeral parity cells set false (honua-release#127)."
+  type        = bool
+  default     = true
+}
+
+variable "cluster_secret_encryption_key_arn" {
+  description = "Existing KMS CMK ARN to encrypt Kubernetes secrets with. Empty creates a module-managed key."
+  type        = string
+  default     = ""
+}
