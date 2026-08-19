@@ -1031,6 +1031,11 @@ jobs:
         run: |
           set -uo pipefail
 
+          if [[ ! -x ./infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-infra.sh ]]; then
+            echo "::warning::The candidate ref predates the validation infra reaper; this run's cell will be reaped by the scheduled sweep instead."
+            exit 0
+          fi
+
           if [[ -z "${BOOTSTRAP_AWS_ACCESS_KEY_ID:-}" || -z "${BOOTSTRAP_AWS_SECRET_ACCESS_KEY:-}" ]]; then
             echo "AWS bootstrap credentials not configured; nothing to reap."
             exit 0
@@ -1675,6 +1680,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
+
+          if [[ ! -x ./infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-infra.sh ]]; then
+            echo "::warning::The candidate ref predates the validation infra reaper; this run's cell will be reaped by the scheduled sweep instead."
+            exit 0
+          fi
 
           if [[ -z "${BOOTSTRAP_AWS_ACCESS_KEY_ID:-}" || -z "${BOOTSTRAP_AWS_SECRET_ACCESS_KEY:-}" ]]; then
             echo "AWS bootstrap credentials not configured; nothing to reap."
