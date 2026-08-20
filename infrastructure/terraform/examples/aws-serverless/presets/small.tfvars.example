@@ -1,0 +1,21 @@
+# Honua infrastructure preset: small / development
+#
+# Use together with the stack-local terraform.tfvars, which carries the image
+# and secrets. This file is intentionally non-secret.
+
+environment = "dev"
+name_prefix = "honua-dev"
+
+redis_enabled          = true
+enable_dashboard       = false
+enable_xray_tracing    = false
+enable_lambda_insights = false
+
+# Provision the core service first; add the optional event worker separately.
+enable_control_plane_events = false
+
+tags = {
+  Environment = "dev"
+  Size        = "small"
+  ManagedBy   = "terraform"
+}

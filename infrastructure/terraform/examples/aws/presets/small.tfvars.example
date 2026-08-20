@@ -1,0 +1,24 @@
+# Honua infrastructure preset: small / development
+#
+# Use together with the stack-local terraform.tfvars, which carries the image
+# and secrets. This file is intentionally non-secret.
+
+environment = "dev"
+name_prefix = "honua-dev"
+
+deployment_mode = "SingleInstance"
+desired_count   = 1
+max_capacity    = 1
+redis_enabled   = true
+canary_enabled  = false
+
+# Development cells are disposable. Production should keep both protections on.
+alb_deletion_protection       = false
+alb_access_logs_enabled       = false
+alb_access_logs_force_destroy = true
+
+tags = {
+  Environment = "dev"
+  Size        = "small"
+  ManagedBy   = "terraform"
+}
