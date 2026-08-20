@@ -12,17 +12,22 @@ Current infrastructure capabilities are summarized in [docs/features/README.md](
    - `infrastructure/terraform/examples/aws-serverless` (AWS Lambda)
    - `infrastructure/terraform/examples/azure-functions` (Azure Functions)
 2. Copy the stack's `terraform.tfvars.example` to `terraform.tfvars` and fill in secrets/images.
-3. Run apply:
+3. For a single-node development cell, add the stack's non-secret `small`
+   overlay from `presets/small.tfvars.example`.
+4. Run plan before apply:
 
 ```bash
 terraform -chdir=infrastructure/terraform/examples/aws init
-terraform -chdir=infrastructure/terraform/examples/aws plan
-terraform -chdir=infrastructure/terraform/examples/aws apply
+terraform -chdir=infrastructure/terraform/examples/aws plan \
+  -var-file=presets/small.tfvars.example
+terraform -chdir=infrastructure/terraform/examples/aws apply \
+  -var-file=presets/small.tfvars.example
 ```
 
-4. Capture outputs (`honua_url`, DB endpoint/FQDN) and run health checks.
+5. Capture outputs (`honua_url`, DB endpoint/FQDN) and run health checks.
 
-Detailed guide: [docs/operator-deployment.md](docs/operator-deployment.md)
+Detailed guide: [docs/operator-deployment.md](docs/operator-deployment.md).
+Preset contract: [docs/deployment-presets.md](docs/deployment-presets.md).
 
 ## Repository layout
 

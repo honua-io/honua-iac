@@ -1,0 +1,21 @@
+# Honua infrastructure preset: small / development
+#
+# Use together with the stack-local terraform.tfvars, which carries the image
+# and secrets. This file is intentionally non-secret.
+
+environment = "dev"
+name_prefix = "honua-dev"
+
+deployment_mode = "SingleInstance"
+min_replicas    = 1
+max_replicas    = 1
+redis_enabled   = true
+
+db_geo_redundant_backup_enabled = false
+db_backup_retention_days        = 7
+
+tags = {
+  environment = "dev"
+  size        = "small"
+  managedBy   = "terraform"
+}

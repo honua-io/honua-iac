@@ -54,6 +54,9 @@ module "honua" {
     HONUA_SERVE_ADMIN_UI    = "true"
     HONUA_ADMIN_UI          = "true"
     HostValidation__Enabled = "false"
+    Mcp__Profiles__0        = "base"
+    Mcp__Profiles__1        = "analysis"
+    Mcp__Profiles__2        = "esri-gp"
   }
 }
 
