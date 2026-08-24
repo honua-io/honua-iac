@@ -78,6 +78,36 @@ variable "honua_image" {
   type        = string
 }
 
+variable "operator_contract_identity" {
+  description = "Optional immutable identity inputs for the honua.operator-contract/v1 output. Omit only for disposable, unqualified development plans; certified consumers must provide every required digest and backend/state lineage input."
+  type = object({
+    candidate_digest      = string
+    iac_revision          = string
+    terraform_version     = string
+    provider_lock_digest  = string
+    image_digest          = string
+    backend_config_digest = optional(string)
+    state_lineage         = optional(string)
+    state_serial          = optional(number)
+    workload_identity     = optional(string)
+  })
+  default = null
+
+  validation {
+    condition = var.operator_contract_identity == null || (
+      can(regex("^[0-9a-f]{64}$", var.operator_contract_identity.candidate_digest)) &&
+      can(regex("^([0-9a-f]{40}|[0-9a-f]{64})$", var.operator_contract_identity.iac_revision)) &&
+      trimspace(var.operator_contract_identity.terraform_version) != "" &&
+      can(regex("^[0-9a-f]{64}$", var.operator_contract_identity.provider_lock_digest)) &&
+      can(regex("^sha256:[0-9a-f]{64}$", var.operator_contract_identity.image_digest)) &&
+      (try(var.operator_contract_identity.backend_config_digest, null) == null || can(regex("^[0-9a-f]{64}$", var.operator_contract_identity.backend_config_digest))) &&
+      (try(var.operator_contract_identity.state_lineage, null) == null || can(regex("^[0-9a-f-]{36}$", var.operator_contract_identity.state_lineage))) &&
+      (try(var.operator_contract_identity.state_serial, null) == null || var.operator_contract_identity.state_serial >= 0)
+    )
+    error_message = "operator_contract_identity must use SHA-256 digests, a 40/64-character IaC revision, a sha256 image digest, and non-negative state serial when supplied."
+  }
+}
+
 variable "ai_provider_secret_arn" {
   description = "Optional customer-owned Secrets Manager ARN containing HONUA_AI_PROVIDER_API_KEY. The stack references but never creates, reads, or deletes this secret."
   type        = string

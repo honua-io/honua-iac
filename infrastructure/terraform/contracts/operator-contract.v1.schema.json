@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://honua.io/terraform/schemas/honua.operator-contract.v1.json",
+  "title": "Honua Operator Contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "deployment_contract",
+    "validation_contract",
+    "operations_contract"
+  ],
+  "properties": {
+    "schema_version": { "const": "v1" },
+    "deployment_contract": { "$ref": "#/$defs/deployment_contract" },
+    "validation_contract": { "$ref": "#/$defs/validation_contract" },
+    "operations_contract": { "$ref": "#/$defs/operations_contract" }
+  },
+  "$defs": {
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["qualified", "unqualified"] },
+        "candidate_digest": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+        "iac_revision": { "type": ["string", "null"], "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$" },
+        "terraform_version": { "type": ["string", "null"] },
+        "provider_lock_digest": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+        "image_digest": { "type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$" },
+        "backend_config_digest": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+        "state_lineage": { "type": ["string", "null"], "pattern": "^[0-9a-f-]{36}$" },
+        "state_serial": { "type": ["integer", "null"], "minimum": 0 },
+        "workload_identity": { "type": ["string", "null"] }
+      }
+    },
+    "deployment_contract": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["schema_version", "identity", "stack", "endpoints", "workload", "rollout", "dependencies"],
+      "properties": {
+        "schema_version": { "const": "v1" },
+        "identity": { "$ref": "#/$defs/identity" },
+        "stack": { "type": "object" },
+        "endpoints": { "type": "object" },
+        "workload": { "type": "object" },
+        "rollout": { "type": "object" },
+        "dependencies": { "type": "object" }
+      }
+    },
+    "validation_contract": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["schema_version", "platform", "tests", "artifacts", "lifecycle"],
+      "properties": {
+        "schema_version": { "const": "v1" },
+        "platform": { "type": "object" },
+        "tests": { "type": "object" },
+        "artifacts": { "type": "object" },
+        "lifecycle": { "type": "object" }
+      }
+    },
+    "operations_contract": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["schema_version", "observability", "secrets", "grouping", "state"],
+      "properties": {
+        "schema_version": { "const": "v1" },
+        "observability": { "type": "object" },
+        "secrets": { "type": "object" },
+        "grouping": { "type": "object" },
+        "state": { "type": "object" }
+      }
+    }
+  }
+}
