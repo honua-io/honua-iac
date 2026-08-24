@@ -2,6 +2,10 @@
 param(
   [Parameter(Mandatory = $true)] [string] $PlanPath,
   [Parameter(Mandatory = $true)] [string] $StateMetadataPath,
+  [Parameter(Mandatory = $true)] [string] $CandidateDigest,
+  [Parameter(Mandatory = $true)] [string] $TargetId,
+  [Parameter(Mandatory = $true)] [string] $ActorId,
+  [Parameter(Mandatory = $true)] [string] $WorkloadIdentityContractDigest,
   [Parameter(Mandatory = $true)] [string] $BackendConfigDigest,
   [Parameter(Mandatory = $true)] [string] $IacRevision,
   [Parameter(Mandatory = $true)] [string] $ProviderLockDigest,
@@ -21,8 +25,12 @@ function Assert-Digest([string] $Name, [string] $Value) {
 }
 
 Assert-Digest "BackendConfigDigest" $BackendConfigDigest
+Assert-Digest "CandidateDigest" $CandidateDigest
 Assert-Digest "ProviderLockDigest" $ProviderLockDigest
 Assert-Digest "InputDigest" $InputDigest
+Assert-Digest "WorkloadIdentityContractDigest" $WorkloadIdentityContractDigest
+if ([string]::IsNullOrWhiteSpace($TargetId)) { throw "TargetId must not be empty." }
+if ([string]::IsNullOrWhiteSpace($ActorId)) { throw "ActorId must not be empty." }
 if ($OutputContractDigest) { Assert-Digest "OutputContractDigest" $OutputContractDigest }
 if ($IacRevision -notmatch '^[0-9a-fA-F]{40,64}$') { throw "IacRevision must be a 40- to 64-character hexadecimal revision." }
 if ($ExpiresAtUtc.ToUniversalTime() -le [DateTime]::UtcNow) { throw "ExpiresAtUtc must be in the future." }
@@ -39,6 +47,10 @@ if ($ExpectedStateSerial -ge 0 -and $ExpectedStateSerial -ne $serial) { throw "S
 $contract = [ordered]@{
   schema_version         = "v1"
   action                 = $Action
+  candidate_digest       = $CandidateDigest.ToLowerInvariant()
+  target_id              = $TargetId
+  actor_id               = $ActorId
+  workload_identity_contract_digest = $WorkloadIdentityContractDigest.ToLowerInvariant()
   plan_sha256            = $planHash
   backend_config_digest  = $BackendConfigDigest.ToLowerInvariant()
   iac_revision           = $IacRevision.ToLowerInvariant()
@@ -48,6 +60,7 @@ $contract = [ordered]@{
   expires_at_utc         = $ExpiresAtUtc.ToUniversalTime().ToString("o")
   output_contract_digest = if ($OutputContractDigest) { $OutputContractDigest.ToLowerInvariant() } else { $null }
   state_after            = $null
+  qualification_status   = "unqualified"
   evidence_scope         = "metadata-only-pre-apply"
 }
 $json = $contract | ConvertTo-Json -Depth 10

@@ -4,10 +4,14 @@
   "title": "Honua Terraform plan and state lineage contract v1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "action", "plan_sha256", "backend_config_digest", "iac_revision", "provider_lock_digest", "input_digest", "state_before", "expires_at_utc", "evidence_scope"],
+  "required": ["schema_version", "action", "candidate_digest", "target_id", "actor_id", "workload_identity_contract_digest", "plan_sha256", "backend_config_digest", "iac_revision", "provider_lock_digest", "input_digest", "state_before", "expires_at_utc", "qualification_status", "evidence_scope"],
   "properties": {
     "schema_version": { "const": "v1" },
     "action": { "enum": ["plan", "apply", "destroy"] },
+    "candidate_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "target_id": { "type": "string", "minLength": 1 },
+    "actor_id": { "type": "string", "minLength": 1 },
+    "workload_identity_contract_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "plan_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "backend_config_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "iac_revision": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
@@ -23,6 +27,7 @@
       }
     },
     "expires_at_utc": { "type": "string", "format": "date-time" },
+    "qualification_status": { "const": "unqualified" },
     "output_contract_digest": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
     "state_after": { "type": ["object", "null"] },
     "evidence_scope": { "const": "metadata-only-pre-apply" }

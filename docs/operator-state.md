@@ -2,9 +2,9 @@
 
 ## Exact plan and state lineage metadata
 
-Before any governed apply or destroy, create a metadata-only contract with `scripts/new-terraform-lineage-contract.ps1`. The caller supplies the saved plan path, a protected file containing only `lineage` and `serial` extracted from `terraform state pull`, exact revision and digest values, and a future expiry. The script hashes the saved plan and emits no state contents, credentials, or secrets.
+Before any governed apply or destroy, create a metadata-only contract with `scripts/new-terraform-lineage-contract.ps1`. The caller supplies the saved plan path, a protected file containing only `lineage` and `serial` extracted from `terraform state pull`, the exact candidate, deployment target, identified actor, workload-identity contract digest, revision and digest values, and a future expiry. The script hashes the saved plan and emits no state contents, credentials, tokens, or secret values.
 
-The artifact is pre-apply evidence only. It does not approve or apply a plan, and `state_after` remains null until a durable actuator and verifier receipt records the resulting lineage, serial, and output contract digest. Never commit the pulled state file or place it in model context, logs, proposals, or receipts.
+The artifact is pre-apply evidence only and is always emitted with `qualification_status = "unqualified"`. It does not approve or apply a plan, and `state_after` remains null until a durable actuator and verifier receipt records the resulting lineage, serial, and output contract digest. A consumer must reject the artifact when live backend, actuator, or verifier evidence is absent. Never commit the pulled state file or place it in model context, logs, proposals, or receipts.
 
 Example Windows invocation:
 
@@ -12,6 +12,10 @@ Example Windows invocation:
 & .\scripts\new-terraform-lineage-contract.ps1 `
   -PlanPath .\candidate.tfplan `
   -StateMetadataPath .\state-metadata.json `
+  -CandidateDigest $candidateDigest `
+  -TargetId "ecs:cluster/service" `
+  -ActorId $actorId `
+  -WorkloadIdentityContractDigest $workloadIdentityDigest `
   -BackendConfigDigest $backendDigest `
   -IacRevision $iacRevision `
   -ProviderLockDigest $lockDigest `
