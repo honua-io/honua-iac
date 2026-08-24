@@ -12,6 +12,8 @@ module "honua" {
   existing_public_subnet_ids       = local.install_net_pub_sub
   existing_private_subnet_ids      = local.install_net_prv_sub
   image                            = local.install_image
+  ai_provider_secret_arn           = var.ai_provider_secret_arn
+  ai_provider_secret_kms_key_arn   = var.ai_provider_secret_kms_key_arn
   task_cpu_architecture            = var.task_cpu_architecture
   admin_password                   = var.honua_admin_password
   connection_encryption_master_key = var.honua_connection_encryption_master_key

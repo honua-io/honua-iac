@@ -30,6 +30,10 @@ module "honua" {
   connection_encryption_master_key = null # Deliberate auto-generation for this new deployment
   enable_postgis = true  # Required — Honua needs PostGIS + PostGIS Raster
 
+  # Optional caller-owned AI provider credential. Only the ARN is passed to Terraform.
+  ai_provider_secret_arn         = var.ai_provider_secret_arn
+  ai_provider_secret_kms_key_arn = var.ai_provider_secret_kms_key_arn
+
   additional_env = {
     HONUA_SERVE_ADMIN_UI = "true"
     HONUA_ADMIN_UI       = "true"
@@ -182,6 +186,8 @@ If your Prometheus scrape config uses different job names, override the correspo
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `image` | Required | Container image. Pin to an immutable release tag or digest. AOT builds are recommended. |
+| `ai_provider_secret_arn` | `""` | Optional caller-owned Secrets Manager ARN for `HONUA_AI_PROVIDER_API_KEY`; the module never creates or exposes the value. |
+| `ai_provider_secret_kms_key_arn` | `""` | Optional customer-managed KMS key ARN for the AI provider secret; grants decrypt only when the secret ARN is set. |
 | `connection_encryption_master_key` | Required (nullable) | Fail-closed connection-key decision. Set `null` explicitly only for a new deployment; existing deployments must supply their current key as described below. |
 | `task_cpu_architecture` | `X86_64` | Fargate CPU architecture. `X86_64` is release-certified; use `ARM64` only with an independently verified image. |
 | `container_cpu` | 512 | Fargate CPU units (256/512/1024/2048/4096). |

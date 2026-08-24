@@ -43,6 +43,30 @@ mock_provider "aws" {
       minified_json = "{\"Version\":\"2012-10-17\",\"Statement\":[]}"
     }
   }
+
+  mock_resource "aws_lb" {
+    defaults = {
+      arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/honua-test/0000000000000000"
+    }
+  }
+
+  mock_resource "aws_lb_target_group" {
+    defaults = {
+      arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/honua-test/0000000000000000"
+    }
+  }
+
+  mock_resource "aws_iam_policy" {
+    defaults = {
+      arn = "arn:aws:iam::123456789012:policy/honua-test"
+    }
+  }
+
+  mock_resource "aws_iam_role" {
+    defaults = {
+      arn = "arn:aws:iam::123456789012:role/honua-test"
+    }
+  }
 }
 
 mock_provider "random" {}
@@ -77,6 +101,34 @@ run "single_instance_default_is_safe" {
   assert {
     condition     = aws_secretsmanager_secret_version.master_key.secret_string != aws_secretsmanager_secret_version.admin_password.secret_string
     error_message = "The connection encryption key must not alias the admin password."
+  }
+}
+
+run "ai_provider_secret_uses_reference_and_scoped_kms" {
+  command = apply
+
+  variables {
+    ai_provider_secret_arn         = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-ai-provider"
+    ai_provider_secret_kms_key_arn = "arn:aws:kms:us-east-1:123456789012:key/11111111-1111-1111-1111-111111111111"
+  }
+
+  assert {
+    condition     = strcontains(aws_ecs_task_definition.this.container_definitions, "HONUA_AI_PROVIDER_API_KEY") && strcontains(aws_ecs_task_definition.this.container_definitions, var.ai_provider_secret_arn)
+    error_message = "The AI provider credential must be emitted as an ECS Secrets Manager reference."
+  }
+
+  assert {
+    condition     = strcontains(aws_iam_policy.secrets.policy, var.ai_provider_secret_arn) && strcontains(aws_iam_policy.secrets.policy, var.ai_provider_secret_kms_key_arn)
+    error_message = "The execution-role policy must scope access to the supplied secret and customer-managed KMS key ARN."
+  }
+}
+
+run "ai_provider_secret_omits_optional_access_when_unconfigured" {
+  command = apply
+
+  assert {
+    condition     = !strcontains(aws_ecs_task_definition.this.container_definitions, "HONUA_AI_PROVIDER_API_KEY")
+    error_message = "An omitted AI provider secret must not add an ECS secret mapping."
   }
 }
 
