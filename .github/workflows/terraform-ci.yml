@@ -130,6 +130,7 @@ jobs:
             "infrastructure/terraform/bootstrap/azure-support-access"
             "infrastructure/terraform/bootstrap/aws-ecs"
             "infrastructure/terraform/bootstrap/aws-tfstate"
+            "infrastructure/terraform/bootstrap/aws-terraform-oidc"
             "infrastructure/terraform/bootstrap/aws-serverless"
             "infrastructure/terraform/bootstrap/aws-eks"
             "infrastructure/terraform/bootstrap/aws-support-access"
