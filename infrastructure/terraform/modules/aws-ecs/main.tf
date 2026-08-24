@@ -168,7 +168,7 @@ module "vpc" {
   #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
   #checkov:skip=CKV2_AWS_12: Default SG is managed via module inputs.
   source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 5.0"
+  version = "5.21.0"
 
   name = "${local.name}-vpc"
   cidr = var.vpc_cidr
@@ -937,7 +937,7 @@ module "rds" {
   #checkov:skip=CKV_AWS_133: Backup retention is configured in this module call.
   #checkov:skip=CKV_AWS_304: Secret rotation is handled outside this module.
   source  = "terraform-aws-modules/rds/aws"
-  version = "~> 6.0"
+  version = "6.13.1"
 
   identifier = "${local.name}-postgres"
 
