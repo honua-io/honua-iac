@@ -32,7 +32,36 @@
         "state_lineage": { "type": ["string", "null"], "pattern": "^[0-9a-f-]{36}$" },
         "state_serial": { "type": ["integer", "null"], "minimum": 0 },
         "workload_identity": { "type": ["string", "null"] }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "qualified" } } },
+          "then": {
+            "required": [
+              "candidate_digest",
+              "iac_revision",
+              "terraform_version",
+              "provider_lock_digest",
+              "image_digest",
+              "backend_config_digest",
+              "state_lineage",
+              "state_serial",
+              "workload_identity"
+            ],
+            "properties": {
+              "candidate_digest": { "type": "string" },
+              "iac_revision": { "type": "string" },
+              "terraform_version": { "type": "string", "minLength": 1 },
+              "provider_lock_digest": { "type": "string" },
+              "image_digest": { "type": "string" },
+              "backend_config_digest": { "type": "string" },
+              "state_lineage": { "type": "string" },
+              "state_serial": { "type": "integer" },
+              "workload_identity": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      ]
     },
     "deployment_contract": {
       "type": "object",

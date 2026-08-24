@@ -20,7 +20,7 @@ locals {
 
   backend_access_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat([
       {
         Sid    = "StateObjectAccess"
         Effect = "Allow"
@@ -30,7 +30,7 @@ locals {
           "s3:GetObjectVersion",
           "s3:PutObject"
         ]
-        Resource = "${var.state_bucket_arn}/*"
+        Resource = var.state_object_arn
       },
       {
         Sid    = "StateBucketDiscovery"
@@ -41,6 +41,11 @@ locals {
           "s3:ListBucket"
         ]
         Resource = var.state_bucket_arn
+        Condition = {
+          StringLike = {
+            "s3:prefix" = [var.state_object_key]
+          }
+        }
       },
       {
         Sid    = "StateLockAccess"
@@ -53,7 +58,16 @@ locals {
         ]
         Resource = var.state_lock_table_arn
       }
-    ]
+      ], var.kms_key_arn == "" ? [] : [{
+        Sid    = "StateKmsAccess"
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:Encrypt",
+          "kms:GenerateDataKey"
+        ]
+        Resource = var.kms_key_arn
+    }])
   })
 
   workload_identity_contract = {

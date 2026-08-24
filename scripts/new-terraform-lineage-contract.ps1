@@ -38,8 +38,15 @@ if ($ExpiresAtUtc.ToUniversalTime() -le [DateTime]::UtcNow) { throw "ExpiresAtUt
 $planHash = (Get-FileHash -LiteralPath $PlanPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $state = Get-Content -LiteralPath $StateMetadataPath -Raw | ConvertFrom-Json
 $lineage = [string] $state.lineage
-$serial = [long] $state.serial
 if ($lineage -notmatch '^[0-9a-fA-F-]{36}$') { throw "State metadata must contain a UUID lineage." }
+$serialValue = $state.serial
+if (-not ($state.PSObject.Properties.Name -contains "serial") -or
+    $null -eq $serialValue -or
+    ($serialValue -isnot [byte] -and $serialValue -isnot [int16] -and
+     $serialValue -isnot [int32] -and $serialValue -isnot [int64])) {
+  throw "State metadata must contain an integer serial."
+}
+$serial = [long] $serialValue
 if ($serial -lt 0) { throw "State metadata serial must be zero or greater." }
 if ($ExpectedStateLineage -and $ExpectedStateLineage -ne $lineage) { throw "State lineage does not match ExpectedStateLineage." }
 if ($ExpectedStateSerial -ge 0 -and $ExpectedStateSerial -ne $serial) { throw "State serial does not match ExpectedStateSerial." }

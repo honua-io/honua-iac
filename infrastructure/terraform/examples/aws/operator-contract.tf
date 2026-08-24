@@ -17,7 +17,7 @@ locals {
     state_serial          = null
     workload_identity     = null
     } : {
-    status                = try(var.operator_contract_identity.backend_config_digest, null) != null && try(var.operator_contract_identity.state_lineage, null) != null ? "qualified" : "unqualified"
+    status                = "unqualified"
     candidate_digest      = var.operator_contract_identity.candidate_digest
     iac_revision          = var.operator_contract_identity.iac_revision
     terraform_version     = var.operator_contract_identity.terraform_version

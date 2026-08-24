@@ -51,9 +51,25 @@ variable "state_bucket_arn" {
   description = "ARN of the separately bootstrapped Terraform state bucket."
 }
 
+variable "state_object_arn" {
+  type        = string
+  description = "Exact ARN of the one Terraform state object this role may access."
+}
+
+variable "state_object_key" {
+  type        = string
+  description = "Exact key used when listing the state bucket."
+}
+
 variable "state_lock_table_arn" {
   type        = string
   description = "ARN of the separately bootstrapped Terraform lock table."
+}
+
+variable "kms_key_arn" {
+  type        = string
+  description = "Optional customer-managed KMS key ARN used to encrypt the state bucket."
+  default     = ""
 }
 
 variable "max_session_duration" {
@@ -62,8 +78,8 @@ variable "max_session_duration" {
   default     = 3600
 
   validation {
-    condition     = var.max_session_duration >= 900 && var.max_session_duration <= 43200
-    error_message = "max_session_duration must be between 900 and 43200 seconds."
+    condition     = var.max_session_duration >= 3600 && var.max_session_duration <= 43200
+    error_message = "max_session_duration must be between 3600 and 43200 seconds."
   }
 }
 

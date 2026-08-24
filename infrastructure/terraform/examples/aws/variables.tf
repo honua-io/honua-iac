@@ -95,14 +95,14 @@ variable "operator_contract_identity" {
 
   validation {
     condition = var.operator_contract_identity == null || (
-      can(regex("^[0-9a-f]{64}$", var.operator_contract_identity.candidate_digest)) &&
-      can(regex("^([0-9a-f]{40}|[0-9a-f]{64})$", var.operator_contract_identity.iac_revision)) &&
-      trimspace(var.operator_contract_identity.terraform_version) != "" &&
-      can(regex("^[0-9a-f]{64}$", var.operator_contract_identity.provider_lock_digest)) &&
-      can(regex("^sha256:[0-9a-f]{64}$", var.operator_contract_identity.image_digest)) &&
+      can(regex("^[0-9a-f]{64}$", try(var.operator_contract_identity.candidate_digest, ""))) &&
+      can(regex("^([0-9a-f]{40}|[0-9a-f]{64})$", try(var.operator_contract_identity.iac_revision, ""))) &&
+      trimspace(try(var.operator_contract_identity.terraform_version, "")) != "" &&
+      can(regex("^[0-9a-f]{64}$", try(var.operator_contract_identity.provider_lock_digest, ""))) &&
+      can(regex("^sha256:[0-9a-f]{64}$", try(var.operator_contract_identity.image_digest, ""))) &&
       (try(var.operator_contract_identity.backend_config_digest, null) == null || can(regex("^[0-9a-f]{64}$", var.operator_contract_identity.backend_config_digest))) &&
       (try(var.operator_contract_identity.state_lineage, null) == null || can(regex("^[0-9a-f-]{36}$", var.operator_contract_identity.state_lineage))) &&
-      (try(var.operator_contract_identity.state_serial, null) == null || var.operator_contract_identity.state_serial >= 0)
+      (try(var.operator_contract_identity.state_serial, null) == null || try(var.operator_contract_identity.state_serial >= 0, false))
     )
     error_message = "operator_contract_identity must use SHA-256 digests, a 40/64-character IaC revision, a sha256 image digest, and non-negative state serial when supplied."
   }

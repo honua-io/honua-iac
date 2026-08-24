@@ -48,10 +48,18 @@ resource "aws_s3_bucket" "state" {
   bucket        = var.bucket_name
   force_destroy = false
   tags          = local.tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_s3_bucket_versioning" "state" {
   bucket = aws_s3_bucket.state.id
+
+  lifecycle {
+    prevent_destroy = true
+  }
 
   versioning_configuration {
     status = "Enabled"
@@ -61,6 +69,10 @@ resource "aws_s3_bucket_versioning" "state" {
 resource "aws_s3_bucket_ownership_controls" "state" {
   bucket = aws_s3_bucket.state.id
 
+  lifecycle {
+    prevent_destroy = true
+  }
+
   rule {
     object_ownership = "BucketOwnerEnforced"
   }
@@ -68,6 +80,10 @@ resource "aws_s3_bucket_ownership_controls" "state" {
 
 resource "aws_s3_bucket_public_access_block" "state" {
   bucket = aws_s3_bucket.state.id
+
+  lifecycle {
+    prevent_destroy = true
+  }
 
   block_public_acls       = true
   block_public_policy     = true
@@ -77,6 +93,10 @@ resource "aws_s3_bucket_public_access_block" "state" {
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "state" {
   bucket = aws_s3_bucket.state.id
+
+  lifecycle {
+    prevent_destroy = true
+  }
 
   rule {
     apply_server_side_encryption_by_default {
@@ -114,6 +134,10 @@ data "aws_iam_policy_document" "state_transport" {
 resource "aws_s3_bucket_policy" "state_transport" {
   bucket = aws_s3_bucket.state.id
   policy = data.aws_iam_policy_document.state_transport.json
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_dynamodb_table" "lock" {
@@ -135,4 +159,8 @@ resource "aws_dynamodb_table" "lock" {
   }
 
   tags = local.tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
