@@ -56,24 +56,3 @@ on workload, availability, retention, and recovery requirements; review the
 root variables and module documentation instead of promoting this preset
 unchanged.
 
-## AI control-plane profiles
-
-Every primary cloud root enables the same 2026.1 MCP profile contract in the
-Honua container or function environment:
-
-| Profile | Configuration | Required catalog proof |
-| --- | --- | --- |
-| Admin | Published by the default admin operation family; no optional profile flag | `tools/list` contains the `honua_admin_*` operation family, including `honua_admin_server_status` |
-| Analysis | `Mcp__Profiles__1=analysis` | `honua_buffer_features`, `honua_overlay_features`, `honua_summarize_statistics`, `honua_reproject_features`, `honua_join_features`, `honua_export_dataset` |
-| Esri GP | `Mcp__Profiles__2=esri-gp` | `honua_esri_gp_list_tasks`, `honua_esri_gp_describe_task`, `honua_esri_gp_execute_task` |
-
-`Mcp__Profiles__0=base` remains the common data-access profile. The Esri GP
-profile is the AI-facing adapter over Honua's GPServer-compatible task catalog:
-an agent can discover Esri task aliases, read the GPServer-derived parameter
-schema, submit a task, and follow its canonical job handle. It does not
-federate or send credentials to an external ArcGIS Server.
-
-Treat this roster as a fail-closed install check. A successful Terraform apply
-with any profile missing from `tools/list` is not a complete AI handoff; verify
-that the pinned Honua image is a 2026.1 candidate containing the admin catalog,
-analysis profile, and Esri GP profile before giving the endpoint to an agent.
