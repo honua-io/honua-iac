@@ -1,0 +1,13 @@
+# Copy this file to backend.tf after applying bootstrap/aws-tfstate.
+# Replace every placeholder with the exact bootstrap outputs. Do not commit
+# the activated file with environment-specific backend details.
+
+terraform {
+  backend "s3" {
+    bucket         = "REPLACE_WITH_STATE_BUCKET_NAME"
+    key            = "honua/aws/prod/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "REPLACE_WITH_STATE_LOCK_TABLE_NAME"
+    encrypt        = true
+  }
+}

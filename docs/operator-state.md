@@ -1,6 +1,9 @@
 # Operator State Guide
 
-Use a remote backend for every shared or long-lived deployment. The example stacks ship `backend.tf.example` files so operators do not have to invent state layout from scratch.
+Use a remote backend for every shared or long-lived deployment. The AWS ECS
+example ships `backend.tf.example`; apply
+`bootstrap/aws-tfstate` separately before activating it so backend creation is
+not hidden inside `terraform init`.
 
 ## Recommended isolation model
 
@@ -18,7 +21,8 @@ Recommended key layout:
 
 ## AWS backend pattern
 
-Use S3 plus DynamoDB locking:
+Use the `backend_contract` output from `bootstrap/aws-tfstate` to configure S3
+plus DynamoDB locking:
 
 ```hcl
 terraform {
@@ -31,6 +35,12 @@ terraform {
   }
 }
 ```
+
+The bootstrap enables S3 versioning, server-side encryption, public-access
+blocking, HTTPS-only access, and DynamoDB point-in-time recovery. Its
+`backend_contract_digest` is evidence of backend configuration only; it does
+not prove application state lineage. The certified executor must still record
+state lineage and serial before and after the exact saved-plan operation.
 
 ## Azure backend pattern
 
