@@ -385,6 +385,18 @@ variable "additional_env" {
   }
 }
 
+variable "ai_provider_secret_arn" {
+  description = "Optional customer-owned Secrets Manager ARN containing HONUA_AI_PROVIDER_API_KEY. The module references but never creates, reads, or deletes this secret."
+  type        = string
+  default     = ""
+}
+
+variable "ai_provider_secret_kms_key_arn" {
+  description = "Optional customer-managed KMS key ARN used to encrypt ai_provider_secret_arn. Grants the ECS execution role decrypt access only to this key when the AI secret is configured."
+  type        = string
+  default     = ""
+}
+
 variable "canary_enabled" {
   description = "Provision a secondary ECS service and ALB target group for canary rollouts."
   type        = bool

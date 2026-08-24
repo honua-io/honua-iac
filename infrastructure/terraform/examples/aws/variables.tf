@@ -78,6 +78,18 @@ variable "honua_image" {
   type        = string
 }
 
+variable "ai_provider_secret_arn" {
+  description = "Optional customer-owned Secrets Manager ARN containing HONUA_AI_PROVIDER_API_KEY. The stack references but never creates, reads, or deletes this secret."
+  type        = string
+  default     = ""
+}
+
+variable "ai_provider_secret_kms_key_arn" {
+  description = "Optional customer-managed KMS key ARN for ai_provider_secret_arn."
+  type        = string
+  default     = ""
+}
+
 variable "task_cpu_architecture" {
   description = "Fargate CPU architecture. X86_64 is the release-certified default."
   type        = string

@@ -92,7 +92,12 @@ locals {
       name      = "Security__ConnectionEncryption__MasterKey"
       valueFrom = aws_secretsmanager_secret.master_key.arn
     }
-    ], local.redis_enabled ? [
+    ], var.ai_provider_secret_arn != "" ? [
+    {
+      name      = "HONUA_AI_PROVIDER_API_KEY"
+      valueFrom = var.ai_provider_secret_arn
+    }
+    ] : [], local.redis_enabled ? [
     {
       name      = "ConnectionStrings__redis"
       valueFrom = aws_secretsmanager_secret.redis_connection[0].arn
@@ -792,7 +797,7 @@ resource "aws_iam_policy" "secrets" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat([
       {
         Effect = "Allow"
         Action = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
@@ -800,6 +805,7 @@ resource "aws_iam_policy" "secrets" {
           aws_secretsmanager_secret.db_connection.arn,
           aws_secretsmanager_secret.admin_password.arn,
           aws_secretsmanager_secret.master_key.arn,
+          var.ai_provider_secret_arn != "" ? var.ai_provider_secret_arn : null,
           local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null
         ])
       },
@@ -808,7 +814,11 @@ resource "aws_iam_policy" "secrets" {
         Action   = ["kms:Decrypt", "kms:DescribeKey"]
         Resource = [local.kms_key_arn]
       }
-    ]
+      ], var.ai_provider_secret_arn != "" && var.ai_provider_secret_kms_key_arn != "" ? [{
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt", "kms:DescribeKey"]
+        Resource = [var.ai_provider_secret_kms_key_arn]
+    }] : [])
   })
 }
 
