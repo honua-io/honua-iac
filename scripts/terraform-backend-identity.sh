@@ -64,7 +64,9 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     -h | --help)
-      sed -n '2,30p' "${BASH_SOURCE[0]}"
+      # Print the contiguous comment header, so help never drifts out of sync
+      # with the line numbers of this file.
+      awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "${BASH_SOURCE[0]}"
       exit 0
       ;;
     *)
