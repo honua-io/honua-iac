@@ -29,6 +29,22 @@ terraform -chdir=infrastructure/terraform/examples/aws apply \
 Detailed guide: [docs/operator-deployment.md](docs/operator-deployment.md).
 Preset contract: [docs/deployment-presets.md](docs/deployment-presets.md).
 
+## Operator contract (automation handoff)
+
+Certified stacks emit `deployment_contract`, `validation_contract`, and
+`operations_contract` — the versioned `honua.operator-contract/v1` handoff that
+honua-devops, honua-server, and honua-release consume instead of scraping
+scalar outputs. The scalar outputs remain but are non-authoritative.
+
+Schema, field semantics, sensitivity rules, canonicalization/digest rules,
+compatibility policy, and producer/consumer ownership:
+[docs/operator-contract.md](docs/operator-contract.md).
+
+```bash
+terraform -chdir=infrastructure/terraform/examples/aws output -json > contract.json
+./scripts/validate-operator-contract.sh --require-qualified contract.json
+```
+
 ## Repository layout
 
 - `infrastructure/terraform/modules/`: reusable Terraform modules

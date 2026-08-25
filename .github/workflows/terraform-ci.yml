@@ -11,6 +11,8 @@ on:
       - 'scripts/run-k8s-terraform-integration.sh'
       - 'scripts/run-terraform-drift-detection.sh'
       - 'scripts/terraform-policy-gate.sh'
+      - 'scripts/validate-operator-contract.sh'
+      - 'scripts/test-operator-contract.sh'
       - 'scripts/check-marketplace-paths.sh'
       - 'scripts/package-customer-dist.sh'
       - 'scripts/new-terraform-lineage-contract.ps1'
@@ -28,6 +30,7 @@ on:
       - 'docs/devops/dr-evidence-template.json'
       - 'docs/devops/cloud-runbook-evidence-template.json'
       - 'docs/devops/examples/**'
+      - 'docs/operator-contract.md'
       - '.github/workflows/cloud-demo-smoke.yml'
       - '.github/workflows/terraform-ci.yml'
       - '.github/workflows/terraform-manual-validation.yml'
@@ -43,6 +46,8 @@ on:
       - 'scripts/run-k8s-terraform-integration.sh'
       - 'scripts/run-terraform-drift-detection.sh'
       - 'scripts/terraform-policy-gate.sh'
+      - 'scripts/validate-operator-contract.sh'
+      - 'scripts/test-operator-contract.sh'
       - 'scripts/check-marketplace-paths.sh'
       - 'scripts/package-customer-dist.sh'
       - 'scripts/new-terraform-lineage-contract.ps1'
@@ -60,6 +65,7 @@ on:
       - 'docs/devops/dr-evidence-template.json'
       - 'docs/devops/cloud-runbook-evidence-template.json'
       - 'docs/devops/examples/**'
+      - 'docs/operator-contract.md'
       - '.github/workflows/cloud-demo-smoke.yml'
       - '.github/workflows/terraform-ci.yml'
       - '.github/workflows/terraform-manual-validation.yml'
@@ -187,6 +193,10 @@ jobs:
           set -euo pipefail
           terraform -chdir=infrastructure/terraform/modules/aws-ecs test -no-color
           terraform -chdir=infrastructure/terraform/modules/azure-aca test -no-color
+
+      - name: Operator contract v1 fixtures and negative tests
+        shell: bash
+        run: ./infrastructure/terraform/validation/scripts/shared/test-operator-contract.sh
 
       - name: Customer distribution tarball smoke test (terraform init each packaged example)
         shell: bash
