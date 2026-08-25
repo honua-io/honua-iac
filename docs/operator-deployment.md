@@ -67,12 +67,49 @@ terraform -chdir=infrastructure/terraform/examples/<stack> apply
 terraform -chdir=infrastructure/terraform/examples/<stack> destroy
 ```
 
+## Governed AWS deployment (remote state + short-lived identity)
+
+The workflow above is the disposable-development path: local state, whatever
+credentials your shell happens to hold, and a plan that is regenerated at apply
+time. That is fine for an account you own and will delete. It is **not** the path
+for anything shared, long-lived, or release-bound.
+
+For those, three things change:
+
+1. **Remote state, created separately.** Apply `bootstrap/aws-tfstate` on its own,
+   then copy the stack's `backend.tf.example` to `backend.tf`. Backend creation is
+   never a side effect of `terraform init`.
+2. **A short-lived deployment identity.** Apply `bootstrap/aws-terraform-oidc`
+   (backend access) and `bootstrap/aws-exec-identity` (infrastructure deployment).
+   No IAM user, no access key. `bootstrap/aws-ecs`, `bootstrap/aws-serverless`,
+   and `bootstrap/aws-eks` create long-lived IAM users and are local-only and
+   unsupported for release.
+3. **One exact saved plan.** Produce the plan and its approval digest once, then
+   apply exactly those bytes:
+
+```bash
+scripts/terraform-exact-plan.sh \
+  --root infrastructure/terraform/examples/aws \
+  --action apply --plan-out out/honua.tfplan \
+  --actor "operator:you@example.com"
+
+scripts/terraform-exact-apply.sh \
+  --plan out/honua.tfplan --receipt-out out/receipt.json
+```
+
+The apply wrapper refuses before touching anything if the account, role, backend,
+workspace, provider lock, IaC revision, inputs, or state lineage moved since the
+plan, if the plan expired, or if it was already applied. Full field and refusal
+reference: [`docs/devops/terraform-exact-plan-contract.md`](devops/terraform-exact-plan-contract.md)
+and [`docs/operator-state.md`](operator-state.md).
+
 ## Recommended operator defaults
 
 - Pin versioned images (avoid `latest` in production)
 - Keep `enable_postgis = true`
 - Keep DB private by default (`db_publicly_accessible = false`)
-- Use managed secrets and remote state backend
+- Use managed secrets and a remote state backend (mandatory for anything shared
+  or long-lived; see [`operator-state.md`](operator-state.md))
 - Add mandatory tags (owner, env, cost center)
 
 ## Horizontal scaling contract
