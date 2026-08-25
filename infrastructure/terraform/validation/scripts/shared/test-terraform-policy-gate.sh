@@ -254,5 +254,69 @@ for wiring_case in \
   rm -rf "$WIRING_FIXTURE"
 done
 
+# --- governed execution substrate guards (honua-iac#149) ---------------------
+#
+# The state bootstrap's hardening, the certified identity's role boundaries, and
+# the unsupported IAM-user bootstraps' hard markers are all "assert_regex_present"
+# guards: they false-pass if the guard itself rots. These cases delete the exact
+# property each guard protects and require the gate to notice.
+
+assert_missing_property_detected() {
+  local label="$1"
+  local target_file="$2"
+  local delete_pattern="$3"
+
+  local fixture="$TMP_DIR/violation-$label"
+  rm -rf "$fixture"
+  cp -a "$FIXTURE_ROOT" "$fixture"
+
+  local target_path="$fixture/$target_file"
+  if [[ ! -f "$target_path" ]]; then
+    echo "[ERROR] Negative-test target file not found: $target_path" >&2
+    exit 1
+  fi
+  sed -i "\\|$delete_pattern|d" "$target_path"
+
+  run_gate "true" 0 0 0 "$fixture"
+  if [[ "$GATE_EXIT_CODE" -eq 0 ]]; then
+    echo "[ERROR] Policy gate accepted a missing '$label' property in $target_file" >&2
+    cat "$GATE_OUTPUT_FILE" >&2
+    exit 1
+  fi
+  assert_output_contains "Policy check failed \\($label\\): expected pattern not found"
+  rm -rf "$fixture"
+}
+
+# Backend hardening: a state bucket that can be published, unversioned, or
+# destroyed is not a trustworthy state store.
+assert_missing_property_detected 'tfstate-restrict-public-buckets' \
+  'bootstrap/aws-tfstate/main.tf' 'restrict_public_buckets = true'
+assert_missing_property_detected 'tfstate-insecure-transport-denied' \
+  'bootstrap/aws-tfstate/main.tf' 'aws:SecureTransport'
+assert_missing_property_detected 'tfstate-protection-tamper-denied' \
+  'bootstrap/aws-tfstate/main.tf' 'DenyStateSubstrateAdministration'
+
+# Role boundaries: the deployment role must stay out of the state substrate and
+# must never be able to mint a long-lived credential.
+assert_missing_property_detected 'exec-identity-state-substrate-denied' \
+  'bootstrap/aws-exec-identity/main.tf' 'DenyStateSubstrateAccess'
+assert_missing_property_detected 'exec-identity-long-lived-credentials-denied' \
+  'bootstrap/aws-exec-identity/main.tf' 'DenyLongLivedCredentials'
+assert_missing_property_detected 'exec-identity-privileged-passrole-denied' \
+  'bootstrap/aws-exec-identity/main.tf' 'DenyPassingPrivilegedRoles'
+
+# The unsupported local-only bootstraps must keep their machine-readable marker.
+assert_missing_property_detected 'unsupported-bootstrap-output-marker' \
+  'bootstrap/aws-ecs/outputs.tf' 'output "supported_for_release"'
+assert_missing_property_detected 'unsupported-bootstrap-posture-tag' \
+  'bootstrap/aws-eks/main.tf' 'HonuaReleasePosture'
+
+# The certified identity path must not grow a long-lived principal. The literal
+# is assembled from fragments so this test file does not itself trip the guard.
+IAM_USER_RESOURCE="resource ${Q}aws_iam_user${Q} ${Q}smuggled${Q} {"
+assert_violation_detected 'exec-identity-no-iam-user' \
+  'bootstrap/aws-exec-identity/main.tf' "$IAM_USER_RESOURCE"
+
+echo "[INFO] terraform-policy-gate governed-execution guard tests passed"
 echo "[INFO] terraform-policy-gate strict/non-strict regression tests passed"
 echo "[INFO] terraform-policy-gate custom security-guard negative tests passed"

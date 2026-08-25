@@ -17,6 +17,10 @@ on:
       - 'scripts/check-tfvars-examples.sh'
       - 'scripts/package-customer-dist.sh'
       - 'scripts/new-terraform-lineage-contract.ps1'
+      - 'scripts/terraform-exact-plan.sh'
+      - 'scripts/terraform-exact-apply.sh'
+      - 'scripts/terraform-backend-identity.sh'
+      - 'scripts/lib/tf-exec-contract.sh'
       - 'scripts/smoke-customer-dist.sh'
       - 'scripts/capture-dr-drill-evidence.sh'
       - 'scripts/capture-runbook-evidence.sh'
@@ -25,6 +29,7 @@ on:
       - 'scripts/tf-secrets.local.example.sh'
       - 'scripts/write-cloud-demo-smoke-env-summary.mjs'
       - 'docs/devops/terraform-validation.md'
+      - 'docs/devops/terraform-exact-plan-contract.md'
       - 'docs/devops/backup-restore-runbook.md'
       - 'docs/devops/failover-drill-runbook.md'
       - 'docs/devops/manual-cloud-runbook-validation.md'
@@ -53,6 +58,10 @@ on:
       - 'scripts/check-tfvars-examples.sh'
       - 'scripts/package-customer-dist.sh'
       - 'scripts/new-terraform-lineage-contract.ps1'
+      - 'scripts/terraform-exact-plan.sh'
+      - 'scripts/terraform-exact-apply.sh'
+      - 'scripts/terraform-backend-identity.sh'
+      - 'scripts/lib/tf-exec-contract.sh'
       - 'scripts/smoke-customer-dist.sh'
       - 'scripts/capture-dr-drill-evidence.sh'
       - 'scripts/capture-runbook-evidence.sh'
@@ -61,6 +70,7 @@ on:
       - 'scripts/tf-secrets.local.example.sh'
       - 'scripts/write-cloud-demo-smoke-env-summary.mjs'
       - 'docs/devops/terraform-validation.md'
+      - 'docs/devops/terraform-exact-plan-contract.md'
       - 'docs/devops/backup-restore-runbook.md'
       - 'docs/devops/failover-drill-runbook.md'
       - 'docs/devops/manual-cloud-runbook-validation.md'
@@ -141,6 +151,7 @@ jobs:
             "infrastructure/terraform/bootstrap/aws-ecs"
             "infrastructure/terraform/bootstrap/aws-tfstate"
             "infrastructure/terraform/bootstrap/aws-terraform-oidc"
+            "infrastructure/terraform/bootstrap/aws-exec-identity"
             "infrastructure/terraform/bootstrap/aws-serverless"
             "infrastructure/terraform/bootstrap/aws-eks"
             "infrastructure/terraform/bootstrap/aws-support-access"
@@ -256,6 +267,14 @@ jobs:
       - name: Validation infra reaper regression test (refusal rules)
         shell: bash
         run: ./infrastructure/terraform/validation/scripts/aws/test-sweep-orphaned-validation-infra.sh
+
+      # The exact-plan/apply wrappers decide whether a customer-account mutation
+      # may start, so their fail-closed matrix is the thing under test. Runs
+      # fully offline against a fake terraform and fixtures: no credentials, no
+      # network, no real state. See honua-iac#149.
+      - name: Governed execution substrate regression test (fail-closed matrix)
+        shell: bash
+        run: ./infrastructure/terraform/validation/scripts/shared/test-terraform-exact-plan.sh
 
       - name: Run Terraform policy gate script
         shell: bash
