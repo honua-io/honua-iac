@@ -1,0 +1,23 @@
+# Honua infrastructure preset: small / development
+#
+# Use together with the stack-local terraform.tfvars, which carries the image
+# and secrets. This file is intentionally non-secret.
+
+environment = "dev"
+name_prefix = "honua-dev"
+
+# EP1 is the smallest release-supported container plan for this stack. The Y1
+# consumption value is exposed for compatibility but is not the certified
+# container-image path.
+plan_sku_name           = "EP1"
+deployment_slot_enabled = false
+redis_enabled           = true
+
+db_geo_redundant_backup_enabled = false
+db_backup_retention_days        = 7
+
+tags = {
+  environment = "dev"
+  size        = "small"
+  managedBy   = "terraform"
+}

@@ -32,7 +32,23 @@ cp infrastructure/terraform/examples/<stack>/terraform.tfvars.example \
 - Set container image (`honua_image` or `honua_image_uri`)
 - Optionally wire existing DB/Redis/VPC if reusing infra
 
-3. Deploy:
+For a disposable, single-node development cell, keep secrets in
+`terraform.tfvars` and add the committed non-secret preset to both plan and
+apply:
+
+```bash
+terraform -chdir=infrastructure/terraform/examples/<stack> init
+terraform -chdir=infrastructure/terraform/examples/<stack> plan \
+  -var-file=presets/small.tfvars.example
+terraform -chdir=infrastructure/terraform/examples/<stack> apply \
+  -var-file=presets/small.tfvars.example
+```
+
+See [deployment-presets.md](deployment-presets.md) for the exact target-to-root
+mapping, secret handling, and the distinction between infrastructure size and
+the server capability deployment profile.
+
+3. Deploy without a preset when you have supplied an environment-specific size:
 
 ```bash
 terraform -chdir=infrastructure/terraform/examples/<stack> init
