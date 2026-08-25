@@ -13,6 +13,7 @@ on:
       - 'scripts/terraform-policy-gate.sh'
       - 'scripts/check-marketplace-paths.sh'
       - 'scripts/package-customer-dist.sh'
+      - 'scripts/new-terraform-lineage-contract.ps1'
       - 'scripts/smoke-customer-dist.sh'
       - 'scripts/capture-dr-drill-evidence.sh'
       - 'scripts/capture-runbook-evidence.sh'
@@ -44,6 +45,7 @@ on:
       - 'scripts/terraform-policy-gate.sh'
       - 'scripts/check-marketplace-paths.sh'
       - 'scripts/package-customer-dist.sh'
+      - 'scripts/new-terraform-lineage-contract.ps1'
       - 'scripts/smoke-customer-dist.sh'
       - 'scripts/capture-dr-drill-evidence.sh'
       - 'scripts/capture-runbook-evidence.sh'
@@ -129,6 +131,8 @@ jobs:
             "infrastructure/terraform/bootstrap/azure-aks"
             "infrastructure/terraform/bootstrap/azure-support-access"
             "infrastructure/terraform/bootstrap/aws-ecs"
+            "infrastructure/terraform/bootstrap/aws-tfstate"
+            "infrastructure/terraform/bootstrap/aws-terraform-oidc"
             "infrastructure/terraform/bootstrap/aws-serverless"
             "infrastructure/terraform/bootstrap/aws-eks"
             "infrastructure/terraform/bootstrap/aws-support-access"

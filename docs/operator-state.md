@@ -1,6 +1,33 @@
 # Operator State Guide
 
-Use a remote backend for every shared or long-lived deployment. The example stacks ship `backend.tf.example` files so operators do not have to invent state layout from scratch.
+## Exact plan and state lineage metadata
+
+Before any governed apply or destroy, create a metadata-only contract with `scripts/new-terraform-lineage-contract.ps1`. The caller supplies the saved plan path, a protected file containing only `lineage` and `serial` extracted from `terraform state pull`, the exact candidate, deployment target, identified actor, workload-identity contract digest, revision and digest values, and a future expiry. The script hashes the saved plan and emits no state contents, credentials, tokens, or secret values.
+
+The artifact is pre-apply evidence only and is always emitted with `qualification_status = "unqualified"`. It does not approve or apply a plan, and `state_after` remains null until a durable actuator and verifier receipt records the resulting lineage, serial, and output contract digest. A consumer must reject the artifact when live backend, actuator, or verifier evidence is absent. Never commit the pulled state file or place it in model context, logs, proposals, or receipts.
+
+Example Windows invocation:
+
+```powershell
+& .\scripts\new-terraform-lineage-contract.ps1 `
+  -PlanPath .\candidate.tfplan `
+  -StateMetadataPath .\state-metadata.json `
+  -CandidateDigest $candidateDigest `
+  -TargetId "ecs:cluster/service" `
+  -ActorId $actorId `
+  -WorkloadIdentityContractDigest $workloadIdentityDigest `
+  -BackendConfigDigest $backendDigest `
+  -IacRevision $iacRevision `
+  -ProviderLockDigest $lockDigest `
+  -InputDigest $inputDigest `
+  -ExpiresAtUtc ([DateTime]::UtcNow.AddHours(1)) `
+  -OutputPath .\terraform-lineage.json
+```
+
+Use a remote backend for every shared or long-lived deployment. The AWS ECS
+example ships `backend.tf.example`; apply
+`bootstrap/aws-tfstate` separately before activating it so backend creation is
+not hidden inside `terraform init`.
 
 ## Recommended isolation model
 
@@ -18,7 +45,8 @@ Recommended key layout:
 
 ## AWS backend pattern
 
-Use S3 plus DynamoDB locking:
+Use the `backend_contract` output from `bootstrap/aws-tfstate` to configure S3
+plus DynamoDB locking:
 
 ```hcl
 terraform {
@@ -31,6 +59,12 @@ terraform {
   }
 }
 ```
+
+The bootstrap enables S3 versioning, server-side encryption, public-access
+blocking, HTTPS-only access, and DynamoDB point-in-time recovery. Its
+`backend_contract_digest` is evidence of backend configuration only; it does
+not prove application state lineage. The certified executor must still record
+state lineage and serial before and after the exact saved-plan operation.
 
 ## Azure backend pattern
 
