@@ -1,5 +1,16 @@
 # Copy to terraform.tfvars and fill in real values.
 # NEVER commit terraform.tfvars — it contains secrets.
+#
+# This file assigns every variable this root requires, so a copied and filled-in
+# terraform.tfvars reaches `terraform plan` with nothing left unset. Values in
+# CAPITALS are placeholders, never real or reusable secrets.
+#
+# For a single-node development cell, keep this file and add the non-secret size
+# overlay, which wins for the variables it sets:
+#
+#   terraform plan -var-file=presets/small.tfvars.example
+#
+# Preset contract: docs/deployment-presets.md
 
 region      = "us-east-1"
 environment = "prod"

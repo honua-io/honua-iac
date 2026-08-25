@@ -1,10 +1,22 @@
 # Honua infrastructure preset: small / development
 #
-# Use together with the stack-local terraform.tfvars, which carries the image
-# and secrets. This file is intentionally non-secret.
+# A non-secret size overlay for a single-node development cell. This is not a
+# standalone tfvars file: apply it on top of the stack's terraform.tfvars, which
+# carries the image and the secrets.
+#
+#   cp terraform.tfvars.example terraform.tfvars   # fill in image + secrets
+#   terraform plan -var-file=presets/small.tfvars.example
+#
+# Precedence: a -var-file loaded after terraform.tfvars wins for every variable
+# it sets, and it replaces the whole value rather than merging it. The tags below
+# therefore substitute for the tags in terraform.tfvars instead of adding to
+# them; keep the two blocks in agreement, or delete the block here to keep the
+# tags from terraform.tfvars.
+#
+# Sizing only. This preset does not grant a license or turn on Honua
+# capabilities. See docs/deployment-presets.md.
 
 environment = "dev"
-name_prefix = "honua-dev"
 
 deployment_mode = "SingleInstance"
 min_replicas    = 1
