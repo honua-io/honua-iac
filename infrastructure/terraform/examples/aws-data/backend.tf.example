@@ -1,4 +1,4 @@
-# Remote state for the AWS ECS/Fargate stack.
+# Remote state for the AWS data-only stack.
 #
 # Copy to backend.tf ONLY after `bootstrap/aws-tfstate` has been applied, then
 # replace every placeholder with that root's outputs. Backend creation is a
@@ -18,7 +18,7 @@
 terraform {
   backend "s3" {
     bucket       = "REPLACE_WITH_STATE_BUCKET_NAME"
-    key          = "honua/aws/prod/terraform.tfstate"
+    key          = "honua/aws-data/prod/terraform.tfstate"
     region       = "us-east-1"
     encrypt      = true
     use_lockfile = true
