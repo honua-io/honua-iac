@@ -71,16 +71,36 @@ Tier 3 internal-only) are recorded in [`docs/module-publishing-decision.md`](../
 - `examples/azure-aks`
 - `examples/observability`
 
+## State backend and execution identity (AWS release lane)
+
+Apply these before the product stack. Backend creation is always a separate,
+explicit operation and never a side effect of `terraform init`.
+
+- `bootstrap/aws-tfstate` — S3 remote state: versioning, default encryption,
+  public-access denial, HTTPS-only, one exclusive object key per stack and
+  environment, the locking primitive, and a least-privilege backend access
+  policy.
+- `bootstrap/aws-terraform-oidc` — the short-lived **backend access** role.
+- `bootstrap/aws-exec-identity` — the short-lived **infrastructure deployment**
+  role, with explicit denials that keep it out of the state substrate and out of
+  the long-lived-credential business.
+
+See [`docs/operator-state.md`](../../docs/operator-state.md) and
+[`docs/devops/terraform-exact-plan-contract.md`](../../docs/devops/terraform-exact-plan-contract.md).
+
 ## Bootstrap identities (optional)
 
-- `bootstrap/aws-ecs`
-- `bootstrap/aws-serverless`
-- `bootstrap/aws-eks`
 - `bootstrap/azure-aca`
 - `bootstrap/azure-functions`
 - `bootstrap/azure-aks`
 
 Use these when you need dedicated least-privilege deployment identities.
+
+The AWS entries in this family — `bootstrap/aws-ecs`, `bootstrap/aws-serverless`,
+and `bootstrap/aws-eks` — create a **long-lived IAM user** and are **local-only
+and unsupported for release or certification**. Their `supported_for_release`
+output is a hard `false`. Use `bootstrap/aws-exec-identity` for anything shared,
+long-lived, or release-bound.
 
 ## Validation assets (maintainers)
 

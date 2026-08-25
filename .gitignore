@@ -10,3 +10,6 @@ infrastructure/terraform/examples/aws-demo/postgis-bootstrap/bootstrap.zip
 infrastructure/terraform/internal/gtm-forms-router/build/
 scripts/tf-secrets.local.sh
 scripts/tf-pass-insert.local.sh
+
+# Local pinned tool downloads (terraform binary for agent worktrees).
+.tools/

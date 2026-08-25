@@ -305,6 +305,64 @@ run_custom_policy_checks() {
 
   assert_regex_absent 'kubernetes[[:space:]]*=[[:space:]]*\{' "$ROOT/examples/observability/main.tf" "helm-provider-kubernetes-attribute"
   assert_regex_present '^[[:space:]]*kubernetes[[:space:]]*\{' "$ROOT/examples/observability/main.tf" "helm-provider-kubernetes-block"
+
+  run_governed_execution_policy_checks
+}
+
+# Static contract guards for the governed AWS execution substrate (honua-iac#149).
+#
+# The remote state bootstrap, the certified execution identity, and the
+# explicitly unsupported IAM-user bootstraps each carry properties that a later
+# well-meaning edit could quietly remove. These guards fail the build instead.
+run_governed_execution_policy_checks() {
+  log_info "Running governed execution substrate policy checks"
+
+  local tfstate="$ROOT/bootstrap/aws-tfstate/main.tf"
+
+  # --- backend hardening ---------------------------------------------------
+  assert_regex_present 'status[[:space:]]*=[[:space:]]*"Enabled"' "$tfstate" "tfstate-versioning-enabled"
+  assert_regex_present 'block_public_acls[[:space:]]*=[[:space:]]*true' "$tfstate" "tfstate-block-public-acls"
+  assert_regex_present 'block_public_policy[[:space:]]*=[[:space:]]*true' "$tfstate" "tfstate-block-public-policy"
+  assert_regex_present 'ignore_public_acls[[:space:]]*=[[:space:]]*true' "$tfstate" "tfstate-ignore-public-acls"
+  assert_regex_present 'restrict_public_buckets[[:space:]]*=[[:space:]]*true' "$tfstate" "tfstate-restrict-public-buckets"
+  assert_regex_present 'force_destroy[[:space:]]*=[[:space:]]*false' "$tfstate" "tfstate-force-destroy-disabled"
+  assert_regex_present 'apply_server_side_encryption_by_default' "$tfstate" "tfstate-default-encryption"
+  assert_regex_present 'aws:SecureTransport' "$tfstate" "tfstate-insecure-transport-denied"
+  assert_regex_present 'DenyStateSubstrateAdministration' "$tfstate" "tfstate-protection-tamper-denied"
+  assert_regex_present 'prevent_destroy[[:space:]]*=[[:space:]]*true' "$tfstate" "tfstate-prevent-destroy"
+
+  # --- certified execution identity: role boundaries -----------------------
+  local exec_identity="$ROOT/bootstrap/aws-exec-identity/main.tf"
+
+  assert_regex_present 'DenyStateSubstrateAccess' "$exec_identity" "exec-identity-state-substrate-denied"
+  assert_regex_present 'DenyLongLivedCredentials' "$exec_identity" "exec-identity-long-lived-credentials-denied"
+  assert_regex_present 'DenyPassingPrivilegedRoles' "$exec_identity" "exec-identity-privileged-passrole-denied"
+  assert_regex_present 'iam:PassedToService' "$exec_identity" "exec-identity-passrole-service-scoped"
+  assert_regex_present 'aws:RequestedRegion' "$exec_identity" "exec-identity-region-scoped"
+
+  # The certified identity path must never grow an IAM user or access key.
+  assert_regex_absent 'resource[[:space:]]+"aws_iam_user"' "$ROOT/bootstrap/aws-exec-identity" "exec-identity-no-iam-user"
+  assert_regex_absent 'resource[[:space:]]+"aws_iam_access_key"' "$ROOT/bootstrap/aws-exec-identity" "exec-identity-no-access-key"
+  assert_regex_absent 'resource[[:space:]]+"aws_iam_user"' "$ROOT/bootstrap/aws-terraform-oidc" "backend-identity-no-iam-user"
+  assert_regex_absent 'resource[[:space:]]+"aws_iam_access_key"' "$ROOT/bootstrap/aws-terraform-oidc" "backend-identity-no-access-key"
+
+  # --- unsupported local-only bootstraps keep their hard markers -----------
+  local unsupported_root
+  for unsupported_root in aws-ecs aws-eks aws-serverless; do
+    assert_regex_present 'HonuaReleasePosture[[:space:]]*=[[:space:]]*"unsupported-local-only"' \
+      "$ROOT/bootstrap/$unsupported_root/main.tf" "unsupported-bootstrap-posture-tag"
+    assert_regex_present 'check[[:space:]]+"unsupported_for_release_lane"' \
+      "$ROOT/bootstrap/$unsupported_root/main.tf" "unsupported-bootstrap-plan-warning"
+    assert_regex_present 'output[[:space:]]+"supported_for_release"' \
+      "$ROOT/bootstrap/$unsupported_root/outputs.tf" "unsupported-bootstrap-output-marker"
+  done
+
+  # --- backend examples the operator docs promise --------------------------
+  local backend_example_stack
+  for backend_example_stack in aws aws-serverless aws-eks aws-data; do
+    assert_regex_present 'backend[[:space:]]+"s3"' \
+      "$ROOT/examples/$backend_example_stack/backend.tf.example" "backend-example-present"
+  done
 }
 
 main() {
