@@ -219,11 +219,11 @@ PY
 assert_remote_backend() {
   local doc="$1"
   local kind is_remote lock_kind
-  kind="$(printf '%s' "$doc" | python3 -c 'import json,sys; print(json.load(sys.stdin)["backend_kind"])')"
-  is_remote="$(printf '%s' "$doc" | python3 -c 'import json,sys; print(json.load(sys.stdin)["is_remote"])')"
-  lock_kind="$(printf '%s' "$doc" | python3 -c 'import json,sys; print(json.load(sys.stdin)["locking"]["kind"])')"
+  kind="$(json_get "$doc" backend_kind)"
+  is_remote="$(json_get "$doc" is_remote)"
+  lock_kind="$(json_get "$doc" locking.kind)"
 
-  if [[ "$is_remote" != "True" ]]; then
+  if [[ "$is_remote" != "true" ]]; then
     refuse "local-state-refused" \
       "backend kind '$kind' is local state; the release lane requires a remote backend (see docs/operator-state.md)"
   fi
@@ -239,7 +239,7 @@ assert_lock_primitive_supported() {
   local doc="$1"
   local tf_version="$2"
   local lock_kind
-  lock_kind="$(printf '%s' "$doc" | python3 -c 'import json,sys; print(json.load(sys.stdin)["locking"]["kind"])')"
+  lock_kind="$(json_get "$doc" locking.kind)"
 
   if [[ "$lock_kind" == "s3-native-lockfile" ]] && ! version_at_least "$tf_version" "1.10.0"; then
     refuse "lock-primitive-unsupported" \
@@ -329,10 +329,10 @@ PY
 assert_short_lived_identity() {
   local doc="$1"
   local kind
-  kind="$(printf '%s' "$doc" | python3 -c 'import json,sys; print(json.load(sys.stdin)["credential_kind"])')"
+  kind="$(json_get "$doc" credential_kind)"
 
   case "$kind" in
-    sts-assumed-role | offline-test) return 0 ;;
+    sts-assumed-role) return 0 ;;
     iam-user)
       refuse "long-lived-credential-refused" \
         "caller is a long-lived IAM user; the certified lane requires an SSO/OIDC-federated STS session"
