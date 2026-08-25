@@ -2,6 +2,10 @@
 
 Operator-focused Terraform for deploying Honua in your own AWS or Azure account.
 
+This repository was named `honua-terraform` until it was renamed to `honua-iac`;
+GitHub redirects the old name and old clone URLs here, so no separate archive
+exists.
+
 Current infrastructure capabilities are summarized in [docs/features/README.md](docs/features/README.md).
 
 ## Deploy Honua (operator path)

@@ -12,6 +12,7 @@ on:
       - 'scripts/run-terraform-drift-detection.sh'
       - 'scripts/terraform-policy-gate.sh'
       - 'scripts/check-marketplace-paths.sh'
+      - 'scripts/check-tfvars-examples.sh'
       - 'scripts/package-customer-dist.sh'
       - 'scripts/new-terraform-lineage-contract.ps1'
       - 'scripts/smoke-customer-dist.sh'
@@ -44,6 +45,7 @@ on:
       - 'scripts/run-terraform-drift-detection.sh'
       - 'scripts/terraform-policy-gate.sh'
       - 'scripts/check-marketplace-paths.sh'
+      - 'scripts/check-tfvars-examples.sh'
       - 'scripts/package-customer-dist.sh'
       - 'scripts/new-terraform-lineage-contract.ps1'
       - 'scripts/smoke-customer-dist.sh'
@@ -180,6 +182,14 @@ jobs:
       - name: Marketplace manifest path check
         shell: bash
         run: ./scripts/check-marketplace-paths.sh
+
+      # `terraform validate` never reads a tfvars file, so the loop above cannot
+      # tell that a root's terraform.tfvars.example still assigns every required
+      # variable. This checks the documented copy-and-plan flow statically, with
+      # no cloud credentials.
+      - name: Operator tfvars example contract
+        shell: bash
+        run: ./scripts/check-tfvars-examples.sh
 
       - name: Multi-node topology contract tests
         shell: bash
