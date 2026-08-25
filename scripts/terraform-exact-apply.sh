@@ -22,9 +22,14 @@
 #   input-digest-changed
 #   state-lineage-changed / state-serial-drift
 #
-# On success it writes an evidence-safe receipt: exit status, resulting state
+# It writes an evidence-safe receipt either way: exit status, resulting state
 # lineage/serial, output contract digest, actor and workload identity reference,
 # backend step, and the cleanup/teardown handle. No secrets, no state contents.
+#
+# A refusal releases the claim -- nothing was mutated, so the same approved plan
+# can be retried. An execution completes the claim whether Terraform succeeded or
+# not: a failed apply may have mutated part of the stack, so the plan is spent
+# and a fresh one must be produced and approved.
 #
 # Usage:
 #   scripts/terraform-exact-apply.sh --plan <file> [options]
@@ -279,7 +284,10 @@ APPLY_EXIT=$?
 set -e
 
 if [[ "$APPLY_EXIT" -ne 0 ]]; then
-  log_error "terraform apply exited $APPLY_EXIT; recording a failed receipt"
+  # The claim is still completed below. A failed apply may have mutated part of
+  # the stack, so this plan is spent: read state_after from the receipt, then
+  # produce and approve a fresh plan.
+  log_error "terraform apply exited $APPLY_EXIT; the plan is spent, recording a failed receipt"
 fi
 
 # --- post-execution evidence --------------------------------------------------

@@ -765,6 +765,24 @@ expect_refusal "recovery: an interrupted claim is not silently stolen" "concurre
 run_apply "$CASE" --allow-unqualified --reclaim-after 60 --dry-run
 expect_success "recovery: an explicit reclaim window releases a stale claim"
 
+# A failed apply still spends the plan: it may have mutated part of the stack, so
+# the same bytes must not be reusable.
+CASE="$(apply_case failed-apply)"
+FAKE_TF_APPLY_EXIT=1 run_apply "$CASE" --allow-unqualified \
+  --receipt-out "$CASE/artifacts/receipt.json"
+if [[ "$LAST_EXIT" -eq 1 ]]; then
+  echo "[PASS] failure: a failed apply propagates terraform's exit status"
+  PASS_COUNT=$((PASS_COUNT + 1))
+else
+  echo "[FAIL] failure: expected exit 1 from a failed apply, got $LAST_EXIT" >&2
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+fi
+assert_json "failure: the receipt records the failure and the resulting state" \
+  "$CASE/artifacts/receipt.json" \
+  "doc['status'] == 'failed' and doc['exit_status'] == 1 and doc['state_after']['serial'] == 13"
+run_apply "$CASE" --allow-unqualified
+expect_refusal "failure: the spent plan cannot be applied again" "plan-already-claimed"
+
 # A COMPLETED claim is never reclaimable -- recovery must not become replay.
 CASE="$(apply_case completed-not-reclaimable)"
 mkdir -p "$CASE/artifacts/honua.tfplan.claim"

@@ -108,8 +108,14 @@ which runs fully offline against a fake `terraform` and fixtures.
 The apply wrapper takes a one-time claim with an atomic `mkdir` beside the saved
 plan. A second concurrent executor loses the race deterministically
 (`concurrent-claim`); a completed claim makes a later replay
-`plan-already-claimed`. A refusal removes the claim so the operator can fix the
-cause and retry the same approved plan.
+`plan-already-claimed`.
+
+A **refusal** removes the claim: nothing was mutated, so the operator can fix the
+cause and retry the same approved plan. An **execution** completes the claim
+whether Terraform exited 0 or not: a failed apply may have mutated part of the
+stack, so the plan is spent. Read `state_after` from the failed receipt, then
+produce and approve a fresh plan. (Retrying the spent plan would be refused by
+`state-serial-drift` anyway; completing the claim makes the refusal say why.)
 
 After an ambiguous client disconnect, `--claim-status` reports whether the claim
 is `free`, `held`, or `completed` without touching anything. `--reclaim-after
