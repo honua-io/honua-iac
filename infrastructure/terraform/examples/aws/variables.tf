@@ -82,14 +82,22 @@ variable "operator_contract_identity" {
   description = "Optional immutable identity inputs for the honua.operator-contract/v1 output. Omit only for disposable, unqualified development plans; certified consumers must provide every required digest and backend/state lineage input."
   type = object({
     candidate_digest      = string
+    manifest_digest       = optional(string)
     iac_revision          = string
     terraform_version     = string
     provider_lock_digest  = string
     image_digest          = string
+    image_reference       = optional(string)
     backend_config_digest = optional(string)
     state_lineage         = optional(string)
     state_serial          = optional(number)
     workload_identity     = optional(string)
+    artifacts = optional(list(object({
+      name    = string
+      kind    = string
+      version = string
+      digest  = string
+    })), [])
   })
   default = null
 
@@ -97,14 +105,49 @@ variable "operator_contract_identity" {
     condition = var.operator_contract_identity == null || (
       can(regex("^[0-9a-f]{64}$", try(var.operator_contract_identity.candidate_digest, ""))) &&
       can(regex("^([0-9a-f]{40}|[0-9a-f]{64})$", try(var.operator_contract_identity.iac_revision, ""))) &&
-      trimspace(try(var.operator_contract_identity.terraform_version, "")) != "" &&
+      try(trimspace(var.operator_contract_identity.terraform_version) != "", false) &&
       can(regex("^[0-9a-f]{64}$", try(var.operator_contract_identity.provider_lock_digest, ""))) &&
       can(regex("^sha256:[0-9a-f]{64}$", try(var.operator_contract_identity.image_digest, ""))) &&
+      (try(var.operator_contract_identity.manifest_digest, null) == null || can(regex("^[0-9a-f]{64}$", var.operator_contract_identity.manifest_digest))) &&
       (try(var.operator_contract_identity.backend_config_digest, null) == null || can(regex("^[0-9a-f]{64}$", var.operator_contract_identity.backend_config_digest))) &&
-      (try(var.operator_contract_identity.state_lineage, null) == null || can(regex("^[0-9a-f-]{36}$", var.operator_contract_identity.state_lineage))) &&
+      (try(var.operator_contract_identity.state_lineage, null) == null || can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", var.operator_contract_identity.state_lineage))) &&
       (try(var.operator_contract_identity.state_serial, null) == null || try(var.operator_contract_identity.state_serial >= 0, false))
     )
-    error_message = "operator_contract_identity must use SHA-256 digests, a 40/64-character IaC revision, a sha256 image digest, and non-negative state serial when supplied."
+    error_message = "operator_contract_identity must use SHA-256 digests, a 40/64-character IaC revision, a sha256 image digest, a UUID state lineage, and a non-negative state serial when supplied."
+  }
+
+  # An immutable identity claim may never be backed by a mutable reference.
+  # image_reference must be registry/repository@sha256:<64 hex>; a tag-only
+  # reference (":latest", ":2026.1.0") is rejected here rather than silently
+  # projected into the contract as an immutable pin.
+  # HCL evaluates both operands of || and &&, so every branch below is written
+  # as a conditional (which does short-circuit) or wrapped in try/can. A null
+  # attribute must fail the check, not crash the plan with a function error.
+  validation {
+    condition = var.operator_contract_identity == null ? true : (
+      try(var.operator_contract_identity.image_reference, null) == null ? true :
+      can(regex("^[A-Za-z0-9][A-Za-z0-9._-]*(\\.[A-Za-z0-9._-]+)*(:[0-9]+)?(/[A-Za-z0-9._-]+)+@sha256:[0-9a-f]{64}$", var.operator_contract_identity.image_reference))
+    )
+    error_message = "operator_contract_identity.image_reference must be digest-pinned as registry/repository@sha256:<64 hex>; a mutable tag is not an immutable pin."
+  }
+
+  validation {
+    condition = var.operator_contract_identity == null ? true : (
+      try(var.operator_contract_identity.image_reference, null) == null ? true :
+      try(endswith(var.operator_contract_identity.image_reference, "@${var.operator_contract_identity.image_digest}"), false)
+    )
+    error_message = "operator_contract_identity.image_reference must end with @<image_digest>; the reference and the digest must describe the same image."
+  }
+
+  validation {
+    condition = var.operator_contract_identity == null ? true : alltrue([
+      for artifact in try(var.operator_contract_identity.artifacts, []) :
+      try(trimspace(artifact.name) != "", false) &&
+      try(contains(["proxy", "cli", "mcp-server", "helm-chart", "package", "other"], artifact.kind), false) &&
+      try(trimspace(artifact.version) != "", false) &&
+      can(regex("^[0-9a-f]{64}$", artifact.digest))
+    ])
+    error_message = "Each operator_contract_identity.artifacts entry needs a name, a supported kind (proxy, cli, mcp-server, helm-chart, package, other), a version, and a 64-character SHA-256 digest."
   }
 }
 
