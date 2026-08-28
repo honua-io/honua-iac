@@ -129,9 +129,16 @@ One-time, per certification account:
 1. **Dedicated account + region.** Use an isolated AWS account (blast-radius
    containment + clean budget attribution); keep `region = us-east-1` unless the
    honua-server workflow is realigned to match.
-2. **Uncomment the S3 backend** in `versions.tf`
-   (`cert/aws-cert/terraform.tfstate`) so state is durable before the first
-   apply.
+2. **Apply the state backend, then activate it.** Apply
+   `bootstrap/aws-tfstate` on its own — with a `state_key_scopes` entry of
+   `{ stack_name = "aws-cert", environment = "cert" }` — as a separate,
+   explicitly decided operation. Then `cp backend.tf.example backend.tf` and
+   replace every placeholder with that root's outputs, so state is remote,
+   encrypted, versioned and locked before the first apply. Backend creation is
+   never a side effect of `terraform init`, and `backend.tf` is gitignored
+   because the filled-in copy names your account's bucket and role. Local state
+   cannot certify anything: the governed wrappers refuse it with
+   `REFUSED[local-state-refused]`. See [`docs/operator-state.md`](../../../../docs/operator-state.md).
 3. **Fill `terraform.tfvars`** from the example — `honua_image`,
    `honua_admin_password`, `db_password`, `budget_alert_emails`, and OIDC
    scoping (`github_oidc_subjects` defaults to the `cert` Environment sub).
@@ -267,8 +274,11 @@ session) to drop it to $0.
 - **GP GPU is out of scope.** GPU needs an EC2 Batch compute environment; the
   cert path is Fargate-Spot. The module's `gp_gpu_enabled` flag is a placeholder
   that provisions nothing — leave it `false`.
-- **State:** uncomment the S3 backend in `versions.tf`
-  (`cert/aws-cert/terraform.tfstate`) before the first real apply.
+- **State:** copy `backend.tf.example` to `backend.tf`
+  (`honua/aws-cert/cert/terraform.tfstate`) after applying
+  `bootstrap/aws-tfstate`, before the first real apply. Remote, encrypted,
+  versioned and locked state is a precondition of certification, not a
+  convenience.
 - **Budget email subscriptions** require each subscriber to confirm via the
   AWS-sent email before alerts deliver.
 - Do not commit `terraform.tfvars`. Validated in CI; CI never runs `apply`.

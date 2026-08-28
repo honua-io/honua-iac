@@ -67,6 +67,20 @@ Then copy the stack's `backend.tf.example` to `backend.tf`, replacing the
 placeholders with these outputs. The bootstrap's own state must use a separately
 managed backend or an explicitly disposable local state during first apply.
 
+Each shipped `backend.tf.example` names the key its scope produces, so the
+scopes and the examples have to agree:
+
+| Stack root | `state_key_scopes` entry | Object key |
+|---|---|---|
+| `examples/aws` | the `stack_name`/`environment` defaults | `honua/aws/prod/terraform.tfstate` |
+| `examples/aws-serverless` | `{ stack_name = "aws-serverless", environment = "prod" }` | `honua/aws-serverless/prod/terraform.tfstate` |
+| `examples/aws-eks` | `{ stack_name = "aws-eks", environment = "prod" }` | `honua/aws-eks/prod/terraform.tfstate` |
+| `examples/aws-data` | `{ stack_name = "aws-data", environment = "prod" }` | `honua/aws-data/prod/terraform.tfstate` |
+| `examples/aws-cert` | `{ stack_name = "aws-cert", environment = "cert" }` | `honua/aws-cert/cert/terraform.tfstate` |
+
+`scripts/check-backend-examples.sh` holds that table's right-hand column to the
+files in CI, including the rule that two roots may never share one key.
+
 ## Evidence
 
 `backend_contract` and `backend_contract_digest` carry resource identity, key
