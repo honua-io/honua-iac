@@ -1,6 +1,9 @@
 **/.terraform/
 # Local operator inputs/state — terraform.tfvars contains secrets, never commit.
 **/terraform.tfvars
+# An activated backend names the operator's own state bucket and backend-access
+# role. Copy backend.tf.example to backend.tf locally; never commit the result.
+infrastructure/terraform/**/backend.tf
 **/*.tfstate
 **/*.tfstate.*
 **/*.tfplan

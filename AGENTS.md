@@ -124,6 +124,11 @@ docs/           operator-deployment.md, module-publishing-decision.md
 - Every Terraform root pins `required_version` and provider versions in
   `versions.tf` — keep new roots consistent and add them to the `roots` list
   in `.github/workflows/terraform-ci.yml` so they get validated.
+- Never declare a `backend` block inside a tracked `.tf` file. A release-qualified
+  AWS root ships `backend.tf.example`, the operator copies it to `backend.tf`
+  (gitignored), and `scripts/check-backend-examples.sh` enforces that plus
+  encryption, locking, key exclusivity, and the file list in
+  `docs/operator-state.md`.
 - CI runs on PRs and on push to `trunk`, but only for paths matching the
   `infrastructure/terraform/**`, listed `scripts/*`, and `docs/devops/**`
   filters. Adding files outside those globs won't trigger Terraform CI.

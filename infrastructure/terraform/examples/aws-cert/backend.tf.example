@@ -1,0 +1,42 @@
+# Remote state for the AWS ECS/ALB certification stack.
+#
+# Copy to backend.tf ONLY after `bootstrap/aws-tfstate` has been applied, then
+# replace every placeholder with that root's outputs. Backend creation is a
+# separate, explicitly applied operation -- `terraform init` must never be the
+# thing that creates the bucket.
+#
+# The key below is exclusive to this stack + environment. Never point two stacks
+# or two environments at the same key. Apply the bootstrap with a state_key_scopes
+# entry of { stack_name = "aws-cert", environment = "cert" } so the certification
+# state is a first-class scope of the bucket rather than a squatted key.
+#
+# Locking: `use_lockfile = true` is the S3 native lock object and requires
+# Terraform >= 1.10. If you are pinned below 1.10, apply the bootstrap with
+# `lock_mode = "dynamodb"` and swap the commented `dynamodb_table` line in.
+#
+# Do not commit the activated backend.tf with environment-specific details, and
+# never place credentials here -- the executor federates through STS.
+
+terraform {
+  backend "s3" {
+    bucket       = "REPLACE_WITH_STATE_BUCKET_NAME"
+    key          = "honua/aws-cert/cert/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
+
+    # Customer-managed key from the bootstrap, when kms_key_arn was set.
+    # kms_key_id = "REPLACE_WITH_STATE_KMS_KEY_ARN"
+
+    # Terraform 1.5-1.9 fallback. Requires lock_mode = "dynamodb" (or "both")
+    # in bootstrap/aws-tfstate, and drop use_lockfile above.
+    # dynamodb_table = "REPLACE_WITH_STATE_LOCK_TABLE_NAME"
+
+    # Backend access is its OWN role. The provider assumes the deployment role
+    # separately (see bootstrap/aws-exec-identity), so neither identity inherits
+    # the other's permissions.
+    # assume_role = {
+    #   role_arn = "REPLACE_WITH_BACKEND_ACCESS_ROLE_ARN"
+    # }
+  }
+}

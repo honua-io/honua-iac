@@ -53,10 +53,22 @@ root's outputs:
 - `examples/aws-serverless/backend.tf.example`
 - `examples/aws-eks/backend.tf.example`
 - `examples/aws-data/backend.tf.example`
+- `examples/aws-cert/backend.tf.example`
+
+That list is not prose. `scripts/check-backend-examples.sh` runs in CI and fails
+if it drifts from the files on disk, if a release-qualified AWS root stops
+shipping one, if two roots claim the same object key, or if a root goes back to
+declaring a backend inside a tracked `.tf` file. The documentation cannot claim a
+`backend.tf.example` that does not exist again.
 
 Backend creation is a **separate, explicitly applied operation**. Apply
 `bootstrap/aws-tfstate` on its own, with its own plan/apply/teardown decision, so
 the bucket is never a hidden side effect of `terraform init`.
+
+Activate one by copying it — `cp backend.tf.example backend.tf` — never by
+editing a tracked file. `backend.tf` is gitignored: the filled-in copy names your
+account's state bucket and backend-access role, and those are account identifiers
+that do not belong in the repository.
 
 ### The locking primitive, and why
 
