@@ -163,6 +163,49 @@ jobs against them with per-job overrides — no terraform re-apply per job:
 - `gp_compute_environment_arn`, `gp_job_role_arn`, `gp_execution_role_arn`,
   `gp_worker_gdal_repository_url`.
 
+## Operator contract (`honua.operator-contract/v1`)
+
+`operator-contract.tf` renders the three structured outputs the honua-devops
+agent consumes — `deployment_contract`, `validation_contract`,
+`operations_contract` — plus the `operator_contract` envelope, its digest, and
+its qualification status. Without them the agent can plan this root through the
+exact-plan substrate but refuses to consume it
+(`ProjectsOperatorContract = false`).
+
+The projection describes **this** stack, not the ECS one. Four differences are
+deliberate and are commented at their point of use:
+
+- `stack.runtime` is `lambda`; the workload is a Lambda alias, so
+  `workload.cluster_id` and the validation `cluster_arn` / `service_arn`
+  selectors are `null` rather than invented.
+- `rollout.current_revision` / `desired_revision` **are** projected. The ECS root
+  nulls them because a task-set revision is observed after apply; a Lambda
+  alias's function version is Terraform-owned state.
+- `rollout.canary` is disabled. The ECS/ALB weighted-cutover cell is a
+  certification fixture for the server's `AwsEcsAlbDeployBackend`, not a canary
+  of this workload, so it is reported under the contract's `extensions` block
+  alongside the GP / custom-code substrate ARNs and the artifact bucket.
+- `dependencies.object_storage` is disabled: `modules/aws-serverless` exposes no
+  Honua file-storage provider, and the cert artifact bucket is job scratch plus
+  evidence storage, not the application's object-storage backend.
+
+Two v1 fields have no honest serverless analogue and are recorded as
+"none declared" rather than guessed: `workload.cluster_name` (required
+non-empty; the stack's resource-group name stands in) and the
+`desired_count` / `max_capacity` integers (a demand-driven alias with no
+reserved concurrency declares no standing instance count).
+
+Pass `operator_contract_identity` to qualify the contract. Omit it and the
+contract is emitted with `status = "unqualified"`, which certified consumers
+must reject. The scalar outputs above are **not** superseded by the contract —
+they are the substrate runtime contract the honua-server cert fixture reads —
+so unlike `examples/aws` they carry no deprecation marker.
+
+```bash
+terraform -chdir=infrastructure/terraform/examples/aws-cert output -json \
+  | ./scripts/validate-operator-contract.sh --require-qualified -
+```
+
 ## Custom-code (UNTRUSTED user code) substrate — locked down
 
 `enable_customcode_batch` (off by default) provisions a **SEPARATE, deliberately
