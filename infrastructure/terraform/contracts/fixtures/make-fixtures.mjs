@@ -35,6 +35,26 @@ const SECRETS_PREFIX = `arn:${PARTITION}:secretsmanager:${REGION}:${ACCOUNT}:sec
 
 const secretArn = (name) => `${SECRETS_PREFIX}${BASE_NAME}-${name}-AbCdEf`;
 
+// -- examples/aws-cert (modules/aws-serverless: Lambda + HTTP API Gateway) ---
+// The certification root's shapes differ from the ECS root's in ways the
+// corpus has to carry, or the validator is only ever exercised against one
+// runtime: a Lambda alias instead of an ECS service, no cluster, no canary,
+// an extensions block, and a contract whose iac_root is examples/aws-cert.
+const CERT_NAME = 'honua-cert-cert';
+const CERT_FUNCTION = `${CERT_NAME}-honua`;
+const CERT_BASE_URL = 'https://a1b2c3d4e5.execute-api.us-east-1.amazonaws.com';
+const CERT_ROOT = 'infrastructure/terraform/examples/aws-cert';
+const CERT_MODULE = 'infrastructure/terraform/modules/aws-serverless';
+const CERT_BUCKET = `${CERT_NAME}-artifacts-9f8e7d6c`;
+const CERT_TAGS = {
+  Project: 'honua-server',
+  Environment: 'cert',
+  ManagedBy: 'terraform',
+  Purpose: 'real-aws-certification',
+};
+
+const certSecretArn = (name) => `${SECRETS_PREFIX}${CERT_NAME}-${name}-AbCdEf`;
+
 // --------------------------------------------------------------------------
 
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
@@ -129,6 +149,266 @@ function unqualifiedIdentity() {
       region: REGION,
     },
   };
+}
+
+function certQualifiedIdentity() {
+  return {
+    ...qualifiedIdentity(),
+    iac_root: CERT_ROOT,
+    module_source: CERT_MODULE,
+    workload_identity: `arn:${PARTITION}:iam::${ACCOUNT}:role/${CERT_FUNCTION}-role`,
+  };
+}
+
+// Additive certification facts, byte-identical across the three contracts the
+// way examples/aws-cert/operator-contract.tf emits them.
+function certExtensions() {
+  const batchArn = (kind, name) => `arn:${PARTITION}:batch:${REGION}:${ACCOUNT}:${kind}/${name}`;
+  return {
+    artifact_bucket: CERT_BUCKET,
+    customcode_batch: {
+      enabled: false,
+      job_definition_arns: {},
+      job_queue_arn: null,
+      runtimes: [],
+      task_role_arn: null,
+    },
+    ecs_alb_cutover_cell: {
+      canary_target_group_arn: null,
+      cluster_arn: null,
+      cluster_name: null,
+      enabled: false,
+      listener_arn: null,
+      service_name: null,
+      stable_target_group_arn: null,
+    },
+    geoprocessing_batch: {
+      compute_environment: batchArn('compute-environment', `${CERT_NAME}-gp`),
+      control_plane_backend: 'honua-gitops-aws-batch',
+      enabled: true,
+      execution_role_arn: `arn:${PARTITION}:iam::${ACCOUNT}:role/${CERT_NAME}-gp-execution`,
+      job_definition_arns: {
+        l: batchArn('job-definition', `${CERT_NAME}-gp-l:1`),
+        m: batchArn('job-definition', `${CERT_NAME}-gp-m:1`),
+        s: batchArn('job-definition', `${CERT_NAME}-gp-s:1`),
+        xl: batchArn('job-definition', `${CERT_NAME}-gp-xl:1`),
+      },
+      job_queue_arn: batchArn('job-queue', `${CERT_NAME}-gp`),
+      job_role_arn: `arn:${PARTITION}:iam::${ACCOUNT}:role/${CERT_NAME}-gp-job`,
+      workload_id: 'geoprocessing-batch',
+    },
+    github_oidc_role_arn: `arn:${PARTITION}:iam::${ACCOUNT}:role/${CERT_NAME}-github-oidc`,
+  };
+}
+
+function certContracts(identity) {
+  const extensions = certExtensions();
+  const logGroup = `/aws/lambda/${CERT_FUNCTION}`;
+
+  const deployment = {
+    schema_version: SCHEMA_VERSION,
+    kind: 'deployment',
+    identity,
+    extensions,
+    stack: {
+      id: 'aws-cert-serverless',
+      platform: 'aws',
+      runtime: 'lambda',
+      environment: 'cert',
+      region: REGION,
+      account_id: ACCOUNT,
+      name_prefix: 'honua-cert',
+    },
+    endpoints: {
+      public_base_url: CERT_BASE_URL,
+      readiness_path: '/healthz/ready',
+      admin_base_path: '/api/v1/admin',
+      protocol_path: '/v1',
+      mcp_path: null,
+      ingress_dns_name: 'a1b2c3d4e5.execute-api.us-east-1.amazonaws.com',
+      custom_domain: null,
+    },
+    workload: {
+      kind: 'AwsLambda',
+      name: CERT_FUNCTION,
+      resource_id: `arn:${PARTITION}:lambda:${REGION}:${ACCOUNT}:function:${CERT_FUNCTION}:live`,
+      // No cluster exists for a Lambda alias; the stack's resource-group name
+      // stands in for v1's required cluster_name and cluster_id stays null.
+      cluster_name: CERT_NAME,
+      cluster_id: null,
+      cpu_architecture: 'x86_64',
+      desired_count: 0,
+      identity: identity.workload_identity,
+    },
+    rollout: {
+      backend_name: 'honua-gitops-aws-lambda',
+      target_kind: 'AwsLambda',
+      target_id: `${CERT_FUNCTION}-live`,
+      target_name: CERT_FUNCTION,
+      target_resource: `arn:${PARTITION}:lambda:${REGION}:${ACCOUNT}:function:${CERT_FUNCTION}:live`,
+      // A Lambda alias's function version is Terraform-owned state, so unlike
+      // the ECS root these are projected rather than nulled.
+      current_revision: '7',
+      desired_revision: '7',
+      canary: {
+        enabled: false,
+        service_name: null,
+        target_group_arn: null,
+        weight_percentage: 0,
+        verification_header_name: null,
+      },
+    },
+    dependencies: {
+      database: {
+        kind: 'aws-rds-postgres',
+        managed: true,
+        endpoint: `${CERT_NAME}-db.abcdefghij.${REGION}.rds.amazonaws.com`,
+        secret_ref: certSecretArn('db-connection'),
+      },
+      cache: {
+        kind: 'aws-elasticache-redis',
+        enabled: false,
+        secret_ref: null,
+      },
+      ingress: {
+        kind: 'aws-apigatewayv2-http',
+        endpoint: CERT_BASE_URL,
+        certificate_ref: null,
+        waf_ref: null,
+      },
+      object_storage: {
+        kind: null,
+        enabled: false,
+        bucket: null,
+        prefix: null,
+      },
+    },
+    secret_refs: {
+      admin_password: certSecretArn('admin-password'),
+      db_connection: certSecretArn('db-connection'),
+    },
+  };
+
+  const validation = {
+    schema_version: SCHEMA_VERSION,
+    kind: 'validation',
+    identity,
+    extensions,
+    platform: {
+      name: 'aws-cert-serverless',
+      capabilities: {
+        deploy_plan: true,
+        mutation: false,
+        scale_check: false,
+        backup_drill: true,
+        idempotency: true,
+        http_protocol: true,
+        mcp: false,
+      },
+    },
+    tests: {
+      readiness_url: `${CERT_BASE_URL}/healthz/ready`,
+      admin_url: `${CERT_BASE_URL}/api/v1/admin`,
+      protocol_url: `${CERT_BASE_URL}/v1`,
+      mcp_url: null,
+    },
+    mcp: {
+      enabled: false,
+      profile: null,
+      transport: null,
+      required_tools: [],
+    },
+    test_data: {
+      seed_mode: 'smoke',
+      tenant_prefix: 'honua-cert',
+      reuse_data_stack: false,
+      admin_credential_ref: certSecretArn('admin-password'),
+    },
+    artifacts: {
+      terraform_root: CERT_ROOT,
+      module_source: CERT_MODULE,
+      image_reference: identity.image_reference,
+      image_digest: identity.image_digest,
+      pins: identity.artifacts,
+    },
+    lifecycle: {
+      reuse_data_stack: false,
+      destroy_mode: 'ephemeral',
+      ttl_hours: null,
+    },
+    selectors: {
+      account_id: ACCOUNT,
+      region: REGION,
+      // A Lambda workload has neither a cluster nor a service.
+      cluster_arn: null,
+      service_arn: null,
+      log_group: logGroup,
+      tag_filters: CERT_TAGS,
+    },
+  };
+
+  const operations = {
+    schema_version: SCHEMA_VERSION,
+    kind: 'operations',
+    identity,
+    extensions,
+    observability: {
+      telemetry_policy: 'honua-http',
+      prometheus_job: null,
+      prometheus_canary_job: null,
+      log_group: logGroup,
+      metrics_namespace: `Honua/${CERT_NAME}`,
+    },
+    secrets: {
+      provider: 'aws-secretsmanager',
+      references: {
+        admin_password: {
+          kind: 'admin_password',
+          provider: 'aws-secretsmanager',
+          id: certSecretArn('admin-password'),
+          kms_key_ref: null,
+          managed_by: 'honua-iac',
+        },
+        db_connection: {
+          kind: 'db_connection',
+          provider: 'aws-secretsmanager',
+          id: certSecretArn('db-connection'),
+          kms_key_ref: null,
+          managed_by: 'honua-iac',
+        },
+      },
+    },
+    scaling: {
+      deployment_mode: 'Serverless',
+      desired_count: 0,
+      max_capacity: 0,
+      cpu_architecture: 'x86_64',
+    },
+    resilience: {
+      ingress_deletion_protection: false,
+      ingress_access_logs_enabled: true,
+      database_managed: true,
+      cache_enabled: false,
+    },
+    grouping: {
+      resource_group: CERT_NAME,
+      name_prefix: 'honua-cert',
+      tags: CERT_TAGS,
+    },
+    cost: {
+      owner: null,
+      ephemeral: true,
+      ttl_hours: null,
+    },
+    state: {
+      terraform_root: CERT_ROOT,
+      backend_config_digest: identity.backend_config_digest,
+      lineage: identity.state_lineage,
+      serial: identity.state_serial,
+    },
+  };
+
+  return { deployment, validation, operations };
 }
 
 function contracts(identity) {
@@ -360,8 +640,8 @@ function sealDigest(envelope) {
   return digest;
 }
 
-function buildEnvelope(identity) {
-  const { deployment, validation, operations } = contracts(identity);
+function buildEnvelope(identity, shape = contracts) {
+  const { deployment, validation, operations } = shape(identity);
   const envelope = {
     deployment_contract: deployment,
     validation_contract: validation,
@@ -387,6 +667,27 @@ function terraformOutputDocument(envelope) {
   };
 }
 
+// The certification root's own `terraform output -json` shape. Its scalar
+// outputs are the GP/custom-code substrate runtime contract the honua-server
+// cert fixture consumes -- they are NOT legacy scalars superseded by the
+// operator contract, so they carry no deprecation marker.
+function certTerraformOutputDocument(envelope) {
+  const wrap = (value, sensitive = false) => ({ sensitive, type: 'dynamic', value });
+  const extensions = envelope.deployment_contract.extensions;
+  return {
+    honua_api_endpoint: wrap(envelope.deployment_contract.endpoints.public_base_url),
+    cert_artifact_bucket: wrap(extensions.artifact_bucket),
+    gp_job_queue_arn: wrap(extensions.geoprocessing_batch.job_queue_arn),
+    gp_job_definition_arns: wrap(extensions.geoprocessing_batch.job_definition_arns),
+    github_oidc_role_arn: wrap(extensions.github_oidc_role_arn),
+    operator_contract_status: wrap(envelope.deployment_contract.identity.status),
+    operator_contract_digest: wrap(envelope.deployment_contract.identity.contract_digest),
+    deployment_contract: wrap(envelope.deployment_contract),
+    validation_contract: wrap(envelope.validation_contract),
+    operations_contract: wrap(envelope.operations_contract),
+  };
+}
+
 function write(name, document) {
   const path = join(HERE, name);
   writeFileSync(path, `${JSON.stringify(document, null, 2)}\n`);
@@ -400,6 +701,12 @@ write('valid-aws-ecs-small.json', terraformOutputDocument(qualified));
 
 const unqualified = buildEnvelope(unqualifiedIdentity());
 write('valid-aws-ecs-small-unqualified.json', terraformOutputDocument(unqualified));
+
+// examples/aws-cert. A second runtime in the positive corpus, so the rules the
+// validator enforces are proven against a Lambda/API-Gateway projection with an
+// extensions block and no cluster -- not only against the ECS root.
+const certQualified = buildEnvelope(certQualifiedIdentity(), certContracts);
+write('valid-aws-cert-lambda.json', certTerraformOutputDocument(certQualified));
 
 // -- negative ---------------------------------------------------------------
 

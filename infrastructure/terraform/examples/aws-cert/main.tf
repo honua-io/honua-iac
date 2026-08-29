@@ -26,6 +26,11 @@ data "aws_caller_identity" "current" {}
 locals {
   name = "${var.name_prefix}-${var.environment}"
 
+  # Single source of truth for the Lambda CPU architecture: consumed both by
+  # the module input below and by the operator contract's workload/scaling
+  # projection (operator-contract.tf), so the two can never disagree.
+  lambda_architecture = "x86_64"
+
   tags = merge({
     Project     = "honua-server"
     Environment = "cert"
@@ -128,7 +133,7 @@ module "honua" {
   environment = var.environment
 
   image                = var.honua_image
-  lambda_architectures = ["x86_64"]
+  lambda_architectures = [local.lambda_architecture]
   admin_password       = var.honua_admin_password
   db_password          = var.db_password
 
