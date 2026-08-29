@@ -142,3 +142,34 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+# --- Approval-receipt MAC key (honua-devops#175) ----------------------------
+
+variable "enable_approval_mac_key" {
+  description = "Create the KMS HMAC key backing honua-devops approval receipts, plus the GenerateMac-only and VerifyMac-only policies. Off by default; existing operators of this root are unaffected until they turn it on and name the principals."
+  type        = bool
+  default     = false
+}
+
+variable "approval_signer_role_names" {
+  description = "Names of the roles that ISSUE approval receipts. They receive kms:GenerateMac on the approval key and are explicitly denied kms:VerifyMac. Never defaulted: the issuer is a release-lane identity this root does not create, and defaulting it to the verifier would recreate the forgeable-receipt problem the key exists to remove."
+  type        = list(string)
+  default     = []
+}
+
+variable "approval_verifier_role_names" {
+  description = "Names of the roles that VERIFY approval receipts. They receive kms:VerifyMac on the approval key and are explicitly denied kms:GenerateMac. Empty defaults to the deployment role this root creates, which is the lane the honua-devops agent runs in."
+  type        = list(string)
+  default     = []
+}
+
+variable "approval_mac_key_deletion_window_days" {
+  description = "Waiting period before the approval MAC key is destroyed after a scheduled deletion."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.approval_mac_key_deletion_window_days >= 7 && var.approval_mac_key_deletion_window_days <= 30
+    error_message = "approval_mac_key_deletion_window_days must be between 7 and 30."
+  }
+}
