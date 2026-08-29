@@ -80,6 +80,15 @@ beta sign-off across the AWS/Azure AOT and JIT matrix:
 
 - [docs/devops/manual-cloud-runbook-validation.md](docs/devops/manual-cloud-runbook-validation.md)
 
+## AWS certification live evidence
+
+The ordered commands to take a disposable AWS account from zero to the live
+evidence honua-iac#118 requires, and back to zero — bootstrap, the four-role
+separation, governed plan/apply, IAM allow/deny proofs, lock-contention
+refusals, teardown, and a cost estimate:
+
+- [docs/devops/aws-cert-live-evidence-runbook.md](docs/devops/aws-cert-live-evidence-runbook.md)
+
 ## Disaster-recovery drills
 
 Backup/restore and failover drill runbooks with RTO/RPO evidence capture:
