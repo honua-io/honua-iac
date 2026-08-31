@@ -46,8 +46,8 @@ locals {
             "s3:prefix" = [var.state_object_key]
           }
         }
-      },
-      {
+      }
+      ], var.state_lock_table_arn == "" ? [] : [{
         Sid    = "StateLockAccess"
         Effect = "Allow"
         Action = [
@@ -57,8 +57,7 @@ locals {
           "dynamodb:PutItem"
         ]
         Resource = var.state_lock_table_arn
-      }
-      ], var.kms_key_arn == "" ? [] : [{
+        }], var.kms_key_arn == "" ? [] : [{
         Sid    = "StateKmsAccess"
         Effect = "Allow"
         Action = [
