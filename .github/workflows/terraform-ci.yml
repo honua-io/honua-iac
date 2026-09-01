@@ -98,6 +98,57 @@ env:
   TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
 
 jobs:
+  terraform-1-5-validate:
+    name: Terraform 1.5 Floor Validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore Terraform plugin cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: terraform-1.5-plugin-cache-${{ runner.os }}-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            terraform-1.5-plugin-cache-${{ runner.os }}-
+
+      - name: Ensure Terraform plugin cache directory
+        run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
+
+      - name: Setup Terraform 1.5
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.7
+
+      - name: Terraform init/validate at declared floor
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          roots=(
+            "infrastructure/terraform/examples/aws"
+            "infrastructure/terraform/examples/aws-serverless"
+            "infrastructure/terraform/examples/azure"
+            "infrastructure/terraform/examples/azure-functions"
+            "infrastructure/terraform/modules/aws-serverless"
+          )
+
+          for root in "${roots[@]}"; do
+            echo "::group::terraform 1.5 init ($root)"
+            terraform -chdir="$root" init -backend=false -input=false -no-color
+            echo "::endgroup::"
+
+            echo "::group::terraform 1.5 validate ($root)"
+            terraform -chdir="$root" validate -no-color
+            echo "::endgroup::"
+          done
+
+      - name: Operator tfvars example contract at declared floor
+        shell: bash
+        run: ./scripts/check-tfvars-examples.sh
+
   static-validate:
     name: Static Terraform Validate
     runs-on: ubuntu-latest

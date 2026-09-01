@@ -74,21 +74,10 @@ state contains infrastructure metadata and can contain sensitive values.
 
 ### Terraform version
 
-Use **Terraform 1.12 or newer** for this flow, even though the roots still
-declare `required_version = ">= 1.5, < 2.0"`.
-
-The runtime modules validate the optional connection-encryption master key with
-`var.connection_encryption_master_key == null || length(...) >= 32`. Terraform
-evaluated both sides of `||` in a variable validation until 1.12, so wherever
-that key is null — the `honua_connection_encryption_master_key = null` shipped in
-three of the root examples for a brand-new deployment, and the module's own
-`default = null` in `aws-serverless` — `length(null)` raises a hard error before
-any provider is contacted. Measured on this tree: 1.5.7 and 1.11.4 fail all four
-stacks; 1.12.2, 1.13.3, and 1.15.9 plan cleanly. Repo CI does not surface it
-because `hashicorp/setup-terraform@v3` installs the newest release.
-
-Repairing those validation expressions means editing the modules, which is out
-of scope for the preset contract; raise it against the modules instead.
+Use a Terraform version that satisfies the roots' declared constraint:
+`required_version = ">= 1.5, < 2.0"`. CI validates the primary operator roots
+and the optional connection-encryption master-key flow on Terraform 1.5 as well
+as on the current Terraform release.
 
 ## Infrastructure size versus capability profile
 
@@ -122,4 +111,3 @@ The preset is intentionally limited to development. Production sizing depends
 on workload, availability, retention, and recovery requirements; review the
 root variables and module documentation instead of promoting this preset
 unchanged.
-
