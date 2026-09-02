@@ -74,6 +74,8 @@ case "$cmd" in
     exit "${FAKE_TF_PLAN_EXIT:-0}"
     ;;
   apply)
+    [[ -n "${FAKE_TF_APPLY_START_LOG:-}" ]] && printf '%s\n' "$$" >>"$FAKE_TF_APPLY_START_LOG"
+    [[ "${FAKE_TF_APPLY_WAIT:-0}" == "1" ]] && while :; do sleep 1; done
     printf 'fake terraform apply of %s\n' "${args[*]}"
     exit "${FAKE_TF_APPLY_EXIT:-0}"
     ;;
@@ -745,8 +747,8 @@ else
   FAIL_COUNT=$((FAIL_COUNT + 1))
 fi
 
-# Ambiguous client disconnect: the claim is held but never completed. Status is
-# recoverable without mutating, and only an explicit reclaim window releases it.
+# A legacy ambiguous claim cannot prove mutation never started, so time alone
+# never makes it replayable.
 CASE="$(apply_case disconnect)"
 mkdir -p "$CASE/artifacts/honua.tfplan.claim"
 echo "2000-01-01T00:00:00Z" >"$CASE/artifacts/honua.tfplan.claim/acquired"
@@ -763,7 +765,47 @@ assert_json "recovery: the interrupted claim reports state=held" "$CASE/status.j
 run_apply "$CASE" --allow-unqualified --dry-run
 expect_refusal "recovery: an interrupted claim is not silently stolen" "concurrent-claim"
 run_apply "$CASE" --allow-unqualified --reclaim-after 60 --dry-run
-expect_success "recovery: an explicit reclaim window releases a stale claim"
+expect_refusal "recovery: an ambiguous legacy claim requires reconciliation" "reconciliation-required"
+
+# Once the Terraform child starts, terminating the wrapper leaves a durable
+# reconciliation-required claim. A second claimant cannot overlap or replay it,
+# even with a zero-age reclaim window.
+CASE="$(apply_case killed-in-flight)"
+START_LOG="$CASE/artifacts/terraform-starts"
+PATH="$FAKE_BIN:$PATH" HONUA_IAC_OFFLINE=1 \
+  HONUA_IAC_STS_FIXTURE="$CASE/fixtures/sts.json" \
+  HONUA_IAC_STATE_FIXTURE="$CASE/fixtures/state-before.json" \
+  HONUA_IAC_STATE_FIXTURE_AFTER="$CASE/fixtures/state-after.json" \
+  HONUA_IAC_EXECUTOR_ID="executor-one" \
+  FAKE_TF_APPLY_START_LOG="$START_LOG" FAKE_TF_APPLY_WAIT=1 \
+  "$CASE/scripts/terraform-exact-apply.sh" --plan "$CASE/artifacts/honua.tfplan" \
+  --allow-unqualified >"$CASE/in-flight.log" 2>&1 &
+WRAPPER_PID=$!
+for _ in $(seq 1 1500); do [[ -s "$START_LOG" ]] && break; sleep 0.02; done
+if [[ ! -s "$START_LOG" ]]; then
+  echo "[FAIL] interruption: Terraform child did not start before timeout" >&2
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+  kill -TERM "$WRAPPER_PID" 2>/dev/null || true
+else
+  TERRAFORM_PID="$(tail -1 "$START_LOG")"
+  kill -TERM "$WRAPPER_PID" 2>/dev/null || true
+  kill -TERM "$TERRAFORM_PID" 2>/dev/null || true
+fi
+wait "$WRAPPER_PID" 2>/dev/null || true
+"$CASE/scripts/terraform-exact-apply.sh" --plan "$CASE/artifacts/honua.tfplan" \
+  --claim-status >"$CASE/interrupted-status.json"
+assert_json "interruption: mutation-started becomes reconciliation-required" \
+  "$CASE/interrupted-status.json" \
+  "doc['state'] == 'reconciliation-required' and doc['executor_id'] == 'executor-one'"
+run_apply "$CASE" --allow-unqualified --reclaim-after 0
+expect_refusal "interruption: retry cannot start a second Terraform mutation" "reconciliation-required"
+if [[ "$(wc -l <"$START_LOG")" -eq 1 ]]; then
+  echo "[PASS] interruption: exactly one Terraform child started"
+  PASS_COUNT=$((PASS_COUNT + 1))
+else
+  echo "[FAIL] interruption: expected exactly one Terraform child start" >&2
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+fi
 
 # A failed apply still spends the plan: it may have mutated part of the stack, so
 # the same bytes must not be reusable.

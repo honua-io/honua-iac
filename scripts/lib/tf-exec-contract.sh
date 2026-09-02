@@ -540,6 +540,9 @@ claim_acquire() {
 
   if mkdir "$claim_dir" 2>/dev/null; then
     printf '%s\n' "$(utc_now)" >"$claim_dir/acquired"
+    printf '%s\n' "$$" >"$claim_dir/executor_pid"
+    printf '%s\n' "${HONUA_IAC_EXECUTOR_ID:-host-$(hostname)-pid-$$}" >"$claim_dir/executor_id"
+    printf '%s\n' "preflight" >"$claim_dir/phase"
     return 0
   fi
 
@@ -548,12 +551,33 @@ claim_acquire() {
       "this saved plan was already consumed at $(cat "$claim_dir/completed"); regenerate and re-approve a new plan"
   fi
 
+  local phase="unknown" holder_pid=""
+  [[ -f "$claim_dir/phase" ]] && phase="$(cat "$claim_dir/phase")"
+  [[ -f "$claim_dir/executor_pid" ]] && holder_pid="$(cat "$claim_dir/executor_pid")"
+
+  if [[ "$phase" == "mutation-started" || "$phase" == "terraform-acknowledged" || "$phase" == "reconciliation-required" || "$phase" == "receipt-committed" ]]; then
+    refuse "reconciliation-required" \
+      "the original executor may have started mutation (phase=$phase); inspect authoritative state and the recovery receipt before continuing"
+  fi
+
+  if [[ -n "$holder_pid" ]] && kill -0 "$holder_pid" 2>/dev/null; then
+    refuse "concurrent-claim" \
+      "the original executor (pid $holder_pid) is still live; reclaim cannot overlap it"
+  fi
+
+  if [[ "$reclaim_after" -gt 0 && "$phase" != "preflight" ]]; then
+    refuse "reconciliation-required" \
+      "this legacy claim has no proof that mutation never started; reconcile it instead of reclaiming"
+  fi
+
   if [[ "$reclaim_after" -gt 0 && -f "$claim_dir/acquired" ]]; then
     local age
     age=$(($(date -u +%s) - $(date -u -r "$claim_dir/acquired" +%s)))
     if [[ "$age" -ge "$reclaim_after" ]]; then
       log_warn "reclaiming a stale claim held for ${age}s without completion: $claim_dir"
       printf '%s\n' "$(utc_now)" >"$claim_dir/acquired"
+      printf '%s\n' "$$" >"$claim_dir/executor_pid"
+      printf '%s\n' "${HONUA_IAC_EXECUTOR_ID:-host-$(hostname)-pid-$$}" >"$claim_dir/executor_id"
       return 0
     fi
   fi
@@ -566,7 +590,7 @@ claim_acquire() {
 # This is the recoverable-status probe for an ambiguous client disconnect.
 claim_status() {
   local claim_dir="$1"
-  local state="free" acquired="" completed=""
+  local state="free" acquired="" completed="" phase="" executor_id="" receipt_digest=""
   if [[ -f "$claim_dir/completed" ]]; then
     state="completed"
     completed="$(cat "$claim_dir/completed")"
@@ -575,9 +599,16 @@ claim_status() {
     state="held"
     [[ -f "$claim_dir/acquired" ]] && acquired="$(cat "$claim_dir/acquired")"
   fi
+  [[ -f "$claim_dir/phase" ]] && phase="$(cat "$claim_dir/phase")"
+  [[ "$phase" == "mutation-started" || "$phase" == "terraform-acknowledged" || "$phase" == "reconciliation-required" ]] && state="reconciliation-required"
+  [[ -f "$claim_dir/executor_id" ]] && executor_id="$(cat "$claim_dir/executor_id")"
+  [[ -f "$claim_dir/receipt.json" ]] && receipt_digest="$(sha256_file "$claim_dir/receipt.json")"
   HONUA_IAC_CLAIM_STATE="$state" \
     HONUA_IAC_CLAIM_ACQUIRED="$acquired" \
     HONUA_IAC_CLAIM_COMPLETED="$completed" \
+    HONUA_IAC_CLAIM_PHASE="$phase" \
+    HONUA_IAC_EXECUTOR_ID="$executor_id" \
+    HONUA_IAC_RECEIPT_DIGEST="$receipt_digest" \
     HONUA_IAC_CLAIM_DIR="$claim_dir" \
     python3 - <<'PY'
 import json
@@ -592,6 +623,9 @@ json.dump(
         "state": os.environ["HONUA_IAC_CLAIM_STATE"],
         "acquired_at_utc": os.environ["HONUA_IAC_CLAIM_ACQUIRED"].strip() or None,
         "completed_at_utc": os.environ["HONUA_IAC_CLAIM_COMPLETED"].strip() or None,
+        "phase": os.environ["HONUA_IAC_CLAIM_PHASE"].strip() or None,
+        "executor_id": os.environ["HONUA_IAC_EXECUTOR_ID"].strip() or None,
+        "receipt_digest": os.environ["HONUA_IAC_RECEIPT_DIGEST"].strip() or None,
     },
     sys.stdout,
     sort_keys=True,
@@ -607,12 +641,24 @@ claim_complete() {
   printf '%s\n' "$(utc_now)" >"$claim_dir/completed"
 }
 
+claim_phase() {
+  local claim_dir="$1" phase="$2" temporary
+  temporary="$claim_dir/.phase.$$"
+  printf '%s\n' "$phase" >"$temporary"
+  mv "$temporary" "$claim_dir/phase"
+}
+
 # Drop a claim that never reached execution so an operator can fix the cause and
 # retry. A completed claim is never removed -- that record is what makes a
 # replayed plan detectable.
 claim_abandon() {
   local claim_dir="$1"
-  [[ -f "$claim_dir/completed" ]] || rm -rf "$claim_dir"
+  [[ -f "$claim_dir/completed" ]] && return 0
+  if [[ -f "$claim_dir/phase" && "$(cat "$claim_dir/phase")" != "preflight" ]]; then
+    claim_phase "$claim_dir" "reconciliation-required"
+    return 0
+  fi
+  rm -rf "$claim_dir"
 }
 
 # --- expiry ------------------------------------------------------------------
