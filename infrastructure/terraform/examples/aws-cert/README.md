@@ -42,6 +42,8 @@ ARNs, the surface the OIDC role is scoped to.
 | `module.github_oidc` | GitHub OIDC provider + least-privilege cert role |
 | `aws_budgets_budget.cert` + `aws_sns_topic.budget` | Monthly cost ceiling + alerts |
 | worker-gdal ECR repo (via the module) | Dedicated GP worker image lifecycle |
+| `aws_ecr_repository.lambda_preview` | Immutable, same-region mirror for the exact Lambda Preview candidate |
+| `aws_iam_role.lambda_preview_execution` | Dedicated execution role for run-isolated `honua-certrun-lambda-*` functions |
 | Custom-code Batch substrate (via the module, opt-in) | SEPARATE hardened Fargate-Spot queue + size-tier pool for **untrusted user code** |
 | worker-customcode-python ECR repo (via the module, opt-in) | Dedicated python custom-code worker image lifecycle |
 | worker-customcode-dotnet ECR repo (via the module, opt-in) | Dedicated .NET custom-code worker image lifecycle (honua-server #2196) |
@@ -92,6 +94,8 @@ the `cert` GitHub Environment) → **test env var** the workflow exports.
 | `gp_job_role_arn` | `REALAWS_CERT_JOB_ROLE_ARN` | `HONUA_REALAWS_CERT_JOB_ROLE_ARN` |
 | `gp_execution_role_arn` | `REALAWS_CERT_EXECUTION_ROLE_ARN` | `HONUA_REALAWS_CERT_EXECUTION_ROLE_ARN` |
 | `cert_artifact_bucket` | `REALAWS_CERT_ARTIFACT_BUCKET` | `HONUA_REALAWS_CERT_ARTIFACT_BUCKET` |
+| `lambda_preview_repository_url` | `REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY` | `HONUA_LAMBDA_PREVIEW_REPOSITORY` |
+| `lambda_preview_execution_role_arn` | `REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN` | `HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN` |
 
 ECS/ALB weighted-cutover cell (only populated when `enable_ecs_alb_cert = true`;
 the outputs are `null` otherwise):
@@ -123,6 +127,24 @@ on the job-definition prefix and `s3:PutObjectTagging`/`GetObjectTagging` on the
 artifact bucket — no broader tagging or resource creation is permitted.
 
 ## Maintainer bootstrap checklist
+
+The Lambda Preview additions in honua-iac#168 require exactly this
+operator-side step after the change merges:
+
+> Run a governed `infrastructure/terraform/examples/aws-cert` plan, post its
+> fingerprint-only plan summary to the honua-iac#168 evidence thread BEFORE
+> apply, obtain the standing approval, and apply that exact saved plan. Then set
+> `REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY` from
+> `lambda_preview_repository_url` and
+> `REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN` from
+> `lambda_preview_execution_role_arn` in the honua-server `cert` Environment.
+
+Standing limits (verbatim): **plan summaries to the evidence thread BEFORE
+apply, STOP on any destroy beyond the lane's own teardown-of-what-it-created,
+no IAM trust widening, fingerprints only.** The bootstrap apply creates the
+standing repository and execution role; it does not run or tear down the
+per-run function. The server lane may delete only its uniquely named
+`honua-certrun-lambda-*` function and matching log group.
 
 One-time, per certification account:
 

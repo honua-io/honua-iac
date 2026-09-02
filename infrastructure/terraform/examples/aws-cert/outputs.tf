@@ -13,6 +13,16 @@ output "cert_artifact_bucket_arn" {
   value       = aws_s3_bucket.cert_artifacts.arn
 }
 
+output "lambda_preview_repository_url" {
+  description = "Immutable cert-region ECR repository consumed by the real Lambda Preview lane."
+  value       = aws_ecr_repository.lambda_preview.repository_url
+}
+
+output "lambda_preview_execution_role_arn" {
+  description = "Dedicated execution role passable only to ephemeral Lambda Preview certification functions."
+  value       = aws_iam_role.lambda_preview_execution.arn
+}
+
 # --- GP substrate runtime contract (opaque ARNs the devops agent/server read) -
 
 output "gp_job_queue_arn" {
