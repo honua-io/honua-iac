@@ -600,7 +600,7 @@ claim_status() {
     [[ -f "$claim_dir/acquired" ]] && acquired="$(cat "$claim_dir/acquired")"
   fi
   [[ -f "$claim_dir/phase" ]] && phase="$(cat "$claim_dir/phase")"
-  [[ "$phase" == "mutation-started" || "$phase" == "terraform-acknowledged" || "$phase" == "reconciliation-required" ]] && state="reconciliation-required"
+  [[ "$phase" == "mutation-started" || "$phase" == "terraform-acknowledged" || "$phase" == "receipt-committed" || "$phase" == "reconciliation-required" ]] && state="reconciliation-required"
   [[ -f "$claim_dir/executor_id" ]] && executor_id="$(cat "$claim_dir/executor_id")"
   [[ -f "$claim_dir/receipt.json" ]] && receipt_digest="$(sha256_file "$claim_dir/receipt.json")"
   HONUA_IAC_CLAIM_STATE="$state" \

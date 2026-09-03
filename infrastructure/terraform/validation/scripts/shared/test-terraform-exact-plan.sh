@@ -807,6 +807,18 @@ else
   FAIL_COUNT=$((FAIL_COUNT + 1))
 fi
 
+# A receipt committed before completion is also an ambiguous interruption: the
+# recovery probe must agree with claim acquisition and require reconciliation.
+CASE="$(apply_case receipt-committed)"
+mkdir -p "$CASE/artifacts/honua.tfplan.claim"
+echo "receipt-committed" >"$CASE/artifacts/honua.tfplan.claim/phase"
+echo "executor-receipt" >"$CASE/artifacts/honua.tfplan.claim/executor_id"
+"$CASE/scripts/terraform-exact-apply.sh" --plan "$CASE/artifacts/honua.tfplan" \
+  --claim-status >"$CASE/receipt-committed-status.json"
+assert_json "recovery: receipt-committed requires reconciliation" \
+  "$CASE/receipt-committed-status.json" \
+  "doc['state'] == 'reconciliation-required' and doc['phase'] == 'receipt-committed'"
+
 # A failed apply still spends the plan: it may have mutated part of the stack, so
 # the same bytes must not be reusable.
 CASE="$(apply_case failed-apply)"

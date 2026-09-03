@@ -376,7 +376,6 @@ sys.stdout.write("\n")
 PY
 )"
 
-printf '%s\n' "$RECEIPT"
 # Commit the canonical evidence into the claim first.  A restart can therefore
 # recover it even if the caller's receipt path is unavailable or the process is
 # interrupted between claim completion and the outward copy.
@@ -386,6 +385,7 @@ mv "$RECEIPT_TMP" "$CLAIM_DIR/receipt.json"
 claim_phase "$CLAIM_DIR" "receipt-committed"
 claim_complete "$CLAIM_DIR"
 trap - EXIT
+printf '%s\n' "$RECEIPT"
 if [[ -n "$RECEIPT_OUT" ]]; then
   RECEIPT_OUT_TMP="${RECEIPT_OUT}.tmp.$$"
   printf '%s\n' "$RECEIPT" >"$RECEIPT_OUT_TMP"
