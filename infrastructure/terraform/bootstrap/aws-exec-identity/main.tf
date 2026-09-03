@@ -43,7 +43,11 @@ locals {
 
   oidc_hostpath = trimprefix(var.oidc_provider_url, "https://")
 
-  deployment_role_arn = aws_iam_role.deployment.arn
+  # These ARNs are deterministic from the inputs. Keeping them independent of
+  # the resources lets the role preconditions and policy document refer to the
+  # identities they protect without creating a dependency cycle.
+  deployment_role_arn   = "arn:${local.partition}:iam::${local.account_id}:role/${local.name}-deploy"
+  deployment_policy_arn = "arn:${local.partition}:iam::${local.account_id}:policy/${local.name}-deploy"
 
   passable_role_arns = distinct(compact([
     "arn:${local.partition}:iam::${local.account_id}:role/${var.task_execution_role_name_prefix}*",
@@ -89,7 +93,7 @@ locals {
       infra_deployment = {
         purpose    = "provision-stack-resources"
         role_arn   = local.deployment_role_arn
-        policy_arn = aws_iam_policy.deployment.arn
+        policy_arn = local.deployment_policy_arn
         created_by = "bootstrap/aws-exec-identity"
       }
       task_execution = {
@@ -479,7 +483,7 @@ data "aws_iam_policy_document" "deployment" {
     ]
     resources = compact([
       aws_iam_role.deployment.arn,
-      aws_iam_policy.deployment.arn,
+      local.deployment_policy_arn,
       var.backend_access_role_arn,
       var.backend_access_policy_arn,
     ])
