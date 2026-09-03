@@ -351,8 +351,16 @@ run_governed_execution_policy_checks() {
   for unsupported_root in aws-ecs aws-eks aws-serverless; do
     assert_regex_present 'HonuaReleasePosture[[:space:]]*=[[:space:]]*"unsupported-local-only"' \
       "$ROOT/bootstrap/$unsupported_root/main.tf" "unsupported-bootstrap-posture-tag"
-    assert_regex_present 'check[[:space:]]+"unsupported_for_release_lane"' \
-      "$ROOT/bootstrap/$unsupported_root/main.tf" "unsupported-bootstrap-plan-warning"
+    if [[ "$unsupported_root" == "aws-ecs" ]]; then
+      # The AWS ECS bootstrap now rejects create_access_key through variable
+      # validation, rather than a plan-level check. This is an earlier hard
+      # failure for the same unsafe contract and must remain policy-guarded.
+      assert_regex_present 'condition[[:space:]]*=[[:space:]]*!var\.create_access_key' \
+        "$ROOT/bootstrap/$unsupported_root/variables.tf" "unsupported-bootstrap-input-validation"
+    else
+      assert_regex_present 'check[[:space:]]+"unsupported_for_release_lane"' \
+        "$ROOT/bootstrap/$unsupported_root/main.tf" "unsupported-bootstrap-plan-warning"
+    fi
     assert_regex_present 'output[[:space:]]+"supported_for_release"' \
       "$ROOT/bootstrap/$unsupported_root/outputs.tf" "unsupported-bootstrap-output-marker"
   done

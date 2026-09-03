@@ -26,6 +26,11 @@ variable "create_access_key" {
   type        = bool
   description = "Whether to mint a long-lived access key. Leave false. Setting it true emits a plan-time warning and can never satisfy the release lane."
   default     = false
+
+  validation {
+    condition     = !var.create_access_key
+    error_message = "create_access_key must remain false; this bootstrap is local-only and unsupported for the release lane."
+  }
 }
 
 variable "tags" {

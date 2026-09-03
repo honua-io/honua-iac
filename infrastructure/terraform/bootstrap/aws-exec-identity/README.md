@@ -30,8 +30,9 @@ The deployment role is **explicitly denied**:
 It may pass the task execution and application runtime roles, by name prefix,
 and only to `ecs-tasks.amazonaws.com`.
 
-`check` blocks fail the plan when the supplied role ARNs are not three distinct
-roles, or when the selected `trust_mode` is missing its federation inputs.
+Resource preconditions fail the plan when the supplied role ARNs are not three
+distinct roles, or when the selected `trust_mode` is missing its federation
+inputs. These are hard plan gates, not advisory `check` warnings.
 
 ## Order of operations
 

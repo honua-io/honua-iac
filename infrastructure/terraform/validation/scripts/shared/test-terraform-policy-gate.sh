@@ -305,7 +305,10 @@ assert_missing_property_detected 'exec-identity-long-lived-credentials-denied' \
 assert_missing_property_detected 'exec-identity-privileged-passrole-denied' \
   'bootstrap/aws-exec-identity/main.tf' 'DenyPassingPrivilegedRoles'
 
-# The unsupported local-only bootstraps must keep their machine-readable marker.
+# The unsupported local-only bootstraps must keep their machine-readable marker
+# and reject the unsafe ECS access-key input at variable-validation time.
+assert_missing_property_detected 'unsupported-bootstrap-input-validation' \
+  'bootstrap/aws-ecs/variables.tf' 'condition     = !var.create_access_key'
 assert_missing_property_detected 'unsupported-bootstrap-output-marker' \
   'bootstrap/aws-ecs/outputs.tf' 'output "supported_for_release"'
 assert_missing_property_detected 'unsupported-bootstrap-posture-tag' \

@@ -112,52 +112,11 @@ locals {
     }
   }
   container_health_check = {
-    command     = ["CMD-SHELL", "curl -f http://localhost:8080/healthz/ready || exit 1"]
+    command     = ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:${var.container_port}${var.health_check_path} || exit 1"]
     interval    = 30
     timeout     = 5
     retries     = 3
     startPeriod = 60
-  }
-}
-
-check "existing_db_inputs" {
-  assert {
-    condition = (
-      (var.existing_db_endpoint == "" && var.existing_db_connection_string == "") ||
-      (var.existing_db_endpoint != "" && var.existing_db_connection_string != "")
-    )
-    error_message = "existing_db_endpoint and existing_db_connection_string must both be set or both be empty."
-  }
-}
-
-check "existing_vpc_inputs" {
-  assert {
-    condition = (
-      (var.existing_vpc_id == "" && var.existing_vpc_cidr == "" && length(var.existing_public_subnet_ids) == 0 && length(var.existing_private_subnet_ids) == 0) ||
-      (var.existing_vpc_id != "" && var.existing_vpc_cidr != "" && length(var.existing_public_subnet_ids) > 0 && length(var.existing_private_subnet_ids) > 0)
-    )
-    error_message = "existing_vpc_id, existing_vpc_cidr, existing_public_subnet_ids, and existing_private_subnet_ids must be set together."
-  }
-}
-
-check "existing_redis_inputs" {
-  assert {
-    condition     = var.redis_connection_string == "" || length(var.redis_connection_cidrs) > 0
-    error_message = "redis_connection_cidrs must include at least one trusted CIDR when redis_connection_string is set."
-  }
-}
-
-check "canary_weight_requires_canary" {
-  assert {
-    condition     = local.canary_enabled || var.canary_weight_percentage == 0
-    error_message = "canary_weight_percentage must be 0 unless canary_enabled is true."
-  }
-}
-
-check "canary_desired_count_when_enabled" {
-  assert {
-    condition     = !local.canary_enabled || var.canary_desired_count >= 1
-    error_message = "canary_desired_count must be at least 1 when canary_enabled is true."
   }
 }
 
@@ -186,27 +145,6 @@ module "vpc" {
   default_security_group_egress  = []
 
   tags = local.tags
-}
-
-check "nat_gateway_required" {
-  assert {
-    condition     = local.use_existing_vpc || var.enable_nat_gateway || var.assign_public_ip
-    error_message = "Tasks in private subnets require either NAT gateway or public IP assignment for outbound connectivity."
-  }
-}
-
-check "http_ingress_requires_https" {
-  assert {
-    condition     = local.use_https || !contains(local.http_ingress_cidrs, "0.0.0.0/0")
-    error_message = "Public HTTP ingress over 0.0.0.0/0 requires HTTPS to be configured (set alb_certificate_arn or domain_name/route53_zone_id)."
-  }
-}
-
-check "public_ingress_requires_https" {
-  assert {
-    condition     = !contains(concat(local.http_ingress_cidrs, local.https_ingress_cidrs), "0.0.0.0/0") || local.use_https
-    error_message = "Public ingress (0.0.0.0/0) requires HTTPS to be configured."
-  }
 }
 
 resource "aws_security_group" "alb" {
@@ -244,6 +182,54 @@ resource "aws_security_group" "alb" {
     to_port     = var.container_port
     protocol    = "tcp"
     cidr_blocks = [local.vpc_cidr_block]
+  }
+
+  lifecycle {
+    precondition {
+      condition = (
+        (var.existing_db_endpoint == "" && var.existing_db_connection_string == "") ||
+        (var.existing_db_endpoint != "" && var.existing_db_connection_string != "")
+      )
+      error_message = "existing_db_endpoint and existing_db_connection_string must both be set or both be empty."
+    }
+
+    precondition {
+      condition = (
+        (var.existing_vpc_id == "" && var.existing_vpc_cidr == "" && length(var.existing_public_subnet_ids) == 0 && length(var.existing_private_subnet_ids) == 0) ||
+        (var.existing_vpc_id != "" && var.existing_vpc_cidr != "" && length(var.existing_public_subnet_ids) > 0 && length(var.existing_private_subnet_ids) > 0)
+      )
+      error_message = "existing_vpc_id, existing_vpc_cidr, existing_public_subnet_ids, and existing_private_subnet_ids must be set together."
+    }
+
+    precondition {
+      condition     = var.redis_connection_string == "" || length(var.redis_connection_cidrs) > 0
+      error_message = "redis_connection_cidrs must include at least one trusted CIDR when redis_connection_string is set."
+    }
+
+    precondition {
+      condition     = local.canary_enabled || var.canary_weight_percentage == 0
+      error_message = "canary_weight_percentage must be 0 unless canary_enabled is true."
+    }
+
+    precondition {
+      condition     = !local.canary_enabled || var.canary_desired_count >= 1
+      error_message = "canary_desired_count must be at least 1 when canary_enabled is true."
+    }
+
+    precondition {
+      condition     = local.use_existing_vpc || var.enable_nat_gateway || var.assign_public_ip
+      error_message = "Tasks in private subnets require either NAT gateway or public IP assignment for outbound connectivity."
+    }
+
+    precondition {
+      condition     = local.use_https || !contains(local.http_ingress_cidrs, "0.0.0.0/0")
+      error_message = "Public HTTP ingress over 0.0.0.0/0 requires HTTPS to be configured (set alb_certificate_arn or domain_name/route53_zone_id)."
+    }
+
+    precondition {
+      condition     = !contains(concat(local.http_ingress_cidrs, local.https_ingress_cidrs), "0.0.0.0/0") || local.use_https
+      error_message = "Public ingress (0.0.0.0/0) requires HTTPS to be configured."
+    }
   }
 
   tags = local.tags
@@ -979,7 +965,7 @@ module "rds" {
   backup_retention_period = var.environment == "prod" ? 7 : 3
   maintenance_window      = "Sun:04:00-Sun:05:00"
 
-  deletion_protection              = var.environment == "prod"
+  deletion_protection              = var.rds_deletion_protection
   skip_final_snapshot              = var.environment != "prod"
   final_snapshot_identifier_prefix = "${local.name}-postgres-final"
 
@@ -1269,6 +1255,13 @@ data "aws_iam_policy_document" "ecs_task_assume" {
 
 resource "null_resource" "enable_postgis" {
   count = var.enable_postgis && !local.db_use_existing ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition     = !var.enable_postgis || var.db_publicly_accessible || local.db_use_existing
+      error_message = "enable_postgis uses a local-exec psql bootstrap. Set db_publicly_accessible=true or provide an existing database reachable from the Terraform runner; private RDS requires a separate in-VPC bootstrap before enabling PostGIS."
+    }
+  }
 
   triggers = {
     db_endpoint = local.db_endpoint
