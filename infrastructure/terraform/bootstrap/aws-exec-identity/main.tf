@@ -118,52 +118,6 @@ locals {
   }
 }
 
-check "oidc_inputs_present" {
-  assert {
-    condition = !local.use_oidc || (
-      trimspace(var.oidc_provider_arn) != "" &&
-      trimspace(var.oidc_provider_url) != "" &&
-      length(var.oidc_subjects) > 0
-    )
-    error_message = "trust_mode includes oidc, so oidc_provider_arn, oidc_provider_url and at least one oidc_subject are required."
-  }
-}
-
-check "sso_inputs_present" {
-  assert {
-    condition     = !local.use_sso || length(var.trusted_principal_arns) > 0
-    error_message = "trust_mode includes sso, so at least one trusted principal ARN is required."
-  }
-}
-
-check "roles_are_distinct" {
-  assert {
-    condition = alltrue([
-      for arn in compact([
-        var.backend_access_role_arn,
-        var.task_execution_role_arn,
-        var.app_runtime_role_arn,
-      ]) : arn != local.deployment_role_arn
-    ])
-    error_message = "The deployment role must be distinct from the backend, task execution, and application runtime roles."
-  }
-}
-
-check "backend_and_runtime_roles_are_distinct" {
-  assert {
-    condition = length(compact([
-      var.backend_access_role_arn,
-      var.task_execution_role_arn,
-      var.app_runtime_role_arn,
-      ])) == length(distinct(compact([
-        var.backend_access_role_arn,
-        var.task_execution_role_arn,
-        var.app_runtime_role_arn,
-    ])))
-    error_message = "The backend, task execution, and application runtime roles must be three different roles."
-  }
-}
-
 # ---------------------------------------------------------------------------
 # Trust policy. Web identity, already-federated principals, or both. Never a
 # long-lived IAM user.
@@ -219,6 +173,46 @@ resource "aws_iam_role" "deployment" {
   assume_role_policy   = data.aws_iam_policy_document.deployment_trust.json
   max_session_duration = var.max_session_duration
   tags                 = local.tags
+
+  lifecycle {
+    precondition {
+      condition = !local.use_oidc || (
+        trimspace(var.oidc_provider_arn) != "" &&
+        trimspace(var.oidc_provider_url) != "" &&
+        length(var.oidc_subjects) > 0
+      )
+      error_message = "trust_mode includes oidc, so oidc_provider_arn, oidc_provider_url and at least one oidc_subject are required."
+    }
+
+    precondition {
+      condition     = !local.use_sso || length(var.trusted_principal_arns) > 0
+      error_message = "trust_mode includes sso, so at least one trusted principal ARN is required."
+    }
+
+    precondition {
+      condition = alltrue([
+        for arn in compact([
+          var.backend_access_role_arn,
+          var.task_execution_role_arn,
+          var.app_runtime_role_arn,
+        ]) : arn != local.deployment_role_arn
+      ])
+      error_message = "The deployment role must be distinct from the backend, task execution, and application runtime roles."
+    }
+
+    precondition {
+      condition = length(compact([
+        var.backend_access_role_arn,
+        var.task_execution_role_arn,
+        var.app_runtime_role_arn,
+        ])) == length(distinct(compact([
+          var.backend_access_role_arn,
+          var.task_execution_role_arn,
+          var.app_runtime_role_arn,
+      ])))
+      error_message = "The backend, task execution, and application runtime roles must be three different roles."
+    }
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -465,6 +459,30 @@ data "aws_iam_policy_document" "deployment" {
       "iam:PassRole",
     ]
     resources = local.unpassable_role_arns
+  }
+
+  # Keep the deployment and backend identities outside the workload-management
+  # wildcard. Explicit denies preserve the separation even when names share a
+  # common prefix.
+  statement {
+    sid    = "DenyDeploymentIdentityMutation"
+    effect = "Deny"
+    actions = [
+      "iam:AttachRolePolicy",
+      "iam:CreatePolicyVersion",
+      "iam:DeletePolicy",
+      "iam:DeletePolicyVersion",
+      "iam:DeleteRole",
+      "iam:DeleteRolePolicy",
+      "iam:DetachRolePolicy",
+      "iam:PutRolePolicy",
+    ]
+    resources = compact([
+      aws_iam_role.deployment.arn,
+      aws_iam_policy.deployment.arn,
+      var.backend_access_role_arn,
+      var.backend_access_policy_arn,
+    ])
   }
 }
 

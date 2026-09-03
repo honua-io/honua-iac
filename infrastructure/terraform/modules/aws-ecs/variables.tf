@@ -330,6 +330,12 @@ variable "alb_deletion_protection" {
   default     = true
 }
 
+variable "rds_deletion_protection" {
+  description = "Enable deletion protection on the managed RDS instance. Disable this in a separate apply before destroying a production stack."
+  type        = bool
+  default     = true
+}
+
 variable "alb_drop_invalid_headers" {
   description = "Drop invalid HTTP headers at the ALB."
   type        = bool

@@ -67,6 +67,19 @@ terraform -chdir=infrastructure/terraform/examples/<stack> apply
 terraform -chdir=infrastructure/terraform/examples/<stack> destroy
 ```
 
+The AWS ECS root enables ALB and production RDS deletion protection by
+default. Before destroying that root, make a separate approved apply with
+both protections disabled, then generate a fresh destroy plan:
+
+```bash
+terraform -chdir=infrastructure/terraform/examples/aws apply \
+  -var='alb_deletion_protection=false' \
+  -var='rds_deletion_protection=false'
+terraform -chdir=infrastructure/terraform/examples/aws destroy
+```
+
+Changing protection spends any previously generated plan; do not reuse it.
+
 ## Governed AWS deployment (remote state + short-lived identity)
 
 The workflow above is the disposable-development path: local state, whatever
@@ -106,7 +119,12 @@ and [`docs/operator-state.md`](operator-state.md).
 ## Recommended operator defaults
 
 - Pin versioned images (avoid `latest` in production)
-- Keep `enable_postgis = true`
+- Keep `enable_postgis = true` only when the Terraform runner can reach
+  PostgreSQL. The ECS module bootstraps PostGIS with local `psql`, so a private
+  RDS endpoint cannot be bootstrapped from a normal laptop or external CI
+  runner. Use an in-VPC bootstrap first, or temporarily set
+  `db_publicly_accessible=true` with narrowly scoped
+  `db_additional_ingress_cidrs` for the bootstrap apply.
 - Keep DB private by default (`db_publicly_accessible = false`)
 - Use managed secrets and a remote state backend (mandatory for anything shared
   or long-lived; see [`operator-state.md`](operator-state.md))
