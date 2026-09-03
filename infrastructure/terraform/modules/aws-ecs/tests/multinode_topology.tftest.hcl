@@ -117,6 +117,18 @@ run "postgis_bootstrap_requires_runner_reachability" {
   expect_failures = [null_resource.enable_postgis]
 }
 
+run "managed_database_requires_postgis" {
+  command = plan
+
+  variables {
+    existing_db_endpoint          = ""
+    existing_db_connection_string = ""
+    enable_postgis                = false
+  }
+
+  expect_failures = [aws_ecs_service.this]
+}
+
 run "ai_provider_secret_uses_reference_and_scoped_kms" {
   command = apply
 
