@@ -48,6 +48,36 @@ resource "aws_ecr_lifecycle_policy" "lambda_preview" {
   })
 }
 
+data "aws_iam_policy_document" "lambda_preview_ecr_access" {
+  statement {
+    sid    = "AllowLambdaPreviewImageRetrieval"
+    effect = "Allow"
+
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+
+    actions = [
+      "ecr:BatchGetImage",
+      "ecr:GetDownloadUrlForLayer"
+    ]
+
+    condition {
+      test     = "StringLike"
+      variable = "aws:sourceArn"
+      values = [
+        "arn:aws:lambda:${var.region}:${data.aws_caller_identity.current.account_id}:function:${local.lambda_preview_run_prefix}-*"
+      ]
+    }
+  }
+}
+
+resource "aws_ecr_repository_policy" "lambda_preview" {
+  repository = aws_ecr_repository.lambda_preview.name
+  policy     = data.aws_iam_policy_document.lambda_preview_ecr_access.json
+}
+
 data "aws_iam_policy_document" "lambda_preview_execution_trust" {
   statement {
     effect  = "Allow"
