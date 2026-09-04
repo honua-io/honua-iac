@@ -290,6 +290,12 @@ variable "alb_deletion_protection" {
   default     = true
 }
 
+variable "rds_deletion_protection" {
+  description = "Enable deletion protection on the managed production RDS instance. Set false in a separate apply before destroy."
+  type        = bool
+  default     = true
+}
+
 variable "alb_access_logs_enabled" {
   description = "Enable ALB access logs."
   type        = bool

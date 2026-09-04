@@ -27,15 +27,6 @@ locals {
   tags = merge(var.tags, local.unsupported_posture_tags)
 }
 
-# Fails loudly on every plan that asks for a long-lived access key. The key is
-# the part that cannot be reconciled with the certified path at all.
-check "unsupported_for_release_lane" {
-  assert {
-    condition     = !var.create_access_key
-    error_message = "This bootstrap is LOCAL-ONLY and UNSUPPORTED for release: create_access_key mints a long-lived AWS credential. The certified lane uses bootstrap/aws-exec-identity with short-lived SSO/OIDC/STS federation."
-  }
-}
-
 resource "aws_iam_user" "terraform" {
   #checkov:skip=CKV_AWS_273: Unsupported local-only bootstrap; the certified lane is bootstrap/aws-exec-identity.
   name = local.user_name

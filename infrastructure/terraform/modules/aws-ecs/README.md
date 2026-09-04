@@ -205,7 +205,8 @@ If your Prometheus scrape config uses different job names, override the correspo
 | `canary_weight_percentage` | 0 | Percentage of default ALB traffic routed to the canary target group. |
 | `canary_header_name` | `X-Honua-Canary` | Header name that forces ALB routing to the canary target group. |
 | `canary_header_value` | `always` | Header value that forces ALB routing to the canary target group. |
-| `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster on RDS. **Set to true.** |
+| `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster on RDS. The Terraform runner must have a network path to the database. |
+| `rds_deletion_protection` | **true** | Protect the managed RDS instance from deletion; disable in a separate apply before teardown. |
 | `existing_db_endpoint` | `""` | Reuse an existing PostgreSQL endpoint (must be paired with `existing_db_connection_string`). |
 | `existing_db_connection_string` | `""` | Reuse an existing PostgreSQL connection string (skips RDS provisioning and PostGIS local-exec). |
 | `db_instance_class` | `db.t3.micro` | RDS instance class. Use `db.r6g.*` for production. |
