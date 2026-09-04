@@ -40,6 +40,7 @@ module "honua" {
   canary_desired_count             = var.canary_desired_count
   canary_weight_percentage         = var.canary_weight_percentage
   alb_deletion_protection          = var.alb_deletion_protection
+  rds_deletion_protection          = var.rds_deletion_protection
   alb_access_logs_enabled          = var.alb_access_logs_enabled
   alb_access_logs_force_destroy    = var.alb_access_logs_force_destroy
   alb_certificate_arn              = var.alb_certificate_arn
