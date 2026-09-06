@@ -54,9 +54,11 @@ resource "aws_ecr_lifecycle_policy" "lambda_preview" {
 # policies. Only Lambda functions in this account/region/run namespace may pull.
 data "aws_iam_policy_document" "lambda_preview_image_pull" {
   statement {
-    sid       = "LambdaCertificationImagePull"
-    actions   = ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]
-    resources = [aws_ecr_repository.lambda_preview.arn]
+    sid     = "LambdaCertificationImagePull"
+    actions = ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]
+    # ECR repository policies are resource-based and reject a Resource element
+    # ("Invalid repository policy provided", first apply 2026-09-06); the
+    # repository is implied by attachment.
 
     principals {
       type        = "Service"
