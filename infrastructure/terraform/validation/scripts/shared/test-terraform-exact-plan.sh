@@ -65,6 +65,7 @@ case "$cmd" in
     esac
     ;;
   plan)
+    [[ -z "${FAKE_TF_MUTATION_LOG:-}" ]] || echo plan >>"$FAKE_TF_MUTATION_LOG"
     out=""
     for arg in "${args[@]}"; do
       case "$arg" in -out=*) out="${arg#-out=}" ;; esac
@@ -74,6 +75,7 @@ case "$cmd" in
     exit "${FAKE_TF_PLAN_EXIT:-0}"
     ;;
   apply)
+    [[ -z "${FAKE_TF_MUTATION_LOG:-}" ]] || echo apply >>"$FAKE_TF_MUTATION_LOG"
     printf 'fake terraform apply of %s\n' "${args[*]}"
     exit "${FAKE_TF_APPLY_EXIT:-0}"
     ;;
@@ -212,8 +214,8 @@ desired_count = 1
 EOF
 
 git -C "$BASE" init -q
-git -C "$BASE" config user.email "test@honua.io"
-git -C "$BASE" config user.name "Honua Test"
+git -C "$BASE" config user.email "mike@honua.io"
+git -C "$BASE" config user.name "Mike McDougall"
 git -C "$BASE" add -A
 git -C "$BASE" -c commit.gpgsign=false commit -qm "fixture"
 
@@ -836,6 +838,108 @@ LAST_EXIT=$?
 set -e
 LAST_LOG="$CASE/backend.log"
 expect_refusal "backend-identity: refuses local state" "local-state-refused"
+
+# A lock flag alone cannot qualify an ambiguous or credential-bearing backend.
+# The fake process journal proves these are pre-plan/pre-apply refusals.
+for spec in bucket:null key:null region:null key:17 region:'"  "' \
+  encrypt:false encrypt:'"true"' access_key:'"credential-canary"' \
+  secret_key:'"credential-canary"' token:'"credential-canary"' \
+  assume_role_with_web_identity:'{"role_arn":"arn:aws:iam::123456789012:role/backend","web_identity_token":"credential-canary"}'; do
+  field="${spec%%:*}"
+  value="${spec#*:}"
+  case "$field" in
+    bucket | key | region) reason=backend-identity-missing ;;
+    encrypt) reason=backend-encryption-missing ;;
+    *) reason=backend-credential-refused ;;
+  esac
+  CASE="$(apply_case "backend-invalid-$field")"
+  python3 - "$CASE/$STACK_REL/.terraform/terraform.tfstate" "$field" "$value" <<'PY'
+import json, sys
+path, field, value = sys.argv[1:]
+with open(path) as handle:
+    document = json.load(handle)
+document['backend']['config'][field] = json.loads(value)
+with open(path, 'w') as handle:
+    json.dump(document, handle)
+PY
+  FAKE_TF_MUTATION_LOG="$CASE/processes" run_plan "$CASE"
+  expect_refusal "plan: rejects invalid backend $spec" "$reason"
+  FAKE_TF_MUTATION_LOG="$CASE/processes" run_apply "$CASE" --allow-unqualified
+  expect_refusal "apply: rejects invalid backend $spec" "$reason"
+  if [[ -e "$CASE/processes" ]] || rg -q credential-canary "$CASE/plan.log" "$CASE/apply.log"; then
+    echo "[FAIL] invalid backend started plan/apply or leaked a credential"
+    FAIL_COUNT=$((FAIL_COUNT + 1))
+  else
+    echo "[PASS] invalid backend starts no plan/apply and leaks no credentials"
+    PASS_COUNT=$((PASS_COUNT + 1))
+  fi
+done
+
+CASE="$(new_case backend-redaction)"
+python3 - "$CASE/$STACK_REL/.terraform/terraform.tfstate" <<'PY'
+import json, sys
+with open(sys.argv[1]) as handle:
+    document = json.load(handle)
+document['backend']['config'].update({
+    'assume_role': {
+        'role_arn': 'arn:aws:iam::123456789012:role/backend',
+        'session_name': 'session-canary',
+        'external_id': 'external-canary',
+        'tags': {'operator': 'tag-canary'},
+    },
+    'endpoints': {'s3': 'https://endpoint-canary'},
+})
+with open(sys.argv[1], 'w') as handle:
+    json.dump(document, handle)
+PY
+run_plan "$CASE"
+expect_success "plan: role session configuration is bound without disclosure"
+PATH="$FAKE_BIN:$PATH" HONUA_IAC_OFFLINE=1 \
+  HONUA_IAC_STS_FIXTURE="$CASE/fixtures/sts.json" \
+  "$CASE/scripts/terraform-backend-identity.sh" --root "$CASE/$STACK_REL" \
+  --output "$CASE/artifacts/backend.json" >"$CASE/backend.log" 2>&1
+if python3 - "$CASE/artifacts/backend.json" "$(metadata_of "$CASE")" \
+  "$CASE/$STACK_REL/.terraform/terraform.tfstate" <<'PY'
+import hashlib, json, sys
+backend, plan, resolved = [json.load(open(path)) for path in sys.argv[1:]]
+# Independently derive expected bytes from the input fixture, not the exporter.
+expected = hashlib.sha256(json.dumps(resolved['backend']['config'],
+    sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+assert backend['resolved_config_digest'] == expected
+assert backend['backend_config_digest'] == plan['backend']['backend_config_digest']
+assert backend['non_secret_config']['assume_role'] == {
+    'role_arn': 'arn:aws:iam::123456789012:role/backend'}
+assert backend['redacted_config_keys'] == [
+    'assume_role.external_id', 'assume_role.session_name', 'assume_role.tags', 'endpoints']
+assert backend['release_qualified'] is False
+assert '-canary' not in json.dumps(backend)
+PY
+then
+  echo "[PASS] backend: canonical fixture digest, shared binding, nested redaction, offline posture"
+  PASS_COUNT=$((PASS_COUNT + 1))
+else
+  echo "[FAIL] backend: canonical fixture digest, shared binding, nested redaction, offline posture"
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+fi
+
+# Alter only a redacted value: its name and all public fields remain identical.
+python3 - "$CASE/$STACK_REL/.terraform/terraform.tfstate" <<'PY'
+import json, sys
+with open(sys.argv[1]) as handle:
+    document = json.load(handle)
+document['backend']['config']['assume_role']['external_id'] = 'changed-canary'
+with open(sys.argv[1], 'w') as handle:
+    json.dump(document, handle)
+PY
+FAKE_TF_MUTATION_LOG="$CASE/processes" run_apply "$CASE" --allow-unqualified
+expect_refusal "apply: detects substitution of a redacted backend value" "backend-substituted"
+if [[ -e "$CASE/processes" ]] || rg -q changed-canary "$CASE/apply.log"; then
+  echo "[FAIL] redacted substitution started apply or leaked its value"
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+else
+  echo "[PASS] redacted substitution starts no apply and discloses no value"
+  PASS_COUNT=$((PASS_COUNT + 1))
+fi
 
 # =============================================================================
 
