@@ -206,6 +206,40 @@ data "aws_iam_policy_document" "lambda_preview_certification" {
     }
   }
 
+  # Candidate proof on the STANDING certification function (release#282 bill,
+  # item 3): publish the certified digest as a new version, shift the alias,
+  # verify through the alias Function URL, roll back, delete the version the
+  # lane created. The driver reads the alias URL config before any write
+  # ("AWS lambda get-function-url-config failed; serving noProof", first live
+  # run 2026-09-06). Deletion is allowed on qualified (version) ARNs only,
+  # never on the unqualified function.
+  statement {
+    sid = "CertifyStandingAliasUpgradeRollback"
+    actions = [
+      "lambda:GetFunction",
+      "lambda:GetFunctionConfiguration",
+      "lambda:GetFunctionUrlConfig",
+      "lambda:GetAlias",
+      "lambda:ListAliases",
+      "lambda:ListVersionsByFunction",
+      "lambda:UpdateFunctionCode",
+      "lambda:PublishVersion",
+      "lambda:UpdateAlias",
+      "lambda:InvokeFunction",
+      "lambda:InvokeFunctionUrl",
+    ]
+    resources = [
+      module.honua.lambda_function_arn,
+      "${module.honua.lambda_function_arn}:*",
+    ]
+  }
+
+  statement {
+    sid       = "DeleteOnlyStandingFunctionVersions"
+    actions   = ["lambda:DeleteFunction"]
+    resources = ["${module.honua.lambda_function_arn}:*"]
+  }
+
   statement {
     sid       = "PassOnlyCertificationExecutionRole"
     actions   = ["iam:PassRole"]
