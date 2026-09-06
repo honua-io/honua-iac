@@ -93,6 +93,16 @@ esac
 EOF
 chmod +x "$FAKE_BIN/terraform"
 
+# Exercise the live-code-path posture calculation without any network access.
+# This synthetic CLI is not live AWS evidence and its output stays in TMP_DIR.
+cat >"$FAKE_BIN/aws" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$*" == 'sts get-caller-identity --output json' ]] || exit 1
+cat "$HONUA_IAC_STS_FIXTURE"
+EOF
+chmod +x "$FAKE_BIN/aws"
+
 # --- synthetic repository ----------------------------------------------------
 BASE="$TMP_DIR/base"
 STACK_REL="infrastructure/terraform/examples/fake-stack"
@@ -817,6 +827,19 @@ assert_json "backend-identity: redacts credential-bearing config keys by name" \
 assert_json "backend-identity: reports the lock and KMS posture" \
   "$CASE/artifacts/backend.json" \
   "doc['locking']['kind'] == 's3-native-lockfile' and doc['encryption']['kms_key_reference']"
+
+for posture in live --no-identity --allow-local-state; do
+  posture_args=()
+  [[ "$posture" == live ]] || posture_args+=("$posture")
+  PATH="$FAKE_BIN:$PATH" HONUA_IAC_OFFLINE=0 \
+    HONUA_IAC_STS_FIXTURE="$CASE/fixtures/sts.json" \
+    "$CASE/scripts/terraform-backend-identity.sh" --root "$CASE/$STACK_REL" \
+    "${posture_args[@]}" --output "$CASE/artifacts/backend.json" >"$CASE/backend.log" 2>&1
+  expected_posture=False
+  [[ "$posture" != live ]] || expected_posture=True
+  assert_json "backend-identity: $posture reports the expected qualification posture" \
+    "$CASE/artifacts/backend.json" "doc['release_qualified'] is $expected_posture"
+done
 
 CASE="$(new_case backend-identity-local)"
 python3 - "$CASE/$STACK_REL/.terraform/terraform.tfstate" <<'PY'
