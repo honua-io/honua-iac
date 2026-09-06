@@ -219,17 +219,59 @@ assert_required_nullable_variable() {
   exit 1
 }
 
+assert_single_wildcard_exception() {
+  local file="$1"
+  local label="$2"
+  local sanctioned_action="$3"
+  local sanctioned_condition="$4"
+
+  if [[ ! -f "$file" ]]; then
+    log_error "Policy check failed ($label): file not found: $file"
+    exit 1
+  fi
+
+  # Split the document into policy statements and allow at most one statement
+  # whose resources are "*", and only when that statement is the sanctioned
+  # action carrying the sanctioned condition key. Any additional wildcard, or a
+  # wildcard that migrates onto some other action, fails the gate.
+  if awk -v action="$sanctioned_action" -v cond="$sanctioned_condition" '
+    BEGIN { chunk = ""; wildcards = 0; bad = 0 }
+    function flush_chunk() {
+      if (chunk ~ /resources[ \t]*=[ \t]*\[[ \t]*"\*"/) {
+        wildcards++
+        if (index(chunk, action) == 0 || index(chunk, cond) == 0) {
+          bad = 1
+        }
+      }
+      chunk = ""
+    }
+    /^  (dynamic "statement"|statement)[ \t]*\{/ { flush_chunk() }
+    { chunk = chunk $0 "\n" }
+    END { flush_chunk(); exit !(bad == 0 && wildcards <= 1) }
+  ' "$file"; then
+    return 0
+  fi
+
+  log_error "Policy check failed ($label): disallowed pattern found"
+  grep -En 'resources[[:space:]]*=[[:space:]]*\[[[:space:]]*"\*"' "$file" || true
+  exit 1
+}
+
 run_custom_policy_checks() {
   log_info "Running custom policy checks"
 
   assert_regex_absent 'actions[[:space:]]*=[[:space:]]*\[[[:space:]]*"\*"[[:space:]]*\]' "$ROOT" "least-privilege-actions"
   assert_regex_absent 'Action"[[:space:]]*:[[:space:]]*"\*"' "$ROOT" "least-privilege-actions-json"
 
-  # release#282: the Lambda certification packet must preserve the explicit
-  # no-global-grants constraint, service trust and tagged lifecycle boundary.
+  # release#282: the Lambda certification packet must preserve its service
+  # trust, tagged lifecycle boundary, and the single sanctioned wildcard grant.
   local lambda_cert="$ROOT/examples/aws-cert/lambda-preview-cert.tf"
-  assert_regex_absent 'resources[[:space:]]*=[[:space:]]*\[[[:space:]]*"\*"' "$lambda_cert" "lambda-cert-no-global-resources"
-  assert_regex_absent '"ecr:GetAuthorizationToken"|"ecr:SetRepositoryPolicy"|"lambda:UntagResource"|"ec2:' "$lambda_cert" "lambda-cert-no-extra-capabilities"
+  assert_regex_absent '"ecr:SetRepositoryPolicy"|"lambda:UntagResource"|"ec2:' "$lambda_cert" "lambda-cert-no-extra-capabilities"
+  # ecr:GetAuthorizationToken has no resource-level ARN form in AWS, so it is
+  # the single sanctioned Resource "*" grant here and must stay region-scoped.
+  assert_regex_present 'variable[[:space:]]*=[[:space:]]*"aws:RequestedRegion"' "$lambda_cert" "lambda-cert-auth-token-region"
+  assert_single_wildcard_exception "$lambda_cert" "lambda-cert-no-global-resources" \
+    'ecr:GetAuthorizationToken' 'aws:RequestedRegion'
   assert_regex_present 'identifiers[[:space:]]*=[[:space:]]*\["lambda.amazonaws.com"\]' "$lambda_cert" "lambda-cert-service-trust"
   assert_regex_present 'permissions_boundary[[:space:]]*=[[:space:]]*aws_iam_policy.lambda_preview_execution_boundary.arn' "$lambda_cert" "lambda-cert-execution-boundary"
   assert_regex_present 'variable[[:space:]]*=[[:space:]]*"aws:RequestTag/honua-cert-run"' "$lambda_cert" "lambda-cert-required-run-tag"

@@ -1,7 +1,9 @@
 # Lambda GA certification substrate (honua-io/honua-release#282).
 # The server lane owns the ephemeral functions and log groups, not Terraform.
-# ECR GetAuthorizationToken is intentionally NOT granted: AWS requires Resource
-# "*", which conflicts with ruling A's no-wildcard permission constraint.
+# ecr:GetAuthorizationToken is granted in its own statement on Resource "*":
+# AWS publishes no resource-level form for it. The token it returns is only an
+# authentication credential; repository access stays governed by the scoped
+# ecr:* statement, and the wildcard is confined to var.region.
 
 data "aws_partition" "lambda_preview" {}
 
@@ -211,6 +213,29 @@ data "aws_iam_policy_document" "lambda_preview_certification" {
       test     = "StringEquals"
       variable = "iam:PassedToService"
       values   = ["lambda.amazonaws.com"]
+    }
+  }
+
+  # `aws ecr get-login-password` needs a registry authorization token before any
+  # push. AWS supports this action ONLY on Resource "*" -- it is registry-wide
+  # and has no repository ARN form:
+  # https://docs.aws.amazon.com/service-authorization/latest/reference/list_ecr.html
+  # The wildcard is unavoidable and is not a widening of repository access: the
+  # token authenticates the Docker client but authorizes nothing on its own, and
+  # every repository operation remains bound to the certification repository ARN
+  # by MirrorAndVerifyCertificationImage below. Keep it in its own statement and
+  # confine it to the certification region so it cannot be exercised against
+  # registries in any other region.
+  statement {
+    #checkov:skip=CKV_AWS_356: ecr:GetAuthorizationToken has no resource-level ARN form; scoped by aws:RequestedRegion.
+    sid       = "EcrAuthorizationTokenGlobal"
+    actions   = ["ecr:GetAuthorizationToken"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.region]
     }
   }
 

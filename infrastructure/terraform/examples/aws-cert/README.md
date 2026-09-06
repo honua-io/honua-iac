@@ -334,14 +334,15 @@ historical `preview` names are retained for compatibility; Lambda is a 2026.1
 GA target. The inspected server revision is
 `2ee4eb4eca080160cad4b2f4ba97cb0c370dc17d`.
 
-**Operator decision required before this packet can unblock the lane:**
-`ecr:GetAuthorizationToken` is deliberately omitted because ruling A prohibits
-new `Resource: "*"` grants. [AWS requires that resource scope for ECR login](https://docs.aws.amazon.com/service-authorization/latest/reference/list_ecr.html).
-The existing OIDC component does not grant it. Consequently the current lane's
-first image push will fail at `aws ecr get-login-password`; these additions alone
-are not a completed certification gate. Do not disguise this action as a
-repository-scoped grant or widen any trust policy. A separately authorized
-exception or a separately reviewed mirror/authentication change is required.
+**ECR login grant (coordinator ruling):** `aws ecr get-login-password` needs
+`ecr:GetAuthorizationToken`, and [AWS exposes that action only on `Resource: "*"`](https://docs.aws.amazon.com/service-authorization/latest/reference/list_ecr.html)
+— it is registry-wide and has no repository ARN form. It is granted here as its
+own statement, confined to the certification region by `aws:RequestedRegion`.
+The wildcard is not a widening of repository access: the token only
+authenticates the Docker client, and every repository operation stays bound to
+the certification repository ARN by `MirrorAndVerifyCertificationImage`. The
+policy gate permits exactly this one wildcard statement and fails on any other.
+No trust policy is widened and no OIDC subject changes.
 
 The image repository has the exact script-required name
 `honua-cert-cert-lambda-preview`, immutable tags, scan on push, AES256 encryption,
@@ -395,6 +396,7 @@ Deny. No OIDC subject or provider changes are introduced.
 | OIDC / ObserveCertificationFunction | `lambda:GetFunction`, `lambda:ListTags` | F | None (collision detection, waiters, ownership inspection, absence verification) |
 | OIDC / InvokeAndDeleteTaggedCertificationFunction | `lambda:InvokeFunction`, `lambda:DeleteFunction` | F | StringEquals resource `honua-purpose=lambda-preview-certification`; StringLike resource `honua-cert-run=?*-?*` |
 | OIDC / PassOnlyCertificationExecutionRole | `iam:PassRole` | X | StringEquals `iam:PassedToService=lambda.amazonaws.com` |
+| OIDC / EcrAuthorizationTokenGlobal | `ecr:GetAuthorizationToken` | `*` (AWS supports no resource-level form) | StringEquals `aws:RequestedRegion=<var.region>`; token authenticates only, repository access still bound to E below |
 | OIDC / MirrorAndVerifyCertificationImage | `ecr:DescribeImages`, `ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer`, `ecr:GetRepositoryPolicy`, `ecr:BatchCheckLayerAvailability`, `ecr:InitiateLayerUpload`, `ecr:UploadLayerPart`, `ecr:CompleteLayerUpload`, `ecr:PutImage` | E | StringEquals resource `honua-purpose=lambda-preview-certification` |
 | OIDC / CertificationLogGroupLifecycle | `logs:CreateLogGroup`, `logs:PutRetentionPolicy`, `logs:FilterLogEvents`, `logs:DeleteLogGroup` | `L:*` | None (the script creates untagged log groups) |
 
@@ -422,29 +424,32 @@ to the release evidence thread and reviewing the exact saved plan against the
 existing governed backend. Confirm the seven additions above and **no destroys**;
 stop on any unexpected changes, replacements, or trust differences. Do not create
 a new empty state for this existing stack. No local validation command applies
-infrastructure. Resolve the ECR authentication constraint before dispatching the
-lane; do not treat this packet as a passing GA receipt.
+infrastructure. Do not treat this packet as a passing GA receipt; it is the
+substrate the lane needs, not a certification result.
 
 After the reviewed operator apply, set these **repository variables**:
 
 | Terraform output | Repository variable | Workflow/script environment |
 |---|---|---|
 | `REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN` | `REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN` | `HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN` |
-| `HONUA_LAMBDA_PREVIEW_REPOSITORY` | `REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY` | `HONUA_LAMBDA_PREVIEW_REPOSITORY` |
+| `REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY` | `REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY` | `HONUA_LAMBDA_PREVIEW_REPOSITORY` |
 | `github_oidc_role_arn` (existing) | `REALAWS_CERT_ROLE_ARN` (existing) | OIDC role-to-assume |
 
-The repository output deliberately matches the requested script variable name.
-The workflow actually reads `vars.REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY`:
-setting only a repository variable named `HONUA_LAMBDA_PREVIEW_REPOSITORY` does
-not wire this lane. Check that `cert` Environment variables do not override these
-repository values. Keep the existing `REALAWS_CERT_REGION` aligned with the stack.
+Both outputs are named for the repository variable they populate. The workflow
+reads `vars.REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY` and
+`vars.REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN`, then passes them to the
+script as `HONUA_LAMBDA_PREVIEW_REPOSITORY` and
+`HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN`; do not create repository variables
+under the script names. Check that `cert` Environment variables do not override
+these repository values. Keep the existing `REALAWS_CERT_REGION` aligned with
+the stack — the ECR authorization-token grant is conditioned on that region.
 
 ```bash
 terraform -chdir=infrastructure/terraform/examples/aws-cert output -raw \
   REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN |
   gh variable set REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN --repo honua-io/honua-server
 terraform -chdir=infrastructure/terraform/examples/aws-cert output -raw \
-  HONUA_LAMBDA_PREVIEW_REPOSITORY |
+  REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY |
   gh variable set REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY --repo honua-io/honua-server
 ```
 

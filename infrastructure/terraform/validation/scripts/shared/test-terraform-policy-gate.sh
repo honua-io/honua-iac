@@ -344,6 +344,12 @@ assert_missing_property_detected 'lambda-cert-image-pull-source' \
 assert_missing_property_detected 'lambda-cert-immutable-images' \
   "$LAMBDA_CERT" 'image_tag_mutability'
 
+# ecr:GetAuthorizationToken is the one action AWS exposes only on Resource "*".
+# It is tolerated as a single statement, but only while it stays confined to the
+# certification region; dropping that condition must fail the gate.
+assert_missing_property_detected 'lambda-cert-auth-token-region' \
+  "$LAMBDA_CERT" 'aws:RequestedRegion'
+
 echo "[INFO] terraform-policy-gate Lambda certification guard tests passed"
 echo "[INFO] terraform-policy-gate governed-execution guard tests passed"
 echo "[INFO] terraform-policy-gate strict/non-strict regression tests passed"
