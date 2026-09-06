@@ -106,6 +106,22 @@ data "aws_iam_policy_document" "lambda_preview_execution_boundary" {
     actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
     resources = ["${local.lambda_preview_log_arn}:log-stream:*"]
   }
+
+  # The certification function is VPC-attached (it must reach the cert PostGIS
+  # over private subnets, #4432); Lambda manages the ENIs with these actions,
+  # which take no resource ARN (AWSLambdaVPCAccessExecutionRole shape).
+  statement {
+    sid = "CertificationVpcEni"
+    actions = [
+      "ec2:CreateNetworkInterface",
+      "ec2:DescribeNetworkInterfaces",
+      "ec2:DescribeSubnets",
+      "ec2:DeleteNetworkInterface",
+      "ec2:AssignPrivateIpAddresses",
+      "ec2:UnassignPrivateIpAddresses",
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_policy" "lambda_preview_execution_boundary" {
@@ -124,6 +140,11 @@ resource "aws_iam_role" "lambda_preview_execution" {
 resource "aws_iam_role_policy_attachment" "lambda_preview_basic_execution" {
   role       = aws_iam_role.lambda_preview_execution.name
   policy_arn = "arn:${data.aws_partition.lambda_preview.partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_preview_vpc_access" {
+  role       = aws_iam_role.lambda_preview_execution.name
+  policy_arn = "arn:${data.aws_partition.lambda_preview.partition}:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
 # A separate inline policy attaches to the EXISTING OIDC role. No inputs to the

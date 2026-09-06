@@ -376,14 +376,40 @@ run_custom_policy_checks() {
   # release#282: the Lambda certification packet must preserve its service
   # trust, tagged lifecycle boundary, and the single sanctioned wildcard grant.
   local lambda_cert="$ROOT/examples/aws-cert/lambda-preview-cert.tf"
-  assert_regex_absent '"ecr:SetRepositoryPolicy"|"lambda:UntagResource"|"ec2:' "$lambda_cert" "lambda-cert-no-extra-capabilities"
+  # ec2 is allowed in exactly one place: the execution-role boundary statement
+  # that lets Lambda manage the ENIs of the VPC-attached certification function
+  # (the six AWSLambdaVPCAccessExecutionRole actions, nothing else).
+  local eni_stmt
+  eni_stmt="$(extract_policy_statement "$lambda_cert" "CertificationVpcEni")"
+  if [ -z "$eni_stmt" ]; then
+    echo "[ERROR] Policy check failed (lambda-cert-vpc-eni-statement): expected pattern not found" >&2; echo "  CertificationVpcEni statement missing from $lambda_cert" >&2
+    exit 1
+  fi
+  local eni_extra
+  eni_extra="$(printf '%s' "$eni_stmt" | grep -oE '"ec2:[A-Za-z]+"' | grep -vE '^"ec2:(CreateNetworkInterface|DescribeNetworkInterfaces|DescribeSubnets|DeleteNetworkInterface|AssignPrivateIpAddresses|UnassignPrivateIpAddresses)"$' || true)"
+  if [ -n "$eni_extra" ]; then
+    echo "[ERROR] Policy check failed (lambda-cert-vpc-eni-allowlist): disallowed pattern found" >&2; echo "  unexpected ec2 action(s) in CertificationVpcEni: ${eni_extra//$'\n'/ }" >&2
+    exit 1
+  fi
+  local lambda_cert_no_eni
+  lambda_cert_no_eni="$(mktemp)"
+  awk '
+    function flush_chunk() { if (chunk !~ /sid[ \t]*=[ \t]*"CertificationVpcEni"/) printf "%s", chunk; chunk = "" }
+    /^  (dynamic "statement"|statement)[ \t]*\{/ { flush_chunk() }
+    { chunk = chunk $0 "\n" }
+    END { flush_chunk() }
+  ' "$lambda_cert" > "$lambda_cert_no_eni"
+  assert_regex_absent '"ecr:SetRepositoryPolicy"|"lambda:UntagResource"|"ec2:' "$lambda_cert_no_eni" "lambda-cert-no-extra-capabilities"
 
   # ecr:GetAuthorizationToken has no resource-level ARN form in AWS, so it is
   # the single sanctioned Resource "*" grant here and must stay region-scoped.
   assert_regex_present_in_statement "lambda-cert-auth-token-region" "$lambda_cert" \
     "EcrAuthorizationTokenGlobal" 'variable[[:space:]]*=[[:space:]]*"aws:RequestedRegion"'
-  assert_single_wildcard_exception "$lambda_cert" "lambda-cert-no-global-resources" \
+  # The ENI statement's Resource "*" is sanctioned separately above (six ENI
+  # actions only); the single-wildcard rule applies to everything else.
+  assert_single_wildcard_exception "$lambda_cert_no_eni" "lambda-cert-no-global-resources" \
     'ecr:GetAuthorizationToken' 'aws:RequestedRegion'
+  rm -f "$lambda_cert_no_eni"
 
   # Each guard below is scoped to the block or statement that must carry the
   # invariant. The Lambda service principal and the purpose resource tag each

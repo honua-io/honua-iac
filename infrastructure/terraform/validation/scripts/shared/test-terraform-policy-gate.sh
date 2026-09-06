@@ -327,6 +327,19 @@ assert_violation_detected 'lambda-cert-no-global-resources' \
   "$LAMBDA_CERT" "  resources = [${Q}${STAR}${Q}]"
 assert_violation_detected 'lambda-cert-no-extra-capabilities' \
   "$LAMBDA_CERT" "  actions = [${Q}ecr:SetRepositoryPolicy${Q}]"
+assert_violation_detected 'lambda-cert-no-extra-capabilities' \
+  "$LAMBDA_CERT" "  actions = [${Q}ec2:CreateNetworkInterface${Q}]"
+assert_missing_property_detected 'lambda-cert-vpc-eni-statement' \
+  "$LAMBDA_CERT" 'sid = "CertificationVpcEni"'
+# An ec2 action beyond the six ENI actions inside the ENI statement must fail.
+eni_fixture="$TMP_DIR/violation-lambda-cert-vpc-eni-allowlist"
+rm -rf "$eni_fixture"; cp -a "$FIXTURE_ROOT" "$eni_fixture"
+sed -i 's|"ec2:UnassignPrivateIpAddresses",|"ec2:UnassignPrivateIpAddresses",\n      "ec2:RunInstances",|' "$eni_fixture/$LAMBDA_CERT"
+run_gate "true" 0 0 0 "$eni_fixture"
+if [[ "$GATE_EXIT_CODE" -eq 0 ]]; then
+  echo "[ERROR] Policy gate accepted an extra ec2 action inside CertificationVpcEni" >&2
+  exit 1
+fi
 assert_missing_property_detected 'lambda-cert-service-trust' \
   "$LAMBDA_CERT" 'identifiers.*lambda.amazonaws.com'
 assert_missing_property_detected 'lambda-cert-execution-boundary' \
