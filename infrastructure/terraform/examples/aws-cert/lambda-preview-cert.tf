@@ -275,6 +275,15 @@ data "aws_iam_policy_document" "lambda_preview_certification" {
     }
   }
 
+  # Reruns for the same candidate must be able to replace a stale mirror tag
+  # (the repository is tag-immutable; first live rerun 2026-09-06 failed with
+  # TAG_INVALID). Scoped to the certification repository only.
+  statement {
+    sid       = "ReplaceStaleCertificationMirrorTag"
+    actions   = ["ecr:DescribeImages", "ecr:BatchDeleteImage"]
+    resources = [aws_ecr_repository.lambda_preview.arn]
+  }
+
   statement {
     sid = "MirrorAndVerifyCertificationImage"
     actions = [
