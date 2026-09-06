@@ -135,7 +135,12 @@ module "honua" {
   image                = var.honua_image
   lambda_architectures = [local.lambda_architecture]
   admin_password       = var.honua_admin_password
-  db_password          = var.db_password
+  # Lambda GA certification (release#282): the driver refuses a standing
+  # function that skips migrations ("Standing function skips migrations:
+  # noProof", 2026-09-06). The cert database is bootstrapped with PostGIS, so
+  # startup migrations are safe here.
+  skip_migrations = false
+  db_password     = var.db_password
 
   # Cert is short-lived: single-AZ, modest DB, no Redis (cert does not exercise
   # the Production durable-event-store /healthz/ready path).
