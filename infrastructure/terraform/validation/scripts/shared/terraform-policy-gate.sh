@@ -219,6 +219,96 @@ assert_required_nullable_variable() {
   exit 1
 }
 
+# Print the top-level HCL block whose header line starts with $2. Terraform fmt
+# guarantees the closing brace of a top-level block sits in column 0, so that is
+# the terminator.
+extract_hcl_block() {
+  local file="$1"
+  local header="$2"
+
+  awk -v header="$header" '
+    index($0, header) == 1 { inblock = 1 }
+    inblock { print }
+    inblock && /^\}[ \t]*$/ { inblock = 0 }
+  ' "$file"
+}
+
+# Print the policy statement whose sid is $2. Statements are two-space indented
+# inside an aws_iam_policy_document, so the next statement header terminates the
+# current one.
+extract_policy_statement() {
+  local file="$1"
+  local sid="$2"
+
+  awk -v sid="$sid" '
+    function flush_chunk() {
+      if (chunk ~ ("sid[ \t]*=[ \t]*\"" sid "\"")) printf "%s", chunk
+      chunk = ""
+    }
+    /^  (dynamic "statement"|statement)[ \t]*\{/ { flush_chunk() }
+    { chunk = chunk $0 "\n" }
+    END { flush_chunk() }
+  ' "$file"
+}
+
+# A file-wide presence match can be satisfied by an unrelated statement that
+# happens to use the same principal, tag key or condition key, so a removed
+# invariant would still pass. These assert the pattern inside the one block or
+# statement that is supposed to carry it. Comment lines are stripped first so a
+# guard cannot be satisfied by prose that merely mentions the key.
+assert_scoped_pattern() {
+  local label="$1"
+  local file="$2"
+  local pattern="$3"
+  local scope="$4"
+
+  if [[ -z "${scope//[[:space:]]/}" ]]; then
+    log_error "Policy check failed ($label): expected pattern not found in $file (guarded block is missing)"
+    exit 1
+  fi
+
+  # Strip comments so a guard cannot be satisfied by prose that merely mentions
+  # the condition key it is supposed to be enforcing.
+  if grep -Ev '^[[:space:]]*#' <<<"$scope" | grep -Eq "$pattern"; then
+    return 0
+  fi
+
+  log_error "Policy check failed ($label): expected pattern not found in $file"
+  exit 1
+}
+
+assert_regex_present_in_block() {
+  local label="$1"
+  local file="$2"
+  local header="$3"
+  local pattern="$4"
+
+  if [[ ! -f "$file" ]]; then
+    log_error "Policy check failed ($label): file not found: $file"
+    exit 1
+  fi
+
+  local scope
+  scope="$(extract_hcl_block "$file" "$header")"
+  assert_scoped_pattern "$label" "$file" "$pattern" "$scope"
+}
+
+assert_regex_present_in_statement() {
+  local label="$1"
+  local file="$2"
+  local sid="$3"
+  local pattern="$4"
+
+  if [[ ! -f "$file" ]]; then
+    log_error "Policy check failed ($label): file not found: $file"
+    exit 1
+  fi
+
+  local scope
+  scope="$(extract_policy_statement "$file" "$sid")"
+  assert_scoped_pattern "$label" "$file" "$pattern" "$scope"
+}
+
 assert_single_wildcard_exception() {
   local file="$1"
   local label="$2"
@@ -231,29 +321,49 @@ assert_single_wildcard_exception() {
   fi
 
   # Split the document into policy statements and allow at most one statement
-  # whose resources are "*", and only when that statement is the sanctioned
-  # action carrying the sanctioned condition key. Any additional wildcard, or a
-  # wildcard that migrates onto some other action, fails the gate.
-  if awk -v action="$sanctioned_action" -v cond="$sanctioned_condition" '
-    BEGIN { chunk = ""; wildcards = 0; bad = 0 }
-    function flush_chunk() {
-      if (chunk ~ /resources[ \t]*=[ \t]*\[[ \t]*"\*"/) {
+  # whose resource list contains "*", and only when that statement is the
+  # sanctioned action carrying the sanctioned condition. Any additional
+  # wildcard, or a wildcard that migrates onto some other action, fails.
+  #
+  # Whitespace inside each statement is collapsed before matching: a line
+  # oriented regex cannot see `resources = [` with the "*" element on the next
+  # line, which is ordinary HCL formatting and would otherwise slip past.
+  local findings
+  findings="$(awk -v action="$sanctioned_action" -v cond="$sanctioned_condition" '
+    function statement_sid(flat,   sid) {
+      sid = "<unnamed statement>"
+      if (match(flat, /sid[ ]*=[ ]*"[^"]+"/)) {
+        sid = substr(flat, RSTART, RLENGTH)
+        sub(/sid[ ]*=[ ]*"/, "", sid)
+        sub(/"$/, "", sid)
+      }
+      return sid
+    }
+    function flush_chunk(   flat, sid) {
+      flat = chunk
+      gsub(/[ \t\r\n]+/, " ", flat)
+      if (flat ~ /resources[ ]*=[ ]*\[[^]]*"\*"/) {
         wildcards++
-        if (index(chunk, action) == 0 || index(chunk, cond) == 0) {
-          bad = 1
+        sid = statement_sid(flat)
+        if (index(flat, action) == 0 || index(flat, cond) == 0) {
+          print "  " sid ": Resource \"*\" without " action " and " cond
+        } else if (wildcards > 1) {
+          print "  " sid ": additional Resource \"*\" grant"
         }
       }
       chunk = ""
     }
     /^  (dynamic "statement"|statement)[ \t]*\{/ { flush_chunk() }
     { chunk = chunk $0 "\n" }
-    END { flush_chunk(); exit !(bad == 0 && wildcards <= 1) }
-  ' "$file"; then
+    END { flush_chunk() }
+  ' "$file")"
+
+  if [[ -z "$findings" ]]; then
     return 0
   fi
 
   log_error "Policy check failed ($label): disallowed pattern found"
-  grep -En 'resources[[:space:]]*=[[:space:]]*\[[[:space:]]*"\*"' "$file" || true
+  printf '%s\n' "$findings"
   exit 1
 }
 
@@ -267,19 +377,37 @@ run_custom_policy_checks() {
   # trust, tagged lifecycle boundary, and the single sanctioned wildcard grant.
   local lambda_cert="$ROOT/examples/aws-cert/lambda-preview-cert.tf"
   assert_regex_absent '"ecr:SetRepositoryPolicy"|"lambda:UntagResource"|"ec2:' "$lambda_cert" "lambda-cert-no-extra-capabilities"
+
   # ecr:GetAuthorizationToken has no resource-level ARN form in AWS, so it is
   # the single sanctioned Resource "*" grant here and must stay region-scoped.
-  assert_regex_present 'variable[[:space:]]*=[[:space:]]*"aws:RequestedRegion"' "$lambda_cert" "lambda-cert-auth-token-region"
+  assert_regex_present_in_statement "lambda-cert-auth-token-region" "$lambda_cert" \
+    "EcrAuthorizationTokenGlobal" 'variable[[:space:]]*=[[:space:]]*"aws:RequestedRegion"'
   assert_single_wildcard_exception "$lambda_cert" "lambda-cert-no-global-resources" \
     'ecr:GetAuthorizationToken' 'aws:RequestedRegion'
-  assert_regex_present 'identifiers[[:space:]]*=[[:space:]]*\["lambda.amazonaws.com"\]' "$lambda_cert" "lambda-cert-service-trust"
-  assert_regex_present 'permissions_boundary[[:space:]]*=[[:space:]]*aws_iam_policy.lambda_preview_execution_boundary.arn' "$lambda_cert" "lambda-cert-execution-boundary"
-  assert_regex_present 'variable[[:space:]]*=[[:space:]]*"aws:RequestTag/honua-cert-run"' "$lambda_cert" "lambda-cert-required-run-tag"
-  assert_regex_present 'variable[[:space:]]*=[[:space:]]*"aws:ResourceTag/honua-purpose"' "$lambda_cert" "lambda-cert-tagged-lifecycle"
-  assert_regex_present 'variable[[:space:]]*=[[:space:]]*"iam:PassedToService"' "$lambda_cert" "lambda-cert-passrole-service"
-  assert_regex_present 'resources[[:space:]]*=[[:space:]]*\[aws_iam_role.lambda_preview_execution.arn\]' "$lambda_cert" "lambda-cert-passrole-resource"
-  assert_regex_present 'variable[[:space:]]*=[[:space:]]*"aws:SourceArn"' "$lambda_cert" "lambda-cert-image-pull-source"
-  assert_regex_present 'image_tag_mutability[[:space:]]*=[[:space:]]*"IMMUTABLE"' "$lambda_cert" "lambda-cert-immutable-images"
+
+  # Each guard below is scoped to the block or statement that must carry the
+  # invariant. The Lambda service principal and the purpose resource tag each
+  # appear twice in this file, so a file-wide match would let a removed trust
+  # or lifecycle condition pass on the strength of the unrelated copy.
+  assert_regex_present_in_block "lambda-cert-service-trust" "$lambda_cert" \
+    'data "aws_iam_policy_document" "lambda_preview_trust"' \
+    'identifiers[[:space:]]*=[[:space:]]*\["lambda.amazonaws.com"\]'
+  assert_regex_present_in_block "lambda-cert-execution-boundary" "$lambda_cert" \
+    'resource "aws_iam_role" "lambda_preview_execution"' \
+    'permissions_boundary[[:space:]]*=[[:space:]]*aws_iam_policy.lambda_preview_execution_boundary.arn'
+  assert_regex_present_in_block "lambda-cert-immutable-images" "$lambda_cert" \
+    'resource "aws_ecr_repository" "lambda_preview"' \
+    'image_tag_mutability[[:space:]]*=[[:space:]]*"IMMUTABLE"'
+  assert_regex_present_in_statement "lambda-cert-required-run-tag" "$lambda_cert" \
+    "CreateTaggedCertificationFunction" 'variable[[:space:]]*=[[:space:]]*"aws:RequestTag/honua-cert-run"'
+  assert_regex_present_in_statement "lambda-cert-tagged-lifecycle" "$lambda_cert" \
+    "InvokeAndDeleteTaggedCertificationFunction" 'variable[[:space:]]*=[[:space:]]*"aws:ResourceTag/honua-purpose"'
+  assert_regex_present_in_statement "lambda-cert-passrole-service" "$lambda_cert" \
+    "PassOnlyCertificationExecutionRole" 'variable[[:space:]]*=[[:space:]]*"iam:PassedToService"'
+  assert_regex_present_in_statement "lambda-cert-passrole-resource" "$lambda_cert" \
+    "PassOnlyCertificationExecutionRole" 'resources[[:space:]]*=[[:space:]]*\[aws_iam_role.lambda_preview_execution.arn\]'
+  assert_regex_present_in_statement "lambda-cert-image-pull-source" "$lambda_cert" \
+    "LambdaCertificationImagePull" 'variable[[:space:]]*=[[:space:]]*"aws:SourceArn"'
 
   local tag_files=(
     "$ROOT/modules/aws-ecs/variables.tf"

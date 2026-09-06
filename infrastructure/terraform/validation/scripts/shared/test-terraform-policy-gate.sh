@@ -350,6 +350,69 @@ assert_missing_property_detected 'lambda-cert-immutable-images' \
 assert_missing_property_detected 'lambda-cert-auth-token-region' \
   "$LAMBDA_CERT" 'aws:RequestedRegion'
 
+# A wildcard resource list split across lines is ordinary HCL formatting, and a
+# line-oriented regex cannot see it. The guard collapses whitespace per
+# statement; this proves the multiline form is still rejected.
+MULTILINE_WILDCARD="$(printf '  resources = [\n    %s%s%s\n  ]' "$Q" "$STAR" "$Q")"
+assert_violation_detected 'lambda-cert-no-global-resources' \
+  "$LAMBDA_CERT" "$MULTILINE_WILDCARD"
+
+# The presence guards must be scoped to the statement or block that carries the
+# invariant. The Lambda service principal and the purpose resource tag each
+# appear twice in the substrate, so deleting only the guarded copy must still
+# fail even though the unrelated copy remains and would satisfy a file-wide
+# match. assert_missing_property_detected deletes every matching line and so
+# cannot detect this; these cases delete one occurrence.
+delete_nth_match() {
+  local file="$1"
+  local pattern="$2"
+  local occurrence="$3"
+
+  awk -v pat="$pattern" -v n="$occurrence" '
+    $0 ~ pat { count++; if (count == n) next }
+    { print }
+  ' "$file" > "$file.scoped" && mv "$file.scoped" "$file"
+}
+
+assert_scoped_guard_detected() {
+  local label="$1"
+  local pattern="$2"
+  local occurrence="$3"
+
+  local fixture="$TMP_DIR/violation-scoped-$label-$occurrence"
+  rm -rf "$fixture"
+  cp -a "$FIXTURE_ROOT" "$fixture"
+
+  local target_path="$fixture/$LAMBDA_CERT"
+  local before after
+  before="$(grep -Ec "$pattern" "$target_path")"
+  delete_nth_match "$target_path" "$pattern" "$occurrence"
+  after="$(grep -Ec "$pattern" "$target_path")"
+
+  if [[ "$after" -ne $((before - 1)) || "$after" -lt 1 ]]; then
+    echo "[ERROR] Scoped test setup for '$label' did not leave a decoy match ($before -> $after)" >&2
+    exit 1
+  fi
+
+  run_gate "true" 0 0 0 "$fixture"
+  if [[ "$GATE_EXIT_CODE" -eq 0 ]]; then
+    echo "[ERROR] Policy gate accepted removal of occurrence $occurrence of '$pattern' ($label)" >&2
+    cat "$GATE_OUTPUT_FILE" >&2
+    exit 1
+  fi
+  assert_output_contains "Policy check failed \\($label\\): expected pattern not found"
+  rm -rf "$fixture"
+}
+
+# Occurrence 1 is the ECR repository policy principal, occurrence 2 the
+# execution-role trust the guard is actually about.
+assert_scoped_guard_detected 'lambda-cert-service-trust' \
+  'identifiers.*lambda[.]amazonaws[.]com' 2
+# Occurrence 1 is the function invoke/delete lifecycle condition, occurrence 2
+# the ECR mirror grant.
+assert_scoped_guard_detected 'lambda-cert-tagged-lifecycle' \
+  'aws:ResourceTag/honua-purpose' 1
+
 echo "[INFO] terraform-policy-gate Lambda certification guard tests passed"
 echo "[INFO] terraform-policy-gate governed-execution guard tests passed"
 echo "[INFO] terraform-policy-gate strict/non-strict regression tests passed"
