@@ -320,6 +320,31 @@ IAM_USER_RESOURCE="resource ${Q}aws_iam_user${Q} ${Q}smuggled${Q} {"
 assert_violation_detected 'exec-identity-no-iam-user' \
   'bootstrap/aws-exec-identity/main.tf' "$IAM_USER_RESOURCE"
 
+# Lambda certification's IAM boundary must fail closed when a property is
+# removed, and must reject a new global resource or repository-policy write.
+LAMBDA_CERT='examples/aws-cert/lambda-preview-cert.tf'
+assert_violation_detected 'lambda-cert-no-global-resources' \
+  "$LAMBDA_CERT" "  resources = [${Q}${STAR}${Q}]"
+assert_violation_detected 'lambda-cert-no-extra-capabilities' \
+  "$LAMBDA_CERT" "  actions = [${Q}ecr:SetRepositoryPolicy${Q}]"
+assert_missing_property_detected 'lambda-cert-service-trust' \
+  "$LAMBDA_CERT" 'identifiers.*lambda.amazonaws.com'
+assert_missing_property_detected 'lambda-cert-execution-boundary' \
+  "$LAMBDA_CERT" 'permissions_boundary ='
+assert_missing_property_detected 'lambda-cert-required-run-tag' \
+  "$LAMBDA_CERT" 'aws:RequestTag/honua-cert-run'
+assert_missing_property_detected 'lambda-cert-tagged-lifecycle' \
+  "$LAMBDA_CERT" 'aws:ResourceTag/honua-purpose'
+assert_missing_property_detected 'lambda-cert-passrole-service' \
+  "$LAMBDA_CERT" 'iam:PassedToService'
+assert_missing_property_detected 'lambda-cert-passrole-resource' \
+  "$LAMBDA_CERT" 'resources.*aws_iam_role.lambda_preview_execution.arn'
+assert_missing_property_detected 'lambda-cert-image-pull-source' \
+  "$LAMBDA_CERT" 'aws:SourceArn'
+assert_missing_property_detected 'lambda-cert-immutable-images' \
+  "$LAMBDA_CERT" 'image_tag_mutability'
+
+echo "[INFO] terraform-policy-gate Lambda certification guard tests passed"
 echo "[INFO] terraform-policy-gate governed-execution guard tests passed"
 echo "[INFO] terraform-policy-gate strict/non-strict regression tests passed"
 echo "[INFO] terraform-policy-gate custom security-guard negative tests passed"

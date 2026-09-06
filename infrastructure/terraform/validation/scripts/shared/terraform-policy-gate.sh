@@ -225,6 +225,20 @@ run_custom_policy_checks() {
   assert_regex_absent 'actions[[:space:]]*=[[:space:]]*\[[[:space:]]*"\*"[[:space:]]*\]' "$ROOT" "least-privilege-actions"
   assert_regex_absent 'Action"[[:space:]]*:[[:space:]]*"\*"' "$ROOT" "least-privilege-actions-json"
 
+  # release#282: the Lambda certification packet must preserve the explicit
+  # no-global-grants constraint, service trust and tagged lifecycle boundary.
+  local lambda_cert="$ROOT/examples/aws-cert/lambda-preview-cert.tf"
+  assert_regex_absent 'resources[[:space:]]*=[[:space:]]*\[[[:space:]]*"\*"' "$lambda_cert" "lambda-cert-no-global-resources"
+  assert_regex_absent '"ecr:GetAuthorizationToken"|"ecr:SetRepositoryPolicy"|"lambda:UntagResource"|"ec2:' "$lambda_cert" "lambda-cert-no-extra-capabilities"
+  assert_regex_present 'identifiers[[:space:]]*=[[:space:]]*\["lambda.amazonaws.com"\]' "$lambda_cert" "lambda-cert-service-trust"
+  assert_regex_present 'permissions_boundary[[:space:]]*=[[:space:]]*aws_iam_policy.lambda_preview_execution_boundary.arn' "$lambda_cert" "lambda-cert-execution-boundary"
+  assert_regex_present 'variable[[:space:]]*=[[:space:]]*"aws:RequestTag/honua-cert-run"' "$lambda_cert" "lambda-cert-required-run-tag"
+  assert_regex_present 'variable[[:space:]]*=[[:space:]]*"aws:ResourceTag/honua-purpose"' "$lambda_cert" "lambda-cert-tagged-lifecycle"
+  assert_regex_present 'variable[[:space:]]*=[[:space:]]*"iam:PassedToService"' "$lambda_cert" "lambda-cert-passrole-service"
+  assert_regex_present 'resources[[:space:]]*=[[:space:]]*\[aws_iam_role.lambda_preview_execution.arn\]' "$lambda_cert" "lambda-cert-passrole-resource"
+  assert_regex_present 'variable[[:space:]]*=[[:space:]]*"aws:SourceArn"' "$lambda_cert" "lambda-cert-image-pull-source"
+  assert_regex_present 'image_tag_mutability[[:space:]]*=[[:space:]]*"IMMUTABLE"' "$lambda_cert" "lambda-cert-immutable-images"
+
   local tag_files=(
     "$ROOT/modules/aws-ecs/variables.tf"
     "$ROOT/modules/aws-serverless/variables.tf"
