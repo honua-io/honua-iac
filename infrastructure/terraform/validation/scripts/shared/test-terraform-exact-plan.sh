@@ -818,6 +818,40 @@ LAST_LOG="$CASE/backend.log"
 expect_success "backend-identity: emits a document for a hardened backend"
 assert_schema "backend-identity: satisfies terraform-backend-identity.v1" \
   "$CASE/artifacts/backend.json" "$CONTRACTS/terraform-backend-identity.v1.schema.json"
+if python3 - "$CASE/artifacts/backend.json" \
+  "$CONTRACTS/terraform-backend-identity.v1.schema.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    document = json.load(handle)
+with open(sys.argv[2], encoding="utf-8") as handle:
+    schema = json.load(handle)
+
+try:
+    import jsonschema
+except ImportError:
+    # Match assert_schema's required-keys fallback on bare runners.
+    assert "resolved_config_digest" in document
+    del document["resolved_config_digest"]
+    missing = set(schema["required"]) - document.keys()
+    assert missing == {"resolved_config_digest"}, missing
+else:
+    validator = jsonschema.Draft202012Validator(schema)
+    validator.validate(document)
+    del document["resolved_config_digest"]
+    errors = list(validator.iter_errors(document))
+    assert len(errors) == 1, [error.message for error in errors]
+    assert errors[0].validator == "required"
+    assert errors[0].message == "'resolved_config_digest' is a required property"
+PY
+then
+  echo "[PASS] backend-identity: schema rejects an omitted resolved config digest"
+  PASS_COUNT=$((PASS_COUNT + 1))
+else
+  echo "[FAIL] backend-identity: schema must reject an omitted resolved config digest"
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+fi
 assert_json "backend-identity: emits account, region, bucket arn, key and digest" \
   "$CASE/artifacts/backend.json" \
   "doc['account']['account_id'] == '123456789012' and doc['location']['region'] == 'us-east-1' and doc['location']['bucket_arn'] and doc['location']['object_key'] and len(doc['backend_config_digest']) == 64"
