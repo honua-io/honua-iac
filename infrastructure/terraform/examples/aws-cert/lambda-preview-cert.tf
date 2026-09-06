@@ -283,3 +283,28 @@ resource "aws_iam_role_policy" "lambda_preview_certification" {
   role   = module.github_oidc.role_name
   policy = data.aws_iam_policy_document.lambda_preview_certification.json
 }
+
+# Function URL on the standing certification alias (release#282 bill, item 2):
+# the certification driver verifies REALAWS_CERT_LAMBDA_WRITE_BASE_URL against
+# `get-function-url-config --qualifier <alias>` before any write, so the write
+# target must be the alias's own URL, never the API Gateway or the demo.
+# NONE auth: the server authenticates every request itself with X-API-Key.
+resource "aws_lambda_function_url" "cert_alias" {
+  function_name      = module.honua.lambda_function_name
+  qualifier          = module.honua.lambda_alias_name
+  authorization_type = "NONE"
+}
+
+resource "aws_lambda_permission" "cert_alias_function_url" {
+  statement_id           = "AllowCertificationFunctionUrlInvoke"
+  action                 = "lambda:InvokeFunctionUrl"
+  function_name          = module.honua.lambda_function_name
+  qualifier              = module.honua.lambda_alias_name
+  principal              = "*"
+  function_url_auth_type = "NONE"
+}
+
+output "REALAWS_CERT_LAMBDA_WRITE_BASE_URL" {
+  description = "Function URL of the standing certification alias; set as the honua-server repository variable of the same name."
+  value       = aws_lambda_function_url.cert_alias.function_url
+}
