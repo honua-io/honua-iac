@@ -6,8 +6,8 @@
 # workspace, locking primitive, encryption/KMS reference, the backend access
 # role, and a canonical digest over all of it. It prints no credentials, no
 # tokens, and no Terraform state contents -- backend config keys that could
-# carry a secret are recorded as redacted key names only, which still moves the
-# digest when they change.
+# carry a secret are recorded as redacted key names only. A digest of the full
+# resolved configuration detects changes to redacted values too.
 #
 # honua-devops#147 binds an approval to `backend_config_digest`. A later apply
 # whose backend resolves to a different bucket, key, region, lock table, or role
@@ -112,6 +112,11 @@ import sys
 backend = json.loads(os.environ["HONUA_IAC_BACKEND_DOC"])
 identity = json.loads(os.environ["HONUA_IAC_IDENTITY_DOC"])
 
+# Use exactly the same backend binding as plan/apply. Presentation fields such
+# as Terraform version, caller identity, and posture are bound separately by
+# the plan and must not change the backend digest reported to its consumer.
+canonical = json.dumps(backend, sort_keys=True, separators=(",", ":")).encode("utf-8")
+backend_digest = hashlib.sha256(canonical).hexdigest()
 backend["account"] = {
     "account_id": (identity or {}).get("account_id"),
     "partition": (identity or {}).get("partition", "aws"),
@@ -119,11 +124,13 @@ backend["account"] = {
 backend["terraform_version"] = os.environ["HONUA_IAC_TF_VERSION"]
 backend["release_qualified"] = bool(
     backend["is_remote"] and backend["locking"]["kind"] != "none"
+    and os.environ["HONUA_IAC_ALLOW_LOCAL"] != "true"
+    and (identity or {}).get("credential_kind") == "sts-assumed-role"
+    and (identity or {}).get("evidence_mode") == "live"
 )
 backend["local_state_allowed"] = os.environ["HONUA_IAC_ALLOW_LOCAL"] == "true"
 
-canonical = json.dumps(backend, sort_keys=True, separators=(",", ":")).encode("utf-8")
-backend["backend_config_digest"] = hashlib.sha256(canonical).hexdigest()
+backend["backend_config_digest"] = backend_digest
 
 json.dump(backend, sys.stdout, sort_keys=True, separators=(",", ":"), indent=2)
 sys.stdout.write("\n")

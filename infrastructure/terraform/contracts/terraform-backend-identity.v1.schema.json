@@ -70,6 +70,7 @@
       }
     },
     "non_secret_config": { "type": "object" },
+    "resolved_config_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "redacted_config_keys": { "type": "array", "items": { "type": "string" } },
     "release_qualified": { "type": "boolean" },
     "local_state_allowed": { "type": "boolean" },

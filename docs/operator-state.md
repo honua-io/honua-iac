@@ -131,6 +131,26 @@ posture, encryption/KMS reference, backend access role, and the canonical
 `backend_config_digest`. Credential-bearing backend keys are listed by name under
 `redacted_config_keys` and never by value.
 
+The S3 configuration must explicitly name its bucket, object key and region,
+set `encrypt = true`, and configure locking. Credentials belong in the
+short-lived credential chain, never in backend configuration. The governed
+wrappers refuse persisted access keys, secret keys, session tokens, web identity
+tokens and SSE customer keys before planning or applying.
+
+Nested role settings publish only `role_arn`; session names, external IDs,
+session policies/tags and endpoint configuration are redacted. The
+`resolved_config_digest` hashes the entire resolved configuration, including
+redacted values, so changing only an external ID still invalidates a saved plan.
+The exported `backend_config_digest` is identical to the binding in the plan
+metadata; caller identity, toolchain and qualification fields are bound
+separately. Offline or identity-free exports and disposable-local overrides
+always report `release_qualified = false`. Existing plans made with the earlier
+digest rules must be regenerated and approved again.
+
+These checks validate configured posture. They do not prove live bucket
+versioning, IAM resource boundaries, lock contention or successful deployment;
+those remain the disposable-account evidence required by #118 and #149.
+
 `scripts/terraform-exact-plan.sh` and `scripts/terraform-exact-apply.sh` produce
 the approvable plan metadata and the post-execution receipt. The full field list,
 digest rules, and fail-closed matrix are in
