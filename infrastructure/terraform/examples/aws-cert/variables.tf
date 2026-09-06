@@ -209,6 +209,7 @@ variable "existing_oidc_provider_arn" {
   type        = string
   default     = ""
 }
+
 variable "lambda_preview_image_retention_count" {
   description = "Number of newest candidate-tagged Lambda certification images to retain in ECR."
   type        = number
