@@ -325,3 +325,138 @@ session) to drop it to $0.
 - **Budget email subscriptions** require each subscriber to confirm via the
   AWS-sent email before alerts deliver.
 - Do not commit `terraform.tfvars`. Validated in CI; CI never runs `apply`.
+
+## Lambda GA certification substrate (release#282, ruling A)
+
+`lambda-preview-cert.tf` adds the standing substrate for the server's
+`lambda-preview-certification.yml` / `certify-lambda-preview.sh` lane. The
+historical `preview` names are retained for compatibility; Lambda is a 2026.1
+GA target. The inspected server revision is
+`2ee4eb4eca080160cad4b2f4ba97cb0c370dc17d`.
+
+**ECR login grant (coordinator ruling):** `aws ecr get-login-password` needs
+`ecr:GetAuthorizationToken`, and [AWS exposes that action only on `Resource: "*"`](https://docs.aws.amazon.com/service-authorization/latest/reference/list_ecr.html)
+— it is registry-wide and has no repository ARN form. It is granted here as its
+own statement, confined to the certification region by `aws:RequestedRegion`.
+The wildcard is not a widening of repository access: the token only
+authenticates the Docker client, and every repository operation stays bound to
+the certification repository ARN by `MirrorAndVerifyCertificationImage`. The
+policy gate permits exactly this one wildcard statement and fails on any other.
+No trust policy is widened and no OIDC subject changes.
+
+The image repository has the exact script-required name
+`honua-cert-cert-lambda-preview`, immutable tags, scan on push, AES256 encryption,
+and a lifecycle policy retaining the newest `lambda_preview_image_retention_count`
+(default **10**, positive integer) images tagged `candidate-*`. The script derives
+tags from the revision and digest and reuses existing immutable images. ECR
+expires older candidates asynchronously; retain enough for active certification
+runs. The runner cannot delete images or edit the repository policy.
+
+The lane creates `honua-certrun-lambda-<run-id>-<attempt>` with the two tags
+`honua-cert-run=<run-id>-<attempt>` and
+`honua-purpose=lambda-preview-certification`, invokes `GET /healthz/live`, checks
+CloudWatch evidence, and deletes its function and log group. The image remains
+for reuse/evidence until lifecycle expiration. These ephemeral resources are
+owned by the script and are not Terraform resources. The lane does **not** pass
+`--vpc-config`; the execution role therefore has no VPC/ENI permissions.
+
+### Static plan summary — operator must confirm against governed state
+
+This is a source-derived delta against the existing certification stack, **not
+an executed AWS plan**. No AWS credentials, state, plan, or apply are used for
+local validation. Expected delta: **7 creates, 0 changes, 0 destroys**, assuming
+these addresses are absent and the existing stack has no unrelated drift:
+
+| New Terraform resource | Purpose |
+|---|---|
+| `aws_ecr_repository.lambda_preview` | Immutable, scanned image repository |
+| `aws_ecr_lifecycle_policy.lambda_preview` | Retain newest N candidate images |
+| `aws_ecr_repository_policy.lambda_preview` | Lambda service image retrieval |
+| `aws_iam_policy.lambda_preview_execution_boundary` | Bound execution to lane log streams |
+| `aws_iam_role.lambda_preview_execution` | Lambda-service-only execution identity |
+| `aws_iam_role_policy_attachment.lambda_preview_basic_execution` | Attach AWSLambdaBasicExecutionRole |
+| `aws_iam_role_policy.lambda_preview_certification` | Add scoped permissions to existing certification OIDC role |
+
+IAM notation below contains no account identifiers: `F` =
+`arn:<partition>:lambda:<region>:<account>:function:honua-certrun-lambda-*`;
+`L` = `arn:<partition>:logs:<region>:<account>:log-group:/aws/lambda/honua-certrun-lambda-*`;
+`E` = the new repository ARN; `X` = the new execution-role ARN. Account, region,
+and partition are Terraform-derived. All new statements are Allow unless marked
+Deny. No OIDC subject or provider changes are introduced.
+
+| Policy / statement | Actions | Resources | Conditions / principal |
+|---|---|---|---|
+| Execution trust / LambdaServiceOnly | `sts:AssumeRole` | Implicit attached role X (trust policy has no Resource field) | Only service `lambda.amazonaws.com`; no conditions |
+| AWSLambdaBasicExecutionRole (AWS-managed) | `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents` | `*` in AWS-managed policy | None; effective permissions intersect with the boundary below |
+| Execution boundary / CertificationLogStreamsOnly | `logs:CreateLogStream`, `logs:PutLogEvents` | `L:log-stream:*` | None; runtime cannot create groups or access other AWS services |
+| ECR policy / LambdaCertificationImagePull | `ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer` | E | Service `lambda.amazonaws.com`; StringEquals `aws:SourceAccount=<current account>`; ArnLike `aws:SourceArn=F` |
+| OIDC / PreserveCertificationRun (Deny) | `lambda:TagResource` | F | Null `aws:ResourceTag/honua-cert-run=false` AND StringNotEquals request run tag to existing resource run tag |
+| OIDC / PreserveCertificationPurpose (Deny) | `lambda:TagResource` | F | Null `aws:ResourceTag/honua-purpose=false` AND StringNotEquals request purpose tag to existing resource purpose tag |
+| OIDC / CreateTaggedCertificationFunction | `lambda:CreateFunction`, `lambda:TagResource` | F | StringEquals request `honua-purpose=lambda-preview-certification`; StringLike request `honua-cert-run=?*-?*`; ForAllValues:StringEquals `aws:TagKeys=[honua-cert-run,honua-purpose]` |
+| OIDC / ObserveCertificationFunction | `lambda:GetFunction`, `lambda:ListTags` | F | None (collision detection, waiters, ownership inspection, absence verification) |
+| OIDC / InvokeAndDeleteTaggedCertificationFunction | `lambda:InvokeFunction`, `lambda:DeleteFunction` | F | StringEquals resource `honua-purpose=lambda-preview-certification`; StringLike resource `honua-cert-run=?*-?*` |
+| OIDC / PassOnlyCertificationExecutionRole | `iam:PassRole` | X | StringEquals `iam:PassedToService=lambda.amazonaws.com` |
+| OIDC / EcrAuthorizationTokenGlobal | `ecr:GetAuthorizationToken` | `*` (AWS supports no resource-level form) | StringEquals `aws:RequestedRegion=<var.region>`; token authenticates only, repository access still bound to E below |
+| OIDC / MirrorAndVerifyCertificationImage | `ecr:DescribeImages`, `ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer`, `ecr:GetRepositoryPolicy`, `ecr:BatchCheckLayerAvailability`, `ecr:InitiateLayerUpload`, `ecr:UploadLayerPart`, `ecr:CompleteLayerUpload`, `ecr:PutImage` | E | StringEquals resource `honua-purpose=lambda-preview-certification` |
+| OIDC / CertificationLogGroupLifecycle | `logs:CreateLogGroup`, `logs:PutRetentionPolicy`, `logs:FilterLogEvents`, `logs:DeleteLogGroup` | `L:*` | None (the script creates untagged log groups) |
+
+The [managed basic policy](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AWSLambdaBasicExecutionRole.html)
+is explicitly requested by ruling A; its boundary permits only writes to the
+precreated lane log streams. The [repository service policy](https://docs.aws.amazon.com/lambda/latest/dg/images-create.html#images-permissions)
+is installed by Terraform, so the runner does not need `ecr:SetRepositoryPolicy`.
+`logs:DescribeLogGroups` is already allowed by the existing component's
+`CloudWatchReadGlobal`; no global read grant is added. The pre-existing policy
+statements remain unchanged and are not part of the incremental IAM table.
+
+IAM enforces namespace plus purpose/run tags, not exact session ownership: the
+workflow uses a fixed OIDC role-session name without run-specific session tags.
+The script checks the exact run tag before function deletion and checks log-name
+ownership before deleting the untagged log group. Existing run/purpose tags
+cannot be changed through the new tagging grant. The run-tag pattern requires
+nonempty components around a hyphen; numeric validation belongs to GitHub's run
+identifiers. A caller with this role can still operate on other correctly tagged
+functions in this dedicated lane namespace.
+
+### Operator handoff
+
+Apply is **operator-run only**, after publishing a fingerprint-only plan summary
+to the release evidence thread and reviewing the exact saved plan against the
+existing governed backend. Confirm the seven additions above and **no destroys**;
+stop on any unexpected changes, replacements, or trust differences. Do not create
+a new empty state for this existing stack. No local validation command applies
+infrastructure. Do not treat this packet as a passing GA receipt; it is the
+substrate the lane needs, not a certification result.
+
+After the reviewed operator apply, set these **repository variables**:
+
+| Terraform output | Repository variable | Workflow/script environment |
+|---|---|---|
+| `REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN` | `REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN` | `HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN` |
+| `REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY` | `REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY` | `HONUA_LAMBDA_PREVIEW_REPOSITORY` |
+| `github_oidc_role_arn` (existing) | `REALAWS_CERT_ROLE_ARN` (existing) | OIDC role-to-assume |
+
+Both outputs are named for the repository variable they populate. The workflow
+reads `vars.REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY` and
+`vars.REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN`, then passes them to the
+script as `HONUA_LAMBDA_PREVIEW_REPOSITORY` and
+`HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN`; do not create repository variables
+under the script names. Check that `cert` Environment variables do not override
+these repository values. Keep the existing `REALAWS_CERT_REGION` aligned with
+the stack — the ECR authorization-token grant is conditioned on that region.
+
+```bash
+terraform -chdir=infrastructure/terraform/examples/aws-cert output -raw \
+  REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN |
+  gh variable set REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN --repo honua-io/honua-server
+terraform -chdir=infrastructure/terraform/examples/aws-cert output -raw \
+  REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY |
+  gh variable set REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY --repo honua-io/honua-server
+```
+
+Run without shell tracing. Outputs are piped directly to GitHub; publish only
+fingerprints in evidence, never raw account identifiers, ARNs/URIs, or state.
+Local checks are `terraform fmt -check -recursive infrastructure/terraform`,
+`terraform init -backend=false -input=false` followed by `terraform validate`
+in this root, and the existing
+`infrastructure/terraform/validation/scripts/shared/test-terraform-policy-gate.sh`.
+The policy-gate tests include negative mutations for this substrate's IAM guards.

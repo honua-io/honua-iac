@@ -209,3 +209,14 @@ variable "existing_oidc_provider_arn" {
   type        = string
   default     = ""
 }
+
+variable "lambda_preview_image_retention_count" {
+  description = "Number of newest candidate-tagged Lambda certification images to retain in ECR."
+  type        = number
+  default     = 10
+
+  validation {
+    condition     = var.lambda_preview_image_retention_count >= 1 && floor(var.lambda_preview_image_retention_count) == var.lambda_preview_image_retention_count
+    error_message = "lambda_preview_image_retention_count must be a positive integer."
+  }
+}

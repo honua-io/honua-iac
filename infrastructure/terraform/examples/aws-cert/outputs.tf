@@ -116,3 +116,13 @@ output "budget_sns_topic_arn" {
   description = "SNS topic ARN that receives the monthly budget threshold notifications."
   value       = aws_sns_topic.budget.arn
 }
+
+output "REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN" {
+  description = "Set the identically named honua-server repository variable from this execution-role ARN."
+  value       = aws_iam_role.lambda_preview_execution.arn
+}
+
+output "REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY" {
+  description = "Set the identically named honua-server repository variable from this ECR URI; the workflow passes it to the script as HONUA_LAMBDA_PREVIEW_REPOSITORY."
+  value       = aws_ecr_repository.lambda_preview.repository_url
+}

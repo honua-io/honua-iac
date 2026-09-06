@@ -320,6 +320,100 @@ IAM_USER_RESOURCE="resource ${Q}aws_iam_user${Q} ${Q}smuggled${Q} {"
 assert_violation_detected 'exec-identity-no-iam-user' \
   'bootstrap/aws-exec-identity/main.tf' "$IAM_USER_RESOURCE"
 
+# Lambda certification's IAM boundary must fail closed when a property is
+# removed, and must reject a new global resource or repository-policy write.
+LAMBDA_CERT='examples/aws-cert/lambda-preview-cert.tf'
+assert_violation_detected 'lambda-cert-no-global-resources' \
+  "$LAMBDA_CERT" "  resources = [${Q}${STAR}${Q}]"
+assert_violation_detected 'lambda-cert-no-extra-capabilities' \
+  "$LAMBDA_CERT" "  actions = [${Q}ecr:SetRepositoryPolicy${Q}]"
+assert_missing_property_detected 'lambda-cert-service-trust' \
+  "$LAMBDA_CERT" 'identifiers.*lambda.amazonaws.com'
+assert_missing_property_detected 'lambda-cert-execution-boundary' \
+  "$LAMBDA_CERT" 'permissions_boundary ='
+assert_missing_property_detected 'lambda-cert-required-run-tag' \
+  "$LAMBDA_CERT" 'aws:RequestTag/honua-cert-run'
+assert_missing_property_detected 'lambda-cert-tagged-lifecycle' \
+  "$LAMBDA_CERT" 'aws:ResourceTag/honua-purpose'
+assert_missing_property_detected 'lambda-cert-passrole-service' \
+  "$LAMBDA_CERT" 'iam:PassedToService'
+assert_missing_property_detected 'lambda-cert-passrole-resource' \
+  "$LAMBDA_CERT" 'resources.*aws_iam_role.lambda_preview_execution.arn'
+assert_missing_property_detected 'lambda-cert-image-pull-source' \
+  "$LAMBDA_CERT" 'aws:SourceArn'
+assert_missing_property_detected 'lambda-cert-immutable-images' \
+  "$LAMBDA_CERT" 'image_tag_mutability'
+
+# ecr:GetAuthorizationToken is the one action AWS exposes only on Resource "*".
+# It is tolerated as a single statement, but only while it stays confined to the
+# certification region; dropping that condition must fail the gate.
+assert_missing_property_detected 'lambda-cert-auth-token-region' \
+  "$LAMBDA_CERT" 'aws:RequestedRegion'
+
+# A wildcard resource list split across lines is ordinary HCL formatting, and a
+# line-oriented regex cannot see it. The guard collapses whitespace per
+# statement; this proves the multiline form is still rejected.
+MULTILINE_WILDCARD="$(printf '  resources = [\n    %s%s%s\n  ]' "$Q" "$STAR" "$Q")"
+assert_violation_detected 'lambda-cert-no-global-resources' \
+  "$LAMBDA_CERT" "$MULTILINE_WILDCARD"
+
+# The presence guards must be scoped to the statement or block that carries the
+# invariant. The Lambda service principal and the purpose resource tag each
+# appear twice in the substrate, so deleting only the guarded copy must still
+# fail even though the unrelated copy remains and would satisfy a file-wide
+# match. assert_missing_property_detected deletes every matching line and so
+# cannot detect this; these cases delete one occurrence.
+delete_nth_match() {
+  local file="$1"
+  local pattern="$2"
+  local occurrence="$3"
+
+  awk -v pat="$pattern" -v n="$occurrence" '
+    $0 ~ pat { count++; if (count == n) next }
+    { print }
+  ' "$file" > "$file.scoped" && mv "$file.scoped" "$file"
+}
+
+assert_scoped_guard_detected() {
+  local label="$1"
+  local pattern="$2"
+  local occurrence="$3"
+
+  local fixture="$TMP_DIR/violation-scoped-$label-$occurrence"
+  rm -rf "$fixture"
+  cp -a "$FIXTURE_ROOT" "$fixture"
+
+  local target_path="$fixture/$LAMBDA_CERT"
+  local before after
+  before="$(grep -Ec "$pattern" "$target_path")"
+  delete_nth_match "$target_path" "$pattern" "$occurrence"
+  after="$(grep -Ec "$pattern" "$target_path")"
+
+  if [[ "$after" -ne $((before - 1)) || "$after" -lt 1 ]]; then
+    echo "[ERROR] Scoped test setup for '$label' did not leave a decoy match ($before -> $after)" >&2
+    exit 1
+  fi
+
+  run_gate "true" 0 0 0 "$fixture"
+  if [[ "$GATE_EXIT_CODE" -eq 0 ]]; then
+    echo "[ERROR] Policy gate accepted removal of occurrence $occurrence of '$pattern' ($label)" >&2
+    cat "$GATE_OUTPUT_FILE" >&2
+    exit 1
+  fi
+  assert_output_contains "Policy check failed \\($label\\): expected pattern not found"
+  rm -rf "$fixture"
+}
+
+# Occurrence 1 is the ECR repository policy principal, occurrence 2 the
+# execution-role trust the guard is actually about.
+assert_scoped_guard_detected 'lambda-cert-service-trust' \
+  'identifiers.*lambda[.]amazonaws[.]com' 2
+# Occurrence 1 is the function invoke/delete lifecycle condition, occurrence 2
+# the ECR mirror grant.
+assert_scoped_guard_detected 'lambda-cert-tagged-lifecycle' \
+  'aws:ResourceTag/honua-purpose' 1
+
+echo "[INFO] terraform-policy-gate Lambda certification guard tests passed"
 echo "[INFO] terraform-policy-gate governed-execution guard tests passed"
 echo "[INFO] terraform-policy-gate strict/non-strict regression tests passed"
 echo "[INFO] terraform-policy-gate custom security-guard negative tests passed"
