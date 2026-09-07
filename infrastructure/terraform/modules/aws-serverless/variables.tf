@@ -361,6 +361,12 @@ variable "redis_auth_token" {
   }
 }
 
+variable "additional_allowed_hosts" {
+  description = "Extra host patterns the server accepts besides the API Gateway domain (HostValidation__AllowedHosts__N), e.g. \"*.lambda-url.<region>.on.aws\" when a Function URL fronts the alias."
+  type        = list(string)
+  default     = []
+}
+
 variable "redis_enabled" {
   description = "Provision Redis (ElastiCache) for multi-node mode."
   type        = bool

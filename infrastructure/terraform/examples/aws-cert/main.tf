@@ -148,6 +148,10 @@ module "honua" {
   db_multi_az          = false
   db_apply_immediately = true
   redis_enabled        = false
+  # The certification write target is the alias Function URL (lambda-preview-cert.tf);
+  # the server's host validation must accept that host or every request answers
+  # 400 "Invalid Host header" (live certification run 16, 2026-09-07).
+  additional_allowed_hosts = ["*.lambda-url.${var.region}.on.aws"]
 
   log_retention_days = 30
 
