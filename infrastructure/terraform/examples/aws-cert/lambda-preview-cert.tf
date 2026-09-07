@@ -261,6 +261,21 @@ data "aws_iam_policy_document" "lambda_preview_certification" {
     resources = ["${module.honua.lambda_function_arn}:*"]
   }
 
+  # Creating a VPC-attached function makes Lambda validate the subnets and
+  # security groups with the CALLER's credentials (AccessDeniedException "denied
+  # by EC2", eighth live run 2026-09-07). Read-only Describe actions take no
+  # resource ARN.
+  statement {
+    sid = "CertificationVpcDescribe"
+    actions = [
+      "ec2:DescribeSubnets",
+      "ec2:DescribeSecurityGroups",
+      "ec2:DescribeVpcs",
+      "ec2:DescribeNetworkInterfaces",
+    ]
+    resources = ["*"]
+  }
+
   statement {
     sid       = "PassOnlyCertificationExecutionRole"
     actions   = ["iam:PassRole"]

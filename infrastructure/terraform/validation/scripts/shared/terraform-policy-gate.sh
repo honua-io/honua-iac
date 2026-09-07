@@ -379,22 +379,29 @@ run_custom_policy_checks() {
   # ec2 is allowed in exactly one place: the execution-role boundary statement
   # that lets Lambda manage the ENIs of the VPC-attached certification function
   # (the six AWSLambdaVPCAccessExecutionRole actions, nothing else).
-  local eni_stmt
-  eni_stmt="$(extract_policy_statement "$lambda_cert" "CertificationVpcEni")"
-  if [ -z "$eni_stmt" ]; then
-    echo "[ERROR] Policy check failed (lambda-cert-vpc-eni-statement): expected pattern not found" >&2; echo "  CertificationVpcEni statement missing from $lambda_cert" >&2
-    exit 1
-  fi
-  local eni_extra
-  eni_extra="$(printf '%s' "$eni_stmt" | grep -oE '"ec2:[A-Za-z]+"' | grep -vE '^"ec2:(CreateNetworkInterface|DescribeNetworkInterfaces|DescribeSubnets|DeleteNetworkInterface|AssignPrivateIpAddresses|UnassignPrivateIpAddresses)"$' || true)"
-  if [ -n "$eni_extra" ]; then
-    echo "[ERROR] Policy check failed (lambda-cert-vpc-eni-allowlist): disallowed pattern found" >&2; echo "  unexpected ec2 action(s) in CertificationVpcEni: ${eni_extra//$'\n'/ }" >&2
-    exit 1
-  fi
+  # Two sanctioned ec2 statements, each with its own action allowlist: the
+  # execution-role boundary's ENI management and the caller's VPC describes.
+  local vpc_sid vpc_allow vpc_stmt vpc_extra
+  for vpc_sid in CertificationVpcEni CertificationVpcDescribe; do
+    case "$vpc_sid" in
+      CertificationVpcEni) vpc_allow='CreateNetworkInterface|DescribeNetworkInterfaces|DescribeSubnets|DeleteNetworkInterface|AssignPrivateIpAddresses|UnassignPrivateIpAddresses' ;;
+      CertificationVpcDescribe) vpc_allow='DescribeSubnets|DescribeSecurityGroups|DescribeVpcs|DescribeNetworkInterfaces' ;;
+    esac
+    vpc_stmt="$(extract_policy_statement "$lambda_cert" "$vpc_sid")"
+    if [ -z "$vpc_stmt" ]; then
+      echo "[ERROR] Policy check failed (lambda-cert-vpc-eni-statement): expected pattern not found" >&2; echo "  ${vpc_sid} statement missing from $lambda_cert" >&2
+      exit 1
+    fi
+    vpc_extra="$(printf '%s' "$vpc_stmt" | grep -oE '"ec2:[A-Za-z]+"' | grep -vE "^\"ec2:(${vpc_allow})\"\$" || true)"
+    if [ -n "$vpc_extra" ]; then
+      echo "[ERROR] Policy check failed (lambda-cert-vpc-eni-allowlist): disallowed pattern found" >&2; echo "  unexpected ec2 action(s) in ${vpc_sid}: ${vpc_extra//$'\n'/ }" >&2
+      exit 1
+    fi
+  done
   local lambda_cert_no_eni
   lambda_cert_no_eni="$(mktemp)"
   awk '
-    function flush_chunk() { if (chunk !~ /sid[ \t]*=[ \t]*"CertificationVpcEni"/) printf "%s", chunk; chunk = "" }
+    function flush_chunk() { if (chunk !~ /sid[ \t]*=[ \t]*"(CertificationVpcEni|CertificationVpcDescribe)"/) printf "%s", chunk; chunk = "" }
     /^  (dynamic "statement"|statement)[ \t]*\{/ { flush_chunk() }
     { chunk = chunk $0 "\n" }
     END { flush_chunk() }

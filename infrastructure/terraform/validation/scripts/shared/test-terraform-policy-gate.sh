@@ -335,6 +335,15 @@ assert_missing_property_detected 'lambda-cert-vpc-eni-statement' \
 eni_fixture="$TMP_DIR/violation-lambda-cert-vpc-eni-allowlist"
 rm -rf "$eni_fixture"; cp -a "$FIXTURE_ROOT" "$eni_fixture"
 sed -i 's|"ec2:UnassignPrivateIpAddresses",|"ec2:UnassignPrivateIpAddresses",\n      "ec2:RunInstances",|' "$eni_fixture/$LAMBDA_CERT"
+# ...and inside the caller's describe statement.
+desc_fixture="$TMP_DIR/violation-lambda-cert-vpc-describe-allowlist"
+rm -rf "$desc_fixture"; cp -a "$FIXTURE_ROOT" "$desc_fixture"
+sed -i 's|"ec2:DescribeVpcs",|"ec2:DescribeVpcs",\n      "ec2:AuthorizeSecurityGroupIngress",|' "$desc_fixture/$LAMBDA_CERT"
+run_gate "true" 0 0 0 "$desc_fixture"
+if [[ "$GATE_EXIT_CODE" -eq 0 ]]; then
+  echo "[ERROR] Policy gate accepted an extra ec2 action inside CertificationVpcDescribe" >&2
+  exit 1
+fi
 run_gate "true" 0 0 0 "$eni_fixture"
 if [[ "$GATE_EXIT_CODE" -eq 0 ]]; then
   echo "[ERROR] Policy gate accepted an extra ec2 action inside CertificationVpcEni" >&2
