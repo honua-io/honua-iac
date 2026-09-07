@@ -220,3 +220,49 @@ variable "lambda_preview_image_retention_count" {
     error_message = "lambda_preview_image_retention_count must be a positive integer."
   }
 }
+
+###############################################################################
+# Certification serving fixture (release#282).
+#
+# The Lambda GA certification lane's serving smoke asserts ten named rows on
+# `test_service/0` and writes its run-owned row to the scratch layer
+# `test_service/10`, so the cert PostGIS must already carry honua-server's
+# client-compat snapshot (tests/seed/client-compat-v1.sql). The database is
+# reachable only from inside the VPC, so the seed is applied through the
+# in-VPC postgis-bootstrap Lambda instead of by hand from an operator shell —
+# which is what makes it a recorded, sha-pinned apply step rather than an
+# unrecorded one. Leave both empty to skip fixture seeding entirely.
+###############################################################################
+
+variable "cert_fixture_seed_url" {
+  description = "HTTPS URL of the certification serving fixture SQL, pinned to an immutable commit (e.g. https://raw.githubusercontent.com/honua-io/honua-server/<40-hex sha>/tests/seed/client-compat-v1.sql). Empty disables fixture seeding."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.cert_fixture_seed_url == "" || startswith(var.cert_fixture_seed_url, "https://")
+    error_message = "cert_fixture_seed_url must be an https URL (the bootstrap Lambda refuses any other scheme)."
+  }
+
+  # A raw.githubusercontent.com URL carrying a branch name rather than a commit
+  # sha is exactly the unrecorded apply this variable exists to prevent: the
+  # bytes behind it change without the Terraform input changing.
+  validation {
+    condition = (
+      !startswith(var.cert_fixture_seed_url, "https://raw.githubusercontent.com/") ||
+      can(regex("^https://raw\\.githubusercontent\\.com/[^/]+/[^/]+/[0-9a-f]{40}/", var.cert_fixture_seed_url))
+    )
+    error_message = "A raw.githubusercontent.com cert_fixture_seed_url must be pinned to a 40-hex commit sha, not a branch or tag."
+  }
+}
+
+variable "cert_fixture_seed_sha256" {
+  description = "Lowercase hex sha256 of the bytes at cert_fixture_seed_url. The bootstrap Lambda refuses to apply anything else, and changing it re-runs the seed."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.cert_fixture_seed_sha256 == "" || can(regex("^[0-9a-f]{64}$", var.cert_fixture_seed_sha256))
+    error_message = "cert_fixture_seed_sha256 must be 64 lowercase hex characters."
+  }
+}

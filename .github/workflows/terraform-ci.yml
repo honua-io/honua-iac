@@ -223,6 +223,14 @@ jobs:
         shell: bash
         run: ./infrastructure/terraform/validation/scripts/shared/test-backend-examples.sh
 
+      # The aws-cert postgis-bootstrap Lambda applies the certification serving
+      # fixture as one transaction, so its SQL splitter and sha256 verification
+      # decide whether a 52 KB seed lands intact. Stdlib-only: no zip, no
+      # database, no credentials. See examples/aws-cert/README.md.
+      - name: PostGIS bootstrap handler unit tests (SQL splitter, script verification)
+        shell: bash
+        run: python3 infrastructure/terraform/examples/aws-cert/postgis-bootstrap/test_handler.py
+
       - name: Multi-node topology contract tests
         shell: bash
         run: |

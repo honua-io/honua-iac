@@ -7,9 +7,13 @@ infrastructure/terraform/**/backend.tf
 **/*.tfstate
 **/*.tfstate.*
 **/*.tfplan
-# Apply-time build artifacts for the aws-demo PostGIS bootstrap Lambda.
+# Apply-time build artifacts for the aws-demo/aws-cert PostGIS bootstrap Lambda,
+# and the bytecode cache from running its handler unit tests.
 infrastructure/terraform/examples/aws-demo/postgis-bootstrap/build/
 infrastructure/terraform/examples/aws-demo/postgis-bootstrap/bootstrap.zip
+infrastructure/terraform/examples/aws-cert/postgis-bootstrap/build/
+infrastructure/terraform/examples/aws-cert/postgis-bootstrap/bootstrap.zip
+**/__pycache__/
 infrastructure/terraform/internal/gtm-forms-router/build/
 scripts/tf-secrets.local.sh
 scripts/tf-pass-insert.local.sh
