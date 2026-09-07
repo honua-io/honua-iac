@@ -235,7 +235,7 @@ variable "lambda_preview_image_retention_count" {
 ###############################################################################
 
 variable "cert_fixture_seed_url" {
-  description = "HTTPS URL of the certification serving fixture SQL, pinned to an immutable commit (e.g. https://raw.githubusercontent.com/honua-io/honua-server/<40-hex sha>/tests/seed/client-compat-v1.sql). Empty disables fixture seeding for future applies; it does not remove a fixture already committed to the database."
+  description = "HTTPS URL of the certification serving fixture SQL, pinned to an immutable commit (e.g. https://raw.githubusercontent.com/honua-io/honua-server/<40-hex sha>/tests/seed/client-compat-v1.sql). Empty means no fixture has been pinned. To stop seeding a stack that has already been seeded, set cert_fixture_seed_enabled = false and leave this set: emptying it discards the record of what the database carries, and neither spelling removes a fixture already committed to the database."
   type        = string
   default     = ""
 
@@ -272,4 +272,18 @@ variable "cert_fixture_seed_sha256" {
     condition     = var.cert_fixture_seed_sha256 == "" || can(regex("^[0-9a-f]{64}$", var.cert_fixture_seed_sha256))
     error_message = "cert_fixture_seed_sha256 must be 64 lowercase hex characters."
   }
+}
+
+# Disabling seeding and forgetting what was seeded are different acts, and
+# Terraform can only durably record the second one here: destroying the
+# invocation performs no API call, so it cannot undo SQL already committed to
+# RDS, and a resource that has left the configuration keeps no state to read
+# back. The pinned inputs are therefore the record. Turning this off stops the
+# stack re-applying the fixture while `cert_fixture_seed_url` and
+# `cert_fixture_seed_sha256` stay set, so `cert_fixture_seed_source` still names
+# the revision the database carries.
+variable "cert_fixture_seed_enabled" {
+  description = "Whether this apply invokes the certification fixture seed. Set false to stop seeding a stack that has already been seeded while keeping the pinned URL and digest — the database still carries the last fixture applied, and cert_fixture_seed_source keeps naming it. Seeding is already off whenever cert_fixture_seed_url is empty."
+  type        = bool
+  default     = true
 }

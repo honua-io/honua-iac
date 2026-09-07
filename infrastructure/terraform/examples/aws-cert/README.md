@@ -529,18 +529,34 @@ this cert database carries:
 |---|---|
 | `cert_fixture_seed_applied` | `url`, verified `sha256`, `bytes`, `committed`, `statement_count`, `rows_affected` — `null` when seeding is disabled |
 | `cert_fixture_seed_result` | The Lambda's full per-statement result (index, bounded statement echo, row count) |
+| `cert_fixture_seed_source` | The pinned `url`, `sha256` and `seeding_enabled`, reported whether or not this apply invoked the seed — the record of which fixture revision this database carries |
 
 `client-compat-v1.sql` at honua-server `ecc83d115` is 52,187 bytes and applies as
 **69 statements**; publish the digest and statement count, never raw state.
 
-**Turning seeding off does not unseed the database.** Emptying
-`cert_fixture_seed_url` removes the invocation from Terraform state; it cannot
-undo SQL already committed to RDS. Both outputs then read `null` while the
-database still carries the last fixture applied, so a `null` here means *this
-stack is no longer asserting a fixture revision* — not *this database has no
-fixture*. Capture the evidence from the apply that seeded it, and to stop
-carrying a fixture, destroy and recreate the stack rather than emptying the
-input.
+**Turning seeding off does not unseed the database.** Destroying the invocation
+performs no API call, so nothing undoes SQL already committed to RDS — and a
+resource that has left the configuration keeps no state to read back, so the
+pinned inputs are the only place a durable record can live. Turn seeding off
+with the flag, not by emptying the URL:
+
+```hcl
+# Stop re-applying the fixture; keep the record of what the database carries.
+cert_fixture_seed_enabled = false
+cert_fixture_seed_url     = "https://raw.githubusercontent.com/honua-io/honua-server/<40-hex sha>/tests/seed/client-compat-v1.sql"
+cert_fixture_seed_sha256  = "<64-hex sha256>"
+```
+
+`cert_fixture_seed_applied` and `cert_fixture_seed_result` describe *the apply
+that ran*, so they necessarily read `null` once the invocation leaves state;
+`cert_fixture_seed_source` still names the pinned revision, and `plan` warns
+that the stack holds a fixture it is no longer applying. Emptying
+`cert_fixture_seed_url` stops seeding just the same, but takes that record with
+it — every output then reads `null` while the database still carries the last
+fixture applied, which means *this stack is no longer naming a fixture
+revision*, not *this database has no fixture*. Capture the evidence from the
+apply that seeded it, and to stop carrying a fixture at all, destroy and
+recreate the stack.
 
 No new IAM, network or egress is granted: the seed rides the bootstrap Lambda's
 existing Secrets Manager HTTPS egress rule and its existing role. The invocation

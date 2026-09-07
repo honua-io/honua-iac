@@ -229,11 +229,13 @@ output "postgis_bootstrap_result" {
 ###############################################################################
 
 resource "aws_lambda_invocation" "cert_fixture_seed" {
-  # Emptying the URL stops seeding future applies; it drops this invocation from
-  # state and cannot undo SQL already committed to RDS, so the outputs below go
-  # null while the database still carries the last fixture applied. Destroy and
-  # recreate the stack to stop carrying one (see README, "Turning seeding off").
-  count = var.cert_fixture_seed_url == "" ? 0 : 1
+  # Stopping the seed drops this invocation from state; destroying it performs no
+  # API call, so it cannot undo SQL already committed to RDS. Prefer
+  # `cert_fixture_seed_enabled = false`, which stops future applies while the
+  # pinned inputs — and so `cert_fixture_seed_source` below — keep naming the
+  # fixture the database carries; emptying the URL stops seeding too, but
+  # discards that record (see README, "Turning seeding off").
+  count = var.cert_fixture_seed_enabled && var.cert_fixture_seed_url != "" ? 1 : 0
 
   function_name = aws_lambda_function.postgis_bootstrap.function_name
   input = jsonencode({
@@ -262,8 +264,19 @@ check "cert_fixture_seed_inputs_agree" {
   }
 }
 
+# A stack that has pinned a fixture but is not applying it is a legitimate state
+# — it is how seeding is turned off without losing provenance — but it is one
+# the evidence has to be read against, so say it out loud at plan time rather
+# than leaving it to be inferred from a null output.
+check "cert_fixture_seed_disabled_is_stated" {
+  assert {
+    condition     = var.cert_fixture_seed_enabled || var.cert_fixture_seed_url == ""
+    error_message = "cert_fixture_seed_enabled is false with a fixture still pinned: this apply does not seed, and the database may still carry the fixture named by cert_fixture_seed_source."
+  }
+}
+
 output "cert_fixture_seed_applied" {
-  description = "What the certification serving fixture apply recorded: the pinned source, its verified sha256, how many statements committed, and the rows they touched. Null when fixture seeding is disabled, which does not imply the database is unseeded."
+  description = "What the certification serving fixture apply recorded: the pinned source, its verified sha256, how many statements committed, and the rows they touched. Null when fixture seeding is disabled, which does not imply the database is unseeded — read cert_fixture_seed_source for the revision it carries."
   value = one([
     for invocation in aws_lambda_invocation.cert_fixture_seed : {
       url             = var.cert_fixture_seed_url
@@ -276,7 +289,20 @@ output "cert_fixture_seed_applied" {
   ])
 }
 
+# Provenance that outlives the invocation. `cert_fixture_seed_applied` reports
+# the apply that ran and is necessarily null once the invocation leaves state;
+# this reports what the stack has pinned, so disabling seeding does not erase
+# which fixture revision the certification database was last seeded with.
+output "cert_fixture_seed_source" {
+  description = "The commit-pinned certification fixture this stack carries, reported whether or not this apply invoked the seed: `url`, its `sha256`, and `seeding_enabled`. Null only when no fixture has ever been pinned here (an emptied cert_fixture_seed_url also reads null, which is why disabling seeding should use cert_fixture_seed_enabled)."
+  value = var.cert_fixture_seed_url == "" ? null : {
+    url             = var.cert_fixture_seed_url
+    sha256          = var.cert_fixture_seed_sha256
+    seeding_enabled = var.cert_fixture_seed_enabled
+  }
+}
+
 output "cert_fixture_seed_result" {
-  description = "Full per-statement result returned by the bootstrap Lambda's script mode. Null when fixture seeding is disabled, which does not imply the database is unseeded."
+  description = "Full per-statement result returned by the bootstrap Lambda's script mode. Null when fixture seeding is disabled, which does not imply the database is unseeded — read cert_fixture_seed_source for the revision it carries."
   value       = one(aws_lambda_invocation.cert_fixture_seed[*].result)
 }
