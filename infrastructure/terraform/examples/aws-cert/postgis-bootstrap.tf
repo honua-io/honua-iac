@@ -229,6 +229,10 @@ output "postgis_bootstrap_result" {
 ###############################################################################
 
 resource "aws_lambda_invocation" "cert_fixture_seed" {
+  # Emptying the URL stops seeding future applies; it drops this invocation from
+  # state and cannot undo SQL already committed to RDS, so the outputs below go
+  # null while the database still carries the last fixture applied. Destroy and
+  # recreate the stack to stop carrying one (see README, "Turning seeding off").
   count = var.cert_fixture_seed_url == "" ? 0 : 1
 
   function_name = aws_lambda_function.postgis_bootstrap.function_name
@@ -259,7 +263,7 @@ check "cert_fixture_seed_inputs_agree" {
 }
 
 output "cert_fixture_seed_applied" {
-  description = "What the certification serving fixture apply recorded: the pinned source, its verified sha256, how many statements committed, and the rows they touched. Null when fixture seeding is disabled."
+  description = "What the certification serving fixture apply recorded: the pinned source, its verified sha256, how many statements committed, and the rows they touched. Null when fixture seeding is disabled, which does not imply the database is unseeded."
   value = one([
     for invocation in aws_lambda_invocation.cert_fixture_seed : {
       url             = var.cert_fixture_seed_url
@@ -273,6 +277,6 @@ output "cert_fixture_seed_applied" {
 }
 
 output "cert_fixture_seed_result" {
-  description = "Full per-statement result returned by the bootstrap Lambda's script mode. Null when fixture seeding is disabled."
+  description = "Full per-statement result returned by the bootstrap Lambda's script mode. Null when fixture seeding is disabled, which does not imply the database is unseeded."
   value       = one(aws_lambda_invocation.cert_fixture_seed[*].result)
 }

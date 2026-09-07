@@ -235,7 +235,7 @@ variable "lambda_preview_image_retention_count" {
 ###############################################################################
 
 variable "cert_fixture_seed_url" {
-  description = "HTTPS URL of the certification serving fixture SQL, pinned to an immutable commit (e.g. https://raw.githubusercontent.com/honua-io/honua-server/<40-hex sha>/tests/seed/client-compat-v1.sql). Empty disables fixture seeding."
+  description = "HTTPS URL of the certification serving fixture SQL, pinned to an immutable commit (e.g. https://raw.githubusercontent.com/honua-io/honua-server/<40-hex sha>/tests/seed/client-compat-v1.sql). Empty disables fixture seeding for future applies; it does not remove a fixture already committed to the database."
   type        = string
   default     = ""
 

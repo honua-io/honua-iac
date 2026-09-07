@@ -533,6 +533,15 @@ this cert database carries:
 `client-compat-v1.sql` at honua-server `ecc83d115` is 52,187 bytes and applies as
 **69 statements**; publish the digest and statement count, never raw state.
 
+**Turning seeding off does not unseed the database.** Emptying
+`cert_fixture_seed_url` removes the invocation from Terraform state; it cannot
+undo SQL already committed to RDS. Both outputs then read `null` while the
+database still carries the last fixture applied, so a `null` here means *this
+stack is no longer asserting a fixture revision* — not *this database has no
+fixture*. Capture the evidence from the apply that seeded it, and to stop
+carrying a fixture, destroy and recreate the stack rather than emptying the
+input.
+
 No new IAM, network or egress is granted: the seed rides the bootstrap Lambda's
 existing Secrets Manager HTTPS egress rule and its existing role. The invocation
 depends on `aws_lambda_invocation.postgis_bootstrap`, so PostGIS exists before
