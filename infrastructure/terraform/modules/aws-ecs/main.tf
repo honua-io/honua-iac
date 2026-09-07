@@ -1165,6 +1165,11 @@ resource "aws_ecs_service" "this" {
       condition     = var.file_storage_provider != "AwsS3" || local.shared_file_storage_configured
       error_message = "file_storage_provider=AwsS3 requires file_storage_aws_s3_bucket_name."
     }
+
+    precondition {
+      condition     = local.db_use_existing || var.enable_postgis
+      error_message = "A managed PostgreSQL database requires PostGIS and PostGIS Raster before Honua can start. Set enable_postgis=true or provide an existing database whose required extensions are already provisioned."
+    }
   }
 
   depends_on = [aws_lb_listener.https, aws_lb_listener.http, aws_lb_listener.http_redirect]

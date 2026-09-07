@@ -182,9 +182,9 @@ variable "db_additional_ingress_cidrs" {
 }
 
 variable "enable_postgis" {
-  description = "Enable PostGIS and PostGIS Raster during apply."
+  description = "Enable PostGIS and PostGIS Raster during apply. Requires the Terraform runner to reach the database endpoint."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "postgis_readiness_max_attempts" {

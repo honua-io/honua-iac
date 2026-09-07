@@ -119,8 +119,10 @@ and [`docs/operator-state.md`](operator-state.md).
 ## Recommended operator defaults
 
 - Pin versioned images (avoid `latest` in production)
-- Keep `enable_postgis = true` only when the Terraform runner can reach
-  PostgreSQL. The ECS module bootstraps PostGIS with local `psql`, so a private
+- The `examples/aws` root defaults to `enable_postgis = false` because the
+  database is private by default. Set it to `true` only when the Terraform
+  runner can reach PostgreSQL. The ECS module bootstraps PostGIS with local
+  `psql`, so a private
   RDS endpoint cannot be bootstrapped from a normal laptop or external CI
   runner. Use an in-VPC bootstrap first, or temporarily set
   `db_publicly_accessible=true` with narrowly scoped
