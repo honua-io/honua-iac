@@ -247,10 +247,17 @@ variable "cert_fixture_seed_url" {
   # A raw.githubusercontent.com URL carrying a branch name rather than a commit
   # sha is exactly the unrecorded apply this variable exists to prevent: the
   # bytes behind it change without the Terraform input changing.
+  #
+  # The authority is normalized before the check because more than one spelling
+  # reaches the same server: hostnames are case-insensitive, `:443` is https's
+  # default port, and a `user@` prefix is ignored by the fetch. Matching the
+  # literal lowercase host only would let `RAW.GITHUBUSERCONTENT.COM/...` or
+  # `raw.githubusercontent.com:443/...` skip the pin check and still serve a
+  # mutable branch URL.
   validation {
     condition = (
-      !startswith(var.cert_fixture_seed_url, "https://raw.githubusercontent.com/") ||
-      can(regex("^https://raw\\.githubusercontent\\.com/[^/]+/[^/]+/[0-9a-f]{40}/", var.cert_fixture_seed_url))
+      !can(regex("^https://([^/@]*@)?raw\\.githubusercontent\\.com(:443)?/", lower(var.cert_fixture_seed_url))) ||
+      can(regex("^https://([^/@]*@)?raw\\.githubusercontent\\.com(:443)?/[^/]+/[^/]+/[0-9a-f]{40}/", lower(var.cert_fixture_seed_url)))
     )
     error_message = "A raw.githubusercontent.com cert_fixture_seed_url must be pinned to a 40-hex commit sha, not a branch or tag."
   }

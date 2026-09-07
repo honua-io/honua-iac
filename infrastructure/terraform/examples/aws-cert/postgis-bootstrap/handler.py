@@ -25,7 +25,6 @@
 import hashlib
 import io
 import os
-import re
 import ssl
 import urllib.request
 
@@ -228,25 +227,44 @@ def _sql_start(fragment):
     return index
 
 
+def _leading_words(statement, count):
+    """The first `count` bare words of a statement, lowercased.
+
+    Comments lex as whitespace in PostgreSQL, so the words are collected
+    across any comment between them, not just before the first one: `PREPARE
+    /* c */ TRANSACTION` and `PREPARE -- c\n TRANSACTION` are the same command
+    as `PREPARE TRANSACTION`. Stops early at the first non-word token, so the
+    caller gets fewer than `count` words for a statement that has fewer.
+    """
+    words = []
+    index = 0
+    while len(words) < count:
+        index += _sql_start(statement[index:])
+        end = index
+        while end < len(statement) and (
+            statement[end].isalpha() or statement[end] == "_"
+        ):
+            end += 1
+        if end == index:
+            break
+        words.append(statement[index:end].lower())
+        index = end
+    return words
+
+
 def _leading_keyword(statement):
     """First bare word of a statement, lowercased, skipping leading comments."""
-    index = _sql_start(statement)
-    end = index
-    while end < len(statement) and (
-        statement[end].isalpha() or statement[end] == "_"
-    ):
-        end += 1
-    return statement[index:end].lower()
+    words = _leading_words(statement, 1)
+    return words[0] if words else ""
 
 
 def _assert_no_transaction_control(statements):
     for position, statement in enumerate(statements):
-        keyword = _leading_keyword(statement)
+        words = _leading_words(statement, 2)
+        keyword = words[0] if words else ""
         # `PREPARE TRANSACTION` ends the current transaction; a plain `PREPARE`
         # (a prepared statement) does not, so only the two-word form counts.
-        if keyword == "prepare" and re.match(
-            r"prepare\s+transaction\b", " ".join(statement.split()), re.IGNORECASE
-        ):
+        if keyword == "prepare" and words[1:] == ["transaction"]:
             keyword = "prepare transaction"
         if keyword in _TRANSACTION_CONTROL_KEYWORDS or keyword == "prepare transaction":
             raise ValueError(

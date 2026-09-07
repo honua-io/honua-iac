@@ -229,6 +229,23 @@ class TransactionControlTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "manages transactions itself"):
             handler._assert_no_transaction_control(split("-- setup\n/* x */ COMMIT;"))
 
+    def test_comments_between_prepare_and_transaction_do_not_hide_it(self):
+        # Comments lex as whitespace, so each of these is `PREPARE TRANSACTION`
+        # and would end the wrapper transaction and leave it prepared.
+        for sql in ("PREPARE /* c */ TRANSACTION 'x';",
+                    "PREPARE -- c\n TRANSACTION 'x';",
+                    "PREPARE\n/* a */ /* b */\tTRANSACTION 'x';",
+                    "PREPARE TRANSACTION'x';"):
+            with self.subTest(sql=sql):
+                with self.assertRaisesRegex(ValueError, "manages transactions itself"):
+                    handler._assert_no_transaction_control(split("SELECT 1;" + sql))
+
+    def test_comments_do_not_turn_a_plain_prepare_into_transaction_control(self):
+        for sql in ("PREPARE /* c */ p AS SELECT 1;",
+                    "PREPARE transaction_log AS SELECT 1;"):
+            with self.subTest(sql=sql):
+                handler._assert_no_transaction_control(split(sql))
+
 
 class ResolveScriptTests(unittest.TestCase):
     SQL = "SELECT 1;\n"
