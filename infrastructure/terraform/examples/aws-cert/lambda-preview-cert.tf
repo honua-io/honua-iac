@@ -101,9 +101,9 @@ data "aws_iam_policy_document" "lambda_preview_trust" {
 # precreates log groups, so runtime CreateLogGroup is unnecessary. Beyond the
 # ENI actions and read access to the cert stack's own secrets (below), no ECR,
 # database, or other application permissions are granted to code.
-#checkov:skip=CKV_AWS_356: Lambda-managed ENI actions take no resource ARN (the AWSLambdaVPCAccessExecutionRole shape); this is a permissions boundary on the certification role only.
-#checkov:skip=CKV_AWS_111: The only unconstrained write actions are the ENI lifecycle Lambda performs for VPC attachment; every other statement is scoped to this stack's ARNs.
 data "aws_iam_policy_document" "lambda_preview_execution_boundary" {
+  #checkov:skip=CKV_AWS_356: Lambda-managed ENI actions take no resource ARN (the AWSLambdaVPCAccessExecutionRole shape); this is a permissions boundary on the certification role only.
+  #checkov:skip=CKV_AWS_111: The only unconstrained write actions are the ENI lifecycle Lambda performs for VPC attachment; every other statement is scoped to this stack's ARNs.
   statement {
     sid       = "CertificationLogStreamsOnly"
     actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
@@ -406,15 +406,15 @@ resource "aws_iam_role_policy" "lambda_preview_certification" {
 # `get-function-url-config --qualifier <alias>` before any write, so the write
 # target must be the alias's own URL, never the API Gateway or the demo.
 # NONE auth: the server authenticates every request itself with X-API-Key.
-#checkov:skip=CKV_AWS_258: The certification write target is the standing alias behind the server's own API-key authentication (REALAWS_CERT_ADMIN_KEY / denied key); the lane proves the denial path over this URL, so IAM auth would hide the surface under test.
 resource "aws_lambda_function_url" "cert_alias" {
+  #checkov:skip=CKV_AWS_258: The certification write target is the standing alias behind the server's own API-key authentication (REALAWS_CERT_ADMIN_KEY / denied key); the lane proves the denial path over this URL, so IAM auth would hide the surface under test.
   function_name      = module.honua.lambda_function_name
   qualifier          = module.honua.lambda_alias_name
   authorization_type = "NONE"
 }
 
-#checkov:skip=CKV_AWS_301: Public invoke is limited to the Function URL principal on the alias; the server authenticates every request (see CKV_AWS_258 above) and the stack is the ephemeral certification substrate.
 resource "aws_lambda_permission" "cert_alias_function_url" {
+  #checkov:skip=CKV_AWS_301: Public invoke is limited to the Function URL principal on the alias; the server authenticates every request (see CKV_AWS_258 above) and the stack is the ephemeral certification substrate.
   statement_id           = "AllowCertificationFunctionUrlInvoke"
   action                 = "lambda:InvokeFunctionUrl"
   function_name          = module.honua.lambda_function_name
