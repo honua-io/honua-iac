@@ -98,8 +98,9 @@ data "aws_iam_policy_document" "lambda_preview_trust" {
 
 # AWSLambdaBasicExecutionRole has Resource "*". Its effective permissions are
 # intersected with this boundary, restricting it to this lane's logs. The lane
-# precreates log groups, so runtime CreateLogGroup is unnecessary. No VPC/ENI,
-# ECR, database, secret, or other application permissions are granted to code.
+# precreates log groups, so runtime CreateLogGroup is unnecessary. Beyond the
+# ENI actions and read access to the cert stack's own secrets (below), no ECR,
+# database, or other application permissions are granted to code.
 data "aws_iam_policy_document" "lambda_preview_execution_boundary" {
   statement {
     sid       = "CertificationLogStreamsOnly"
@@ -122,6 +123,41 @@ data "aws_iam_policy_document" "lambda_preview_execution_boundary" {
     ]
     resources = ["*"]
   }
+
+  # The candidate image boots with the standing function's environment, whose
+  # aws:secretsmanager: references (connection string, admin password,
+  # connection-encryption master key, optional Pro license) are resolved at
+  # startup; without this the server exits before serving (run 34078979087:
+  # "Failed to resolve the security setting 'HONUA_ADMIN_PASSWORD'"). Only the
+  # cert stack's own secrets, by ARN; no KMS grant (secrets use the AWS-managed key).
+  statement {
+    sid       = "CertificationStackSecretsRead"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = local.lambda_preview_secret_arns
+  }
+}
+
+locals {
+  lambda_preview_secret_arns = compact([
+    module.honua.db_connection_secret_arn,
+    module.honua.admin_password_secret_arn,
+    module.honua.master_key_secret_arn,
+    module.honua.pro_license_secret_arn,
+  ])
+}
+
+data "aws_iam_policy_document" "lambda_preview_execution_secrets" {
+  statement {
+    sid       = "CertificationStackSecretsRead"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = local.lambda_preview_secret_arns
+  }
+}
+
+resource "aws_iam_role_policy" "lambda_preview_execution_secrets" {
+  name   = "${local.lambda_preview_name}-execution-secrets"
+  role   = aws_iam_role.lambda_preview_execution.id
+  policy = data.aws_iam_policy_document.lambda_preview_execution_secrets.json
 }
 
 resource "aws_iam_policy" "lambda_preview_execution_boundary" {
