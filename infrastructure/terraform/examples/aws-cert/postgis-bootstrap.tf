@@ -19,8 +19,8 @@
 #
 # Build prerequisites on the apply host: Bash and python3 (or python) with pip
 # (replaces the module's psql + network-path requirement). The pure-Python
-# pg8000 driver is vendored
-# into the deployment zip at apply time; nothing is compiled.
+# pg8000 driver is vendored into the deployment zip at apply time; nothing is
+# compiled.
 ###############################################################################
 
 locals {
