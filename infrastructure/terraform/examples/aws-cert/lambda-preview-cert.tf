@@ -248,7 +248,7 @@ data "aws_iam_policy_document" "lambda_preview_certification" {
   }
 
   statement {
-    sid       = "InvokeAndDeleteTaggedCertificationFunction"
+    sid = "InvokeAndDeleteTaggedCertificationFunction"
     # UpdateFunctionConfiguration: the lane writes an inert environment nonce
     # on the per-run function before the cold-start evidence invoke
     # (honua-server#4548); certification run 20 was denied it on
