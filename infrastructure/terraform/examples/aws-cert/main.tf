@@ -142,12 +142,17 @@ module "honua" {
   skip_migrations = false
   db_password     = var.db_password
 
-  # Cert is short-lived: single-AZ, modest DB, no Redis (cert does not exercise
-  # the Production durable-event-store /healthz/ready path).
+  # Cert is short-lived: single-AZ, modest DB. Redis IS enabled (operator
+  # ruling A, 2026-09-08): the Lambda certification lane mints a per-run
+  # scoped API key and requires the candidate and the standing alias to share
+  # the Redis-backed key store (honua-server#4568, certification run 24), and
+  # a customer Lambda deployment needs Redis for the same reason. Smallest
+  # node type; the module wires the connection through Secrets Manager.
   db_instance_class    = "db.t4g.micro"
   db_multi_az          = false
   db_apply_immediately = true
-  redis_enabled        = false
+  redis_enabled        = true
+  redis_node_type      = "cache.t4g.micro"
   # The certification write target is the alias Function URL (lambda-preview-cert.tf);
   # the server's host validation must accept that host or every request answers
   # 400 "Invalid Host header" (live certification run 16, 2026-09-07).
