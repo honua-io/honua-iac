@@ -282,6 +282,11 @@ data "aws_iam_policy_document" "lambda_preview_certification" {
       "lambda:ListAliases",
       "lambda:ListVersionsByFunction",
       "lambda:UpdateFunctionCode",
+      # Cold-start evidence (honua-server#4548): the lane writes an inert
+      # environment nonce before the evidence invoke so the first certified
+      # invoke is provably cold. Certification run 19 (2026-09-08) was denied
+      # this call.
+      "lambda:UpdateFunctionConfiguration",
       "lambda:PublishVersion",
       "lambda:UpdateAlias",
       "lambda:InvokeFunction",
