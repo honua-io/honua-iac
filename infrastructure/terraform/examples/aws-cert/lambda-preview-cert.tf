@@ -54,9 +54,11 @@ resource "aws_ecr_lifecycle_policy" "lambda_preview" {
 # policies. Only Lambda functions in this account/region/run namespace may pull.
 data "aws_iam_policy_document" "lambda_preview_image_pull" {
   statement {
-    sid       = "LambdaCertificationImagePull"
-    actions   = ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]
-    resources = [aws_ecr_repository.lambda_preview.arn]
+    sid     = "LambdaCertificationImagePull"
+    actions = ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]
+    # ECR repository policies are resource-based and reject a Resource element
+    # ("Invalid repository policy provided", first apply 2026-09-06); the
+    # repository is implied by attachment.
 
     principals {
       type        = "Service"
@@ -96,14 +98,68 @@ data "aws_iam_policy_document" "lambda_preview_trust" {
 
 # AWSLambdaBasicExecutionRole has Resource "*". Its effective permissions are
 # intersected with this boundary, restricting it to this lane's logs. The lane
-# precreates log groups, so runtime CreateLogGroup is unnecessary. No VPC/ENI,
-# ECR, database, secret, or other application permissions are granted to code.
+# precreates log groups, so runtime CreateLogGroup is unnecessary. Beyond the
+# ENI actions and read access to the cert stack's own secrets (below), no ECR,
+# database, or other application permissions are granted to code.
 data "aws_iam_policy_document" "lambda_preview_execution_boundary" {
+  #checkov:skip=CKV_AWS_356: Lambda-managed ENI actions take no resource ARN (the AWSLambdaVPCAccessExecutionRole shape); this is a permissions boundary on the certification role only.
+  #checkov:skip=CKV_AWS_111: The only unconstrained write actions are the ENI lifecycle Lambda performs for VPC attachment; every other statement is scoped to this stack's ARNs.
   statement {
     sid       = "CertificationLogStreamsOnly"
     actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
     resources = ["${local.lambda_preview_log_arn}:log-stream:*"]
   }
+
+  # The certification function is VPC-attached (it must reach the cert PostGIS
+  # over private subnets, #4432); Lambda manages the ENIs with these actions,
+  # which take no resource ARN (AWSLambdaVPCAccessExecutionRole shape).
+  statement {
+    sid = "CertificationVpcEni"
+    actions = [
+      "ec2:CreateNetworkInterface",
+      "ec2:DescribeNetworkInterfaces",
+      "ec2:DescribeSubnets",
+      "ec2:DeleteNetworkInterface",
+      "ec2:AssignPrivateIpAddresses",
+      "ec2:UnassignPrivateIpAddresses",
+    ]
+    resources = ["*"]
+  }
+
+  # The candidate image boots with the standing function's environment, whose
+  # aws:secretsmanager: references (connection string, admin password,
+  # connection-encryption master key, optional Pro license) are resolved at
+  # startup; without this the server exits before serving (run 34078979087:
+  # "Failed to resolve the security setting 'HONUA_ADMIN_PASSWORD'"). Only the
+  # cert stack's own secrets, by ARN; no KMS grant (secrets use the AWS-managed key).
+  statement {
+    sid       = "CertificationStackSecretsRead"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = local.lambda_preview_secret_arns
+  }
+}
+
+locals {
+  lambda_preview_secret_arns = compact([
+    module.honua.db_connection_secret_arn,
+    module.honua.admin_password_secret_arn,
+    module.honua.master_key_secret_arn,
+    module.honua.pro_license_secret_arn,
+  ])
+}
+
+data "aws_iam_policy_document" "lambda_preview_execution_secrets" {
+  statement {
+    sid       = "CertificationStackSecretsRead"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = local.lambda_preview_secret_arns
+  }
+}
+
+resource "aws_iam_role_policy" "lambda_preview_execution_secrets" {
+  name   = "${local.lambda_preview_name}-execution-secrets"
+  role   = aws_iam_role.lambda_preview_execution.id
+  policy = data.aws_iam_policy_document.lambda_preview_execution_secrets.json
 }
 
 resource "aws_iam_policy" "lambda_preview_execution_boundary" {
@@ -122,6 +178,11 @@ resource "aws_iam_role" "lambda_preview_execution" {
 resource "aws_iam_role_policy_attachment" "lambda_preview_basic_execution" {
   role       = aws_iam_role.lambda_preview_execution.name
   policy_arn = "arn:${data.aws_partition.lambda_preview.partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_preview_vpc_access" {
+  role       = aws_iam_role.lambda_preview_execution.name
+  policy_arn = "arn:${data.aws_partition.lambda_preview.partition}:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
 # A separate inline policy attaches to the EXISTING OIDC role. No inputs to the
@@ -204,6 +265,55 @@ data "aws_iam_policy_document" "lambda_preview_certification" {
     }
   }
 
+  # Candidate proof on the STANDING certification function (release#282 bill,
+  # item 3): publish the certified digest as a new version, shift the alias,
+  # verify through the alias Function URL, roll back, delete the version the
+  # lane created. The driver reads the alias URL config before any write
+  # ("AWS lambda get-function-url-config failed; serving noProof", first live
+  # run 2026-09-06). Deletion is allowed on qualified (version) ARNs only,
+  # never on the unqualified function.
+  statement {
+    sid = "CertifyStandingAliasUpgradeRollback"
+    actions = [
+      "lambda:GetFunction",
+      "lambda:GetFunctionConfiguration",
+      "lambda:GetFunctionUrlConfig",
+      "lambda:GetAlias",
+      "lambda:ListAliases",
+      "lambda:ListVersionsByFunction",
+      "lambda:UpdateFunctionCode",
+      "lambda:PublishVersion",
+      "lambda:UpdateAlias",
+      "lambda:InvokeFunction",
+      "lambda:InvokeFunctionUrl",
+    ]
+    resources = [
+      module.honua.lambda_function_arn,
+      "${module.honua.lambda_function_arn}:*",
+    ]
+  }
+
+  statement {
+    sid       = "DeleteOnlyStandingFunctionVersions"
+    actions   = ["lambda:DeleteFunction"]
+    resources = ["${module.honua.lambda_function_arn}:*"]
+  }
+
+  # Creating a VPC-attached function makes Lambda validate the subnets and
+  # security groups with the CALLER's credentials (AccessDeniedException "denied
+  # by EC2", eighth live run 2026-09-07). Read-only Describe actions take no
+  # resource ARN.
+  statement {
+    sid = "CertificationVpcDescribe"
+    actions = [
+      "ec2:DescribeSubnets",
+      "ec2:DescribeSecurityGroups",
+      "ec2:DescribeVpcs",
+      "ec2:DescribeNetworkInterfaces",
+    ]
+    resources = ["*"]
+  }
+
   statement {
     sid       = "PassOnlyCertificationExecutionRole"
     actions   = ["iam:PassRole"]
@@ -237,6 +347,15 @@ data "aws_iam_policy_document" "lambda_preview_certification" {
       variable = "aws:RequestedRegion"
       values   = [var.region]
     }
+  }
+
+  # Reruns for the same candidate must be able to replace a stale mirror tag
+  # (the repository is tag-immutable; first live rerun 2026-09-06 failed with
+  # TAG_INVALID). Scoped to the certification repository only.
+  statement {
+    sid       = "ReplaceStaleCertificationMirrorTag"
+    actions   = ["ecr:DescribeImages", "ecr:BatchDeleteImage"]
+    resources = [aws_ecr_repository.lambda_preview.arn]
   }
 
   statement {
@@ -280,4 +399,31 @@ resource "aws_iam_role_policy" "lambda_preview_certification" {
   name   = "${local.lambda_preview_name}-certification"
   role   = module.github_oidc.role_name
   policy = data.aws_iam_policy_document.lambda_preview_certification.json
+}
+
+# Function URL on the standing certification alias (release#282 bill, item 2):
+# the certification driver verifies REALAWS_CERT_LAMBDA_WRITE_BASE_URL against
+# `get-function-url-config --qualifier <alias>` before any write, so the write
+# target must be the alias's own URL, never the API Gateway or the demo.
+# NONE auth: the server authenticates every request itself with X-API-Key.
+resource "aws_lambda_function_url" "cert_alias" {
+  #checkov:skip=CKV_AWS_258: The certification write target is the standing alias behind the server's own API-key authentication (REALAWS_CERT_ADMIN_KEY / denied key); the lane proves the denial path over this URL, so IAM auth would hide the surface under test.
+  function_name      = module.honua.lambda_function_name
+  qualifier          = module.honua.lambda_alias_name
+  authorization_type = "NONE"
+}
+
+resource "aws_lambda_permission" "cert_alias_function_url" {
+  #checkov:skip=CKV_AWS_301: Public invoke is limited to the Function URL principal on the alias; the server authenticates every request (see CKV_AWS_258 above) and the stack is the ephemeral certification substrate.
+  statement_id           = "AllowCertificationFunctionUrlInvoke"
+  action                 = "lambda:InvokeFunctionUrl"
+  function_name          = module.honua.lambda_function_name
+  qualifier              = module.honua.lambda_alias_name
+  principal              = "*"
+  function_url_auth_type = "NONE"
+}
+
+output "REALAWS_CERT_LAMBDA_WRITE_BASE_URL" {
+  description = "Function URL of the standing certification alias; set as the honua-server repository variable of the same name."
+  value       = aws_lambda_function_url.cert_alias.function_url
 }

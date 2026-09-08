@@ -105,6 +105,11 @@ output "admin_password_secret_arn" {
   value       = aws_secretsmanager_secret.admin_password.arn
 }
 
+output "master_key_secret_arn" {
+  description = "Secrets Manager ARN for the connection-encryption master key (resolved by the Lambda at startup)."
+  value       = aws_secretsmanager_secret.master_key.arn
+}
+
 output "lambda_security_group_id" {
   description = "Security group ID attached to the Honua Lambda function."
   value       = aws_security_group.lambda.id

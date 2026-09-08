@@ -188,6 +188,19 @@ variable "admin_password" {
     condition     = length(var.admin_password) >= 32
     error_message = "admin_password must be at least 32 characters."
   }
+  # The server refuses to start in the Production environment (the Lambda
+  # default) unless the admin password carries every character class
+  # (AdminPasswordValidation.ValidateProductionPassword); fail the plan
+  # instead of the cold start.
+  validation {
+    condition = (
+      can(regex("[A-Z]", var.admin_password)) &&
+      can(regex("[a-z]", var.admin_password)) &&
+      can(regex("[0-9]", var.admin_password)) &&
+      can(regex("[^A-Za-z0-9]", var.admin_password))
+    )
+    error_message = "admin_password must contain uppercase, lowercase, digit, and special characters (the server's production policy)."
+  }
 }
 
 variable "connection_encryption_master_key" {
@@ -346,6 +359,12 @@ variable "redis_auth_token" {
     )
     error_message = "redis_auth_token must be 16-128 characters, contain only letters, digits, or !&#$^<>-, and use at least three character classes."
   }
+}
+
+variable "additional_allowed_hosts" {
+  description = "Extra host patterns the server accepts besides the API Gateway domain (HostValidation__AllowedHosts__N), e.g. \"*.lambda-url.<region>.on.aws\" when a Function URL fronts the alias."
+  type        = list(string)
+  default     = []
 }
 
 variable "redis_enabled" {

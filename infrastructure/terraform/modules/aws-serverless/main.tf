@@ -168,7 +168,7 @@ locals {
   } : {}
   # API Gateway is HTTPS-only, but Lambda Web Adapter's final in-process hop is HTTP.
   # Emit HSTS for that trusted topology instead of suppressing it based on the internal scheme.
-  lambda_environment = merge({
+  lambda_environment = merge({ for i, h in var.additional_allowed_hosts : "HostValidation__AllowedHosts__${i + 1}" => h }, {
     HONUA_SKIP_MIGRATIONS                                       = var.skip_migrations ? "true" : "false"
     HostValidation__AllowedHosts__0                             = "*.execute-api.${data.aws_region.current.name}.amazonaws.com"
     SecurityHeaders__HstsHttpsOnly                              = "false"
