@@ -45,10 +45,17 @@ resource "terraform_data" "postgis_bootstrap_build" {
     interpreter = ["bash", "-c"]
     command     = <<-EOT
       set -euo pipefail
-      python_bin=$(command -v python3 || command -v python) || {
+      python_bin=""
+      for candidate in python3 python; do
+        if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -m pip --version >/dev/null 2>&1; then
+          python_bin=$(command -v "$candidate")
+          break
+        fi
+      done
+      if [[ -z "$python_bin" ]]; then
         echo "PostGIS bootstrap build requires python3 (or python) with pip on PATH" >&2
         exit 1
-      }
+      fi
       "$python_bin" - <<'PYTHON'
       import pathlib, shutil, subprocess, sys, urllib.request
       root = pathlib.Path(r"${local.postgis_bootstrap_dir}")
