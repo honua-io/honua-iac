@@ -460,3 +460,116 @@ Local checks are `terraform fmt -check -recursive infrastructure/terraform`,
 in this root, and the existing
 `infrastructure/terraform/validation/scripts/shared/test-terraform-policy-gate.sh`.
 The policy-gate tests include negative mutations for this substrate's IAM guards.
+
+### Certification serving fixture — recorded, sha-pinned seed apply
+
+The lane's serving smoke asserts **all ten named rows and the exact count** on
+`test_service/0` and writes its run-owned row to the scratch layer
+`test_service/10` (`scripts/cloud/lambda-certification.md`). Nothing else in
+this stack seeds a Honua serving fixture: `real-aws-certification.tf` covers the
+control plane and `ecs-alb-cert.tf` runs nginx. So the cert database has to
+carry honua-server's client-compat snapshot,
+[`tests/seed/client-compat-v1.sql`](https://github.com/honua-io/honua-server/blob/trunk/tests/seed/client-compat-v1.sql)
+— the same fixture `docker/client-compat/seed/run.sh` applies — before the lane
+runs. **Missing or drifted fixture data fails the run.**
+
+The cert RDS instance lives in private subnets, so the apply host cannot reach
+it. The seed therefore goes in through the same in-VPC `postgis-bootstrap`
+Lambda that enables PostGIS, in its `script` mode:
+
+| Event key | Contract |
+|---|---|
+| `script_url` | https URL of the SQL file, pinned to an immutable commit. Fetched over the VPC's existing NAT egress; a redirect off https is refused. 8 MB ceiling. |
+| `script_sha256` | Lowercase hex sha256 of those exact bytes. **Required** with `script_url`; a mismatch aborts before any database session is opened. |
+| `script` | Inline SQL alternative (mutually exclusive with `script_url`), for ad-hoc maintenance. |
+
+The Lambda splits the file with a dollar-quote / string / comment-aware splitter
+— `client-compat-v1.sql` is 52 KB with two `$$` bodies whose plpgsql contains
+`;` and `END;`, so `split(";")` would corrupt it — and runs every statement
+inside **one transaction**. All-or-nothing: a half-applied fixture would fail the
+lane's exact-count assertions in a way that looks like a server defect. A script
+that manages transactions itself (`BEGIN`/`COMMIT`/`SAVEPOINT`/…) is refused
+rather than half-applied, and an unterminated literal, identifier, dollar quote
+or block comment is refused rather than truncated.
+
+Seeding is **off by default** (both variables empty). To enable it:
+
+```bash
+# 1. Pick the honua-server revision whose fixture this cert database should
+#    carry, and take the digest from the file at that exact commit.
+SEED_REF=<40-hex honua-server commit sha>
+git -C ../honua-server show "$SEED_REF:tests/seed/client-compat-v1.sql" | sha256sum
+# Without a checkout, read the same bytes through the GitHub API:
+gh api "repos/honua-io/honua-server/contents/tests/seed/client-compat-v1.sql?ref=$SEED_REF" \
+  --jq .content | base64 -d | sha256sum
+```
+
+```hcl
+# 2. terraform.tfvars — the URL names the bytes, the digest proves them.
+cert_fixture_seed_url    = "https://raw.githubusercontent.com/honua-io/honua-server/<40-hex sha>/tests/seed/client-compat-v1.sql"
+cert_fixture_seed_sha256 = "<64-hex sha256 from step 1>"
+```
+
+A `raw.githubusercontent.com` URL carrying a branch or tag instead of a commit
+sha is rejected at plan time: the bytes behind it change without the Terraform
+input changing, which is exactly the unrecorded apply this step replaces.
+
+**To bump the fixture to a newer server revision**, change both variables
+together. Terraform re-invokes the Lambda whenever the invocation input changes,
+so the new seed is applied on the next apply. Every statement in
+`client-compat-v1.sql` is idempotent (`CREATE ... IF NOT EXISTS`, `ON CONFLICT
+DO UPDATE`), so re-applying converges the fixture — it does not reset unrelated
+standing data. Changing only the digest fails the fetch verification; changing
+only the URL fails the plan-time pin check.
+
+What the apply records, so evidence can state which server revision's fixture
+this cert database carries:
+
+| Output | Contents |
+|---|---|
+| `cert_fixture_seed_applied` | `url`, verified `sha256`, `bytes`, `committed`, `statement_count`, `rows_affected` — `null` when seeding is disabled |
+| `cert_fixture_seed_result` | The Lambda's full per-statement result (index, bounded statement echo, row count) |
+| `cert_fixture_seed_source` | The pinned `url`, `sha256` and `seeding_enabled`, reported whether or not this apply invoked the seed — the record of which fixture revision this database carries |
+
+`client-compat-v1.sql` at honua-server `ecc83d115` is 52,187 bytes and applies as
+**69 statements**; publish the digest and statement count, never raw state.
+
+**Turning seeding off does not unseed the database.** Destroying the invocation
+performs no API call, so nothing undoes SQL already committed to RDS — and a
+resource that has left the configuration keeps no state to read back, so the
+pinned inputs are the only place a durable record can live. Turn seeding off
+with the flag, not by emptying the URL:
+
+```hcl
+# Stop re-applying the fixture; keep the record of what the database carries.
+cert_fixture_seed_enabled = false
+cert_fixture_seed_url     = "https://raw.githubusercontent.com/honua-io/honua-server/<40-hex sha>/tests/seed/client-compat-v1.sql"
+cert_fixture_seed_sha256  = "<64-hex sha256>"
+```
+
+`cert_fixture_seed_applied` and `cert_fixture_seed_result` describe *the apply
+that ran*, so they necessarily read `null` once the invocation leaves state;
+`cert_fixture_seed_source` still names the pinned revision, and `plan` warns
+that the stack holds a fixture it is no longer applying. Emptying
+`cert_fixture_seed_url` stops seeding just the same, but takes that record with
+it — every output then reads `null` while the database still carries the last
+fixture applied, which means *this stack is no longer naming a fixture
+revision*, not *this database has no fixture*. Capture the evidence from the
+apply that seeded it, and to stop carrying a fixture at all, destroy and
+recreate the stack.
+
+No new IAM, network or egress is granted: the seed rides the bootstrap Lambda's
+existing Secrets Manager HTTPS egress rule and its existing role. The invocation
+depends on `aws_lambda_invocation.postgis_bootstrap`, so PostGIS exists before
+the snapshot's `GEOMETRY` columns are created, and the two share the function's
+single reserved concurrent execution.
+
+The splitter and the fetch/verify path have stdlib-only unit tests that need
+neither the deployment zip nor a database:
+
+```bash
+python3 infrastructure/terraform/examples/aws-cert/postgis-bootstrap/test_handler.py
+# Optionally split the real fixture too:
+HONUA_CERT_SEED_SQL=../honua-server/tests/seed/client-compat-v1.sql \
+  python3 infrastructure/terraform/examples/aws-cert/postgis-bootstrap/test_handler.py
+```

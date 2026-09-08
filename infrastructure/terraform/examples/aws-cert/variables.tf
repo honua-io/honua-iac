@@ -220,3 +220,70 @@ variable "lambda_preview_image_retention_count" {
     error_message = "lambda_preview_image_retention_count must be a positive integer."
   }
 }
+
+###############################################################################
+# Certification serving fixture (release#282).
+#
+# The Lambda GA certification lane's serving smoke asserts ten named rows on
+# `test_service/0` and writes its run-owned row to the scratch layer
+# `test_service/10`, so the cert PostGIS must already carry honua-server's
+# client-compat snapshot (tests/seed/client-compat-v1.sql). The database is
+# reachable only from inside the VPC, so the seed is applied through the
+# in-VPC postgis-bootstrap Lambda instead of by hand from an operator shell —
+# which is what makes it a recorded, sha-pinned apply step rather than an
+# unrecorded one. Leave both empty to skip fixture seeding entirely.
+###############################################################################
+
+variable "cert_fixture_seed_url" {
+  description = "HTTPS URL of the certification serving fixture SQL, pinned to an immutable commit (e.g. https://raw.githubusercontent.com/honua-io/honua-server/<40-hex sha>/tests/seed/client-compat-v1.sql). Empty means no fixture has been pinned. To stop seeding a stack that has already been seeded, set cert_fixture_seed_enabled = false and leave this set: emptying it discards the record of what the database carries, and neither spelling removes a fixture already committed to the database."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.cert_fixture_seed_url == "" || startswith(var.cert_fixture_seed_url, "https://")
+    error_message = "cert_fixture_seed_url must be an https URL (the bootstrap Lambda refuses any other scheme)."
+  }
+
+  # A raw.githubusercontent.com URL carrying a branch name rather than a commit
+  # sha is exactly the unrecorded apply this variable exists to prevent: the
+  # bytes behind it change without the Terraform input changing.
+  #
+  # The authority is normalized before the check because more than one spelling
+  # reaches the same server: hostnames are case-insensitive, `:443` is https's
+  # default port, and a `user@` prefix is ignored by the fetch. Matching the
+  # literal lowercase host only would let `RAW.GITHUBUSERCONTENT.COM/...` or
+  # `raw.githubusercontent.com:443/...` skip the pin check and still serve a
+  # mutable branch URL.
+  validation {
+    condition = (
+      !can(regex("^https://([^/@]*@)?raw\\.githubusercontent\\.com(:443)?/", lower(var.cert_fixture_seed_url))) ||
+      can(regex("^https://([^/@]*@)?raw\\.githubusercontent\\.com(:443)?/[^/]+/[^/]+/[0-9a-f]{40}/", lower(var.cert_fixture_seed_url)))
+    )
+    error_message = "A raw.githubusercontent.com cert_fixture_seed_url must be pinned to a 40-hex commit sha, not a branch or tag."
+  }
+}
+
+variable "cert_fixture_seed_sha256" {
+  description = "Lowercase hex sha256 of the bytes at cert_fixture_seed_url. The bootstrap Lambda refuses to apply anything else, and changing it re-runs the seed."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.cert_fixture_seed_sha256 == "" || can(regex("^[0-9a-f]{64}$", var.cert_fixture_seed_sha256))
+    error_message = "cert_fixture_seed_sha256 must be 64 lowercase hex characters."
+  }
+}
+
+# Disabling seeding and forgetting what was seeded are different acts, and
+# Terraform can only durably record the second one here: destroying the
+# invocation performs no API call, so it cannot undo SQL already committed to
+# RDS, and a resource that has left the configuration keeps no state to read
+# back. The pinned inputs are therefore the record. Turning this off stops the
+# stack re-applying the fixture while `cert_fixture_seed_url` and
+# `cert_fixture_seed_sha256` stay set, so `cert_fixture_seed_source` still names
+# the revision the database carries.
+variable "cert_fixture_seed_enabled" {
+  description = "Whether this apply invokes the certification fixture seed. Set false to stop seeding a stack that has already been seeded while keeping the pinned URL and digest — the database still carries the last fixture applied, and cert_fixture_seed_source keeps naming it. Seeding is already off whenever cert_fixture_seed_url is empty."
+  type        = bool
+  default     = true
+}

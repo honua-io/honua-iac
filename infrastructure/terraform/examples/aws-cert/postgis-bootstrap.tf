@@ -201,3 +201,108 @@ output "postgis_bootstrap_result" {
   description = "Extensions reported by the one-shot PostGIS bootstrap Lambda."
   value       = aws_lambda_invocation.postgis_bootstrap.result
 }
+
+###############################################################################
+# Certification serving fixture apply (release#282).
+#
+# The Lambda GA certification lane asserts ten named rows on `test_service/0`
+# and writes its run-owned row to the scratch layer `test_service/10`
+# (scripts/cloud/lambda-certification.md), so the cert database has to carry
+# honua-server's client-compat snapshot before the lane runs. Neither
+# real-aws-certification.tf's control-plane tests nor ecs-alb-cert.tf's nginx
+# seeds a Honua serving fixture, and the database is reachable only from inside
+# the VPC — so the snapshot goes in through the same in-VPC bootstrap Lambda,
+# in `script` mode: it fetches the file from a commit-pinned https URL over the
+# VPC's NAT egress, verifies the sha256, splits it (dollar-quote/string/comment
+# aware) and applies every statement in ONE transaction. All-or-nothing: a
+# partially applied fixture would fail the lane's exact-count assertions in a
+# way that looks like a server defect.
+#
+# Recorded, not hand-run: the URL, its digest, the statement count and the
+# transaction outcome all land in state and in the outputs below, so the
+# evidence says which honua-server revision's seed this cert database carries.
+#
+# Terraform re-invokes the Lambda whenever `input` changes, so bumping either
+# variable re-applies the seed. Every statement in client-compat-v1.sql is
+# idempotent (CREATE ... IF NOT EXISTS / ON CONFLICT DO UPDATE), so re-applying
+# converges the fixture; it does not reset unrelated standing data.
+###############################################################################
+
+resource "aws_lambda_invocation" "cert_fixture_seed" {
+  # Stopping the seed drops this invocation from state; destroying it performs no
+  # API call, so it cannot undo SQL already committed to RDS. Prefer
+  # `cert_fixture_seed_enabled = false`, which stops future applies while the
+  # pinned inputs — and so `cert_fixture_seed_source` below — keep naming the
+  # fixture the database carries; emptying the URL stops seeding too, but
+  # discards that record (see README, "Turning seeding off").
+  count = var.cert_fixture_seed_enabled && var.cert_fixture_seed_url != "" ? 1 : 0
+
+  function_name = aws_lambda_function.postgis_bootstrap.function_name
+  input = jsonencode({
+    script_url    = var.cert_fixture_seed_url
+    script_sha256 = var.cert_fixture_seed_sha256
+  })
+
+  # postgis must exist before the snapshot's GEOMETRY columns are created, and
+  # the two invocations share one reserved concurrent execution.
+  depends_on = [aws_lambda_invocation.postgis_bootstrap]
+
+  lifecycle {
+    precondition {
+      condition     = can(regex("^[0-9a-f]{64}$", var.cert_fixture_seed_sha256))
+      error_message = "cert_fixture_seed_sha256 must be set to the 64-hex sha256 of the file at cert_fixture_seed_url; the bootstrap Lambda will not apply an unverified script."
+    }
+  }
+}
+
+# Warn (rather than fail) on the harmless-but-wrong half-configuration: a digest
+# with no URL seeds nothing at all.
+check "cert_fixture_seed_inputs_agree" {
+  assert {
+    condition     = var.cert_fixture_seed_sha256 == "" || var.cert_fixture_seed_url != ""
+    error_message = "cert_fixture_seed_sha256 is set but cert_fixture_seed_url is empty, so no certification fixture is applied."
+  }
+}
+
+# A stack that has pinned a fixture but is not applying it is a legitimate state
+# — it is how seeding is turned off without losing provenance — but it is one
+# the evidence has to be read against, so say it out loud at plan time rather
+# than leaving it to be inferred from a null output.
+check "cert_fixture_seed_disabled_is_stated" {
+  assert {
+    condition     = var.cert_fixture_seed_enabled || var.cert_fixture_seed_url == ""
+    error_message = "cert_fixture_seed_enabled is false with a fixture still pinned: this apply does not seed, and the database may still carry the fixture named by cert_fixture_seed_source."
+  }
+}
+
+output "cert_fixture_seed_applied" {
+  description = "What the certification serving fixture apply recorded: the pinned source, its verified sha256, how many statements committed, and the rows they touched. Null when fixture seeding is disabled, which does not imply the database is unseeded — read cert_fixture_seed_source for the revision it carries."
+  value = one([
+    for invocation in aws_lambda_invocation.cert_fixture_seed : {
+      url             = var.cert_fixture_seed_url
+      sha256          = jsondecode(invocation.result).source.sha256
+      bytes           = jsondecode(invocation.result).source.bytes
+      committed       = jsondecode(invocation.result).committed
+      statement_count = jsondecode(invocation.result).statement_count
+      rows_affected   = jsondecode(invocation.result).rows_affected
+    }
+  ])
+}
+
+# Provenance that outlives the invocation. `cert_fixture_seed_applied` reports
+# the apply that ran and is necessarily null once the invocation leaves state;
+# this reports what the stack has pinned, so disabling seeding does not erase
+# which fixture revision the certification database was last seeded with.
+output "cert_fixture_seed_source" {
+  description = "The commit-pinned certification fixture this stack carries, reported whether or not this apply invoked the seed: `url`, its `sha256`, and `seeding_enabled`. Null only when no fixture has ever been pinned here (an emptied cert_fixture_seed_url also reads null, which is why disabling seeding should use cert_fixture_seed_enabled)."
+  value = var.cert_fixture_seed_url == "" ? null : {
+    url             = var.cert_fixture_seed_url
+    sha256          = var.cert_fixture_seed_sha256
+    seeding_enabled = var.cert_fixture_seed_enabled
+  }
+}
+
+output "cert_fixture_seed_result" {
+  description = "Full per-statement result returned by the bootstrap Lambda's script mode. Null when fixture seeding is disabled, which does not imply the database is unseeded — read cert_fixture_seed_source for the revision it carries."
+  value       = one(aws_lambda_invocation.cert_fixture_seed[*].result)
+}
