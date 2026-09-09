@@ -153,6 +153,13 @@ module "honua" {
   db_apply_immediately = true
   redis_enabled        = true
   redis_node_type      = "cache.t4g.micro"
+  # Pro license (operator ruling A, 2026-09-09): certification exercises
+  # GeoServices editing, a Pro entitlement; off by default, see variables.tf.
+  enable_pro_license             = var.enable_pro_license
+  pro_license_secret_arn         = var.pro_license_secret_arn
+  pro_license_content            = var.pro_license_content
+  pro_license_key_id             = var.pro_license_key_id
+  pro_license_trusted_public_key = var.pro_license_trusted_public_key
   # The certification write target is the alias Function URL (lambda-preview-cert.tf);
   # the server's host validation must accept that host or every request answers
   # 400 "Invalid Host header" (live certification run 16, 2026-09-07).

@@ -287,3 +287,42 @@ variable "cert_fixture_seed_enabled" {
   type        = bool
   default     = true
 }
+
+# Pro license for the certification Lambda (operator ruling A, 2026-09-09).
+# Lambda Preview Certification runs 28/29 failed the deployed-phase addFeatures
+# assertion with an in-body 402: the function ran Community and the editing
+# entitlement (editing.featureserver-edits) was absent. The module already
+# delivers a signed Pro license through Secrets Manager; these inputs pass it
+# through, off by default. Reference an EXISTING secret (pro_license_secret_arn,
+# e.g. a us-east-1 replica of the demo stack's license) so no license material
+# is ever written here, in state outputs, or in logs.
+variable "enable_pro_license" {
+  description = "Deliver a signed Pro license to the certification Lambda via Secrets Manager (module aws-serverless enable_pro_license). Off by default: the server runs Community and GeoServices editing certification refuses with 402."
+  type        = bool
+  default     = false
+}
+
+variable "pro_license_secret_arn" {
+  description = "ARN of an EXISTING Secrets Manager secret (same region as the stack) holding the signed Pro license envelope. When set, Terraform creates no secret and no version; it only injects Licensing__LicenseContentSecretRef and grants the Lambda role GetSecretValue on it."
+  type        = string
+  default     = ""
+}
+
+variable "pro_license_content" {
+  description = "Escape hatch: the signed Pro license envelope JSON for Terraform to store itself. Prefer pro_license_secret_arn. Never commit a value; set it only in the operator's local secret tfvars."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "pro_license_key_id" {
+  description = "The license signing keyId as relabeled in the envelope (hyphen-free; it becomes the env-var segment Licensing__TrustedKeys__<keyId>)."
+  type        = string
+  default     = "honuademo2026q2"
+}
+
+variable "pro_license_trusted_public_key" {
+  description = "The Ed25519 public key (base64url: prefix) that verifies the license signature; injected as Licensing__TrustedKeys__<pro_license_key_id>. A public key only verifies and is not secret."
+  type        = string
+  default     = ""
+}
