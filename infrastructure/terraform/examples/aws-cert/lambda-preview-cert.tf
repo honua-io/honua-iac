@@ -145,6 +145,10 @@ locals {
     module.honua.admin_password_secret_arn,
     module.honua.master_key_secret_arn,
     module.honua.pro_license_secret_arn,
+    # Redis connection (redis_enabled, 2026-09-08): the candidate boots with
+    # the standing environment's aws:secretsmanager: reference and must be
+    # allowed to resolve it, or it exits before the shared-key assertion.
+    module.honua.redis_connection_secret_arn,
   ])
 }
 
