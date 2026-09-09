@@ -360,6 +360,28 @@ for reuse/evidence until lifecycle expiration. These ephemeral resources are
 owned by the script and are not Terraform resources. The lane does **not** pass
 `--vpc-config`; the execution role therefore has no VPC/ENI permissions.
 
+### Pro license for the certification Lambda (operator ruling A, 2026-09-09)
+
+Certification runs 28 and 29 failed the deployed-phase `addFeatures` assertion
+with an in-body 402: the function ran Community and GeoServices editing is the
+Pro entitlement `editing.featureserver-edits` (honua-server#4607 names the
+cause in `serving-402:`; the assertion is deliberately not relaxed). The stack
+now passes the module's license inputs through, **off by default**:
+
+| Variable | Effect | Secret? |
+|---|---|---|
+| `enable_pro_license` | grants the Lambda role `secretsmanager:GetSecretValue` on the license secret; injects `Licensing__LicenseContentSecretRef` and `Licensing__TrustedKeys__<pro_license_key_id>` | No |
+| `pro_license_secret_arn` | an EXISTING secret in this region holding the signed envelope (ruling A: a Secrets Manager replica of the demo stack's `honua-demo-demo/license-pro`); Terraform creates no secret and no version | No, an ARN |
+| `pro_license_key_id` | hyphen-free keyId matching the envelope (`honuademo2026q2`); a mismatch silently serves Community | No |
+| `pro_license_trusted_public_key` | the Ed25519 public key (`base64url:` prefix); verifies only, cannot mint | No |
+| `pro_license_content` | escape hatch for Terraform to own the envelope; never commit a value | **Yes**, local secret tfvars only |
+
+The envelope and the signing seed never live in this repository, in state
+outputs, or in logs. Apply targeted (`module.honua` and its IAM policies, the
+run-27 lesson: a new secret needs the module policies applied) and verify with
+the alias `GET /api/v1/admin/license/status` (`edition=Pro`,
+`validationState=Valid`) before dispatching the next certification run.
+
 ### Static plan summary — operator must confirm against governed state
 
 This is a source-derived delta against the existing certification stack, **not

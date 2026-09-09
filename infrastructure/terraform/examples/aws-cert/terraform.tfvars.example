@@ -73,3 +73,17 @@ github_oidc_subjects = ["repo:honua-io/honua-server:environment:cert"]
 tags = {
   CostCenter = "certification"
 }
+
+# Pro license for the certification Lambda (off by default). Certification
+# exercises GeoServices editing, a Pro entitlement; without a license the
+# deployed-phase addFeatures assertion refuses with an in-body 402.
+# Preferred: reference an EXISTING secret in this region (for example a
+# Secrets Manager replica of the demo stack's honua-demo-demo/license-pro).
+# The public key only verifies signatures and is not secret. Never put
+# pro_license_content here; if you must let Terraform own the envelope, set it
+# only in your local secret tfvars (~/.config/honua/aws-cert.secret.tfvars).
+# enable_pro_license             = true
+# pro_license_secret_arn         = "arn:aws:secretsmanager:us-east-1:<account>:secret:<name>-<suffix>"
+# pro_license_key_id             = "honuademo2026q2"
+# pro_license_trusted_public_key = "base64url:<public-key>"
+
