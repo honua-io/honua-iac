@@ -56,6 +56,12 @@ mock_provider "aws" {
     }
   }
 
+  mock_resource "aws_lb_listener" {
+    defaults = {
+      arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/honua-test/0000000000000000/1111111111111111"
+    }
+  }
+
   mock_resource "aws_iam_policy" {
     defaults = {
       arn = "arn:aws:iam::123456789012:policy/honua-test"
@@ -199,5 +205,85 @@ run "multinode_scale_out_with_redis_and_s3_is_safe" {
     redis_connection_cidrs          = ["10.0.0.0/16"]
     file_storage_provider           = "AwsS3"
     file_storage_aws_s3_bucket_name = "honua-test-files"
+  }
+}
+
+# honua-iac#182: the protection profile must derive availability_class from
+# real topology, not from a caller assertion. SingleInstance with no Redis/S3
+# wiring must report not-ready and the single-task health/observation limits
+# ECS actually enforces on this module's target group and container.
+run "single_instance_reports_not_multi_node_ready_with_expected_limits" {
+  command = apply
+
+  assert {
+    condition     = output.multi_node_topology_ready == false
+    error_message = "SingleInstance with no Redis/S3 wiring must not claim multi-node readiness."
+  }
+
+  assert {
+    condition     = output.alb_health_check.path == "/healthz/ready"
+    error_message = "ALB health check path must match the module default health_check_path."
+  }
+
+  assert {
+    condition = (
+      output.alb_health_check.interval_seconds == 30 &&
+      output.alb_health_check.timeout_seconds == 5 &&
+      output.alb_health_check.healthy_threshold == 2 &&
+      output.alb_health_check.unhealthy_threshold == 3
+    )
+    error_message = "ALB health check observation limits must match the module's configured target group health check block exactly."
+  }
+
+  assert {
+    condition     = output.container_health_check_start_period_seconds == 60
+    error_message = "Container warmup window must match the module's configured container health check startPeriod exactly."
+  }
+
+  assert {
+    condition = (
+      output.deployment_rollback.mechanism == "aws-ecs-deployment-circuit-breaker" &&
+      output.deployment_rollback.primary_rollback_enabled == true &&
+      output.deployment_rollback.canary_rollback_enabled == null
+    )
+    error_message = "Primary service must report an executable, enabled rollback actuator; canary rollback must be null when no canary service exists."
+  }
+
+  assert {
+    condition     = output.task_definition_revision_retention == "unbounded-until-manually-deregistered"
+    error_message = "This module never deregisters a task definition revision, so retention must be reported as unbounded."
+  }
+}
+
+# The canary ECS service also carries the deployment circuit breaker
+# (main.tf aws_ecs_service.canary), so a topology that legitimately runs a
+# canary must report both services' rollback actuators as enabled -- the
+# contract must not claim recovery it cannot exercise for either service.
+run "canary_topology_reports_both_rollback_actuators_enabled" {
+  command = apply
+
+  variables {
+    desired_count                   = 2
+    max_capacity                    = 4
+    deployment_mode                 = "MultiNode"
+    redis_connection_string         = "redis.example.internal:6379,password=test,ssl=true"
+    redis_connection_cidrs          = ["10.0.0.0/16"]
+    file_storage_provider           = "AwsS3"
+    file_storage_aws_s3_bucket_name = "honua-test-files"
+    canary_enabled                  = true
+    canary_desired_count            = 1
+  }
+
+  assert {
+    condition     = output.multi_node_topology_ready == true
+    error_message = "MultiNode with Redis and shared S3 storage must report multi-node readiness."
+  }
+
+  assert {
+    condition = (
+      output.deployment_rollback.primary_rollback_enabled == true &&
+      output.deployment_rollback.canary_rollback_enabled == true
+    )
+    error_message = "Both the primary and canary ECS services must report an enabled rollback actuator when the canary service exists."
   }
 }
