@@ -22,7 +22,7 @@
   "operator_contract_digest": {
     "sensitive": false,
     "type": "dynamic",
-    "value": "e17693e032233f6273fba98e0bc50e171f3cf35a7871526025bfe7714fe1af7a"
+    "value": "5e7e958e48f1c73a033abeb13002a3c4166b8af06b165b33155316aab433edb5"
   },
   "deployment_contract": {
     "sensitive": false,
@@ -32,7 +32,7 @@
       "kind": "deployment",
       "identity": {
         "status": "qualified",
-        "contract_digest": "e17693e032233f6273fba98e0bc50e171f3cf35a7871526025bfe7714fe1af7a",
+        "contract_digest": "5e7e958e48f1c73a033abeb13002a3c4166b8af06b165b33155316aab433edb5",
         "candidate_digest": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
         "manifest_digest": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
         "iac_revision": "9c1e7f0b2d3a4c5e6f708192a3b4c5d6e7f80912",
@@ -146,7 +146,7 @@
       "kind": "validation",
       "identity": {
         "status": "qualified",
-        "contract_digest": "e17693e032233f6273fba98e0bc50e171f3cf35a7871526025bfe7714fe1af7a",
+        "contract_digest": "5e7e958e48f1c73a033abeb13002a3c4166b8af06b165b33155316aab433edb5",
         "candidate_digest": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
         "manifest_digest": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
         "iac_revision": "9c1e7f0b2d3a4c5e6f708192a3b4c5d6e7f80912",
@@ -249,7 +249,7 @@
       "kind": "operations",
       "identity": {
         "status": "qualified",
-        "contract_digest": "e17693e032233f6273fba98e0bc50e171f3cf35a7871526025bfe7714fe1af7a",
+        "contract_digest": "5e7e958e48f1c73a033abeb13002a3c4166b8af06b165b33155316aab433edb5",
         "candidate_digest": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
         "manifest_digest": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
         "iac_revision": "9c1e7f0b2d3a4c5e6f708192a3b4c5d6e7f80912",
@@ -328,7 +328,35 @@
         "ingress_deletion_protection": false,
         "ingress_access_logs_enabled": true,
         "database_managed": true,
-        "cache_enabled": true
+        "cache_enabled": true,
+        "protection_profile": {
+          "availability_class": "single-task",
+          "interruption_guarantee": "brief-interruption-on-replacement",
+          "health_sources": {
+            "functional_check_path": "/healthz/ready",
+            "log_group": "/honua/honuaecs-it",
+            "metrics_namespace": "Honua/honuaecs-it"
+          },
+          "warmup_seconds": 60,
+          "observation": {
+            "interval_seconds": 30,
+            "timeout_seconds": 5,
+            "healthy_threshold": 2,
+            "unhealthy_threshold": 3
+          },
+          "recovery": {
+            "mechanism": "aws-ecs-deployment-circuit-breaker",
+            "executable": true,
+            "primary_rollback_enabled": true,
+            "canary_rollback_enabled": null
+          },
+          "durable_state": {
+            "database_managed": true,
+            "cache_enabled": true,
+            "object_storage_enabled": false
+          },
+          "prior_revision_retention": "unbounded-until-manually-deregistered"
+        }
       },
       "grouping": {
         "resource_group": "honuaecs-it-cluster",
