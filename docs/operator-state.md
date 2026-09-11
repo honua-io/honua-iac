@@ -1,3 +1,9 @@
+---
+type: reference
+title: "Plan and state lineage"
+description: "The exact-plan and state-lineage metadata an operator needs to prove which configuration produced a given deployment."
+tags: [state, lineage, terraform]
+---
 # Operator State Guide
 
 ## Exact plan and state lineage metadata

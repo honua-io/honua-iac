@@ -1,3 +1,9 @@
+---
+type: reference
+title: "Exact plan contract"
+description: "The non-secret backend, init, plan and apply contract, so a plan produced in one place can be trusted and applied in another."
+tags: [terraform, plan, contract]
+---
 # Terraform exact-plan execution contract
 
 This is the non-secret backend / init / plan / apply metadata contract that

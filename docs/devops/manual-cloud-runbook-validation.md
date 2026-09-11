@@ -1,3 +1,9 @@
+---
+type: guide
+title: "Execute the cloud runbooks manually"
+description: "The operator procedure for running the cloud runbooks by hand, for when the automated lane is unavailable or being verified."
+tags: [runbook, validation, manual]
+---
 # Manual Cloud Runbook Validation + Evidence (AWS + Azure)
 
 This is the operator procedure for executing the manual cloud runbooks

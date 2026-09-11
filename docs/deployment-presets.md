@@ -1,3 +1,9 @@
+---
+type: reference
+title: "Deployment presets"
+description: "The small, medium and large presets the four primary deployable roots ship, what each sizes for, and when to depart from them."
+tags: [presets, sizing, terraform]
+---
 # Deployment presets
 
 The four primary deployable roots ship a `small` infrastructure preset for a

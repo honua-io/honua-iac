@@ -1,3 +1,9 @@
+---
+type: guide
+title: "Validate Terraform on demand"
+description: "The on-demand validation run: what it checks, what it costs, and how to read its output before an apply."
+tags: [terraform, validation, runbook]
+---
 # Terraform Validation Runbook
 
 This runbook defines the on-demand Terraform validation flow for Honua across Azure, AWS, and Kubernetes.

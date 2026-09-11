@@ -1,3 +1,9 @@
+---
+type: guide
+title: "Produce AWS certification evidence"
+description: "The exact ordered commands to take a disposable AWS deployment from empty account to recorded certification evidence."
+tags: [aws, certification, evidence, runbook]
+---
 # AWS Certification Live-Evidence Runbook (honua-iac#118)
 
 The exact ordered commands to take a disposable AWS account from zero to the

@@ -1,3 +1,9 @@
+---
+type: guide
+title: "Prove backups actually restore"
+description: "Turns backups exist into backups were tested: the ordered procedure for restoring a deployment and confirming the result."
+tags: [backup, restore, runbook, dr]
+---
 # Backup / Restore Drill Runbook (AWS + Azure)
 
 This runbook turns "backups exist" into a tested operator workflow for the
