@@ -96,6 +96,10 @@ Backup/restore and failover drill runbooks with RTO/RPO evidence capture:
 - [docs/devops/backup-restore-runbook.md](docs/devops/backup-restore-runbook.md)
 - [docs/devops/failover-drill-runbook.md](docs/devops/failover-drill-runbook.md)
 
+## Documentation
+
+- **[Full documentation index](docs/SUMMARY.md)** — every published page, generated from the documentation bundle so it cannot drift.
+
 ## Module publishing scope
 
 Decision and tier classification: [docs/module-publishing-decision.md](docs/module-publishing-decision.md).

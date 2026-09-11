@@ -1,3 +1,9 @@
+---
+type: concept
+title: "Why modules are not on the Terraform Registry"
+description: "The recorded decision: modules are distributed by Git source at a SemVer tag because the Elastic License 2.0 blocks the public registry, and relicensing is out of scope."
+tags: [decision, licensing, registry]
+---
 # Module Publishing Decision
 
 Tracks the evaluation requested in honua-io/honua-terraform#10 (now

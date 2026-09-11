@@ -1,3 +1,9 @@
+---
+type: guide
+title: "Execute the cloud runbooks manually"
+description: "The operator procedure for running the cloud runbooks by hand, for when the automated lane is unavailable or being verified."
+tags: [runbook, validation, manual]
+---
 # Manual Cloud Runbook Validation + Evidence (AWS + Azure)
 
 This is the operator procedure for executing the manual cloud runbooks
@@ -42,7 +48,7 @@ JSON evidence to the issue.
 ## Scope (matrix cells to execute)
 
 At minimum, execute one AOT and one JIT path per cloud, per the upstream
-[deployment validation matrix](https://github.com/honua-io/honua-devops/blob/main/docs/deployment-validation-matrix.md):
+[deployment validation matrix](https://github.com/honua-io/honua-devops/blob/trunk/docs/deployment-validation-matrix.md):
 
 | Cloud | Target | Mode | Launch class | Local entrypoint |
 | --- | --- | --- | --- | --- |
@@ -129,7 +135,7 @@ HONUA_SMOKE_API_KEY="$HONUA_ADMIN_API_KEY" \
 
 The smoke contract checks the readiness, liveness, and (with an API key) admin
 version endpoints. After the endpoint smoke passes, perform the
-[admin UI verification](https://github.com/honua-io/honua-devops/blob/main/docs/manual-cloud-runbooks.md#admin-ui-verification)
+[admin UI verification](https://github.com/honua-io/honua-devops/blob/trunk/docs/manual-cloud-runbooks.md#admin-ui-verification)
 pass; if the profile has no admin UI, record `admin-ui` as `not-present` and
 rely on the authenticated admin-version probe as the minimum control-plane
 proof.

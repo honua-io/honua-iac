@@ -1,3 +1,9 @@
+---
+type: reference
+title: "honua.operator-contract/v1"
+description: "The versioned, machine-readable contract between this repository and the platforms that consume it: what it promises and how a consumer validates against it."
+tags: [contract, operator, machine-readable]
+---
 # Honua Operator Contract v1
 
 `honua.operator-contract/v1` is the versioned, machine-validated boundary

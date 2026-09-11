@@ -1,3 +1,9 @@
+---
+type: index
+title: "What this repository owns"
+description: "The reusable cloud modules, deployment presets and operator contracts this repo ships, and which cloud each covers."
+tags: [terraform, modules, cloud]
+---
 # Honua Terraform Feature Map
 
 This repository owns reusable cloud modules, deployable examples, bootstrap templates, and validation assets for Honua deployments.

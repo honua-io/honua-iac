@@ -1,3 +1,9 @@
+---
+type: guide
+title: "Run a failover drill"
+description: "Validates failover behaviour for the deployment rather than assuming it, with the checks that make the drill meaningful."
+tags: [failover, drill, runbook, dr]
+---
 # Failover Drill Runbook + RTO/RPO Evidence (AWS + Azure)
 
 This runbook validates failover behavior for the validated managed targets and
