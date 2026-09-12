@@ -1217,6 +1217,77 @@ verify_protocol_endpoints() {
   log_info "Protocol/admin smoke checks passed for $normalized"
 }
 
+# Assert the LIVE server agrees with the licensing contract the module declared
+# (honua-iac #191, honua-server #4721). The 2026.1 candidate ships with
+# licensing disabled: the harness and the cloud parity/certification cells
+# supply no license inputs, so the admin surface must report mode "disabled" and
+# edition "Unlicensed-2026.1".
+#
+# The expected values are honua-server's published contract, not a snapshot of
+# whatever this deployment happens to return. In particular a Community edition
+# is a FAILURE and not a benign fallback: it means the server loaded its own
+# Licensing__Mode=Enabled default, found no license source, and silently gated
+# editing/sync/streaming/geocoding on a deployment that is supposed to have
+# every entitlement active.
+#
+# Export HONUA_EXPECTED_LICENSING_MODE=enabled to validate a licensed stack.
+verify_licensing_mode() {
+  local base_url="$1"
+  local expected_mode="${HONUA_EXPECTED_LICENSING_MODE:-disabled}"
+  local normalized
+  local response_file
+  local status
+  local body
+  local mode
+  local edition
+  local validation_state
+
+  normalized="$(normalize_base_url "$base_url")"
+  response_file="$(mktemp)"
+  status="$(curl -sS -o "$response_file" -w "%{http_code}" --max-time 20 \
+    -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
+    "${normalized}/api/v1/admin/license" || true)"
+
+  if [[ "$status" != "200" ]]; then
+    body="$(tr '\n' ' ' < "$response_file" | sed 's/[[:space:]]\+/ /g' | cut -c1-200)"
+    rm -f "$response_file"
+    log_error "Licensing check failed: GET /api/v1/admin/license returned HTTP $status (${body:-no-body})"
+    return 1
+  fi
+
+  body="$(tr -d '\n\r' < "$response_file")"
+  rm -f "$response_file"
+
+  if command -v jq >/dev/null 2>&1; then
+    mode="$(printf '%s' "$body" | jq -r '.data.mode // ""' 2>/dev/null || printf '')"
+    edition="$(printf '%s' "$body" | jq -r '.data.edition // ""' 2>/dev/null || printf '')"
+    validation_state="$(printf '%s' "$body" | jq -r '.data.validationState // ""' 2>/dev/null || printf '')"
+  else
+    mode="$(printf '%s' "$body" | grep -o '"mode"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n 1 | sed 's/.*"\([^"]*\)"$/\1/')"
+    edition="$(printf '%s' "$body" | grep -o '"edition"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n 1 | sed 's/.*"\([^"]*\)"$/\1/')"
+    validation_state="$(printf '%s' "$body" | grep -o '"validationState"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n 1 | sed 's/.*"\([^"]*\)"$/\1/')"
+  fi
+
+  if [[ "$mode" != "$expected_mode" ]]; then
+    log_error "Licensing check failed: admin license reports mode '${mode:-<absent>}', expected '$expected_mode'"
+    return 1
+  fi
+
+  if [[ "$expected_mode" == "disabled" ]]; then
+    if [[ "$edition" != "Unlicensed-2026.1" ]]; then
+      log_error "Licensing check failed: mode is disabled but edition is '${edition:-<absent>}', expected 'Unlicensed-2026.1' (a Community edition here means the server fell back instead of running licensing-disabled)"
+      return 1
+    fi
+
+    if [[ "$validation_state" != "Disabled" ]]; then
+      log_error "Licensing check failed: mode is disabled but validationState is '${validation_state:-<absent>}', expected 'Disabled'"
+      return 1
+    fi
+  fi
+
+  log_info "Licensing check passed for $normalized (mode=$mode, edition=${edition:-<absent>}, validationState=${validation_state:-<absent>})"
+}
+
 json_escape() {
   local value="$1"
   value="${value//\\/\\\\}"
@@ -2189,6 +2260,7 @@ run_ecs_checks() {
   wait_for_ready "$url" "$TIMEOUT_SECONDS"
   if [[ "$CHECK_PROTOCOLS" == "true" ]]; then
     verify_protocol_endpoints "$url"
+    verify_licensing_mode "$url"
     run_admin_api_crud_smoke "$url" "$db_endpoint"
   fi
   verify_postgis_extensions "$db_endpoint"
@@ -2253,6 +2325,7 @@ run_serverless_checks() {
   wait_for_ready "$url" "$TIMEOUT_SECONDS"
   if [[ "$CHECK_PROTOCOLS" == "true" ]]; then
     verify_protocol_endpoints "$url"
+    verify_licensing_mode "$url"
     run_admin_api_crud_smoke "$url" "$db_endpoint"
   fi
   verify_postgis_extensions "$db_endpoint"
@@ -2737,4 +2810,9 @@ main() {
   log_info "AWS Terraform integration checks completed successfully"
 }
 
-main "$@"
+# Run only when executed. Sourcing loads the helpers without running the
+# harness, so hermetic tests (test-licensing-mode-check.sh) can exercise single
+# verification functions against fake binaries.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi
