@@ -1,8 +1,3 @@
-output "licensing_mode" {
-  description = "The licensing mode declared to the server as Licensing__Mode. \"Disabled\" is the 2026.1 contract: the live service's GET /api/v1/admin/license must report mode disabled, edition Unlicensed-2026.1."
-  value       = module.honua.licensing_mode
-}
-
 # Legacy scalar outputs for this root.
 #
 # NON-AUTHORITATIVE. These are kept for backward compatibility with operator

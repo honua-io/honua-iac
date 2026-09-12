@@ -136,6 +136,15 @@ and [`docs/operator-state.md`](operator-state.md).
 - Use managed secrets and a remote state backend (mandatory for anything shared
   or long-lived; see [`operator-state.md`](operator-state.md))
 - Add mandatory tags (owner, env, cost center)
+- Leave the licensing inputs alone. The 2026.1 AWS roots default to
+  `licensing_mode = "Disabled"`, which declares `Licensing__Mode=Disabled` on
+  the deployed server: no license envelope, no capacity metering, every
+  capability active. Confirm it on the live service with
+  `GET /api/v1/admin/license` — it must report `mode=disabled` and
+  `edition=Unlicensed-2026.1`. An `edition=Community` there means the mode did
+  not reach the server and paid capabilities are gated. Licensing returns in
+  2026.2; see the `aws-ecs` and `aws-serverless` module READMEs for the licensed
+  path.
 
 ## Horizontal scaling contract
 

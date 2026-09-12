@@ -106,7 +106,8 @@ module "honua" {
 | `enable_xray_tracing` | false | Enable Lambda X-Ray active tracing, grant least-privilege `xray:PutTraceSegments`/sampling reads, and set the app-side `Tracing__XRay__Enabled` flag. |
 | `enable_lambda_insights` | false | Attach the CloudWatch Lambda Insights managed policy and add the Insights widgets (the Insights extension layer must be present in the image). |
 | `honua_metrics_namespace` | `Honua/Serverless` | CloudWatch namespace the custom Honua metrics (cold-start, init duration) are published to via an ADOT/EMF collector; used by the dashboard's custom widgets. |
-| `enable_pro_license` | false | Deliver a signed Pro license to the Lambda via Secrets Manager so editing/sync/streaming/geocoding work. When off the server runs Community. |
+| `licensing_mode` | `Disabled` | Licensing deployment mode declared as `Licensing__Mode`. `Disabled` is the 2026.1 contract: no license, no capacity metering, every entitlement active. `Enabled` loads and validates a license. Supplying one via `enable_pro_license` implies `Enabled`. |
+| `enable_pro_license` | false | Deliver a signed Pro license to the Lambda via Secrets Manager and set `Licensing__Mode=Enabled`. When off the deployment runs with licensing **disabled** (all entitlements active), not Community. |
 | `pro_license_content` | `""` | Signed Pro license envelope JSON (relabeled hyphen-free keyId). Stored in `<name>/license-pro` and referenced by `Licensing__LicenseContentSecretRef`. Required when `enable_pro_license`. |
 | `pro_license_key_id` | `honuademo2026q2` | Hyphen-free license keyId as relabeled in the envelope; used to build the legal env var name `Licensing__TrustedKeys__<keyId>`. |
 | `pro_license_trusted_public_key` | `""` | Ed25519 public key (`base64url:` prefixed) that verifies the license signature. Required when `enable_pro_license`. |
@@ -120,9 +121,35 @@ module "honua" {
 
 See `variables.tf` for the complete list.
 
+## Licensing
+
+The 2026.1 release ships with licensing **disabled** (operator ruling
+2026-09-12; honua-server #4721). With no license inputs the module declares
+
+- `Licensing__Mode = Disabled`
+
+on the Lambda, on both control-plane event handlers, and on the geoprocessing
+Batch job definition — and creates no license secret and grants the execution
+role no access to one.
+
+The mode is declared rather than inferred. honua-server's own default is
+`Licensing__Mode=Enabled`, which with no license source resolves to the
+**Community** edition and gates editing, sync, streaming and geocoding; a
+candidate deployed with no license inputs would then look licensed-but-crippled
+instead of licensing-disabled. In `Disabled` mode the server loads and validates
+nothing, registers no capacity meter, activates every `FeatureCatalog`
+entitlement, and its admin surface reports it:
+`GET /api/v1/admin/license` answers `mode: disabled`, `edition:
+Unlicensed-2026.1`, `validationState: Disabled`. The live AWS harness asserts
+exactly that and treats a Community edition as a failure, not a fallback
+(`validation/scripts/aws/run-aws-terraform-integration.sh`).
+
+Set `licensing_mode = "Enabled"` (or supply an envelope, below) to opt a
+deployment into licensing. Licensing hardening and metering return in 2026.2.
+
 ## Pro license (Secrets Manager delivery)
 
-Optional, **off by default**. The signed Pro license envelope (~2KB) does not fit
+Optional, **off by default**; this is the 2026.2 path. The signed Pro license envelope (~2KB) does not fit
 Lambda's 4KB total environment-variable budget, so when `enable_pro_license = true`
 the module stores the envelope in a dedicated Secrets Manager secret
 (`<name_prefix>-<environment>/license-pro`), grants the Lambda role
@@ -136,9 +163,10 @@ the module stores the envelope in a dedicated Secrets Manager secret
 The envelope's `keyId` must be **hyphen-free** (e.g. `honuademo2026q2`) because it
 becomes part of the `Licensing__TrustedKeys__<keyId>` env var name; the license
 signature is over the payload only, so relabeling the envelope keyId is safe as long as
-the trusted key still matches. If the secret is unreachable the server degrades to
-Community rather than failing to start. Cost is effectively `$0` (one small secret;
-negligible reads at cold start).
+the trusted key still matches. Supplying an envelope forces `Licensing__Mode=Enabled`,
+and a paid deployment that cannot resolve a valid license refuses to start — so
+leave the envelope off rather than relying on a fallback. Cost is effectively
+`$0` (one small secret; negligible reads at cold start).
 
 ```hcl
 module "honua" {
