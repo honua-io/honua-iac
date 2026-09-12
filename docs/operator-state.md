@@ -2,6 +2,7 @@
 type: reference
 title: "Plan and state lineage"
 description: "The exact-plan and state-lineage metadata an operator needs to prove which configuration produced a given deployment."
+resource: "https://github.com/honua-io/honua-iac/blob/trunk/contracts/operator-contract.v1.json"
 tags: [state, lineage, terraform]
 ---
 # Operator State Guide

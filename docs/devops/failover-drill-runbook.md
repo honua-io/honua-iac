@@ -2,6 +2,7 @@
 type: guide
 title: "Run a failover drill"
 description: "Validates failover behaviour for the deployment rather than assuming it, with the checks that make the drill meaningful."
+resource: "honua://capability/dr.failover"
 tags: [failover, drill, runbook, dr]
 ---
 # Failover Drill Runbook + RTO/RPO Evidence (AWS + Azure)

@@ -2,6 +2,7 @@
 type: guide
 title: "Deploy Honua as a platform operator"
 description: "The end-to-end path for an operator standing up Honua on their own cloud account, from module selection through to a running deployment."
+resource: "https://github.com/honua-io/honua-iac/tree/trunk/infrastructure/terraform/examples"
 tags: [deployment, operator, terraform]
 ---
 # Operator Deployment Guide

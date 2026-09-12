@@ -2,6 +2,7 @@
 type: index
 title: "What this repository owns"
 description: "The reusable cloud modules, deployment presets and operator contracts this repo ships, and which cloud each covers."
+resource: "https://github.com/honua-io/honua-iac/tree/trunk/infrastructure/terraform/modules"
 tags: [terraform, modules, cloud]
 ---
 # Honua Terraform Feature Map

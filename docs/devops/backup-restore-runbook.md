@@ -2,6 +2,7 @@
 type: guide
 title: "Prove backups actually restore"
 description: "Turns backups exist into backups were tested: the ordered procedure for restoring a deployment and confirming the result."
+resource: "honua://capability/dr.backup-automation"
 tags: [backup, restore, runbook, dr]
 ---
 # Backup / Restore Drill Runbook (AWS + Azure)

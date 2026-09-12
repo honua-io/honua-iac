@@ -2,6 +2,7 @@
 type: reference
 title: "How modules are versioned and consumed"
 description: "The tag scheme, the pre-1.0 stance and the breaking-change policy for the publishable modules, with the Git source form to pin against."
+resource: "https://github.com/honua-io/honua-iac/tags"
 tags: [versioning, modules, terraform]
 ---
 # Module Versioning

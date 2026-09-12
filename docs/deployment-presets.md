@@ -2,6 +2,7 @@
 type: reference
 title: "Deployment presets"
 description: "The small, medium and large presets the four primary deployable roots ship, what each sizes for, and when to depart from them."
+resource: "https://github.com/honua-io/honua-iac/tree/trunk/infrastructure/terraform/modules"
 tags: [presets, sizing, terraform]
 ---
 # Deployment presets
