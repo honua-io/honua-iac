@@ -17,9 +17,10 @@
 # runs with no NAT and therefore needs a Secrets Manager interface endpoint;
 # cert does not.
 #
-# Build prerequisites on the apply host: python3 + pip (replaces the module's
-# psql + network-path requirement). The pure-Python pg8000 driver is vendored
-# into the deployment zip at apply time; nothing is compiled.
+# Build prerequisites on the apply host: Bash and python3 (or python) with pip
+# (replaces the module's psql + network-path requirement). The pure-Python
+# pg8000 driver is vendored into the deployment zip at apply time; nothing is
+# compiled.
 ###############################################################################
 
 locals {
@@ -41,8 +42,21 @@ resource "terraform_data" "postgis_bootstrap_build" {
   }
 
   provisioner "local-exec" {
-    interpreter = ["python", "-c"]
+    interpreter = ["bash", "-c"]
     command     = <<-EOT
+      set -euo pipefail
+      python_bin=""
+      for candidate in python3 python; do
+        if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -m pip --version >/dev/null 2>&1; then
+          python_bin=$(command -v "$candidate")
+          break
+        fi
+      done
+      if [[ -z "$python_bin" ]]; then
+        echo "PostGIS bootstrap build requires python3 (or python) with pip on PATH" >&2
+        exit 1
+      fi
+      "$python_bin" - <<'PYTHON'
       import pathlib, shutil, subprocess, sys, urllib.request
       root = pathlib.Path(r"${local.postgis_bootstrap_dir}")
       build = root / "build"
@@ -59,6 +73,7 @@ resource "terraform_data" "postgis_bootstrap_build" {
       if b"BEGIN CERTIFICATE" not in data:
           raise SystemExit("downloaded RDS CA bundle is not a PEM certificate file")
       ca.write_bytes(data)
+      PYTHON
     EOT
   }
 }

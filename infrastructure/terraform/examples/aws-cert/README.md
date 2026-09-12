@@ -485,6 +485,8 @@ The policy-gate tests include negative mutations for this substrate's IAM guards
 
 ### Certification serving fixture — recorded, sha-pinned seed apply
 
+The apply host needs Bash and `python3` (or `python`) with pip to build the PostGIS bootstrap package.
+
 The lane's serving smoke asserts **all ten named rows and the exact count** on
 `test_service/0` and writes its run-owned row to the scratch layer
 `test_service/10` (`scripts/cloud/lambda-certification.md`). Nothing else in
