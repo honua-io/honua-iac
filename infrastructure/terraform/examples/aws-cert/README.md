@@ -377,10 +377,24 @@ now passes the module's license inputs through, **off by default**:
 | `pro_license_content` | escape hatch for Terraform to own the envelope; never commit a value | **Yes**, local secret tfvars only |
 
 The envelope and the signing seed never live in this repository, in state
-outputs, or in logs. Apply targeted (`module.honua` and its IAM policies, the
-run-27 lesson: a new secret needs the module policies applied) and verify with
-the alias `GET /api/v1/admin/license/status` (`edition=Pro`,
-`validationState=Valid`) before dispatching the next certification run.
+outputs, or in logs. `terraform.tfvars.example` points the `pro_license_content`
+escape hatch at a local secret tfvars file (`~/.config/honua/aws-cert.secret.tfvars`),
+but Terraform only auto-loads `terraform.tfvars`, `terraform.tfvars.json`, and
+`*.auto.tfvars[.json]` in the root -- that path is none of those, so plan/apply
+must pass it explicitly:
+
+```bash
+terraform -chdir=infrastructure/terraform/examples/aws-cert plan \
+  -var-file="$HOME/.config/honua/aws-cert.secret.tfvars"
+terraform -chdir=infrastructure/terraform/examples/aws-cert apply \
+  -var-file="$HOME/.config/honua/aws-cert.secret.tfvars"
+```
+
+or export `TF_VAR_pro_license_content` instead of using a file. Apply targeted
+(`module.honua` and its IAM policies, the run-27 lesson: a new secret needs the
+module policies applied) and verify with the alias
+`GET /api/v1/admin/license/status` (`edition=Pro`, `validationState=Valid`)
+before dispatching the next certification run.
 
 ### Static plan summary — operator must confirm against governed state
 
