@@ -135,6 +135,11 @@ output "redis_connection_secret_arn" {
   sensitive = true
 }
 
+output "licensing_mode" {
+  description = "The licensing deployment mode declared to the server as Licensing__Mode. \"Disabled\" is the 2026.1 contract (no license, no metering, all entitlements active); \"Enabled\" loads and validates a license."
+  value       = local.licensing_mode
+}
+
 output "pro_license_enabled" {
   description = "Whether the server is configured to load a signed Pro license from Secrets Manager."
   value       = local.pro_license_enabled

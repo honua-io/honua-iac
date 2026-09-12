@@ -221,8 +221,46 @@ If your Prometheus scrape config uses different job names, override the correspo
 | `enable_nat_gateway` | true | NAT gateways for private subnets (required for outbound). |
 | `log_retention_days` | 365 | CloudWatch log retention. |
 | `kms_key_arn` | `""` | Existing KMS key for logs/secrets. Creates one if empty. |
+| `licensing_mode` | `Disabled` | Licensing deployment mode declared as `Licensing__Mode`. `Disabled` is the 2026.1 contract: no license, no capacity metering, every entitlement active. Supplying `pro_license_secret_arn` implies `Enabled`. |
+| `licensing_edition` | `Pro` | Edition declared as `Licensing__Edition` **only when** a license envelope is supplied. Ignored with no envelope. |
+| `pro_license_secret_arn` | `""` | Caller-owned Secrets Manager ARN whose value is the signed license envelope JSON; injected as the ECS secret `Licensing__LicenseContent`. The module never creates, reads or deletes it. |
+| `pro_license_secret_kms_key_arn` | `""` | Optional customer-managed KMS key ARN for the license secret; grants decrypt only when the license ARN is set. |
+| `pro_license_key_id` | `honuademo2026q2` | Hyphen-free license keyId as relabeled in the envelope; builds the legal env var name `Licensing__TrustedKeys__<keyId>`. |
+| `pro_license_trusted_public_key` | `""` | Ed25519 public key (`base64url:` prefixed) that verifies the license signature. Required when `pro_license_secret_arn` is set. |
 
 See `variables.tf` for the complete list.
+
+## Licensing
+
+The 2026.1 release ships with licensing **disabled** (operator ruling
+2026-09-12; honua-server #4721). With no license inputs the module declares
+
+- `Licensing__Mode = Disabled`
+
+on the primary task definition and on the canary, declares no
+`Licensing__Edition`, injects no license secret, and grants the execution role
+no access to one.
+
+The mode is declared rather than inferred. honua-server's own default is
+`Licensing__Mode=Enabled`, which with no license source resolves to the
+**Community** edition and gates editing, sync, streaming and geocoding; a
+candidate deployed with no license inputs would then look
+licensed-but-crippled instead of licensing-disabled. In `Disabled` mode the
+server validates nothing, registers no capacity meter, activates every
+`FeatureCatalog` entitlement, and `GET /api/v1/admin/license` answers
+`mode: disabled`, `edition: Unlicensed-2026.1`, `validationState: Disabled`.
+
+Because the declared mode and the deployed task definition must not disagree,
+`Licensing__*` keys are refused in `additional_env` / `canary_additional_env`;
+use the typed inputs.
+
+To supply a license (the 2026.2 path), point `pro_license_secret_arn` at an
+existing Secrets Manager secret holding the signed envelope. The module injects
+it as the ECS secret `Licensing__LicenseContent`, publishes
+`Licensing__TrustedKeys__<pro_license_key_id>`, declares
+`Licensing__Edition = licensing_edition`, and scopes the execution role's read
+grant to that ARN (plus `pro_license_secret_kms_key_arn` when the secret uses a
+customer-managed key). The plan fails if the verification public key is missing.
 
 ## Upgrade from the aliased connection key
 

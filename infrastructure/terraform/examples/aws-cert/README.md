@@ -360,27 +360,44 @@ for reuse/evidence until lifecycle expiration. These ephemeral resources are
 owned by the script and are not Terraform resources. The lane does **not** pass
 `--vpc-config`; the execution role therefore has no VPC/ENI permissions.
 
-### Pro license for the certification Lambda (operator ruling A, 2026-09-09)
+### Licensing (operator ruling 2026-09-12 — 2026.1 certifies licensing-disabled)
 
-Certification runs 28 and 29 failed the deployed-phase `addFeatures` assertion
-with an in-body 402: the function ran Community and GeoServices editing is the
-Pro entitlement `editing.featureserver-edits` (honua-server#4607 names the
-cause in `serving-402:`; the assertion is deliberately not relaxed). The stack
-now passes the module's license inputs through, **off by default**:
+The 2026.1 candidate ships with licensing **disabled** (honua-server #4721,
+honua-iac #191), and the certification stack certifies it in that mode:
+`licensing_mode = "Disabled"` (the default) declares `Licensing__Mode=Disabled`,
+so the function loads and validates no license, registers no capacity meter, and
+activates every `FeatureCatalog` entitlement — including
+`editing.featureserver-edits`. A `terraform plan` with no license inputs shows
+**no license secret** and no `secretsmanager:GetSecretValue` grant for one.
+
+Verify on the alias with `GET /api/v1/admin/license` (or `/status`): it must
+report `mode=disabled`, `edition=Unlicensed-2026.1`,
+`validationState=Disabled`. An `edition=Community` here is a **failure**, not a
+fallback: it means the function ignored the declared mode, took the server's
+`Enabled` default, found no license source and gated editing — the exact shape
+that failed certification runs 28 and 29 with an in-body 402 on the
+deployed-phase `addFeatures` assertion (honua-server#4607 names the cause in
+`serving-402:`; the assertion is deliberately not relaxed).
+
+The earlier ruling A (2026-09-09) required a Pro envelope because the
+licensing-disabled mode did not yet exist. Those inputs remain wired for the
+2026.2 path and stay **off by default**:
 
 | Variable | Effect | Secret? |
 |---|---|---|
-| `enable_pro_license` | grants the Lambda role `secretsmanager:GetSecretValue` on the license secret; injects `Licensing__LicenseContentSecretRef` and `Licensing__TrustedKeys__<pro_license_key_id>` | No |
+| `licensing_mode` | declares `Licensing__Mode`; `Disabled` (default) is the 2026.1 contract | No |
+| `enable_pro_license` | forces `Licensing__Mode=Enabled`; grants the Lambda role `secretsmanager:GetSecretValue` on the license secret; injects `Licensing__LicenseContentSecretRef` and `Licensing__TrustedKeys__<pro_license_key_id>` | No |
 | `pro_license_secret_arn` | an EXISTING secret in this region holding the signed envelope (ruling A: a Secrets Manager replica of the demo stack's `honua-demo-demo/license-pro`); Terraform creates no secret and no version | No, an ARN |
-| `pro_license_key_id` | hyphen-free keyId matching the envelope (`honuademo2026q2`); a mismatch silently serves Community | No |
+| `pro_license_key_id` | hyphen-free keyId matching the envelope (`honuademo2026q2`); a mismatch makes the envelope unverifiable | No |
 | `pro_license_trusted_public_key` | the Ed25519 public key (`base64url:` prefix); verifies only, cannot mint | No |
 | `pro_license_content` | escape hatch for Terraform to own the envelope; never commit a value | **Yes**, local secret tfvars only |
 
-The envelope and the signing seed never live in this repository, in state
-outputs, or in logs. Apply targeted (`module.honua` and its IAM policies, the
-run-27 lesson: a new secret needs the module policies applied) and verify with
-the alias `GET /api/v1/admin/license/status` (`edition=Pro`,
-`validationState=Valid`) before dispatching the next certification run.
+Supplying an envelope forces `Licensing__Mode=Enabled`. The envelope and the
+signing seed never live in this repository, in state outputs, or in logs. Apply
+targeted (`module.honua` and its IAM policies, the run-27 lesson: a new secret
+needs the module policies applied) and verify with the alias
+`GET /api/v1/admin/license/status` (`edition=Pro`, `validationState=Valid`)
+before dispatching the next certification run.
 
 ### Static plan summary — operator must confirm against governed state
 

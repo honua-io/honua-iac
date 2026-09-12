@@ -1,3 +1,8 @@
+output "licensing_mode" {
+  description = "The licensing mode declared to the certification stack (Licensing__Mode). \"Disabled\" is the 2026.1 contract: the live cell's GET /api/v1/admin/license must report mode disabled, edition Unlicensed-2026.1."
+  value       = module.honua.licensing_mode
+}
+
 output "honua_api_endpoint" {
   description = "Honua API Gateway endpoint URL for the cert stack."
   value       = module.honua.api_endpoint
