@@ -99,6 +99,9 @@ context and refuses **before any mutation**. Each refusal prints
 | `backend-substituted` | the resolved backend config digest moved |
 | `local-state-refused` | the backend is local state |
 | `lock-posture-missing` | the remote backend names no locking primitive |
+| `backend-identity-missing` | the S3 backend lacks an explicit non-empty bucket, object key, or region |
+| `backend-encryption-missing` | the S3 backend does not set `encrypt = true` (a KMS reference alone is insufficient) |
+| `backend-credential-refused` | credentials, a web identity token, or an SSE customer key were persisted in backend configuration |
 | `lock-primitive-unsupported` | S3 native locking on Terraform < 1.10 |
 | `workspace-mismatch` | the workspace moved |
 | `account-mismatch` / `role-mismatch` | a different account or execution role |

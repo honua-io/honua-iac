@@ -65,6 +65,7 @@ case "$cmd" in
     esac
     ;;
   plan)
+    [[ -z "${FAKE_TF_MUTATION_LOG:-}" ]] || echo plan >>"$FAKE_TF_MUTATION_LOG"
     out=""
     for arg in "${args[@]}"; do
       case "$arg" in -out=*) out="${arg#-out=}" ;; esac
@@ -74,6 +75,7 @@ case "$cmd" in
     exit "${FAKE_TF_PLAN_EXIT:-0}"
     ;;
   apply)
+    [[ -z "${FAKE_TF_MUTATION_LOG:-}" ]] || echo apply >>"$FAKE_TF_MUTATION_LOG"
     printf 'fake terraform apply of %s\n' "${args[*]}"
     exit "${FAKE_TF_APPLY_EXIT:-0}"
     ;;
@@ -90,6 +92,16 @@ case "$cmd" in
 esac
 EOF
 chmod +x "$FAKE_BIN/terraform"
+
+# Exercise the live-code-path posture calculation without any network access.
+# This synthetic CLI is not live AWS evidence and its output stays in TMP_DIR.
+cat >"$FAKE_BIN/aws" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$*" == 'sts get-caller-identity --output json' ]] || exit 1
+cat "$HONUA_IAC_STS_FIXTURE"
+EOF
+chmod +x "$FAKE_BIN/aws"
 
 # --- synthetic repository ----------------------------------------------------
 BASE="$TMP_DIR/base"
@@ -212,8 +224,8 @@ desired_count = 1
 EOF
 
 git -C "$BASE" init -q
-git -C "$BASE" config user.email "test@honua.io"
-git -C "$BASE" config user.name "Honua Test"
+git -C "$BASE" config user.email "mike@honua.io"
+git -C "$BASE" config user.name "Mike McDougall"
 git -C "$BASE" add -A
 git -C "$BASE" -c commit.gpgsign=false commit -qm "fixture"
 
@@ -806,6 +818,40 @@ LAST_LOG="$CASE/backend.log"
 expect_success "backend-identity: emits a document for a hardened backend"
 assert_schema "backend-identity: satisfies terraform-backend-identity.v1" \
   "$CASE/artifacts/backend.json" "$CONTRACTS/terraform-backend-identity.v1.schema.json"
+if python3 - "$CASE/artifacts/backend.json" \
+  "$CONTRACTS/terraform-backend-identity.v1.schema.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    document = json.load(handle)
+with open(sys.argv[2], encoding="utf-8") as handle:
+    schema = json.load(handle)
+
+try:
+    import jsonschema
+except ImportError:
+    # Match assert_schema's required-keys fallback on bare runners.
+    assert "resolved_config_digest" in document
+    del document["resolved_config_digest"]
+    missing = set(schema["required"]) - document.keys()
+    assert missing == {"resolved_config_digest"}, missing
+else:
+    validator = jsonschema.Draft202012Validator(schema)
+    validator.validate(document)
+    del document["resolved_config_digest"]
+    errors = list(validator.iter_errors(document))
+    assert len(errors) == 1, [error.message for error in errors]
+    assert errors[0].validator == "required"
+    assert errors[0].message == "'resolved_config_digest' is a required property"
+PY
+then
+  echo "[PASS] backend-identity: schema rejects an omitted resolved config digest"
+  PASS_COUNT=$((PASS_COUNT + 1))
+else
+  echo "[FAIL] backend-identity: schema must reject an omitted resolved config digest"
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+fi
 assert_json "backend-identity: emits account, region, bucket arn, key and digest" \
   "$CASE/artifacts/backend.json" \
   "doc['account']['account_id'] == '123456789012' and doc['location']['region'] == 'us-east-1' and doc['location']['bucket_arn'] and doc['location']['object_key'] and len(doc['backend_config_digest']) == 64"
@@ -815,6 +861,19 @@ assert_json "backend-identity: redacts credential-bearing config keys by name" \
 assert_json "backend-identity: reports the lock and KMS posture" \
   "$CASE/artifacts/backend.json" \
   "doc['locking']['kind'] == 's3-native-lockfile' and doc['encryption']['kms_key_reference']"
+
+for posture in live --no-identity --allow-local-state; do
+  posture_args=()
+  [[ "$posture" == live ]] || posture_args+=("$posture")
+  PATH="$FAKE_BIN:$PATH" HONUA_IAC_OFFLINE=0 \
+    HONUA_IAC_STS_FIXTURE="$CASE/fixtures/sts.json" \
+    "$CASE/scripts/terraform-backend-identity.sh" --root "$CASE/$STACK_REL" \
+    "${posture_args[@]}" --output "$CASE/artifacts/backend.json" >"$CASE/backend.log" 2>&1
+  expected_posture=False
+  [[ "$posture" != live ]] || expected_posture=True
+  assert_json "backend-identity: $posture reports the expected qualification posture" \
+    "$CASE/artifacts/backend.json" "doc['release_qualified'] is $expected_posture"
+done
 
 CASE="$(new_case backend-identity-local)"
 python3 - "$CASE/$STACK_REL/.terraform/terraform.tfstate" <<'PY'
@@ -836,6 +895,108 @@ LAST_EXIT=$?
 set -e
 LAST_LOG="$CASE/backend.log"
 expect_refusal "backend-identity: refuses local state" "local-state-refused"
+
+# A lock flag alone cannot qualify an ambiguous or credential-bearing backend.
+# The fake process journal proves these are pre-plan/pre-apply refusals.
+for spec in bucket:null key:null region:null key:17 region:'"  "' \
+  encrypt:false encrypt:'"true"' access_key:'"credential-canary"' \
+  secret_key:'"credential-canary"' token:'"credential-canary"' \
+  assume_role_with_web_identity:'{"role_arn":"arn:aws:iam::123456789012:role/backend","web_identity_token":"credential-canary"}'; do
+  field="${spec%%:*}"
+  value="${spec#*:}"
+  case "$field" in
+    bucket | key | region) reason=backend-identity-missing ;;
+    encrypt) reason=backend-encryption-missing ;;
+    *) reason=backend-credential-refused ;;
+  esac
+  CASE="$(apply_case "backend-invalid-$field")"
+  python3 - "$CASE/$STACK_REL/.terraform/terraform.tfstate" "$field" "$value" <<'PY'
+import json, sys
+path, field, value = sys.argv[1:]
+with open(path) as handle:
+    document = json.load(handle)
+document['backend']['config'][field] = json.loads(value)
+with open(path, 'w') as handle:
+    json.dump(document, handle)
+PY
+  FAKE_TF_MUTATION_LOG="$CASE/processes" run_plan "$CASE"
+  expect_refusal "plan: rejects invalid backend $spec" "$reason"
+  FAKE_TF_MUTATION_LOG="$CASE/processes" run_apply "$CASE" --allow-unqualified
+  expect_refusal "apply: rejects invalid backend $spec" "$reason"
+  if [[ -e "$CASE/processes" ]] || rg -q credential-canary "$CASE/plan.log" "$CASE/apply.log"; then
+    echo "[FAIL] invalid backend started plan/apply or leaked a credential"
+    FAIL_COUNT=$((FAIL_COUNT + 1))
+  else
+    echo "[PASS] invalid backend starts no plan/apply and leaks no credentials"
+    PASS_COUNT=$((PASS_COUNT + 1))
+  fi
+done
+
+CASE="$(new_case backend-redaction)"
+python3 - "$CASE/$STACK_REL/.terraform/terraform.tfstate" <<'PY'
+import json, sys
+with open(sys.argv[1]) as handle:
+    document = json.load(handle)
+document['backend']['config'].update({
+    'assume_role': {
+        'role_arn': 'arn:aws:iam::123456789012:role/backend',
+        'session_name': 'session-canary',
+        'external_id': 'external-canary',
+        'tags': {'operator': 'tag-canary'},
+    },
+    'endpoints': {'s3': 'https://endpoint-canary'},
+})
+with open(sys.argv[1], 'w') as handle:
+    json.dump(document, handle)
+PY
+run_plan "$CASE"
+expect_success "plan: role session configuration is bound without disclosure"
+PATH="$FAKE_BIN:$PATH" HONUA_IAC_OFFLINE=1 \
+  HONUA_IAC_STS_FIXTURE="$CASE/fixtures/sts.json" \
+  "$CASE/scripts/terraform-backend-identity.sh" --root "$CASE/$STACK_REL" \
+  --output "$CASE/artifacts/backend.json" >"$CASE/backend.log" 2>&1
+if python3 - "$CASE/artifacts/backend.json" "$(metadata_of "$CASE")" \
+  "$CASE/$STACK_REL/.terraform/terraform.tfstate" <<'PY'
+import hashlib, json, sys
+backend, plan, resolved = [json.load(open(path)) for path in sys.argv[1:]]
+# Independently derive expected bytes from the input fixture, not the exporter.
+expected = hashlib.sha256(json.dumps(resolved['backend']['config'],
+    sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+assert backend['resolved_config_digest'] == expected
+assert backend['backend_config_digest'] == plan['backend']['backend_config_digest']
+assert backend['non_secret_config']['assume_role'] == {
+    'role_arn': 'arn:aws:iam::123456789012:role/backend'}
+assert backend['redacted_config_keys'] == [
+    'assume_role.external_id', 'assume_role.session_name', 'assume_role.tags', 'endpoints']
+assert backend['release_qualified'] is False
+assert '-canary' not in json.dumps(backend)
+PY
+then
+  echo "[PASS] backend: canonical fixture digest, shared binding, nested redaction, offline posture"
+  PASS_COUNT=$((PASS_COUNT + 1))
+else
+  echo "[FAIL] backend: canonical fixture digest, shared binding, nested redaction, offline posture"
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+fi
+
+# Alter only a redacted value: its name and all public fields remain identical.
+python3 - "$CASE/$STACK_REL/.terraform/terraform.tfstate" <<'PY'
+import json, sys
+with open(sys.argv[1]) as handle:
+    document = json.load(handle)
+document['backend']['config']['assume_role']['external_id'] = 'changed-canary'
+with open(sys.argv[1], 'w') as handle:
+    json.dump(document, handle)
+PY
+FAKE_TF_MUTATION_LOG="$CASE/processes" run_apply "$CASE" --allow-unqualified
+expect_refusal "apply: detects substitution of a redacted backend value" "backend-substituted"
+if [[ -e "$CASE/processes" ]] || rg -q changed-canary "$CASE/apply.log"; then
+  echo "[FAIL] redacted substitution started apply or leaked its value"
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+else
+  echo "[PASS] redacted substitution starts no apply and discloses no value"
+  PASS_COUNT=$((PASS_COUNT + 1))
+fi
 
 # =============================================================================
 
