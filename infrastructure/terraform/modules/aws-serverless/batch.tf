@@ -351,6 +351,12 @@ resource "aws_batch_job_definition" "gp" {
     # way the Lambda does. Per-job env (HONUA_OPERATION_ID, workload name, and
     # any env.* spec parameters) is injected by the backend as container
     # overrides at submit time.
+    #
+    # Licensing__Mode travels with it: the GP container runs the SAME server
+    # image and evaluates the same entitlement gates, so a job-def left on the
+    # server default (Enabled with no license source -> Community) would refuse
+    # geoprocessing on a licensing-disabled 2026.1 deployment whose Lambda runs
+    # fine. Per-tier job-defs all inherit this baseline.
     environment = [
       {
         name  = "ConnectionStrings__DefaultConnection"
@@ -363,6 +369,10 @@ resource "aws_batch_job_definition" "gp" {
       {
         name  = "Security__ConnectionEncryption__MasterKey"
         value = "aws:secretsmanager:${aws_secretsmanager_secret.admin_password.arn}"
+      },
+      {
+        name  = "Licensing__Mode"
+        value = local.licensing_mode
       }
     ]
 
