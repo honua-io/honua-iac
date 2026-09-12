@@ -34,6 +34,7 @@ module "honua" {
   enable_xray_tracing    = var.enable_xray_tracing
   enable_lambda_insights = var.enable_lambda_insights
 
+  licensing_mode                 = var.licensing_mode
   enable_pro_license             = var.enable_pro_license
   pro_license_content            = var.pro_license_content
   pro_license_key_id             = var.pro_license_key_id
@@ -148,6 +149,10 @@ output "admin_password_secret_arn" {
 output "redis_connection_string" {
   value     = module.honua.redis_connection_string
   sensitive = true
+}
+
+output "licensing_mode" {
+  value = module.honua.licensing_mode
 }
 
 output "pro_license_enabled" {

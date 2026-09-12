@@ -840,6 +840,26 @@ variable "worker_customcode_dotnet_repo_force_delete" {
   default     = false
 }
 
+# --- Licensing mode --------------------------------------------------------
+# The 2026.1 candidate ships with licensing DISABLED (operator ruling
+# 2026-09-12; honua-server #4721): no license envelope, no validation, no
+# capacity metering, every FeatureCatalog entitlement active. The module
+# DECLARES that mode as Licensing__Mode=Disabled rather than relying on the
+# absence of a license, because the server's own default is Mode=Enabled, which
+# with no license source resolves to Community and gates editing/sync/streaming/
+# geocoding.
+
+variable "licensing_mode" {
+  description = "Licensing deployment mode declared to the server as Licensing__Mode. Defaults to Disabled (the 2026.1 contract: no license, no metering, all entitlements active). Set to Enabled to load and validate a license; supplying one via enable_pro_license implies Enabled regardless of this value."
+  type        = string
+  default     = "Disabled"
+
+  validation {
+    condition     = contains(["Disabled", "Enabled"], var.licensing_mode)
+    error_message = "licensing_mode must be \"Disabled\" or \"Enabled\" (the server rejects any other value at startup)."
+  }
+}
+
 # --- Pro license (Secrets Manager delivery) -------------------------------
 # Optional, off by default. When enabled, stores the signed Pro license
 # envelope in a Secrets Manager secret, grants the Lambda role
@@ -847,10 +867,15 @@ variable "worker_customcode_dotnet_repo_force_delete" {
 # Licensing__LicenseContentSecretRef + Licensing__TrustedKeys__<keyId> so the
 # server activates Pro (editing/sync/streaming/geocoding) without the ~2KB
 # envelope having to fit Lambda's 4KB environment-variable limit. The server
-# resolves the reference at startup and falls back to Community if unreachable.
+# resolves the reference at startup and refuses to start if a paid deployment
+# cannot resolve a valid license.
+#
+# This is the 2026.2 path. For 2026.1 leave it off: the module then creates no
+# license secret, grants the execution role no access to one, and declares
+# Licensing__Mode=Disabled (see licensing_mode).
 
 variable "enable_pro_license" {
-  description = "Deliver a signed Pro license to the Lambda via Secrets Manager. Off by default; when off the server runs Community. Requires pro_license_content and pro_license_trusted_public_key when enabled."
+  description = "Deliver a signed Pro license to the Lambda via Secrets Manager and set Licensing__Mode=Enabled. Off by default; when off the deployment runs with licensing disabled (all entitlements active, no metering), NOT Community. Requires pro_license_trusted_public_key when enabled."
   type        = bool
   default     = false
 }

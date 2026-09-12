@@ -140,6 +140,22 @@ locals {
     Licensing__LicenseContentSecretRef                  = "aws:secretsmanager:${local.pro_license_effective_secret_arn}"
     "Licensing__TrustedKeys__${var.pro_license_key_id}" = var.pro_license_trusted_public_key
   } : {}
+  # Licensing deployment mode (operator ruling, 2026-09-12; honua-server #4721).
+  # The 2026.1 candidate ships with licensing DISABLED: no license envelope, no
+  # validation, no capacity metering, and every FeatureCatalog entitlement
+  # active. The mode must be DECLARED, not inferred: with no license source the
+  # server's own default (Licensing__Mode=Enabled) resolves to the Community
+  # edition and silently gates editing/sync/streaming/geocoding, so a candidate
+  # deployed with no license inputs would look licensed-but-crippled instead of
+  # licensing-disabled.
+  #
+  # Supplying a license (enable_pro_license) is the 2026.2 path and forces
+  # Enabled, because an envelope is only meaningful to a server that loads and
+  # validates it. Otherwise var.licensing_mode decides, defaulting to Disabled.
+  licensing_mode = local.pro_license_enabled ? "Enabled" : var.licensing_mode
+  licensing_environment = {
+    Licensing__Mode = local.licensing_mode
+  }
   # When GP-on-Batch is enabled, surface the DURABLE substrate to the server as a
   # ControlPlane:ExecutionWorkloads entry: the queue ARN and the per-TIER
   # job-definition ARNs (s/m/l/xl). The reconciler selects the
@@ -191,7 +207,7 @@ locals {
     ControlPlane__DeployTargets__0__ParameterEntries__1__Value  = var.lambda_alias_name
     ControlPlane__DeployTargets__0__ParameterEntries__2__Key    = "aws.region"
     ControlPlane__DeployTargets__0__ParameterEntries__2__Value  = data.aws_region.current.name
-  }, local.gp_batch_environment, local.bedrock_ai_environment, local.amazon_location_environment, var.additional_env, local.redis_secret_environment, local.xray_environment, local.pro_license_environment)
+  }, local.gp_batch_environment, local.bedrock_ai_environment, local.amazon_location_environment, var.additional_env, local.redis_secret_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment)
 }
 
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.

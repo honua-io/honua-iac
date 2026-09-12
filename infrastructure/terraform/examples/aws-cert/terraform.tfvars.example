@@ -74,9 +74,14 @@ tags = {
   CostCenter = "certification"
 }
 
-# Pro license for the certification Lambda (off by default). Certification
-# exercises GeoServices editing, a Pro entitlement; without a license the
-# deployed-phase addFeatures assertion refuses with an in-body 402.
+# Licensing. The 2026.1 candidate certifies with licensing DISABLED: the
+# default licensing_mode = "Disabled" declares Licensing__Mode=Disabled, so the
+# function activates every entitlement (including GeoServices editing) with no
+# license envelope, and a plan shows no license secret. Leave this commented
+# unless you are certifying the 2026.2 licensed path.
+# licensing_mode = "Enabled"
+#
+# Pro license for the certification Lambda (off by default; 2026.2 path).
 # Preferred: reference an EXISTING secret in this region (for example a
 # Secrets Manager replica of the demo stack's honua-demo-demo/license-pro).
 # The public key only verifies signatures and is not secret. Never put

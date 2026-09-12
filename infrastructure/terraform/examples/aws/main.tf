@@ -14,6 +14,12 @@ module "honua" {
   image                            = local.install_image
   ai_provider_secret_arn           = var.ai_provider_secret_arn
   ai_provider_secret_kms_key_arn   = var.ai_provider_secret_kms_key_arn
+  licensing_mode                   = var.licensing_mode
+  licensing_edition                = var.licensing_edition
+  pro_license_secret_arn           = var.pro_license_secret_arn
+  pro_license_secret_kms_key_arn   = var.pro_license_secret_kms_key_arn
+  pro_license_key_id               = var.pro_license_key_id
+  pro_license_trusted_public_key   = var.pro_license_trusted_public_key
   task_cpu_architecture            = var.task_cpu_architecture
   admin_password                   = var.honua_admin_password
   connection_encryption_master_key = var.honua_connection_encryption_master_key
