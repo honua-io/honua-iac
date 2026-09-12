@@ -164,6 +164,34 @@ The admin-password secret ARN appears in both: as
 `operations_contract.secrets.references.admin_password`. Both are required by
 the schema.
 
+## Protection profile
+
+`operations_contract.resilience.protection_profile` is the executable
+deployment safety profile for the honua-iac#182 protected-rollout promise. It
+is optional in the schema: a producer that does not yet claim protection
+guarantees omits it, and an absent profile is not itself a finding.
+
+Every field is **derived** from the topology Terraform actually created — none
+of it is a caller-supplied assertion, so a contract cannot claim a guarantee
+the deployment does not back:
+
+| Field | Meaning |
+| --- | --- |
+| `availability_class` | `single-task` or `multi-task`, computed from whether Redis and shared S3 storage actually make `deployment_mode=MultiNode` usable (`module.honua.multi_node_topology_ready`) — the same gate the ECS service preconditions enforce before allowing more than one task. |
+| `interruption_guarantee` | `brief-interruption-on-replacement` for `single-task`, `rolling-through-healthy-tasks` for `multi-task`. A `single-task` profile must never be read as zero-downtime: the running task is stopped before its replacement starts. |
+| `health_sources` | The functional health-check path, log group, and metrics namespace a consumer would probe to confirm the deployment is actually healthy. |
+| `warmup_seconds` | The container health check `startPeriod`: how long a task is given to become healthy before a failed check counts against it. |
+| `observation` | The ALB target group health check's interval, timeout, and healthy/unhealthy thresholds that gate traffic to a task. |
+| `recovery` | The rollback actuator: `mechanism` (`aws-ecs-deployment-circuit-breaker`), whether it is `executable`, and whether it is enabled on the primary and (if present) canary ECS service. ECS's own control plane performs the rollback; no separate controller is retained. |
+| `durable_state` | Whether the managed database, cache, and shared object storage this topology depends on are actually configured. |
+| `prior_revision_retention` | This module never deregisters an ECS task definition revision, so retention is `unbounded-until-manually-deregistered`. |
+
+Live-provider proof that a candidate actually boots, serves traffic, and
+recovers under real fault injection is a separate concern, owned by
+[honua-iac#118](https://github.com/honua-io/honua-iac/issues/118); this
+profile is a static Terraform-time projection of the safety mechanisms in
+place, not a substitute for that live evidence.
+
 ## Canonicalization and the contract digest
 
 `identity.contract_digest` lets a consumer detect substituted contract bytes.

@@ -146,6 +146,45 @@ locals {
 
   operator_contract_object_storage_enabled = var.file_storage_provider == "AwsS3"
 
+  # Derived, never caller-asserted: a topology only earns "multi-task" once
+  # Redis and shared S3 storage are actually wired, which is exactly the gate
+  # module.honua itself enforces before it will let more than one task run.
+  operator_contract_availability_class = module.honua.multi_node_topology_ready ? "multi-task" : "single-task"
+  operator_contract_interruption_guarantee = module.honua.multi_node_topology_ready ? (
+    "rolling-through-healthy-tasks"
+    ) : (
+    "brief-interruption-on-replacement"
+  )
+
+  operator_contract_protection_profile = {
+    availability_class     = local.operator_contract_availability_class
+    interruption_guarantee = local.operator_contract_interruption_guarantee
+    health_sources = {
+      functional_check_path = module.honua.alb_health_check.path
+      log_group             = local.operator_contract_log_group
+      metrics_namespace     = "Honua/${local.operator_contract_base_name}"
+    }
+    warmup_seconds = module.honua.container_health_check_start_period_seconds
+    observation = {
+      interval_seconds    = module.honua.alb_health_check.interval_seconds
+      timeout_seconds     = module.honua.alb_health_check.timeout_seconds
+      healthy_threshold   = module.honua.alb_health_check.healthy_threshold
+      unhealthy_threshold = module.honua.alb_health_check.unhealthy_threshold
+    }
+    recovery = {
+      mechanism                = module.honua.deployment_rollback.mechanism
+      executable               = true
+      primary_rollback_enabled = module.honua.deployment_rollback.primary_rollback_enabled
+      canary_rollback_enabled  = module.honua.deployment_rollback.canary_rollback_enabled
+    }
+    durable_state = {
+      database_managed       = var.existing_db_endpoint == ""
+      cache_enabled          = var.redis_enabled
+      object_storage_enabled = local.operator_contract_object_storage_enabled
+    }
+    prior_revision_retention = module.honua.task_definition_revision_retention
+  }
+
   operator_contract_mcp_enabled = try(var.operator_contract_validation.mcp_enabled, false)
   operator_contract_mcp_path    = local.operator_contract_mcp_enabled ? var.operator_contract_validation.mcp_path : null
   operator_contract_ttl_hours   = try(var.operator_contract_validation.ttl_hours, null)
@@ -360,6 +399,7 @@ locals {
       ingress_access_logs_enabled = var.alb_access_logs_enabled
       database_managed            = var.existing_db_endpoint == ""
       cache_enabled               = var.redis_enabled
+      protection_profile          = local.operator_contract_protection_profile
     }
     grouping = {
       resource_group = local.operator_contract_cluster_name

@@ -120,3 +120,41 @@ output "redis_primary_endpoint" {
   value       = local.redis_create ? aws_elasticache_replication_group.redis[0].primary_endpoint_address : null
   sensitive   = true
 }
+
+output "multi_node_topology_ready" {
+  description = "True when deployment_mode=MultiNode, Redis, and shared AwsS3 file storage are all configured, i.e. more than one task is actually permitted to serve traffic concurrently."
+  # local.multi_node_topology_ready is tainted sensitive only because it
+  # compares the sensitive redis_connection_string to "", not because
+  # readiness itself is secret.
+  value = nonsensitive(local.multi_node_topology_ready)
+}
+
+output "alb_health_check" {
+  description = "ALB target group health check settings that gate traffic to a task (shared by the primary and canary target groups)."
+  value = {
+    path                = aws_lb_target_group.this.health_check[0].path
+    interval_seconds    = aws_lb_target_group.this.health_check[0].interval
+    timeout_seconds     = aws_lb_target_group.this.health_check[0].timeout
+    healthy_threshold   = aws_lb_target_group.this.health_check[0].healthy_threshold
+    unhealthy_threshold = aws_lb_target_group.this.health_check[0].unhealthy_threshold
+  }
+}
+
+output "container_health_check_start_period_seconds" {
+  description = "Container health check warmup window (ECS startPeriod, seconds) before failed health checks count against a task."
+  value       = local.container_health_check.startPeriod
+}
+
+output "deployment_rollback" {
+  description = "The executable rollback actuator backing the protection claim: ECS's native deployment circuit breaker, which stops a rollout and reverts to the last stable task definition if the replacement cannot reach a healthy steady state. Recovery uses ECS's own control plane; no separate controller is retained or required."
+  value = {
+    mechanism                = "aws-ecs-deployment-circuit-breaker"
+    primary_rollback_enabled = aws_ecs_service.this.deployment_circuit_breaker[0].rollback
+    canary_rollback_enabled  = local.canary_enabled ? aws_ecs_service.canary[0].deployment_circuit_breaker[0].rollback : null
+  }
+}
+
+output "task_definition_revision_retention" {
+  description = "Prior task definition revision retention policy. This module never deregisters a revision, so every prior revision an operator has run remains registered and selectable for a manual rollback until the operator deregisters it."
+  value       = "unbounded-until-manually-deregistered"
+}

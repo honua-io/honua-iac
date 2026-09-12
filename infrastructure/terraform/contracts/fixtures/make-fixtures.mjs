@@ -604,6 +604,34 @@ function contracts(identity) {
       ingress_access_logs_enabled: true,
       database_managed: true,
       cache_enabled: true,
+      protection_profile: {
+        availability_class: 'single-task',
+        interruption_guarantee: 'brief-interruption-on-replacement',
+        health_sources: {
+          functional_check_path: '/healthz/ready',
+          log_group: `/honua/${BASE_NAME}`,
+          metrics_namespace: `Honua/${BASE_NAME}`,
+        },
+        warmup_seconds: 60,
+        observation: {
+          interval_seconds: 30,
+          timeout_seconds: 5,
+          healthy_threshold: 2,
+          unhealthy_threshold: 3,
+        },
+        recovery: {
+          mechanism: 'aws-ecs-deployment-circuit-breaker',
+          executable: true,
+          primary_rollback_enabled: true,
+          canary_rollback_enabled: null,
+        },
+        durable_state: {
+          database_managed: true,
+          cache_enabled: true,
+          object_storage_enabled: false,
+        },
+        prior_revision_retention: 'unbounded-until-manually-deregistered',
+      },
     },
     grouping: {
       resource_group: CLUSTER,
