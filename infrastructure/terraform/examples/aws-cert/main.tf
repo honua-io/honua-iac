@@ -153,8 +153,13 @@ module "honua" {
   db_apply_immediately = true
   redis_enabled        = true
   redis_node_type      = "cache.t4g.micro"
-  # Pro license (operator ruling A, 2026-09-09): certification exercises
-  # GeoServices editing, a Pro entitlement; off by default, see variables.tf.
+  # Licensing (operator ruling 2026-09-12; honua-iac #191, honua-server #4721):
+  # the 2026.1 candidate certifies with licensing DISABLED — no envelope, no
+  # metering, every entitlement active — so certification exercises GeoServices
+  # editing without a license. Superseded ruling A (2026-09-09) needed a Pro
+  # envelope because the licensing-disabled mode did not yet exist; the license
+  # inputs stay wired for the 2026.2 path and remain off by default.
+  licensing_mode                 = var.licensing_mode
   enable_pro_license             = var.enable_pro_license
   pro_license_secret_arn         = var.pro_license_secret_arn
   pro_license_content            = var.pro_license_content

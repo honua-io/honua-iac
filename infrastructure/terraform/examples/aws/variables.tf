@@ -151,6 +151,50 @@ variable "operator_contract_identity" {
   }
 }
 
+# Licensing (operator ruling 2026-09-12; honua-iac #191, honua-server #4721).
+# The 2026.1 candidate ships with licensing disabled: no envelope, no metering,
+# every entitlement active. Supplying an envelope is the 2026.2 path.
+variable "licensing_mode" {
+  description = "Licensing deployment mode declared to the server as Licensing__Mode. Defaults to Disabled (the 2026.1 contract). Supplying pro_license_secret_arn implies Enabled."
+  type        = string
+  default     = "Disabled"
+
+  validation {
+    condition     = contains(["Disabled", "Enabled"], var.licensing_mode)
+    error_message = "licensing_mode must be \"Disabled\" or \"Enabled\"."
+  }
+}
+
+variable "licensing_edition" {
+  description = "Edition declared as Licensing__Edition when (and only when) pro_license_secret_arn is set. Ignored with no envelope."
+  type        = string
+  default     = "Pro"
+}
+
+variable "pro_license_secret_arn" {
+  description = "Optional ARN of an EXISTING Secrets Manager secret holding the signed Pro license envelope JSON. Leave empty for the 2026.1 licensing-disabled contract; the module never creates, reads or deletes this secret."
+  type        = string
+  default     = ""
+}
+
+variable "pro_license_secret_kms_key_arn" {
+  description = "Optional customer-managed KMS key ARN for pro_license_secret_arn."
+  type        = string
+  default     = ""
+}
+
+variable "pro_license_key_id" {
+  description = "Hyphen-free license signing keyId as relabeled in the envelope (becomes the env segment Licensing__TrustedKeys__<keyId>). Only used when an envelope is supplied."
+  type        = string
+  default     = "honuademo2026q2"
+}
+
+variable "pro_license_trusted_public_key" {
+  description = "Ed25519 public key (base64url: prefix) that verifies the license signature. Required when pro_license_secret_arn is set; a public key only verifies and is not secret."
+  type        = string
+  default     = ""
+}
+
 variable "ai_provider_secret_arn" {
   description = "Optional customer-owned Secrets Manager ARN containing HONUA_AI_PROVIDER_API_KEY. The stack references but never creates, reads, or deletes this secret."
   type        = string

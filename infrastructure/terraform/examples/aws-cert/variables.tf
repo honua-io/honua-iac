@@ -288,7 +288,20 @@ variable "cert_fixture_seed_enabled" {
   default     = true
 }
 
-# Pro license for the certification Lambda (operator ruling A, 2026-09-09).
+variable "licensing_mode" {
+  description = "Licensing deployment mode for the certification stack (module aws-serverless licensing_mode). Defaults to Disabled: the 2026.1 candidate certifies with licensing disabled — no license envelope, no capacity metering, every entitlement active — so GeoServices editing certification needs no license."
+  type        = string
+  default     = "Disabled"
+
+  validation {
+    condition     = contains(["Disabled", "Enabled"], var.licensing_mode)
+    error_message = "licensing_mode must be \"Disabled\" or \"Enabled\"."
+  }
+}
+
+# Pro license for the certification Lambda (operator ruling A, 2026-09-09;
+# superseded for 2026.1 by the licensing-disabled ruling of 2026-09-12, kept
+# wired for the 2026.2 path).
 # Lambda Preview Certification runs 28/29 failed the deployed-phase addFeatures
 # assertion with an in-body 402: the function ran Community and the editing
 # entitlement (editing.featureserver-edits) was absent. The module already
