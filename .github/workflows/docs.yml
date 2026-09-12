@@ -1,0 +1,43 @@
+name: Documentation
+
+# docs/okf-bundle.v1.json declares which markdown in this repository is
+# published documentation. terraform-ci.yml is filtered to
+# infrastructure/terraform/**, so a documentation-only change reaches no gate at
+# all; this workflow is that gate.
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'scripts/check-okf-bundle.py'
+      - 'scripts/generate-summary.py'
+      - '.github/workflows/docs.yml'
+  push:
+    branches: [trunk]
+    paths:
+      - 'docs/**'
+      - 'scripts/check-okf-bundle.py'
+      - 'scripts/generate-summary.py'
+      - '.github/workflows/docs.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  okf-bundle:
+    name: OKF documentation bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      # Proves every page inside the boundary carries valid Open Knowledge
+      # Format v0.2 frontmatter and that its relative links resolve.
+      - name: Verify the bundle
+        run: python3 scripts/check-okf-bundle.py
+
+      # SUMMARY.md is GitBook's table of contents, derived from the same
+      # boundary. A page added to the bundle and not the TOC - or the reverse -
+      # fails here rather than shipping a contents page that disagrees with the
+      # bundle.
+      - name: Verify the table of contents is derived
+        run: python3 scripts/generate-summary.py --check
