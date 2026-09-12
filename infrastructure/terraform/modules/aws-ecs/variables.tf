@@ -385,9 +385,13 @@ variable "additional_env" {
       "filestorage__provider",
       "filestorage__awss3__bucketname",
       "filestorage__awss3__region",
-      "filestorage__awss3__keyprefix"
+      "filestorage__awss3__keyprefix",
+      "licensing__mode",
+      "licensing__edition",
+      "licensing__licensecontent",
+      "licensing__licensecontentsecretref"
     ]))) == 0
-    error_message = "Set deployment and file-storage settings through the typed module variables, not additional_env."
+    error_message = "Set deployment, file-storage and licensing settings through the typed module variables, not additional_env."
   }
 }
 
@@ -399,6 +403,74 @@ variable "ai_provider_secret_arn" {
 
 variable "ai_provider_secret_kms_key_arn" {
   description = "Optional customer-managed KMS key ARN used to encrypt ai_provider_secret_arn. Grants the ECS execution role decrypt access only to this key when the AI secret is configured."
+  type        = string
+  default     = ""
+}
+
+# --- Licensing -------------------------------------------------------------
+# The 2026.1 candidate ships with licensing DISABLED (operator ruling
+# 2026-09-12; honua-server #4721, honua-iac #191): no license envelope, no
+# validation, no capacity metering, every FeatureCatalog entitlement active.
+# The module declares Licensing__Mode=Disabled rather than leaving the server on
+# its own default (Mode=Enabled), which with no license source resolves to the
+# Community edition and gates editing/sync/streaming/geocoding.
+#
+# Supplying an envelope is the 2026.2 path: point pro_license_secret_arn at an
+# EXISTING Secrets Manager secret. The module then references but never creates,
+# reads or deletes it — exactly like ai_provider_secret_arn.
+
+variable "licensing_mode" {
+  description = "Licensing deployment mode declared to the server as Licensing__Mode. Defaults to Disabled (the 2026.1 contract: no license, no metering, all entitlements active). Set to Enabled to load and validate a license; supplying pro_license_secret_arn implies Enabled regardless of this value."
+  type        = string
+  default     = "Disabled"
+
+  validation {
+    condition     = contains(["Disabled", "Enabled"], var.licensing_mode)
+    error_message = "licensing_mode must be \"Disabled\" or \"Enabled\" (the server rejects any other value at startup)."
+  }
+}
+
+variable "licensing_edition" {
+  description = "Edition declared as Licensing__Edition when (and only when) a license envelope is supplied via pro_license_secret_arn. Ignored with no envelope, so a licensing-disabled deployment never claims an edition."
+  type        = string
+  default     = "Pro"
+
+  validation {
+    condition     = contains(["Community", "Pro", "Enterprise"], var.licensing_edition)
+    error_message = "licensing_edition must be one of Community, Pro or Enterprise."
+  }
+}
+
+variable "pro_license_secret_arn" {
+  description = "Optional ARN of an EXISTING Secrets Manager secret whose value is the signed Pro license envelope JSON. When set the module injects it as the ECS secret Licensing__LicenseContent, grants the execution role read access to this exact ARN, and declares Licensing__Mode=Enabled plus Licensing__Edition. The module never creates, reads or deletes the secret. Leave empty for the 2026.1 licensing-disabled contract."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = trimspace(var.pro_license_secret_arn) == "" || can(regex("^arn:aws[a-zA-Z-]*:secretsmanager:", var.pro_license_secret_arn))
+    error_message = "pro_license_secret_arn must be a Secrets Manager secret ARN (arn:aws:secretsmanager:...) or empty."
+  }
+}
+
+variable "pro_license_secret_kms_key_arn" {
+  description = "Optional customer-managed KMS key ARN used to encrypt pro_license_secret_arn. Grants the ECS execution role decrypt access only to this key when a license envelope is configured."
+  type        = string
+  default     = ""
+}
+
+variable "pro_license_key_id" {
+  description = "The license signing keyId as relabeled in the envelope. Must be hyphen-free so it is a legal environment-variable name segment (Licensing__TrustedKeys__<keyId>). Only used when a license envelope is supplied."
+  type        = string
+  default     = "honuademo2026q2"
+
+  validation {
+    condition     = can(regex("^[A-Za-z_][A-Za-z0-9_]*$", var.pro_license_key_id))
+    error_message = "pro_license_key_id must be a valid environment-variable name segment (letters, digits, underscore; no hyphens)."
+  }
+}
+
+variable "pro_license_trusted_public_key" {
+  description = "The Ed25519 public key (base64url: prefix) that verifies the license signature, injected as Licensing__TrustedKeys__<pro_license_key_id>. A public key only verifies and is not secret. Required when pro_license_secret_arn is set."
   type        = string
   default     = ""
 }
@@ -445,9 +517,13 @@ variable "canary_additional_env" {
       "filestorage__provider",
       "filestorage__awss3__bucketname",
       "filestorage__awss3__region",
-      "filestorage__awss3__keyprefix"
+      "filestorage__awss3__keyprefix",
+      "licensing__mode",
+      "licensing__edition",
+      "licensing__licensecontent",
+      "licensing__licensecontentsecretref"
     ]))) == 0
-    error_message = "Set deployment and file-storage settings through the typed module variables, not canary_additional_env."
+    error_message = "Set deployment, file-storage and licensing settings through the typed module variables, not canary_additional_env."
   }
 }
 

@@ -83,6 +83,16 @@ output "control_plane_telemetry_prometheus_canary_job" {
   value       = var.canary_enabled ? "honua-canary" : null
 }
 
+output "licensing_mode" {
+  description = "The licensing deployment mode declared to the server as Licensing__Mode. \"Disabled\" is the 2026.1 contract (no license, no metering, all entitlements active); \"Enabled\" loads and validates a license envelope."
+  value       = local.licensing_mode
+}
+
+output "pro_license_secret_arn" {
+  description = "ARN of the Secrets Manager secret holding the signed Pro license envelope, or null when no envelope is configured (the 2026.1 licensing-disabled contract). The module never creates, reads or deletes this secret."
+  value       = local.pro_license_enabled ? trimspace(var.pro_license_secret_arn) : null
+}
+
 output "db_endpoint" {
   description = "RDS endpoint address."
   value       = local.db_endpoint

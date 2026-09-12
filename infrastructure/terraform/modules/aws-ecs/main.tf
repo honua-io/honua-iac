@@ -59,6 +59,27 @@ locals {
   primary_weight             = local.canary_enabled ? 100 - local.canary_weight : 100
   effective_canary_image     = trimspace(var.canary_image) != "" ? var.canary_image : var.image
   master_key                 = var.connection_encryption_master_key != null ? var.connection_encryption_master_key : random_password.master_key[0].result
+  # Licensing (operator ruling 2026-09-12; honua-server #4721, honua-iac #191).
+  # The 2026.1 candidate ships with licensing DISABLED: no envelope, no
+  # validation, no capacity metering, every FeatureCatalog entitlement active.
+  # The mode is DECLARED rather than inferred from the absence of a license,
+  # because the server's own default (Licensing__Mode=Enabled with no license
+  # source) resolves to the Community edition and gates editing/sync/streaming/
+  # geocoding — a candidate deployed with no license inputs would look
+  # licensed-but-crippled instead of licensing-disabled.
+  #
+  # Supplying an envelope (pro_license_secret_arn) is the 2026.2 path: it forces
+  # Enabled, injects the envelope as an ECS Secrets Manager reference, grants the
+  # execution role read access to that exact ARN, and declares the edition. With
+  # no envelope none of that exists — no secret, no grant, no Licensing__Edition.
+  pro_license_enabled = trimspace(var.pro_license_secret_arn) != ""
+  licensing_mode      = local.pro_license_enabled ? "Enabled" : var.licensing_mode
+  licensing_environment = merge({
+    Licensing__Mode = local.licensing_mode
+    }, local.pro_license_enabled ? {
+    Licensing__Edition                                  = var.licensing_edition
+    "Licensing__TrustedKeys__${var.pro_license_key_id}" = var.pro_license_trusted_public_key
+  } : {})
   runtime_environment = merge({
     Deployment__Mode      = var.deployment_mode
     FileStorage__Provider = var.file_storage_provider
@@ -66,7 +87,7 @@ locals {
     FileStorage__AwsS3__BucketName = var.file_storage_aws_s3_bucket_name
     FileStorage__AwsS3__Region     = local.file_storage_aws_s3_region
     FileStorage__AwsS3__KeyPrefix  = var.file_storage_aws_s3_key_prefix
-  } : {})
+  } : {}, local.licensing_environment)
   primary_container_environment = [
     for key, value in merge(var.additional_env, local.runtime_environment) : {
       name  = key
@@ -96,6 +117,15 @@ locals {
     {
       name      = "HONUA_AI_PROVIDER_API_KEY"
       valueFrom = var.ai_provider_secret_arn
+    }
+    ] : [], local.pro_license_enabled ? [
+    {
+      # The signed envelope is injected as Licensing__LicenseContent (inline
+      # JSON), not as a secret-store reference: ECS resolves the secret for the
+      # container, so unlike Lambda there is no 4KB environment budget to route
+      # around and the server needs no in-process secret resolver.
+      name      = "Licensing__LicenseContent"
+      valueFrom = trimspace(var.pro_license_secret_arn)
     }
     ] : [], local.redis_enabled ? [
     {
@@ -792,6 +822,7 @@ resource "aws_iam_policy" "secrets" {
           aws_secretsmanager_secret.admin_password.arn,
           aws_secretsmanager_secret.master_key.arn,
           var.ai_provider_secret_arn != "" ? var.ai_provider_secret_arn : null,
+          local.pro_license_enabled ? trimspace(var.pro_license_secret_arn) : null,
           local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null
         ])
       },
@@ -804,6 +835,10 @@ resource "aws_iam_policy" "secrets" {
         Effect   = "Allow"
         Action   = ["kms:Decrypt", "kms:DescribeKey"]
         Resource = [var.ai_provider_secret_kms_key_arn]
+        }] : [], local.pro_license_enabled && trimspace(var.pro_license_secret_kms_key_arn) != "" ? [{
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt", "kms:DescribeKey"]
+        Resource = [trimspace(var.pro_license_secret_kms_key_arn)]
     }] : [])
   })
 }
@@ -1164,6 +1199,14 @@ resource "aws_ecs_service" "this" {
     precondition {
       condition     = var.file_storage_provider != "AwsS3" || local.shared_file_storage_configured
       error_message = "file_storage_provider=AwsS3 requires file_storage_aws_s3_bucket_name."
+    }
+
+    # Fail the plan rather than the running server: without the verification key
+    # the envelope cannot be validated, and a paid deployment that cannot resolve
+    # a valid license refuses to start.
+    precondition {
+      condition     = !local.pro_license_enabled || trimspace(var.pro_license_trusted_public_key) != ""
+      error_message = "pro_license_secret_arn is set but pro_license_trusted_public_key (the Ed25519 public key) is empty. The public key is required to verify the envelope; it is not secret and is safe to set in config."
     }
   }
 
