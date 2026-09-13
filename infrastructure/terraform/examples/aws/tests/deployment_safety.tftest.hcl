@@ -140,6 +140,8 @@ run "native_profile_is_projected_without_live_claims" {
       output.deployment_contract.rollout.target_id == output.operations_contract.resilience.protection_profile.execution.target_id &&
       output.operations_contract.resilience.protection_profile.qualification == "unverified" &&
       output.operations_contract.resilience.protection_profile.durable_state.cache_enabled &&
+      output.deployment_contract.dependencies.cache.enabled &&
+      !output.deployment_contract.dependencies.database.managed &&
       output.operations_contract.resilience.protection_profile.health_sources.functional_check_path == null &&
       output.operations_contract.resilience.protection_profile.recovery.recovery_time_bound_seconds == null
     )

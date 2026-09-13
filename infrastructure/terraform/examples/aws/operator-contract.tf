@@ -146,9 +146,8 @@ locals {
 
   operator_contract_object_storage_enabled = var.file_storage_provider == "AwsS3"
 
-  # Derived, never caller-asserted: a topology only earns "multi-task" once
-  # Redis and shared S3 storage are actually wired, which is exactly the gate
-  # module.honua itself enforces before it will let more than one task run.
+  # Count the configured baseline, not an autoscaling ceiling or readiness
+  # flag. The module independently rejects concurrent tasks without Redis/S3.
   operator_contract_availability_class = var.desired_count + (var.canary_enabled ? var.canary_desired_count : 0) > 1 ? "multi-task" : "single-task"
   operator_contract_interruption_guarantee = module.honua.multi_node_topology_ready ? (
     "rolling-through-healthy-tasks"
@@ -185,7 +184,7 @@ locals {
       canary_rollback_enabled             = module.honua.deployment_rollback.canary_rollback_enabled
     }
     durable_state = {
-      database_managed       = var.existing_db_endpoint == ""
+      database_managed       = module.honua.database_managed
       cache_enabled          = module.honua.cache_configured
       object_storage_enabled = local.operator_contract_object_storage_enabled
     }
@@ -299,13 +298,13 @@ locals {
     dependencies = {
       database = {
         kind       = "aws-rds-postgres"
-        managed    = var.existing_db_endpoint == ""
+        managed    = module.honua.database_managed
         endpoint   = nonsensitive(module.honua.db_endpoint)
         secret_ref = module.honua.db_connection_secret_arn
       }
       cache = {
         kind       = "aws-elasticache-redis"
-        enabled    = var.redis_enabled
+        enabled    = module.honua.cache_configured
         secret_ref = nonsensitive(module.honua.redis_connection_secret_arn)
       }
       ingress = {
@@ -334,7 +333,7 @@ locals {
         deploy_plan   = true
         mutation      = true
         scale_check   = var.deployment_mode == "MultiNode"
-        backup_drill  = var.existing_db_endpoint == ""
+        backup_drill  = module.honua.database_managed
         idempotency   = true
         http_protocol = true
         mcp           = local.operator_contract_mcp_enabled
@@ -355,7 +354,7 @@ locals {
     test_data = {
       seed_mode            = try(var.operator_contract_validation.seed_mode, "smoke")
       tenant_prefix        = try(var.operator_contract_validation.tenant_prefix, "honua-it")
-      reuse_data_stack     = var.existing_db_endpoint != ""
+      reuse_data_stack     = !module.honua.database_managed
       admin_credential_ref = module.honua.admin_password_secret_arn
     }
     artifacts = {
@@ -366,7 +365,7 @@ locals {
       pins            = local.operator_contract_artifacts
     }
     lifecycle = {
-      reuse_data_stack = var.existing_db_endpoint != ""
+      reuse_data_stack = !module.honua.database_managed
       destroy_mode     = var.environment == "prod" ? "protected" : "ephemeral"
       ttl_hours        = local.operator_contract_ttl_hours
     }
@@ -404,8 +403,8 @@ locals {
     resilience = {
       ingress_deletion_protection = var.alb_deletion_protection
       ingress_access_logs_enabled = var.alb_access_logs_enabled
-      database_managed            = var.existing_db_endpoint == ""
-      cache_enabled               = var.redis_enabled
+      database_managed            = module.honua.database_managed
+      cache_enabled               = module.honua.cache_configured
       protection_profile          = local.operator_contract_protection_profile
     }
     grouping = {

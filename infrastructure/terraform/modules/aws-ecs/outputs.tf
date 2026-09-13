@@ -156,7 +156,7 @@ output "container_health_check_start_period_seconds" {
 }
 
 output "deployment_rollback" {
-  description = "The executable rollback actuator backing the protection claim: ECS's native deployment circuit breaker, which stops a rollout and reverts to the last stable task definition if the replacement cannot reach a healthy steady state. Recovery uses ECS's own control plane; no separate controller is retained or required."
+  description = "ECS startup circuit breaker settings. AWS performs rollback independently of candidate startup, but requires a prior COMPLETED deployment and provides no post-activation functional recovery or time bound."
   value = {
     mechanism                = "aws-ecs-deployment-circuit-breaker"
     primary_rollback_enabled = aws_ecs_service.this.deployment_circuit_breaker[0].rollback
@@ -172,4 +172,9 @@ output "task_definition_revision_retention" {
 output "cache_configured" {
   description = "Whether managed or external Redis is configured (not a live readiness assertion)."
   value       = nonsensitive(local.redis_enabled)
+}
+
+output "database_managed" {
+  description = "Whether this module manages RDS, including the resolved operator database inputs."
+  value       = nonsensitive(!local.db_use_existing)
 }
