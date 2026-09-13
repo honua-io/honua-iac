@@ -1,3 +1,9 @@
+---
+type: guide
+title: "Configure AWS deployment safety"
+description: "Wire the native ECS recovery controller, validate its prerequisites, and bind installed settings to candidate recovery evidence."
+tags: [aws, ecs, deployment, recovery]
+---
 # AWS deployment safety and recovery prerequisites
 
 Release promise: **2026.1 safe rollout must have executable protection and

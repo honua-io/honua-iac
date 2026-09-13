@@ -7,6 +7,7 @@
 ## Guides
 
 * [Produce AWS certification evidence](devops/aws-cert-live-evidence-runbook.md)
+* [Configure AWS deployment safety](devops/aws-deployment-safety.md)
 * [Prove backups actually restore](devops/backup-restore-runbook.md)
 * [Run a failover drill](devops/failover-drill-runbook.md)
 * [Execute the cloud runbooks manually](devops/manual-cloud-runbook-validation.md)
