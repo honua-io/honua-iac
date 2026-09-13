@@ -2,7 +2,7 @@
 type: reference
 title: "Exact plan contract"
 description: "The non-secret backend, init, plan and apply contract, so a plan produced in one place can be trusted and applied in another."
-resource: "https://github.com/honua-io/honua-iac/blob/trunk/contracts/operator-contract.v1.json"
+resource: "https://github.com/honua-io/honua-iac/blob/trunk/infrastructure/terraform/contracts/operator-contract.v1.schema.json"
 tags: [terraform, plan, contract]
 ---
 # Terraform exact-plan execution contract
