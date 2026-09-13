@@ -65,7 +65,7 @@ output "control_plane_target_kind" {
 
 output "control_plane_backend_name" {
   description = "Recommended Honua control-plane backend identifier for this environment."
-  value       = "honua-gitops-aws-ecs"
+  value       = var.deployment_safety == null ? "honua-gitops-aws-ecs" : "honua-aws-ecs-alb"
 }
 
 output "control_plane_telemetry_policy" {
@@ -165,6 +165,11 @@ output "deployment_rollback" {
 }
 
 output "task_definition_revision_retention" {
-  description = "Prior task definition revision retention policy. This module never deregisters a revision, so every prior revision an operator has run remains registered and selectable for a manual rollback until the operator deregisters it."
+  description = "Prior task definition revision retention policy. skip_destroy retains registered revisions across replacement and destroy. Images, secret versions and compatible data must also be retained externally; registration alone does not prove recoverability."
   value       = "unbounded-until-manually-deregistered"
+}
+
+output "cache_configured" {
+  description = "Whether managed or external Redis is configured (not a live readiness assertion)."
+  value       = nonsensitive(local.redis_enabled)
 }

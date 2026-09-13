@@ -1066,6 +1066,8 @@ resource "aws_secretsmanager_secret_version" "redis_connection" {
 }
 
 resource "aws_ecs_task_definition" "this" {
+  # Keep the registered revision usable by the provider rollback actuator.
+  skip_destroy = true
   family                   = "${local.name}-task"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
@@ -1109,6 +1111,7 @@ resource "aws_ecs_task_definition" "this" {
 }
 
 resource "aws_ecs_task_definition" "canary" {
+  skip_destroy = true
   count                    = local.canary_enabled ? 1 : 0
   family                   = "${local.name}-canary-task"
   network_mode             = "awsvpc"
