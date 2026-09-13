@@ -404,10 +404,11 @@ only auto-loads `terraform.tfvars`, `terraform.tfvars.json`, and
 must pass it explicitly:
 
 ```bash
-terraform -chdir=infrastructure/terraform/examples/aws-cert plan \
-  -var-file="$HOME/.config/honua/aws-cert.secret.tfvars"
-terraform -chdir=infrastructure/terraform/examples/aws-cert apply \
-  -var-file="$HOME/.config/honua/aws-cert.secret.tfvars"
+scripts/terraform-exact-plan.sh \
+  --root infrastructure/terraform/examples/aws-cert \
+  --var-file="$HOME/.config/honua/aws-cert.secret.tfvars"
+scripts/terraform-exact-apply.sh \
+  --plan infrastructure/terraform/examples/aws-cert/honua.tfplan
 ```
 
 or export `TF_VAR_pro_license_content` instead of using a file. Apply targeted
