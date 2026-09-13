@@ -280,10 +280,12 @@ if [[ "$DRY_RUN" == "true" ]]; then
 fi
 
 # --- execute exactly the saved plan ------------------------------------------
+claim_phase "$CLAIM_DIR" "mutation-started"
 set +e
 tf -chdir="$ROOT" apply -input=false -no-color -lock-timeout=120s "$PLAN"
 APPLY_EXIT=$?
 set -e
+claim_phase "$CLAIM_DIR" "terraform-acknowledged"
 
 if [[ "$APPLY_EXIT" -ne 0 ]]; then
   # The claim is still completed below. A failed apply may have mutated part of
@@ -304,9 +306,6 @@ if [[ "$APPLY_EXIT" -eq 0 && "$ACTION" == "apply" ]]; then
   # sensitive values, so it is never invoked here.
   OUTPUT_CONTRACT_DIGEST="$(tf -chdir="$ROOT" output -raw "$OUTPUT_DIGEST_NAME" 2>/dev/null || echo "")"
 fi
-
-claim_complete "$CLAIM_DIR"
-trap - EXIT
 
 RECEIPT="$(
   HONUA_IAC_METADATA="$METADATA" \
@@ -377,9 +376,20 @@ sys.stdout.write("\n")
 PY
 )"
 
+# Commit the canonical evidence into the claim first.  A restart can therefore
+# recover it even if the caller's receipt path is unavailable or the process is
+# interrupted between claim completion and the outward copy.
+RECEIPT_TMP="$CLAIM_DIR/.receipt.$$"
+printf '%s\n' "$RECEIPT" >"$RECEIPT_TMP"
+mv "$RECEIPT_TMP" "$CLAIM_DIR/receipt.json"
+claim_phase "$CLAIM_DIR" "receipt-committed"
+claim_complete "$CLAIM_DIR"
+trap - EXIT
 printf '%s\n' "$RECEIPT"
 if [[ -n "$RECEIPT_OUT" ]]; then
-  printf '%s\n' "$RECEIPT" >"$RECEIPT_OUT"
+  RECEIPT_OUT_TMP="${RECEIPT_OUT}.tmp.$$"
+  printf '%s\n' "$RECEIPT" >"$RECEIPT_OUT_TMP"
+  mv "$RECEIPT_OUT_TMP" "$RECEIPT_OUT"
   log_info "execution receipt written to $RECEIPT_OUT"
 fi
 
