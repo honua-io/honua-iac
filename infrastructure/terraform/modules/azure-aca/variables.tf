@@ -131,7 +131,7 @@ variable "connection_encryption_master_key" {
   nullable    = true
 
   validation {
-    condition     = var.connection_encryption_master_key == null || length(var.connection_encryption_master_key) >= 32
+    condition     = var.connection_encryption_master_key == null ? true : length(var.connection_encryption_master_key) >= 32
     error_message = "connection_encryption_master_key must be at least 32 characters when set."
   }
 }
