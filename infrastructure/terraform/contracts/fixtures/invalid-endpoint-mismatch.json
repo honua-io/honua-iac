@@ -22,7 +22,7 @@
   "operator_contract_digest": {
     "sensitive": false,
     "type": "dynamic",
-    "value": "62ed7c98148019104ba99cb1af1f64574dd2acdc7e2380a66eb5259cd037954f"
+    "value": "e9ad0e218eb66134270426b6637f3bccba659a5a1a68e0ca3c610295e7142d1e"
   },
   "deployment_contract": {
     "sensitive": false,
@@ -32,7 +32,7 @@
       "kind": "deployment",
       "identity": {
         "status": "qualified",
-        "contract_digest": "62ed7c98148019104ba99cb1af1f64574dd2acdc7e2380a66eb5259cd037954f",
+        "contract_digest": "e9ad0e218eb66134270426b6637f3bccba659a5a1a68e0ca3c610295e7142d1e",
         "candidate_digest": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
         "manifest_digest": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
         "iac_revision": "9c1e7f0b2d3a4c5e6f708192a3b4c5d6e7f80912",
@@ -146,7 +146,7 @@
       "kind": "validation",
       "identity": {
         "status": "qualified",
-        "contract_digest": "62ed7c98148019104ba99cb1af1f64574dd2acdc7e2380a66eb5259cd037954f",
+        "contract_digest": "e9ad0e218eb66134270426b6637f3bccba659a5a1a68e0ca3c610295e7142d1e",
         "candidate_digest": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
         "manifest_digest": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
         "iac_revision": "9c1e7f0b2d3a4c5e6f708192a3b4c5d6e7f80912",
@@ -249,7 +249,7 @@
       "kind": "operations",
       "identity": {
         "status": "qualified",
-        "contract_digest": "62ed7c98148019104ba99cb1af1f64574dd2acdc7e2380a66eb5259cd037954f",
+        "contract_digest": "e9ad0e218eb66134270426b6637f3bccba659a5a1a68e0ca3c610295e7142d1e",
         "candidate_digest": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
         "manifest_digest": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
         "iac_revision": "9c1e7f0b2d3a4c5e6f708192a3b4c5d6e7f80912",
@@ -330,12 +330,15 @@
         "database_managed": true,
         "cache_enabled": true,
         "protection_profile": {
+          "qualification": "unverified",
+          "execution": null,
           "availability_class": "single-task",
-          "interruption_guarantee": "brief-interruption-on-replacement",
+          "interruption_guarantee": "interruption-until-replacement-ready",
           "health_sources": {
-            "functional_check_path": "/healthz/ready",
+            "functional_check_path": null,
+            "readiness_check_path": "/healthz/ready",
             "log_group": "/honua/honuaecs-it",
-            "metrics_namespace": "Honua/honuaecs-it"
+            "metrics_namespace": "AWS/ApplicationELB"
           },
           "warmup_seconds": 60,
           "observation": {
@@ -347,6 +350,10 @@
           "recovery": {
             "mechanism": "aws-ecs-deployment-circuit-breaker",
             "executable": true,
+            "scope": "startup-until-ecs-deployment-completes",
+            "requires_prior_completed_deployment": true,
+            "controller_topology": "aws-provider-control-plane",
+            "recovery_time_bound_seconds": null,
             "primary_rollback_enabled": true,
             "canary_rollback_enabled": null
           },

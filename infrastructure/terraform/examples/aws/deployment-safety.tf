@@ -1,17 +1,17 @@
 variable "deployment_safety" {
   description = "Opt-in native ECS/ALB safety wiring for an independently retained Honua controller. Null leaves only ECS startup circuit-breaker protection. No setting asserts live qualification."
   type = object({
-    controller_role_name          = string
-    telemetry_connection_id       = string
-    prometheus_canary_job         = string
-    functional_probe_url          = string
-    functional_expected_sha256    = string
-    observation_window_seconds    = optional(number, 600)
-    recovery_timeout_seconds      = optional(number, 300)
-    warmup_seconds                = optional(number, 180)
-    evidence_grace_seconds        = optional(number, 120)
-    max_staleness_seconds         = optional(number, 60)
-    exposure_deadline_seconds     = optional(number, 900)
+    controller_role_name       = string
+    telemetry_connection_id    = string
+    prometheus_canary_job      = string
+    functional_probe_url       = string
+    functional_expected_sha256 = string
+    observation_window_seconds = optional(number, 600)
+    recovery_timeout_seconds   = optional(number, 300)
+    warmup_seconds             = optional(number, 180)
+    evidence_grace_seconds     = optional(number, 120)
+    max_staleness_seconds      = optional(number, 60)
+    exposure_deadline_seconds  = optional(number, 900)
   })
   default = null
 

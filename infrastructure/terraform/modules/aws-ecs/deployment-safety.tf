@@ -4,17 +4,17 @@
 variable "deployment_safety" {
   description = "Opt-in native ECS/ALB safety wiring for an independently retained Honua controller. Null leaves only ECS startup circuit-breaker protection. No setting asserts live qualification."
   type = object({
-    controller_role_name          = string
-    telemetry_connection_id       = string
-    prometheus_canary_job         = string
-    functional_probe_url          = string
-    functional_expected_sha256    = string
-    observation_window_seconds    = optional(number, 600)
-    recovery_timeout_seconds      = optional(number, 300)
-    warmup_seconds                = optional(number, 180)
-    evidence_grace_seconds        = optional(number, 120)
-    max_staleness_seconds         = optional(number, 60)
-    exposure_deadline_seconds     = optional(number, 900)
+    controller_role_name       = string
+    telemetry_connection_id    = string
+    prometheus_canary_job      = string
+    functional_probe_url       = string
+    functional_expected_sha256 = string
+    observation_window_seconds = optional(number, 600)
+    recovery_timeout_seconds   = optional(number, 300)
+    warmup_seconds             = optional(number, 180)
+    evidence_grace_seconds     = optional(number, 120)
+    max_staleness_seconds      = optional(number, 60)
+    exposure_deadline_seconds  = optional(number, 900)
   })
   default = null
 
@@ -103,9 +103,9 @@ resource "aws_iam_role_policy" "recovery_controller" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = ["ecs:DescribeServices", "ecs:UpdateService"]
-        Resource = [aws_ecs_service.canary[0].id]
+        Effect    = "Allow"
+        Action    = ["ecs:DescribeServices", "ecs:UpdateService"]
+        Resource  = [aws_ecs_service.canary[0].id]
         Condition = { ArnEquals = { "ecs:cluster" = aws_ecs_cluster.this.arn } }
       },
       {
@@ -132,25 +132,25 @@ resource "aws_iam_role_policy" "recovery_controller" {
 output "deployment_safety" {
   description = "Native backend registration and bounded canonical runtime parameters. Configured-unverified until exact-candidate provider recovery evidence passes. No secrets or live-protection assertion."
   value = !local.safety_enabled ? null : {
-    status                 = "configured-unverified"
-    backend_name           = "honua-aws-ecs-alb"
-    target_kind            = "AwsEcs"
-    target_id              = aws_ecs_service.canary[0].id
+    status                  = "configured-unverified"
+    backend_name            = "honua-aws-ecs-alb"
+    target_kind             = "AwsEcs"
+    target_id               = aws_ecs_service.canary[0].id
     controller_role_arn     = data.aws_iam_role.recovery_controller[0].arn
-    controller_topology    = "external-retained-controller"
+    controller_topology     = "external-retained-controller"
     durable_operation_store = "external-controller-required"
-    evidence_owner         = "honua-iac#118"
+    evidence_owner          = "honua-iac#118"
     parameters = {
-      "aws.region"                                      = data.aws_region.current.region
-      "aws.ecs.cluster"                                 = aws_ecs_cluster.this.arn
-      "aws.ecs.canary_service"                          = aws_ecs_service.canary[0].name
-      "aws.alb.listener_rule_arn"                       = aws_lb_listener_rule.protected_rollout[0].arn
-      "aws.alb.stable_target_group_arn"                 = aws_lb_target_group.this.arn
-      "aws.alb.canary_target_group_arn"                 = aws_lb_target_group.canary[0].arn
+      "aws.region"                                       = data.aws_region.current.region
+      "aws.ecs.cluster"                                  = aws_ecs_cluster.this.arn
+      "aws.ecs.canary_service"                           = aws_ecs_service.canary[0].name
+      "aws.alb.listener_rule_arn"                        = aws_lb_listener_rule.protected_rollout[0].arn
+      "aws.alb.stable_target_group_arn"                  = aws_lb_target_group.this.arn
+      "aws.alb.canary_target_group_arn"                  = aws_lb_target_group.canary[0].arn
       "deployment.protection.observation_window_seconds" = tostring(var.deployment_safety.observation_window_seconds)
       "deployment.rollback.observation_timeout_seconds"  = tostring(var.deployment_safety.recovery_timeout_seconds)
-      "telemetry.connection"                            = var.deployment_safety.telemetry_connection_id
-      "telemetry.policy"                                = "aws-alb-canary"
+      "telemetry.connection"                             = var.deployment_safety.telemetry_connection_id
+      "telemetry.policy"                                 = "aws-alb-canary"
       "telemetry.prometheus.canary_job"                  = var.deployment_safety.prometheus_canary_job
       "telemetry.healthz.url"                            = "${local.service_scheme}://${local.service_host}${var.health_check_path}"
       "telemetry.golden_query.url"                       = var.deployment_safety.functional_probe_url

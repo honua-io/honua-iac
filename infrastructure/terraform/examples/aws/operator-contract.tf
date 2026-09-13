@@ -149,21 +149,24 @@ locals {
   # Derived, never caller-asserted: a topology only earns "multi-task" once
   # Redis and shared S3 storage are actually wired, which is exactly the gate
   # module.honua itself enforces before it will let more than one task run.
-  operator_contract_availability_class = module.honua.multi_node_topology_ready ? "multi-task" : "single-task"
+  operator_contract_availability_class = var.desired_count + (var.canary_enabled ? var.canary_desired_count : 0) > 1 ? "multi-task" : "single-task"
   operator_contract_interruption_guarantee = module.honua.multi_node_topology_ready ? (
     "rolling-through-healthy-tasks"
     ) : (
-    "brief-interruption-on-replacement"
+    "interruption-until-replacement-ready"
   )
 
   operator_contract_protection_profile = {
     availability_class     = local.operator_contract_availability_class
     interruption_guarantee = local.operator_contract_interruption_guarantee
     health_sources = {
-      functional_check_path = module.honua.alb_health_check.path
+      readiness_check_path  = module.honua.alb_health_check.path
+      functional_check_path = null
       log_group             = local.operator_contract_log_group
-      metrics_namespace     = "Honua/${local.operator_contract_base_name}"
+      metrics_namespace     = "AWS/ApplicationELB"
     }
+    qualification  = "unverified"
+    execution      = module.honua.deployment_safety
     warmup_seconds = module.honua.container_health_check_start_period_seconds
     observation = {
       interval_seconds    = module.honua.alb_health_check.interval_seconds
@@ -172,14 +175,18 @@ locals {
       unhealthy_threshold = module.honua.alb_health_check.unhealthy_threshold
     }
     recovery = {
-      mechanism                = module.honua.deployment_rollback.mechanism
-      executable               = true
-      primary_rollback_enabled = module.honua.deployment_rollback.primary_rollback_enabled
-      canary_rollback_enabled  = module.honua.deployment_rollback.canary_rollback_enabled
+      mechanism                           = module.honua.deployment_rollback.mechanism
+      executable                          = module.honua.deployment_rollback.primary_rollback_enabled
+      scope                               = "startup-until-ecs-deployment-completes"
+      requires_prior_completed_deployment = true
+      controller_topology                 = "aws-provider-control-plane"
+      recovery_time_bound_seconds         = null
+      primary_rollback_enabled            = module.honua.deployment_rollback.primary_rollback_enabled
+      canary_rollback_enabled             = module.honua.deployment_rollback.canary_rollback_enabled
     }
     durable_state = {
       database_managed       = var.existing_db_endpoint == ""
-      cache_enabled          = var.redis_enabled
+      cache_enabled          = module.honua.cache_configured
       object_storage_enabled = local.operator_contract_object_storage_enabled
     }
     prior_revision_retention = module.honua.task_definition_revision_retention
@@ -274,8 +281,8 @@ locals {
     rollout = {
       backend_name    = module.honua.control_plane_backend_name
       target_kind     = module.honua.control_plane_target_kind
-      target_id       = local.operator_contract_service_name
-      target_name     = local.operator_contract_service_name
+      target_id       = var.deployment_safety == null ? local.operator_contract_service_name : module.honua.deployment_safety.target_id
+      target_name     = var.deployment_safety == null ? local.operator_contract_service_name : module.honua.canary_ecs_service_name
       target_resource = local.operator_contract_cluster_arn
       # Revisions are observed by the rollout controller after apply. Terraform
       # does not claim a revision it cannot prove.

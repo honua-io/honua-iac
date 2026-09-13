@@ -605,12 +605,15 @@ function contracts(identity) {
       database_managed: true,
       cache_enabled: true,
       protection_profile: {
+        qualification: 'unverified',
+        execution: null,
         availability_class: 'single-task',
-        interruption_guarantee: 'brief-interruption-on-replacement',
+        interruption_guarantee: 'interruption-until-replacement-ready',
         health_sources: {
-          functional_check_path: '/healthz/ready',
+          functional_check_path: null,
+          readiness_check_path: '/healthz/ready',
           log_group: `/honua/${BASE_NAME}`,
-          metrics_namespace: `Honua/${BASE_NAME}`,
+          metrics_namespace: 'AWS/ApplicationELB',
         },
         warmup_seconds: 60,
         observation: {
@@ -622,6 +625,10 @@ function contracts(identity) {
         recovery: {
           mechanism: 'aws-ecs-deployment-circuit-breaker',
           executable: true,
+          scope: 'startup-until-ecs-deployment-completes',
+          requires_prior_completed_deployment: true,
+          controller_topology: 'aws-provider-control-plane',
+          recovery_time_bound_seconds: null,
           primary_rollback_enabled: true,
           canary_rollback_enabled: null,
         },
