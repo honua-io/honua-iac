@@ -151,3 +151,13 @@ The live-provider/candidate-certificate criterion remains owned by #118/#321:
 Static tests here cannot release the live gate or manufacture a certificate.
 Lambda's separate 2026.1 qualification remains honua-release#282; no Lambda
 recovery claim is added. Azure #147 remains 2027.
+
+## Implementation validation (2026-09-13)
+
+The #182 implementation was checked locally with 28 passing ECS module runs,
+three passing operator-root runs, and canonical schema/digest/identity validation
+of all three applied root outputs. The operator-contract suite passed 21 checks,
+including 28 native safety assertions with independently specified duration,
+identity and SHA-256 expectations. Terraform validation, recursive formatting,
+and the strict policy gate (including TFLint and Checkov) passed. Provider tests
+use Terraform mocks and are not live AWS/candidate recovery evidence.
