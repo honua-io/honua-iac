@@ -263,8 +263,8 @@ run "single_instance_reports_not_multi_node_ready_with_expected_limits" {
   }
 
   assert {
-    condition     = output.task_definition_revision_retention == "unbounded-until-manually-deregistered"
-    error_message = "This module never deregisters a task definition revision, so retention must be reported as unbounded."
+    condition     = output.task_definition_revision_retention == "unbounded-until-manually-deregistered" && aws_ecs_task_definition.this.skip_destroy
+    error_message = "The retention claim must be backed by skip_destroy on the primary task definition."
   }
 }
 
@@ -295,7 +295,8 @@ run "canary_topology_reports_both_rollback_actuators_enabled" {
   assert {
     condition = (
       output.deployment_rollback.primary_rollback_enabled == true &&
-      output.deployment_rollback.canary_rollback_enabled == true
+      output.deployment_rollback.canary_rollback_enabled == true &&
+      aws_ecs_task_definition.canary[0].skip_destroy
     )
     error_message = "Both the primary and canary ECS services must report an enabled rollback actuator when the canary service exists."
   }
