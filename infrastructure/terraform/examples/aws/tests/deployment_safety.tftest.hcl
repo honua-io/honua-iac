@@ -1,4 +1,8 @@
 mock_provider "aws" {
+  mock_resource "aws_ecs_cluster" {
+    defaults = { arn = "arn:aws:ecs:us-east-1:123456789012:cluster/honuaecs-it-cluster" }
+  }
+
   mock_data "aws_iam_role" {
     defaults = {
       name = "retained-controller"
@@ -181,5 +185,12 @@ run "multinode_one_task_does_not_claim_redundancy" {
       output.operations_contract.resilience.protection_profile.interruption_guarantee == "rolling-through-healthy-tasks"
     )
     error_message = "An autoscaling ceiling and shared storage permit surge but do not imply multiple baseline tasks."
+  }
+}
+
+override_resource {
+  target = module.honua.aws_lb_target_group.canary[0]
+  values = {
+    arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/honua-canary/2222222222222222"
   }
 }
