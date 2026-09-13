@@ -144,6 +144,76 @@
       }
     },
 
+    "protection_profile": {
+      "description": "Executable deployment safety profile: the derived (never caller-asserted) availability class, health/functional/metric sources, warmup/observation limits, rollback actuator, and revision retention that back the protection claim. Absent entirely on a platform that does not yet claim protection.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "availability_class",
+        "interruption_guarantee",
+        "health_sources",
+        "warmup_seconds",
+        "observation",
+        "recovery",
+        "durable_state",
+        "prior_revision_retention"
+      ],
+      "properties": {
+        "availability_class": {
+          "description": "single-task: exactly one task can serve traffic at a time. multi-task: two or more tasks can serve traffic concurrently across the primary and (if enabled) canary services.",
+          "enum": ["single-task", "multi-task"]
+        },
+        "interruption_guarantee": {
+          "description": "single-task deployments stop the running task before the replacement starts, so an update or recovery has a request-serving gap; multi-task deployments roll through healthy replacement tasks so no single update or task loss need interrupt service. Neither value may be read as a zero-downtime claim for single-task.",
+          "enum": ["brief-interruption-on-replacement", "rolling-through-healthy-tasks"]
+        },
+        "health_sources": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["functional_check_path", "log_group", "metrics_namespace"],
+          "properties": {
+            "functional_check_path": { "$ref": "#/$defs/url_path" },
+            "log_group": { "type": "string", "minLength": 1 },
+            "metrics_namespace": { "type": "string", "minLength": 1 }
+          }
+        },
+        "warmup_seconds": { "type": "integer", "minimum": 0 },
+        "observation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["interval_seconds", "timeout_seconds", "healthy_threshold", "unhealthy_threshold"],
+          "properties": {
+            "interval_seconds": { "type": "integer", "minimum": 1 },
+            "timeout_seconds": { "type": "integer", "minimum": 1 },
+            "healthy_threshold": { "type": "integer", "minimum": 1 },
+            "unhealthy_threshold": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "recovery": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mechanism", "executable", "primary_rollback_enabled", "canary_rollback_enabled"],
+          "properties": {
+            "mechanism": { "type": "string", "minLength": 1 },
+            "executable": { "type": "boolean" },
+            "primary_rollback_enabled": { "type": "boolean" },
+            "canary_rollback_enabled": { "type": ["boolean", "null"] }
+          }
+        },
+        "durable_state": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["database_managed", "cache_enabled", "object_storage_enabled"],
+          "properties": {
+            "database_managed": { "type": "boolean" },
+            "cache_enabled": { "type": "boolean" },
+            "object_storage_enabled": { "type": "boolean" }
+          }
+        },
+        "prior_revision_retention": { "type": "string", "minLength": 1 }
+      }
+    },
+
     "identity": {
       "description": "Immutable identity block. Byte-identical in all three contracts. Terraform projects these values; it never derives a Git revision, resolves a tag to a digest, or otherwise converts a mutable reference into an immutable claim.",
       "type": "object",
@@ -601,7 +671,8 @@
             "ingress_deletion_protection": { "type": "boolean" },
             "ingress_access_logs_enabled": { "type": "boolean" },
             "database_managed": { "type": "boolean" },
-            "cache_enabled": { "type": "boolean" }
+            "cache_enabled": { "type": "boolean" },
+            "protection_profile": { "$ref": "#/$defs/protection_profile" }
           }
         },
         "grouping": {
