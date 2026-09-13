@@ -104,6 +104,19 @@ run "single_instance_default_is_safe" {
   }
 }
 
+run "postgis_bootstrap_requires_runner_reachability" {
+  command = plan
+
+  variables {
+    existing_db_endpoint          = ""
+    existing_db_connection_string = ""
+    enable_postgis                = true
+    db_publicly_accessible        = false
+  }
+
+  expect_failures = [null_resource.enable_postgis]
+}
+
 run "ai_provider_secret_uses_reference_and_scoped_kms" {
   command = apply
 
