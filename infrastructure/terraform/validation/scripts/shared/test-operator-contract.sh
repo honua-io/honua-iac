@@ -280,7 +280,7 @@ done
 
 # ---------------------------------------------------------------------------
 # Bounded native execution settings and cross-contract target/prerequisite joins.
-if node --test "$SCRIPT_DIR/test-deployment-safety.mjs"; then
+if node "$SCRIPT_DIR/test-deployment-safety.mjs"; then
   pass "native deployment safety contract checks"
 else
   fail "native deployment safety contract checks"
