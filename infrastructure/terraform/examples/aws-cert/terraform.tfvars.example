@@ -87,8 +87,14 @@ tags = {
 # The public key only verifies signatures and is not secret. Never put
 # pro_license_content here; if you must let Terraform own the envelope, set it
 # only in your local secret tfvars (~/.config/honua/aws-cert.secret.tfvars).
+# That file is NOT auto-loaded by plan/apply -- pass it explicitly:
+#   scripts/terraform-exact-plan.sh \
+#     --root infrastructure/terraform/examples/aws-cert \
+#     --var-file="$HOME/.config/honua/aws-cert.secret.tfvars"
+#   scripts/terraform-exact-apply.sh \
+#     --plan infrastructure/terraform/examples/aws-cert/honua.tfplan
+# or export TF_VAR_pro_license_content instead of using a file.
 # enable_pro_license             = true
 # pro_license_secret_arn         = "arn:aws:secretsmanager:us-east-1:<account>:secret:<name>-<suffix>"
 # pro_license_key_id             = "honuademo2026q2"
 # pro_license_trusted_public_key = "base64url:<public-key>"
-
