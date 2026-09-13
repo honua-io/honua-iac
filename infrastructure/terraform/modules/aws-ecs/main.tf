@@ -237,6 +237,11 @@ resource "aws_security_group" "alb" {
     }
 
     precondition {
+      condition     = !local.safety_enabled || (local.canary_enabled && local.multi_node_topology_ready && var.desired_count >= 1)
+      error_message = "Native safety requires a running stable/canary MultiNode topology with Redis and shared S3."
+    }
+
+    precondition {
       condition     = local.canary_enabled || var.canary_weight_percentage == 0
       error_message = "canary_weight_percentage must be 0 unless canary_enabled is true."
     }

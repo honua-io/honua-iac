@@ -639,6 +639,53 @@ function checkSchemaVersion(envelope, findings) {
 }
 
 // --------------------------------------------------------------------------
+function checkProtectionProfile(envelope, findings) {
+  const deployment = envelope.deployment_contract;
+  const profile = envelope.operations_contract?.resilience?.protection_profile;
+  const execution = profile?.execution;
+  if (!execution) return;
+  const parameters = execution.parameters ?? {};
+  const report = (message) => findings.push({
+    code: 'E_PROTECTION_PROFILE',
+    path: '$.operations_contract.resilience.protection_profile.execution',
+    message,
+  });
+  if (deployment?.rollout?.backend_name !== execution.backend_name ||
+      deployment?.rollout?.target_id !== execution.target_id ||
+      deployment?.rollout?.target_kind !== execution.target_kind) {
+    report('Native execution must identify the same backend and target as the deployment contract.');
+  }
+  if (deployment?.rollout?.canary?.enabled !== true ||
+      deployment?.dependencies?.cache?.enabled !== true ||
+      deployment?.dependencies?.object_storage?.enabled !== true ||
+      profile.durable_state?.cache_enabled !== true ||
+      profile.durable_state?.object_storage_enabled !== true) {
+    report('Native execution requires an installed canary, Redis and shared object storage.');
+  }
+  if (parameters['aws.region'] !== deployment?.stack?.region ||
+      parameters['aws.ecs.cluster'] !== deployment?.workload?.cluster_id ||
+      parameters['aws.ecs.canary_service'] !== deployment?.rollout?.canary?.service_name ||
+      parameters['aws.alb.canary_target_group_arn'] !== deployment?.rollout?.canary?.target_group_arn) {
+    report('Native AWS selectors must match the installed target.');
+  }
+  for (const [key, maximum] of Object.entries({
+    'deployment.protection.observation_window_seconds': 86400,
+    'deployment.rollback.observation_timeout_seconds': 1800,
+    'telemetry.warmup_seconds': 21600,
+    'telemetry.evidence_grace_seconds': 3600,
+    'telemetry.max_staleness_seconds': 3600,
+    'telemetry.exposure_deadline_seconds': 7200,
+  })) {
+    const value = Number(parameters[key]);
+    if (!Number.isSafeInteger(value) || value <= 0 || value > maximum) {
+      report(`${key} must be positive whole seconds no greater than ${maximum}.`);
+    }
+  }
+  if (parameters['aws.alb.stable_target_group_arn'] === parameters['aws.alb.canary_target_group_arn']) {
+    report('Stable and candidate target groups must be distinct.');
+  }
+}
+
 // Entry point
 // --------------------------------------------------------------------------
 
@@ -673,6 +720,7 @@ export function validateDocument(raw, { schema, requireQualified = false } = {})
   checkPlatformAgreement(envelope, findings);
   checkEndpointAgreement(envelope, findings);
   checkSecretRefAgreement(envelope, findings);
+  checkProtectionProfile(envelope, findings);
   if (requireQualified) checkQualified(envelope, findings);
 
   return findings;

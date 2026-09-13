@@ -352,9 +352,99 @@
             },
             "parameters": {
               "type": "object",
-              "additionalProperties": {
-                "type": "string",
-                "minLength": 1
+              "additionalProperties": false,
+              "required": [
+                "aws.region",
+                "aws.ecs.cluster",
+                "aws.ecs.canary_service",
+                "aws.alb.listener_rule_arn",
+                "aws.alb.stable_target_group_arn",
+                "aws.alb.canary_target_group_arn",
+                "telemetry.connection",
+                "telemetry.policy",
+                "telemetry.prometheus.canary_job",
+                "telemetry.healthz.url",
+                "telemetry.golden_query.url",
+                "telemetry.golden_query.expected_sha256",
+                "deployment.protection.observation_window_seconds",
+                "deployment.rollback.observation_timeout_seconds",
+                "telemetry.warmup_seconds",
+                "telemetry.evidence_grace_seconds",
+                "telemetry.max_staleness_seconds",
+                "telemetry.exposure_deadline_seconds"
+              ],
+              "properties": {
+                "aws.region": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "aws.ecs.cluster": {
+                  "type": "string",
+                  "pattern": "^arn:aws[a-z-]*:ecs:[a-z0-9-]+:[0-9]{12}:cluster/.+"
+                },
+                "aws.ecs.canary_service": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "aws.alb.listener_rule_arn": {
+                  "type": "string",
+                  "pattern": "^arn:aws[a-z-]*:elasticloadbalancing:[a-z0-9-]+:[0-9]{12}:listener-rule/.+"
+                },
+                "aws.alb.stable_target_group_arn": {
+                  "type": "string",
+                  "pattern": "^arn:aws[a-z-]*:elasticloadbalancing:[a-z0-9-]+:[0-9]{12}:targetgroup/.+"
+                },
+                "aws.alb.canary_target_group_arn": {
+                  "type": "string",
+                  "pattern": "^arn:aws[a-z-]*:elasticloadbalancing:[a-z0-9-]+:[0-9]{12}:targetgroup/.+"
+                },
+                "telemetry.connection": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_.:-]+$"
+                },
+                "telemetry.policy": {
+                  "const": "aws-alb-canary"
+                },
+                "telemetry.prometheus.canary_job": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_.:-]+$"
+                },
+                "telemetry.healthz.url": {
+                  "type": "string",
+                  "pattern": "^https?://"
+                },
+                "telemetry.golden_query.url": {
+                  "type": "string",
+                  "pattern": "^https://[^/@?#]+/[^#]*$"
+                },
+                "telemetry.golden_query.expected_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "deployment.protection.observation_window_seconds": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "deployment.rollback.observation_timeout_seconds": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "telemetry.warmup_seconds": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "telemetry.evidence_grace_seconds": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "telemetry.max_staleness_seconds": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "telemetry.exposure_deadline_seconds": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                }
               }
             }
           }

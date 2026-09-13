@@ -287,6 +287,7 @@ jobs:
         run: |
           set -euo pipefail
           terraform -chdir=infrastructure/terraform/modules/aws-ecs test -no-color
+          terraform -chdir=infrastructure/terraform/examples/aws test -no-color
           terraform -chdir=infrastructure/terraform/modules/aws-serverless test -no-color
           terraform -chdir=infrastructure/terraform/modules/azure-aca test -no-color
 

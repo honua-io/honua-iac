@@ -279,6 +279,13 @@ for root in "${CONTRACT_ROOTS[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
+# Bounded native execution settings and cross-contract target/prerequisite joins.
+if node --test "$SCRIPT_DIR/test-deployment-safety.mjs"; then
+  pass "native deployment safety contract checks"
+else
+  fail "native deployment safety contract checks"
+fi
+
 log ""
 if [[ "$FAILURES" -eq 0 ]]; then
   log "[OK] operator-contract v1: $CHECKS checks passed"

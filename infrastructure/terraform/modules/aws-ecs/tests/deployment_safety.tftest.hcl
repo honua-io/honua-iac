@@ -248,3 +248,9 @@ run "cold_canary_is_rejected" {
   variables { canary_desired_count = 0 }
   expect_failures = [aws_security_group.alb]
 }
+
+run "single_service_cannot_enable_native_canary_backend" {
+  command = plan
+  variables { canary_enabled = false }
+  expect_failures = [aws_security_group.alb]
+}

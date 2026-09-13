@@ -743,6 +743,63 @@ write('valid-aws-ecs-small-unqualified.json', terraformOutputDocument(unqualifie
 const certQualified = buildEnvelope(certQualifiedIdentity(), certContracts);
 write('valid-aws-cert-lambda.json', certTerraformOutputDocument(certQualified));
 
+// A native profile binds a distinct candidate cell to the same contract identity.
+const native = structuredClone(qualified);
+const nativeDeployment = native.deployment_contract;
+const nativeProfile = native.operations_contract.resilience.protection_profile;
+const canaryService = `${BASE_NAME}-canary-service`;
+const canaryTarget = `arn:aws:elasticloadbalancing:${REGION}:${ACCOUNT}:targetgroup/canary/2222222222222222`;
+const stableTarget = `arn:aws:elasticloadbalancing:${REGION}:${ACCOUNT}:targetgroup/stable/1111111111111111`;
+const nativeTarget = `arn:aws:ecs:${REGION}:${ACCOUNT}:service/${CLUSTER}/${canaryService}`;
+nativeDeployment.rollout.backend_name = 'honua-aws-ecs-alb';
+nativeDeployment.rollout.target_id = nativeTarget;
+nativeDeployment.rollout.target_name = canaryService;
+nativeDeployment.rollout.canary = {
+  enabled: true, service_name: canaryService, target_group_arn: canaryTarget,
+  weight_percentage: 0, verification_header_name: 'X-Honua-Canary',
+};
+nativeDeployment.workload.desired_count = 2;
+nativeDeployment.dependencies.object_storage = {
+  kind: 'aws-s3', enabled: true, bucket: 'honua-test-files', prefix: null,
+};
+native.operations_contract.scaling.deployment_mode = 'MultiNode';
+native.operations_contract.scaling.desired_count = 2;
+native.operations_contract.scaling.max_capacity = 4;
+nativeProfile.availability_class = 'multi-task';
+nativeProfile.interruption_guarantee = 'rolling-through-healthy-tasks';
+nativeProfile.durable_state.object_storage_enabled = true;
+nativeProfile.recovery.canary_rollback_enabled = true;
+nativeProfile.execution = {
+  status: 'configured-unverified', backend_name: 'honua-aws-ecs-alb',
+  target_kind: 'AwsEcs', target_id: nativeTarget,
+  controller_role_arn: `arn:aws:iam::${ACCOUNT}:role/retained-controller`,
+  controller_topology: 'external-retained-controller',
+  durable_operation_store: 'external-controller-required', evidence_owner: 'honua-iac#118',
+  parameters: {
+    'aws.region': REGION,
+    'aws.ecs.cluster': nativeDeployment.workload.cluster_id,
+    'aws.ecs.canary_service': canaryService,
+    'aws.alb.listener_rule_arn': `arn:aws:elasticloadbalancing:${REGION}:${ACCOUNT}:listener-rule/app/cert/1111111111111111/2222222222222222/3333333333333333`,
+    'aws.alb.stable_target_group_arn': stableTarget,
+    'aws.alb.canary_target_group_arn': canaryTarget,
+    'deployment.protection.observation_window_seconds': '600',
+    'deployment.rollback.observation_timeout_seconds': '300',
+    'telemetry.connection': 'cert-prometheus',
+    'telemetry.policy': 'aws-alb-canary',
+    'telemetry.prometheus.canary_job': 'cert-cell-canary',
+    'telemetry.healthz.url': `${BASE_URL}/healthz/ready`,
+    'telemetry.golden_query.url': 'https://candidate.example.com/fixture',
+    // Independent standard SHA-256 test vector: response bytes abc.
+    'telemetry.golden_query.expected_sha256': 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+    'telemetry.warmup_seconds': '180',
+    'telemetry.evidence_grace_seconds': '120',
+    'telemetry.max_staleness_seconds': '60',
+    'telemetry.exposure_deadline_seconds': '900',
+  },
+};
+sealDigest(native);
+write('valid-aws-ecs-native-safety.json', terraformOutputDocument(native));
+
 // -- negative ---------------------------------------------------------------
 
 function mutate(fn, { reseal = true } = {}) {
