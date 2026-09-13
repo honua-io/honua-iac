@@ -121,9 +121,9 @@ utc_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
 # Non-secret S3/azurerm backend keys that may be recorded verbatim. Anything
 # else present in the resolved backend config is recorded as a redacted key
-# name only, so a substituted credential still moves the digest without ever
-# being written down.
-readonly HONUA_IAC_BACKEND_PUBLIC_KEYS="bucket key region workspace_key_prefix dynamodb_table use_lockfile encrypt kms_key_id sse_customer_key_id role_arn assume_role external_id endpoints skip_region_validation container_name storage_account_name resource_group_name"
+# name only. The complete configuration is hashed separately, so changing a
+# redacted value still invalidates the binding without publishing that value.
+readonly HONUA_IAC_BACKEND_PUBLIC_KEYS="bucket key region workspace_key_prefix dynamodb_table use_lockfile encrypt kms_key_id role_arn skip_region_validation container_name storage_account_name resource_group_name"
 
 # backend_identity_doc <root> <workspace>
 #
@@ -141,6 +141,7 @@ backend_identity_doc() {
 
   HONUA_IAC_PUBLIC_KEYS="$HONUA_IAC_BACKEND_PUBLIC_KEYS" \
     python3 - "$backend_state" "$workspace" <<'PY'
+import hashlib
 import json
 import os
 import sys
@@ -159,7 +160,13 @@ redacted = []
 for name, value in sorted(config.items()):
     if value is None:
         continue
-    if name in public_keys:
+    if name in ("assume_role", "assume_role_with_web_identity") and isinstance(value, dict):
+        # Session names, external IDs, session policies/tags, and web identity
+        # tokens are not evidence. Only the role reference may be published.
+        public[name] = {"role_arn": value.get("role_arn")}
+        redacted.extend(name + "." + key for key, item in sorted(value.items())
+                        if key != "role_arn" and item is not None)
+    elif name in public_keys and isinstance(value, (str, bool, int)):
         public[name] = value
     else:
         redacted.append(name)
@@ -176,11 +183,11 @@ elif kind == "azurerm":
 encryption = {"enabled": None, "kms_key_reference": None}
 if kind == "s3":
     encryption = {
-        "enabled": bool(public.get("encrypt", False)) or bool(public.get("kms_key_id")),
+        "enabled": public.get("encrypt") is True,
         "kms_key_reference": public.get("kms_key_id"),
     }
 
-assume_role = public.get("assume_role")
+assume_role = public.get("assume_role") or public.get("assume_role_with_web_identity")
 backend_role_arn = public.get("role_arn")
 if not backend_role_arn and isinstance(assume_role, dict):
     backend_role_arn = assume_role.get("role_arn")
@@ -207,6 +214,9 @@ doc = {
     "backend_access_role_arn": backend_role_arn,
     "non_secret_config": public,
     "redacted_config_keys": sorted(redacted),
+    "resolved_config_digest": hashlib.sha256(json.dumps(
+        config, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")).hexdigest(),
     "evidence_scope": "non-secret-backend-configuration",
 }
 json.dump(doc, sys.stdout, sort_keys=True, separators=(",", ":"))
@@ -231,6 +241,25 @@ assert_remote_backend() {
   if [[ "$lock_kind" == "none" ]]; then
     refuse "lock-posture-missing" \
       "remote backend declares no locking primitive; set use_lockfile = true (Terraform >= 1.10) or dynamodb_table"
+  fi
+
+  if [[ "$kind" == "s3" ]]; then
+    HONUA_IAC_JSON="$doc" python3 -c '
+import json, os, sys
+location = json.loads(os.environ["HONUA_IAC_JSON"])["location"]
+sys.exit(0 if all(isinstance(location.get(key), str) and location[key].strip()
+                 for key in ("bucket_id", "object_key", "region")) else 1)
+' || refuse "backend-identity-missing" "S3 backend must explicitly identify bucket, object key, and region"
+    [[ "$(json_get "$doc" encryption.enabled)" == "true" ]] ||
+      refuse "backend-encryption-missing" "S3 backend requires encryption"
+    if HONUA_IAC_JSON="$doc" python3 -c '
+import json, os, sys
+keys = set(json.loads(os.environ["HONUA_IAC_JSON"])["redacted_config_keys"])
+sys.exit(0 if keys.intersection({"access_key", "secret_key", "token", "session_token",
+    "sse_customer_key", "assume_role_with_web_identity.web_identity_token"}) else 1)
+'; then
+      refuse "backend-credential-refused" "backend configuration contains credential material; use short-lived session credentials outside backend configuration"
+    fi
   fi
 }
 
