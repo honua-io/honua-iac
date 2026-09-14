@@ -435,6 +435,100 @@ assert_scoped_guard_detected 'lambda-cert-service-trust' \
 assert_scoped_guard_detected 'lambda-cert-tagged-lifecycle' \
   'aws:ResourceTag/honua-purpose' 1
 
+# --- honua-iac#168: teardown scope, trust isolation, bootstrap inventory ------
+#
+# Each case applies one sed mutation to a copy of the tree, refuses a mutation
+# that changed nothing (a stale sed would otherwise pass vacuously), and
+# requires the gate to fail with the named guard.
+MUTATION_COUNT=0
+assert_mutation_detected() {
+  local label="$1"
+  local target_file="$2"
+  local sed_script="$3"
+  local expected="$4"
+
+  MUTATION_COUNT=$((MUTATION_COUNT + 1))
+  local fixture="$TMP_DIR/mutation-$MUTATION_COUNT-$label"
+  rm -rf "$fixture"
+  cp -a "$FIXTURE_ROOT" "$fixture"
+
+  local target_path="$fixture/$target_file"
+  if [[ ! -f "$target_path" ]]; then
+    echo "[ERROR] Negative-test target file not found: $target_path" >&2
+    exit 1
+  fi
+  sed -i "$sed_script" "$target_path"
+  if cmp -s "$FIXTURE_ROOT/$target_file" "$target_path"; then
+    echo "[ERROR] Mutation $MUTATION_COUNT for '$label' did not change $target_file" >&2
+    exit 1
+  fi
+
+  run_gate "true" 0 0 0 "$fixture"
+  if [[ "$GATE_EXIT_CODE" -eq 0 ]]; then
+    echo "[ERROR] Policy gate accepted mutation $MUTATION_COUNT ($label) of $target_file: $sed_script" >&2
+    cat "$GATE_OUTPUT_FILE" >&2
+    exit 1
+  fi
+  assert_output_contains "Policy check failed \\($label\\): $expected"
+  rm -rf "$fixture"
+}
+
+NOT_FOUND='expected pattern not found'
+DISALLOWED='disallowed pattern found'
+OIDC_COMPONENT='components/aws-github-oidc/main.tf'
+CERT_README='examples/aws-cert/README.md'
+
+# Run namespace: widening either per-run ARN lets teardown reach foreign resources.
+assert_mutation_detected 'lambda-cert-run-namespace' "$LAMBDA_CERT" \
+  's|:function:honua-certrun-lambda-\*"|:function:honua-*"|' "$NOT_FOUND"
+assert_mutation_detected 'lambda-cert-run-namespace' "$LAMBDA_CERT" \
+  's|/aws/lambda/honua-certrun-lambda-\*"|/aws/lambda/*"|' "$NOT_FOUND"
+
+# Tag preservation: the Deny must stay a Deny and must keep covering both keys.
+assert_mutation_detected 'lambda-cert-tag-preservation' "$LAMBDA_CERT" \
+  's|effect    = "Deny"|effect    = "Allow"|' "$NOT_FOUND"
+assert_mutation_detected 'lambda-cert-tag-preservation' "$LAMBDA_CERT" \
+  '/PreserveCertificationPurpose[[:space:]]*=/d' "$NOT_FOUND"
+
+# Destructive and identity-passing actions stay in their sanctioned statement.
+assert_mutation_detected 'lambda-cert-destructive-action-scope' "$LAMBDA_CERT" \
+  's|"lambda:PublishVersion",|"lambda:PublishVersion",\n      "lambda:DeleteFunction",|' "$DISALLOWED"
+assert_mutation_detected 'lambda-cert-destructive-action-scope' "$LAMBDA_CERT" \
+  's|actions   = \["lambda:GetFunction", "lambda:ListTags"\]|actions   = ["lambda:GetFunction", "lambda:ListTags", "logs:DeleteLogGroup"]|' "$DISALLOWED"
+assert_mutation_detected 'lambda-cert-destructive-action-scope' "$LAMBDA_CERT" \
+  's|"ecr:PutImage"|"ecr:PutImage",\n      "ecr:BatchDeleteImage"|' "$DISALLOWED"
+assert_mutation_detected 'lambda-cert-destructive-action-scope' "$LAMBDA_CERT" \
+  's|actions   = \["lambda:GetFunction", "lambda:ListTags"\]|actions   = ["lambda:GetFunction", "lambda:ListTags", "iam:PassRole"]|' "$DISALLOWED"
+assert_mutation_detected 'lambda-cert-destructive-action-scope' "$LAMBDA_CERT" \
+  's|actions   = \["lambda:GetFunction", "lambda:ListTags"\]|actions   = ["lambda:GetFunction", "lambda:ListTags", "lambda:TagResource"]|' "$DISALLOWED"
+
+# ...and each sanctioned statement keeps its namespaced resource scope.
+assert_mutation_detected 'lambda-cert-destructive-resource-scope' "$LAMBDA_CERT" \
+  's|resources = \["\${module.honua.lambda_function_arn}:\*"\]|resources = [module.honua.lambda_function_arn, "${module.honua.lambda_function_arn}:*"]|' "$NOT_FOUND"
+assert_mutation_detected 'lambda-cert-destructive-resource-scope' "$LAMBDA_CERT" \
+  's|resources = \["\${local.lambda_preview_log_arn}:\*"\]|resources = ["arn:aws:logs:us-east-1:123456789012:log-group:/aws/lambda/honua-cert*"]|' "$NOT_FOUND"
+
+# Trust isolation: no federation in the substrate, policy on the existing role,
+# and the component trust keeps its audience/subject conditions.
+assert_mutation_detected 'lambda-cert-oidc-trust-untouched' "$LAMBDA_CERT" \
+  '$a\  actions = ["sts:AssumeRoleWithWebIdentity"]' "$DISALLOWED"
+assert_mutation_detected 'lambda-cert-oidc-role-attachment' "$LAMBDA_CERT" \
+  's|role   = module.github_oidc.role_name|role   = aws_iam_role.lambda_preview_execution.id|' "$NOT_FOUND"
+assert_mutation_detected 'oidc-trust-audience-condition' "$OIDC_COMPONENT" \
+  '\|"token.actions.githubusercontent.com:aud"|d' "$NOT_FOUND"
+assert_mutation_detected 'oidc-trust-subject-condition' "$OIDC_COMPONENT" \
+  '\|"token.actions.githubusercontent.com:sub"|d' "$NOT_FOUND"
+assert_mutation_detected 'aws-cert-oidc-subject-scope' 'examples/aws-cert/variables.tf' \
+  's|"repo:honua-io/honua-server:environment:cert"|"repo:honua-io/honua-server:*"|' "$NOT_FOUND"
+
+# Bootstrap inventory: an unlisted resource, statement or output fails.
+assert_mutation_detected 'lambda-cert-readme-inventory' "$CERT_README" \
+  '/aws_lambda_function_url\.cert_alias`/d' "$NOT_FOUND"
+assert_mutation_detected 'lambda-cert-readme-inventory' "$CERT_README" \
+  '/CertificationVpcDescribe/d' "$NOT_FOUND"
+assert_mutation_detected 'lambda-cert-readme-inventory' "$CERT_README" \
+  '/REALAWS_CERT_LAMBDA_ALIAS/d' "$NOT_FOUND"
+
 echo "[INFO] terraform-policy-gate Lambda certification guard tests passed"
 echo "[INFO] terraform-policy-gate governed-execution guard tests passed"
 echo "[INFO] terraform-policy-gate strict/non-strict regression tests passed"

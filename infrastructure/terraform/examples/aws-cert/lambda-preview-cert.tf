@@ -440,3 +440,16 @@ output "REALAWS_CERT_LAMBDA_WRITE_BASE_URL" {
   description = "Function URL of the standing certification alias; set as the honua-server repository variable of the same name."
   value       = aws_lambda_function_url.cert_alias.function_url
 }
+
+# The lane's bootstrap check also requires the standing function and alias
+# (lambda-preview-certification.yml "Require the certified bootstrap"). Both are
+# plain names, which is what the driver passes to --function-name/--qualifier.
+output "REALAWS_CERT_LAMBDA_FUNCTION" {
+  description = "Name of the standing certification function; set as the honua-server repository variable of the same name."
+  value       = module.honua.lambda_function_name
+}
+
+output "REALAWS_CERT_LAMBDA_ALIAS" {
+  description = "Name of the standing certification alias; set as the honua-server repository variable of the same name."
+  value       = module.honua.lambda_alias_name
+}

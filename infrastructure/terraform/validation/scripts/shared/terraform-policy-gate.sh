@@ -277,6 +277,69 @@ assert_scoped_pattern() {
   exit 1
 }
 
+# Print the policy statement containing the literal marker $2. A dynamic
+# statement's sid is an expression (statement.key), so it is located by one of
+# its for_each keys instead of by sid.
+extract_policy_statement_containing() {
+  local file="$1"
+  local marker="$2"
+
+  awk -v marker="$marker" '
+    function flush_chunk() {
+      if (index(chunk, marker)) printf "%s", chunk
+      chunk = ""
+    }
+    /^  (dynamic "statement"|statement)[ \t]*\{/ { flush_chunk() }
+    { chunk = chunk $0 "\n" }
+    END { flush_chunk() }
+  ' "$file"
+}
+
+# Fail when any Allow statement other than the sanctioned sids ($4,
+# space-separated) grants the action $3. Comment lines are ignored so prose
+# cannot trip or satisfy the check, and Deny statements are skipped because
+# they remove rather than grant the action. A statement without a literal sid
+# is reported as "<unnamed statement>" and is never sanctioned.
+assert_action_confined() {
+  local label="$1"
+  local file="$2"
+  local action="$3"
+  local allowed="$4"
+
+  if [[ ! -f "$file" ]]; then
+    log_error "Policy check failed ($label): file not found: $file"
+    exit 1
+  fi
+
+  local findings
+  findings="$(awk -v action="\"$action\"" -v allowed=" $allowed " '
+    function flush_chunk(   sid) {
+      if (index(chunk, action) && chunk !~ /effect[ \t]*=[ \t]*"Deny"/) {
+        sid = "<unnamed statement>"
+        if (match(chunk, /sid[ \t]*=[ \t]*"[^"]+"/)) {
+          sid = substr(chunk, RSTART, RLENGTH)
+          sub(/sid[ \t]*=[ \t]*"/, "", sid)
+          sub(/"$/, "", sid)
+        }
+        if (index(allowed, " " sid " ") == 0) print "  " sid ": grants " action
+      }
+      chunk = ""
+    }
+    /^[ \t]*#/ { next }
+    /^  (dynamic "statement"|statement)[ \t]*\{/ { flush_chunk() }
+    { chunk = chunk $0 "\n" }
+    END { flush_chunk() }
+  ' "$file")"
+
+  if [[ -z "$findings" ]]; then
+    return 0
+  fi
+
+  log_error "Policy check failed ($label): disallowed pattern found"
+  printf '%s\n' "$findings"
+  exit 1
+}
+
 assert_regex_present_in_block() {
   local label="$1"
   local file="$2"
@@ -441,6 +504,97 @@ run_custom_policy_checks() {
     "PassOnlyCertificationExecutionRole" 'resources[[:space:]]*=[[:space:]]*\[aws_iam_role.lambda_preview_execution.arn\]'
   assert_regex_present_in_statement "lambda-cert-image-pull-source" "$lambda_cert" \
     "LambdaCertificationImagePull" 'variable[[:space:]]*=[[:space:]]*"aws:SourceArn"'
+
+  # honua-iac#168: teardown can only reach what the lane created. The per-run
+  # function and log-group ARNs stay inside the run namespace that the server
+  # lane's teardown refuses to leave (honua-certrun-lambda-*).
+  assert_regex_present '^[[:space:]]*lambda_preview_function_arn[[:space:]]*=[[:space:]]*".*:function:honua-certrun-lambda-\*"[[:space:]]*$' \
+    "$lambda_cert" "lambda-cert-run-namespace"
+  assert_regex_present '^[[:space:]]*lambda_preview_log_arn[[:space:]]*=[[:space:]]*".*:log-group:/aws/lambda/honua-certrun-lambda-\*"[[:space:]]*$' \
+    "$lambda_cert" "lambda-cert-run-namespace"
+
+  # The tag grant that CreateFunction needs must never relabel a function that
+  # already carries run or purpose tags. The Deny also covers the purpose key.
+  local tag_preservation tag_pattern
+  tag_preservation="$(extract_policy_statement_containing "$lambda_cert" 'PreserveCertificationRun')"
+  for tag_pattern in \
+    'effect[[:space:]]*=[[:space:]]*"Deny"' \
+    '"lambda:TagResource"' \
+    'PreserveCertificationRun[[:space:]]*=[[:space:]]*"honua-cert-run"' \
+    'PreserveCertificationPurpose[[:space:]]*=[[:space:]]*"honua-purpose"' \
+    'test[[:space:]]*=[[:space:]]*"StringNotEquals"'; do
+    assert_scoped_pattern "lambda-cert-tag-preservation" "$lambda_cert" "$tag_pattern" "$tag_preservation"
+  done
+
+  # Destructive, identity-passing and tagging actions are granted by exactly
+  # one sanctioned statement each (two for DeleteFunction), and each of those
+  # statements keeps its namespaced resource scope. Adding DeleteFunction to
+  # the standing-alias statement, or the unqualified standing function ARN to
+  # the version-delete statement, would let the lane delete what it did not
+  # create.
+  assert_action_confined "lambda-cert-destructive-action-scope" "$lambda_cert" \
+    'lambda:DeleteFunction' 'InvokeAndDeleteTaggedCertificationFunction DeleteOnlyStandingFunctionVersions'
+  assert_action_confined "lambda-cert-destructive-action-scope" "$lambda_cert" \
+    'logs:DeleteLogGroup' 'CertificationLogGroupLifecycle'
+  assert_action_confined "lambda-cert-destructive-action-scope" "$lambda_cert" \
+    'ecr:BatchDeleteImage' 'ReplaceStaleCertificationMirrorTag'
+  assert_action_confined "lambda-cert-destructive-action-scope" "$lambda_cert" \
+    'iam:PassRole' 'PassOnlyCertificationExecutionRole'
+  assert_action_confined "lambda-cert-destructive-action-scope" "$lambda_cert" \
+    'lambda:CreateFunction' 'CreateTaggedCertificationFunction'
+  assert_action_confined "lambda-cert-destructive-action-scope" "$lambda_cert" \
+    'lambda:TagResource' 'CreateTaggedCertificationFunction'
+  local scoped_statement
+  for scoped_statement in \
+    'CreateTaggedCertificationFunction:resources[[:space:]]*=[[:space:]]*\[local\.lambda_preview_function_arn\][[:space:]]*$' \
+    'InvokeAndDeleteTaggedCertificationFunction:resources[[:space:]]*=[[:space:]]*\[local\.lambda_preview_function_arn\][[:space:]]*$' \
+    'DeleteOnlyStandingFunctionVersions:resources[[:space:]]*=[[:space:]]*\["\$\{module\.honua\.lambda_function_arn\}:\*"\][[:space:]]*$' \
+    'CertificationLogGroupLifecycle:resources[[:space:]]*=[[:space:]]*\["\$\{local\.lambda_preview_log_arn\}:\*"\][[:space:]]*$' \
+    'ReplaceStaleCertificationMirrorTag:resources[[:space:]]*=[[:space:]]*\[aws_ecr_repository\.lambda_preview\.arn\][[:space:]]*$'; do
+    assert_regex_present_in_statement "lambda-cert-destructive-resource-scope" "$lambda_cert" \
+      "${scoped_statement%%:*}" "${scoped_statement#*:}"
+  done
+
+  # The substrate extends the certified role's permissions only: it must not
+  # declare federation, trust or subjects of its own, its policy must attach to
+  # the existing OIDC role, and that role's trust must keep its audience and
+  # subject conditions with the cert-Environment subject as the stack default.
+  assert_regex_absent 'AssumeRoleWithWebIdentity|token\.actions\.githubusercontent\.com|aws_iam_openid_connect_provider|github_oidc_subjects|UpdateAssumeRolePolicy' \
+    "$lambda_cert" "lambda-cert-oidc-trust-untouched"
+  assert_regex_present_in_block "lambda-cert-oidc-role-attachment" "$lambda_cert" \
+    'resource "aws_iam_role_policy" "lambda_preview_certification"' \
+    'role[[:space:]]*=[[:space:]]*module\.github_oidc\.role_name'
+  local oidc_component="$ROOT/components/aws-github-oidc/main.tf"
+  assert_regex_present_in_block "oidc-trust-audience-condition" "$oidc_component" \
+    'data "aws_iam_policy_document" "trust"' 'variable[[:space:]]*=[[:space:]]*"token\.actions\.githubusercontent\.com:aud"'
+  assert_regex_present_in_block "oidc-trust-subject-condition" "$oidc_component" \
+    'data "aws_iam_policy_document" "trust"' 'variable[[:space:]]*=[[:space:]]*"token\.actions\.githubusercontent\.com:sub"'
+  assert_regex_present_in_block "aws-cert-oidc-subject-scope" "$ROOT/examples/aws-cert/variables.tf" \
+    'variable "github_oidc_subjects"' 'default[[:space:]]*=[[:space:]]*\["repo:honua-io/honua-server:environment:cert"\]'
+
+  # The README inventory is what an operator checks a governed plan against
+  # before apply. A resource, statement or output missing from it would be
+  # approved blind, so every one must be named there.
+  local cert_readme="$ROOT/examples/aws-cert/README.md"
+  local inventory_item inventory_missing=""
+  while IFS= read -r inventory_item; do
+    grep -qF -- "\`${inventory_item}\`" "$cert_readme" || inventory_missing+="  ${inventory_item}"$'\n'
+  done < <(
+    sed -nE 's/^resource "([^"]+)" "([^"]+)".*/\1.\2/p; s/^output "([^"]+)".*/\1/p' "$lambda_cert"
+    sed -nE 's/^output "(REALAWS_CERT_LAMBDA_[A-Z_]+)".*/\1/p' "$ROOT/examples/aws-cert/outputs.tf"
+  )
+  while IFS= read -r inventory_item; do
+    grep -qw -- "$inventory_item" "$cert_readme" || inventory_missing+="  ${inventory_item}"$'\n'
+  done < <(
+    grep -Ev '^[[:space:]]*#' "$lambda_cert" |
+      sed -nE 's/^[[:space:]]*sid[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p; s/^[[:space:]]*(Preserve[A-Za-z]+)[[:space:]]*=.*/\1/p' |
+      sort -u
+  )
+  if [[ -n "$inventory_missing" ]]; then
+    log_error "Policy check failed (lambda-cert-readme-inventory): expected pattern not found in $cert_readme"
+    printf '%s' "$inventory_missing"
+    exit 1
+  fi
 
   local tag_files=(
     "$ROOT/modules/aws-ecs/variables.tf"
