@@ -489,6 +489,9 @@ assert_mutation_detected 'lambda-cert-tag-preservation' "$LAMBDA_CERT" \
   's|effect    = "Deny"|effect    = "Allow"|' "$NOT_FOUND"
 assert_mutation_detected 'lambda-cert-tag-preservation' "$LAMBDA_CERT" \
   '/PreserveCertificationPurpose[[:space:]]*=/d' "$NOT_FOUND"
+# Dropping the Null condition would make the Deny block initial tagging.
+assert_mutation_detected 'lambda-cert-tag-preservation' "$LAMBDA_CERT" \
+  '/test     = "Null"/,/^      }/d' "$NOT_FOUND"
 
 # Destructive and identity-passing actions stay in their sanctioned statement.
 assert_mutation_detected 'lambda-cert-destructive-action-scope' "$LAMBDA_CERT" \
@@ -501,6 +504,14 @@ assert_mutation_detected 'lambda-cert-destructive-action-scope' "$LAMBDA_CERT" \
   's|actions   = \["lambda:GetFunction", "lambda:ListTags"\]|actions   = ["lambda:GetFunction", "lambda:ListTags", "iam:PassRole"]|' "$DISALLOWED"
 assert_mutation_detected 'lambda-cert-destructive-action-scope' "$LAMBDA_CERT" \
   's|actions   = \["lambda:GetFunction", "lambda:ListTags"\]|actions   = ["lambda:GetFunction", "lambda:ListTags", "lambda:TagResource"]|' "$DISALLOWED"
+
+# ...a sanctioned statement cannot silently lose its grant...
+assert_mutation_detected 'lambda-cert-required-action-grant' "$LAMBDA_CERT" \
+  '/"logs:DeleteLogGroup"/d' "$NOT_FOUND"
+assert_mutation_detected 'lambda-cert-required-action-grant' "$LAMBDA_CERT" \
+  's|actions   = \["lambda:DeleteFunction"\]|actions   = ["lambda:GetFunction"]|' "$NOT_FOUND"
+assert_mutation_detected 'lambda-cert-required-action-grant' "$LAMBDA_CERT" \
+  's|actions   = \["iam:PassRole"\]|actions   = ["iam:GetRole"]|' "$NOT_FOUND"
 
 # ...and each sanctioned statement keeps its namespaced resource scope.
 assert_mutation_detected 'lambda-cert-destructive-resource-scope' "$LAMBDA_CERT" \
@@ -518,6 +529,14 @@ assert_mutation_detected 'oidc-trust-audience-condition' "$OIDC_COMPONENT" \
   '\|"token.actions.githubusercontent.com:aud"|d' "$NOT_FOUND"
 assert_mutation_detected 'oidc-trust-subject-condition' "$OIDC_COMPONENT" \
   '\|"token.actions.githubusercontent.com:sub"|d' "$NOT_FOUND"
+assert_mutation_detected 'oidc-trust-subject-condition' "$OIDC_COMPONENT" \
+  's|values   = local.oidc_subjects|values   = ["repo:honua-io/other-repo:*"]|' "$NOT_FOUND"
+assert_mutation_detected 'oidc-trust-audience-condition' "$OIDC_COMPONENT" \
+  '/^data "aws_iam_policy_document" "trust"/,/^}/s|test     = "StringEquals"|test     = "StringLike"|' "$NOT_FOUND"
+assert_mutation_detected 'oidc-trust-subject-wiring' "$OIDC_COMPONENT" \
+  's|? var.github_oidc_subjects :|? ["repo:honua-io/other-repo:*"] :|' "$NOT_FOUND"
+assert_mutation_detected 'oidc-trust-subject-wiring' 'examples/aws-cert/main.tf' \
+  's|github_oidc_subjects = var.github_oidc_subjects|github_oidc_subjects = ["repo:honua-io/other-repo:*"]|' "$NOT_FOUND"
 assert_mutation_detected 'aws-cert-oidc-subject-scope' 'examples/aws-cert/variables.tf' \
   's|"repo:honua-io/honua-server:environment:cert"|"repo:honua-io/honua-server:*"|' "$NOT_FOUND"
 

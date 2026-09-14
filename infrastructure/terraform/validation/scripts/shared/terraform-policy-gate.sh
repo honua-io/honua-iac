@@ -525,6 +525,13 @@ run_custom_policy_checks() {
     'test[[:space:]]*=[[:space:]]*"StringNotEquals"'; do
     assert_scoped_pattern "lambda-cert-tag-preservation" "$lambda_cert" "$tag_pattern" "$tag_preservation"
   done
+  # The Null condition limits the Deny to functions that already carry the tag.
+  # Without it the negated StringNotEquals also matches an untagged function, so
+  # the Deny would block CreateFunction's own initial tagging on every run.
+  # Whitespace is collapsed so the condition's three attributes match as a unit.
+  assert_scoped_pattern "lambda-cert-tag-preservation" "$lambda_cert" \
+    'test = "Null" variable = "aws:ResourceTag/\$\{statement\.value\}" values = \["false"\]' \
+    "$(grep -Ev '^[[:space:]]*#' <<<"$tag_preservation" | tr -s ' \t\n' ' ')"
 
   # Destructive, identity-passing and tagging actions are granted by exactly
   # one sanctioned statement each (two for DeleteFunction), and each of those
@@ -544,6 +551,21 @@ run_custom_policy_checks() {
     'lambda:CreateFunction' 'CreateTaggedCertificationFunction'
   assert_action_confined "lambda-cert-destructive-action-scope" "$lambda_cert" \
     'lambda:TagResource' 'CreateTaggedCertificationFunction'
+  # Confinement alone passes when an action vanishes from every statement, which
+  # would silently break lane cleanup or startup. Each sanctioned statement must
+  # still grant its action.
+  local required_grant
+  for required_grant in \
+    'InvokeAndDeleteTaggedCertificationFunction:lambda:DeleteFunction' \
+    'DeleteOnlyStandingFunctionVersions:lambda:DeleteFunction' \
+    'CertificationLogGroupLifecycle:logs:DeleteLogGroup' \
+    'ReplaceStaleCertificationMirrorTag:ecr:BatchDeleteImage' \
+    'PassOnlyCertificationExecutionRole:iam:PassRole' \
+    'CreateTaggedCertificationFunction:lambda:CreateFunction' \
+    'CreateTaggedCertificationFunction:lambda:TagResource'; do
+    assert_regex_present_in_statement "lambda-cert-required-action-grant" "$lambda_cert" \
+      "${required_grant%%:*}" "\"${required_grant#*:}\""
+  done
   local scoped_statement
   for scoped_statement in \
     'CreateTaggedCertificationFunction:resources[[:space:]]*=[[:space:]]*\[local\.lambda_preview_function_arn\][[:space:]]*$' \
@@ -564,11 +586,22 @@ run_custom_policy_checks() {
   assert_regex_present_in_block "lambda-cert-oidc-role-attachment" "$lambda_cert" \
     'resource "aws_iam_role_policy" "lambda_preview_certification"' \
     'role[[:space:]]*=[[:space:]]*module\.github_oidc\.role_name'
+  # Each condition is matched as a unit (test, claim, value source) on the
+  # whitespace-collapsed trust block, so a subject condition rewired to a fixed
+  # value, or an audience condition loosened to StringLike, fails. The value
+  # chain from the stack default to the trust policy is checked link by link.
   local oidc_component="$ROOT/components/aws-github-oidc/main.tf"
-  assert_regex_present_in_block "oidc-trust-audience-condition" "$oidc_component" \
-    'data "aws_iam_policy_document" "trust"' 'variable[[:space:]]*=[[:space:]]*"token\.actions\.githubusercontent\.com:aud"'
-  assert_regex_present_in_block "oidc-trust-subject-condition" "$oidc_component" \
-    'data "aws_iam_policy_document" "trust"' 'variable[[:space:]]*=[[:space:]]*"token\.actions\.githubusercontent\.com:sub"'
+  local oidc_trust
+  oidc_trust="$(extract_hcl_block "$oidc_component" 'data "aws_iam_policy_document" "trust"' |
+    grep -Ev '^[[:space:]]*#' | tr -s ' \t\n' ' ')"
+  assert_scoped_pattern "oidc-trust-audience-condition" "$oidc_component" \
+    'test = "StringEquals" variable = "token\.actions\.githubusercontent\.com:aud" values = \[var\.oidc_audience\]' "$oidc_trust"
+  assert_scoped_pattern "oidc-trust-subject-condition" "$oidc_component" \
+    'test = "StringLike" variable = "token\.actions\.githubusercontent\.com:sub" values = local\.oidc_subjects' "$oidc_trust"
+  assert_regex_present '^[[:space:]]*oidc_subjects[[:space:]]*=[[:space:]]*length\(var\.github_oidc_subjects\)[[:space:]]*>[[:space:]]*0[[:space:]]*\?[[:space:]]*var\.github_oidc_subjects[[:space:]]*:' \
+    "$oidc_component" "oidc-trust-subject-wiring"
+  assert_regex_present_in_block "oidc-trust-subject-wiring" "$ROOT/examples/aws-cert/main.tf" \
+    'module "github_oidc"' '^[[:space:]]*github_oidc_subjects[[:space:]]*=[[:space:]]*var\.github_oidc_subjects[[:space:]]*$'
   assert_regex_present_in_block "aws-cert-oidc-subject-scope" "$ROOT/examples/aws-cert/variables.tf" \
     'variable "github_oidc_subjects"' 'default[[:space:]]*=[[:space:]]*\["repo:honua-io/honua-server:environment:cert"\]'
 
