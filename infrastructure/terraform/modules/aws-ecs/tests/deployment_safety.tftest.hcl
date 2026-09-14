@@ -119,7 +119,7 @@ variables {
   # Nonzero on purpose: the protected rollout rule must still install at
   # stable=100/candidate=0 regardless of this setting until the retained
   # controller takes ownership of the weights post-apply.
-  canary_weight_percentage        = 40
+  canary_weight_percentage = 40
   deployment_safety = {
     controller_role_name    = "retained-controller"
     telemetry_connection_id = "cert-prometheus"
