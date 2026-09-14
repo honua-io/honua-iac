@@ -350,15 +350,35 @@ and a lifecycle policy retaining the newest `lambda_preview_image_retention_coun
 (default **10**, positive integer) images tagged `candidate-*`. The script derives
 tags from the revision and digest and reuses existing immutable images. ECR
 expires older candidates asynchronously; retain enough for active certification
-runs. The runner cannot delete images or edit the repository policy.
+runs. The runner cannot edit the repository policy. Its only image deletion is
+`ReplaceStaleCertificationMirrorTag`, which lets a rerun replace a stale mirror
+tag in this one repository.
 
 The lane creates `honua-certrun-lambda-<run-id>-<attempt>` with the two tags
 `honua-cert-run=<run-id>-<attempt>` and
 `honua-purpose=lambda-preview-certification`, invokes `GET /healthz/live`, checks
 CloudWatch evidence, and deletes its function and log group. The image remains
 for reuse/evidence until lifecycle expiration. These ephemeral resources are
-owned by the script and are not Terraform resources. The lane does **not** pass
-`--vpc-config`; the execution role therefore has no VPC/ENI permissions.
+owned by the script and are not Terraform resources. The lane clones the
+standing function's VPC configuration (`--vpc-config`), because the candidate
+must reach the certification PostGIS over the private subnets. The execution
+role therefore carries the Lambda ENI actions, and the calling role carries
+read-only VPC describes.
+
+**Run namespace and teardown refusal.** Everything the lane creates is named
+inside `honua-certrun-lambda-*` and tagged with its own run. Teardown refuses:
+
+- to delete a function outside `honua-certrun-lambda-*` (script exit 90);
+- to delete a function whose `honua-cert-run` tag is not this run's (exit 91);
+- to delete a log group outside `/aws/lambda/honua-certrun-lambda-*` (exit 92).
+
+IAM backs those refusals up. Function create, invoke, update and delete are
+scoped to the namespace ARN and require the purpose and run tags. An existing
+run or purpose tag cannot be rewritten. On the standing function, deletion is
+allowed only on qualified version ARNs, never on the function itself. The
+policy gate guards each of these statements and its resource scope, and fails
+if a delete, `iam:PassRole`, `lambda:CreateFunction` or `lambda:TagResource`
+grant shows up in any other statement.
 
 ### Licensing (operator ruling 2026-09-12 — 2026.1 certifies licensing-disabled)
 
@@ -417,49 +437,71 @@ module policies applied) and verify with the alias
 `GET /api/v1/admin/license/status` (`edition=Pro`, `validationState=Valid`)
 before dispatching the next certification run.
 
-### Static plan summary — operator must confirm against governed state
+### Static resource and IAM inventory — operator must confirm against governed state
 
-This is a source-derived delta against the existing certification stack, **not
-an executed AWS plan**. No AWS credentials, state, plan, or apply are used for
-local validation. Expected delta: **7 creates, 0 changes, 0 destroys**, assuming
-these addresses are absent and the existing stack has no unrelated drift:
+This inventory is derived from source. It is **not an executed AWS plan**. No
+AWS credentials, state, plan, or apply are used for local validation. It lists
+every Terraform resource in `lambda-preview-cert.tf`, **11 in total**. On a
+fresh certification account they are part of the full stack create. On an
+existing stack, a governed plan may only create or change addresses from this
+list. Stop on any other Lambda substrate address, any replacement, any destroy,
+or any trust difference. The policy gate fails if a resource, policy statement
+or bootstrap output in the file is missing from this section.
 
-| New Terraform resource | Purpose |
+| Terraform resource | Purpose |
 |---|---|
 | `aws_ecr_repository.lambda_preview` | Immutable, scanned image repository |
 | `aws_ecr_lifecycle_policy.lambda_preview` | Retain newest N candidate images |
 | `aws_ecr_repository_policy.lambda_preview` | Lambda service image retrieval |
-| `aws_iam_policy.lambda_preview_execution_boundary` | Bound execution to lane log streams |
+| `aws_iam_policy.lambda_preview_execution_boundary` | Bound execution to lane log streams, Lambda ENIs and the stack's own secrets |
 | `aws_iam_role.lambda_preview_execution` | Lambda-service-only execution identity |
 | `aws_iam_role_policy_attachment.lambda_preview_basic_execution` | Attach AWSLambdaBasicExecutionRole |
+| `aws_iam_role_policy_attachment.lambda_preview_vpc_access` | Attach AWSLambdaVPCAccessExecutionRole (the candidate is VPC-attached) |
+| `aws_iam_role_policy.lambda_preview_execution_secrets` | Let the candidate resolve the standing environment's secret references at boot |
 | `aws_iam_role_policy.lambda_preview_certification` | Add scoped permissions to existing certification OIDC role |
+| `aws_lambda_function_url.cert_alias` | Function URL on the standing alias; the lane's write target |
+| `aws_lambda_permission.cert_alias_function_url` | Allow Function URL invokes on that alias only |
 
 IAM notation below contains no account identifiers: `F` =
 `arn:<partition>:lambda:<region>:<account>:function:honua-certrun-lambda-*`;
 `L` = `arn:<partition>:logs:<region>:<account>:log-group:/aws/lambda/honua-certrun-lambda-*`;
-`E` = the new repository ARN; `X` = the new execution-role ARN. Account, region,
-and partition are Terraform-derived. All new statements are Allow unless marked
-Deny. No OIDC subject or provider changes are introduced.
+`E` = the certification repository ARN; `X` = the execution-role ARN; `S` = the
+standing certification function ARN (`module.honua.lambda_function_arn`); `K` =
+the certification stack's own secret ARNs (database connection, admin password,
+connection-encryption master key, and the optional Pro license and Redis
+connection). Account, region, and partition are Terraform-derived. All
+statements are Allow unless marked Deny. No OIDC subject or provider changes
+are introduced.
 
 | Policy / statement | Actions | Resources | Conditions / principal |
 |---|---|---|---|
 | Execution trust / LambdaServiceOnly | `sts:AssumeRole` | Implicit attached role X (trust policy has no Resource field) | Only service `lambda.amazonaws.com`; no conditions |
 | AWSLambdaBasicExecutionRole (AWS-managed) | `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents` | `*` in AWS-managed policy | None; effective permissions intersect with the boundary below |
-| Execution boundary / CertificationLogStreamsOnly | `logs:CreateLogStream`, `logs:PutLogEvents` | `L:log-stream:*` | None; runtime cannot create groups or access other AWS services |
+| Execution boundary / CertificationLogStreamsOnly | `logs:CreateLogStream`, `logs:PutLogEvents` | `L:log-stream:*` | None; runtime cannot create log groups |
+| Execution boundary / CertificationVpcEni | `ec2:CreateNetworkInterface`, `ec2:DescribeNetworkInterfaces`, `ec2:DescribeSubnets`, `ec2:DeleteNetworkInterface`, `ec2:AssignPrivateIpAddresses`, `ec2:UnassignPrivateIpAddresses` | `*` (no resource-level form; the AWSLambdaVPCAccessExecutionRole shape) | None; the policy gate allowlists exactly these six actions |
+| Execution boundary / CertificationStackSecretsRead | `secretsmanager:GetSecretValue` | K | None; no KMS grant (secrets use the AWS-managed key) |
+| AWSLambdaVPCAccessExecutionRole (AWS-managed) | ENI lifecycle actions | `*` in AWS-managed policy | None; effective permissions intersect with the boundary above |
+| Execution inline / CertificationStackSecretsRead | `secretsmanager:GetSecretValue` | K | None; the boundary above caps it to the same ARNs |
 | ECR policy / LambdaCertificationImagePull | `ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer` | E | Service `lambda.amazonaws.com`; StringEquals `aws:SourceAccount=<current account>`; ArnLike `aws:SourceArn=F` |
 | OIDC / PreserveCertificationRun (Deny) | `lambda:TagResource` | F | Null `aws:ResourceTag/honua-cert-run=false` AND StringNotEquals request run tag to existing resource run tag |
 | OIDC / PreserveCertificationPurpose (Deny) | `lambda:TagResource` | F | Null `aws:ResourceTag/honua-purpose=false` AND StringNotEquals request purpose tag to existing resource purpose tag |
 | OIDC / CreateTaggedCertificationFunction | `lambda:CreateFunction`, `lambda:TagResource` | F | StringEquals request `honua-purpose=lambda-preview-certification`; StringLike request `honua-cert-run=?*-?*`; ForAllValues:StringEquals `aws:TagKeys=[honua-cert-run,honua-purpose]` |
 | OIDC / ObserveCertificationFunction | `lambda:GetFunction`, `lambda:ListTags` | F | None (collision detection, waiters, ownership inspection, absence verification) |
+| OIDC / CertifyStandingAliasUpgradeRollback | `lambda:GetFunction`, `lambda:GetFunctionConfiguration`, `lambda:GetFunctionUrlConfig`, `lambda:GetAlias`, `lambda:ListAliases`, `lambda:ListVersionsByFunction`, `lambda:UpdateFunctionCode`, `lambda:UpdateFunctionConfiguration`, `lambda:PublishVersion`, `lambda:UpdateAlias`, `lambda:InvokeFunction`, `lambda:InvokeFunctionUrl` | S, `S:*` | None; no delete (the policy gate fails if `lambda:DeleteFunction` appears here) |
+| OIDC / DeleteOnlyStandingFunctionVersions | `lambda:DeleteFunction` | `S:*` only (qualified version ARNs, never the function) | None; the lane deletes only the version it published |
+| OIDC / CertificationVpcDescribe | `ec2:DescribeSubnets`, `ec2:DescribeSecurityGroups`, `ec2:DescribeVpcs`, `ec2:DescribeNetworkInterfaces` | `*` (read-only; no resource-level form) | None; Lambda validates the VPC config with the caller's credentials |
 | OIDC / InvokeAndDeleteTaggedCertificationFunction | `lambda:InvokeFunction`, `lambda:DeleteFunction`, `lambda:UpdateFunctionConfiguration` (cold-start nonce, honua-server#4548) | F | StringEquals resource `honua-purpose=lambda-preview-certification`; StringLike resource `honua-cert-run=?*-?*` |
 | OIDC / PassOnlyCertificationExecutionRole | `iam:PassRole` | X | StringEquals `iam:PassedToService=lambda.amazonaws.com` |
 | OIDC / EcrAuthorizationTokenGlobal | `ecr:GetAuthorizationToken` | `*` (AWS supports no resource-level form) | StringEquals `aws:RequestedRegion=<var.region>`; token authenticates only, repository access still bound to E below |
+| OIDC / ReplaceStaleCertificationMirrorTag | `ecr:DescribeImages`, `ecr:BatchDeleteImage` | E | None; a rerun replaces a stale immutable mirror tag in this repository only |
 | OIDC / MirrorAndVerifyCertificationImage | `ecr:DescribeImages`, `ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer`, `ecr:GetRepositoryPolicy`, `ecr:BatchCheckLayerAvailability`, `ecr:InitiateLayerUpload`, `ecr:UploadLayerPart`, `ecr:CompleteLayerUpload`, `ecr:PutImage` | E | StringEquals resource `honua-purpose=lambda-preview-certification` |
 | OIDC / CertificationLogGroupLifecycle | `logs:CreateLogGroup`, `logs:PutRetentionPolicy`, `logs:FilterLogEvents`, `logs:DeleteLogGroup` | `L:*` | None (the script creates untagged log groups) |
+| Function URL permission / AllowCertificationFunctionUrlInvoke | `lambda:InvokeFunctionUrl` | The standing alias only | Principal `*` with `function_url_auth_type=NONE`; the server authenticates every request with its API key |
 
 The [managed basic policy](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AWSLambdaBasicExecutionRole.html)
-is explicitly requested by ruling A; its boundary permits only writes to the
-precreated lane log streams. The [repository service policy](https://docs.aws.amazon.com/lambda/latest/dg/images-create.html#images-permissions)
+is explicitly requested by ruling A. The execution boundary caps both managed
+policies to writes on the precreated lane log streams, the six Lambda ENI
+actions, and reads of the stack's own secrets. The [repository service policy](https://docs.aws.amazon.com/lambda/latest/dg/images-create.html#images-permissions)
 is installed by Terraform, so the runner does not need `ecr:SetRepositoryPolicy`.
 `logs:DescribeLogGroups` is already allowed by the existing component's
 `CloudWatchReadGlobal`; no global read grant is added. The pre-existing policy
@@ -478,8 +520,9 @@ functions in this dedicated lane namespace.
 
 Apply is **operator-run only**, after publishing a fingerprint-only plan summary
 to the release evidence thread and reviewing the exact saved plan against the
-existing governed backend. Confirm the seven additions above and **no destroys**;
-stop on any unexpected changes, replacements, or trust differences. Do not create
+existing governed backend. Confirm that every Lambda substrate address in the plan
+appears in the 11-resource inventory above, and that there are **no destroys**.
+Stop on any unexpected change, replacement, or trust difference. Do not create
 a new empty state for this existing stack. No local validation command applies
 infrastructure. Do not treat this packet as a passing GA receipt; it is the
 substrate the lane needs, not a certification result.
@@ -490,24 +533,34 @@ After the reviewed operator apply, set these **repository variables**:
 |---|---|---|
 | `REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN` | `REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN` | `HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN` |
 | `REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY` | `REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY` | `HONUA_LAMBDA_PREVIEW_REPOSITORY` |
+| `REALAWS_CERT_LAMBDA_FUNCTION` | `REALAWS_CERT_LAMBDA_FUNCTION` | `REALAWS_CERT_LAMBDA_FUNCTION` (standing function name) |
+| `REALAWS_CERT_LAMBDA_ALIAS` | `REALAWS_CERT_LAMBDA_ALIAS` | `REALAWS_CERT_LAMBDA_ALIAS` (standing alias name) |
+| `REALAWS_CERT_LAMBDA_WRITE_BASE_URL` | `REALAWS_CERT_LAMBDA_WRITE_BASE_URL` | `HONUA_LAMBDA_WRITE_BASE_URL` |
 | `github_oidc_role_arn` (existing) | `REALAWS_CERT_ROLE_ARN` (existing) | OIDC role-to-assume |
 
-Both outputs are named for the repository variable they populate. The workflow
-reads `vars.REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY` and
+These are every variable the workflow's "Require the certified bootstrap" step
+checks that this stack owns. The remaining one, `HONUA_DEMO_BASE_URL`, belongs to
+the demo deployment, not to this stack. Each `REALAWS_CERT_LAMBDA_*` output is
+named for the repository variable it populates. The workflow reads
+`vars.REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY` and
 `vars.REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN`, then passes them to the
 script as `HONUA_LAMBDA_PREVIEW_REPOSITORY` and
-`HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN`; do not create repository variables
-under the script names. Check that `cert` Environment variables do not override
+`HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN`. It passes
+`vars.REALAWS_CERT_LAMBDA_WRITE_BASE_URL` as `HONUA_LAMBDA_WRITE_BASE_URL`. Do
+not create repository variables under the script names. Check that `cert` Environment variables do not override
 these repository values. Keep the existing `REALAWS_CERT_REGION` aligned with
 the stack — the ECR authorization-token grant is conditioned on that region.
 
 ```bash
-terraform -chdir=infrastructure/terraform/examples/aws-cert output -raw \
-  REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN |
-  gh variable set REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN --repo honua-io/honua-server
-terraform -chdir=infrastructure/terraform/examples/aws-cert output -raw \
-  REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY |
-  gh variable set REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY --repo honua-io/honua-server
+for name in \
+  REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN \
+  REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY \
+  REALAWS_CERT_LAMBDA_FUNCTION \
+  REALAWS_CERT_LAMBDA_ALIAS \
+  REALAWS_CERT_LAMBDA_WRITE_BASE_URL; do
+  terraform -chdir=infrastructure/terraform/examples/aws-cert output -raw "$name" |
+    gh variable set "$name" --repo honua-io/honua-server
+done
 ```
 
 Run without shell tracing. Outputs are piped directly to GitHub; publish only
@@ -516,7 +569,9 @@ Local checks are `terraform fmt -check -recursive infrastructure/terraform`,
 `terraform init -backend=false -input=false` followed by `terraform validate`
 in this root, and the existing
 `infrastructure/terraform/validation/scripts/shared/test-terraform-policy-gate.sh`.
-The policy-gate tests include negative mutations for this substrate's IAM guards.
+The policy-gate tests include negative mutations for this substrate's IAM guards,
+covering the run namespace, the tag-preservation deny, confinement of destructive
+and identity-passing actions, OIDC trust isolation, and this inventory.
 
 ### Certification serving fixture — recorded, sha-pinned seed apply
 

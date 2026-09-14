@@ -286,8 +286,17 @@ The plan binds `state_before.lineage` and `state_before.serial`. Anything that
 moves state between now and Phase 6 makes the apply refuse — that is the replay
 barrier, not a nuisance.
 
+The certification root includes the Lambda certification substrate
+(`lambda-preview-cert.tf`, honua-iac#168). Before Phase 6, publish a
+**fingerprint-only** plan summary to the release evidence thread. Check every
+Lambda substrate address in the plan against the resource and IAM inventory in
+[`examples/aws-cert/README.md`](../../infrastructure/terraform/examples/aws-cert/README.md#static-resource-and-iam-inventory--operator-must-confirm-against-governed-state).
+Stop on anything the inventory does not list, on any replacement, and on any
+change to the GitHub OIDC trust policy or subjects. The substrate adds
+permissions to the existing certified role; it never touches the role's trust.
+
 **Evidence:** `out/evidence/05-plan-metadata.json`, the approval digest, the
-plan SHA-256.
+plan SHA-256, and the link to the posted plan summary.
 
 ## Phase 6 — approval and governed apply
 
@@ -485,6 +494,37 @@ apply.
 
 Destroy is a governed operation too — plan it, approve it, apply it.
 
+Before planning the destroy, confirm the Lambda certification lane has nothing
+in flight. Its per-run functions and log groups belong to the lane, not to
+Terraform. The lane deletes them itself, and this destroy does not own them:
+
+```bash
+aws lambda list-functions \
+  --query "Functions[?starts_with(FunctionName, 'honua-certrun-lambda-')].FunctionName"
+aws logs describe-log-groups --log-group-name-prefix /aws/lambda/honua-certrun-lambda-
+```
+
+Both must be empty. If a cancelled run left something behind, delete only
+entries whose `honua-cert-run` tag names that run. Never delete anything outside
+the `honua-certrun-lambda-*` namespace.
+
+The certification image repository is created with `force_delete = false`, so
+the destroy apply **fails** while `honua-cert-cert-lambda-preview` still holds
+candidate images. That is deliberate: those images are the digests that
+certification receipts cite. Before planning the destroy, choose one:
+
+- **Retain the evidence.** Keep the stack, or copy the cited digests elsewhere
+  first. Record where they went.
+- **Release the evidence.** Delete the images explicitly, and record that
+  decision in the destroy receipt's evidence thread:
+
+  ```bash
+  aws ecr list-images --repository-name honua-cert-cert-lambda-preview \
+    --query 'imageIds[*]' --output json > out/evidence/11-lambda-cert-images.json
+  aws ecr batch-delete-image --repository-name honua-cert-cert-lambda-preview \
+    --image-ids file://out/evidence/11-lambda-cert-images.json
+  ```
+
 ```bash
 scripts/terraform-exact-plan.sh \
   --root infrastructure/terraform/examples/aws-cert \
@@ -511,6 +551,7 @@ aws ecs list-clusters
 aws rds describe-db-instances --query 'DBInstances[].DBInstanceIdentifier'
 aws batch describe-compute-environments --query 'computeEnvironments[].computeEnvironmentName'
 aws logs describe-log-groups --log-group-name-prefix /aws/lambda/honua-cert
+aws ecr describe-repositories --query 'repositories[].repositoryName'
 ```
 
 Intentionally retained by documented ownership:

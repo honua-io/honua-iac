@@ -44,6 +44,14 @@ honua-iac#2164), but reusable for any repo/workflow → AWS OIDC need.
   execution role — the GP job/execution roles are intentionally NOT passable (the
   standing definitions already carry them; passing them would reopen the escalation).
 
+The Lambda certification lane's lifecycle grants are not part of this
+component. These are the ECR mirror, tagged per-run function
+create/invoke/delete, log cleanup, and `iam:PassRole` for the dedicated Lambda
+execution role. `examples/aws-cert/lambda-preview-cert.tf` attaches them as a
+separate inline policy on this role (honua-iac#168). It changes none of this
+component's inputs, its trust policy or its subjects, and the policy gate
+fails if that file declares any federation or trust of its own.
+
 ## Trust scoping
 
 | Goal | Set |
