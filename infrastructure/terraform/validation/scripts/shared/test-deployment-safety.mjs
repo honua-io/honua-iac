@@ -41,6 +41,14 @@ rejected('reject missing installed Redis', (_, doc) => { doc.deployment_contract
 rejected('reject identical stable/candidate groups', execution => {
   execution.parameters['aws.alb.stable_target_group_arn'] = execution.parameters['aws.alb.canary_target_group_arn'];
 });
+rejected('reject listener rule from another account', execution => {
+  execution.parameters['aws.alb.listener_rule_arn'] =
+    execution.parameters['aws.alb.listener_rule_arn'].replace(':123456789012:', ':210987654321:');
+});
+rejected('reject stable target group from another region', execution => {
+  execution.parameters['aws.alb.stable_target_group_arn'] =
+    execution.parameters['aws.alb.stable_target_group_arn'].replace(':us-east-1:', ':us-west-2:');
+});
 for (const [key, max] of Object.entries({
   'deployment.protection.observation_window_seconds': 86400,
   'deployment.rollback.observation_timeout_seconds': 1800,

@@ -63,13 +63,16 @@ resource "aws_lb_listener_rule" "protected_rollout" {
   action {
     type = "forward"
     forward {
+      # Installed at stable=100/candidate=0 regardless of canary_weight_percentage:
+      # the retained controller has not yet registered or observed the candidate,
+      # so no candidate-serving traffic may exist before it takes ownership below.
       target_group {
         arn    = aws_lb_target_group.this.arn
-        weight = local.primary_weight
+        weight = 100
       }
       target_group {
         arn    = aws_lb_target_group.canary[0].arn
-        weight = local.canary_weight
+        weight = 0
       }
     }
   }

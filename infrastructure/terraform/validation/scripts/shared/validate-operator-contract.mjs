@@ -684,6 +684,16 @@ function checkProtectionProfile(envelope, findings) {
   if (parameters['aws.alb.stable_target_group_arn'] === parameters['aws.alb.canary_target_group_arn']) {
     report('Stable and candidate target groups must be distinct.');
   }
+  const platform = deployment?.identity?.platform;
+  if (platform) {
+    const albPrefix = `arn:${platform.partition}:elasticloadbalancing:${platform.region}:${platform.account_id}:`;
+    for (const key of ['aws.alb.listener_rule_arn', 'aws.alb.stable_target_group_arn', 'aws.alb.canary_target_group_arn']) {
+      const arn = parameters[key];
+      if (typeof arn === 'string' && !arn.startsWith(albPrefix)) {
+        report(`${key} does not belong to account ${platform.account_id} in region ${platform.region}.`);
+      }
+    }
+  }
 }
 
 // Entry point

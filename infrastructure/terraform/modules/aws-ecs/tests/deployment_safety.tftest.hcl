@@ -116,6 +116,10 @@ variables {
   file_storage_aws_s3_bucket_name = "honua-test-files"
   canary_enabled                  = true
   canary_desired_count            = 1
+  # Nonzero on purpose: the protected rollout rule must still install at
+  # stable=100/candidate=0 regardless of this setting until the retained
+  # controller takes ownership of the weights post-apply.
+  canary_weight_percentage        = 40
   deployment_safety = {
     controller_role_name    = "retained-controller"
     telemetry_connection_id = "cert-prometheus"
@@ -149,7 +153,8 @@ run "native_safety_wires_bounded_runtime_and_retained_actuator" {
     condition = (
       aws_lb_listener_rule.protected_rollout[0].priority == 50000 &&
       length(aws_lb_listener_rule.protected_rollout[0].action[0].forward[0].target_group) == 2 &&
-      sum([for tg in aws_lb_listener_rule.protected_rollout[0].action[0].forward[0].target_group : tg.weight]) == 100 &&
+      length([for tg in aws_lb_listener_rule.protected_rollout[0].action[0].forward[0].target_group : tg if tg.arn == aws_lb_target_group.this.arn && tg.weight == 100]) == 1 &&
+      length([for tg in aws_lb_listener_rule.protected_rollout[0].action[0].forward[0].target_group : tg if tg.arn == aws_lb_target_group.canary[0].arn && tg.weight == 0]) == 1 &&
       output.deployment_safety.parameters["aws.alb.listener_rule_arn"] == aws_lb_listener_rule.protected_rollout[0].arn &&
       output.deployment_safety.parameters["aws.ecs.canary_service"] == aws_ecs_service.canary[0].name &&
       aws_ecs_task_definition.this.skip_destroy && aws_ecs_task_definition.canary[0].skip_destroy
