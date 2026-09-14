@@ -281,3 +281,23 @@ See `outputs.tf` for ALB URL, ECS service names, canary routing headers, control
 1. Verify extensions: `psql $CONNECTION_STRING -c "SELECT PostGIS_Version(); SELECT extname FROM pg_extension WHERE extname IN ('postgis','postgis_raster');"`
 2. Health check: `curl -f https://<alb-url>/healthz/ready`
 3. If using OIDC, configure env vars per [Security Configuration](../../../../docs/devops/security.md)
+
+## Deployment safety
+
+The default ECS circuit breaker covers failed startup and requires a previous
+completed deployment. SingleInstance has an unbounded interruption while the
+replacement becomes ready. Both primary and canary task definitions are retained
+with `skip_destroy`; after teardown, explicitly deregister obsolete revisions
+only after their recovery window and evidence retention obligations end.
+
+Set `deployment_safety` to wire the native ECS/ALB backend to an existing,
+independently retained Honua controller. It requires MultiNode, Redis, shared S3,
+a running stable/canary pair, digest-pinned images, a dedicated canary Prometheus
+connection/job and an independently computed functional expectation. The module
+installs a weighted traffic rule and grants the retained controller narrowly
+scoped mutation/read permissions. It does not create a controller or telemetry
+connection and reports the handoff as `configured-unverified`.
+
+See [AWS deployment safety](../../../../docs/devops/aws-deployment-safety.md) for
+runtime registration, finite limits, IAM/secret/storage validation and the
+candidate-bound live recovery evidence required before claiming protection.

@@ -22,7 +22,7 @@
   "operator_contract_digest": {
     "sensitive": false,
     "type": "dynamic",
-    "value": "1f1a4497caa509b6bb77af4bb6ad4c7583c69b7f1534bde42b8ae30f080dd21d"
+    "value": "6e1f8d0a8deb87ce35473aedb7c6a604d4efdf5897eb58262121c344f339a315"
   },
   "deployment_contract": {
     "sensitive": false,
@@ -32,7 +32,7 @@
       "kind": "deployment",
       "identity": {
         "status": "unqualified",
-        "contract_digest": "1f1a4497caa509b6bb77af4bb6ad4c7583c69b7f1534bde42b8ae30f080dd21d",
+        "contract_digest": "6e1f8d0a8deb87ce35473aedb7c6a604d4efdf5897eb58262121c344f339a315",
         "candidate_digest": null,
         "manifest_digest": null,
         "iac_revision": null,
@@ -139,7 +139,7 @@
       "kind": "validation",
       "identity": {
         "status": "unqualified",
-        "contract_digest": "1f1a4497caa509b6bb77af4bb6ad4c7583c69b7f1534bde42b8ae30f080dd21d",
+        "contract_digest": "6e1f8d0a8deb87ce35473aedb7c6a604d4efdf5897eb58262121c344f339a315",
         "candidate_digest": null,
         "manifest_digest": null,
         "iac_revision": null,
@@ -228,7 +228,7 @@
       "kind": "operations",
       "identity": {
         "status": "unqualified",
-        "contract_digest": "1f1a4497caa509b6bb77af4bb6ad4c7583c69b7f1534bde42b8ae30f080dd21d",
+        "contract_digest": "6e1f8d0a8deb87ce35473aedb7c6a604d4efdf5897eb58262121c344f339a315",
         "candidate_digest": null,
         "manifest_digest": null,
         "iac_revision": null,
@@ -302,12 +302,15 @@
         "database_managed": true,
         "cache_enabled": true,
         "protection_profile": {
+          "qualification": "unverified",
+          "execution": null,
           "availability_class": "single-task",
-          "interruption_guarantee": "brief-interruption-on-replacement",
+          "interruption_guarantee": "interruption-until-replacement-ready",
           "health_sources": {
             "functional_check_path": "/healthz/ready",
+            "readiness_check_path": "/healthz/ready",
             "log_group": "/honua/honuaecs-it",
-            "metrics_namespace": "Honua/honuaecs-it"
+            "metrics_namespace": "AWS/ApplicationELB"
           },
           "warmup_seconds": 60,
           "observation": {
@@ -319,6 +322,10 @@
           "recovery": {
             "mechanism": "aws-ecs-deployment-circuit-breaker",
             "executable": true,
+            "scope": "startup-until-ecs-deployment-completes",
+            "requires_prior_completed_deployment": true,
+            "controller_topology": "aws-provider-control-plane",
+            "recovery_time_bound_seconds": null,
             "primary_rollback_enabled": true,
             "canary_rollback_enabled": null
           },

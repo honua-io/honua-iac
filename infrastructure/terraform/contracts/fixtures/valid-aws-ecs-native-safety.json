@@ -22,7 +22,7 @@
   "operator_contract_digest": {
     "sensitive": false,
     "type": "dynamic",
-    "value": "506ff0bffe27d8e1e2c7bd51747dfbe981a564b39f23b71962861f545067f76c"
+    "value": "f81790d71c702d592dfbfc39204f8726f58f68369c461eb3f388f7ceaa7fbdf3"
   },
   "deployment_contract": {
     "sensitive": false,
@@ -32,7 +32,7 @@
       "kind": "deployment",
       "identity": {
         "status": "qualified",
-        "contract_digest": "506ff0bffe27d8e1e2c7bd51747dfbe981a564b39f23b71962861f545067f76c",
+        "contract_digest": "f81790d71c702d592dfbfc39204f8726f58f68369c461eb3f388f7ceaa7fbdf3",
         "candidate_digest": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
         "manifest_digest": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
         "iac_revision": "9c1e7f0b2d3a4c5e6f708192a3b4c5d6e7f80912",
@@ -86,30 +86,30 @@
         "cluster_name": "honuaecs-it-cluster",
         "cluster_id": "arn:aws:ecs:us-east-1:123456789012:cluster/honuaecs-it-cluster",
         "cpu_architecture": "X86_64",
-        "desired_count": 1,
+        "desired_count": 2,
         "identity": "arn:aws:iam::123456789012:role/honuaecs-it-task"
       },
       "rollout": {
-        "backend_name": "honua-gitops-aws-ecs",
+        "backend_name": "honua-aws-ecs-alb",
         "target_kind": "AwsEcs",
-        "target_id": "honuaecs-it-service",
-        "target_name": "honuaecs-it-service",
+        "target_id": "arn:aws:ecs:us-east-1:123456789012:service/honuaecs-it-cluster/honuaecs-it-canary-service",
+        "target_name": "honuaecs-it-canary-service",
         "target_resource": "arn:aws:ecs:us-east-1:123456789012:cluster/honuaecs-it-cluster",
         "current_revision": null,
         "desired_revision": null,
         "canary": {
-          "enabled": false,
-          "service_name": null,
-          "target_group_arn": null,
+          "enabled": true,
+          "service_name": "honuaecs-it-canary-service",
+          "target_group_arn": "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/canary/2222222222222222",
           "weight_percentage": 0,
-          "verification_header_name": null
+          "verification_header_name": "X-Honua-Canary"
         }
       },
       "dependencies": {
         "database": {
           "kind": "aws-rds-postgres",
           "managed": true,
-          "endpoint": "postgres://honua_admin:hunter2-not-a-reference@honuaecs-it-db.abcdefghij.us-east-1.rds.amazonaws.com:5432/honua",
+          "endpoint": "honuaecs-it-db.abcdefghij.us-east-1.rds.amazonaws.com",
           "secret_ref": "arn:aws:secretsmanager:us-east-1:123456789012:secret:honuaecs-it-db-connection-AbCdEf"
         },
         "cache": {
@@ -124,9 +124,9 @@
           "waf_ref": null
         },
         "object_storage": {
-          "kind": null,
-          "enabled": false,
-          "bucket": null,
+          "kind": "aws-s3",
+          "enabled": true,
+          "bucket": "honua-test-files",
           "prefix": null
         }
       },
@@ -146,7 +146,7 @@
       "kind": "validation",
       "identity": {
         "status": "qualified",
-        "contract_digest": "506ff0bffe27d8e1e2c7bd51747dfbe981a564b39f23b71962861f545067f76c",
+        "contract_digest": "f81790d71c702d592dfbfc39204f8726f58f68369c461eb3f388f7ceaa7fbdf3",
         "candidate_digest": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
         "manifest_digest": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
         "iac_revision": "9c1e7f0b2d3a4c5e6f708192a3b4c5d6e7f80912",
@@ -249,7 +249,7 @@
       "kind": "operations",
       "identity": {
         "status": "qualified",
-        "contract_digest": "506ff0bffe27d8e1e2c7bd51747dfbe981a564b39f23b71962861f545067f76c",
+        "contract_digest": "f81790d71c702d592dfbfc39204f8726f58f68369c461eb3f388f7ceaa7fbdf3",
         "candidate_digest": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
         "manifest_digest": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
         "iac_revision": "9c1e7f0b2d3a4c5e6f708192a3b4c5d6e7f80912",
@@ -319,9 +319,9 @@
         }
       },
       "scaling": {
-        "deployment_mode": "SingleInstance",
-        "desired_count": 1,
-        "max_capacity": 2,
+        "deployment_mode": "MultiNode",
+        "desired_count": 2,
+        "max_capacity": 4,
         "cpu_architecture": "X86_64"
       },
       "resilience": {
@@ -331,9 +331,38 @@
         "cache_enabled": true,
         "protection_profile": {
           "qualification": "unverified",
-          "execution": null,
-          "availability_class": "single-task",
-          "interruption_guarantee": "interruption-until-replacement-ready",
+          "execution": {
+            "status": "configured-unverified",
+            "backend_name": "honua-aws-ecs-alb",
+            "target_kind": "AwsEcs",
+            "target_id": "arn:aws:ecs:us-east-1:123456789012:service/honuaecs-it-cluster/honuaecs-it-canary-service",
+            "controller_role_arn": "arn:aws:iam::123456789012:role/retained-controller",
+            "controller_topology": "external-retained-controller",
+            "durable_operation_store": "external-controller-required",
+            "evidence_owner": "honua-iac#118",
+            "parameters": {
+              "aws.region": "us-east-1",
+              "aws.ecs.cluster": "arn:aws:ecs:us-east-1:123456789012:cluster/honuaecs-it-cluster",
+              "aws.ecs.canary_service": "honuaecs-it-canary-service",
+              "aws.alb.listener_rule_arn": "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener-rule/app/cert/1111111111111111/2222222222222222/3333333333333333",
+              "aws.alb.stable_target_group_arn": "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/stable/1111111111111111",
+              "aws.alb.canary_target_group_arn": "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/canary/2222222222222222",
+              "deployment.protection.observation_window_seconds": "600",
+              "deployment.rollback.observation_timeout_seconds": "300",
+              "telemetry.connection": "cert-prometheus",
+              "telemetry.policy": "aws-alb-canary",
+              "telemetry.prometheus.canary_job": "cert-cell-canary",
+              "telemetry.healthz.url": "https://honua.example.com/healthz/ready",
+              "telemetry.golden_query.url": "https://candidate.example.com/fixture",
+              "telemetry.golden_query.expected_sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+              "telemetry.warmup_seconds": "180",
+              "telemetry.evidence_grace_seconds": "120",
+              "telemetry.max_staleness_seconds": "60",
+              "telemetry.exposure_deadline_seconds": "900"
+            }
+          },
+          "availability_class": "multi-task",
+          "interruption_guarantee": "rolling-through-healthy-tasks",
           "health_sources": {
             "functional_check_path": "/healthz/ready",
             "readiness_check_path": "/healthz/ready",
@@ -355,12 +384,12 @@
             "controller_topology": "aws-provider-control-plane",
             "recovery_time_bound_seconds": null,
             "primary_rollback_enabled": true,
-            "canary_rollback_enabled": null
+            "canary_rollback_enabled": true
           },
           "durable_state": {
             "database_managed": true,
             "cache_enabled": true,
-            "object_storage_enabled": false
+            "object_storage_enabled": true
           },
           "prior_revision_retention": "unbounded-until-manually-deregistered"
         }

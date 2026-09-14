@@ -5,6 +5,7 @@ provider "aws" {
 module "honua" {
   source = "../../modules/aws-ecs"
 
+  deployment_safety                = var.deployment_safety
   environment                      = var.environment
   name_prefix                      = var.name_prefix
   existing_vpc_id                  = local.install_net_id

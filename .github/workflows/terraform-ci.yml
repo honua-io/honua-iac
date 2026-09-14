@@ -30,6 +30,7 @@ on:
       - 'scripts/tf-secrets.local.example.sh'
       - 'scripts/write-cloud-demo-smoke-env-summary.mjs'
       - 'docs/devops/terraform-validation.md'
+      - 'docs/devops/aws-deployment-safety.md'
       - 'docs/devops/terraform-exact-plan-contract.md'
       - 'docs/devops/backup-restore-runbook.md'
       - 'docs/devops/failover-drill-runbook.md'
@@ -73,6 +74,7 @@ on:
       - 'scripts/tf-secrets.local.example.sh'
       - 'scripts/write-cloud-demo-smoke-env-summary.mjs'
       - 'docs/devops/terraform-validation.md'
+      - 'docs/devops/aws-deployment-safety.md'
       - 'docs/devops/terraform-exact-plan-contract.md'
       - 'docs/devops/backup-restore-runbook.md'
       - 'docs/devops/failover-drill-runbook.md'
@@ -287,6 +289,8 @@ jobs:
         run: |
           set -euo pipefail
           terraform -chdir=infrastructure/terraform/modules/aws-ecs test -no-color
+          terraform -chdir=infrastructure/terraform/examples/aws test -json -verbose > "$RUNNER_TEMP/aws-safety-tests.jsonl"
+          node infrastructure/terraform/validation/scripts/shared/test-deployment-safety-output.mjs "$RUNNER_TEMP/aws-safety-tests.jsonl"
           terraform -chdir=infrastructure/terraform/modules/aws-serverless test -no-color
           terraform -chdir=infrastructure/terraform/modules/azure-aca test -no-color
 

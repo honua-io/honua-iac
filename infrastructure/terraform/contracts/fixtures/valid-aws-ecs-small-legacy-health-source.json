@@ -22,7 +22,7 @@
   "operator_contract_digest": {
     "sensitive": false,
     "type": "dynamic",
-    "value": "506ff0bffe27d8e1e2c7bd51747dfbe981a564b39f23b71962861f545067f76c"
+    "value": "aa6a8b54c4d9d16a5ed84f3abf49cc226aabd6fc5e6a198bee7cd13f0161bffc"
   },
   "deployment_contract": {
     "sensitive": false,
@@ -32,7 +32,7 @@
       "kind": "deployment",
       "identity": {
         "status": "qualified",
-        "contract_digest": "506ff0bffe27d8e1e2c7bd51747dfbe981a564b39f23b71962861f545067f76c",
+        "contract_digest": "aa6a8b54c4d9d16a5ed84f3abf49cc226aabd6fc5e6a198bee7cd13f0161bffc",
         "candidate_digest": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
         "manifest_digest": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
         "iac_revision": "9c1e7f0b2d3a4c5e6f708192a3b4c5d6e7f80912",
@@ -109,7 +109,7 @@
         "database": {
           "kind": "aws-rds-postgres",
           "managed": true,
-          "endpoint": "postgres://honua_admin:hunter2-not-a-reference@honuaecs-it-db.abcdefghij.us-east-1.rds.amazonaws.com:5432/honua",
+          "endpoint": "honuaecs-it-db.abcdefghij.us-east-1.rds.amazonaws.com",
           "secret_ref": "arn:aws:secretsmanager:us-east-1:123456789012:secret:honuaecs-it-db-connection-AbCdEf"
         },
         "cache": {
@@ -146,7 +146,7 @@
       "kind": "validation",
       "identity": {
         "status": "qualified",
-        "contract_digest": "506ff0bffe27d8e1e2c7bd51747dfbe981a564b39f23b71962861f545067f76c",
+        "contract_digest": "aa6a8b54c4d9d16a5ed84f3abf49cc226aabd6fc5e6a198bee7cd13f0161bffc",
         "candidate_digest": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
         "manifest_digest": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
         "iac_revision": "9c1e7f0b2d3a4c5e6f708192a3b4c5d6e7f80912",
@@ -249,7 +249,7 @@
       "kind": "operations",
       "identity": {
         "status": "qualified",
-        "contract_digest": "506ff0bffe27d8e1e2c7bd51747dfbe981a564b39f23b71962861f545067f76c",
+        "contract_digest": "aa6a8b54c4d9d16a5ed84f3abf49cc226aabd6fc5e6a198bee7cd13f0161bffc",
         "candidate_digest": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
         "manifest_digest": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
         "iac_revision": "9c1e7f0b2d3a4c5e6f708192a3b4c5d6e7f80912",
@@ -336,7 +336,6 @@
           "interruption_guarantee": "interruption-until-replacement-ready",
           "health_sources": {
             "functional_check_path": "/healthz/ready",
-            "readiness_check_path": "/healthz/ready",
             "log_group": "/honua/honuaecs-it",
             "metrics_namespace": "AWS/ApplicationELB"
           },

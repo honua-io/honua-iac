@@ -237,6 +237,11 @@ resource "aws_security_group" "alb" {
     }
 
     precondition {
+      condition     = !local.safety_enabled || (local.canary_enabled && local.multi_node_topology_ready && var.desired_count >= 1)
+      error_message = "Native safety requires a running stable/canary MultiNode topology with Redis and shared S3."
+    }
+
+    precondition {
       condition     = local.canary_enabled || var.canary_weight_percentage == 0
       error_message = "canary_weight_percentage must be 0 unless canary_enabled is true."
     }
@@ -1066,6 +1071,8 @@ resource "aws_secretsmanager_secret_version" "redis_connection" {
 }
 
 resource "aws_ecs_task_definition" "this" {
+  # Keep the registered revision usable by the provider rollback actuator.
+  skip_destroy             = true
   family                   = "${local.name}-task"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
@@ -1109,6 +1116,7 @@ resource "aws_ecs_task_definition" "this" {
 }
 
 resource "aws_ecs_task_definition" "canary" {
+  skip_destroy             = true
   count                    = local.canary_enabled ? 1 : 0
   family                   = "${local.name}-canary-task"
   network_mode             = "awsvpc"

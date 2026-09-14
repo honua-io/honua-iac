@@ -145,7 +145,7 @@
     },
 
     "protection_profile": {
-      "description": "Executable deployment safety profile: the derived (never caller-asserted) availability class, health/functional/metric sources, warmup/observation limits, rollback actuator, and revision retention that back the protection claim. Absent entirely on a platform that does not yet claim protection.",
+      "description": "Installed deployment safety configuration, never a live recovery certificate. Startup circuit-breaker protection is distinct from the optional native post-activation execution handoff.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -160,57 +160,291 @@
       ],
       "properties": {
         "availability_class": {
-          "description": "single-task: exactly one task can serve traffic at a time. multi-task: two or more tasks can serve traffic concurrently across the primary and (if enabled) canary services.",
-          "enum": ["single-task", "multi-task"]
+          "description": "Configured baseline task count across primary and canary services. This is not proof that tasks are healthy, nor an availability SLO.",
+          "enum": [
+            "single-task",
+            "multi-task"
+          ]
         },
         "interruption_guarantee": {
-          "description": "single-task deployments stop the running task before the replacement starts, so an update or recovery has a request-serving gap; multi-task deployments roll through healthy replacement tasks so no single update or task loss need interrupt service. Neither value may be read as a zero-downtime claim for single-task.",
-          "enum": ["brief-interruption-on-replacement", "rolling-through-healthy-tasks"]
+          "description": "SingleInstance stops before starting and has no bounded outage duration. MultiNode permits surge/rolling updates but does not guarantee uninterrupted service or healthy capacity.",
+          "enum": [
+            "brief-interruption-on-replacement",
+            "rolling-through-healthy-tasks",
+            "interruption-until-replacement-ready"
+          ]
         },
         "health_sources": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["functional_check_path", "log_group", "metrics_namespace"],
+          "required": [
+            "functional_check_path",
+            "log_group",
+            "metrics_namespace"
+          ],
           "properties": {
-            "functional_check_path": { "$ref": "#/$defs/url_path" },
-            "log_group": { "type": "string", "minLength": 1 },
-            "metrics_namespace": { "type": "string", "minLength": 1 }
+            "functional_check_path": {
+              "$ref": "#/$defs/url_path"
+            },
+            "log_group": {
+              "type": "string",
+              "minLength": 1
+            },
+            "metrics_namespace": {
+              "type": "string",
+              "minLength": 1
+            },
+            "readiness_check_path": {
+              "$ref": "#/$defs/url_path"
+            }
           }
         },
-        "warmup_seconds": { "type": "integer", "minimum": 0 },
+        "warmup_seconds": {
+          "type": "integer",
+          "minimum": 0
+        },
         "observation": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["interval_seconds", "timeout_seconds", "healthy_threshold", "unhealthy_threshold"],
+          "required": [
+            "interval_seconds",
+            "timeout_seconds",
+            "healthy_threshold",
+            "unhealthy_threshold"
+          ],
           "properties": {
-            "interval_seconds": { "type": "integer", "minimum": 1 },
-            "timeout_seconds": { "type": "integer", "minimum": 1 },
-            "healthy_threshold": { "type": "integer", "minimum": 1 },
-            "unhealthy_threshold": { "type": "integer", "minimum": 1 }
+            "interval_seconds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "timeout_seconds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "healthy_threshold": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "unhealthy_threshold": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         },
         "recovery": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["mechanism", "executable", "primary_rollback_enabled", "canary_rollback_enabled"],
+          "required": [
+            "mechanism",
+            "executable",
+            "primary_rollback_enabled",
+            "canary_rollback_enabled"
+          ],
           "properties": {
-            "mechanism": { "type": "string", "minLength": 1 },
-            "executable": { "type": "boolean" },
-            "primary_rollback_enabled": { "type": "boolean" },
-            "canary_rollback_enabled": { "type": ["boolean", "null"] }
+            "mechanism": {
+              "type": "string",
+              "minLength": 1
+            },
+            "executable": {
+              "type": "boolean"
+            },
+            "primary_rollback_enabled": {
+              "type": "boolean"
+            },
+            "canary_rollback_enabled": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "scope": {
+              "enum": [
+                "startup-until-ecs-deployment-completes"
+              ]
+            },
+            "requires_prior_completed_deployment": {
+              "const": true
+            },
+            "controller_topology": {
+              "const": "aws-provider-control-plane"
+            },
+            "recovery_time_bound_seconds": {
+              "type": "null"
+            }
           }
         },
         "durable_state": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["database_managed", "cache_enabled", "object_storage_enabled"],
+          "required": [
+            "database_managed",
+            "cache_enabled",
+            "object_storage_enabled"
+          ],
           "properties": {
-            "database_managed": { "type": "boolean" },
-            "cache_enabled": { "type": "boolean" },
-            "object_storage_enabled": { "type": "boolean" }
+            "database_managed": {
+              "type": "boolean"
+            },
+            "cache_enabled": {
+              "type": "boolean"
+            },
+            "object_storage_enabled": {
+              "type": "boolean"
+            }
           }
         },
-        "prior_revision_retention": { "type": "string", "minLength": 1 }
+        "prior_revision_retention": {
+          "type": "string",
+          "minLength": 1
+        },
+        "qualification": {
+          "enum": [
+            "unverified"
+          ]
+        },
+        "execution": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "backend_name",
+            "target_kind",
+            "target_id",
+            "controller_role_arn",
+            "controller_topology",
+            "durable_operation_store",
+            "evidence_owner",
+            "parameters"
+          ],
+          "properties": {
+            "status": {
+              "const": "configured-unverified"
+            },
+            "backend_name": {
+              "const": "honua-aws-ecs-alb"
+            },
+            "target_kind": {
+              "const": "AwsEcs"
+            },
+            "target_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "controller_role_arn": {
+              "type": "string",
+              "pattern": "^arn:aws[a-z-]*:iam::[0-9]{12}:role/.+"
+            },
+            "controller_topology": {
+              "const": "external-retained-controller"
+            },
+            "durable_operation_store": {
+              "const": "external-controller-required"
+            },
+            "evidence_owner": {
+              "const": "honua-iac#118"
+            },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "aws.region",
+                "aws.ecs.cluster",
+                "aws.ecs.canary_service",
+                "aws.alb.listener_rule_arn",
+                "aws.alb.stable_target_group_arn",
+                "aws.alb.canary_target_group_arn",
+                "telemetry.connection",
+                "telemetry.policy",
+                "telemetry.prometheus.canary_job",
+                "telemetry.healthz.url",
+                "telemetry.golden_query.url",
+                "telemetry.golden_query.expected_sha256",
+                "deployment.protection.observation_window_seconds",
+                "deployment.rollback.observation_timeout_seconds",
+                "telemetry.warmup_seconds",
+                "telemetry.evidence_grace_seconds",
+                "telemetry.max_staleness_seconds",
+                "telemetry.exposure_deadline_seconds"
+              ],
+              "properties": {
+                "aws.region": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "aws.ecs.cluster": {
+                  "type": "string",
+                  "pattern": "^arn:aws[a-z-]*:ecs:[a-z0-9-]+:[0-9]{12}:cluster/.+"
+                },
+                "aws.ecs.canary_service": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "aws.alb.listener_rule_arn": {
+                  "type": "string",
+                  "pattern": "^arn:aws[a-z-]*:elasticloadbalancing:[a-z0-9-]+:[0-9]{12}:listener-rule/.+"
+                },
+                "aws.alb.stable_target_group_arn": {
+                  "type": "string",
+                  "pattern": "^arn:aws[a-z-]*:elasticloadbalancing:[a-z0-9-]+:[0-9]{12}:targetgroup/.+"
+                },
+                "aws.alb.canary_target_group_arn": {
+                  "type": "string",
+                  "pattern": "^arn:aws[a-z-]*:elasticloadbalancing:[a-z0-9-]+:[0-9]{12}:targetgroup/.+"
+                },
+                "telemetry.connection": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_.:-]+$"
+                },
+                "telemetry.policy": {
+                  "const": "aws-alb-canary"
+                },
+                "telemetry.prometheus.canary_job": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_.:-]+$"
+                },
+                "telemetry.healthz.url": {
+                  "type": "string",
+                  "pattern": "^https?://"
+                },
+                "telemetry.golden_query.url": {
+                  "type": "string",
+                  "pattern": "^https://[^/@?#]+/[^#]*$"
+                },
+                "telemetry.golden_query.expected_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "deployment.protection.observation_window_seconds": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "deployment.rollback.observation_timeout_seconds": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "telemetry.warmup_seconds": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "telemetry.evidence_grace_seconds": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "telemetry.max_staleness_seconds": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                },
+                "telemetry.exposure_deadline_seconds": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*$"
+                }
+              }
+            }
+          }
+        }
       }
     },
 

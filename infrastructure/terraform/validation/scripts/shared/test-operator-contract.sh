@@ -109,6 +109,15 @@ else
   fail "valid-aws-cert-lambda.json should satisfy --require-qualified"
 fi
 
+# health_sources.readiness_check_path is additive: a producer that predates it
+# must still validate against the unchanged, still-required functional_check_path.
+if validate --expect-valid --quiet "$FIXTURE_DIR/valid-aws-ecs-small-legacy-health-source.json"; then
+  pass "valid-aws-ecs-small-legacy-health-source.json (pre-readiness_check_path shape) validates"
+else
+  validate "$FIXTURE_DIR/valid-aws-ecs-small-legacy-health-source.json" || true
+  fail "valid-aws-ecs-small-legacy-health-source.json should validate"
+fi
+
 # ---------------------------------------------------------------------------
 log "== negative fixtures =="
 
@@ -279,6 +288,13 @@ for root in "${CONTRACT_ROOTS[@]}"; do
 done
 
 # ---------------------------------------------------------------------------
+# Bounded native execution settings and cross-contract target/prerequisite joins.
+if node "$SCRIPT_DIR/test-deployment-safety.mjs"; then
+  pass "native deployment safety contract checks"
+else
+  fail "native deployment safety contract checks"
+fi
+
 log ""
 if [[ "$FAILURES" -eq 0 ]]; then
   log "[OK] operator-contract v1: $CHECKS checks passed"

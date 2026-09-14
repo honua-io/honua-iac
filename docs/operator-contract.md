@@ -166,31 +166,36 @@ the schema.
 
 ## Protection profile
 
-`operations_contract.resilience.protection_profile` is the executable
-deployment safety profile for the honua-iac#182 protected-rollout promise. It
-is optional in the schema: a producer that does not yet claim protection
-guarantees omits it, and an absent profile is not itself a finding.
-
-Every field is **derived** from the topology Terraform actually created — none
-of it is a caller-supplied assertion, so a contract cannot claim a guarantee
-the deployment does not back:
+`operations_contract.resilience.protection_profile` describes installed AWS
+ECS safeguards. It does **not** certify the 2026.1 safe rollout promise.
+`qualification = "unverified"` is independent of `identity.status`: complete
+artifact pins do not prove recovery. Older v1 producers may omit this additive
+profile; Lambda qualification under honua-release#282 is unchanged.
 
 | Field | Meaning |
 | --- | --- |
-| `availability_class` | `single-task` or `multi-task`, computed from whether Redis and shared S3 storage actually make `deployment_mode=MultiNode` usable (`module.honua.multi_node_topology_ready`) — the same gate the ECS service preconditions enforce before allowing more than one task. |
-| `interruption_guarantee` | `brief-interruption-on-replacement` for `single-task`, `rolling-through-healthy-tasks` for `multi-task`. A `single-task` profile must never be read as zero-downtime: the running task is stopped before its replacement starts. |
-| `health_sources` | The functional health-check path, log group, and metrics namespace a consumer would probe to confirm the deployment is actually healthy. |
-| `warmup_seconds` | The container health check `startPeriod`: how long a task is given to become healthy before a failed check counts against it. |
-| `observation` | The ALB target group health check's interval, timeout, and healthy/unhealthy thresholds that gate traffic to a task. |
-| `recovery` | The rollback actuator: `mechanism` (`aws-ecs-deployment-circuit-breaker`), whether it is `executable`, and whether it is enabled on the primary and (if present) canary ECS service. ECS's own control plane performs the rollback; no separate controller is retained. |
-| `durable_state` | Whether the managed database, cache, and shared object storage this topology depends on are actually configured. |
-| `prior_revision_retention` | This module never deregisters an ECS task definition revision, so retention is `unbounded-until-manually-deregistered`. |
+| `availability_class` | Configured primary plus canary baseline task count. MultiNode with a baseline of one still reports `single-task`; a larger autoscaling ceiling is not present redundancy. |
+| `interruption_guarantee` | SingleInstance reports `interruption-until-replacement-ready`: stop-before-start has **no bounded outage duration**. MultiNode permits rolling/surge updates, but healthy capacity and uninterrupted service are not guaranteed. The old `brief-interruption-on-replacement` value remains readable for historical contracts. |
+| `health_sources` | ALB health-check path and log group; `AWS/ApplicationELB` identifies provider metrics. `functional_check_path` carries the same ALB path for v1 compatibility; the additive `readiness_check_path` names it precisely as a readiness probe, not a functional assertion. Native execution supplies a separate golden query and dedicated canary Prometheus source. |
+| `warmup_seconds`, `observation` | Actual container startPeriod and ALB sampling settings. These are distinct from the canonical controller's post-activation observation/recovery deadlines. |
+| `recovery` | The ECS circuit breaker runs in AWS's provider control plane, independently of candidate startup. It only covers startup until ECS completes the deployment, requires a previous `COMPLETED` deployment, and supplies no wall-clock recovery guarantee (`recovery_time_bound_seconds = null`). It does not restore ALB weights or provide post-activation functional recovery. |
+| `durable_state` | Installed database/cache/storage configuration, including external Redis. Configured does not mean reachable, authorized or certified. |
+| `prior_revision_retention` | Both task definitions use `skip_destroy = true`. Registered revisions survive replacement and stack destroy until explicitly deregistered. Preserve corresponding immutable images, secret/config versions and compatible database state as well. Registration alone is insufficient. |
+| `execution` | Null by default. Opt-in `deployment_safety` emits a `configured-unverified` native `honua-aws-ecs-alb` target, independent controller role and canonical runtime parameters. See [the AWS safety runbook](devops/aws-deployment-safety.md). |
 
-Live-provider proof that a candidate actually boots, serves traffic, and
-recovers under real fault injection is a separate concern, owned by
-[honua-iac#118](https://github.com/honua-io/honua-iac/issues/118); this
-profile is a static Terraform-time projection of the safety mechanisms in
-place, not a substitute for that live evidence.
+The ECS rollback boundary follows [AWS deployment failure detection](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/deployment-failure-detection.html).
+Revision retention uses the provider's [task definition `skip_destroy`](https://registry.terraform.io/providers/hashicorp/aws/5.99.1/docs/resources/ecs_task_definition.html).
+
+The contract validator rejects native execution with mismatched target identity,
+AWS selectors, missing installed canary/Redis/storage, missing health/functional/
+metric inputs, unknown parameters, and non-positive, fractional or out-of-range
+durations. It rejects a Terraform-only `protected` status. It cannot verify
+provider access or promote a profile to certified protection.
+
+Live-provider proof is owned by [honua-iac#118](https://github.com/honua-io/honua-iac/issues/118).
+Join the exact installed contract/digest and native target capabilities to its
+receipts and the candidate recovery certificate as described in the runbook.
+Mocked Terraform tests and the contract fixtures prove wiring only.
 
 ## Canonicalization and the contract digest
 

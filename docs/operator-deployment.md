@@ -205,3 +205,10 @@ Use this when your platform team provides shared VPCs, databases, or caches.
 
 - `infrastructure/terraform/README.md` (module and maintainer details)
 - `docs/devops/terraform-validation.md` (validation and CI runbook)
+
+### AWS deployment safety
+
+For native ECS rollout observation and recovery, use the opt-in
+[deployment safety profile](devops/aws-deployment-safety.md). The default
+single-instance stack has a service interruption during replacement; its ECS
+startup circuit breaker is not a post-activation protected-change certificate.
