@@ -335,7 +335,7 @@
           "availability_class": "single-task",
           "interruption_guarantee": "interruption-until-replacement-ready",
           "health_sources": {
-            "functional_check_path": null,
+            "functional_check_path": "/healthz/ready",
             "readiness_check_path": "/healthz/ready",
             "log_group": "/honua/honuaecs-it",
             "metrics_namespace": "AWS/ApplicationELB"

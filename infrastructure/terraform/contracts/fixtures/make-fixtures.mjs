@@ -610,7 +610,7 @@ function contracts(identity) {
         availability_class: 'single-task',
         interruption_guarantee: 'interruption-until-replacement-ready',
         health_sources: {
-          functional_check_path: null,
+          functional_check_path: '/healthz/ready',
           readiness_check_path: '/healthz/ready',
           log_group: `/honua/${BASE_NAME}`,
           metrics_namespace: 'AWS/ApplicationELB',
@@ -799,6 +799,19 @@ nativeProfile.execution = {
 };
 sealDigest(native);
 write('valid-aws-ecs-native-safety.json', terraformOutputDocument(native));
+
+// A pre-readiness_check_path health_sources shape: the additive field is
+// absent entirely, the way every producer emitted this block before it
+// existed. Proves the schema still accepts the old shape, not only the new
+// one -- the field is additive, not a replacement.
+const legacyHealthSource = structuredClone(qualified);
+delete legacyHealthSource.operations_contract.resilience.protection_profile
+  .health_sources.readiness_check_path;
+sealDigest(legacyHealthSource);
+write(
+  'valid-aws-ecs-small-legacy-health-source.json',
+  terraformOutputDocument(legacyHealthSource),
+);
 
 // -- negative ---------------------------------------------------------------
 

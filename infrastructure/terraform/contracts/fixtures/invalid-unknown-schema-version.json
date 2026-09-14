@@ -22,7 +22,7 @@
   "operator_contract_digest": {
     "sensitive": false,
     "type": "dynamic",
-    "value": "4776ac596ed04c3ea92de1b6e562e7a30cb5171bd37c72b32d6719b576cd0786"
+    "value": "8d3f366152f28e8cb011c57e738d6605281b3633c3b7c1791dbfad41d481247d"
   },
   "deployment_contract": {
     "sensitive": false,
@@ -32,7 +32,7 @@
       "kind": "deployment",
       "identity": {
         "status": "qualified",
-        "contract_digest": "4776ac596ed04c3ea92de1b6e562e7a30cb5171bd37c72b32d6719b576cd0786",
+        "contract_digest": "8d3f366152f28e8cb011c57e738d6605281b3633c3b7c1791dbfad41d481247d",
         "candidate_digest": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
         "manifest_digest": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
         "iac_revision": "9c1e7f0b2d3a4c5e6f708192a3b4c5d6e7f80912",
@@ -146,7 +146,7 @@
       "kind": "validation",
       "identity": {
         "status": "qualified",
-        "contract_digest": "4776ac596ed04c3ea92de1b6e562e7a30cb5171bd37c72b32d6719b576cd0786",
+        "contract_digest": "8d3f366152f28e8cb011c57e738d6605281b3633c3b7c1791dbfad41d481247d",
         "candidate_digest": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
         "manifest_digest": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
         "iac_revision": "9c1e7f0b2d3a4c5e6f708192a3b4c5d6e7f80912",
@@ -249,7 +249,7 @@
       "kind": "operations",
       "identity": {
         "status": "qualified",
-        "contract_digest": "4776ac596ed04c3ea92de1b6e562e7a30cb5171bd37c72b32d6719b576cd0786",
+        "contract_digest": "8d3f366152f28e8cb011c57e738d6605281b3633c3b7c1791dbfad41d481247d",
         "candidate_digest": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
         "manifest_digest": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
         "iac_revision": "9c1e7f0b2d3a4c5e6f708192a3b4c5d6e7f80912",
@@ -335,7 +335,7 @@
           "availability_class": "single-task",
           "interruption_guarantee": "interruption-until-replacement-ready",
           "health_sources": {
-            "functional_check_path": null,
+            "functional_check_path": "/healthz/ready",
             "readiness_check_path": "/healthz/ready",
             "log_group": "/honua/honuaecs-it",
             "metrics_namespace": "AWS/ApplicationELB"

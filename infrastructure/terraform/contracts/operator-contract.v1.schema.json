@@ -184,11 +184,7 @@
           ],
           "properties": {
             "functional_check_path": {
-              "type": [
-                "string",
-                "null"
-              ],
-              "pattern": "^/"
+              "$ref": "#/$defs/url_path"
             },
             "log_group": {
               "type": "string",

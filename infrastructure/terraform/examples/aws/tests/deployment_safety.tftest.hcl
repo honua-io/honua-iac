@@ -146,7 +146,7 @@ run "native_profile_is_projected_without_live_claims" {
       output.operations_contract.resilience.protection_profile.durable_state.cache_enabled &&
       output.deployment_contract.dependencies.cache.enabled &&
       !output.deployment_contract.dependencies.database.managed &&
-      output.operations_contract.resilience.protection_profile.health_sources.functional_check_path == null &&
+      output.operations_contract.resilience.protection_profile.health_sources.functional_check_path == output.operations_contract.resilience.protection_profile.health_sources.readiness_check_path &&
       output.operations_contract.resilience.protection_profile.recovery.recovery_time_bound_seconds == null
     )
     error_message = "The installed contract must match the native target and external Redis while keeping readiness, provider startup protection and live recovery qualification distinct."

@@ -22,7 +22,7 @@
   "operator_contract_digest": {
     "sensitive": false,
     "type": "dynamic",
-    "value": "64918dd3e383f3e93dd6b77a40cbfb2f2d45ea90a885312d9e1e5e8309e0a632"
+    "value": "6e1f8d0a8deb87ce35473aedb7c6a604d4efdf5897eb58262121c344f339a315"
   },
   "deployment_contract": {
     "sensitive": false,
@@ -32,7 +32,7 @@
       "kind": "deployment",
       "identity": {
         "status": "unqualified",
-        "contract_digest": "64918dd3e383f3e93dd6b77a40cbfb2f2d45ea90a885312d9e1e5e8309e0a632",
+        "contract_digest": "6e1f8d0a8deb87ce35473aedb7c6a604d4efdf5897eb58262121c344f339a315",
         "candidate_digest": null,
         "manifest_digest": null,
         "iac_revision": null,
@@ -139,7 +139,7 @@
       "kind": "validation",
       "identity": {
         "status": "unqualified",
-        "contract_digest": "64918dd3e383f3e93dd6b77a40cbfb2f2d45ea90a885312d9e1e5e8309e0a632",
+        "contract_digest": "6e1f8d0a8deb87ce35473aedb7c6a604d4efdf5897eb58262121c344f339a315",
         "candidate_digest": null,
         "manifest_digest": null,
         "iac_revision": null,
@@ -228,7 +228,7 @@
       "kind": "operations",
       "identity": {
         "status": "unqualified",
-        "contract_digest": "64918dd3e383f3e93dd6b77a40cbfb2f2d45ea90a885312d9e1e5e8309e0a632",
+        "contract_digest": "6e1f8d0a8deb87ce35473aedb7c6a604d4efdf5897eb58262121c344f339a315",
         "candidate_digest": null,
         "manifest_digest": null,
         "iac_revision": null,
@@ -307,7 +307,7 @@
           "availability_class": "single-task",
           "interruption_guarantee": "interruption-until-replacement-ready",
           "health_sources": {
-            "functional_check_path": null,
+            "functional_check_path": "/healthz/ready",
             "readiness_check_path": "/healthz/ready",
             "log_group": "/honua/honuaecs-it",
             "metrics_namespace": "AWS/ApplicationELB"

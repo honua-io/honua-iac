@@ -159,8 +159,8 @@ locals {
     availability_class     = local.operator_contract_availability_class
     interruption_guarantee = local.operator_contract_interruption_guarantee
     health_sources = {
+      functional_check_path = module.honua.alb_health_check.path
       readiness_check_path  = module.honua.alb_health_check.path
-      functional_check_path = null
       log_group             = local.operator_contract_log_group
       metrics_namespace     = "AWS/ApplicationELB"
     }
