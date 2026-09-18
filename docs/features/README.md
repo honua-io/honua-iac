@@ -29,4 +29,4 @@ This repository owns reusable cloud modules, deployable examples, bootstrap temp
 
 ## Boundary
 
-Marketplace listing packages belong in `honua-marketplace`; Kubernetes chart packaging belongs in `honua-helm`. This repository owns reusable infrastructure and validation paths.
+Kubernetes chart packaging belongs in [honua-helm](https://github.com/honua-io/honua-helm). This repository owns reusable infrastructure and validation paths.
