@@ -25,7 +25,7 @@ Do **not** start with an Amazon EKS add-on for the first submission.
 
 ## Current Repo Boundary
 
-`honua-terraform` remains the source of truth for:
+`honua-iac` remains the source of truth for:
 
 - reusable Terraform modules
 - operator-facing example stacks

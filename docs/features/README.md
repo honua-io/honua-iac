@@ -1,11 +1,11 @@
 ---
 type: index
-title: "What this repository owns"
+title: "What the Terraform repository ships"
 description: "The reusable cloud modules, deployment presets and operator contracts this repo ships, and which cloud each covers."
 resource: "https://github.com/honua-io/honua-iac/tree/trunk/infrastructure/terraform/modules"
 tags: [terraform, modules, cloud]
 ---
-# Honua Terraform Feature Map
+# What the Terraform repository ships
 
 This repository owns reusable cloud modules, deployable examples, bootstrap templates, and validation assets for Honua deployments.
 
@@ -16,16 +16,7 @@ This repository owns reusable cloud modules, deployable examples, bootstrap temp
 - Bootstrap templates for least-privilege identities across the supported runtime targets.
 - Validation and platform QA scripts for live applies, policy gates, drift checks, and Kubernetes/serverless/container runtime validation.
 - Disaster-recovery drill runbooks (backup/restore, failover) with RTO/RPO evidence capture for the validated AWS and Azure targets.
-- Module publishing decision docs and operator deployment guide.
 - CI workflows for Terraform formatting, validation, security checks, manual validation, and platform QA.
-
-## Source Evidence
-
-- Modules and examples: `infrastructure/terraform/modules/`, `infrastructure/terraform/examples/`
-- Bootstrap templates: `infrastructure/terraform/bootstrap/`
-- Validation assets: `infrastructure/terraform/validation/`, `scripts/`
-- Operator docs: `docs/operator-deployment.md`, `docs/devops/terraform-validation.md`, `docs/module-publishing-decision.md`
-- DR drill runbooks: `docs/devops/backup-restore-runbook.md`, `docs/devops/failover-drill-runbook.md`, `docs/devops/dr-evidence-template.json`
 
 ## Boundary
 

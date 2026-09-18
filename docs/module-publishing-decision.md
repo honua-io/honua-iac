@@ -183,55 +183,21 @@ accidentally invite external dependencies on it.
   source. The operator-deployment guide will call this out explicitly when the
   publishing rollout ships.
 
-## Follow-up tickets if approved
+## What followed the decision
 
-All bounded to `honua-io/honua-terraform`; none requires `honua-server`
-changes.
+The follow-up work the decision called for has mostly landed on `trunk`:
 
-1. **Freeze Tier 1 / Tier 2 input-output contracts for `v0.1.0`** - audit
-   `variables.tf` + `outputs.tf` for each Tier 1 module, mark experimental
-   inputs in the README, and remove or rename anything we already know is
-   wrong before tagging.
-2. **Add `CHANGELOG.md` scaffolding and `docs/module-versioning.md`** - capture
-   the SemVer policy, breaking-change rules, and deprecation runway.
-3. **Add `terraform-release.yml`** - tag-triggered workflow that re-validates
-   Tier 1/Tier 2 roots and publishes the GitHub Release for the tag. Cut the
-   first `v0.1.0` from this workflow.
-4. **Add `examples/registry-pin/` smoke example** - consumes one Tier 1 module
-   via Git source. Wire as a non-blocking CI check so PR throughput is not
-   affected by tag-availability lag.
-5. **Tier 1 / Tier 2 README updates** - add a "Pin to a release" subsection
-   with the Git-source snippet to each Tier 1 module README and the
-   Tier 2 (`observability-stack`) README, including the explicit
-   "add-on, contract may move" callout for Tier 2.
-6. **Tier 3 README updates** - add the single
-   "internal-only; not part of the published module surface" line to
-   `aws-eks/README.md` and `azure-aks/README.md`, and create README stubs for
-   `aws-data/` and `azure-data/` carrying the same notice.
-7. **Operator-deployment guide update** - add a
-   "Consuming modules at a pinned version" section to
-   `docs/operator-deployment.md` with the Git-source snippet and the ELv2
-   callout for consumers.
-
-## Open questions for stakeholder confirmation
-
-These do not block recording the recommendation but should be answered before
-follow-up ticket #1 lands:
-
-1. Are there any confirmed external consumers today, or is the use case still
-   hypothetical? If hypothetical, follow-up #3 can stay a hand-tagged release
-   rather than full automation for `v0.1.0`.
-2. Is the ELv2 stance fixed? If there is appetite to relicense the module
-   subtree under a permissive OSI license, the recommendation flips to public
-   Terraform Registry and the follow-up list shifts accordingly.
-3. Should `observability-stack` ride the same tag as Tier 1, or run on its
-   own `observability/v0.x.0` track? Default in this proposal: same tag.
-4. Should `aws-data` / `azure-data` stay strictly internal, or be stabilised
-   as "BYO data plane" Tier 1 modules? Default in this proposal: internal.
-5. What are the explicit pre-1.0 to 1.0 readiness gates - number of no-break
-   minor releases, list of "experimental" inputs exempt from SemVer? Default
-   in this proposal: documented in `docs/module-versioning.md` as part of
-   follow-up #2.
+- Versioning policy, breaking-change rules and deprecation runway are in
+  [How modules are versioned and consumed](module-versioning.md), with a
+  repository `CHANGELOG.md`.
+- `examples/registry-pin/` consumes a Tier 1 module by Git source at a tag.
+- Each Tier 1 module README and the `observability-stack` README open with a
+  "Pin to a release" section; Tier 3 module READMEs carry the internal-only
+  notice.
+- [Deploy Honua as a platform operator](operator-deployment.md) has a
+  "Consuming modules at a pinned version" section with the ELv2 callout.
+- `v0.1.0` is tagged. Releases are still cut by hand; a tag-triggered release
+  workflow has not been added.
 
 ## Risks accepted
 

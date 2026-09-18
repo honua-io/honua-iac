@@ -162,7 +162,7 @@ source <(scripts/tf-pass-secrets.sh export)
 To push the same pass-backed credentials into GitHub Actions secrets:
 
 ```bash
-scripts/tf-pass-secrets.sh sync-gh --repo honua-io/honua-terraform
+scripts/tf-pass-secrets.sh sync-gh --repo honua-io/honua-iac
 scripts/tf-pass-secrets.sh sync-gh --scope publish --repo honua-io/honua-server
 ```
 
@@ -352,7 +352,7 @@ It runs daily at 11:17 UTC and can be triggered manually:
 
 ```bash
 gh workflow run cloud-demo-smoke.yml \
-  --repo honua-io/honua-terraform \
+  --repo honua-io/honua-iac \
   -f sdk_ref=trunk \
   -f strict_env=true
 ```
@@ -361,7 +361,7 @@ Secret setup:
 
 ```bash
 source <(scripts/tf-pass-secrets.sh export --scope cloud-demo 2>/dev/null)
-scripts/tf-pass-secrets.sh sync-gh --scope cloud-demo --repo honua-io/honua-terraform
+scripts/tf-pass-secrets.sh sync-gh --scope cloud-demo --repo honua-io/honua-iac
 ```
 
 `HONUA_CLOUD_DEMO_ALLOW_WRITES` is a repository variable and defaults to

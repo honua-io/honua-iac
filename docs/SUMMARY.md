@@ -2,11 +2,10 @@
 
 ## Start here
 
-* [What this repository owns](features/README.md)
+* [What the Terraform repository ships](features/README.md)
 
 ## Guides
 
-* [Produce AWS certification evidence](devops/aws-cert-live-evidence-runbook.md)
 * [Configure AWS deployment safety](devops/aws-deployment-safety.md)
 * [Prove backups actually restore](devops/backup-restore-runbook.md)
 * [Run a failover drill](devops/failover-drill-runbook.md)
