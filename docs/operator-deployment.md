@@ -11,7 +11,7 @@ This guide is for platform operators deploying Honua into their own cloud subscr
 
 ## Prerequisites
 
-- Terraform 1.8+
+- Terraform 1.5 or later (every root pins `>= 1.5, < 2.0`; the AWS release lane's S3 native state lock needs 1.10 or later, see [Plan and state lineage](operator-state.md))
 - Cloud credentials configured locally
 - Container image accessible from target runtime
 - Strong admin and database passwords
