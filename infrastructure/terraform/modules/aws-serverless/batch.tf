@@ -357,7 +357,12 @@ resource "aws_batch_job_definition" "gp" {
     # server default (Enabled with no license source -> Community) would refuse
     # geoprocessing on a licensing-disabled 2026.1 deployment whose Lambda runs
     # fine. Per-tier job-defs all inherit this baseline.
-    environment = [
+    #
+    # The allowlist for request-supplied secret references travels with it for
+    # the same reason: a job that reads through a secure connection resolves
+    # that connection's stored reference under the same server policy. Empty
+    # lists add no entries.
+    environment = concat([
       {
         name  = "ConnectionStrings__DefaultConnection"
         value = "aws:secretsmanager:${aws_secretsmanager_secret.connection_string.arn}"
@@ -374,7 +379,12 @@ resource "aws_batch_job_definition" "gp" {
         name  = "Licensing__Mode"
         value = local.licensing_mode
       }
-    ]
+      ], [
+      for name, value in local.request_secret_reference_environment : {
+        name  = name
+        value = value
+      }
+    ])
 
     logConfiguration = {
       logDriver = "awslogs"

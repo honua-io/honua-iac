@@ -7,6 +7,16 @@ locals {
     Environment = var.environment
     ManagedBy   = "terraform"
   }, var.tags)
+
+  # Allowlist for request-supplied secret references (honua-server #5055):
+  # indexed Security__RequestSecretReferences__<List>__<n> entries in list order.
+  # Empty lists render nothing, which keeps the server's deny-by-default policy.
+  request_secret_reference_environment = merge(
+    { for index, value in var.request_secret_reference_allowed_environment_variables : "Security__RequestSecretReferences__AllowedEnvironmentVariables__${index}" => value },
+    { for index, value in var.request_secret_reference_allowed_environment_variable_prefixes : "Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__${index}" => value },
+    { for index, value in var.request_secret_reference_allowed_secret_reference_prefixes : "Security__RequestSecretReferences__AllowedSecretReferencePrefixes__${index}" => value },
+  )
+
   db_use_existing = var.existing_db_connection_string != ""
 }
 
@@ -385,6 +395,14 @@ resource "azurerm_container_app" "this" {
         content {
           name  = "FileStorage__AzureBlob__BlobPrefix"
           value = var.file_storage_azure_blob_prefix
+        }
+      }
+
+      dynamic "env" {
+        for_each = local.request_secret_reference_environment
+        content {
+          name  = env.key
+          value = env.value
         }
       }
 

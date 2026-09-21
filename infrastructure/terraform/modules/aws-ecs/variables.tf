@@ -686,3 +686,49 @@ variable "postgis_readiness_sleep_seconds" {
     error_message = "postgis_readiness_sleep_seconds must be at least 1."
   }
 }
+
+# Allowlist for request-supplied secret references (honua-server #5055). The
+# server section Security:RequestSecretReferences is deny-by-default: with all
+# three lists empty the server resolves no secret reference named in a request
+# (import credentials, workflow source steps, secure-connection registration),
+# and does not resolve a reference stored on a secure connection at runtime.
+# Server images that predate the setting ignore the rendered variables.
+variable "request_secret_reference_allowed_environment_variables" {
+  description = "Exact environment variable names a request may name as env:NAME (case-sensitive). Rendered as Security__RequestSecretReferences__AllowedEnvironmentVariables__<n>. Empty permits none."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for name in var.request_secret_reference_allowed_environment_variables : can(regex("^[A-Za-z_][A-Za-z0-9_]*$", name))
+    ])
+    error_message = "Each entry must be a valid environment variable name."
+  }
+}
+
+variable "request_secret_reference_allowed_environment_variable_prefixes" {
+  description = "Environment variable name prefixes a request may name as env:NAME, for example HONUA_IMPORT_. A prefix never matches a name containing a double underscore. Rendered as Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__<n>. Empty permits none."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for prefix in var.request_secret_reference_allowed_environment_variable_prefixes : can(regex("^[A-Za-z_][A-Za-z0-9_]*$", prefix))
+    ])
+    error_message = "Each entry must be a valid environment variable name prefix."
+  }
+}
+
+variable "request_secret_reference_allowed_secret_reference_prefixes" {
+  description = "Whole-reference prefixes a request may name for the other providers, including the provider segment, for example aws:secretsmanager:honua/imports/. The provider segment is case-insensitive; the remainder is a case-sensitive prefix of the reference. Rendered as Security__RequestSecretReferences__AllowedSecretReferencePrefixes__<n>. Empty permits none."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for prefix in var.request_secret_reference_allowed_secret_reference_prefixes :
+      length(prefix) <= 512 && can(regex("^[A-Za-z][A-Za-z0-9-]{0,31}:[^\\s{}$;]+$", prefix)) && lower(split(":", prefix)[0]) != "env"
+    ])
+    error_message = "Each entry must be '<provider>:<identifier-prefix>' for a non-environment provider."
+  }
+}

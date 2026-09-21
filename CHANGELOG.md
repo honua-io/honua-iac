@@ -44,6 +44,19 @@ module input/output contracts may still change.
   long-lived key ARN to keep the encryption path exercised without minting a key
   per cluster.
 
+### aws-ecs, aws-serverless, azure-aca, azure-functions
+
+- Added three optional list inputs, all defaulting to `[]`, for the allowlist
+  for request-supplied secret references (honua-server #5055):
+  `request_secret_reference_allowed_environment_variables`,
+  `request_secret_reference_allowed_environment_variable_prefixes` and
+  `request_secret_reference_allowed_secret_reference_prefixes`. Entries render
+  as indexed `Security__RequestSecretReferences__*` server settings
+  (`aws-serverless` also carries them to the geoprocessing Batch job
+  definitions). Empty lists render nothing, so existing deployments plan no
+  change and the server's deny-by-default policy is preserved. Server images
+  that predate the setting ignore the variables.
+
 ## v0.1.0 (planned — not yet tagged)
 
 Prepared notes for the first version-pinnable release of the Honua Terraform
