@@ -139,8 +139,10 @@ run "entries_render_as_indexed_variables_in_list_order" {
       } == {
       Security__RequestSecretReferences__AllowedEnvironmentVariables__0        = "HONUA_IMPORT_ARCGIS_TOKEN"
       Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__0 = "HONUA_IMPORT_"
-      Security__RequestSecretReferences__AllowedSecretReferencePrefixes__0     = "aws:secretsmanager:honua/imports/"
-      Security__RequestSecretReferences__AllowedSecretReferencePrefixes__1     = "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:honua/connections/"
+      # checkov:skip=CKV_SECRET_6: Configuration key names and placeholder reference prefixes, not credentials.
+      Security__RequestSecretReferences__AllowedSecretReferencePrefixes__0 = "aws:secretsmanager:honua/imports/"
+      # checkov:skip=CKV_SECRET_6: Configuration key names and placeholder reference prefixes, not credentials.
+      Security__RequestSecretReferences__AllowedSecretReferencePrefixes__1 = "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:honua/connections/"
     }
     error_message = "The Lambda environment must carry exactly the supplied entries under the server's indexed variable names."
   }
