@@ -32,6 +32,11 @@ platform_validation_contract_default() {
   local capability="${2:-}"
 
   case "${platform}:${capability}" in
+    aws-lambda:deploy-plan|aws-lambda:mutation)
+      # Matches the canonical server runner's default for this post-apply profile.
+      # The separate Lambda serving/alias certification remains required for GA.
+      printf 'false\n'
+      ;;
     azure-functions:deploy-plan)
       printf 'true\n'
       ;;
@@ -221,45 +226,12 @@ render_control_plane_config_from_terraform() {
   platform_validation_log info "Rendered control-plane config fragment at $rendered_config_path"
 }
 
-run_filtered_cloud_post_apply_validation() {
-  local validation_root="$1"
-  local include_scale_tests="${2:-false}"
-  local cloud_test_filter="Category=Cloud"
-
-  cd "$validation_root"
-
-  if [[ "${HONUA_CLOUD_TEST_PLATFORM:-}" == "azure-functions" && "${HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT:-}" == "false" ]]; then
-    cloud_test_filter="${cloud_test_filter}&FullyQualifiedName!=Honua.Server.Tests.Cloud.CloudDeploymentValidationTests.DeployPlanEndpoint_ReturnsPlan_WhenTargetConfigured_OrNotFoundContract_WhenNoTargetConfigured"
-    platform_validation_log info "Skipping Azure Functions deploy-plan cloud test because the validation deployment did not provision a rollout target"
-  fi
-
-  chmod +x scripts/post-deployment-verification.sh
-  scripts/post-deployment-verification.sh
-
-  dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
-    -p:RunAnalyzers=false \
-    --filter "$cloud_test_filter"
-
-  if [[ "$include_scale_tests" == "true" ]]; then
-    if [[ -z "${HONUA_SCALE_TEST_BASE_URL:-}" ]]; then
-      echo "INCLUDE_SCALE_TESTS=true but HONUA_SCALE_TEST_BASE_URL is not set." >&2
-      return 1
-    fi
-
-    echo "Running scale validation against ${HONUA_SCALE_TEST_BASE_URL}"
-    dotnet test tests/Honua.Server.Tests/Honua.Server.Tests.csproj \
-      -p:RunAnalyzers=false \
-      --filter "Category=Scale"
-  fi
-
-  echo "Cloud post-apply validation completed successfully."
-}
-
 run_honua_platform_post_apply_validation() {
   local base_url="$1"
   local default_platform="${2:-}"
   local validation_runner="${HONUA_PLATFORM_VALIDATION_SCRIPT:-}"
   local validation_root
+  local evidence_checker="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/assert-platform-validation.py"
   local effective_platform
   local include_scale_tests
   local -a runner_args
@@ -277,6 +249,7 @@ run_honua_platform_post_apply_validation() {
     platform_validation_log error "Platform validation runner not found: $validation_runner"
     return 1
   fi
+  validation_runner="$(cd "$(dirname "$validation_runner")" && pwd)/$(basename "$validation_runner")"
 
   if ! validation_root="$(resolve_platform_validation_root "$validation_runner")"; then
     platform_validation_log error "Could not determine honua-server repository root from $validation_runner"
@@ -404,10 +377,21 @@ run_honua_platform_post_apply_validation() {
 
     export INCLUDE_SCALE_TESTS="$include_scale_tests"
 
-    if [[ "$effective_platform" == "azure-functions" && "${HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT:-}" == "false" ]]; then
-      run_filtered_cloud_post_apply_validation "$validation_root" "$include_scale_tests"
-    else
-      bash "./scripts/run-cloud-post-apply-validation.sh" "${runner_args[@]}"
+    # Use one canonical runner for every topology. It owns unsupported-capability skips,
+    # current project paths and TRX generation; no local test-filter clone can bypass it.
+    local results_root="${HONUA_PLATFORM_VALIDATION_RESULTS_DIR:-$validation_root/tests/TestResults/post-apply}"
+    mkdir -p "$results_root"
+    export HONUA_CLOUD_TEST_RESULTS_DIR="$(mktemp -d "$results_root/run.XXXXXX")"
+    platform_validation_log info "Post-apply evidence directory: $HONUA_CLOUD_TEST_RESULTS_DIR"
+    bash "$validation_runner" "${runner_args[@]}" || exit $?
+    python3 "$validation_root/scripts/ci/assert-trx-executed.py" \
+      --label "IaC post-apply validation" \
+      --trx "$HONUA_CLOUD_TEST_RESULTS_DIR/cloud-post-apply-validation.trx" --min-passed 3 || exit $?
+    python3 "$evidence_checker" "$HONUA_CLOUD_TEST_RESULTS_DIR/cloud-post-apply-validation.trx" || exit $?
+    if [[ "$include_scale_tests" == "true" ]]; then
+      python3 "$validation_root/scripts/ci/assert-trx-executed.py" \
+        --label "IaC scale validation" \
+        --trx "$HONUA_CLOUD_TEST_RESULTS_DIR/cloud-post-apply-scale.trx" --min-passed 1 || exit $?
     fi
   )
 }

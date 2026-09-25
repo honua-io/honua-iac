@@ -299,7 +299,7 @@ jobs:
       HONUA_AZURE_REGISTRY_USERNAME: ${{ secrets.HONUA_AZURE_REGISTRY_USERNAME || '' }}
       HONUA_AZURE_REGISTRY_PASSWORD: ${{ secrets.HONUA_AZURE_REGISTRY_PASSWORD || '' }}
       HONUA_AZURE_DATA_CACHE_FILE: ${{ github.workspace }}/.gha-cache/azure-data-reuse.env
-      HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/run-cloud-post-apply-validation.sh
+      HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/cloud/run-cloud-post-apply-validation.sh
       HONUA_PLATFORM_VALIDATION_IMPORT_TABLE_PREFIX: ${{ inputs.deployment_profile == 'ephemeral' && inputs.no_destroy == false && format('cloud{0}{1}', github.run_id, github.run_attempt) || '' }}
     steps:
       - name: Checkout
@@ -616,6 +616,13 @@ jobs:
               "$FUNCTIONS_ARM_SUBSCRIPTION_ID"
           fi
 
+      - name: Upload Azure post-apply evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-post-apply-azure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: honua-server/tests/TestResults/post-apply/**/*.trx
+          if-no-files-found: ignore
       - name: Upload Azure plan artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -664,7 +671,7 @@ jobs:
       HONUA_AWS_SERVERLESS_IMAGE: ${{ vars.HONUA_AWS_SERVERLESS_IMAGE || '' }}
       HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE: ${{ vars.HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE || '' }}
       HONUA_AWS_DATA_CACHE_FILE: ${{ github.workspace }}/.gha-cache/aws-data-reuse.env
-      HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/run-cloud-post-apply-validation.sh
+      HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/cloud/run-cloud-post-apply-validation.sh
       HONUA_PLATFORM_VALIDATION_IMPORT_TABLE_PREFIX: ${{ inputs.deployment_profile == 'ephemeral' && inputs.no_destroy == false && format('cloud{0}{1}', github.run_id, github.run_attempt) || '' }}
     steps:
       - name: Checkout
@@ -979,6 +986,13 @@ jobs:
               "$SERVERLESS_AWS_SECRET_ACCESS_KEY"
           fi
 
+      - name: Upload AWS post-apply evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-post-apply-aws-${{ github.run_id }}-${{ github.run_attempt }}
+          path: honua-server/tests/TestResults/post-apply/**/*.trx
+          if-no-files-found: ignore
       - name: Upload AWS plan artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -1245,7 +1259,7 @@ jobs:
       HONUA_AZURE_REGISTRY_RESOURCE_ID: ${{ vars.HONUA_AZURE_REGISTRY_RESOURCE_ID || '' }}
       HONUA_AZURE_REGISTRY_USERNAME: ${{ secrets.HONUA_AZURE_REGISTRY_USERNAME || '' }}
       HONUA_AZURE_REGISTRY_PASSWORD: ${{ secrets.HONUA_AZURE_REGISTRY_PASSWORD || '' }}
-      HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/run-cloud-post-apply-validation.sh
+      HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/cloud/run-cloud-post-apply-validation.sh
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -1440,6 +1454,13 @@ jobs:
           HONUA_VALIDATION_RUN_ID="gha-${{ github.run_id }}-aks" \
           ./infrastructure/terraform/validation/scripts/azure/run-aks-terraform-integration.sh "${args[@]}"
 
+      - name: Upload AKS post-apply evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-post-apply-aks-${{ github.run_id }}-${{ github.run_attempt }}
+          path: honua-server/tests/TestResults/post-apply/**/*.trx
+          if-no-files-found: ignore
       - name: Upload AKS plan artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -1462,7 +1483,7 @@ jobs:
       HONUA_ADMIN_PASSWORD: ${{ secrets.HONUA_ADMIN_PASSWORD }}
       HONUA_K8S_IMAGE: ${{ vars.HONUA_EKS_IMAGE || vars.HONUA_K8S_IMAGE || '' }}
       HONUA_K8S_PREVIOUS_IMAGE: ${{ vars.HONUA_K8S_PREVIOUS_IMAGE || '' }}
-      HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/run-cloud-post-apply-validation.sh
+      HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/cloud/run-cloud-post-apply-validation.sh
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -1656,6 +1677,13 @@ jobs:
           HONUA_VALIDATION_RUN_ID="gha-${{ github.run_id }}-eks" \
           ./infrastructure/terraform/validation/scripts/aws/run-eks-terraform-integration.sh "${args[@]}"
 
+      - name: Upload EKS post-apply evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-post-apply-eks-${{ github.run_id }}-${{ github.run_attempt }}
+          path: honua-server/tests/TestResults/post-apply/**/*.trx
+          if-no-files-found: ignore
       - name: Upload EKS plan artifacts
         if: always()
         uses: actions/upload-artifact@v4
