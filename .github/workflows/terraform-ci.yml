@@ -294,6 +294,9 @@ jobs:
           terraform -chdir=infrastructure/terraform/modules/aws-serverless test -no-color
           terraform -chdir=infrastructure/terraform/modules/azure-aca test -no-color
 
+      - name: Post-apply caller and named-evidence contract
+        shell: bash
+        run: python3 infrastructure/terraform/validation/scripts/shared/test-platform-post-apply-validation.py
       - name: Operator contract v1 fixtures and negative tests
         shell: bash
         run: ./infrastructure/terraform/validation/scripts/shared/test-operator-contract.sh
