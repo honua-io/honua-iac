@@ -17,6 +17,7 @@
 #   unqualified-plan-refused the plan was produced under a dev-only escape hatch
 #   terraform-version-changed / provider-lock-changed / source-changed
 #   backend-substituted / local-state-refused / lock-posture-missing
+#   backend-role-missing / backend-role-not-distinct
 #   workspace-mismatch / account-mismatch / role-mismatch
 #   long-lived-credential-refused
 #   input-digest-changed
@@ -245,6 +246,7 @@ assert_equal "backend-substituted" "backend config digest" \
 LIVE_IDENTITY="$(sts_identity_doc)"
 if [[ "$(json_get "$METADATA" posture.local_state_allowed)" != "true" ]]; then
   assert_short_lived_identity "$LIVE_IDENTITY"
+  assert_backend_role_separated "$LIVE_BACKEND" "$LIVE_IDENTITY"
 fi
 assert_equal "account-mismatch" "aws account" \
   "$(json_get "$METADATA" identity.account_id)" "$(json_get "$LIVE_IDENTITY" account_id)"

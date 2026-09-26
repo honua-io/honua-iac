@@ -97,12 +97,21 @@ IDENTITY_DOC='null'
 if [[ "$WITH_IDENTITY" == "true" ]]; then
   IDENTITY_DOC="$(sts_identity_doc)"
 fi
+if [[ "$(backend_roles_separated "$BACKEND_DOC" "$IDENTITY_DOC")" == "true" ]]; then
+  BACKEND_ROLE_SEPARATED=true
+else
+  BACKEND_ROLE_SEPARATED=false
+fi
+if [[ "$ALLOW_LOCAL_STATE" != "true" && "$WITH_IDENTITY" == "true" && "$BACKEND_ROLE_SEPARATED" != "true" ]]; then
+  assert_backend_role_separated "$BACKEND_DOC" "$IDENTITY_DOC"
+fi
 
 DOCUMENT="$(
   HONUA_IAC_BACKEND_DOC="$BACKEND_DOC" \
     HONUA_IAC_IDENTITY_DOC="$IDENTITY_DOC" \
     HONUA_IAC_ALLOW_LOCAL="$ALLOW_LOCAL_STATE" \
     HONUA_IAC_TF_VERSION="$(terraform_version)" \
+    HONUA_IAC_BACKEND_ROLE_SEPARATED="$BACKEND_ROLE_SEPARATED" \
     python3 - <<'PY'
 import hashlib
 import json
@@ -124,6 +133,8 @@ backend["account"] = {
 backend["terraform_version"] = os.environ["HONUA_IAC_TF_VERSION"]
 backend["release_qualified"] = bool(
     backend["is_remote"] and backend["locking"]["kind"] != "none"
+    and backend.get("backend_access_role_arn")
+    and os.environ.get("HONUA_IAC_BACKEND_ROLE_SEPARATED") == "true"
     and os.environ["HONUA_IAC_ALLOW_LOCAL"] != "true"
     and (identity or {}).get("credential_kind") == "sts-assumed-role"
     and (identity or {}).get("evidence_mode") == "live"

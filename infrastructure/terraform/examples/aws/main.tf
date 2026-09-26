@@ -1,3 +1,7 @@
+# The process credential must already be the deployment role from
+# bootstrap/aws-exec-identity. Do not add assume_role here: the exact-plan
+# receipt binds this caller, and the backend block assumes the separate
+# backend-access role.
 provider "aws" {
   region = var.region
 }

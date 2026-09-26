@@ -188,10 +188,17 @@ else
 fi
 BACKEND_DIGEST="$(printf '%s' "$BACKEND_DOC" | json_digest)"
 
-# --- 4. short-lived execution identity
+# --- 4. short-lived execution identity, distinct from the backend role
 IDENTITY_DOC="$(sts_identity_doc)"
+if [[ "$(backend_roles_separated "$BACKEND_DOC" "$IDENTITY_DOC")" == "true" ]]; then
+  BACKEND_ROLE_SEPARATED=true
+else
+  BACKEND_ROLE_SEPARATED=false
+fi
 if [[ "$ALLOW_LOCAL_STATE" != "true" ]]; then
   assert_short_lived_identity "$IDENTITY_DOC"
+  [[ "$BACKEND_ROLE_SEPARATED" == "true" ]] ||
+    assert_backend_role_separated "$BACKEND_DOC" "$IDENTITY_DOC"
 fi
 
 # --- 5. prior state lineage/serial (metadata only; state contents never stored)
@@ -243,6 +250,7 @@ METADATA="$(
     HONUA_IAC_EXPIRES_AT="$EXPIRES_AT" \
     HONUA_IAC_ALLOW_LOCAL="$ALLOW_LOCAL_STATE" \
     HONUA_IAC_ALLOW_DIRTY="$ALLOW_DIRTY" \
+    HONUA_IAC_BACKEND_ROLE_SEPARATED="$BACKEND_ROLE_SEPARATED" \
     python3 - <<'PY'
 import hashlib
 import json
@@ -312,6 +320,8 @@ document = {
         "release_qualified": bool(
             backend["is_remote"]
             and backend["locking"]["kind"] != "none"
+            and backend.get("backend_access_role_arn")
+            and os.environ.get("HONUA_IAC_BACKEND_ROLE_SEPARATED") == "true"
             and not allow_local
             and not allow_dirty
             and identity.get("credential_kind") == "sts-assumed-role"

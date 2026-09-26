@@ -101,8 +101,10 @@ For those, three things change:
    never a side effect of `terraform init`.
 2. **A short-lived deployment identity.** Apply `bootstrap/aws-terraform-oidc`
    (backend access) and `bootstrap/aws-exec-identity` (infrastructure deployment).
-   No IAM user, no access key. `bootstrap/aws-ecs`, `bootstrap/aws-serverless`,
-   and `bootstrap/aws-eks` create long-lived IAM users and are local-only and
+   No IAM user, no access key. The shell that runs the exact-plan wrappers must
+   already be the deployment role, and `backend.tf` must assume a different
+   backend-access role. `bootstrap/aws-ecs`, `bootstrap/aws-serverless`, and
+   `bootstrap/aws-eks` create long-lived IAM users and are local-only and
    unsupported for release.
 3. **One exact saved plan.** Produce the plan and its approval digest once, then
    apply exactly those bytes:

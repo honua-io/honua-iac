@@ -60,9 +60,12 @@ rejected by an input validation, not by convention.
 
 ## Wiring the two roles into one Terraform run
 
-Terraform holds both roles at once without either inheriting the other's
-permissions: the backend block assumes the backend role, the provider assumes
-the deployment role.
+Assume this deployment role in the process credential before planning: an SSO
+permission set, or a `credential_process` that calls STS. The exact-plan
+receipt binds that caller. The backend block then assumes the backend-access
+role, which must be a different role. Leave the AWS provider on the process
+credential. A provider `assume_role` is invisible to the receipt, so the
+apply would mutate as an identity the approval did not bind.
 
 ```hcl
 terraform {
@@ -81,10 +84,6 @@ terraform {
 
 provider "aws" {
   region = var.region
-
-  assume_role {
-    role_arn = "arn:aws:iam::123456789012:role/honua-prod-deploy"
-  }
 }
 ```
 

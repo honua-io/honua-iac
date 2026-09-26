@@ -74,6 +74,10 @@ terraform {
     use_lockfile = true
 
     # dynamodb_table = "REPLACE_WITH_STATE_LOCK_TABLE_NAME"
+
+    assume_role = {
+      role_arn = "REPLACE_WITH_BACKEND_ACCESS_ROLE_ARN"
+    }
   }
 }
 EOF
@@ -120,6 +124,11 @@ real_bucket() {
 
 static_credential() {
   sed -i 's|^    region       = "us-east-1"$|    region       = "us-east-1"\n    access_key   = "AKIAEXAMPLE"|' \
+    "$1/infrastructure/terraform/examples/aws/backend.tf.example"
+}
+
+drop_backend_role() {
+  sed -i '/role_arn/d' \
     "$1/infrastructure/terraform/examples/aws/backend.tf.example"
 }
 
@@ -214,6 +223,8 @@ expect_refusal "a real bucket name committed" \
   "instead of a REPLACE_ placeholder" real_bucket
 expect_refusal "a static credential in the example" \
   "federates through STS" static_credential
+expect_refusal "no distinct backend-access role" \
+  "must assume a distinct backend-access role" drop_backend_role
 expect_refusal "two roots sharing one state object" \
   "shares object key" shared_key
 expect_refusal "an off-convention object key" \
