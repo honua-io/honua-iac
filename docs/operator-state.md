@@ -113,9 +113,17 @@ session, and four permission surfaces stay separate:
 | Task execution | `modules/aws-ecs` | image pull and secret fetch |
 | App runtime | `modules/aws-ecs` | what the application itself may call |
 
-Terraform holds the first two at once without either inheriting the other's
-permissions: the `backend "s3"` block assumes the backend role and the
-`provider "aws"` block assumes the deployment role.
+The process credential is already the deployment role: an SSO permission set
+or a `credential_process` that assumed `bootstrap/aws-exec-identity`. The
+`backend "s3"` block assumes a different backend-access role. The AWS provider
+uses the process credential and must not assume a second role. The exact-plan
+receipt binds the process caller, so a provider `assume_role` the wrapper
+cannot see would mutate as an identity the receipt does not name. A remote
+backend with no backend-access role is refused
+(`REFUSED[backend-role-missing]`). A caller whose role name and account are
+the backend-access role — including an IAM path the assumed-role ARN drops —
+is refused (`REFUSED[backend-role-not-distinct]`). Neither can be
+release-qualified.
 
 `bootstrap/aws-ecs`, `bootstrap/aws-serverless`, and `bootstrap/aws-eks` create a
 long-lived IAM user. They are **local-only and unsupported for release**: their
@@ -184,7 +192,8 @@ terraform {
     encrypt      = true
     use_lockfile = true
 
-    # Backend access is its own role, separate from the deployment role.
+    # Backend access is its own role. The process credential is the deployment
+    # role; do not also set provider assume_role.
     assume_role = {
       role_arn = "replace-with-backend-access-role-arn"
     }

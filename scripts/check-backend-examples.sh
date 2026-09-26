@@ -148,6 +148,11 @@ for root in "${roots[@]}"; do
     fail "$root/backend.tf.example names bucket '$bucket' instead of a REPLACE_ placeholder; a committed example must not point at a real state bucket"
   fi
 
+  role_arn="$(backend_argument "$example" role_arn)"
+  if [[ "$role_arn" != "REPLACE_WITH_BACKEND_ACCESS_ROLE_ARN" ]]; then
+    fail "$root/backend.tf.example must assume a distinct backend-access role via role_arn = \"REPLACE_WITH_BACKEND_ACCESS_ROLE_ARN\" (got '${role_arn:-<unset>}')"
+  fi
+
   for key in "${credential_keys[@]}"; do
     if [[ -n "$(backend_argument "$example" "$key")" ]]; then
       fail "$root/backend.tf.example sets '$key'; the certified executor federates through STS and no credential reference belongs in the example"

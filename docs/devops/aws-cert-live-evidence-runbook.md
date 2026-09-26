@@ -224,10 +224,12 @@ cp infrastructure/terraform/examples/aws-cert/backend.tf.example \
    infrastructure/terraform/examples/aws-cert/backend.tf
 ```
 
-Edit `backend.tf` and replace `REPLACE_WITH_STATE_BUCKET_NAME` with the Phase 1
-bucket. Uncomment `assume_role` with the Phase 2 backend role — the backend
-assumes the backend role while the provider assumes the deployment role, so
-neither identity inherits the other's permissions. Leave the key as
+Edit `backend.tf` and replace `REPLACE_WITH_STATE_BUCKET_NAME` and
+`REPLACE_WITH_BACKEND_ACCESS_ROLE_ARN` with the Phase 1 bucket and the Phase 2
+backend role. Assume the deployment role in the process credential before
+`terraform-exact-plan.sh`; do not add a provider `assume_role`. The backend
+role and the caller must be different roles, or the wrapper refuses with
+`backend-role-missing` or `backend-role-not-distinct`. Leave the key as
 `honua/aws-cert/cert/terraform.tfstate`.
 
 `infrastructure/terraform/**/backend.tf` is gitignored; never commit it.
