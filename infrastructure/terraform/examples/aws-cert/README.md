@@ -413,9 +413,7 @@ licensing-disabled mode did not yet exist. Those inputs remain wired for the
 | `pro_license_content` | escape hatch for Terraform to own the envelope; never commit a value | **Yes**, local secret tfvars only |
 
 Supplying an envelope forces `Licensing__Mode=Enabled`. The envelope and the
-signing seed never live in this repository, in state outputs, or in logs. Apply
-targeted (`module.honua` and its IAM policies, the run-27 lesson: a new secret
-needs the module policies applied) and verify with the alias
+signing seed never live in this repository, in state outputs, or in logs.
 
 `terraform.tfvars.example` points the `pro_license_content` escape hatch at a
 local secret tfvars file (`~/.config/honua/aws-cert.secret.tfvars`), but Terraform

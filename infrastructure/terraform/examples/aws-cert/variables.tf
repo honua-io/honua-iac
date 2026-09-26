@@ -299,18 +299,16 @@ variable "licensing_mode" {
   }
 }
 
-# Pro license for the certification Lambda (operator ruling A, 2026-09-09;
-# superseded for 2026.1 by the licensing-disabled ruling of 2026-09-12, kept
-# wired for the 2026.2 path).
-# Lambda Preview Certification runs 28/29 failed the deployed-phase addFeatures
-# assertion with an in-body 402: the function ran Community and the editing
-# entitlement (editing.featureserver-edits) was absent. The module already
-# delivers a signed Pro license through Secrets Manager; these inputs pass it
-# through, off by default. Reference an EXISTING secret (pro_license_secret_arn,
-# e.g. a us-east-1 replica of the demo stack's license) so no license material
-# is ever written here, in state outputs, or in logs.
+# Pro license for the certification Lambda. Ruling A (2026-09-09) required an
+# envelope because runs 28/29 failed deployed-phase addFeatures with an in-body
+# 402 while the function ran Community. The 2026-09-12 ruling supersedes that
+# for 2026.1: leave these unset and the stack declares Licensing__Mode=Disabled
+# (no license secret, no execution-role grant). The inputs stay wired for the
+# 2026.2 path. Reference an EXISTING secret (pro_license_secret_arn, e.g. a
+# us-east-1 replica of the demo stack's license) so no license material is
+# written here, in state outputs, or in logs.
 variable "enable_pro_license" {
-  description = "Deliver a signed Pro license to the certification Lambda via Secrets Manager (module aws-serverless enable_pro_license). Off by default: the server runs Community and GeoServices editing certification refuses with 402."
+  description = "Deliver a signed Pro license to the certification Lambda via Secrets Manager and set Licensing__Mode=Enabled. Off by default: with no envelope the stack declares Licensing__Mode=Disabled (every entitlement active), not Community."
   type        = bool
   default     = false
 }
