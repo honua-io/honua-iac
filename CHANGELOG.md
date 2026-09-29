@@ -14,35 +14,46 @@ module input/output contracts may still change.
 
 ## Unreleased
 
-### tooling
+No changes yet.
 
-- Added a scheduled reaper for the AWS infrastructure the manual validation
-  workflow strands (`.github/workflows/terraform-validation-infra-reaper.yml` ->
-  `infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-infra.sh`),
-  plus an `if: always()` run-scoped teardown step in the AWS and EKS live jobs
-  and a job-summary report of anything left behind. Validation resources now
-  also carry a `Stack` tag (`data` | `ecs` | `serverless` | `eks`) so a
-  run-scoped teardown can reap the throwaway compute stacks without destroying
-  a data stack `--keep-data` was told to retain. No module inputs or outputs
-  changed.
-- Added the manual cloud runbook validation procedure
-  (`docs/devops/manual-cloud-runbook-validation.md`), a structured evidence
-  schema (`docs/devops/cloud-runbook-evidence-template.json`), and an evidence
-  capture helper (`scripts/capture-runbook-evidence.sh` ->
-  `infrastructure/terraform/validation/scripts/shared/capture-runbook-evidence.sh`)
-  for recording apply -> smoke -> destroy beta-validation evidence across the
-  AWS/Azure AOT and JIT matrix. No module inputs or outputs changed.
+## v0.2.0
 
-### aws-eks
+Second pinnable release, cut from trunk `8ec0737`. It is a `0.x` **minor**
+bump, not a patch: per [`docs/module-versioning.md`](docs/module-versioning.md)
+it adds optional inputs and changes defaults that alter apply behaviour.
 
-- Added `cluster_secret_encryption_enabled` (bool, default `true`) and
-  `cluster_secret_encryption_key_arn` (string, default `""`). The default is
-  unchanged production shape: a module-managed CMK encrypts Kubernetes secrets.
-  Ephemeral parity/validation clusters can now set
-  `cluster_secret_encryption_enabled = false` so a throwaway cluster does not
-  strand a CMK on the 7-day deletion window AWS refuses to shorten, or pass a
-  long-lived key ARN to keep the encryption path exercised without minting a key
-  per cluster.
+### Behaviour-changing defaults
+
+- `aws-ecs`, `aws-serverless` and the `aws`, `aws-serverless` and `aws-cert`
+  example roots add `licensing_mode` (default `"Disabled"`) and render
+  `Licensing__Mode` for the 2026.1 candidate (#192). A deployment that relied
+  on the server's implicit licensing mode now starts with licensing disabled;
+  set `licensing_mode` (and, for `aws-ecs`, `licensing_edition` plus the
+  `pro_license_*` inputs) to keep a licensed deployment.
+- `examples/aws`: `enable_postgis` now defaults to `false` so a private RDS
+  instance does not require the Terraform runner to reach it (#172). Set it to
+  `true` where the runner has database reachability.
+- `aws-ecs` and `examples/aws` add `rds_deletion_protection` (default `true`).
+
+### aws-ecs
+
+- Added AI provider secret delivery by reference: `ai_provider_secret_arn`,
+  `ai_provider_secret_kms_key_arn` (#146).
+- Added licensing inputs `licensing_mode`, `licensing_edition`,
+  `pro_license_secret_arn`, `pro_license_secret_kms_key_arn`,
+  `pro_license_key_id`, `pro_license_trusted_public_key`.
+- Added outputs `licensing_mode`, `pro_license_secret_arn`,
+  `multi_node_topology_ready`, `alb_health_check`,
+  `container_health_check_start_period_seconds`, `deployment_rollback`,
+  `task_definition_revision_retention`, `cache_configured`, `database_managed`,
+  and a derived protection profile in the operator contract (#184, #193).
+- Pinned module and provider sources immutably (#151) and enforced deployment
+  safety preconditions (#171).
+
+### aws-serverless
+
+- Added `licensing_mode` (default `"Disabled"`) and `additional_allowed_hosts`
+  (default `[]`); added outputs `master_key_secret_arn` and `licensing_mode`.
 
 ### aws-ecs, aws-serverless, azure-aca, azure-functions
 
@@ -68,14 +79,40 @@ module input/output contracts may still change.
   user-assigned identity when an `azure:` reference is allowlisted, so the
   in-process Key Vault lookup authenticates as that identity.
 
-## v0.1.0 (planned — not yet tagged)
+### aws-eks
 
-Prepared notes for the first version-pinnable release of the Honua Terraform
-modules. These notes are staged so the release can be cut with a single tag
-push; until `git tag v0.1.0 && git push origin v0.1.0` is run (see the release
-process in [`docs/module-versioning.md`](docs/module-versioning.md)), no
-`v0.1.0` tag exists, so `?ref=v0.1.0` will not resolve — pin `?ref=trunk` in the
-meantime.
+- Added `cluster_secret_encryption_enabled` (bool, default `true`) and
+  `cluster_secret_encryption_key_arn` (string, default `""`). The default is
+  unchanged production shape: a module-managed CMK encrypts Kubernetes secrets.
+  Ephemeral parity/validation clusters can now set
+  `cluster_secret_encryption_enabled = false` so a throwaway cluster does not
+  strand a CMK on the 7-day deletion window AWS refuses to shorten, or pass a
+  long-lived key ARN to keep the encryption path exercised without minting a key
+  per cluster.
+
+### examples and tooling
+
+- `examples/aws`: secured remote state and short-lived execution identity for
+  exact-plan apply (#158, #174, #202), canonical operator contract v1 (#153),
+  2026.1 small presets and AI profiles (#145), and the operator-contract
+  identity input `operator_contract_identity`.
+- `examples/aws-cert`: bounded Lambda GA certification substrate and bootstrap
+  contract (#173, #176, #181, #195).
+- Added a scheduled reaper for the AWS infrastructure the manual validation
+  workflow strands (`.github/workflows/terraform-validation-infra-reaper.yml` ->
+  `infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-infra.sh`),
+  plus an `if: always()` run-scoped teardown step in the AWS and EKS live jobs
+  and a job-summary report of anything left behind. Validation resources now
+  also carry a `Stack` tag (`data` | `ecs` | `serverless` | `eks`).
+- Added the manual cloud runbook validation procedure
+  (`docs/devops/manual-cloud-runbook-validation.md`), a structured evidence
+  schema (`docs/devops/cloud-runbook-evidence-template.json`), and an evidence
+  capture helper (`scripts/capture-runbook-evidence.sh`).
+
+## v0.1.0
+
+First version-pinnable release of the Honua Terraform modules (tag `v0.1.0`,
+commit `cace70f`).
 
 ### Breaking changes
 
