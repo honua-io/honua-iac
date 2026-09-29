@@ -552,3 +552,19 @@ echo "[INFO] terraform-policy-gate Lambda certification guard tests passed"
 echo "[INFO] terraform-policy-gate governed-execution guard tests passed"
 echo "[INFO] terraform-policy-gate strict/non-strict regression tests passed"
 echo "[INFO] terraform-policy-gate custom security-guard negative tests passed"
+
+# Explicit deny-all is a safety boundary, not an overprivileged grant. The same
+# wildcard in an Allow (scalar or array) must still fail in JSON/templates.
+json_fixture="$TMP_DIR/json-actions"
+mkdir -p "$json_fixture"
+checker="$SCRIPT_DIR/check-json-iam-actions.py"
+printf '%s\n' '{"Statement":[{"Effect":"Deny","Action":"*","Resource":"*"},{"Effect":"Allow","Action":"ec2:CreateTags","Condition":{"StringLike":{"ec2:CreateAction":"*"}}}]}' > "$json_fixture/policy.json.tftpl"
+python3 "$checker" "$json_fixture"
+for action in '"*"' '["*"]'; do
+  printf '{"Statement":[{"Effect":"Allow","Action":%s,"Resource":"*"}]}\n' "$action" > "$json_fixture/policy.json.tftpl"
+  if python3 "$checker" "$json_fixture" >/dev/null 2>&1; then
+    echo '[ERROR] wildcard JSON Allow was accepted' >&2
+    exit 1
+  fi
+done
+echo '[PASS] JSON IAM denies and condition keys preserve wildcard-grant rejection'

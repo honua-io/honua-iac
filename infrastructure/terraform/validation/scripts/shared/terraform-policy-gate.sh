@@ -434,7 +434,7 @@ run_custom_policy_checks() {
   log_info "Running custom policy checks"
 
   assert_regex_absent 'actions[[:space:]]*=[[:space:]]*\[[[:space:]]*"\*"[[:space:]]*\]' "$ROOT" "least-privilege-actions"
-  assert_regex_absent 'Action"[[:space:]]*:[[:space:]]*"\*"' "$ROOT" "least-privilege-actions-json"
+  python3 "$(dirname "${BASH_SOURCE[0]}")/check-json-iam-actions.py" "$ROOT"
 
   # release#282: the Lambda certification packet must preserve its service
   # trust, tagged lifecycle boundary, and the single sanctioned wildcard grant.
