@@ -136,6 +136,7 @@ run "auxiliary_roles_keep_the_boundary" {
   command = plan
   variables {
     permissions_boundary_arn      = "arn:aws:iam::123456789012:policy/honua-release-cell-workload-boundary"
+    use_batch_service_linked_role = true
     enable_gp_batch               = true
     enable_customcode_batch       = true
     customcode_batch_image        = "registry.example/python@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -144,7 +145,7 @@ run "auxiliary_roles_keep_the_boundary" {
   }
   assert {
     condition = alltrue([
-      aws_iam_role.batch_service[0].permissions_boundary == var.permissions_boundary_arn,
+      length(aws_iam_role.batch_service) == 0,
       aws_iam_role.batch_execution[0].permissions_boundary == var.permissions_boundary_arn,
       aws_iam_role.batch_job[0].permissions_boundary == var.permissions_boundary_arn,
       aws_iam_role.customcode_execution[0].permissions_boundary == var.permissions_boundary_arn,
@@ -154,4 +155,14 @@ run "auxiliary_roles_keep_the_boundary" {
     ])
     error_message = "All auxiliary Batch, custom-code and event roles must retain the operator boundary."
   }
+}
+
+run "workload_boundary_cannot_cap_batch_control_plane" {
+  command = plan
+  variables {
+    permissions_boundary_arn      = "arn:aws:iam::123456789012:policy/honua-release-cell-workload-boundary"
+    enable_gp_batch               = true
+    use_batch_service_linked_role = false
+  }
+  expect_failures = [aws_batch_compute_environment.gp]
 }

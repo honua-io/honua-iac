@@ -33,3 +33,19 @@ variable "mirror_repository_arn" {
   description = "Single existing operator-owned ECR mirror repository."
   type        = string
 }
+
+variable "enable_workload_role_passing" {
+  description = "Activate PassRole only after the operator has inventoried every cell-namespace role and verified its boundary. Off prevents legacy unbounded roles from escaping containment."
+  type        = bool
+  default     = false
+}
+
+variable "workload_vpc_arns" {
+  description = "Operator-verified ephemeral VPC ARNs where Lambda may manage ENIs. Empty grants no ENI creation. Plan reads each VPC and verifies cell ownership and protected tags."
+  type        = set(string)
+  default     = []
+  validation {
+    condition     = alltrue([for arn in var.workload_vpc_arns : can(regex("^arn:aws:ec2:[a-z0-9-]+:[0-9]{12}:vpc/vpc-[a-f0-9]+$", arn))])
+    error_message = "workload_vpc_arns must contain exact VPC ARNs, not wildcards."
+  }
+}

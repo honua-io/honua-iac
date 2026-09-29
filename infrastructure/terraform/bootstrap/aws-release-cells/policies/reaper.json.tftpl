@@ -23,7 +23,10 @@
         "iam:ListRolePolicies",
         "iam:ListAttachedRolePolicies",
         "iam:ListInstanceProfilesForRole",
-        "iam:ListRoleTags"
+        "iam:ListRoleTags",
+        "application-autoscaling:Describe*",
+        "application-autoscaling:ListTagsForResource",
+        "apigateway:GET"
       ],
       "Resource": "*"
     },
@@ -95,7 +98,7 @@
           "aws:ResourceTag/Owner": "release-cell"
         },
         "Null": {
-          "aws:ResourceTag/RunId": "false"
+          "aws:ResourceTag/ValidationRunId": "false"
         }
       }
     },
@@ -123,7 +126,7 @@
           "ec2:ResourceTag/Owner": "release-cell"
         },
         "Null": {
-          "ec2:ResourceTag/RunId": "false"
+          "ec2:ResourceTag/ValidationRunId": "false"
         }
       }
     },
@@ -145,7 +148,55 @@
           "aws:ResourceTag/Owner": "release-cell"
         },
         "Null": {
-          "aws:ResourceTag/RunId": "false"
+          "aws:ResourceTag/ValidationRunId": "false"
+        }
+      }
+    },
+    {
+      "Sid": "DeleteCellScaling",
+      "Effect": "Allow",
+      "Action": [
+        "application-autoscaling:DeleteScalingPolicy",
+        "application-autoscaling:DeregisterScalableTarget"
+      ],
+      "Resource": "arn:aws:application-autoscaling:${region}:${account_id}:scalable-target/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Owner": "release-cell"
+        },
+        "Null": {
+          "aws:ResourceTag/ValidationRunId": "false"
+        }
+      }
+    },
+    {
+      "Sid": "DeleteCellHttpApi",
+      "Effect": "Allow",
+      "Action": "apigateway:DELETE",
+      "Resource": "arn:aws:apigateway:${region}::/apis/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Owner": "release-cell"
+        },
+        "Null": {
+          "aws:ResourceTag/ValidationRunId": "false"
+        }
+      }
+    },
+    {
+      "Sid": "RetireCellKey",
+      "Effect": "Allow",
+      "Action": [
+        "kms:DescribeKey",
+        "kms:ScheduleKeyDeletion"
+      ],
+      "Resource": "arn:aws:kms:${region}:${account_id}:key/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Owner": "release-cell"
+        },
+        "Null": {
+          "aws:ResourceTag/ValidationRunId": "false"
         }
       }
     }

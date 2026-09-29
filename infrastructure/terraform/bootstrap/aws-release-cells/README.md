@@ -22,7 +22,8 @@ terraform plan -out=cell-identities.tfplan \
 terraform show cell-identities.tfplan
 ```
 
-The plan creates three roles, three inline policies and one workload boundary.
+The plan creates three roles, three inline grant policies, one shared guardrail policy,
+three guardrail attachments, and one workload boundary.
 It grants no access to standing state, budgets, account controls or identity
 providers. It does not create service-linked roles. Operator-created service
 linked roles and backend identities are separate prerequisites. The cell role
@@ -43,22 +44,34 @@ policy decisions for the supplied context, not end-to-end service authorization.
 
 - Provision, mirror and reap jobs use their corresponding `role_arns` output and
   protected GitHub environment. Do not share a single unrestricted trunk subject.
-- Cell resources carry `Owner=release-cell`, a nonempty `RunId`, and an ephemeral
+- Cell resources carry `Owner=release-cell`, a nonempty `ValidationRunId` in the
+  reaper format `gha-RUN_ID-aws-STACK`, and an ephemeral
   Environment. Names remain in `honuar*`, `honuan*`, or `honuaeks*` namespaces.
 - Pass `permissions_boundary_arn` to both `examples/aws` and
-  `examples/aws-serverless`. Every role these modules create retains the boundary,
-  including Batch, custom-code and scheduled-event roles. Legacy roles in these
+  `examples/aws-serverless`. Every workload role these modules create retains the boundary,
+  including Batch task, custom-code and scheduled-event roles. Bounded Batch
+  deployments must set `use_batch_service_linked_role=true` and use an
+  operator-created AWSServiceRoleForBatch infrastructure role. Legacy roles in these
   namespaces must be inventoried and bounded by the operator before PassRole is
   enabled; a name alone does not establish that an old role is safe.
+  `enable_workload_role_passing` defaults to false and only the operator can
+  activate it after that inventory.
+- Invoke the reaper with `--owner-tag release-cell`; it reads the same
+  `ValidationRunId` as the IAM contract.
 - Read-only discovery is account-wide. Mutation grants require cell tags and,
   where a service exposes names, the cell namespace. APIs that cannot supply the
   relevant tag context fail closed. Do not remove those conditions to make an
   apply succeed. Capture the actual denied API and qualify a narrow alternative.
-- This initial policy intentionally does not authorize EKS provisioning or
-  service-created untagged ENI management. Those paths still require a scoped
+- This initial policy intentionally does not authorize EKS provisioning  . That path still requires a scoped
   service-specific policy and a live positive lifecycle receipt before replacing
   the existing six-cell workflow role. The workload boundary excludes IAM and
   role chaining even if a task receives a broad inline policy.
+
+For Lambda VPC networking, an operator can add exact `workload_vpc_arns` after
+creating and tagging the ephemeral VPC. Terraform rejects standing/demo,
+unowned, wrong-account and wrong-region VPCs. ENI operations require that exact
+VPC context; an empty allowlist grants none. This two-stage setup and the
+service-linked Batch role must be qualified with real deployments before use.
 
 ## Standing stack and alerts
 

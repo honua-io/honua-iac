@@ -85,9 +85,41 @@
           "ec2:ResourceTag/Owner": "release-cell"
         },
         "Null": {
-          "ec2:ResourceTag/RunId": "false"
+          "ec2:ResourceTag/ValidationRunId": "false"
         }
       }
+    },
+    {
+      "Sid": "ReadCellEncryptionKey",
+      "Effect": "Allow",
+      "Action": [
+        "kms:Decrypt",
+        "kms:DescribeKey"
+      ],
+      "Resource": "arn:aws:kms:${region}:${account_id}:key/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Owner": "release-cell"
+        },
+        "Null": {
+          "aws:ResourceTag/ValidationRunId": "false"
+        }
+      }
+    },
+    {
+      "Sid": "CellVpcNetworking",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:CreateNetworkInterface",
+        "ec2:DeleteNetworkInterface",
+        "ec2:AssignPrivateIpAddresses",
+        "ec2:UnassignPrivateIpAddresses"
+      ],
+      "Resource": [
+        "arn:aws:ec2:${region}:${account_id}:network-interface/*",
+        "arn:aws:ec2:${region}:${account_id}:subnet/*",
+        "arn:aws:ec2:${region}:${account_id}:security-group/*"
+      ]
     }
   ]
 }

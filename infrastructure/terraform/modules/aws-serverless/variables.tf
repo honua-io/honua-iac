@@ -1178,3 +1178,9 @@ variable "permissions_boundary_arn" {
     error_message = "permissions_boundary_arn must be an IAM managed policy ARN."
   }
 }
+
+variable "use_batch_service_linked_role" {
+  description = "Use the operator-precreated AWSServiceRoleForBatch instead of a module-created infrastructure role. Required when workload permissions boundaries and GP Batch are enabled; the workload boundary must not cap AWS Batch's control plane."
+  type        = bool
+  default     = false
+}

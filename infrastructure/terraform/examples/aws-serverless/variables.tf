@@ -266,3 +266,9 @@ variable "permissions_boundary_arn" {
   type        = string
   default     = null
 }
+
+variable "use_batch_service_linked_role" {
+  description = "Use the operator-precreated AWS Batch service-linked role for bounded certification cells."
+  type        = bool
+  default     = false
+}

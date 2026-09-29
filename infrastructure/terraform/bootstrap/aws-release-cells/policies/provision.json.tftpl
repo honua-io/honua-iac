@@ -23,7 +23,10 @@
         "iam:ListRolePolicies",
         "iam:ListAttachedRolePolicies",
         "iam:ListInstanceProfilesForRole",
-        "iam:ListRoleTags"
+        "iam:ListRoleTags",
+        "application-autoscaling:Describe*",
+        "application-autoscaling:ListTagsForResource",
+        "apigateway:GET"
       ],
       "Resource": "*"
     },
@@ -58,7 +61,7 @@
           "aws:RequestTag/Owner": "release-cell"
         },
         "StringLike": {
-          "aws:RequestTag/RunId": "?*"
+          "aws:RequestTag/ValidationRunId": "?*"
         }
       }
     },
@@ -129,7 +132,7 @@
           "aws:ResourceTag/Owner": "release-cell"
         },
         "Null": {
-          "aws:ResourceTag/RunId": "false"
+          "aws:ResourceTag/ValidationRunId": "false"
         }
       }
     },
@@ -154,7 +157,7 @@
           "ec2:ResourceTag/Owner": "release-cell"
         },
         "Null": {
-          "ec2:ResourceTag/RunId": "false"
+          "ec2:ResourceTag/ValidationRunId": "false"
         }
       }
     },
@@ -172,7 +175,7 @@
           "aws:RequestTag/Owner": "release-cell"
         },
         "StringLike": {
-          "aws:RequestTag/RunId": "?*"
+          "aws:RequestTag/ValidationRunId": "?*"
         },
         "ArnEquals": {
           "iam:PermissionsBoundary": "${boundary_arn}"
@@ -197,7 +200,7 @@
           "aws:ResourceTag/Owner": "release-cell"
         },
         "Null": {
-          "aws:ResourceTag/RunId": "false"
+          "aws:ResourceTag/ValidationRunId": "false"
         }
       }
     },
@@ -233,7 +236,107 @@
         },
         "StringLike": {
           "ec2:CreateAction": "*",
-          "aws:RequestTag/RunId": "?*"
+          "aws:RequestTag/ValidationRunId": "?*"
+        }
+      }
+    },
+    {
+      "Sid": "RegisterCellScaling",
+      "Effect": "Allow",
+      "Action": [
+        "application-autoscaling:RegisterScalableTarget",
+        "application-autoscaling:TagResource"
+      ],
+      "Resource": "arn:aws:application-autoscaling:${region}:${account_id}:scalable-target/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Owner": "release-cell"
+        },
+        "StringLike": {
+          "aws:RequestTag/ValidationRunId": "gha-?*"
+        }
+      }
+    },
+    {
+      "Sid": "CellScaling",
+      "Effect": "Allow",
+      "Action": [
+        "application-autoscaling:RegisterScalableTarget",
+        "application-autoscaling:PutScalingPolicy"
+      ],
+      "Resource": "arn:aws:application-autoscaling:${region}:${account_id}:scalable-target/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Owner": "release-cell"
+        },
+        "Null": {
+          "aws:ResourceTag/ValidationRunId": "false"
+        }
+      }
+    },
+    {
+      "Sid": "CreateCellHttpApi",
+      "Effect": "Allow",
+      "Action": "apigateway:POST",
+      "Resource": "arn:aws:apigateway:${region}::/apis",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Owner": "release-cell"
+        },
+        "StringLike": {
+          "aws:RequestTag/ValidationRunId": "gha-?*"
+        }
+      }
+    },
+    {
+      "Sid": "ConfigureCellHttpApi",
+      "Effect": "Allow",
+      "Action": [
+        "apigateway:POST",
+        "apigateway:PATCH",
+        "apigateway:PUT"
+      ],
+      "Resource": "arn:aws:apigateway:${region}::/apis/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Owner": "release-cell"
+        },
+        "Null": {
+          "aws:ResourceTag/ValidationRunId": "false"
+        }
+      }
+    },
+    {
+      "Sid": "CreateCellKey",
+      "Effect": "Allow",
+      "Action": "kms:CreateKey",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Owner": "release-cell"
+        },
+        "StringLike": {
+          "aws:RequestTag/ValidationRunId": "gha-?*"
+        }
+      }
+    },
+    {
+      "Sid": "ManageCellKey",
+      "Effect": "Allow",
+      "Action": [
+        "kms:DescribeKey",
+        "kms:EnableKeyRotation",
+        "kms:GetKeyRotationStatus",
+        "kms:GetKeyPolicy",
+        "kms:PutKeyPolicy"
+      ],
+      "Resource": "arn:aws:kms:${region}:${account_id}:key/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Owner": "release-cell"
+        },
+        "Null": {
+          "aws:ResourceTag/ValidationRunId": "false"
         }
       }
     }

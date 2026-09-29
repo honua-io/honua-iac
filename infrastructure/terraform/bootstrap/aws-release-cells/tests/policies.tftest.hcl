@@ -9,9 +9,21 @@ variables {
 }
 run "policies" {
   command = plan
+  variables {
+    enable_workload_role_passing = true
+    workload_vpc_arns            = ["arn:aws:ec2:us-east-1:123456789012:vpc/vpc-0123456789abcdef0"]
+  }
+  override_data {
+    target = data.aws_vpc.workload["arn:aws:ec2:us-east-1:123456789012:vpc/vpc-0123456789abcdef0"]
+    values = { tags = { Owner = "release-cell", ValidationRunId = "gha-208-aws-serverless", Environment = "test" } }
+  }
   assert {
-    condition     = alltrue([for policy in values(output.policies) : length(policy) <= 10240])
-    error_message = "The combined inline policies must fit IAM role quotas."
+    condition     = length(local.guardrail_policy) <= 6144
+    error_message = "Shared guardrails must fit the managed policy quota."
+  }
+  assert {
+    condition     = alltrue([for policy in values(local.grant_policies) : length(policy) <= 10240])
+    error_message = "The inline grant policies must fit IAM role quotas."
   }
   assert {
     condition     = length(output.runtime_boundary) <= 6144
@@ -32,4 +44,24 @@ run "reject_shared_trust" {
     }
   }
   expect_failures = [var.oidc_subjects]
+}
+
+run "passrole_is_disabled_before_inventory" {
+  command = plan
+  assert {
+    condition     = alltrue([for statement in jsondecode(output.policies.provision).Statement : statement.Sid != "PassCellRoles"])
+    error_message = "A fresh bootstrap must not delegate an unverified legacy role."
+  }
+}
+
+run "reject_standing_network" {
+  command = plan
+  variables {
+    workload_vpc_arns = ["arn:aws:ec2:us-east-1:123456789012:vpc/vpc-0123456789abcdef0"]
+  }
+  override_data {
+    target = data.aws_vpc.workload["arn:aws:ec2:us-east-1:123456789012:vpc/vpc-0123456789abcdef0"]
+    values = { tags = { Owner = "release-cell", ValidationRunId = "gha-208-aws-serverless", Environment = "cert" } }
+  }
+  expect_failures = [aws_iam_policy.workload_boundary]
 }

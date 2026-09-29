@@ -531,7 +531,7 @@ resource "aws_batch_compute_environment" "gp_provisioning" {
 
   name         = "${local.egress_isolation_name}-prov-ce"
   type         = "MANAGED"
-  service_role = aws_iam_role.batch_service[0].arn
+  service_role = var.use_batch_service_linked_role ? null : aws_iam_role.batch_service[0].arn
 
   compute_resources {
     type               = "FARGATE_SPOT"
@@ -552,7 +552,7 @@ resource "aws_batch_compute_environment" "gp_execution" {
 
   name         = "${local.egress_isolation_name}-exec-ce"
   type         = "MANAGED"
-  service_role = aws_iam_role.batch_service[0].arn
+  service_role = var.use_batch_service_linked_role ? null : aws_iam_role.batch_service[0].arn
 
   compute_resources {
     type               = "FARGATE_SPOT"

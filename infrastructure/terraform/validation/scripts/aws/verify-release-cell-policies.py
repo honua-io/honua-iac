@@ -43,8 +43,8 @@ def main():
     function = f'arn:aws:lambda:us-east-1:{account}:function:honuarfixture-it'
     role = f'arn:aws:iam::{account}:role/honuarfixture-it'
     boundary = f'arn:aws:iam::{account}:policy/honua-release-cell-workload-boundary'
-    tags = {'aws:ResourceTag/Owner': 'release-cell', 'aws:ResourceTag/RunId': 'fixture-208'}
-    request = {'aws:RequestTag/Owner': 'release-cell', 'aws:RequestTag/RunId': 'fixture-208'}
+    tags = {'aws:ResourceTag/Owner': 'release-cell', 'aws:ResourceTag/ValidationRunId': 'fixture-208'}
+    request = {'aws:RequestTag/Owner': 'release-cell', 'aws:RequestTag/ValidationRunId': 'fixture-208'}
     cases = []
     def case(lane, name, action, resource, expected, context=None):
         cases.append((lane, name, action, resource, expected, {'aws:RequestedRegion': 'us-east-1', **(context or {})}))
@@ -59,13 +59,13 @@ def main():
         case(lane, 'no-safety-tag-removal', 'lambda:UntagResource', function, 'explicitDeny', {**tags, 'aws:TagKeys': ['Owner']})
     case('provision', 'bounded-role-create', 'iam:CreateRole', role, 'allowed', {**request, 'iam:PermissionsBoundary': boundary})
     case('provision', 'unbounded-role-create', 'iam:CreateRole', role, 'explicitDeny', request)
-    case('provision', 'missing-owner', 'iam:CreateRole', role, 'implicitDeny', {'aws:RequestTag/RunId': 'fixture-208', 'iam:PermissionsBoundary': boundary})
+    case('provision', 'missing-owner', 'iam:CreateRole', role, 'implicitDeny', {'aws:RequestTag/ValidationRunId': 'fixture-208', 'iam:PermissionsBoundary': boundary})
     case('provision', 'missing-run', 'iam:CreateRole', role, 'implicitDeny', {'aws:RequestTag/Owner': 'release-cell', 'iam:PermissionsBoundary': boundary})
     case('provision', 'update-own-cell', 'lambda:UpdateFunctionCode', function, 'allowed', tags)
     case('provision', 'no-teardown', 'lambda:DeleteFunction', function, 'implicitDeny', tags)
     case('provision', 'no-mirror-push', 'ecr:PutImage', f'arn:aws:ecr:us-east-1:{account}:repository/honua-server', 'implicitDeny')
     case('reaper', 'delete-own-cell', 'lambda:DeleteFunction', function, 'allowed', tags)
-    case('reaper', 'unowned-resource', 'lambda:DeleteFunction', function, 'implicitDeny', {'aws:ResourceTag/RunId': 'fixture-208'})
+    case('reaper', 'unowned-resource', 'lambda:DeleteFunction', function, 'implicitDeny', {'aws:ResourceTag/ValidationRunId': 'fixture-208'})
     case('reaper', 'no-run-resource', 'lambda:DeleteFunction', function, 'implicitDeny', {'aws:ResourceTag/Owner': 'release-cell'})
     case('reaper', 'outside-namespace', 'lambda:DeleteFunction', function.replace('honuarfixture', 'customer-production'), 'implicitDeny', tags)
     case('reaper', 'no-create', 'lambda:CreateFunction', function, 'implicitDeny', request)
@@ -73,6 +73,23 @@ def main():
     case('mirror', 'no-other-repository', 'ecr:PutImage', f'arn:aws:ecr:us-east-1:{account}:repository/other', 'implicitDeny')
     case('mirror', 'no-delete-mirror', 'ecr:DeleteRepository', f'arn:aws:ecr:us-east-1:{account}:repository/honua-server', 'implicitDeny')
     case('runtime', 'broad-inline-cannot-create-user', 'iam:CreateUser', f'arn:aws:iam::{account}:user/escalation', 'explicitDeny')
+    key = f'arn:aws:kms:us-east-1:{account}:key/fixture-208'
+    for lane, action in [('provision', 'kms:EnableKeyRotation'), ('reaper', 'kms:DescribeKey'), ('reaper', 'kms:ScheduleKeyDeletion'), ('runtime', 'kms:Decrypt')]:
+        case(lane, 'owned-key-' + action, action, key, 'allowed', tags)
+        case(lane, 'unowned-key-' + action, action, key, 'implicitDeny')
+    case('provision', 'tagged-key-create', 'kms:CreateKey', '*', 'allowed', request)
+    case('provision', 'untagged-key-create', 'kms:CreateKey', '*', 'implicitDeny')
+    api = 'arn:aws:apigateway:us-east-1::/apis'
+    case('provision', 'tagged-api-create', 'apigateway:POST', api, 'allowed', request)
+    case('provision', 'owned-api-update', 'apigateway:PATCH', api + '/fixture', 'allowed', tags)
+    case('reaper', 'owned-api-delete', 'apigateway:DELETE', api + '/fixture', 'allowed', tags)
+    scaling = f'arn:aws:application-autoscaling:us-east-1:{account}:scalable-target/fixture'
+    case('provision', 'tagged-scaling-create', 'application-autoscaling:RegisterScalableTarget', scaling, 'allowed', request)
+    case('reaper', 'owned-scaling-delete', 'application-autoscaling:DeregisterScalableTarget', scaling, 'allowed', tags)
+    eni = f'arn:aws:ec2:us-east-1:{account}:network-interface/eni-0123456789abcdef0'
+    for action in ['ec2:CreateNetworkInterface', 'ec2:DeleteNetworkInterface', 'ec2:AssignPrivateIpAddresses', 'ec2:UnassignPrivateIpAddresses']:
+        case('runtime', 'approved-vpc-' + action, action, eni, 'allowed', {'ec2:Vpc': f'arn:aws:ec2:us-east-1:{account}:vpc/vpc-0123456789abcdef0'})
+        case('runtime', 'other-vpc-' + action, action, eni, 'implicitDeny', {'ec2:Vpc': f'arn:aws:ec2:us-east-1:{account}:vpc/vpc-other'})
     receipts = []
     for lane, name, action, resource, expected, context in cases:
         entries = [{'ContextKeyName': k, 'ContextKeyValues': v if isinstance(v, list) else [v], 'ContextKeyType': 'stringList' if isinstance(v, list) else 'string'} for k, v in context.items()]
