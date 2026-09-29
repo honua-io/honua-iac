@@ -1,0 +1,94 @@
+# AWS release-cell identities (operator staging)
+
+This bootstrap separates provisioning, ECR mirroring, and teardown into three
+GitHub OIDC roles. Each trusts a different, exact protected environment. It does
+not update or replace `honua-release-cicd` automatically. An operator must review
+the plan, configure environment protections and migrate the callers before the
+new roles become active. Never attach PowerUserAccess to these roles.
+
+The release promise is safe AWS certification of the GA ECS/Lambda substrates:
+a disposable certification run must not modify or destroy standing certification
+or demo resources. This is the pre-cut containment work in honua-iac#208.
+
+## Plan and verify
+
+Supply the existing GitHub OIDC provider and ECR mirror repository ARNs:
+
+```sh
+terraform init -backend=false
+terraform plan -out=cell-identities.tfplan \
+  -var='oidc_provider_arn=arn:aws:iam::ACCOUNT:oidc-provider/token.actions.githubusercontent.com' \
+  -var='mirror_repository_arn=arn:aws:ecr:us-east-1:ACCOUNT:repository/honua-server'
+terraform show cell-identities.tfplan
+```
+
+The plan creates three roles, three inline policies and one workload boundary.
+It grants no access to standing state, budgets, account controls or identity
+providers. It does not create service-linked roles. Operator-created service
+linked roles and backend identities are separate prerequisites. The cell role
+cannot assume another role; each job must obtain its own web identity session.
+
+```sh
+terraform test -json -verbose > /tmp/cell-policy-tests.jsonl
+python3 ../../validation/scripts/aws/verify-release-cell-policies.py \
+  /tmp/cell-policy-tests.jsonl --receipt /tmp/cell-policy-decisions.json
+```
+
+The second command calls IAM SimulateCustomPolicy with the actual rendered
+policies and independent allow/deny fixtures. It never deletes or changes a cloud
+resource. Its caller needs `iam:SimulateCustomPolicy`. Simulator results establish
+policy decisions for the supplied context, not end-to-end service authorization.
+
+## Caller migration (required before activation)
+
+- Provision, mirror and reap jobs use their corresponding `role_arns` output and
+  protected GitHub environment. Do not share a single unrestricted trunk subject.
+- Cell resources carry `Owner=release-cell`, a nonempty `RunId`, and an ephemeral
+  Environment. Names remain in `honuar*`, `honuan*`, or `honuaeks*` namespaces.
+- Pass `permissions_boundary_arn` to both `examples/aws` and
+  `examples/aws-serverless`. Every role these modules create retains the boundary,
+  including Batch, custom-code and scheduled-event roles. Legacy roles in these
+  namespaces must be inventoried and bounded by the operator before PassRole is
+  enabled; a name alone does not establish that an old role is safe.
+- Read-only discovery is account-wide. Mutation grants require cell tags and,
+  where a service exposes names, the cell namespace. APIs that cannot supply the
+  relevant tag context fail closed. Do not remove those conditions to make an
+  apply succeed. Capture the actual denied API and qualify a narrow alternative.
+- This initial policy intentionally does not authorize EKS provisioning or
+  service-created untagged ENI management. Those paths still require a scoped
+  service-specific policy and a live positive lifecycle receipt before replacing
+  the existing six-cell workflow role. The workload boundary excludes IAM and
+  role chaining even if a task receives a broad inline policy.
+
+## Standing stack and alerts
+
+`examples/aws-cert` fixes `Owner=release-standing`, `Lifecycle=standing` and
+`Environment=cert` after caller tags and applies them as provider default tags to
+all taggable resources. IAM explicitly denies standing/demo resources, including
+EC2's service-specific tag keys; protected S3/ECR names also cover actions without
+a resource-tag context. The reaper independently excludes protected tags even
+when a disposable owner/run/expiry is accidentally also present.
+
+Actual-spend alerts are absolute $100 and $200 thresholds; the forecast alert
+remains. After the operator applies the standing-stack plan, verify both budgets
+notifications and the SNS subscriptions:
+
+```sh
+aws budgets describe-notifications-for-budget --account-id ACCOUNT \
+  --budget-name honua-cert-cert-monthly
+aws sns list-subscriptions-by-topic --region us-east-1 --topic-arn TOPIC_ARN
+```
+
+An email recipient must confirm their subscription. Empty results or
+`PendingConfirmation` are not acceptance evidence. Terraform cannot confirm an
+email subscription on the recipient's behalf.
+
+## Qualification status, 2026-09-29
+
+Read-only inspection of account `585192672263` found the existing $200 budget
+with actual 50%, 80%, 100% notifications, 73 `Environment=cert` tagged resources
+but no `Lifecycle=standing`, no SNS subscriptions in us-east-1, and the existing
+`honua-release-cicd` role still attached to PowerUserAccess. No apply was performed.
+The new role policy simulator and hermetic reaper tests do not close the live
+activation, six-cell positive lifecycle, standing-tag apply, or confirmed-alert
+criteria. These remain pre-cut work under #208, not candidate-dependent releases.
