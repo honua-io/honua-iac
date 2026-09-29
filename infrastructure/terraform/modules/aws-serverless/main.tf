@@ -64,10 +64,15 @@ resource "random_password" "db" {
 }
 
 resource "random_password" "redis_auth" {
-  count            = local.redis_create && var.redis_auth_token == "" ? 1 : 0
-  length           = 32
-  special          = true
-  override_special = "#%*()-_=+[]{}:?"
+  count       = local.redis_create && var.redis_auth_token == "" ? 1 : 0
+  length      = 32
+  special     = true
+  min_upper   = 1
+  min_lower   = 1
+  min_numeric = 1
+  min_special = 1
+  # ElastiCache AUTH accepts only this restricted special-character set.
+  override_special = "!&#$^<>-"
 }
 
 # Connection-encryption master key. Generated independently of the admin
@@ -135,6 +140,30 @@ locals {
     Licensing__LicenseContentSecretRef                  = "aws:secretsmanager:${local.pro_license_effective_secret_arn}"
     "Licensing__TrustedKeys__${var.pro_license_key_id}" = var.pro_license_trusted_public_key
   } : {}
+  # Licensing deployment mode (operator ruling, 2026-09-12; honua-server #4721).
+  # The 2026.1 candidate ships with licensing DISABLED: no license envelope, no
+  # validation, no capacity metering, and every FeatureCatalog entitlement
+  # active. The mode must be DECLARED, not inferred: with no license source the
+  # server's own default (Licensing__Mode=Enabled) resolves to the Community
+  # edition and silently gates editing/sync/streaming/geocoding, so a candidate
+  # deployed with no license inputs would look licensed-but-crippled instead of
+  # licensing-disabled.
+  #
+  # Supplying a license (enable_pro_license) is the 2026.2 path and forces
+  # Enabled, because an envelope is only meaningful to a server that loads and
+  # validates it. Otherwise var.licensing_mode decides, defaulting to Disabled.
+  licensing_mode = local.pro_license_enabled ? "Enabled" : var.licensing_mode
+  licensing_environment = {
+    Licensing__Mode = local.licensing_mode
+  }
+  # Allowlist for request-supplied secret references (honua-server #5055):
+  # indexed Security__RequestSecretReferences__<List>__<n> entries in list order.
+  # Empty lists render nothing, which keeps the server's deny-by-default policy.
+  request_secret_reference_environment = merge(
+    { for index, value in var.request_secret_reference_allowed_environment_variables : "Security__RequestSecretReferences__AllowedEnvironmentVariables__${index}" => value },
+    { for index, value in var.request_secret_reference_allowed_environment_variable_prefixes : "Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__${index}" => value },
+    { for index, value in var.request_secret_reference_allowed_secret_reference_prefixes : "Security__RequestSecretReferences__AllowedSecretReferencePrefixes__${index}" => value },
+  )
   # When GP-on-Batch is enabled, surface the DURABLE substrate to the server as a
   # ControlPlane:ExecutionWorkloads entry: the queue ARN and the per-TIER
   # job-definition ARNs (s/m/l/xl). The reconciler selects the
@@ -161,9 +190,12 @@ locals {
     ControlPlane__ExecutionWorkloads__0__ParameterEntries__5__Key   = "batch.job_definition_arn.xl"
     ControlPlane__ExecutionWorkloads__0__ParameterEntries__5__Value = aws_batch_job_definition.gp["xl"].arn
   } : {}
-  lambda_environment = merge({
+  # API Gateway is HTTPS-only, but Lambda Web Adapter's final in-process hop is HTTP.
+  # Emit HSTS for that trusted topology instead of suppressing it based on the internal scheme.
+  lambda_environment = merge({ for i, h in var.additional_allowed_hosts : "HostValidation__AllowedHosts__${i + 1}" => h }, {
     HONUA_SKIP_MIGRATIONS                                       = var.skip_migrations ? "true" : "false"
     HostValidation__AllowedHosts__0                             = "*.execute-api.${data.aws_region.current.name}.amazonaws.com"
+    SecurityHeaders__HstsHttpsOnly                              = "false"
     ConnectionStrings__DefaultConnection                        = "aws:secretsmanager:${aws_secretsmanager_secret.connection_string.arn}"
     HONUA_ADMIN_PASSWORD                                        = "aws:secretsmanager:${aws_secretsmanager_secret.admin_password.arn}"
     Security__ConnectionEncryption__MasterKey                   = "aws:secretsmanager:${aws_secretsmanager_secret.master_key.arn}"
@@ -183,7 +215,7 @@ locals {
     ControlPlane__DeployTargets__0__ParameterEntries__1__Value  = var.lambda_alias_name
     ControlPlane__DeployTargets__0__ParameterEntries__2__Key    = "aws.region"
     ControlPlane__DeployTargets__0__ParameterEntries__2__Value  = data.aws_region.current.name
-  }, local.gp_batch_environment, local.bedrock_ai_environment, var.additional_env, local.redis_secret_environment, local.xray_environment, local.pro_license_environment)
+  }, local.gp_batch_environment, local.bedrock_ai_environment, local.amazon_location_environment, var.additional_env, local.redis_secret_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment)
 }
 
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
@@ -708,6 +740,7 @@ resource "aws_apigatewayv2_api" "this" {
 resource "aws_apigatewayv2_integration" "lambda" {
   api_id                 = aws_apigatewayv2_api.this.id
   integration_type       = "AWS_PROXY"
+  integration_method     = "POST"
   integration_uri        = aws_lambda_alias.live.invoke_arn
   payload_format_version = "2.0"
   timeout_milliseconds   = min(30000, var.lambda_timeout_seconds * 1000)
@@ -733,6 +766,14 @@ resource "aws_apigatewayv2_stage" "this" {
   api_id      = aws_apigatewayv2_api.this.id
   name        = "$default"
   auto_deploy = true
+
+  # Create the initial auto-deployment only after both routes exist. Without
+  # this dependency, the stage may briefly publish an empty route table and
+  # return API Gateway 404s immediately after terraform apply completes.
+  depends_on = [
+    aws_apigatewayv2_route.root,
+    aws_apigatewayv2_route.proxy,
+  ]
 
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.api_gateway.arn

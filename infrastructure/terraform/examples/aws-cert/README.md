@@ -1,8 +1,10 @@
 # examples/aws-cert — real-AWS certification tier
 
 A Honua-owned stack that **certifies the serverless + GP-over-Batch path against
-real AWS** (no LocalStack). It mirrors `examples/aws-demo` but is purpose-built
-for certification: the durable GP Batch substrate is **on**, federation is
+real AWS** (no LocalStack). It mirrors the `stacks/aws` root in the private
+[honua-io/honua-demo](https://github.com/honua-io/honua-demo) repo (formerly
+`examples/aws-demo` here — see honua-iac#126) but is purpose-built for
+certification: the durable GP Batch substrate is **on**, federation is
 **GitHub OIDC**, and a budget guardrail caps spend.
 
 Tracks honua-iac#2164 (cert), honua-server umbrella #2166, GitOps→GP #2165.
@@ -127,9 +129,16 @@ One-time, per certification account:
 1. **Dedicated account + region.** Use an isolated AWS account (blast-radius
    containment + clean budget attribution); keep `region = us-east-1` unless the
    honua-server workflow is realigned to match.
-2. **Uncomment the S3 backend** in `versions.tf`
-   (`cert/aws-cert/terraform.tfstate`) so state is durable before the first
-   apply.
+2. **Apply the state backend, then activate it.** Apply
+   `bootstrap/aws-tfstate` on its own — with a `state_key_scopes` entry of
+   `{ stack_name = "aws-cert", environment = "cert" }` — as a separate,
+   explicitly decided operation. Then `cp backend.tf.example backend.tf` and
+   replace every placeholder with that root's outputs, so state is remote,
+   encrypted, versioned and locked before the first apply. Backend creation is
+   never a side effect of `terraform init`, and `backend.tf` is gitignored
+   because the filled-in copy names your account's bucket and role. Local state
+   cannot certify anything: the governed wrappers refuse it with
+   `REFUSED[local-state-refused]`. See [`docs/operator-state.md`](../../../../docs/operator-state.md).
 3. **Fill `terraform.tfvars`** from the example — `honua_image`,
    `honua_admin_password`, `db_password`, `budget_alert_emails`, and OIDC
    scoping (`github_oidc_subjects` defaults to the `cert` Environment sub).
@@ -153,6 +162,49 @@ jobs against them with per-job overrides — no terraform re-apply per job:
   vCPU / memory / timeout / retry as `SubmitJob` overrides.
 - `gp_compute_environment_arn`, `gp_job_role_arn`, `gp_execution_role_arn`,
   `gp_worker_gdal_repository_url`.
+
+## Operator contract (`honua.operator-contract/v1`)
+
+`operator-contract.tf` renders the three structured outputs the honua-devops
+agent consumes — `deployment_contract`, `validation_contract`,
+`operations_contract` — plus the `operator_contract` envelope, its digest, and
+its qualification status. Without them the agent can plan this root through the
+exact-plan substrate but refuses to consume it
+(`ProjectsOperatorContract = false`).
+
+The projection describes **this** stack, not the ECS one. Four differences are
+deliberate and are commented at their point of use:
+
+- `stack.runtime` is `lambda`; the workload is a Lambda alias, so
+  `workload.cluster_id` and the validation `cluster_arn` / `service_arn`
+  selectors are `null` rather than invented.
+- `rollout.current_revision` / `desired_revision` **are** projected. The ECS root
+  nulls them because a task-set revision is observed after apply; a Lambda
+  alias's function version is Terraform-owned state.
+- `rollout.canary` is disabled. The ECS/ALB weighted-cutover cell is a
+  certification fixture for the server's `AwsEcsAlbDeployBackend`, not a canary
+  of this workload, so it is reported under the contract's `extensions` block
+  alongside the GP / custom-code substrate ARNs and the artifact bucket.
+- `dependencies.object_storage` is disabled: `modules/aws-serverless` exposes no
+  Honua file-storage provider, and the cert artifact bucket is job scratch plus
+  evidence storage, not the application's object-storage backend.
+
+Two v1 fields have no honest serverless analogue and are recorded as
+"none declared" rather than guessed: `workload.cluster_name` (required
+non-empty; the stack's resource-group name stands in) and the
+`desired_count` / `max_capacity` integers (a demand-driven alias with no
+reserved concurrency declares no standing instance count).
+
+Pass `operator_contract_identity` to qualify the contract. Omit it and the
+contract is emitted with `status = "unqualified"`, which certified consumers
+must reject. The scalar outputs above are **not** superseded by the contract —
+they are the substrate runtime contract the honua-server cert fixture reads —
+so unlike `examples/aws` they carry no deprecation marker.
+
+```bash
+terraform -chdir=infrastructure/terraform/examples/aws-cert output -json \
+  | ./scripts/validate-operator-contract.sh --require-qualified -
+```
 
 ## Custom-code (UNTRUSTED user code) substrate — locked down
 
@@ -265,8 +317,371 @@ session) to drop it to $0.
 - **GP GPU is out of scope.** GPU needs an EC2 Batch compute environment; the
   cert path is Fargate-Spot. The module's `gp_gpu_enabled` flag is a placeholder
   that provisions nothing — leave it `false`.
-- **State:** uncomment the S3 backend in `versions.tf`
-  (`cert/aws-cert/terraform.tfstate`) before the first real apply.
+- **State:** copy `backend.tf.example` to `backend.tf`
+  (`honua/aws-cert/cert/terraform.tfstate`) after applying
+  `bootstrap/aws-tfstate`, before the first real apply. Remote, encrypted,
+  versioned and locked state is a precondition of certification, not a
+  convenience.
 - **Budget email subscriptions** require each subscriber to confirm via the
   AWS-sent email before alerts deliver.
 - Do not commit `terraform.tfvars`. Validated in CI; CI never runs `apply`.
+
+## Lambda GA certification substrate (release#282, ruling A)
+
+`lambda-preview-cert.tf` adds the standing substrate for the server's
+`lambda-preview-certification.yml` / `certify-lambda-preview.sh` lane. The
+historical `preview` names are retained for compatibility; Lambda is a 2026.1
+GA target. The inspected server revision is
+`2ee4eb4eca080160cad4b2f4ba97cb0c370dc17d`.
+
+**ECR login grant (coordinator ruling):** `aws ecr get-login-password` needs
+`ecr:GetAuthorizationToken`, and [AWS exposes that action only on `Resource: "*"`](https://docs.aws.amazon.com/service-authorization/latest/reference/list_ecr.html)
+— it is registry-wide and has no repository ARN form. It is granted here as its
+own statement, confined to the certification region by `aws:RequestedRegion`.
+The wildcard is not a widening of repository access: the token only
+authenticates the Docker client, and every repository operation stays bound to
+the certification repository ARN by `MirrorAndVerifyCertificationImage`. The
+policy gate permits exactly this one wildcard statement and fails on any other.
+No trust policy is widened and no OIDC subject changes.
+
+The image repository has the exact script-required name
+`honua-cert-cert-lambda-preview`, immutable tags, scan on push, AES256 encryption,
+and a lifecycle policy retaining the newest `lambda_preview_image_retention_count`
+(default **10**, positive integer) images tagged `candidate-*`. The script derives
+tags from the revision and digest and reuses existing immutable images. ECR
+expires older candidates asynchronously; retain enough for active certification
+runs. The runner cannot edit the repository policy. Its only image deletion is
+`ReplaceStaleCertificationMirrorTag`, which lets a rerun replace a stale mirror
+tag in this one repository.
+
+The lane creates `honua-certrun-lambda-<run-id>-<attempt>` with the two tags
+`honua-cert-run=<run-id>-<attempt>` and
+`honua-purpose=lambda-preview-certification`, invokes `GET /healthz/live`, checks
+CloudWatch evidence, and deletes its function and log group. The image remains
+for reuse/evidence until lifecycle expiration. These ephemeral resources are
+owned by the script and are not Terraform resources. The lane clones the
+standing function's VPC configuration (`--vpc-config`), because the candidate
+must reach the certification PostGIS over the private subnets. The execution
+role therefore carries the Lambda ENI actions, and the calling role carries
+read-only VPC describes.
+
+**Run namespace and teardown refusal.** Everything the lane creates is named
+inside `honua-certrun-lambda-*` and tagged with its own run. Teardown refuses:
+
+- to delete a function outside `honua-certrun-lambda-*` (script exit 90);
+- to delete a function whose `honua-cert-run` tag is not this run's (exit 91);
+- to delete a log group outside `/aws/lambda/honua-certrun-lambda-*` (exit 92).
+
+IAM backs those refusals up. Function create, invoke, update and delete are
+scoped to the namespace ARN and require the purpose and run tags. An existing
+run or purpose tag cannot be rewritten. On the standing function, deletion is
+allowed only on qualified version ARNs, never on the function itself. The
+policy gate guards each of these statements and its resource scope, and fails
+if a delete, `iam:PassRole`, `lambda:CreateFunction` or `lambda:TagResource`
+grant shows up in any other statement.
+
+### Licensing (operator ruling 2026-09-12 — 2026.1 certifies licensing-disabled)
+
+The 2026.1 candidate ships with licensing **disabled** (honua-server #4721,
+honua-iac #191), and the certification stack certifies it in that mode:
+`licensing_mode = "Disabled"` (the default) declares `Licensing__Mode=Disabled`,
+so the function loads and validates no license, registers no capacity meter, and
+activates every `FeatureCatalog` entitlement — including
+`editing.featureserver-edits`. A `terraform plan` with no license inputs shows
+**no license secret** and no `secretsmanager:GetSecretValue` grant for one.
+
+Verify on the alias with `GET /api/v1/admin/license` (or `/status`): it must
+report `mode=disabled`, `edition=Unlicensed-2026.1`,
+`validationState=Disabled`. An `edition=Community` here is a **failure**, not a
+fallback: it means the function ignored the declared mode, took the server's
+`Enabled` default, found no license source and gated editing — the exact shape
+that failed certification runs 28 and 29 with an in-body 402 on the
+deployed-phase `addFeatures` assertion (honua-server#4607 names the cause in
+`serving-402:`; the assertion is deliberately not relaxed).
+
+The earlier ruling A (2026-09-09) required a Pro envelope because the
+licensing-disabled mode did not yet exist. Those inputs remain wired for the
+2026.2 path and stay **off by default**:
+
+| Variable | Effect | Secret? |
+|---|---|---|
+| `licensing_mode` | declares `Licensing__Mode`; `Disabled` (default) is the 2026.1 contract | No |
+| `enable_pro_license` | forces `Licensing__Mode=Enabled`; grants the Lambda role `secretsmanager:GetSecretValue` on the license secret; injects `Licensing__LicenseContentSecretRef` and `Licensing__TrustedKeys__<pro_license_key_id>` | No |
+| `pro_license_secret_arn` | an EXISTING secret in this region holding the signed envelope (ruling A: a Secrets Manager replica of the demo stack's `honua-demo-demo/license-pro`); Terraform creates no secret and no version | No, an ARN |
+| `pro_license_key_id` | hyphen-free keyId matching the envelope (`honuademo2026q2`); a mismatch makes the envelope unverifiable | No |
+| `pro_license_trusted_public_key` | the Ed25519 public key (`base64url:` prefix); verifies only, cannot mint | No |
+| `pro_license_content` | escape hatch for Terraform to own the envelope; never commit a value | **Yes**, local secret tfvars only |
+
+Supplying an envelope forces `Licensing__Mode=Enabled`. The envelope and the
+signing seed never live in this repository, in state outputs, or in logs.
+
+`terraform.tfvars.example` points the `pro_license_content` escape hatch at a
+local secret tfvars file (`~/.config/honua/aws-cert.secret.tfvars`), but Terraform
+only auto-loads `terraform.tfvars`, `terraform.tfvars.json`, and
+`*.auto.tfvars[.json]` in the root -- that path is none of those, so plan/apply
+must pass it explicitly:
+
+```bash
+scripts/terraform-exact-plan.sh \
+  --root infrastructure/terraform/examples/aws-cert \
+  --var-file="$HOME/.config/honua/aws-cert.secret.tfvars"
+scripts/terraform-exact-apply.sh \
+  --plan infrastructure/terraform/examples/aws-cert/honua.tfplan
+```
+
+or export `TF_VAR_pro_license_content` instead of using a file. Apply targeted
+(`module.honua` and its IAM policies, the run-27 lesson: a new secret needs the
+module policies applied) and verify with the alias
+`GET /api/v1/admin/license/status` (`edition=Pro`, `validationState=Valid`)
+before dispatching the next certification run.
+
+### Static resource and IAM inventory — operator must confirm against governed state
+
+This inventory is derived from source. It is **not an executed AWS plan**. No
+AWS credentials, state, plan, or apply are used for local validation. It lists
+every Terraform resource in `lambda-preview-cert.tf`, **11 in total**. On a
+fresh certification account they are part of the full stack create. On an
+existing stack, a governed plan may only create or change addresses from this
+list. Stop on any other Lambda substrate address, any replacement, any destroy,
+or any trust difference. The policy gate fails if a resource, policy statement
+or bootstrap output in the file is missing from this section.
+
+| Terraform resource | Purpose |
+|---|---|
+| `aws_ecr_repository.lambda_preview` | Immutable, scanned image repository |
+| `aws_ecr_lifecycle_policy.lambda_preview` | Retain newest N candidate images |
+| `aws_ecr_repository_policy.lambda_preview` | Lambda service image retrieval |
+| `aws_iam_policy.lambda_preview_execution_boundary` | Bound execution to lane log streams, Lambda ENIs and the stack's own secrets |
+| `aws_iam_role.lambda_preview_execution` | Lambda-service-only execution identity |
+| `aws_iam_role_policy_attachment.lambda_preview_basic_execution` | Attach AWSLambdaBasicExecutionRole |
+| `aws_iam_role_policy_attachment.lambda_preview_vpc_access` | Attach AWSLambdaVPCAccessExecutionRole (the candidate is VPC-attached) |
+| `aws_iam_role_policy.lambda_preview_execution_secrets` | Let the candidate resolve the standing environment's secret references at boot |
+| `aws_iam_role_policy.lambda_preview_certification` | Add scoped permissions to existing certification OIDC role |
+| `aws_lambda_function_url.cert_alias` | Function URL on the standing alias; the lane's write target |
+| `aws_lambda_permission.cert_alias_function_url` | Allow Function URL invokes on that alias only |
+
+IAM notation below contains no account identifiers: `F` =
+`arn:<partition>:lambda:<region>:<account>:function:honua-certrun-lambda-*`;
+`L` = `arn:<partition>:logs:<region>:<account>:log-group:/aws/lambda/honua-certrun-lambda-*`;
+`E` = the certification repository ARN; `X` = the execution-role ARN; `S` = the
+standing certification function ARN (`module.honua.lambda_function_arn`); `K` =
+the certification stack's own secret ARNs (database connection, admin password,
+connection-encryption master key, and the optional Pro license and Redis
+connection). Account, region, and partition are Terraform-derived. All
+statements are Allow unless marked Deny. No OIDC subject or provider changes
+are introduced.
+
+| Policy / statement | Actions | Resources | Conditions / principal |
+|---|---|---|---|
+| Execution trust / LambdaServiceOnly | `sts:AssumeRole` | Implicit attached role X (trust policy has no Resource field) | Only service `lambda.amazonaws.com`; no conditions |
+| AWSLambdaBasicExecutionRole (AWS-managed) | `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents` | `*` in AWS-managed policy | None; effective permissions intersect with the boundary below |
+| Execution boundary / CertificationLogStreamsOnly | `logs:CreateLogStream`, `logs:PutLogEvents` | `L:log-stream:*` | None; runtime cannot create log groups |
+| Execution boundary / CertificationVpcEni | `ec2:CreateNetworkInterface`, `ec2:DescribeNetworkInterfaces`, `ec2:DescribeSubnets`, `ec2:DeleteNetworkInterface`, `ec2:AssignPrivateIpAddresses`, `ec2:UnassignPrivateIpAddresses` | `*` (no resource-level form; the AWSLambdaVPCAccessExecutionRole shape) | None; the policy gate allowlists exactly these six actions |
+| Execution boundary / CertificationStackSecretsRead | `secretsmanager:GetSecretValue` | K | None; no KMS grant (secrets use the AWS-managed key) |
+| AWSLambdaVPCAccessExecutionRole (AWS-managed) | ENI lifecycle actions | `*` in AWS-managed policy | None; effective permissions intersect with the boundary above |
+| Execution inline / CertificationStackSecretsRead | `secretsmanager:GetSecretValue` | K | None; the boundary above caps it to the same ARNs |
+| ECR policy / LambdaCertificationImagePull | `ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer` | E | Service `lambda.amazonaws.com`; StringEquals `aws:SourceAccount=<current account>`; ArnLike `aws:SourceArn=F` |
+| OIDC / PreserveCertificationRun (Deny) | `lambda:TagResource` | F | Null `aws:ResourceTag/honua-cert-run=false` AND StringNotEquals request run tag to existing resource run tag |
+| OIDC / PreserveCertificationPurpose (Deny) | `lambda:TagResource` | F | Null `aws:ResourceTag/honua-purpose=false` AND StringNotEquals request purpose tag to existing resource purpose tag |
+| OIDC / CreateTaggedCertificationFunction | `lambda:CreateFunction`, `lambda:TagResource` | F | StringEquals request `honua-purpose=lambda-preview-certification`; StringLike request `honua-cert-run=?*-?*`; ForAllValues:StringEquals `aws:TagKeys=[honua-cert-run,honua-purpose]` |
+| OIDC / ObserveCertificationFunction | `lambda:GetFunction`, `lambda:ListTags` | F | None (collision detection, waiters, ownership inspection, absence verification) |
+| OIDC / CertifyStandingAliasUpgradeRollback | `lambda:GetFunction`, `lambda:GetFunctionConfiguration`, `lambda:GetFunctionUrlConfig`, `lambda:GetAlias`, `lambda:ListAliases`, `lambda:ListVersionsByFunction`, `lambda:UpdateFunctionCode`, `lambda:UpdateFunctionConfiguration`, `lambda:PublishVersion`, `lambda:UpdateAlias`, `lambda:InvokeFunction`, `lambda:InvokeFunctionUrl` | S, `S:*` | None; no delete (the policy gate fails if `lambda:DeleteFunction` appears here) |
+| OIDC / DeleteOnlyStandingFunctionVersions | `lambda:DeleteFunction` | `S:*` only (qualified version ARNs, never the function) | None; the lane deletes only the version it published |
+| OIDC / CertificationVpcDescribe | `ec2:DescribeSubnets`, `ec2:DescribeSecurityGroups`, `ec2:DescribeVpcs`, `ec2:DescribeNetworkInterfaces` | `*` (read-only; no resource-level form) | None; Lambda validates the VPC config with the caller's credentials |
+| OIDC / InvokeAndDeleteTaggedCertificationFunction | `lambda:InvokeFunction`, `lambda:DeleteFunction`, `lambda:UpdateFunctionConfiguration` (cold-start nonce, honua-server#4548) | F | StringEquals resource `honua-purpose=lambda-preview-certification`; StringLike resource `honua-cert-run=?*-?*` |
+| OIDC / PassOnlyCertificationExecutionRole | `iam:PassRole` | X | StringEquals `iam:PassedToService=lambda.amazonaws.com` |
+| OIDC / EcrAuthorizationTokenGlobal | `ecr:GetAuthorizationToken` | `*` (AWS supports no resource-level form) | StringEquals `aws:RequestedRegion=<var.region>`; token authenticates only, repository access still bound to E below |
+| OIDC / ReplaceStaleCertificationMirrorTag | `ecr:DescribeImages`, `ecr:BatchDeleteImage` | E | None; a rerun replaces a stale immutable mirror tag in this repository only |
+| OIDC / MirrorAndVerifyCertificationImage | `ecr:DescribeImages`, `ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer`, `ecr:GetRepositoryPolicy`, `ecr:BatchCheckLayerAvailability`, `ecr:InitiateLayerUpload`, `ecr:UploadLayerPart`, `ecr:CompleteLayerUpload`, `ecr:PutImage` | E | StringEquals resource `honua-purpose=lambda-preview-certification` |
+| OIDC / CertificationLogGroupLifecycle | `logs:CreateLogGroup`, `logs:PutRetentionPolicy`, `logs:FilterLogEvents`, `logs:DeleteLogGroup` | `L:*` | None (the script creates untagged log groups) |
+| Function URL permission / AllowCertificationFunctionUrlInvoke | `lambda:InvokeFunctionUrl` | The standing alias only | Principal `*` with `function_url_auth_type=NONE`; the server authenticates every request with its API key |
+
+The [managed basic policy](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AWSLambdaBasicExecutionRole.html)
+is explicitly requested by ruling A. The execution boundary caps both managed
+policies to writes on the precreated lane log streams, the six Lambda ENI
+actions, and reads of the stack's own secrets. The [repository service policy](https://docs.aws.amazon.com/lambda/latest/dg/images-create.html#images-permissions)
+is installed by Terraform, so the runner does not need `ecr:SetRepositoryPolicy`.
+`logs:DescribeLogGroups` is already allowed by the existing component's
+`CloudWatchReadGlobal`; no global read grant is added. The pre-existing policy
+statements remain unchanged and are not part of the incremental IAM table.
+
+IAM enforces namespace plus purpose/run tags, not exact session ownership: the
+workflow uses a fixed OIDC role-session name without run-specific session tags.
+The script checks the exact run tag before function deletion and checks log-name
+ownership before deleting the untagged log group. Existing run/purpose tags
+cannot be changed through the new tagging grant. The run-tag pattern requires
+nonempty components around a hyphen; numeric validation belongs to GitHub's run
+identifiers. A caller with this role can still operate on other correctly tagged
+functions in this dedicated lane namespace.
+
+### Operator handoff
+
+Apply is **operator-run only**, after publishing a fingerprint-only plan summary
+to the release evidence thread and reviewing the exact saved plan against the
+existing governed backend. Confirm that every Lambda substrate address in the plan
+appears in the 11-resource inventory above, and that there are **no destroys**.
+Stop on any unexpected change, replacement, or trust difference. Do not create
+a new empty state for this existing stack. No local validation command applies
+infrastructure. Do not treat this packet as a passing GA receipt; it is the
+substrate the lane needs, not a certification result.
+
+After the reviewed operator apply, set these **repository variables**:
+
+| Terraform output | Repository variable | Workflow/script environment |
+|---|---|---|
+| `REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN` | `REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN` | `HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN` |
+| `REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY` | `REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY` | `HONUA_LAMBDA_PREVIEW_REPOSITORY` |
+| `REALAWS_CERT_LAMBDA_FUNCTION` | `REALAWS_CERT_LAMBDA_FUNCTION` | `REALAWS_CERT_LAMBDA_FUNCTION` (standing function name) |
+| `REALAWS_CERT_LAMBDA_ALIAS` | `REALAWS_CERT_LAMBDA_ALIAS` | `REALAWS_CERT_LAMBDA_ALIAS` (standing alias name) |
+| `REALAWS_CERT_LAMBDA_WRITE_BASE_URL` | `REALAWS_CERT_LAMBDA_WRITE_BASE_URL` | `HONUA_LAMBDA_WRITE_BASE_URL` |
+| `github_oidc_role_arn` (existing) | `REALAWS_CERT_ROLE_ARN` (existing) | OIDC role-to-assume |
+
+These are every variable the workflow's "Require the certified bootstrap" step
+checks that this stack owns. The remaining one, `HONUA_DEMO_BASE_URL`, belongs to
+the demo deployment, not to this stack. Each `REALAWS_CERT_LAMBDA_*` output is
+named for the repository variable it populates. The workflow reads
+`vars.REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY` and
+`vars.REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN`, then passes them to the
+script as `HONUA_LAMBDA_PREVIEW_REPOSITORY` and
+`HONUA_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN`. It passes
+`vars.REALAWS_CERT_LAMBDA_WRITE_BASE_URL` as `HONUA_LAMBDA_WRITE_BASE_URL`. Do
+not create repository variables under the script names. Check that `cert` Environment variables do not override
+these repository values. Keep the existing `REALAWS_CERT_REGION` aligned with
+the stack — the ECR authorization-token grant is conditioned on that region.
+
+```bash
+for name in \
+  REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN \
+  REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY \
+  REALAWS_CERT_LAMBDA_FUNCTION \
+  REALAWS_CERT_LAMBDA_ALIAS \
+  REALAWS_CERT_LAMBDA_WRITE_BASE_URL; do
+  terraform -chdir=infrastructure/terraform/examples/aws-cert output -raw "$name" |
+    gh variable set "$name" --repo honua-io/honua-server
+done
+```
+
+Run without shell tracing. Outputs are piped directly to GitHub; publish only
+fingerprints in evidence, never raw account identifiers, ARNs/URIs, or state.
+Local checks are `terraform fmt -check -recursive infrastructure/terraform`,
+`terraform init -backend=false -input=false` followed by `terraform validate`
+in this root, and the existing
+`infrastructure/terraform/validation/scripts/shared/test-terraform-policy-gate.sh`.
+The policy-gate tests include negative mutations for this substrate's IAM guards,
+covering the run namespace, the tag-preservation deny, confinement of destructive
+and identity-passing actions, OIDC trust isolation, and this inventory.
+
+### Certification serving fixture — recorded, sha-pinned seed apply
+
+The apply host needs Bash and `python3` (or `python`) with pip to build the PostGIS bootstrap package.
+
+The lane's serving smoke asserts **all ten named rows and the exact count** on
+`test_service/0` and writes its run-owned row to the scratch layer
+`test_service/10` (`scripts/cloud/lambda-certification.md`). Nothing else in
+this stack seeds a Honua serving fixture: `real-aws-certification.tf` covers the
+control plane and `ecs-alb-cert.tf` runs nginx. So the cert database has to
+carry honua-server's client-compat snapshot,
+[`tests/seed/client-compat-v1.sql`](https://github.com/honua-io/honua-server/blob/trunk/tests/seed/client-compat-v1.sql)
+— the same fixture `docker/client-compat/seed/run.sh` applies — before the lane
+runs. **Missing or drifted fixture data fails the run.**
+
+The cert RDS instance lives in private subnets, so the apply host cannot reach
+it. The seed therefore goes in through the same in-VPC `postgis-bootstrap`
+Lambda that enables PostGIS, in its `script` mode:
+
+| Event key | Contract |
+|---|---|
+| `script_url` | https URL of the SQL file, pinned to an immutable commit. Fetched over the VPC's existing NAT egress; a redirect off https is refused. 8 MB ceiling. |
+| `script_sha256` | Lowercase hex sha256 of those exact bytes. **Required** with `script_url`; a mismatch aborts before any database session is opened. |
+| `script` | Inline SQL alternative (mutually exclusive with `script_url`), for ad-hoc maintenance. |
+
+The Lambda splits the file with a dollar-quote / string / comment-aware splitter
+— `client-compat-v1.sql` is 52 KB with two `$$` bodies whose plpgsql contains
+`;` and `END;`, so `split(";")` would corrupt it — and runs every statement
+inside **one transaction**. All-or-nothing: a half-applied fixture would fail the
+lane's exact-count assertions in a way that looks like a server defect. A script
+that manages transactions itself (`BEGIN`/`COMMIT`/`SAVEPOINT`/…) is refused
+rather than half-applied, and an unterminated literal, identifier, dollar quote
+or block comment is refused rather than truncated.
+
+Seeding is **off by default** (both variables empty). To enable it:
+
+```bash
+# 1. Pick the honua-server revision whose fixture this cert database should
+#    carry, and take the digest from the file at that exact commit.
+SEED_REF=<40-hex honua-server commit sha>
+git -C ../honua-server show "$SEED_REF:tests/seed/client-compat-v1.sql" | sha256sum
+# Without a checkout, read the same bytes through the GitHub API:
+gh api "repos/honua-io/honua-server/contents/tests/seed/client-compat-v1.sql?ref=$SEED_REF" \
+  --jq .content | base64 -d | sha256sum
+```
+
+```hcl
+# 2. terraform.tfvars — the URL names the bytes, the digest proves them.
+cert_fixture_seed_url    = "https://raw.githubusercontent.com/honua-io/honua-server/<40-hex sha>/tests/seed/client-compat-v1.sql"
+cert_fixture_seed_sha256 = "<64-hex sha256 from step 1>"
+```
+
+A `raw.githubusercontent.com` URL carrying a branch or tag instead of a commit
+sha is rejected at plan time: the bytes behind it change without the Terraform
+input changing, which is exactly the unrecorded apply this step replaces.
+
+**To bump the fixture to a newer server revision**, change both variables
+together. Terraform re-invokes the Lambda whenever the invocation input changes,
+so the new seed is applied on the next apply. Every statement in
+`client-compat-v1.sql` is idempotent (`CREATE ... IF NOT EXISTS`, `ON CONFLICT
+DO UPDATE`), so re-applying converges the fixture — it does not reset unrelated
+standing data. Changing only the digest fails the fetch verification; changing
+only the URL fails the plan-time pin check.
+
+What the apply records, so evidence can state which server revision's fixture
+this cert database carries:
+
+| Output | Contents |
+|---|---|
+| `cert_fixture_seed_applied` | `url`, verified `sha256`, `bytes`, `committed`, `statement_count`, `rows_affected` — `null` when seeding is disabled |
+| `cert_fixture_seed_result` | The Lambda's full per-statement result (index, bounded statement echo, row count) |
+| `cert_fixture_seed_source` | The pinned `url`, `sha256` and `seeding_enabled`, reported whether or not this apply invoked the seed — the record of which fixture revision this database carries |
+
+`client-compat-v1.sql` at honua-server `ecc83d115` is 52,187 bytes and applies as
+**69 statements**; publish the digest and statement count, never raw state.
+
+**Turning seeding off does not unseed the database.** Destroying the invocation
+performs no API call, so nothing undoes SQL already committed to RDS — and a
+resource that has left the configuration keeps no state to read back, so the
+pinned inputs are the only place a durable record can live. Turn seeding off
+with the flag, not by emptying the URL:
+
+```hcl
+# Stop re-applying the fixture; keep the record of what the database carries.
+cert_fixture_seed_enabled = false
+cert_fixture_seed_url     = "https://raw.githubusercontent.com/honua-io/honua-server/<40-hex sha>/tests/seed/client-compat-v1.sql"
+cert_fixture_seed_sha256  = "<64-hex sha256>"
+```
+
+`cert_fixture_seed_applied` and `cert_fixture_seed_result` describe *the apply
+that ran*, so they necessarily read `null` once the invocation leaves state;
+`cert_fixture_seed_source` still names the pinned revision, and `plan` warns
+that the stack holds a fixture it is no longer applying. Emptying
+`cert_fixture_seed_url` stops seeding just the same, but takes that record with
+it — every output then reads `null` while the database still carries the last
+fixture applied, which means *this stack is no longer naming a fixture
+revision*, not *this database has no fixture*. Capture the evidence from the
+apply that seeded it, and to stop carrying a fixture at all, destroy and
+recreate the stack.
+
+No new IAM, network or egress is granted: the seed rides the bootstrap Lambda's
+existing Secrets Manager HTTPS egress rule and its existing role. The invocation
+depends on `aws_lambda_invocation.postgis_bootstrap`, so PostGIS exists before
+the snapshot's `GEOMETRY` columns are created, and the two share the function's
+single reserved concurrent execution.
+
+The splitter and the fetch/verify path have stdlib-only unit tests that need
+neither the deployment zip nor a database:
+
+```bash
+python3 infrastructure/terraform/examples/aws-cert/postgis-bootstrap/test_handler.py
+# Optionally split the real fixture too:
+HONUA_CERT_SEED_SQL=../honua-server/tests/seed/client-compat-v1.sql \
+  python3 infrastructure/terraform/examples/aws-cert/postgis-bootstrap/test_handler.py
+```

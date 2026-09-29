@@ -806,6 +806,7 @@ run_tf() {
       -e TF_VAR_environment \
       -e TF_VAR_name_prefix \
       -e TF_VAR_honua_admin_password \
+      -e TF_VAR_honua_connection_encryption_master_key \
       -e TF_VAR_db_password \
       -e TF_VAR_existing_db_endpoint \
       -e TF_VAR_existing_db_connection_string \
@@ -1214,6 +1215,77 @@ verify_protocol_endpoints() {
   fi
 
   log_info "Protocol/admin smoke checks passed for $normalized"
+}
+
+# Assert the LIVE server agrees with the licensing contract the module declared
+# (honua-iac #191, honua-server #4721). The 2026.1 candidate ships with
+# licensing disabled: the harness and the cloud parity/certification cells
+# supply no license inputs, so the admin surface must report mode "disabled" and
+# edition "Unlicensed-2026.1".
+#
+# The expected values are honua-server's published contract, not a snapshot of
+# whatever this deployment happens to return. In particular a Community edition
+# is a FAILURE and not a benign fallback: it means the server loaded its own
+# Licensing__Mode=Enabled default, found no license source, and silently gated
+# editing/sync/streaming/geocoding on a deployment that is supposed to have
+# every entitlement active.
+#
+# Export HONUA_EXPECTED_LICENSING_MODE=enabled to validate a licensed stack.
+verify_licensing_mode() {
+  local base_url="$1"
+  local expected_mode="${HONUA_EXPECTED_LICENSING_MODE:-disabled}"
+  local normalized
+  local response_file
+  local status
+  local body
+  local mode
+  local edition
+  local validation_state
+
+  normalized="$(normalize_base_url "$base_url")"
+  response_file="$(mktemp)"
+  status="$(curl -sS -o "$response_file" -w "%{http_code}" --max-time 20 \
+    -H "X-API-Key: $HONUA_ADMIN_PASSWORD" \
+    "${normalized}/api/v1/admin/license" || true)"
+
+  if [[ "$status" != "200" ]]; then
+    body="$(tr '\n' ' ' < "$response_file" | sed 's/[[:space:]]\+/ /g' | cut -c1-200)"
+    rm -f "$response_file"
+    log_error "Licensing check failed: GET /api/v1/admin/license returned HTTP $status (${body:-no-body})"
+    return 1
+  fi
+
+  body="$(tr -d '\n\r' < "$response_file")"
+  rm -f "$response_file"
+
+  if command -v jq >/dev/null 2>&1; then
+    mode="$(printf '%s' "$body" | jq -r '.data.mode // ""' 2>/dev/null || printf '')"
+    edition="$(printf '%s' "$body" | jq -r '.data.edition // ""' 2>/dev/null || printf '')"
+    validation_state="$(printf '%s' "$body" | jq -r '.data.validationState // ""' 2>/dev/null || printf '')"
+  else
+    mode="$(printf '%s' "$body" | grep -o '"mode"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n 1 | sed 's/.*"\([^"]*\)"$/\1/')"
+    edition="$(printf '%s' "$body" | grep -o '"edition"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n 1 | sed 's/.*"\([^"]*\)"$/\1/')"
+    validation_state="$(printf '%s' "$body" | grep -o '"validationState"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n 1 | sed 's/.*"\([^"]*\)"$/\1/')"
+  fi
+
+  if [[ "$mode" != "$expected_mode" ]]; then
+    log_error "Licensing check failed: admin license reports mode '${mode:-<absent>}', expected '$expected_mode'"
+    return 1
+  fi
+
+  if [[ "$expected_mode" == "disabled" ]]; then
+    if [[ "$edition" != "Unlicensed-2026.1" ]]; then
+      log_error "Licensing check failed: mode is disabled but edition is '${edition:-<absent>}', expected 'Unlicensed-2026.1' (a Community edition here means the server fell back instead of running licensing-disabled)"
+      return 1
+    fi
+
+    if [[ "$validation_state" != "Disabled" ]]; then
+      log_error "Licensing check failed: mode is disabled but validationState is '${validation_state:-<absent>}', expected 'Disabled'"
+      return 1
+    fi
+  fi
+
+  log_info "Licensing check passed for $normalized (mode=$mode, edition=${edition:-<absent>}, validationState=${validation_state:-<absent>})"
 }
 
 json_escape() {
@@ -2043,6 +2115,12 @@ clear_data_reuse_cache() {
 }
 
 set_common_tf_vars() {
+  # $1 is the stack role this apply belongs to. It becomes a Stack tag so the
+  # reaper can tell the throwaway compute stacks apart from the shared data
+  # stack, which --keep-data deliberately retains for a later run's reuse
+  # (#142). Without it a run-scoped teardown cannot reap its own ECS/serverless
+  # cell without also destroying the data stack it was told to keep.
+  local stack_role="${1:?set_common_tf_vars requires a stack role}"
   EXPIRES_AT_UTC="$(date -u -d "+${TTL_HOURS} hours" +%Y-%m-%dT%H:%M:%SZ)"
 
   ensure_existing_db_connection_string_shape
@@ -2053,6 +2131,7 @@ set_common_tf_vars() {
   export TF_VAR_region="$REGION"
   export TF_VAR_environment="$ENVIRONMENT"
   export TF_VAR_honua_admin_password="$HONUA_ADMIN_PASSWORD"
+  export TF_VAR_honua_connection_encryption_master_key="$HONUA_ADMIN_PASSWORD"
   export TF_VAR_db_password="$HONUA_DB_PASSWORD"
   export TF_VAR_existing_db_endpoint="$EXISTING_DB_ENDPOINT"
   export TF_VAR_existing_db_connection_string="$EXISTING_DB_CONNECTION_STRING"
@@ -2077,12 +2156,12 @@ set_common_tf_vars() {
   else
     export TF_VAR_db_additional_ingress_cidrs="[\"$DB_INGRESS_CIDR\"]"
   fi
-  export TF_VAR_tags="{\"ValidationRunId\":\"$VALIDATION_RUN_ID\",\"TTLHours\":\"$TTL_HOURS\",\"ExpiresAtUTC\":\"$EXPIRES_AT_UTC\",\"Owner\":\"terraform-validation\"}"
+  export TF_VAR_tags="{\"ValidationRunId\":\"$VALIDATION_RUN_ID\",\"TTLHours\":\"$TTL_HOURS\",\"ExpiresAtUTC\":\"$EXPIRES_AT_UTC\",\"Owner\":\"terraform-validation\",\"Stack\":\"$stack_role\"}"
 }
 
 set_ecs_tf_vars() {
   ensure_existing_vpc_private_egress
-  set_common_tf_vars
+  set_common_tf_vars "ecs"
   export TF_VAR_name_prefix="$ECS_NAME_PREFIX"
   export TF_VAR_honua_image="$ECS_IMAGE"
   export TF_VAR_desired_count="$ECS_DESIRED_COUNT"
@@ -2102,7 +2181,7 @@ set_ecs_tf_vars() {
 
 set_serverless_tf_vars() {
   ensure_existing_vpc_private_egress
-  set_common_tf_vars
+  set_common_tf_vars "serverless"
   export TF_VAR_name_prefix="$SERVERLESS_NAME_PREFIX"
   export TF_VAR_honua_image_uri="$SERVERLESS_IMAGE"
   export TF_VAR_skip_migrations="true"
@@ -2119,7 +2198,7 @@ set_serverless_tf_vars() {
 }
 
 set_data_tf_vars() {
-  set_common_tf_vars
+  set_common_tf_vars "data"
   export TF_VAR_name_prefix="$DATA_NAME_PREFIX"
   export TF_VAR_existing_db_endpoint=""
   export TF_VAR_existing_db_connection_string=""
@@ -2181,6 +2260,7 @@ run_ecs_checks() {
   wait_for_ready "$url" "$TIMEOUT_SECONDS"
   if [[ "$CHECK_PROTOCOLS" == "true" ]]; then
     verify_protocol_endpoints "$url"
+    verify_licensing_mode "$url"
     run_admin_api_crud_smoke "$url" "$db_endpoint"
   fi
   verify_postgis_extensions "$db_endpoint"
@@ -2245,6 +2325,7 @@ run_serverless_checks() {
   wait_for_ready "$url" "$TIMEOUT_SECONDS"
   if [[ "$CHECK_PROTOCOLS" == "true" ]]; then
     verify_protocol_endpoints "$url"
+    verify_licensing_mode "$url"
     run_admin_api_crud_smoke "$url" "$db_endpoint"
   fi
   verify_postgis_extensions "$db_endpoint"
@@ -2729,4 +2810,9 @@ main() {
   log_info "AWS Terraform integration checks completed successfully"
 }
 
-main "$@"
+# Run only when executed. Sourcing loads the helpers without running the
+# harness, so hermetic tests (test-licensing-mode-check.sh) can exercise single
+# verification functions against fake binaries.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi

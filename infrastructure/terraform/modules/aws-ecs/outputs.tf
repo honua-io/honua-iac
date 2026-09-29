@@ -65,7 +65,7 @@ output "control_plane_target_kind" {
 
 output "control_plane_backend_name" {
   description = "Recommended Honua control-plane backend identifier for this environment."
-  value       = "honua-gitops-aws-ecs"
+  value       = var.deployment_safety == null ? "honua-gitops-aws-ecs" : "honua-aws-ecs-alb"
 }
 
 output "control_plane_telemetry_policy" {
@@ -81,6 +81,16 @@ output "control_plane_telemetry_prometheus_job" {
 output "control_plane_telemetry_prometheus_canary_job" {
   description = "Recommended Prometheus job label for canary Honua traffic when wiring control-plane rollback gates."
   value       = var.canary_enabled ? "honua-canary" : null
+}
+
+output "licensing_mode" {
+  description = "The licensing deployment mode declared to the server as Licensing__Mode. \"Disabled\" is the 2026.1 contract (no license, no metering, all entitlements active); \"Enabled\" loads and validates a license envelope."
+  value       = local.licensing_mode
+}
+
+output "pro_license_secret_arn" {
+  description = "ARN of the Secrets Manager secret holding the signed Pro license envelope, or null when no envelope is configured (the 2026.1 licensing-disabled contract). The module never creates, reads or deletes this secret."
+  value       = local.pro_license_enabled ? trimspace(var.pro_license_secret_arn) : null
 }
 
 output "db_endpoint" {
@@ -119,4 +129,52 @@ output "redis_primary_endpoint" {
   description = "Redis primary endpoint address (if created)."
   value       = local.redis_create ? aws_elasticache_replication_group.redis[0].primary_endpoint_address : null
   sensitive   = true
+}
+
+output "multi_node_topology_ready" {
+  description = "True when deployment_mode=MultiNode, Redis, and shared AwsS3 file storage are all configured, i.e. more than one task is actually permitted to serve traffic concurrently."
+  # local.multi_node_topology_ready is tainted sensitive only because it
+  # compares the sensitive redis_connection_string to "", not because
+  # readiness itself is secret.
+  value = nonsensitive(local.multi_node_topology_ready)
+}
+
+output "alb_health_check" {
+  description = "ALB target group health check settings that gate traffic to a task (shared by the primary and canary target groups)."
+  value = {
+    path                = aws_lb_target_group.this.health_check[0].path
+    interval_seconds    = aws_lb_target_group.this.health_check[0].interval
+    timeout_seconds     = aws_lb_target_group.this.health_check[0].timeout
+    healthy_threshold   = aws_lb_target_group.this.health_check[0].healthy_threshold
+    unhealthy_threshold = aws_lb_target_group.this.health_check[0].unhealthy_threshold
+  }
+}
+
+output "container_health_check_start_period_seconds" {
+  description = "Container health check warmup window (ECS startPeriod, seconds) before failed health checks count against a task."
+  value       = local.container_health_check.startPeriod
+}
+
+output "deployment_rollback" {
+  description = "ECS startup circuit breaker settings. AWS performs rollback independently of candidate startup, but requires a prior COMPLETED deployment and provides no post-activation functional recovery or time bound."
+  value = {
+    mechanism                = "aws-ecs-deployment-circuit-breaker"
+    primary_rollback_enabled = aws_ecs_service.this.deployment_circuit_breaker[0].rollback
+    canary_rollback_enabled  = local.canary_enabled ? aws_ecs_service.canary[0].deployment_circuit_breaker[0].rollback : null
+  }
+}
+
+output "task_definition_revision_retention" {
+  description = "Prior task definition revision retention policy. skip_destroy retains registered revisions across replacement and destroy. Images, secret versions and compatible data must also be retained externally; registration alone does not prove recoverability."
+  value       = "unbounded-until-manually-deregistered"
+}
+
+output "cache_configured" {
+  description = "Whether managed or external Redis is configured (not a live readiness assertion)."
+  value       = nonsensitive(local.redis_enabled)
+}
+
+output "database_managed" {
+  description = "Whether this module manages RDS, including the resolved operator database inputs."
+  value       = nonsensitive(!local.db_use_existing)
 }

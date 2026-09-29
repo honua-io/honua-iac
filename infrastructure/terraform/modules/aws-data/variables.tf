@@ -148,10 +148,23 @@ variable "redis_enabled" {
 }
 
 variable "redis_auth_token" {
-  description = "Redis auth token. Leave empty to auto-generate."
+  description = "Redis auth token. Leave empty to auto-generate. Must be 16-128 characters using letters, digits, or ElastiCache-supported special characters (!&#$^<>-)."
   type        = string
   default     = ""
   sensitive   = true
+
+  validation {
+    condition = var.redis_auth_token == "" || (
+      length(var.redis_auth_token) >= 16 &&
+      length(var.redis_auth_token) <= 128 &&
+      can(regex("^[A-Za-z0-9!&#$^<>-]+$", var.redis_auth_token)) &&
+      length([
+        for pattern in ["[A-Z]", "[a-z]", "[0-9]", "[!&#$^<>-]"] : pattern
+        if can(regex(pattern, var.redis_auth_token))
+      ]) >= 3
+    )
+    error_message = "redis_auth_token must be 16-128 characters, contain only letters, digits, or !&#$^<>-, and use at least three character classes."
+  }
 }
 
 variable "redis_node_type" {

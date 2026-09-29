@@ -100,6 +100,16 @@ output "db_connection_secret_arn" {
   value       = aws_secretsmanager_secret.connection_string.arn
 }
 
+output "admin_password_secret_arn" {
+  description = "Secrets Manager ARN for the admin password."
+  value       = aws_secretsmanager_secret.admin_password.arn
+}
+
+output "master_key_secret_arn" {
+  description = "Secrets Manager ARN for the connection-encryption master key (resolved by the Lambda at startup)."
+  value       = aws_secretsmanager_secret.master_key.arn
+}
+
 output "lambda_security_group_id" {
   description = "Security group ID attached to the Honua Lambda function."
   value       = aws_security_group.lambda.id
@@ -123,6 +133,11 @@ output "redis_connection_string" {
 output "redis_connection_secret_arn" {
   value     = local.redis_connection != "" ? aws_secretsmanager_secret.redis_connection[0].arn : null
   sensitive = true
+}
+
+output "licensing_mode" {
+  description = "The licensing deployment mode declared to the server as Licensing__Mode. \"Disabled\" is the 2026.1 contract (no license, no metering, all entitlements active); \"Enabled\" loads and validates a license."
+  value       = local.licensing_mode
 }
 
 output "pro_license_enabled" {
@@ -162,6 +177,23 @@ output "dashboard_url" {
 output "xray_tracing_enabled" {
   description = "Whether X-Ray active tracing is enabled on the Lambda function."
   value       = var.enable_xray_tracing
+}
+
+# --- Amazon Location geocoding outputs (honua-server#2948) -----------------
+
+output "amazon_location_geocoding_enabled" {
+  description = "Whether the Amazon Location place index and Lambda IAM grant were provisioned."
+  value       = local.amazon_location_geocoding_enabled
+}
+
+output "amazon_location_place_index_name" {
+  description = "Name of the Amazon Location place index (null when disabled). The caller uses this to name/tag a matching VPC interface endpoint for com.amazonaws.<region>.geo if the Lambda has no general internet egress."
+  value       = local.amazon_location_geocoding_enabled ? local.amazon_location_place_index_name : null
+}
+
+output "amazon_location_place_index_arn" {
+  description = "ARN of the Amazon Location place index (null when disabled)."
+  value       = local.amazon_location_place_index_arn
 }
 
 # --- GP on AWS Batch (Fargate Spot) outputs --------------------------------

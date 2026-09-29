@@ -11,8 +11,17 @@ on:
       - 'scripts/run-k8s-terraform-integration.sh'
       - 'scripts/run-terraform-drift-detection.sh'
       - 'scripts/terraform-policy-gate.sh'
+      - 'scripts/validate-operator-contract.sh'
+      - 'scripts/test-operator-contract.sh'
       - 'scripts/check-marketplace-paths.sh'
+      - 'scripts/check-tfvars-examples.sh'
+      - 'scripts/check-backend-examples.sh'
       - 'scripts/package-customer-dist.sh'
+      - 'scripts/new-terraform-lineage-contract.ps1'
+      - 'scripts/terraform-exact-plan.sh'
+      - 'scripts/terraform-exact-apply.sh'
+      - 'scripts/terraform-backend-identity.sh'
+      - 'scripts/lib/tf-exec-contract.sh'
       - 'scripts/smoke-customer-dist.sh'
       - 'scripts/capture-dr-drill-evidence.sh'
       - 'scripts/capture-runbook-evidence.sh'
@@ -21,6 +30,8 @@ on:
       - 'scripts/tf-secrets.local.example.sh'
       - 'scripts/write-cloud-demo-smoke-env-summary.mjs'
       - 'docs/devops/terraform-validation.md'
+      - 'docs/devops/aws-deployment-safety.md'
+      - 'docs/devops/terraform-exact-plan-contract.md'
       - 'docs/devops/backup-restore-runbook.md'
       - 'docs/devops/failover-drill-runbook.md'
       - 'docs/devops/manual-cloud-runbook-validation.md'
@@ -28,6 +39,8 @@ on:
       - 'docs/devops/cloud-runbook-evidence-template.json'
       - 'docs/devops/examples/**'
       - 'docs/operator-deployment.md'
+      - 'docs/operator-contract.md'
+      - 'docs/operator-state.md'
       - '.github/workflows/cloud-demo-smoke.yml'
       - '.github/workflows/terraform-ci.yml'
       - '.github/workflows/terraform-manual-validation.yml'
@@ -43,8 +56,17 @@ on:
       - 'scripts/run-k8s-terraform-integration.sh'
       - 'scripts/run-terraform-drift-detection.sh'
       - 'scripts/terraform-policy-gate.sh'
+      - 'scripts/validate-operator-contract.sh'
+      - 'scripts/test-operator-contract.sh'
       - 'scripts/check-marketplace-paths.sh'
+      - 'scripts/check-tfvars-examples.sh'
+      - 'scripts/check-backend-examples.sh'
       - 'scripts/package-customer-dist.sh'
+      - 'scripts/new-terraform-lineage-contract.ps1'
+      - 'scripts/terraform-exact-plan.sh'
+      - 'scripts/terraform-exact-apply.sh'
+      - 'scripts/terraform-backend-identity.sh'
+      - 'scripts/lib/tf-exec-contract.sh'
       - 'scripts/smoke-customer-dist.sh'
       - 'scripts/capture-dr-drill-evidence.sh'
       - 'scripts/capture-runbook-evidence.sh'
@@ -53,6 +75,8 @@ on:
       - 'scripts/tf-secrets.local.example.sh'
       - 'scripts/write-cloud-demo-smoke-env-summary.mjs'
       - 'docs/devops/terraform-validation.md'
+      - 'docs/devops/aws-deployment-safety.md'
+      - 'docs/devops/terraform-exact-plan-contract.md'
       - 'docs/devops/backup-restore-runbook.md'
       - 'docs/devops/failover-drill-runbook.md'
       - 'docs/devops/manual-cloud-runbook-validation.md'
@@ -60,6 +84,8 @@ on:
       - 'docs/devops/cloud-runbook-evidence-template.json'
       - 'docs/devops/examples/**'
       - 'docs/operator-deployment.md'
+      - 'docs/operator-contract.md'
+      - 'docs/operator-state.md'
       - '.github/workflows/cloud-demo-smoke.yml'
       - '.github/workflows/terraform-ci.yml'
       - '.github/workflows/terraform-manual-validation.yml'
@@ -76,6 +102,57 @@ env:
   TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
 
 jobs:
+  terraform-1-5-validate:
+    name: Terraform 1.5 Floor Validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore Terraform plugin cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: terraform-1.5-plugin-cache-${{ runner.os }}-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            terraform-1.5-plugin-cache-${{ runner.os }}-
+
+      - name: Ensure Terraform plugin cache directory
+        run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
+
+      - name: Setup Terraform 1.5
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.7
+
+      - name: Terraform init/validate at declared floor
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          roots=(
+            "infrastructure/terraform/examples/aws"
+            "infrastructure/terraform/examples/aws-serverless"
+            "infrastructure/terraform/examples/azure"
+            "infrastructure/terraform/examples/azure-functions"
+            "infrastructure/terraform/modules/aws-serverless"
+          )
+
+          for root in "${roots[@]}"; do
+            echo "::group::terraform 1.5 init ($root)"
+            terraform -chdir="$root" init -backend=false -input=false -no-color
+            echo "::endgroup::"
+
+            echo "::group::terraform 1.5 validate ($root)"
+            terraform -chdir="$root" validate -no-color
+            echo "::endgroup::"
+          done
+
+      - name: Operator tfvars example contract at declared floor
+        shell: bash
+        run: ./scripts/check-tfvars-examples.sh
+
   static-validate:
     name: Static Terraform Validate
     runs-on: ubuntu-latest
@@ -138,6 +215,9 @@ jobs:
             "infrastructure/terraform/bootstrap/azure-aks"
             "infrastructure/terraform/bootstrap/azure-support-access"
             "infrastructure/terraform/bootstrap/aws-ecs"
+            "infrastructure/terraform/bootstrap/aws-tfstate"
+            "infrastructure/terraform/bootstrap/aws-terraform-oidc"
+            "infrastructure/terraform/bootstrap/aws-exec-identity"
             "infrastructure/terraform/bootstrap/aws-serverless"
             "infrastructure/terraform/bootstrap/aws-eks"
             "infrastructure/terraform/bootstrap/aws-support-access"
@@ -146,7 +226,6 @@ jobs:
             "infrastructure/terraform/examples/azure-functions"
             "infrastructure/terraform/examples/aws"
             "infrastructure/terraform/examples/aws-serverless"
-            "infrastructure/terraform/examples/aws-demo"
             "infrastructure/terraform/examples/aws-cert"
             "infrastructure/terraform/examples/azure-cert"
             "infrastructure/terraform/examples/aws-data"
@@ -187,12 +266,49 @@ jobs:
         shell: bash
         run: ./scripts/check-marketplace-paths.sh
 
-      - name: Multi-node topology contract tests
+      # `terraform validate` never reads a tfvars file, so the loop above cannot
+      # tell that a root's terraform.tfvars.example still assigns every required
+      # variable. This checks the documented copy-and-plan flow statically, with
+      # no cloud credentials.
+      - name: Operator tfvars example contract
+        shell: bash
+        run: ./scripts/check-tfvars-examples.sh
+
+      # honua-iac#149 made remote state with locking a precondition of the AWS
+      # release lane, so a root that ships no backend.tf.example cannot be
+      # planned through the governed wrappers at all. Static, no credentials.
+      - name: Operator backend example contract
+        shell: bash
+        run: ./scripts/check-backend-examples.sh
+
+      - name: Backend example gate regression test (refusal rules)
+        shell: bash
+        run: ./infrastructure/terraform/validation/scripts/shared/test-backend-examples.sh
+
+      # The aws-cert postgis-bootstrap Lambda applies the certification serving
+      # fixture as one transaction, so its SQL splitter and sha256 verification
+      # decide whether a 52 KB seed lands intact. Stdlib-only: no zip, no
+      # database, no credentials. See examples/aws-cert/README.md.
+      - name: PostGIS bootstrap unit tests (build, SQL splitter, script verification)
+        shell: bash
+        run: python3 -m unittest discover -s infrastructure/terraform/examples/aws-cert/postgis-bootstrap -p 'test_*.py'
+
+      - name: Module contract tests (multi-node topology, licensing mode)
         shell: bash
         run: |
           set -euo pipefail
           terraform -chdir=infrastructure/terraform/modules/aws-ecs test -no-color
+          terraform -chdir=infrastructure/terraform/examples/aws test -json -verbose > "$RUNNER_TEMP/aws-safety-tests.jsonl"
+          node infrastructure/terraform/validation/scripts/shared/test-deployment-safety-output.mjs "$RUNNER_TEMP/aws-safety-tests.jsonl"
+          terraform -chdir=infrastructure/terraform/modules/aws-serverless test -no-color
           terraform -chdir=infrastructure/terraform/modules/azure-aca test -no-color
+
+      - name: Post-apply caller and named-evidence contract
+        shell: bash
+        run: python3 infrastructure/terraform/validation/scripts/shared/test-platform-post-apply-validation.py
+      - name: Operator contract v1 fixtures and negative tests
+        shell: bash
+        run: ./infrastructure/terraform/validation/scripts/shared/test-operator-contract.sh
 
       - name: Customer distribution tarball smoke test (terraform init each packaged example)
         shell: bash
@@ -235,6 +351,25 @@ jobs:
       - name: Policy-gate regression test (gate pass/fail logic)
         shell: bash
         run: ./infrastructure/terraform/validation/scripts/shared/test-terraform-policy-gate.sh
+
+      # The infra reaper deletes live cloud resources, so its refusal rules are
+      # the thing under test: run against a fake AWS + fake gh, no credentials,
+      # no network. See #142.
+      - name: Live licensing-mode check regression test (Community fallback refusal)
+        shell: bash
+        run: ./infrastructure/terraform/validation/scripts/aws/test-licensing-mode-check.sh
+
+      - name: Validation infra reaper regression test (refusal rules)
+        shell: bash
+        run: ./infrastructure/terraform/validation/scripts/aws/test-sweep-orphaned-validation-infra.sh
+
+      # The exact-plan/apply wrappers decide whether a customer-account mutation
+      # may start, so their fail-closed matrix is the thing under test. Runs
+      # fully offline against a fake terraform and fixtures: no credentials, no
+      # network, no real state. See honua-iac#149.
+      - name: Governed execution substrate regression test (fail-closed matrix)
+        shell: bash
+        run: ./infrastructure/terraform/validation/scripts/shared/test-terraform-exact-plan.sh
 
       - name: Run Terraform policy gate script
         shell: bash

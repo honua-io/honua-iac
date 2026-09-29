@@ -4,6 +4,21 @@ data "aws_availability_zones" "available" {
 
 locals {
   name = "${var.name_prefix}-${var.environment}"
+
+  # A module-managed CMK is minted only when secret encryption is on AND the caller did not
+  # hand us a key to reuse. Ephemeral parity/validation clusters turn encryption off entirely
+  # (honua-release#127): every destroyed cluster's CMK sits in PendingDeletion for the 7 days
+  # AWS refuses to shorten, billing the whole time, and nothing in the parity suite asserts
+  # anything about envelope-encrypted secrets. A caller that DOES need the encryption path
+  # exercised without a key per cell passes a long-lived key ARN instead.
+  create_secret_encryption_key = var.cluster_secret_encryption_enabled && var.cluster_secret_encryption_key_arn == ""
+
+  secret_encryption_key_arn = local.create_secret_encryption_key ? one(aws_kms_key.eks[*].arn) : var.cluster_secret_encryption_key_arn
+
+  cluster_encryption_config = var.cluster_secret_encryption_enabled ? {
+    provider_key_arn = local.secret_encryption_key_arn
+    resources        = ["secrets"]
+  } : {}
   tags = merge({
     Project     = "honua-server"
     Environment = var.environment
@@ -52,6 +67,8 @@ module "vpc" {
 #checkov:skip=CKV2_AWS_64: The default AWS KMS key policy is sufficient for this module's EKS secret encryption key.
 resource "aws_kms_key" "eks" {
   #checkov:skip=CKV2_AWS_64: The default AWS KMS key policy is sufficient for this module's EKS secret encryption key.
+  count = local.create_secret_encryption_key ? 1 : 0
+
   description             = "EKS secret encryption key for ${local.name}"
   deletion_window_in_days = 7
   enable_key_rotation     = true
@@ -70,10 +87,9 @@ module "eks" {
   cluster_endpoint_private_access          = true
   enable_cluster_creator_admin_permissions = var.enable_cluster_creator_admin_permissions
 
-  cluster_encryption_config = {
-    provider_key_arn = aws_kms_key.eks.arn
-    resources        = ["secrets"]
-  }
+  # The key is ours (or the caller's); never let the upstream module mint a second one.
+  create_kms_key            = false
+  cluster_encryption_config = local.cluster_encryption_config
 
   cluster_addons = {
     coredns = {

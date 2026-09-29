@@ -49,13 +49,13 @@ variable "cluster_version" {
 variable "node_instance_types" {
   description = "Managed node group instance types."
   type        = list(string)
-  default     = ["t4g.small"]
+  default     = ["t3.medium"]
 }
 
 variable "node_cpu_architecture" {
-  description = "CPU architecture for the managed node group."
+  description = "CPU architecture for the managed node group. X86_64 is the release-certified default."
   type        = string
-  default     = "ARM64"
+  default     = "X86_64"
 }
 
 variable "node_min_size" {
@@ -92,4 +92,16 @@ variable "enable_cluster_creator_admin_permissions" {
   description = "Whether the identity creating the EKS cluster should receive admin permissions."
   type        = bool
   default     = false
+}
+
+variable "cluster_secret_encryption_enabled" {
+  description = "Whether Kubernetes secrets are envelope-encrypted with a KMS CMK. Ephemeral parity cells set false (honua-release#127)."
+  type        = bool
+  default     = true
+}
+
+variable "cluster_secret_encryption_key_arn" {
+  description = "Existing KMS CMK ARN to encrypt Kubernetes secrets with. Empty creates a module-managed key."
+  type        = string
+  default     = ""
 }

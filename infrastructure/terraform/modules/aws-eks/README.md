@@ -11,6 +11,21 @@ Provisions a minimal Amazon EKS cluster and VPC for integration validation flows
 - EKS control plane
 - EKS managed node group
 
+## Secret encryption
+
+By default the module mints a KMS CMK and uses it to envelope-encrypt Kubernetes
+secrets — the production shape. That is the wrong default for a cluster that
+lives for an hour: `terraform destroy` can only *schedule* a CMK for deletion,
+7 days is the shortest window AWS accepts, and the key bills the whole time
+(honua-release#127). Two knobs:
+
+- `cluster_secret_encryption_enabled = false` — no CMK is created and no
+  `encryption_config` is set. Use this for ephemeral parity/validation cells,
+  which certify nothing about envelope encryption.
+- `cluster_secret_encryption_key_arn = "arn:aws:kms:..."` — encrypt with a
+  long-lived key created once and never destroyed. Use this instead when the
+  cells *are* meant to keep the encryption path under test.
+
 ## Example
 
 ```hcl

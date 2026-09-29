@@ -1,0 +1,41 @@
+# Remote state for the AWS ECS/Fargate stack.
+#
+# Copy to backend.tf ONLY after `bootstrap/aws-tfstate` has been applied, then
+# replace every placeholder with that root's outputs. Backend creation is a
+# separate, explicitly applied operation -- `terraform init` must never be the
+# thing that creates the bucket.
+#
+# The key below is exclusive to this stack + environment. Never point two stacks
+# or two environments at the same key.
+#
+# Locking: `use_lockfile = true` is the S3 native lock object and requires
+# Terraform >= 1.10. If you are pinned below 1.10, apply the bootstrap with
+# `lock_mode = "dynamodb"` and swap the commented `dynamodb_table` line in.
+#
+# Do not commit the activated backend.tf with environment-specific details, and
+# never place credentials here -- the executor federates through STS.
+
+terraform {
+  backend "s3" {
+    bucket       = "REPLACE_WITH_STATE_BUCKET_NAME"
+    key          = "honua/aws/prod/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
+
+    # Customer-managed key from the bootstrap, when kms_key_arn was set.
+    # kms_key_id = "REPLACE_WITH_STATE_KMS_KEY_ARN"
+
+    # Terraform 1.5-1.9 fallback. Requires lock_mode = "dynamodb" (or "both")
+    # in bootstrap/aws-tfstate, and drop use_lockfile above.
+    # dynamodb_table = "REPLACE_WITH_STATE_LOCK_TABLE_NAME"
+
+    # Backend access is its own role. The process credential must already be
+    # the deployment role from bootstrap/aws-exec-identity. This block assumes
+    # only the backend-access role, and the two roles must differ. Do not add
+    # a provider assume_role: the exact-plan receipt binds the process caller.
+    assume_role = {
+      role_arn = "REPLACE_WITH_BACKEND_ACCESS_ROLE_ARN"
+    }
+  }
+}

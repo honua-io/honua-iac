@@ -168,8 +168,19 @@ variable "enable_lambda_insights" {
   default     = false
 }
 
+variable "licensing_mode" {
+  description = "Licensing deployment mode declared to the server as Licensing__Mode. Defaults to Disabled: the 2026.1 contract is no license envelope, no capacity metering, every entitlement active."
+  type        = string
+  default     = "Disabled"
+
+  validation {
+    condition     = contains(["Disabled", "Enabled"], var.licensing_mode)
+    error_message = "licensing_mode must be \"Disabled\" or \"Enabled\"."
+  }
+}
+
 variable "enable_pro_license" {
-  description = "Deliver a signed Pro license to the Lambda via Secrets Manager so editing/sync/streaming/geocoding work. Off by default (Community)."
+  description = "Deliver a signed Pro license to the Lambda via Secrets Manager and set Licensing__Mode=Enabled. Off by default; with no envelope the deployment runs with licensing disabled (all entitlements active), not Community."
   type        = bool
   default     = false
 }

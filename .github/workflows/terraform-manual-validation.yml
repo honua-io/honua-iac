@@ -3,6 +3,21 @@ name: Terraform Manual Validation
 on:
   workflow_dispatch:
     inputs:
+      candidate_ref:
+        description: "Exact 40-character honua-iac commit SHA to validate"
+        required: false
+        type: string
+        default: ""
+      honua_server_ref:
+        description: "Exact 40-character honua-server commit SHA whose validation suite is used"
+        required: false
+        type: string
+        default: ""
+      aws_ecs_image:
+        description: "Candidate ECS image override (release trains pass the manifest-pinned image)"
+        required: false
+        type: string
+        default: ""
       cloud:
         description: "Cloud target"
         required: true
@@ -68,6 +83,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: terraform-manual-validation-${{ github.ref }}-${{ inputs.cloud }}-${{ inputs.deployment_profile }}
@@ -75,6 +91,7 @@ concurrency:
 
 env:
   TF_IN_AUTOMATION: true
+  HONUA_SERVER_REF: ${{ inputs.honua_server_ref || '' }}
   AZURE_VALIDATION_REGION: ${{ vars.HONUA_AZURE_VALIDATION_REGION || 'westus' }}
   AWS_VALIDATION_REGION: ${{ vars.HONUA_AWS_VALIDATION_REGION || 'us-east-1' }}
   AZURE_VALIDATION_STACK: ${{ vars.HONUA_AZURE_VALIDATION_STACK || 'both' }}
@@ -119,13 +136,36 @@ env:
   HONUA_DRIFT_VAR_FILES: ${{ vars.HONUA_DRIFT_VAR_FILES || '' }}
 
 jobs:
+  resolve-candidate:
+    name: Resolve immutable candidate
+    runs-on: ubuntu-latest
+    outputs:
+      candidate_sha: ${{ steps.resolve.outputs.candidate_sha }}
+    steps:
+      - name: Validate candidate SHA
+        id: resolve
+        env:
+          REQUESTED_REF: ${{ inputs.candidate_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate_sha="${REQUESTED_REF:-$GITHUB_SHA}"
+          if [[ ! "$candidate_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "candidate_ref must be an exact lowercase 40-character commit SHA; received '$candidate_sha'" >&2
+            exit 1
+          fi
+          echo "candidate_sha=$candidate_sha" >> "$GITHUB_OUTPUT"
+
   static-validate:
     name: Static Terraform Validate
+    needs: resolve-candidate
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -180,12 +220,14 @@ jobs:
 
   policy-gates:
     name: Terraform Policy Gates
-    needs: static-validate
+    needs: [resolve-candidate, static-validate]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -238,7 +280,7 @@ jobs:
 
   azure-live:
     name: Azure Live Validation
-    needs: policy-gates
+    needs: [resolve-candidate, policy-gates]
     if: ${{ inputs.run_live && (inputs.cloud == 'both' || inputs.cloud == 'azure') }}
     runs-on: ubuntu-latest
     timeout-minutes: 240
@@ -257,17 +299,36 @@ jobs:
       HONUA_AZURE_REGISTRY_USERNAME: ${{ secrets.HONUA_AZURE_REGISTRY_USERNAME || '' }}
       HONUA_AZURE_REGISTRY_PASSWORD: ${{ secrets.HONUA_AZURE_REGISTRY_PASSWORD || '' }}
       HONUA_AZURE_DATA_CACHE_FILE: ${{ github.workspace }}/.gha-cache/azure-data-reuse.env
-      HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/run-cloud-post-apply-validation.sh
+      HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/cloud/run-cloud-post-apply-validation.sh
       HONUA_PLATFORM_VALIDATION_IMPORT_TABLE_PREFIX: ${{ inputs.deployment_profile == 'ephemeral' && inputs.no_destroy == false && format('cloud{0}{1}', github.run_id, github.run_attempt) || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
       - name: Checkout honua-server platform validation suite
         uses: actions/checkout@v4
         with:
           repository: honua-io/honua-server
+          ref: ${{ inputs.honua_server_ref || 'trunk' }}
           path: honua-server
+
+      - name: Verify honua-server candidate checkout
+        if: ${{ inputs.honua_server_ref != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$HONUA_SERVER_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "honua_server_ref must be an exact 40-character commit SHA"
+            exit 1
+          fi
+          actual="$(git -C honua-server rev-parse HEAD)"
+          if [[ "$actual" != "$HONUA_SERVER_REF" ]]; then
+            echo "honua-server checkout mismatch: expected $HONUA_SERVER_REF, got $actual"
+            exit 1
+          fi
+          echo "honua-server exact checkout: $actual"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -282,9 +343,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ github.workspace }}/.gha-cache/azure-data-reuse.env
-          key: terraform-manual-validation-azure-data-${{ github.ref_name }}-${{ env.AZURE_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: terraform-manual-validation-azure-data-${{ needs.resolve-candidate.outputs.candidate_sha }}-${{ env.AZURE_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            terraform-manual-validation-azure-data-${{ github.ref_name }}-${{ env.AZURE_VALIDATION_REGION }}-
+            terraform-manual-validation-azure-data-${{ needs.resolve-candidate.outputs.candidate_sha }}-${{ env.AZURE_VALIDATION_REGION }}-
 
       - name: Validate required credentials (Azure)
         shell: bash
@@ -555,6 +616,13 @@ jobs:
               "$FUNCTIONS_ARM_SUBSCRIPTION_ID"
           fi
 
+      - name: Upload Azure post-apply evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-post-apply-azure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: honua-server/tests/TestResults/post-apply/**/*.trx
+          if-no-files-found: ignore
       - name: Upload Azure plan artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -582,11 +650,11 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ github.workspace }}/.gha-cache/azure-data-reuse.env
-          key: terraform-manual-validation-azure-data-${{ github.ref_name }}-${{ env.AZURE_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: terraform-manual-validation-azure-data-${{ needs.resolve-candidate.outputs.candidate_sha }}-${{ env.AZURE_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
 
   aws-live:
     name: AWS Live Validation
-    needs: policy-gates
+    needs: [resolve-candidate, policy-gates]
     if: ${{ inputs.run_live && (inputs.cloud == 'both' || inputs.cloud == 'aws') }}
     runs-on: ubuntu-latest
     timeout-minutes: 240
@@ -597,23 +665,42 @@ jobs:
       BOOTSTRAP_AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
       HONUA_ADMIN_PASSWORD: ${{ secrets.HONUA_ADMIN_PASSWORD }}
       HONUA_DB_PASSWORD: ${{ secrets.HONUA_DB_PASSWORD }}
-      HONUA_AWS_ECS_IMAGE: ${{ vars.HONUA_AWS_ECS_IMAGE || '' }}
+      HONUA_AWS_ECS_IMAGE: ${{ inputs.aws_ecs_image || vars.HONUA_AWS_ECS_IMAGE || '' }}
       HONUA_AWS_ECS_PREVIOUS_IMAGE: ${{ vars.HONUA_AWS_ECS_PREVIOUS_IMAGE || '' }}
       HONUA_AWS_ECS_CANARY_IMAGE: ${{ vars.HONUA_AWS_ECS_CANARY_IMAGE || '' }}
       HONUA_AWS_SERVERLESS_IMAGE: ${{ vars.HONUA_AWS_SERVERLESS_IMAGE || '' }}
       HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE: ${{ vars.HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE || '' }}
       HONUA_AWS_DATA_CACHE_FILE: ${{ github.workspace }}/.gha-cache/aws-data-reuse.env
-      HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/run-cloud-post-apply-validation.sh
+      HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/cloud/run-cloud-post-apply-validation.sh
       HONUA_PLATFORM_VALIDATION_IMPORT_TABLE_PREFIX: ${{ inputs.deployment_profile == 'ephemeral' && inputs.no_destroy == false && format('cloud{0}{1}', github.run_id, github.run_attempt) || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
       - name: Checkout honua-server platform validation suite
         uses: actions/checkout@v4
         with:
           repository: honua-io/honua-server
+          ref: ${{ inputs.honua_server_ref || 'trunk' }}
           path: honua-server
+
+      - name: Verify honua-server candidate checkout
+        if: ${{ inputs.honua_server_ref != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$HONUA_SERVER_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "honua_server_ref must be an exact 40-character commit SHA"
+            exit 1
+          fi
+          actual="$(git -C honua-server rev-parse HEAD)"
+          if [[ "$actual" != "$HONUA_SERVER_REF" ]]; then
+            echo "honua-server checkout mismatch: expected $HONUA_SERVER_REF, got $actual"
+            exit 1
+          fi
+          echo "honua-server exact checkout: $actual"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -628,9 +715,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ github.workspace }}/.gha-cache/aws-data-reuse.env
-          key: terraform-manual-validation-aws-data-${{ github.ref_name }}-${{ env.AWS_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: terraform-manual-validation-aws-data-${{ needs.resolve-candidate.outputs.candidate_sha }}-${{ env.AWS_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            terraform-manual-validation-aws-data-${{ github.ref_name }}-${{ env.AWS_VALIDATION_REGION }}-
+            terraform-manual-validation-aws-data-${{ needs.resolve-candidate.outputs.candidate_sha }}-${{ env.AWS_VALIDATION_REGION }}-
 
       - name: Validate required credentials (AWS)
         shell: bash
@@ -681,6 +768,11 @@ jobs:
           bootstrap_root="$RUNNER_TEMP/bootstrap/aws"
           plan_root="$RUNNER_TEMP/plans/aws"
           mkdir -p "$bootstrap_root" "$plan_root"
+
+          # Tag per-run bootstrap principals so the orphan sweeper can find
+          # and expire them if this job dies before cleanup runs.
+          bootstrap_expires_at="$(date -u -d "+${HONUA_TTL_HOURS} hours" +%Y-%m-%dT%H:%M:%SZ)"
+          bootstrap_tags="{Owner=\"terraform-validation\",ValidationRunId=\"gha-${GITHUB_RUN_ID}-aws-bootstrap\",ExpiresAtUTC=\"${bootstrap_expires_at}\"}"
 
           requested_stack="$AWS_VALIDATION_STACK"
           case "$requested_stack" in
@@ -758,7 +850,8 @@ jobs:
             terraform -chdir="$target_dir" apply -input=false -auto-approve -no-color \
               -var "aws_region=${AWS_VALIDATION_REGION}" \
               -var "create_access_key=true" \
-              -var "user_name=${user_name}"
+              -var "user_name=${user_name}" \
+              -var "tags=${bootstrap_tags}"
           }
 
           read_bootstrap_output() {
@@ -893,6 +986,13 @@ jobs:
               "$SERVERLESS_AWS_SECRET_ACCESS_KEY"
           fi
 
+      - name: Upload AWS post-apply evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-post-apply-aws-${{ github.run_id }}-${{ github.run_attempt }}
+          path: honua-server/tests/TestResults/post-apply/**/*.trx
+          if-no-files-found: ignore
       - name: Upload AWS plan artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -920,11 +1020,116 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ github.workspace }}/.gha-cache/aws-data-reuse.env
-          key: terraform-manual-validation-aws-data-${{ github.ref_name }}-${{ env.AWS_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: terraform-manual-validation-aws-data-${{ needs.resolve-candidate.outputs.candidate_sha }}-${{ env.AWS_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+
+      # Teardown on the failure path (#142). The in-script EXIT trap destroys on
+      # a normal failure, but it cannot run at all when the runner is cancelled
+      # or lost, and when terraform's own destroy errors the script only warns:
+      # either way the cell -- NAT gateway, ALB, RDS, ElastiCache, VPC -- keeps
+      # billing. This step runs whatever happened, reaps this run's own cell
+      # straight through the AWS API (revoking security group rules and sweeping
+      # detached ENIs, the two dependencies that make a naive destroy loop stall
+      # on DependencyViolation), and writes whatever survived into the job
+      # summary so nobody has to discover it by tag sweep a fortnight later.
+      #
+      # --this-run waives the run-completed and grace-window checks for exactly
+      # the ids named here: the job knows its own run is over because it is the
+      # one ending. Nothing else in the account is in scope.
+      - name: Reap this run's AWS validation cell (always)
+        if: ${{ always() && inputs.no_destroy == false }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REUSE_DATA_STACK: ${{ inputs.reuse_data_stack }}
+        run: |
+          set -uo pipefail
+
+          if [[ ! -x ./infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-infra.sh ]]; then
+            echo "::warning::The candidate ref predates the validation infra reaper; this run's cell will be reaped by the scheduled sweep instead."
+            exit 0
+          fi
+
+          if [[ -z "${BOOTSTRAP_AWS_ACCESS_KEY_ID:-}" || -z "${BOOTSTRAP_AWS_SECRET_ACCESS_KEY:-}" ]]; then
+            echo "AWS bootstrap credentials not configured; nothing to reap."
+            exit 0
+          fi
+
+          export AWS_ACCESS_KEY_ID="$BOOTSTRAP_AWS_ACCESS_KEY_ID"
+          export AWS_SECRET_ACCESS_KEY="$BOOTSTRAP_AWS_SECRET_ACCESS_KEY"
+          export AWS_SESSION_TOKEN="$BOOTSTRAP_AWS_SESSION_TOKEN"
+
+          args=(
+            --region "$AWS_VALIDATION_REGION"
+            --this-run
+            --no-defer-on-active
+            --run-id "gha-${GITHUB_RUN_ID}-aws-ecs"
+            --run-id "gha-${GITHUB_RUN_ID}-aws-serverless"
+            --summary-file "$GITHUB_STEP_SUMMARY"
+          )
+
+          # reuse_data_stack keeps the shared PostGIS/Redis data stack alive on
+          # purpose for a later run with the same candidate sha. Restricting the
+          # run-scoped reap to the compute stacks is what lets teardown-on-
+          # failure and data reuse coexist; the retained data stack is the
+          # scheduled reaper's job once its ExpiresAtUTC has elapsed.
+          # HONUA_AWS_KEEP_DATA is belt and braces: the CLI flag above always
+          # wins in this workflow, but if a repo variable ever turns retention on
+          # behind the flag's back, the reap must still not take the data stack.
+          if [[ "$REUSE_DATA_STACK" == "true" || "${HONUA_AWS_KEEP_DATA:-false}" == "true" ]]; then
+            args+=(--stack ecs --stack serverless)
+          fi
+
+          ./infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-infra.sh "${args[@]}" \
+            || echo "::warning::Validation cell teardown left resources behind; see the job summary. The scheduled reaper will retry."
+
+      # The in-step EXIT trap above cannot run to completion when the job is
+      # cancelled or times out, which historically leaked per-run IAM users
+      # with active access keys (#129). This step runs even on cancellation,
+      # re-drives the bootstrap destroy from the state left on disk, and then
+      # purges this run's bootstrap users by name so a crash before the state
+      # file was written cannot strand credentials-bearing principals either.
+      - name: Ensure bootstrap identities are destroyed (always)
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          if [[ -z "${BOOTSTRAP_AWS_ACCESS_KEY_ID:-}" || -z "${BOOTSTRAP_AWS_SECRET_ACCESS_KEY:-}" ]]; then
+            echo "AWS bootstrap credentials not configured; nothing to clean up."
+            exit 0
+          fi
+
+          export AWS_ACCESS_KEY_ID="$BOOTSTRAP_AWS_ACCESS_KEY_ID"
+          export AWS_SECRET_ACCESS_KEY="$BOOTSTRAP_AWS_SECRET_ACCESS_KEY"
+          export AWS_SESSION_TOKEN="$BOOTSTRAP_AWS_SESSION_TOKEN"
+          export AWS_REGION="$AWS_VALIDATION_REGION"
+          export AWS_DEFAULT_REGION="$AWS_VALIDATION_REGION"
+
+          status=0
+
+          for stack in ecs serverless; do
+            dir="$RUNNER_TEMP/bootstrap/aws/$stack"
+            if [[ -f "$dir/terraform.tfstate" ]]; then
+              echo "Ensuring AWS bootstrap identity for stack '$stack' is destroyed"
+              terraform -chdir="$dir" destroy -input=false -auto-approve -no-color || status=1
+            fi
+          done
+
+          ./infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-iam.sh \
+            --user "honua-tf-ecs-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --user "honua-tf-sls-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --protect-run-id "gha-${GITHUB_RUN_ID}-aws-ecs" \
+            --protect-run-id "gha-${GITHUB_RUN_ID}-aws-serverless" \
+            --protect-run-id "gha-${GITHUB_RUN_ID}-aws-bootstrap" \
+            --skip-log-groups \
+            || status=1
+
+          exit "$status"
 
   k8s-live:
     name: Kubernetes Live Validation
-    needs: policy-gates
+    needs: [resolve-candidate, policy-gates]
     if: ${{ inputs.run_live && inputs.run_k8s }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -936,6 +1141,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -1036,7 +1243,7 @@ jobs:
 
   aks-live:
     name: AKS Live Validation
-    needs: policy-gates
+    needs: [resolve-candidate, policy-gates]
     if: ${{ inputs.run_live && inputs.run_aks && (inputs.cloud == 'both' || inputs.cloud == 'azure') }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
@@ -1052,16 +1259,35 @@ jobs:
       HONUA_AZURE_REGISTRY_RESOURCE_ID: ${{ vars.HONUA_AZURE_REGISTRY_RESOURCE_ID || '' }}
       HONUA_AZURE_REGISTRY_USERNAME: ${{ secrets.HONUA_AZURE_REGISTRY_USERNAME || '' }}
       HONUA_AZURE_REGISTRY_PASSWORD: ${{ secrets.HONUA_AZURE_REGISTRY_PASSWORD || '' }}
-      HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/run-cloud-post-apply-validation.sh
+      HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/cloud/run-cloud-post-apply-validation.sh
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
       - name: Checkout honua-server platform validation suite
         uses: actions/checkout@v4
         with:
           repository: honua-io/honua-server
+          ref: ${{ inputs.honua_server_ref || 'trunk' }}
           path: honua-server
+
+      - name: Verify honua-server candidate checkout
+        if: ${{ inputs.honua_server_ref != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$HONUA_SERVER_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "honua_server_ref must be an exact 40-character commit SHA"
+            exit 1
+          fi
+          actual="$(git -C honua-server rev-parse HEAD)"
+          if [[ "$actual" != "$HONUA_SERVER_REF" ]]; then
+            echo "honua-server checkout mismatch: expected $HONUA_SERVER_REF, got $actual"
+            exit 1
+          fi
+          echo "honua-server exact checkout: $actual"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -1228,6 +1454,13 @@ jobs:
           HONUA_VALIDATION_RUN_ID="gha-${{ github.run_id }}-aks" \
           ./infrastructure/terraform/validation/scripts/azure/run-aks-terraform-integration.sh "${args[@]}"
 
+      - name: Upload AKS post-apply evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-post-apply-aks-${{ github.run_id }}-${{ github.run_attempt }}
+          path: honua-server/tests/TestResults/post-apply/**/*.trx
+          if-no-files-found: ignore
       - name: Upload AKS plan artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -1238,7 +1471,7 @@ jobs:
 
   eks-live:
     name: EKS Live Validation
-    needs: policy-gates
+    needs: [resolve-candidate, policy-gates]
     if: ${{ inputs.run_live && inputs.run_eks && (inputs.cloud == 'both' || inputs.cloud == 'aws') }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
@@ -1250,16 +1483,35 @@ jobs:
       HONUA_ADMIN_PASSWORD: ${{ secrets.HONUA_ADMIN_PASSWORD }}
       HONUA_K8S_IMAGE: ${{ vars.HONUA_EKS_IMAGE || vars.HONUA_K8S_IMAGE || '' }}
       HONUA_K8S_PREVIOUS_IMAGE: ${{ vars.HONUA_K8S_PREVIOUS_IMAGE || '' }}
-      HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/run-cloud-post-apply-validation.sh
+      HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/cloud/run-cloud-post-apply-validation.sh
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
       - name: Checkout honua-server platform validation suite
         uses: actions/checkout@v4
         with:
           repository: honua-io/honua-server
+          ref: ${{ inputs.honua_server_ref || 'trunk' }}
           path: honua-server
+
+      - name: Verify honua-server candidate checkout
+        if: ${{ inputs.honua_server_ref != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$HONUA_SERVER_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "honua_server_ref must be an exact 40-character commit SHA"
+            exit 1
+          fi
+          actual="$(git -C honua-server rev-parse HEAD)"
+          if [[ "$actual" != "$HONUA_SERVER_REF" ]]; then
+            echo "honua-server checkout mismatch: expected $HONUA_SERVER_REF, got $actual"
+            exit 1
+          fi
+          echo "honua-server exact checkout: $actual"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -1337,6 +1589,11 @@ jobs:
 
           cp infrastructure/terraform/bootstrap/aws-eks/*.tf "$bootstrap_dir"/
 
+          # Tag the per-run bootstrap principal so the orphan sweeper can find
+          # and expire it if this job dies before cleanup runs.
+          bootstrap_expires_at="$(date -u -d "+${HONUA_TTL_HOURS} hours" +%Y-%m-%dT%H:%M:%SZ)"
+          bootstrap_tags="{Owner=\"terraform-validation\",ValidationRunId=\"gha-${GITHUB_RUN_ID}-eks-bootstrap\",ExpiresAtUTC=\"${bootstrap_expires_at}\"}"
+
           AWS_ACCESS_KEY_ID="$BOOTSTRAP_AWS_ACCESS_KEY_ID" \
           AWS_SECRET_ACCESS_KEY="$BOOTSTRAP_AWS_SECRET_ACCESS_KEY" \
           AWS_SESSION_TOKEN="$BOOTSTRAP_AWS_SESSION_TOKEN" \
@@ -1348,7 +1605,8 @@ jobs:
           terraform -chdir="$bootstrap_dir" apply -input=false -auto-approve -no-color \
             -var "aws_region=${AWS_VALIDATION_REGION}" \
             -var "create_access_key=true" \
-            -var "user_name=honua-tf-eks-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            -var "user_name=honua-tf-eks-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            -var "tags=${bootstrap_tags}"
 
           EKS_AWS_ACCESS_KEY_ID="$(terraform -chdir="$bootstrap_dir" output -raw access_key_id)"
           EKS_AWS_SECRET_ACCESS_KEY="$(terraform -chdir="$bootstrap_dir" output -raw secret_access_key)"
@@ -1419,6 +1677,13 @@ jobs:
           HONUA_VALIDATION_RUN_ID="gha-${{ github.run_id }}-eks" \
           ./infrastructure/terraform/validation/scripts/aws/run-eks-terraform-integration.sh "${args[@]}"
 
+      - name: Upload EKS post-apply evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-post-apply-eks-${{ github.run_id }}-${{ github.run_attempt }}
+          path: honua-server/tests/TestResults/post-apply/**/*.trx
+          if-no-files-found: ignore
       - name: Upload EKS plan artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -1427,9 +1692,88 @@ jobs:
           path: ${{ runner.temp }}/plans/eks
           if-no-files-found: ignore
 
+      # The in-step EXIT trap above cannot run to completion when the job is
+      # cancelled or times out, which historically leaked per-run IAM users
+      # with active access keys (#129). This step runs even on cancellation,
+
+      # Same failure path as the AWS ECS/serverless cell above (#142): an EKS
+      # cell that dies mid-apply, or whose runner is cancelled, keeps its VPC,
+      # NAT gateway and load balancers. The EKS VPC CNI makes it worse -- it
+      # leaves secondary ENIs detached-but-alive after node-group deletion, and
+      # a detached ENI holds its subnet and its security group, so terraform
+      # destroy fails and the whole VPC survives (honua-release#79). The reaper
+      # sweeps those ENIs and revokes cross-referencing security group rules
+      # before deleting anything, which is what makes the teardown terminate.
+      - name: Reap this run's EKS validation cell (always)
+        if: ${{ always() && inputs.no_destroy == false }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+
+          if [[ ! -x ./infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-infra.sh ]]; then
+            echo "::warning::The candidate ref predates the validation infra reaper; this run's cell will be reaped by the scheduled sweep instead."
+            exit 0
+          fi
+
+          if [[ -z "${BOOTSTRAP_AWS_ACCESS_KEY_ID:-}" || -z "${BOOTSTRAP_AWS_SECRET_ACCESS_KEY:-}" ]]; then
+            echo "AWS bootstrap credentials not configured; nothing to reap."
+            exit 0
+          fi
+
+          export AWS_ACCESS_KEY_ID="$BOOTSTRAP_AWS_ACCESS_KEY_ID"
+          export AWS_SECRET_ACCESS_KEY="$BOOTSTRAP_AWS_SECRET_ACCESS_KEY"
+          export AWS_SESSION_TOKEN="$BOOTSTRAP_AWS_SESSION_TOKEN"
+
+          ./infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-infra.sh \
+            --region "$AWS_VALIDATION_REGION" \
+            --this-run \
+            --no-defer-on-active \
+            --run-id "gha-${GITHUB_RUN_ID}-eks" \
+            --summary-file "$GITHUB_STEP_SUMMARY" \
+            || echo "::warning::EKS cell teardown left resources behind; see the job summary. The scheduled reaper will retry."
+
+      # re-drives the bootstrap destroy from the state left on disk, and then
+      # purges this run's bootstrap user by name so a crash before the state
+      # file was written cannot strand a credentials-bearing principal either.
+      - name: Ensure bootstrap identity is destroyed (always)
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          if [[ -z "${BOOTSTRAP_AWS_ACCESS_KEY_ID:-}" || -z "${BOOTSTRAP_AWS_SECRET_ACCESS_KEY:-}" ]]; then
+            echo "AWS bootstrap credentials not configured; nothing to clean up."
+            exit 0
+          fi
+
+          export AWS_ACCESS_KEY_ID="$BOOTSTRAP_AWS_ACCESS_KEY_ID"
+          export AWS_SECRET_ACCESS_KEY="$BOOTSTRAP_AWS_SECRET_ACCESS_KEY"
+          export AWS_SESSION_TOKEN="$BOOTSTRAP_AWS_SESSION_TOKEN"
+          export AWS_REGION="$AWS_VALIDATION_REGION"
+          export AWS_DEFAULT_REGION="$AWS_VALIDATION_REGION"
+
+          status=0
+
+          dir="$RUNNER_TEMP/bootstrap/eks"
+          if [[ -f "$dir/terraform.tfstate" ]]; then
+            echo "Ensuring EKS bootstrap identity is destroyed"
+            terraform -chdir="$dir" destroy -input=false -auto-approve -no-color || status=1
+          fi
+
+          ./infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-iam.sh \
+            --user "honua-tf-eks-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --protect-run-id "gha-${GITHUB_RUN_ID}-eks" \
+            --protect-run-id "gha-${GITHUB_RUN_ID}-eks-bootstrap" \
+            --skip-log-groups \
+            || status=1
+
+          exit "$status"
+
   drift-detect:
     name: Terraform Drift Detection
-    needs: policy-gates
+    needs: [resolve-candidate, policy-gates]
     if: ${{ inputs.run_drift }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -1446,6 +1790,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3

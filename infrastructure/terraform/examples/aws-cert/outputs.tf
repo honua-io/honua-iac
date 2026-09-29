@@ -1,3 +1,8 @@
+output "licensing_mode" {
+  description = "The licensing mode declared to the certification stack (Licensing__Mode). \"Disabled\" is the 2026.1 contract: the live cell's GET /api/v1/admin/license must report mode disabled, edition Unlicensed-2026.1."
+  value       = module.honua.licensing_mode
+}
+
 output "honua_api_endpoint" {
   description = "Honua API Gateway endpoint URL for the cert stack."
   value       = module.honua.api_endpoint
@@ -115,4 +120,14 @@ output "github_oidc_provider_arn" {
 output "budget_sns_topic_arn" {
   description = "SNS topic ARN that receives the monthly budget threshold notifications."
   value       = aws_sns_topic.budget.arn
+}
+
+output "REALAWS_CERT_LAMBDA_PREVIEW_EXECUTION_ROLE_ARN" {
+  description = "Set the identically named honua-server repository variable from this execution-role ARN."
+  value       = aws_iam_role.lambda_preview_execution.arn
+}
+
+output "REALAWS_CERT_LAMBDA_PREVIEW_REPOSITORY" {
+  description = "Set the identically named honua-server repository variable from this ECR URI; the workflow passes it to the script as HONUA_LAMBDA_PREVIEW_REPOSITORY."
+  value       = aws_ecr_repository.lambda_preview.repository_url
 }

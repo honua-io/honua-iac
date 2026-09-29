@@ -20,6 +20,8 @@ module "eks" {
   cluster_endpoint_public_access           = var.cluster_endpoint_public_access
   cluster_endpoint_public_access_cidrs     = var.cluster_endpoint_public_access_cidrs
   enable_cluster_creator_admin_permissions = var.enable_cluster_creator_admin_permissions
+  cluster_secret_encryption_enabled        = var.cluster_secret_encryption_enabled
+  cluster_secret_encryption_key_arn        = var.cluster_secret_encryption_key_arn
 }
 
 output "cluster_name" {

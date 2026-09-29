@@ -1,3 +1,9 @@
+---
+type: guide
+title: "Validate Terraform on demand"
+description: "The on-demand validation run: what it checks, what it costs, and how to read its output before an apply."
+tags: [terraform, validation, runbook]
+---
 # Terraform Validation Runbook
 
 This runbook defines the on-demand Terraform validation flow for Honua across Azure, AWS, and Kubernetes.
@@ -41,6 +47,7 @@ The workflow and scripts cover:
 - Managed Kubernetes integration: AKS and EKS Terraform cluster provisioning, then Kubernetes validation flow, then auto-destroy + leak check
 - Cross-repo platform validation: Azure, AWS, AKS, and EKS live jobs also check out `honua-server` and run its post-apply platform suite against the deployed environment before cleanup; this exercises deploy preflight, migration observability, admin OpenAPI, and optional cloud-staged import checks against real cloud infrastructure
 - Seeded JS cloud demo smoke: a scheduled and manually dispatchable lane checks out `honua-sdk-js` and runs `npm run test:cloud-demo:config` plus credential-gated `npm run test:cloud-demo:staging` against the seeded demo tenant from `honua-sdk-js/examples/cloud-demo-services.json`
+- Governed execution substrate: `infrastructure/terraform/validation/scripts/shared/test-terraform-exact-plan.sh` (wired into `terraform-ci.yml`) asserts the fail-closed matrix for `scripts/terraform-exact-plan.sh` and `scripts/terraform-exact-apply.sh` — local state, missing lock posture, IAM-user callers, mutable source, substituted backend/account/role/workspace, changed provider lock or inputs, stale state lineage/serial, expired or tampered plans, replay, and concurrent claims — plus the positive plan/apply/receipt path and schema conformance. It runs fully offline against a fake `terraform` and fixtures: no AWS credentials, no network, no real state. Contract reference: [`terraform-exact-plan-contract.md`](terraform-exact-plan-contract.md)
 - Drift detection: `terraform plan -detailed-exitcode` via `infrastructure/terraform/validation/scripts/shared/run-terraform-drift-detection.sh`
 
 ## Manual GitHub Actions workflow
@@ -125,7 +132,7 @@ Recommended tag shapes:
 - Azure Container Apps: generic image tag in ACR (`latest-aot` preferred, `latest` debug fallback); ACA runs `amd64`
 - Azure Functions: ACR URI with `*-functions-aot` preferred; `*-functions` is the debug fallback; Functions custom containers are treated as `amd64`
 - AKS: generic multi-arch image tag (`latest-aot` preferred, `latest` debug fallback); Arm node pools should pull the `arm64` variant automatically
-- AWS ECS: ECR URI with `*-ecs-aot` preferred; `*-ecs` is the debug fallback; ECS validation defaults to `ARM64`
+- AWS ECS: ECR URI with `*-ecs-aot` preferred; `*-ecs` is the debug fallback; ECS validation defaults to release-certified `X86_64` (`ARM64` is opt-in and must use an independently verified image)
 - AWS Lambda: ECR URI with concrete `*-lambda-aot-arm64` preferred; `*-lambda-arm64` is the debug fallback; Lambda validation defaults to `arm64`
 
 For local runs, prefer explicit script flags instead of exporting image refs as secrets:
@@ -155,7 +162,7 @@ source <(scripts/tf-pass-secrets.sh export)
 To push the same pass-backed credentials into GitHub Actions secrets:
 
 ```bash
-scripts/tf-pass-secrets.sh sync-gh --repo honua-io/honua-terraform
+scripts/tf-pass-secrets.sh sync-gh --repo honua-io/honua-iac
 scripts/tf-pass-secrets.sh sync-gh --scope publish --repo honua-io/honua-server
 ```
 
@@ -345,7 +352,7 @@ It runs daily at 11:17 UTC and can be triggered manually:
 
 ```bash
 gh workflow run cloud-demo-smoke.yml \
-  --repo honua-io/honua-terraform \
+  --repo honua-io/honua-iac \
   -f sdk_ref=trunk \
   -f strict_env=true
 ```
@@ -354,7 +361,7 @@ Secret setup:
 
 ```bash
 source <(scripts/tf-pass-secrets.sh export --scope cloud-demo 2>/dev/null)
-scripts/tf-pass-secrets.sh sync-gh --scope cloud-demo --repo honua-io/honua-terraform
+scripts/tf-pass-secrets.sh sync-gh --scope cloud-demo --repo honua-io/honua-iac
 ```
 
 `HONUA_CLOUD_DEMO_ALLOW_WRITES` is a repository variable and defaults to
@@ -384,6 +391,14 @@ falling back silently to fixtures.
   - `infrastructure/terraform/bootstrap/aws-serverless`
   - `infrastructure/terraform/bootstrap/aws-eks`
 - Use one database admin secret: `HONUA_DB_PASSWORD` (not separate per cloud).
+- AWS bootstrap principals are per-run IAM users (`honua-tf-{ecs,sls,eks}-<run-id>-<attempt>`) with active access keys, tagged `Owner=terraform-validation` / `ValidationRunId` / `ExpiresAtUTC`. The AWS/EKS live jobs run an `if: always()` cleanup step that re-drives the bootstrap destroy and purges the run's users by name (keys deactivated and deleted first), so cancellation, timeout, or a crash before state was written can no longer strand credentials-bearing users (#129).
+- Backstop janitor: `.github/workflows/terraform-validation-iam-sweeper.yml` runs `infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-iam.sh` daily. It enumerates read-only first, prints the deletion plan, then deletes expired `honua-tf-*` users, `Owner=terraform-validation` roles/policies whose `ExpiresAtUTC` has elapsed, and orphaned Container Insights log groups from `*-it-cluster` validation clusters (the in-run leak janitor cannot see IAM because the Resource Groups Tagging API does not index it). Dispatch with `dry_run=true` to inspect without deleting; the age threshold for untagged historical users defaults to 24 hours.
+- Every AWS/EKS live job reaps its own cell on **every** exit path (#142). An `if: always()` step runs `infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-infra.sh --this-run --run-id gha-<run-id>-aws-{ecs,serverless}` (and `-eks`), which deletes the run's own tagged infrastructure straight through the AWS API and appends what survived to the job summary. It exists because the in-script `trap cleanup EXIT` cannot run when the runner is cancelled or lost, and because a `terraform destroy` that errors is only warned about. When `reuse_data_stack=true` the run-scoped reap is restricted to `--stack ecs --stack serverless`, so the deliberately retained data stack is left to the scheduled reaper once its TTL elapses.
+- Backstop infra reaper: `.github/workflows/terraform-validation-infra-reaper.yml` runs the same script daily without `--this-run`. It is the only thing that catches a cell whose runner died before any step ran, and the shared data stack that `--keep-data` retained for a reuse that never came — two of the 28 leaking runs in #142 concluded `success`, so teardown-on-failure alone would not have caught them. Dispatch it with `dry_run=true` (the dispatch default) to see the plan; the schedule supplies no inputs and therefore performs a real sweep.
+- What stops the reaper deleting something live, in order: `Owner=terraform-validation` is the only thing that makes a resource a candidate at all (an untagged resource is unreachable by construction); the resource must carry a `ValidationRunId` of the form `gha-<run id>-*`; that GitHub run must be `completed` (queued/in-progress/unconfirmable is refused); the run must be outside `--grace-hours` (default 4); the resource's own `ExpiresAtUTC` TTL must have elapsed; `--protect-run-id` ids are untouchable; `--max-delete` (default 400) abandons an implausibly large plan rather than executing it; and the whole sweep defers while **any** `terraform-manual-validation` run is in progress, because a retained data stack is tagged with the run that created it rather than the one currently reusing it. `--dry-run` issues no mutating API call at all. `infrastructure/terraform/validation/scripts/aws/test-sweep-orphaned-validation-infra.sh` (wired into `terraform-ci.yml`) asserts each of those refusals against a fake `aws`/`gh` on PATH, plus the teardown ordering below.
+- Out of scope by design: resources whose `ValidationRunId` is not of the form `gha-<run id>-*` — the ids local runs of `run-aws-terraform-integration.sh` generate (`aws-<timestamp>`) — are never reaped automatically, because nothing proves the run behind them is over. A dry run reports them under `SKIP ... does not name a GitHub run`; clean those up by hand.
+- Teardown ordering the reaper enforces, both learned from real stalls: security groups that reference each other's rules cannot be deleted in any order, so every rule on every non-default SG in the VPC is revoked before any group is deleted; and detached-but-alive ENIs hold their subnet and their security group, so they are swept before subnets are touched (the same failure honua-release#79 hit with the EKS VPC CNI's secondary ENIs, whose harness sweep this mirrors).
+- Validation resources now also carry a `Stack` tag (`data` | `ecs` | `serverless` | `eks`) so a run-scoped teardown can reap the throwaway compute stacks without destroying a data stack it was told to keep.
 - Azure script behavior: when existing Azure data inputs are not provided, `infrastructure/terraform/validation/scripts/azure/run-azure-terraform-integration.sh` applies `infrastructure/terraform/examples/azure-data`, saves outputs to `/tmp/honua-azure-data-reuse.env` (or `HONUA_AZURE_DATA_CACHE_FILE`), reuses them in subsequent runs, and opens the PostgreSQL firewall to the ACA outbound IPs before readiness checks.
 - Azure bootstrap validation now retries `az login` / `az account set` after creating the least-privilege service principal so Azure AD and subscription role assignment propagation does not fail fast on a fresh identity.
 - Azure ACA validation defaults `min_replicas=1` and a wider startup probe budget so cold boot plus migrations can complete before ACA marks the revision unhealthy.

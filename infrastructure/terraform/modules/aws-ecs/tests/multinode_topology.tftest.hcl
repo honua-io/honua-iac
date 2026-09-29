@@ -43,6 +43,36 @@ mock_provider "aws" {
       minified_json = "{\"Version\":\"2012-10-17\",\"Statement\":[]}"
     }
   }
+
+  mock_resource "aws_lb" {
+    defaults = {
+      arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/honua-test/0000000000000000"
+    }
+  }
+
+  mock_resource "aws_lb_target_group" {
+    defaults = {
+      arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/honua-test/0000000000000000"
+    }
+  }
+
+  mock_resource "aws_lb_listener" {
+    defaults = {
+      arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/honua-test/0000000000000000/1111111111111111"
+    }
+  }
+
+  mock_resource "aws_iam_policy" {
+    defaults = {
+      arn = "arn:aws:iam::123456789012:policy/honua-test"
+    }
+  }
+
+  mock_resource "aws_iam_role" {
+    defaults = {
+      arn = "arn:aws:iam::123456789012:role/honua-test"
+    }
+  }
 }
 
 mock_provider "random" {}
@@ -80,6 +110,47 @@ run "single_instance_default_is_safe" {
   }
 }
 
+run "postgis_bootstrap_requires_runner_reachability" {
+  command = plan
+
+  variables {
+    existing_db_endpoint          = ""
+    existing_db_connection_string = ""
+    enable_postgis                = true
+    db_publicly_accessible        = false
+  }
+
+  expect_failures = [null_resource.enable_postgis]
+}
+
+run "ai_provider_secret_uses_reference_and_scoped_kms" {
+  command = apply
+
+  variables {
+    ai_provider_secret_arn         = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-ai-provider"
+    ai_provider_secret_kms_key_arn = "arn:aws:kms:us-east-1:123456789012:key/11111111-1111-1111-1111-111111111111"
+  }
+
+  assert {
+    condition     = strcontains(aws_ecs_task_definition.this.container_definitions, "HONUA_AI_PROVIDER_API_KEY") && strcontains(aws_ecs_task_definition.this.container_definitions, var.ai_provider_secret_arn)
+    error_message = "The AI provider credential must be emitted as an ECS Secrets Manager reference."
+  }
+
+  assert {
+    condition     = strcontains(aws_iam_policy.secrets.policy, var.ai_provider_secret_arn) && strcontains(aws_iam_policy.secrets.policy, var.ai_provider_secret_kms_key_arn)
+    error_message = "The execution-role policy must scope access to the supplied secret and customer-managed KMS key ARN."
+  }
+}
+
+run "ai_provider_secret_omits_optional_access_when_unconfigured" {
+  command = apply
+
+  assert {
+    condition     = !strcontains(aws_ecs_task_definition.this.container_definitions, "HONUA_AI_PROVIDER_API_KEY")
+    error_message = "An omitted AI provider secret must not add an ECS secret mapping."
+  }
+}
+
 run "connection_encryption_key_is_generated_when_unset" {
   command = plan
 
@@ -103,6 +174,16 @@ run "reserved_runtime_env_cannot_bypass_typed_inputs" {
   }
 
   expect_failures = [var.additional_env]
+}
+
+run "invalid_elasticache_auth_token_is_rejected" {
+  command = plan
+
+  variables {
+    redis_auth_token = "aaaaaaaaaaaaaaaa"
+  }
+
+  expect_failures = [var.redis_auth_token]
 }
 
 run "single_instance_scale_out_is_rejected" {
@@ -137,5 +218,86 @@ run "multinode_scale_out_with_redis_and_s3_is_safe" {
     redis_connection_cidrs          = ["10.0.0.0/16"]
     file_storage_provider           = "AwsS3"
     file_storage_aws_s3_bucket_name = "honua-test-files"
+  }
+}
+
+# honua-iac#182: the protection profile must derive availability_class from
+# real topology, not from a caller assertion. SingleInstance with no Redis/S3
+# wiring must report not-ready and the single-task health/observation limits
+# ECS actually enforces on this module's target group and container.
+run "single_instance_reports_not_multi_node_ready_with_expected_limits" {
+  command = apply
+
+  assert {
+    condition     = output.multi_node_topology_ready == false
+    error_message = "SingleInstance with no Redis/S3 wiring must not claim multi-node readiness."
+  }
+
+  assert {
+    condition     = output.alb_health_check.path == "/healthz/ready"
+    error_message = "ALB health check path must match the module default health_check_path."
+  }
+
+  assert {
+    condition = (
+      output.alb_health_check.interval_seconds == 30 &&
+      output.alb_health_check.timeout_seconds == 5 &&
+      output.alb_health_check.healthy_threshold == 2 &&
+      output.alb_health_check.unhealthy_threshold == 3
+    )
+    error_message = "ALB health check observation limits must match the module's configured target group health check block exactly."
+  }
+
+  assert {
+    condition     = output.container_health_check_start_period_seconds == 60
+    error_message = "Container warmup window must match the module's configured container health check startPeriod exactly."
+  }
+
+  assert {
+    condition = (
+      output.deployment_rollback.mechanism == "aws-ecs-deployment-circuit-breaker" &&
+      output.deployment_rollback.primary_rollback_enabled == true &&
+      output.deployment_rollback.canary_rollback_enabled == null
+    )
+    error_message = "Primary service must report an executable, enabled rollback actuator; canary rollback must be null when no canary service exists."
+  }
+
+  assert {
+    condition     = output.task_definition_revision_retention == "unbounded-until-manually-deregistered" && aws_ecs_task_definition.this.skip_destroy
+    error_message = "The retention claim must be backed by skip_destroy on the primary task definition."
+  }
+}
+
+# The canary ECS service also carries the deployment circuit breaker
+# (main.tf aws_ecs_service.canary), so a topology that legitimately runs a
+# canary must report both services' rollback actuators as enabled -- the
+# contract must not claim recovery it cannot exercise for either service.
+run "canary_topology_reports_both_rollback_actuators_enabled" {
+  command = apply
+
+  variables {
+    desired_count                   = 2
+    max_capacity                    = 4
+    deployment_mode                 = "MultiNode"
+    redis_connection_string         = "redis.example.internal:6379,password=test,ssl=true"
+    redis_connection_cidrs          = ["10.0.0.0/16"]
+    file_storage_provider           = "AwsS3"
+    file_storage_aws_s3_bucket_name = "honua-test-files"
+    canary_enabled                  = true
+    canary_desired_count            = 1
+  }
+
+  assert {
+    condition     = output.multi_node_topology_ready == true
+    error_message = "MultiNode with Redis and shared S3 storage must report multi-node readiness."
+  }
+
+  assert {
+    condition = (
+      output.deployment_rollback.primary_rollback_enabled == true &&
+      output.deployment_rollback.canary_rollback_enabled == true &&
+      aws_ecs_task_definition.canary[0].skip_destroy
+    )
+    error_message = "Both the primary and canary ECS services must report an enabled rollback actuator when the canary service exists."
   }
 }

@@ -59,6 +59,35 @@ locals {
   primary_weight             = local.canary_enabled ? 100 - local.canary_weight : 100
   effective_canary_image     = trimspace(var.canary_image) != "" ? var.canary_image : var.image
   master_key                 = var.connection_encryption_master_key != null ? var.connection_encryption_master_key : random_password.master_key[0].result
+  # Licensing (operator ruling 2026-09-12; honua-server #4721, honua-iac #191).
+  # The 2026.1 candidate ships with licensing DISABLED: no envelope, no
+  # validation, no capacity metering, every FeatureCatalog entitlement active.
+  # The mode is DECLARED rather than inferred from the absence of a license,
+  # because the server's own default (Licensing__Mode=Enabled with no license
+  # source) resolves to the Community edition and gates editing/sync/streaming/
+  # geocoding — a candidate deployed with no license inputs would look
+  # licensed-but-crippled instead of licensing-disabled.
+  #
+  # Supplying an envelope (pro_license_secret_arn) is the 2026.2 path: it forces
+  # Enabled, injects the envelope as an ECS Secrets Manager reference, grants the
+  # execution role read access to that exact ARN, and declares the edition. With
+  # no envelope none of that exists — no secret, no grant, no Licensing__Edition.
+  pro_license_enabled = trimspace(var.pro_license_secret_arn) != ""
+  licensing_mode      = local.pro_license_enabled ? "Enabled" : var.licensing_mode
+  licensing_environment = merge({
+    Licensing__Mode = local.licensing_mode
+    }, local.pro_license_enabled ? {
+    Licensing__Edition                                  = var.licensing_edition
+    "Licensing__TrustedKeys__${var.pro_license_key_id}" = var.pro_license_trusted_public_key
+  } : {})
+  # Allowlist for request-supplied secret references (honua-server #5055):
+  # indexed Security__RequestSecretReferences__<List>__<n> entries in list order.
+  # Empty lists render nothing, which keeps the server's deny-by-default policy.
+  request_secret_reference_environment = merge(
+    { for index, value in var.request_secret_reference_allowed_environment_variables : "Security__RequestSecretReferences__AllowedEnvironmentVariables__${index}" => value },
+    { for index, value in var.request_secret_reference_allowed_environment_variable_prefixes : "Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__${index}" => value },
+    { for index, value in var.request_secret_reference_allowed_secret_reference_prefixes : "Security__RequestSecretReferences__AllowedSecretReferencePrefixes__${index}" => value },
+  )
   runtime_environment = merge({
     Deployment__Mode      = var.deployment_mode
     FileStorage__Provider = var.file_storage_provider
@@ -66,7 +95,7 @@ locals {
     FileStorage__AwsS3__BucketName = var.file_storage_aws_s3_bucket_name
     FileStorage__AwsS3__Region     = local.file_storage_aws_s3_region
     FileStorage__AwsS3__KeyPrefix  = var.file_storage_aws_s3_key_prefix
-  } : {})
+  } : {}, local.licensing_environment, local.request_secret_reference_environment)
   primary_container_environment = [
     for key, value in merge(var.additional_env, local.runtime_environment) : {
       name  = key
@@ -92,7 +121,21 @@ locals {
       name      = "Security__ConnectionEncryption__MasterKey"
       valueFrom = aws_secretsmanager_secret.master_key.arn
     }
-    ], local.redis_enabled ? [
+    ], var.ai_provider_secret_arn != "" ? [
+    {
+      name      = "HONUA_AI_PROVIDER_API_KEY"
+      valueFrom = var.ai_provider_secret_arn
+    }
+    ] : [], local.pro_license_enabled ? [
+    {
+      # The signed envelope is injected as Licensing__LicenseContent (inline
+      # JSON), not as a secret-store reference: ECS resolves the secret for the
+      # container, so unlike Lambda there is no 4KB environment budget to route
+      # around and the server needs no in-process secret resolver.
+      name      = "Licensing__LicenseContent"
+      valueFrom = trimspace(var.pro_license_secret_arn)
+    }
+    ] : [], local.redis_enabled ? [
     {
       name      = "ConnectionStrings__redis"
       valueFrom = aws_secretsmanager_secret.redis_connection[0].arn
@@ -107,52 +150,11 @@ locals {
     }
   }
   container_health_check = {
-    command     = ["CMD-SHELL", "curl -f http://localhost:8080/healthz/ready || exit 1"]
+    command     = ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:${var.container_port}${var.health_check_path} || exit 1"]
     interval    = 30
     timeout     = 5
     retries     = 3
     startPeriod = 60
-  }
-}
-
-check "existing_db_inputs" {
-  assert {
-    condition = (
-      (var.existing_db_endpoint == "" && var.existing_db_connection_string == "") ||
-      (var.existing_db_endpoint != "" && var.existing_db_connection_string != "")
-    )
-    error_message = "existing_db_endpoint and existing_db_connection_string must both be set or both be empty."
-  }
-}
-
-check "existing_vpc_inputs" {
-  assert {
-    condition = (
-      (var.existing_vpc_id == "" && var.existing_vpc_cidr == "" && length(var.existing_public_subnet_ids) == 0 && length(var.existing_private_subnet_ids) == 0) ||
-      (var.existing_vpc_id != "" && var.existing_vpc_cidr != "" && length(var.existing_public_subnet_ids) > 0 && length(var.existing_private_subnet_ids) > 0)
-    )
-    error_message = "existing_vpc_id, existing_vpc_cidr, existing_public_subnet_ids, and existing_private_subnet_ids must be set together."
-  }
-}
-
-check "existing_redis_inputs" {
-  assert {
-    condition     = var.redis_connection_string == "" || length(var.redis_connection_cidrs) > 0
-    error_message = "redis_connection_cidrs must include at least one trusted CIDR when redis_connection_string is set."
-  }
-}
-
-check "canary_weight_requires_canary" {
-  assert {
-    condition     = local.canary_enabled || var.canary_weight_percentage == 0
-    error_message = "canary_weight_percentage must be 0 unless canary_enabled is true."
-  }
-}
-
-check "canary_desired_count_when_enabled" {
-  assert {
-    condition     = !local.canary_enabled || var.canary_desired_count >= 1
-    error_message = "canary_desired_count must be at least 1 when canary_enabled is true."
   }
 }
 
@@ -163,7 +165,7 @@ module "vpc" {
   #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
   #checkov:skip=CKV2_AWS_12: Default SG is managed via module inputs.
   source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 5.0"
+  version = "5.21.0"
 
   name = "${local.name}-vpc"
   cidr = var.vpc_cidr
@@ -181,27 +183,6 @@ module "vpc" {
   default_security_group_egress  = []
 
   tags = local.tags
-}
-
-check "nat_gateway_required" {
-  assert {
-    condition     = local.use_existing_vpc || var.enable_nat_gateway || var.assign_public_ip
-    error_message = "Tasks in private subnets require either NAT gateway or public IP assignment for outbound connectivity."
-  }
-}
-
-check "http_ingress_requires_https" {
-  assert {
-    condition     = local.use_https || !contains(local.http_ingress_cidrs, "0.0.0.0/0")
-    error_message = "Public HTTP ingress over 0.0.0.0/0 requires HTTPS to be configured (set alb_certificate_arn or domain_name/route53_zone_id)."
-  }
-}
-
-check "public_ingress_requires_https" {
-  assert {
-    condition     = !contains(concat(local.http_ingress_cidrs, local.https_ingress_cidrs), "0.0.0.0/0") || local.use_https
-    error_message = "Public ingress (0.0.0.0/0) requires HTTPS to be configured."
-  }
 }
 
 resource "aws_security_group" "alb" {
@@ -239,6 +220,59 @@ resource "aws_security_group" "alb" {
     to_port     = var.container_port
     protocol    = "tcp"
     cidr_blocks = [local.vpc_cidr_block]
+  }
+
+  lifecycle {
+    precondition {
+      condition = (
+        (var.existing_db_endpoint == "" && var.existing_db_connection_string == "") ||
+        (var.existing_db_endpoint != "" && var.existing_db_connection_string != "")
+      )
+      error_message = "existing_db_endpoint and existing_db_connection_string must both be set or both be empty."
+    }
+
+    precondition {
+      condition = (
+        (var.existing_vpc_id == "" && var.existing_vpc_cidr == "" && length(var.existing_public_subnet_ids) == 0 && length(var.existing_private_subnet_ids) == 0) ||
+        (var.existing_vpc_id != "" && var.existing_vpc_cidr != "" && length(var.existing_public_subnet_ids) > 0 && length(var.existing_private_subnet_ids) > 0)
+      )
+      error_message = "existing_vpc_id, existing_vpc_cidr, existing_public_subnet_ids, and existing_private_subnet_ids must be set together."
+    }
+
+    precondition {
+      condition     = var.redis_connection_string == "" || length(var.redis_connection_cidrs) > 0
+      error_message = "redis_connection_cidrs must include at least one trusted CIDR when redis_connection_string is set."
+    }
+
+    precondition {
+      condition     = !local.safety_enabled || (local.canary_enabled && local.multi_node_topology_ready && var.desired_count >= 1)
+      error_message = "Native safety requires a running stable/canary MultiNode topology with Redis and shared S3."
+    }
+
+    precondition {
+      condition     = local.canary_enabled || var.canary_weight_percentage == 0
+      error_message = "canary_weight_percentage must be 0 unless canary_enabled is true."
+    }
+
+    precondition {
+      condition     = !local.canary_enabled || var.canary_desired_count >= 1
+      error_message = "canary_desired_count must be at least 1 when canary_enabled is true."
+    }
+
+    precondition {
+      condition     = local.use_existing_vpc || var.enable_nat_gateway || var.assign_public_ip
+      error_message = "Tasks in private subnets require either NAT gateway or public IP assignment for outbound connectivity."
+    }
+
+    precondition {
+      condition     = local.use_https || !contains(local.http_ingress_cidrs, "0.0.0.0/0")
+      error_message = "Public HTTP ingress over 0.0.0.0/0 requires HTTPS to be configured (set alb_certificate_arn or domain_name/route53_zone_id)."
+    }
+
+    precondition {
+      condition     = !contains(concat(local.http_ingress_cidrs, local.https_ingress_cidrs), "0.0.0.0/0") || local.use_https
+      error_message = "Public ingress (0.0.0.0/0) requires HTTPS to be configured."
+    }
   }
 
   tags = local.tags
@@ -792,7 +826,7 @@ resource "aws_iam_policy" "secrets" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat([
       {
         Effect = "Allow"
         Action = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
@@ -800,6 +834,8 @@ resource "aws_iam_policy" "secrets" {
           aws_secretsmanager_secret.db_connection.arn,
           aws_secretsmanager_secret.admin_password.arn,
           aws_secretsmanager_secret.master_key.arn,
+          var.ai_provider_secret_arn != "" ? var.ai_provider_secret_arn : null,
+          local.pro_license_enabled ? trimspace(var.pro_license_secret_arn) : null,
           local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null
         ])
       },
@@ -808,7 +844,15 @@ resource "aws_iam_policy" "secrets" {
         Action   = ["kms:Decrypt", "kms:DescribeKey"]
         Resource = [local.kms_key_arn]
       }
-    ]
+      ], var.ai_provider_secret_arn != "" && var.ai_provider_secret_kms_key_arn != "" ? [{
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt", "kms:DescribeKey"]
+        Resource = [var.ai_provider_secret_kms_key_arn]
+        }] : [], local.pro_license_enabled && trimspace(var.pro_license_secret_kms_key_arn) != "" ? [{
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt", "kms:DescribeKey"]
+        Resource = [trimspace(var.pro_license_secret_kms_key_arn)]
+    }] : [])
   })
 }
 
@@ -836,9 +880,12 @@ resource "random_password" "master_key" {
 }
 
 resource "random_password" "redis_auth" {
-  count   = local.redis_create && var.redis_auth_token == "" ? 1 : 0
-  length  = 32
-  special = false
+  count       = local.redis_create && var.redis_auth_token == "" ? 1 : 0
+  length      = 32
+  special     = false
+  min_upper   = 1
+  min_lower   = 1
+  min_numeric = 1
 }
 
 resource "random_id" "alb_logs_suffix" {
@@ -924,7 +971,7 @@ module "rds" {
   #checkov:skip=CKV_AWS_133: Backup retention is configured in this module call.
   #checkov:skip=CKV_AWS_304: Secret rotation is handled outside this module.
   source  = "terraform-aws-modules/rds/aws"
-  version = "~> 6.0"
+  version = "6.13.1"
 
   identifier = "${local.name}-postgres"
 
@@ -966,7 +1013,7 @@ module "rds" {
   backup_retention_period = var.environment == "prod" ? 7 : 3
   maintenance_window      = "Sun:04:00-Sun:05:00"
 
-  deletion_protection              = var.environment == "prod"
+  deletion_protection              = var.rds_deletion_protection
   skip_final_snapshot              = var.environment != "prod"
   final_snapshot_identifier_prefix = "${local.name}-postgres-final"
 
@@ -1032,6 +1079,8 @@ resource "aws_secretsmanager_secret_version" "redis_connection" {
 }
 
 resource "aws_ecs_task_definition" "this" {
+  # Keep the registered revision usable by the provider rollback actuator.
+  skip_destroy             = true
   family                   = "${local.name}-task"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
@@ -1075,6 +1124,7 @@ resource "aws_ecs_task_definition" "this" {
 }
 
 resource "aws_ecs_task_definition" "canary" {
+  skip_destroy             = true
   count                    = local.canary_enabled ? 1 : 0
   family                   = "${local.name}-canary-task"
   network_mode             = "awsvpc"
@@ -1166,6 +1216,14 @@ resource "aws_ecs_service" "this" {
       condition     = var.file_storage_provider != "AwsS3" || local.shared_file_storage_configured
       error_message = "file_storage_provider=AwsS3 requires file_storage_aws_s3_bucket_name."
     }
+
+    # Fail the plan rather than the running server: without the verification key
+    # the envelope cannot be validated, and a paid deployment that cannot resolve
+    # a valid license refuses to start.
+    precondition {
+      condition     = !local.pro_license_enabled || trimspace(var.pro_license_trusted_public_key) != ""
+      error_message = "pro_license_secret_arn is set but pro_license_trusted_public_key (the Ed25519 public key) is empty. The public key is required to verify the envelope; it is not secret and is safe to set in config."
+    }
   }
 
   depends_on = [aws_lb_listener.https, aws_lb_listener.http, aws_lb_listener.http_redirect]
@@ -1256,6 +1314,13 @@ data "aws_iam_policy_document" "ecs_task_assume" {
 
 resource "null_resource" "enable_postgis" {
   count = var.enable_postgis && !local.db_use_existing ? 1 : 0
+
+  lifecycle {
+    precondition {
+      condition     = !var.enable_postgis || var.db_publicly_accessible || local.db_use_existing
+      error_message = "enable_postgis uses a local-exec psql bootstrap. Set db_publicly_accessible=true or provide an existing database reachable from the Terraform runner; private RDS requires a separate in-VPC bootstrap before enabling PostGIS."
+    }
+  }
 
   triggers = {
     db_endpoint = local.db_endpoint

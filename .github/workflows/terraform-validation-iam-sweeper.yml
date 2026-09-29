@@ -1,0 +1,77 @@
+name: Terraform Validation IAM Sweeper
+
+# Scheduled janitor for per-run IAM principals leaked by
+# terraform-manual-validation (#129). The in-job cleanup steps handle the
+# normal and cancelled paths; this sweeper is the backstop for runner loss and
+# any other path where nothing on the runner got a chance to execute. It
+# deletes:
+#   - IAM users honua-tf-* whose ExpiresAtUTC tag has elapsed (or, for
+#     untagged historical users, older than the age threshold), deactivating
+#     and deleting their access keys first;
+#   - IAM roles and customer-managed policies tagged
+#     Owner=terraform-validation with an elapsed ExpiresAtUTC;
+#   - orphaned Container Insights log groups from validation clusters.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List orphans without deleting anything"
+        required: true
+        type: boolean
+        default: false
+      max_age_hours:
+        description: "Age threshold (hours) for untagged honua-tf-* resources"
+        required: false
+        type: string
+        default: "24"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-validation-iam-sweeper
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    name: Sweep orphaned validation IAM principals
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      AWS_DEFAULT_REGION: ${{ vars.HONUA_AWS_VALIDATION_REGION || 'us-east-1' }}
+      HONUA_AWS_SWEEP_REGIONS: ${{ vars.HONUA_AWS_SWEEP_REGIONS || 'us-east-1,us-west-2' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Sweep orphaned validation IAM principals and log groups
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
+            echo "AWS credentials not configured; skipping sweep."
+            exit 0
+          fi
+
+          max_age_hours="${{ inputs.max_age_hours || '24' }}"
+          args=(--max-age-hours "$max_age_hours")
+
+          IFS=',' read -ra regions <<< "$HONUA_AWS_SWEEP_REGIONS"
+          for region in "${regions[@]}"; do
+            region="$(echo "$region" | xargs)"
+            [[ -z "$region" ]] && continue
+            args+=(--region "$region")
+          done
+
+          if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+            args+=(--dry-run)
+          fi
+
+          ./infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-iam.sh "${args[@]}"

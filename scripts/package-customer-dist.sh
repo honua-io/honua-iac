@@ -55,11 +55,25 @@ sync_tree() {
 }
 
 # Copy operator-facing directories without initialized working directories or test fixtures.
-mkdir -p "${STAGING}/modules" "${STAGING}/examples" "${STAGING}/bootstrap" "${STAGING}/marketplace"
+mkdir -p "${STAGING}/modules" "${STAGING}/examples" "${STAGING}/bootstrap" "${STAGING}/marketplace" \
+  "${STAGING}/scripts" "${STAGING}/infrastructure/terraform/contracts"
 sync_tree "${TF_ROOT}/modules" "${STAGING}/modules"
 sync_tree "${TF_ROOT}/examples" "${STAGING}/examples"
 sync_tree "${TF_ROOT}/bootstrap" "${STAGING}/bootstrap"
 sync_tree "${TF_ROOT}/marketplace" "${STAGING}/marketplace"
+cp "${REPO_ROOT}/scripts/new-terraform-lineage-contract.ps1" "${STAGING}/scripts/"
+# Governed execution substrate: the operator runs these, not just Honua CI.
+mkdir -p "${STAGING}/scripts/lib"
+cp "${REPO_ROOT}/scripts/terraform-backend-identity.sh" \
+  "${REPO_ROOT}/scripts/terraform-exact-plan.sh" \
+  "${REPO_ROOT}/scripts/terraform-exact-apply.sh" \
+  "${STAGING}/scripts/"
+cp "${REPO_ROOT}/scripts/lib/tf-exec-contract.sh" "${STAGING}/scripts/lib/"
+cp "${TF_ROOT}/contracts/operator-contract.v1.schema.json" \
+  "${TF_ROOT}/contracts/terraform-exact-plan.v1.schema.json" \
+  "${TF_ROOT}/contracts/terraform-exec-receipt.v1.schema.json" \
+  "${TF_ROOT}/contracts/terraform-backend-identity.v1.schema.json" \
+  "${STAGING}/infrastructure/terraform/contracts/"
 cp "${TF_ROOT}/README.md" "${STAGING}/README.md"
 
 # Drop Honua-owned, maintainer-only examples that are not part of the operator

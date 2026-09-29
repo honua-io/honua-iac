@@ -26,6 +26,11 @@ data "aws_caller_identity" "current" {}
 locals {
   name = "${var.name_prefix}-${var.environment}"
 
+  # Single source of truth for the Lambda CPU architecture: consumed both by
+  # the module input below and by the operator contract's workload/scaling
+  # projection (operator-contract.tf), so the two can never disagree.
+  lambda_architecture = "x86_64"
+
   tags = merge({
     Project     = "honua-server"
     Environment = "cert"
@@ -128,16 +133,42 @@ module "honua" {
   environment = var.environment
 
   image                = var.honua_image
-  lambda_architectures = ["x86_64"]
+  lambda_architectures = [local.lambda_architecture]
   admin_password       = var.honua_admin_password
-  db_password          = var.db_password
+  # Lambda GA certification (release#282): the driver refuses a standing
+  # function that skips migrations ("Standing function skips migrations:
+  # noProof", 2026-09-06). The cert database is bootstrapped with PostGIS, so
+  # startup migrations are safe here.
+  skip_migrations = false
+  db_password     = var.db_password
 
-  # Cert is short-lived: single-AZ, modest DB, no Redis (cert does not exercise
-  # the Production durable-event-store /healthz/ready path).
+  # Cert is short-lived: single-AZ, modest DB. Redis IS enabled (operator
+  # ruling A, 2026-09-08): the Lambda certification lane mints a per-run
+  # scoped API key and requires the candidate and the standing alias to share
+  # the Redis-backed key store (honua-server#4568, certification run 24), and
+  # a customer Lambda deployment needs Redis for the same reason. Smallest
+  # node type; the module wires the connection through Secrets Manager.
   db_instance_class    = "db.t4g.micro"
   db_multi_az          = false
   db_apply_immediately = true
-  redis_enabled        = false
+  redis_enabled        = true
+  redis_node_type      = "cache.t4g.micro"
+  # Licensing (operator ruling 2026-09-12; honua-iac #191, honua-server #4721):
+  # the 2026.1 candidate certifies with licensing DISABLED — no envelope, no
+  # metering, every entitlement active — so certification exercises GeoServices
+  # editing without a license. Superseded ruling A (2026-09-09) needed a Pro
+  # envelope because the licensing-disabled mode did not yet exist; the license
+  # inputs stay wired for the 2026.2 path and remain off by default.
+  licensing_mode                 = var.licensing_mode
+  enable_pro_license             = var.enable_pro_license
+  pro_license_secret_arn         = var.pro_license_secret_arn
+  pro_license_content            = var.pro_license_content
+  pro_license_key_id             = var.pro_license_key_id
+  pro_license_trusted_public_key = var.pro_license_trusted_public_key
+  # The certification write target is the alias Function URL (lambda-preview-cert.tf);
+  # the server's host validation must accept that host or every request answers
+  # 400 "Invalid Host header" (live certification run 16, 2026-09-07).
+  additional_allowed_hosts = ["*.lambda-url.${var.region}.on.aws"]
 
   log_retention_days = 30
 

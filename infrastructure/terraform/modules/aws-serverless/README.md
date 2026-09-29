@@ -106,19 +106,84 @@ module "honua" {
 | `enable_xray_tracing` | false | Enable Lambda X-Ray active tracing, grant least-privilege `xray:PutTraceSegments`/sampling reads, and set the app-side `Tracing__XRay__Enabled` flag. |
 | `enable_lambda_insights` | false | Attach the CloudWatch Lambda Insights managed policy and add the Insights widgets (the Insights extension layer must be present in the image). |
 | `honua_metrics_namespace` | `Honua/Serverless` | CloudWatch namespace the custom Honua metrics (cold-start, init duration) are published to via an ADOT/EMF collector; used by the dashboard's custom widgets. |
-| `enable_pro_license` | false | Deliver a signed Pro license to the Lambda via Secrets Manager so editing/sync/streaming/geocoding work. When off the server runs Community. |
+| `licensing_mode` | `Disabled` | Licensing deployment mode declared as `Licensing__Mode`. `Disabled` is the 2026.1 contract: no license, no capacity metering, every entitlement active. `Enabled` loads and validates a license. Supplying one via `enable_pro_license` implies `Enabled`. |
+| `enable_pro_license` | false | Deliver a signed Pro license to the Lambda via Secrets Manager and set `Licensing__Mode=Enabled`. When off the deployment runs with licensing **disabled** (all entitlements active), not Community. |
 | `pro_license_content` | `""` | Signed Pro license envelope JSON (relabeled hyphen-free keyId). Stored in `<name>/license-pro` and referenced by `Licensing__LicenseContentSecretRef`. Required when `enable_pro_license`. |
 | `pro_license_key_id` | `honuademo2026q2` | Hyphen-free license keyId as relabeled in the envelope; used to build the legal env var name `Licensing__TrustedKeys__<keyId>`. |
 | `pro_license_trusted_public_key` | `""` | Ed25519 public key (`base64url:` prefixed) that verifies the license signature. Required when `enable_pro_license`. |
 | `enable_bedrock_ai` | false | Grant the Lambda role `bedrock:InvokeModel`/`InvokeModelWithResponseStream` for the configured Claude model and route the AI studio (WorkflowGeneration) flows to Amazon Bedrock. |
 | `bedrock_ai_model` | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` | Bedrock model id for the AI studio flows (cross-region Claude Sonnet 4.5 inference profile). |
 | `bedrock_ai_region` | `us-west-2` | Region the server invokes Bedrock in. |
+| `enable_amazon_location_geocoding` | false | Provision an Amazon Location place index, grant the Lambda role `geo:Search*`/`DescribePlaceIndex` on it, and route `Geocoding:DefaultProvider` to `amazon-location` (Nominatim explicitly disabled). |
+| `amazon_location_place_index_name` | `""` (→ `<name_prefix>-<environment>-geocode`) | Name of the Amazon Location place index. |
+| `amazon_location_data_source` | `Esri` | Upstream data provider for the place index (`Esri` or `Here` — not OpenStreetMap). |
+| `amazon_location_intended_use` | `SingleUse` | `SingleUse` (no result storage) or `Storage`. |
+| `request_secret_reference_allowed_environment_variables` | `[]` | Exact environment variable names a request may name as `env:NAME`. Rendered as `Security__RequestSecretReferences__AllowedEnvironmentVariables__<n>`. |
+| `request_secret_reference_allowed_environment_variable_prefixes` | `[]` | Environment variable name prefixes a request may name as `env:NAME` (never matches a name containing `__`). Rendered as `Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__<n>`. |
+| `request_secret_reference_allowed_secret_reference_prefixes` | `[]` | Whole-reference prefixes for the other providers, including the provider segment, e.g. `aws:secretsmanager:honua/imports/`. Rendered as `Security__RequestSecretReferences__AllowedSecretReferencePrefixes__<n>`. |
 
 See `variables.tf` for the complete list.
 
+## Request-supplied secret references
+
+The three `request_secret_reference_allowed_*` variables are the allowlist for
+request-supplied secret references (honua-server #5055) and bind the server's
+`Security:RequestSecretReferences` section. The server policy is deny-by-default:
+with all three lists empty (the default, which renders nothing) the server
+resolves no secret reference named in a request - import credentials, workflow
+source steps, secure-connection registration - and a secure connection that
+stores a `secretReference` does not resolve it at runtime. Connections stored
+with an encrypted password, and secret references in the server's own
+configuration, are not governed by this policy.
+
+```hcl
+request_secret_reference_allowed_environment_variable_prefixes = ["HONUA_IMPORT_"]
+request_secret_reference_allowed_secret_reference_prefixes     = ["aws:secretsmanager:honua/imports/"]
+```
+
+Entries are rendered in list order into the Lambda environment and, when `enable_gp_batch` is on, the geoprocessing Batch job definitions. For
+the whole-reference list the provider (the text before the first colon) is
+matched case-insensitively and the remainder is a case-sensitive prefix of the
+reference, so an entry must have the same form as the references it is meant to
+permit - a secret referenced by full ARN needs an ARN-form entry, one referenced by name a name-form entry. Keep entries as narrow as the deployment allows, and
+give imports and connections their own variables or secret path rather than
+listing the server's own credentials. Set the entries through these variables or
+through `additional_env`, not both, so one source owns the indexes.
+
+Server images that predate the setting ignore these variables, so they can be
+set before upgrading; deployments that already rely on request-supplied
+references should set matching entries before moving to an image that includes
+the setting.
+
+## Licensing
+
+The 2026.1 release ships with licensing **disabled** (operator ruling
+2026-09-12; honua-server #4721). With no license inputs the module declares
+
+- `Licensing__Mode = Disabled`
+
+on the Lambda, on both control-plane event handlers, and on the geoprocessing
+Batch job definition — and creates no license secret and grants the execution
+role no access to one.
+
+The mode is declared rather than inferred. honua-server's own default is
+`Licensing__Mode=Enabled`, which with no license source resolves to the
+**Community** edition and gates editing, sync, streaming and geocoding; a
+candidate deployed with no license inputs would then look licensed-but-crippled
+instead of licensing-disabled. In `Disabled` mode the server loads and validates
+nothing, registers no capacity meter, activates every `FeatureCatalog`
+entitlement, and its admin surface reports it:
+`GET /api/v1/admin/license` answers `mode: disabled`, `edition:
+Unlicensed-2026.1`, `validationState: Disabled`. The live AWS harness asserts
+exactly that and treats a Community edition as a failure, not a fallback
+(`validation/scripts/aws/run-aws-terraform-integration.sh`).
+
+Set `licensing_mode = "Enabled"` (or supply an envelope, below) to opt a
+deployment into licensing. Licensing hardening and metering return in 2026.2.
+
 ## Pro license (Secrets Manager delivery)
 
-Optional, **off by default**. The signed Pro license envelope (~2KB) does not fit
+Optional, **off by default**; this is the 2026.2 path. The signed Pro license envelope (~2KB) does not fit
 Lambda's 4KB total environment-variable budget, so when `enable_pro_license = true`
 the module stores the envelope in a dedicated Secrets Manager secret
 (`<name_prefix>-<environment>/license-pro`), grants the Lambda role
@@ -132,9 +197,10 @@ the module stores the envelope in a dedicated Secrets Manager secret
 The envelope's `keyId` must be **hyphen-free** (e.g. `honuademo2026q2`) because it
 becomes part of the `Licensing__TrustedKeys__<keyId>` env var name; the license
 signature is over the payload only, so relabeling the envelope keyId is safe as long as
-the trusted key still matches. If the secret is unreachable the server degrades to
-Community rather than failing to start. Cost is effectively `$0` (one small secret;
-negligible reads at cold start).
+the trusted key still matches. Supplying an envelope forces `Licensing__Mode=Enabled`,
+and a paid deployment that cannot resolve a valid license refuses to start — so
+leave the envelope off rather than relying on a fallback. Cost is effectively
+`$0` (one small secret; negligible reads at cold start).
 
 ```hcl
 module "honua" {
@@ -169,6 +235,78 @@ arn:aws:bedrock:us-west-2:<account>:inference-profile/us.anthropic.claude-sonnet
 arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0
 arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0
 arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0
+```
+
+## Geocoding on Amazon Location Service
+
+Optional, **off by default**. When `enable_amazon_location_geocoding = true`, the
+module provisions an Amazon Location **place index** (`aws_location_place_index`),
+grants the Lambda execution role a least-privilege policy scoped to that one
+index (`geo:SearchPlaceIndexForText`, `geo:SearchPlaceIndexForPosition`,
+`geo:SearchPlaceIndexForSuggestions`, `geo:DescribePlaceIndex`), and injects the
+`Geocoding__*` env so the server's built-in `amazon-location` provider
+(`Honua.Geocoding.Features.Geocoding.Providers.AmazonLocationGeocodeProvider`)
+becomes the default:
+
+```
+Geocoding__Enabled                                   = true
+Geocoding__DefaultProvider                           = amazon-location
+Geocoding__Providers__Nominatim__Enabled             = false
+Geocoding__Providers__AmazonLocation__Enabled        = true
+Geocoding__Providers__AmazonLocation__Region         = <module's region>
+Geocoding__Providers__AmazonLocation__PlaceIndexName = <amazon_location_place_index_name>
+Geocoding__Providers__AmazonLocation__UseIamRole     = true
+Geocoding__Providers__AmazonLocation__MaxResults     = <amazon_location_max_results>
+```
+
+**Why this exists (honua-server#2948):** an external Nominatim (OpenStreetMap)
+provider needs general internet egress. A VPC with no NAT/internet gateway
+(this module's `enable_nat_gateway = false` path) cannot reach it — every
+forward/reverse geocode call fails after a consistent outbound-connect
+timeout (observed ~15.8s on demo.honua.io), first call or hundredth, because
+the network path simply does not exist. Amazon Location is reachable over
+AWS's private network via a **VPC interface endpoint**
+(`com.amazonaws.<region>.geo`), so no NAT gateway is needed — but that
+endpoint is VPC-specific and is **not** created by this module; the calling
+root provisions it (see `stacks/aws/vpc-endpoints.tf` in the private
+honua-io/honua-demo repo — honua-iac#126 — for the pattern already used for
+Secrets Manager and Bedrock).
+
+**Why Nominatim is force-disabled, not just deprioritized:** `GeocodeCoordinatorService`
+tries the default provider first, then falls back through every other
+*registered* provider when `EnableFailover` is on (the default).
+`NominatimProviderConfiguration` defaults `Enabled = true` in its own
+constructor, so it stays registered as a failover candidate unless explicitly
+turned off. In a no-NAT VPC, a failover attempt to Nominatim would still incur
+its own ~15.8s connect-timeout before failing — compounding, not fixing,
+latency on any Amazon Location error (e.g. a misconfigured place index). This
+module sets `Geocoding__Providers__Nominatim__Enabled=false` so an
+Amazon-Location-side failure fails fast instead of hanging twice.
+
+**Data source note:** results come from **Esri** (default) or **HERE**, not
+OpenStreetMap — this is a full provider swap. `amazon_location_intended_use`
+defaults to `SingleUse` (real-time lookups, no result storage/caching),
+matching a live GeocodeServer proxy; use `Storage` only if a workflow persists
+geocode results.
+
+**Cost** (`us-west-2`, approximate, in addition to the VPC interface endpoint
+the calling root provisions): the place index itself has no idle charge — you
+pay per API call (`SearchPlaceIndexForText`/`ForPosition`/`ForSuggestions`),
+priced per request under the selected data source's Amazon Location pricing
+tier (a few dollars per 1,000 requests; demo traffic volumes are low single
+dollars/month). The `com.amazonaws.<region>.geo` interface endpoint itself
+costs the same as any other single-AZ interface endpoint in this account
+(~$7–8/month for the ENI + a small per-GB processed charge) — see the example
+root's README for the endpoint-specific cost line.
+
+```hcl
+module "honua" {
+  source = "../../modules/aws-serverless"
+  # ...
+  enable_amazon_location_geocoding = true
+  amazon_location_place_index_name = "honua-demo-demo-geocode"
+  amazon_location_data_source       = "Esri"
+}
 ```
 
 ## Serverless observability
@@ -314,7 +452,14 @@ Because the handlers live in the same image and are selected by `HONUA_CONTROL_P
 
 ## Outputs
 
-See `outputs.tf` for the API endpoint URL, RDS connection string, and secrets. The module also emits Honua control-plane handoff metadata:
+See `outputs.tf` for the API endpoint URL, RDS connection string, and secret
+references. `admin_password_secret_arn` is the always-present, non-sensitive
+string ARN of the module-managed admin-password secret. Treat it as opaque and
+pass it directly to consumers: AWS appends a random suffix to Secrets Manager
+ARNs, so callers must not derive it from the configured secret name. This
+output does not expose the admin-password value.
+
+The module also emits Honua control-plane handoff metadata:
 
 - `environment`
 - `aws_region`

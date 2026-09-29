@@ -127,7 +127,7 @@ Optional environment variables:
   HONUA_KUBECONFORM_IMAGE              Kubeconform image override for Helm manifest validation
   HONUA_ADMIN_PASSWORD                 Admin password for Helm chart secret
   SECURITY_MASTER_KEY                  Master key for app startup
-  HONUA_PLATFORM_VALIDATION_SCRIPT     Optional path to honua-server/scripts/run-cloud-post-apply-validation.sh
+  HONUA_PLATFORM_VALIDATION_SCRIPT     Optional path to honua-server/scripts/cloud/run-cloud-post-apply-validation.sh
 USAGE
 }
 

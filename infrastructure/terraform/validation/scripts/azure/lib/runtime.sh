@@ -59,6 +59,7 @@ run_tf() {
       -e TF_VAR_environment \
       -e TF_VAR_name_prefix \
       -e TF_VAR_honua_admin_password \
+      -e TF_VAR_honua_connection_encryption_master_key \
       -e TF_VAR_db_admin_password \
       -e TF_VAR_db_sku_name \
       -e TF_VAR_db_storage_mb \

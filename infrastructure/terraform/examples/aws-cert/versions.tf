@@ -15,14 +15,11 @@ terraform {
     }
   }
 
-  # Remote state — uncomment and fill in before first apply.
-  # backend "s3" {
-  #   bucket         = "honua-tfstate-<account-id>"
-  #   key            = "cert/aws-cert/terraform.tfstate"
-  #   region         = "us-east-1"
-  #   encrypt        = true
-  #   dynamodb_table = "honua-tfstate-lock"
-  # }
+  # Remote state is configured by copying backend.tf.example to backend.tf after
+  # bootstrap/aws-tfstate has been applied. It is deliberately not declared here:
+  # a tracked file that has to be edited to activate the backend cannot be the
+  # copy-and-fill artifact the operator docs and the governed wrappers expect.
+  # See docs/operator-state.md.
 }
 
 provider "aws" {

@@ -14,12 +14,32 @@ provider "aws" {
 
 locals {
   user_name = var.user_name != "" ? var.user_name : "${var.name_prefix}-${var.environment}"
+
+  # HARD MARKER. This root provisions a long-lived IAM user, which the governed
+  # AWS release lane refuses. The tags travel with the principal so an auditor
+  # reading the account -- not just this file -- can tell the two paths apart.
+  unsupported_posture_tags = {
+    HonuaReleasePosture       = "unsupported-local-only"
+    HonuaSupportedForRelease  = "false"
+    HonuaCertifiedAlternative = "bootstrap/aws-exec-identity"
+  }
+
+  tags = merge(var.tags, local.unsupported_posture_tags)
+}
+
+# Fails loudly on every plan that asks for a long-lived access key. The key is
+# the part that cannot be reconciled with the certified path at all.
+check "unsupported_for_release_lane" {
+  assert {
+    condition     = !var.create_access_key
+    error_message = "This bootstrap is LOCAL-ONLY and UNSUPPORTED for release: create_access_key mints a long-lived AWS credential. The certified lane uses bootstrap/aws-exec-identity with short-lived SSO/OIDC/STS federation."
+  }
 }
 
 resource "aws_iam_user" "terraform" {
-  #checkov:skip=CKV_AWS_273: Bootstrap uses an IAM user for non-SSO automation contexts.
+  #checkov:skip=CKV_AWS_273: Unsupported local-only bootstrap; the certified lane is bootstrap/aws-exec-identity.
   name = local.user_name
-  tags = var.tags
+  tags = local.tags
 }
 
 resource "aws_iam_access_key" "terraform" {
@@ -177,7 +197,7 @@ data "aws_iam_policy_document" "terraform" {
 resource "aws_iam_policy" "terraform" {
   name   = "${local.user_name}-policy"
   policy = data.aws_iam_policy_document.terraform.json
-  tags   = var.tags
+  tags   = local.tags
 }
 
 resource "aws_iam_user_policy_attachment" "terraform" {

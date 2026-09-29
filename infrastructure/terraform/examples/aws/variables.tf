@@ -78,10 +78,139 @@ variable "honua_image" {
   type        = string
 }
 
-variable "task_cpu_architecture" {
-  description = "Fargate CPU architecture for validation. ARM64 is the default."
+variable "operator_contract_identity" {
+  description = "Optional immutable identity inputs for the honua.operator-contract/v1 output. Omit only for disposable, unqualified development plans; certified consumers must provide every required digest and backend/state lineage input."
+  type = object({
+    candidate_digest      = string
+    manifest_digest       = optional(string)
+    iac_revision          = string
+    terraform_version     = string
+    provider_lock_digest  = string
+    image_digest          = string
+    image_reference       = optional(string)
+    backend_config_digest = optional(string)
+    state_lineage         = optional(string)
+    state_serial          = optional(number)
+    workload_identity     = optional(string)
+    artifacts = optional(list(object({
+      name    = string
+      kind    = string
+      version = string
+      digest  = string
+    })), [])
+  })
+  default = null
+
+  validation {
+    condition = var.operator_contract_identity == null || (
+      can(regex("^[0-9a-f]{64}$", try(var.operator_contract_identity.candidate_digest, ""))) &&
+      can(regex("^([0-9a-f]{40}|[0-9a-f]{64})$", try(var.operator_contract_identity.iac_revision, ""))) &&
+      try(trimspace(var.operator_contract_identity.terraform_version) != "", false) &&
+      can(regex("^[0-9a-f]{64}$", try(var.operator_contract_identity.provider_lock_digest, ""))) &&
+      can(regex("^sha256:[0-9a-f]{64}$", try(var.operator_contract_identity.image_digest, ""))) &&
+      (try(var.operator_contract_identity.manifest_digest, null) == null || can(regex("^[0-9a-f]{64}$", var.operator_contract_identity.manifest_digest))) &&
+      (try(var.operator_contract_identity.backend_config_digest, null) == null || can(regex("^[0-9a-f]{64}$", var.operator_contract_identity.backend_config_digest))) &&
+      (try(var.operator_contract_identity.state_lineage, null) == null || can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", var.operator_contract_identity.state_lineage))) &&
+      (try(var.operator_contract_identity.state_serial, null) == null || try(var.operator_contract_identity.state_serial >= 0, false))
+    )
+    error_message = "operator_contract_identity must use SHA-256 digests, a 40/64-character IaC revision, a sha256 image digest, a UUID state lineage, and a non-negative state serial when supplied."
+  }
+
+  # An immutable identity claim may never be backed by a mutable reference.
+  # image_reference must be registry/repository@sha256:<64 hex>; a tag-only
+  # reference (":latest", ":2026.1.0") is rejected here rather than silently
+  # projected into the contract as an immutable pin.
+  # HCL evaluates both operands of || and &&, so every branch below is written
+  # as a conditional (which does short-circuit) or wrapped in try/can. A null
+  # attribute must fail the check, not crash the plan with a function error.
+  validation {
+    condition = var.operator_contract_identity == null ? true : (
+      try(var.operator_contract_identity.image_reference, null) == null ? true :
+      can(regex("^[A-Za-z0-9][A-Za-z0-9._-]*(\\.[A-Za-z0-9._-]+)*(:[0-9]+)?(/[A-Za-z0-9._-]+)+@sha256:[0-9a-f]{64}$", var.operator_contract_identity.image_reference))
+    )
+    error_message = "operator_contract_identity.image_reference must be digest-pinned as registry/repository@sha256:<64 hex>; a mutable tag is not an immutable pin."
+  }
+
+  validation {
+    condition = var.operator_contract_identity == null ? true : (
+      try(var.operator_contract_identity.image_reference, null) == null ? true :
+      try(endswith(var.operator_contract_identity.image_reference, "@${var.operator_contract_identity.image_digest}"), false)
+    )
+    error_message = "operator_contract_identity.image_reference must end with @<image_digest>; the reference and the digest must describe the same image."
+  }
+
+  validation {
+    condition = var.operator_contract_identity == null ? true : alltrue([
+      for artifact in try(var.operator_contract_identity.artifacts, []) :
+      try(trimspace(artifact.name) != "", false) &&
+      try(contains(["proxy", "cli", "mcp-server", "helm-chart", "package", "other"], artifact.kind), false) &&
+      try(trimspace(artifact.version) != "", false) &&
+      can(regex("^[0-9a-f]{64}$", artifact.digest))
+    ])
+    error_message = "Each operator_contract_identity.artifacts entry needs a name, a supported kind (proxy, cli, mcp-server, helm-chart, package, other), a version, and a 64-character SHA-256 digest."
+  }
+}
+
+# Licensing (operator ruling 2026-09-12; honua-iac #191, honua-server #4721).
+# The 2026.1 candidate ships with licensing disabled: no envelope, no metering,
+# every entitlement active. Supplying an envelope is the 2026.2 path.
+variable "licensing_mode" {
+  description = "Licensing deployment mode declared to the server as Licensing__Mode. Defaults to Disabled (the 2026.1 contract). Supplying pro_license_secret_arn implies Enabled."
   type        = string
-  default     = "ARM64"
+  default     = "Disabled"
+
+  validation {
+    condition     = contains(["Disabled", "Enabled"], var.licensing_mode)
+    error_message = "licensing_mode must be \"Disabled\" or \"Enabled\"."
+  }
+}
+
+variable "licensing_edition" {
+  description = "Edition declared as Licensing__Edition when (and only when) pro_license_secret_arn is set. Ignored with no envelope."
+  type        = string
+  default     = "Pro"
+}
+
+variable "pro_license_secret_arn" {
+  description = "Optional ARN of an EXISTING Secrets Manager secret holding the signed Pro license envelope JSON. Leave empty for the 2026.1 licensing-disabled contract; the module never creates, reads or deletes this secret."
+  type        = string
+  default     = ""
+}
+
+variable "pro_license_secret_kms_key_arn" {
+  description = "Optional customer-managed KMS key ARN for pro_license_secret_arn."
+  type        = string
+  default     = ""
+}
+
+variable "pro_license_key_id" {
+  description = "Hyphen-free license signing keyId as relabeled in the envelope (becomes the env segment Licensing__TrustedKeys__<keyId>). Only used when an envelope is supplied."
+  type        = string
+  default     = "honuademo2026q2"
+}
+
+variable "pro_license_trusted_public_key" {
+  description = "Ed25519 public key (base64url: prefix) that verifies the license signature. Required when pro_license_secret_arn is set; a public key only verifies and is not secret."
+  type        = string
+  default     = ""
+}
+
+variable "ai_provider_secret_arn" {
+  description = "Optional customer-owned Secrets Manager ARN containing HONUA_AI_PROVIDER_API_KEY. The stack references but never creates, reads, or deletes this secret."
+  type        = string
+  default     = ""
+}
+
+variable "ai_provider_secret_kms_key_arn" {
+  description = "Optional customer-managed KMS key ARN for ai_provider_secret_arn."
+  type        = string
+  default     = ""
+}
+
+variable "task_cpu_architecture" {
+  description = "Fargate CPU architecture. X86_64 is the release-certified default."
+  type        = string
+  default     = "X86_64"
 }
 
 variable "db_publicly_accessible" {
@@ -97,9 +226,9 @@ variable "db_additional_ingress_cidrs" {
 }
 
 variable "enable_postgis" {
-  description = "Enable PostGIS and PostGIS Raster during apply."
+  description = "Enable PostGIS and PostGIS Raster during apply. Requires the Terraform runner to reach the database endpoint."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "postgis_readiness_max_attempts" {
@@ -201,6 +330,12 @@ variable "canary_weight_percentage" {
 
 variable "alb_deletion_protection" {
   description = "Enable ALB deletion protection."
+  type        = bool
+  default     = true
+}
+
+variable "rds_deletion_protection" {
+  description = "Enable deletion protection on the managed production RDS instance. Set false in a separate apply before destroy."
   type        = bool
   default     = true
 }

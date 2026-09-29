@@ -1,3 +1,7 @@
+# The process credential must already be the deployment role from
+# bootstrap/aws-exec-identity. Do not add assume_role here: the exact-plan
+# receipt binds this caller, and the backend block assumes the separate
+# backend-access role.
 provider "aws" {
   region = var.region
 }
@@ -5,6 +9,7 @@ provider "aws" {
 module "honua" {
   source = "../../modules/aws-ecs"
 
+  deployment_safety                = var.deployment_safety
   environment                      = var.environment
   name_prefix                      = var.name_prefix
   existing_vpc_id                  = local.install_net_id
@@ -12,6 +17,14 @@ module "honua" {
   existing_public_subnet_ids       = local.install_net_pub_sub
   existing_private_subnet_ids      = local.install_net_prv_sub
   image                            = local.install_image
+  ai_provider_secret_arn           = var.ai_provider_secret_arn
+  ai_provider_secret_kms_key_arn   = var.ai_provider_secret_kms_key_arn
+  licensing_mode                   = var.licensing_mode
+  licensing_edition                = var.licensing_edition
+  pro_license_secret_arn           = var.pro_license_secret_arn
+  pro_license_secret_kms_key_arn   = var.pro_license_secret_kms_key_arn
+  pro_license_key_id               = var.pro_license_key_id
+  pro_license_trusted_public_key   = var.pro_license_trusted_public_key
   task_cpu_architecture            = var.task_cpu_architecture
   admin_password                   = var.honua_admin_password
   connection_encryption_master_key = var.honua_connection_encryption_master_key
@@ -38,6 +51,7 @@ module "honua" {
   canary_desired_count             = var.canary_desired_count
   canary_weight_percentage         = var.canary_weight_percentage
   alb_deletion_protection          = var.alb_deletion_protection
+  rds_deletion_protection          = var.rds_deletion_protection
   alb_access_logs_enabled          = var.alb_access_logs_enabled
   alb_access_logs_force_destroy    = var.alb_access_logs_force_destroy
   alb_certificate_arn              = var.alb_certificate_arn
@@ -55,66 +69,4 @@ module "honua" {
     HONUA_ADMIN_UI          = "true"
     HostValidation__Enabled = "false"
   }
-}
-
-output "honua_url" {
-  value = module.honua.service_url
-}
-
-output "service_domain_record_fqdn" {
-  value = module.honua.service_domain_record_fqdn
-}
-
-output "ecs_cluster_name" {
-  value = module.honua.ecs_cluster_name
-}
-
-output "ecs_service_name" {
-  value = module.honua.ecs_service_name
-}
-
-output "canary_enabled" {
-  value = module.honua.canary_enabled
-}
-
-output "canary_ecs_service_name" {
-  value = module.honua.canary_ecs_service_name
-}
-
-output "canary_verification_header_name" {
-  value = module.honua.canary_verification_header_name
-}
-
-output "canary_verification_header_value" {
-  value = module.honua.canary_verification_header_value
-}
-
-output "control_plane_target_kind" {
-  value = module.honua.control_plane_target_kind
-}
-
-output "control_plane_backend_name" {
-  value = module.honua.control_plane_backend_name
-}
-
-output "control_plane_telemetry_policy" {
-  value = module.honua.control_plane_telemetry_policy
-}
-
-output "control_plane_telemetry_prometheus_job" {
-  value = module.honua.control_plane_telemetry_prometheus_job
-}
-
-output "control_plane_telemetry_prometheus_canary_job" {
-  value = module.honua.control_plane_telemetry_prometheus_canary_job
-}
-
-output "db_endpoint" {
-  value     = module.honua.db_endpoint
-  sensitive = true
-}
-
-output "redis_primary_endpoint" {
-  value     = module.honua.redis_primary_endpoint
-  sensitive = true
 }

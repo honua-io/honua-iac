@@ -12,6 +12,7 @@ set_common_tf_vars() {
   export TF_VAR_location="$LOCATION"
   export TF_VAR_environment="$ENVIRONMENT"
   export TF_VAR_honua_admin_password="$HONUA_ADMIN_PASSWORD"
+  export TF_VAR_honua_connection_encryption_master_key="$HONUA_ADMIN_PASSWORD"
   export TF_VAR_db_admin_password="$HONUA_DB_PASSWORD"
   export TF_VAR_enable_postgis="true"
   export TF_VAR_redis_enabled="true"

@@ -157,9 +157,9 @@ variable "image" {
 }
 
 variable "task_cpu_architecture" {
-  description = "ECS/Fargate CPU architecture. Honua defaults to ARM64 for Graviton-friendly AWS deployments."
+  description = "ECS/Fargate CPU architecture. X86_64 is the release-certified default; use ARM64 only with an independently verified image."
   type        = string
-  default     = "ARM64"
+  default     = "X86_64"
 
   validation {
     condition     = contains(["ARM64", "X86_64"], upper(var.task_cpu_architecture))
@@ -185,7 +185,7 @@ variable "connection_encryption_master_key" {
   nullable    = true
 
   validation {
-    condition     = var.connection_encryption_master_key == null || length(var.connection_encryption_master_key) >= 32
+    condition     = var.connection_encryption_master_key == null ? true : length(var.connection_encryption_master_key) >= 32
     error_message = "connection_encryption_master_key must be at least 32 characters when set."
   }
 }
@@ -330,6 +330,12 @@ variable "alb_deletion_protection" {
   default     = true
 }
 
+variable "rds_deletion_protection" {
+  description = "Enable deletion protection on the managed RDS instance. Disable this in a separate apply before destroying a production stack."
+  type        = bool
+  default     = true
+}
+
 variable "alb_drop_invalid_headers" {
   description = "Drop invalid HTTP headers at the ALB."
   type        = bool
@@ -379,10 +385,94 @@ variable "additional_env" {
       "filestorage__provider",
       "filestorage__awss3__bucketname",
       "filestorage__awss3__region",
-      "filestorage__awss3__keyprefix"
+      "filestorage__awss3__keyprefix",
+      "licensing__mode",
+      "licensing__edition",
+      "licensing__licensecontent",
+      "licensing__licensecontentsecretref"
     ]))) == 0
-    error_message = "Set deployment and file-storage settings through the typed module variables, not additional_env."
+    error_message = "Set deployment, file-storage and licensing settings through the typed module variables, not additional_env."
   }
+}
+
+variable "ai_provider_secret_arn" {
+  description = "Optional customer-owned Secrets Manager ARN containing HONUA_AI_PROVIDER_API_KEY. The module references but never creates, reads, or deletes this secret."
+  type        = string
+  default     = ""
+}
+
+variable "ai_provider_secret_kms_key_arn" {
+  description = "Optional customer-managed KMS key ARN used to encrypt ai_provider_secret_arn. Grants the ECS execution role decrypt access only to this key when the AI secret is configured."
+  type        = string
+  default     = ""
+}
+
+# --- Licensing -------------------------------------------------------------
+# The 2026.1 candidate ships with licensing DISABLED (operator ruling
+# 2026-09-12; honua-server #4721, honua-iac #191): no license envelope, no
+# validation, no capacity metering, every FeatureCatalog entitlement active.
+# The module declares Licensing__Mode=Disabled rather than leaving the server on
+# its own default (Mode=Enabled), which with no license source resolves to the
+# Community edition and gates editing/sync/streaming/geocoding.
+#
+# Supplying an envelope is the 2026.2 path: point pro_license_secret_arn at an
+# EXISTING Secrets Manager secret. The module then references but never creates,
+# reads or deletes it — exactly like ai_provider_secret_arn.
+
+variable "licensing_mode" {
+  description = "Licensing deployment mode declared to the server as Licensing__Mode. Defaults to Disabled (the 2026.1 contract: no license, no metering, all entitlements active). Set to Enabled to load and validate a license; supplying pro_license_secret_arn implies Enabled regardless of this value."
+  type        = string
+  default     = "Disabled"
+
+  validation {
+    condition     = contains(["Disabled", "Enabled"], var.licensing_mode)
+    error_message = "licensing_mode must be \"Disabled\" or \"Enabled\" (the server rejects any other value at startup)."
+  }
+}
+
+variable "licensing_edition" {
+  description = "Edition declared as Licensing__Edition when (and only when) a license envelope is supplied via pro_license_secret_arn. Ignored with no envelope, so a licensing-disabled deployment never claims an edition."
+  type        = string
+  default     = "Pro"
+
+  validation {
+    condition     = contains(["Community", "Pro", "Enterprise"], var.licensing_edition)
+    error_message = "licensing_edition must be one of Community, Pro or Enterprise."
+  }
+}
+
+variable "pro_license_secret_arn" {
+  description = "Optional ARN of an EXISTING Secrets Manager secret whose value is the signed Pro license envelope JSON. When set the module injects it as the ECS secret Licensing__LicenseContent, grants the execution role read access to this exact ARN, and declares Licensing__Mode=Enabled plus Licensing__Edition. The module never creates, reads or deletes the secret. Leave empty for the 2026.1 licensing-disabled contract."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = trimspace(var.pro_license_secret_arn) == "" || can(regex("^arn:aws[a-zA-Z-]*:secretsmanager:", var.pro_license_secret_arn))
+    error_message = "pro_license_secret_arn must be a Secrets Manager secret ARN (arn:aws:secretsmanager:...) or empty."
+  }
+}
+
+variable "pro_license_secret_kms_key_arn" {
+  description = "Optional customer-managed KMS key ARN used to encrypt pro_license_secret_arn. Grants the ECS execution role decrypt access only to this key when a license envelope is configured."
+  type        = string
+  default     = ""
+}
+
+variable "pro_license_key_id" {
+  description = "The license signing keyId as relabeled in the envelope. Must be hyphen-free so it is a legal environment-variable name segment (Licensing__TrustedKeys__<keyId>). Only used when a license envelope is supplied."
+  type        = string
+  default     = "honuademo2026q2"
+
+  validation {
+    condition     = can(regex("^[A-Za-z_][A-Za-z0-9_]*$", var.pro_license_key_id))
+    error_message = "pro_license_key_id must be a valid environment-variable name segment (letters, digits, underscore; no hyphens)."
+  }
+}
+
+variable "pro_license_trusted_public_key" {
+  description = "The Ed25519 public key (base64url: prefix) that verifies the license signature, injected as Licensing__TrustedKeys__<pro_license_key_id>. A public key only verifies and is not secret. Required when pro_license_secret_arn is set."
+  type        = string
+  default     = ""
 }
 
 variable "canary_enabled" {
@@ -427,9 +517,13 @@ variable "canary_additional_env" {
       "filestorage__provider",
       "filestorage__awss3__bucketname",
       "filestorage__awss3__region",
-      "filestorage__awss3__keyprefix"
+      "filestorage__awss3__keyprefix",
+      "licensing__mode",
+      "licensing__edition",
+      "licensing__licensecontent",
+      "licensing__licensecontentsecretref"
     ]))) == 0
-    error_message = "Set deployment and file-storage settings through the typed module variables, not canary_additional_env."
+    error_message = "Set deployment, file-storage and licensing settings through the typed module variables, not canary_additional_env."
   }
 }
 
@@ -480,10 +574,23 @@ variable "redis_connection_cidrs" {
 }
 
 variable "redis_auth_token" {
-  description = "Redis auth token (used when creating Redis). Leave empty to auto-generate."
+  description = "Redis auth token (used when creating Redis). Leave empty to auto-generate. Must be 16-128 characters using letters, digits, or ElastiCache-supported special characters (!&#$^<>-)."
   type        = string
   default     = ""
   sensitive   = true
+
+  validation {
+    condition = var.redis_auth_token == "" || (
+      length(var.redis_auth_token) >= 16 &&
+      length(var.redis_auth_token) <= 128 &&
+      can(regex("^[A-Za-z0-9!&#$^<>-]+$", var.redis_auth_token)) &&
+      length([
+        for pattern in ["[A-Z]", "[a-z]", "[0-9]", "[!&#$^<>-]"] : pattern
+        if can(regex(pattern, var.redis_auth_token))
+      ]) >= 3
+    )
+    error_message = "redis_auth_token must be 16-128 characters, contain only letters, digits, or !&#$^<>-, and use at least three character classes."
+  }
 }
 
 variable "redis_enabled" {
@@ -577,5 +684,51 @@ variable "postgis_readiness_sleep_seconds" {
   validation {
     condition     = var.postgis_readiness_sleep_seconds >= 1
     error_message = "postgis_readiness_sleep_seconds must be at least 1."
+  }
+}
+
+# Allowlist for request-supplied secret references (honua-server #5055). The
+# server section Security:RequestSecretReferences is deny-by-default: with all
+# three lists empty the server resolves no secret reference named in a request
+# (import credentials, workflow source steps, secure-connection registration),
+# and does not resolve a reference stored on a secure connection at runtime.
+# Server images that predate the setting ignore the rendered variables.
+variable "request_secret_reference_allowed_environment_variables" {
+  description = "Exact environment variable names a request may name as env:NAME (case-sensitive). Rendered as Security__RequestSecretReferences__AllowedEnvironmentVariables__<n>. Empty permits none."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for name in var.request_secret_reference_allowed_environment_variables : can(regex("^[A-Za-z_][A-Za-z0-9_]*$", name))
+    ])
+    error_message = "Each entry must be a valid environment variable name."
+  }
+}
+
+variable "request_secret_reference_allowed_environment_variable_prefixes" {
+  description = "Environment variable name prefixes a request may name as env:NAME, for example HONUA_IMPORT_. A prefix never matches a name containing a double underscore. Rendered as Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__<n>. Empty permits none."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for prefix in var.request_secret_reference_allowed_environment_variable_prefixes : can(regex("^[A-Za-z_][A-Za-z0-9_]*$", prefix))
+    ])
+    error_message = "Each entry must be a valid environment variable name prefix."
+  }
+}
+
+variable "request_secret_reference_allowed_secret_reference_prefixes" {
+  description = "Whole-reference prefixes a request may name for the other providers, including the provider segment, for example aws:secretsmanager:honua/imports/. The provider segment is case-insensitive; the remainder is a case-sensitive prefix of the reference. Rendered as Security__RequestSecretReferences__AllowedSecretReferencePrefixes__<n>. Empty permits none."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for prefix in var.request_secret_reference_allowed_secret_reference_prefixes :
+      length(prefix) <= 512 && can(regex("^[A-Za-z][A-Za-z0-9-]{0,31}:[^\\s{}$;]+$", prefix)) && lower(split(":", prefix)[0]) != "env"
+    ])
+    error_message = "Each entry must be '<provider>:<identifier-prefix>' for a non-environment provider."
   }
 }

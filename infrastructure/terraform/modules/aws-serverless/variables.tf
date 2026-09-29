@@ -188,6 +188,19 @@ variable "admin_password" {
     condition     = length(var.admin_password) >= 32
     error_message = "admin_password must be at least 32 characters."
   }
+  # The server refuses to start in the Production environment (the Lambda
+  # default) unless the admin password carries every character class
+  # (AdminPasswordValidation.ValidateProductionPassword); fail the plan
+  # instead of the cold start.
+  validation {
+    condition = (
+      can(regex("[A-Z]", var.admin_password)) &&
+      can(regex("[a-z]", var.admin_password)) &&
+      can(regex("[0-9]", var.admin_password)) &&
+      can(regex("[^A-Za-z0-9]", var.admin_password))
+    )
+    error_message = "admin_password must contain uppercase, lowercase, digit, and special characters (the server's production policy)."
+  }
 }
 
 variable "connection_encryption_master_key" {
@@ -196,7 +209,7 @@ variable "connection_encryption_master_key" {
   sensitive   = true
   default     = null
   validation {
-    condition     = var.connection_encryption_master_key == null || length(var.connection_encryption_master_key) >= 32
+    condition     = var.connection_encryption_master_key == null ? true : length(var.connection_encryption_master_key) >= 32
     error_message = "connection_encryption_master_key must be at least 32 characters when set."
   }
 }
@@ -329,10 +342,29 @@ variable "redis_connection_cidrs" {
 }
 
 variable "redis_auth_token" {
-  description = "Redis auth token (used when creating Redis). Leave empty to auto-generate."
+  description = "Redis auth token (used when creating Redis). Leave empty to auto-generate. Must be 16-128 characters using letters, digits, or ElastiCache-supported special characters (!&#$^<>-)."
   type        = string
   default     = ""
   sensitive   = true
+
+  validation {
+    condition = var.redis_auth_token == "" || (
+      length(var.redis_auth_token) >= 16 &&
+      length(var.redis_auth_token) <= 128 &&
+      can(regex("^[A-Za-z0-9!&#$^<>-]+$", var.redis_auth_token)) &&
+      length([
+        for pattern in ["[A-Z]", "[a-z]", "[0-9]", "[!&#$^<>-]"] : pattern
+        if can(regex(pattern, var.redis_auth_token))
+      ]) >= 3
+    )
+    error_message = "redis_auth_token must be 16-128 characters, contain only letters, digits, or !&#$^<>-, and use at least three character classes."
+  }
+}
+
+variable "additional_allowed_hosts" {
+  description = "Extra host patterns the server accepts besides the API Gateway domain (HostValidation__AllowedHosts__N), e.g. \"*.lambda-url.<region>.on.aws\" when a Function URL fronts the alias."
+  type        = list(string)
+  default     = []
 }
 
 variable "redis_enabled" {
@@ -808,6 +840,26 @@ variable "worker_customcode_dotnet_repo_force_delete" {
   default     = false
 }
 
+# --- Licensing mode --------------------------------------------------------
+# The 2026.1 candidate ships with licensing DISABLED (operator ruling
+# 2026-09-12; honua-server #4721): no license envelope, no validation, no
+# capacity metering, every FeatureCatalog entitlement active. The module
+# DECLARES that mode as Licensing__Mode=Disabled rather than relying on the
+# absence of a license, because the server's own default is Mode=Enabled, which
+# with no license source resolves to Community and gates editing/sync/streaming/
+# geocoding.
+
+variable "licensing_mode" {
+  description = "Licensing deployment mode declared to the server as Licensing__Mode. Defaults to Disabled (the 2026.1 contract: no license, no metering, all entitlements active). Set to Enabled to load and validate a license; supplying one via enable_pro_license implies Enabled regardless of this value."
+  type        = string
+  default     = "Disabled"
+
+  validation {
+    condition     = contains(["Disabled", "Enabled"], var.licensing_mode)
+    error_message = "licensing_mode must be \"Disabled\" or \"Enabled\" (the server rejects any other value at startup)."
+  }
+}
+
 # --- Pro license (Secrets Manager delivery) -------------------------------
 # Optional, off by default. When enabled, stores the signed Pro license
 # envelope in a Secrets Manager secret, grants the Lambda role
@@ -815,10 +867,15 @@ variable "worker_customcode_dotnet_repo_force_delete" {
 # Licensing__LicenseContentSecretRef + Licensing__TrustedKeys__<keyId> so the
 # server activates Pro (editing/sync/streaming/geocoding) without the ~2KB
 # envelope having to fit Lambda's 4KB environment-variable limit. The server
-# resolves the reference at startup and falls back to Community if unreachable.
+# resolves the reference at startup and refuses to start if a paid deployment
+# cannot resolve a valid license.
+#
+# This is the 2026.2 path. For 2026.1 leave it off: the module then creates no
+# license secret, grants the execution role no access to one, and declares
+# Licensing__Mode=Disabled (see licensing_mode).
 
 variable "enable_pro_license" {
-  description = "Deliver a signed Pro license to the Lambda via Secrets Manager. Off by default; when off the server runs Community. Requires pro_license_content and pro_license_trusted_public_key when enabled."
+  description = "Deliver a signed Pro license to the Lambda via Secrets Manager and set Licensing__Mode=Enabled. Off by default; when off the deployment runs with licensing disabled (all entitlements active, no metering), NOT Community. Requires pro_license_trusted_public_key when enabled."
   type        = bool
   default     = false
 }
@@ -918,6 +975,57 @@ variable "bedrock_ai_timeout_seconds" {
   }
 }
 
+# ---------------------------------------------------------------------------
+# Amazon Location Service geocoding — replaces an external Nominatim provider
+# for VPCs with no NAT/internet-gateway egress (honua-server#2948). Off by
+# default. When enabled, the module provisions an Amazon Location place index,
+# grants the Lambda role least-privilege geo:Search*/DescribePlaceIndex on it,
+# and routes Geocoding__DefaultProvider to amazon-location. The service is
+# reached over AWS's private network via a VPC interface endpoint
+# (com.amazonaws.<region>.geo) — see the calling example root for that
+# endpoint (regional, VPC-specific, so it is not provisioned here).
+# ---------------------------------------------------------------------------
+
+variable "enable_amazon_location_geocoding" {
+  description = "Provision an Amazon Location place index and grant the Lambda role geo:SearchPlaceIndexForText / geo:SearchPlaceIndexForPosition / geo:SearchPlaceIndexForSuggestions / geo:DescribePlaceIndex on it, and route Geocoding__DefaultProvider to amazon-location (Nominatim is explicitly disabled to avoid a double network-timeout failover hazard in no-NAT VPCs). Off by default so existing deploys are unchanged. The caller must separately provision a VPC interface endpoint for com.amazonaws.<region>.geo if the Lambda has no general internet egress (see the aws-demo example's vpc-endpoints.tf for the pattern)."
+  type        = bool
+  default     = false
+}
+
+variable "amazon_location_place_index_name" {
+  description = "Name of the Amazon Location place index to create. Defaults to '<name_prefix>-<environment>-geocode' when empty. Must be unique per account+region."
+  type        = string
+  default     = ""
+}
+
+variable "amazon_location_data_source" {
+  description = "Upstream data provider for the Amazon Location place index: Esri or Here. Determines the results' data licensing/attribution (Esri or HERE, not OpenStreetMap/Nominatim) and Amazon Location's per-request pricing for that provider."
+  type        = string
+  default     = "Esri"
+
+  validation {
+    condition     = contains(["Esri", "Here"], var.amazon_location_data_source)
+    error_message = "amazon_location_data_source must be \"Esri\" or \"Here\"."
+  }
+}
+
+variable "amazon_location_intended_use" {
+  description = "Amazon Location place index DataSourceConfiguration.IntendedUse. \"SingleUse\" (default) permits real-time geocoding/reverse-geocoding without storing or caching results — matches Esri/HERE's terms for ad hoc lookups and is the right choice for the demo's live GeocodeServer proxy. \"Storage\" is required only if results are persisted (e.g. bulk geocode-and-save workflows), and costs more per request."
+  type        = string
+  default     = "SingleUse"
+
+  validation {
+    condition     = contains(["SingleUse", "Storage"], var.amazon_location_intended_use)
+    error_message = "amazon_location_intended_use must be \"SingleUse\" or \"Storage\"."
+  }
+}
+
+variable "amazon_location_max_results" {
+  description = "Default max results the server requests per Amazon Location geocode call (server-side GeocodeProviderCapabilities.MaxResultsPerRequest is already capped at 50 for this provider; this only affects the env-advertised default)."
+  type        = number
+  default     = 10
+}
+
 # --- Control-plane event triggers (TriggerMode=Event) ---------------------
 # Optional, off by default. When enabled, provisions a reconcile Lambda fired by
 # EventBridge on Batch job state changes plus a backstop Lambda fired every ~2
@@ -981,5 +1089,51 @@ variable "control_plane_scheduled_tick_schedules" {
     FileStorageCleanup   = "rate(1 hour)"
     TemporaryFileCleanup = "rate(30 minutes)"
     DigestFlush          = "rate(5 minutes)"
+  }
+}
+
+# Allowlist for request-supplied secret references (honua-server #5055). The
+# server section Security:RequestSecretReferences is deny-by-default: with all
+# three lists empty the server resolves no secret reference named in a request
+# (import credentials, workflow source steps, secure-connection registration),
+# and does not resolve a reference stored on a secure connection at runtime.
+# Server images that predate the setting ignore the rendered variables.
+variable "request_secret_reference_allowed_environment_variables" {
+  description = "Exact environment variable names a request may name as env:NAME (case-sensitive). Rendered as Security__RequestSecretReferences__AllowedEnvironmentVariables__<n>. Empty permits none."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for name in var.request_secret_reference_allowed_environment_variables : can(regex("^[A-Za-z_][A-Za-z0-9_]*$", name))
+    ])
+    error_message = "Each entry must be a valid environment variable name."
+  }
+}
+
+variable "request_secret_reference_allowed_environment_variable_prefixes" {
+  description = "Environment variable name prefixes a request may name as env:NAME, for example HONUA_IMPORT_. A prefix never matches a name containing a double underscore. Rendered as Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__<n>. Empty permits none."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for prefix in var.request_secret_reference_allowed_environment_variable_prefixes : can(regex("^[A-Za-z_][A-Za-z0-9_]*$", prefix))
+    ])
+    error_message = "Each entry must be a valid environment variable name prefix."
+  }
+}
+
+variable "request_secret_reference_allowed_secret_reference_prefixes" {
+  description = "Whole-reference prefixes a request may name for the other providers, including the provider segment, for example aws:secretsmanager:honua/imports/. The provider segment is case-insensitive; the remainder is a case-sensitive prefix of the reference. Rendered as Security__RequestSecretReferences__AllowedSecretReferencePrefixes__<n>. Empty permits none."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for prefix in var.request_secret_reference_allowed_secret_reference_prefixes :
+      length(prefix) <= 512 && can(regex("^[A-Za-z][A-Za-z0-9-]{0,31}:[^\\s{}$;]+$", prefix)) && lower(split(":", prefix)[0]) != "env"
+    ])
+    error_message = "Each entry must be '<provider>:<identifier-prefix>' for a non-environment provider."
   }
 }

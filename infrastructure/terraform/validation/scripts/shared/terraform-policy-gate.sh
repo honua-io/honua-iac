@@ -219,11 +219,415 @@ assert_required_nullable_variable() {
   exit 1
 }
 
+# Print the top-level HCL block whose header line starts with $2. Terraform fmt
+# guarantees the closing brace of a top-level block sits in column 0, so that is
+# the terminator.
+extract_hcl_block() {
+  local file="$1"
+  local header="$2"
+
+  awk -v header="$header" '
+    index($0, header) == 1 { inblock = 1 }
+    inblock { print }
+    inblock && /^\}[ \t]*$/ { inblock = 0 }
+  ' "$file"
+}
+
+# Print the policy statement whose sid is $2. Statements are two-space indented
+# inside an aws_iam_policy_document, so the next statement header terminates the
+# current one.
+extract_policy_statement() {
+  local file="$1"
+  local sid="$2"
+
+  awk -v sid="$sid" '
+    function flush_chunk() {
+      if (chunk ~ ("sid[ \t]*=[ \t]*\"" sid "\"")) printf "%s", chunk
+      chunk = ""
+    }
+    /^  (dynamic "statement"|statement)[ \t]*\{/ { flush_chunk() }
+    { chunk = chunk $0 "\n" }
+    END { flush_chunk() }
+  ' "$file"
+}
+
+# A file-wide presence match can be satisfied by an unrelated statement that
+# happens to use the same principal, tag key or condition key, so a removed
+# invariant would still pass. These assert the pattern inside the one block or
+# statement that is supposed to carry it. Comment lines are stripped first so a
+# guard cannot be satisfied by prose that merely mentions the key.
+assert_scoped_pattern() {
+  local label="$1"
+  local file="$2"
+  local pattern="$3"
+  local scope="$4"
+
+  if [[ -z "${scope//[[:space:]]/}" ]]; then
+    log_error "Policy check failed ($label): expected pattern not found in $file (guarded block is missing)"
+    exit 1
+  fi
+
+  # Strip comments so a guard cannot be satisfied by prose that merely mentions
+  # the condition key it is supposed to be enforcing.
+  if grep -Ev '^[[:space:]]*#' <<<"$scope" | grep -Eq "$pattern"; then
+    return 0
+  fi
+
+  log_error "Policy check failed ($label): expected pattern not found in $file"
+  exit 1
+}
+
+# Print the policy statement containing the literal marker $2. A dynamic
+# statement's sid is an expression (statement.key), so it is located by one of
+# its for_each keys instead of by sid.
+extract_policy_statement_containing() {
+  local file="$1"
+  local marker="$2"
+
+  awk -v marker="$marker" '
+    function flush_chunk() {
+      if (index(chunk, marker)) printf "%s", chunk
+      chunk = ""
+    }
+    /^  (dynamic "statement"|statement)[ \t]*\{/ { flush_chunk() }
+    { chunk = chunk $0 "\n" }
+    END { flush_chunk() }
+  ' "$file"
+}
+
+# Fail when any Allow statement other than the sanctioned sids ($4,
+# space-separated) grants the action $3. Comment lines are ignored so prose
+# cannot trip or satisfy the check, and Deny statements are skipped because
+# they remove rather than grant the action. A statement without a literal sid
+# is reported as "<unnamed statement>" and is never sanctioned.
+assert_action_confined() {
+  local label="$1"
+  local file="$2"
+  local action="$3"
+  local allowed="$4"
+
+  if [[ ! -f "$file" ]]; then
+    log_error "Policy check failed ($label): file not found: $file"
+    exit 1
+  fi
+
+  local findings
+  findings="$(awk -v action="\"$action\"" -v allowed=" $allowed " '
+    function flush_chunk(   sid) {
+      if (index(chunk, action) && chunk !~ /effect[ \t]*=[ \t]*"Deny"/) {
+        sid = "<unnamed statement>"
+        if (match(chunk, /sid[ \t]*=[ \t]*"[^"]+"/)) {
+          sid = substr(chunk, RSTART, RLENGTH)
+          sub(/sid[ \t]*=[ \t]*"/, "", sid)
+          sub(/"$/, "", sid)
+        }
+        if (index(allowed, " " sid " ") == 0) print "  " sid ": grants " action
+      }
+      chunk = ""
+    }
+    /^[ \t]*#/ { next }
+    /^  (dynamic "statement"|statement)[ \t]*\{/ { flush_chunk() }
+    { chunk = chunk $0 "\n" }
+    END { flush_chunk() }
+  ' "$file")"
+
+  if [[ -z "$findings" ]]; then
+    return 0
+  fi
+
+  log_error "Policy check failed ($label): disallowed pattern found"
+  printf '%s\n' "$findings"
+  exit 1
+}
+
+assert_regex_present_in_block() {
+  local label="$1"
+  local file="$2"
+  local header="$3"
+  local pattern="$4"
+
+  if [[ ! -f "$file" ]]; then
+    log_error "Policy check failed ($label): file not found: $file"
+    exit 1
+  fi
+
+  local scope
+  scope="$(extract_hcl_block "$file" "$header")"
+  assert_scoped_pattern "$label" "$file" "$pattern" "$scope"
+}
+
+assert_regex_present_in_statement() {
+  local label="$1"
+  local file="$2"
+  local sid="$3"
+  local pattern="$4"
+
+  if [[ ! -f "$file" ]]; then
+    log_error "Policy check failed ($label): file not found: $file"
+    exit 1
+  fi
+
+  local scope
+  scope="$(extract_policy_statement "$file" "$sid")"
+  assert_scoped_pattern "$label" "$file" "$pattern" "$scope"
+}
+
+assert_single_wildcard_exception() {
+  local file="$1"
+  local label="$2"
+  local sanctioned_action="$3"
+  local sanctioned_condition="$4"
+
+  if [[ ! -f "$file" ]]; then
+    log_error "Policy check failed ($label): file not found: $file"
+    exit 1
+  fi
+
+  # Split the document into policy statements and allow at most one statement
+  # whose resource list contains "*", and only when that statement is the
+  # sanctioned action carrying the sanctioned condition. Any additional
+  # wildcard, or a wildcard that migrates onto some other action, fails.
+  #
+  # Whitespace inside each statement is collapsed before matching: a line
+  # oriented regex cannot see `resources = [` with the "*" element on the next
+  # line, which is ordinary HCL formatting and would otherwise slip past.
+  local findings
+  findings="$(awk -v action="$sanctioned_action" -v cond="$sanctioned_condition" '
+    function statement_sid(flat,   sid) {
+      sid = "<unnamed statement>"
+      if (match(flat, /sid[ ]*=[ ]*"[^"]+"/)) {
+        sid = substr(flat, RSTART, RLENGTH)
+        sub(/sid[ ]*=[ ]*"/, "", sid)
+        sub(/"$/, "", sid)
+      }
+      return sid
+    }
+    function flush_chunk(   flat, sid) {
+      flat = chunk
+      gsub(/[ \t\r\n]+/, " ", flat)
+      if (flat ~ /resources[ ]*=[ ]*\[[^]]*"\*"/) {
+        wildcards++
+        sid = statement_sid(flat)
+        if (index(flat, action) == 0 || index(flat, cond) == 0) {
+          print "  " sid ": Resource \"*\" without " action " and " cond
+        } else if (wildcards > 1) {
+          print "  " sid ": additional Resource \"*\" grant"
+        }
+      }
+      chunk = ""
+    }
+    /^  (dynamic "statement"|statement)[ \t]*\{/ { flush_chunk() }
+    { chunk = chunk $0 "\n" }
+    END { flush_chunk() }
+  ' "$file")"
+
+  if [[ -z "$findings" ]]; then
+    return 0
+  fi
+
+  log_error "Policy check failed ($label): disallowed pattern found"
+  printf '%s\n' "$findings"
+  exit 1
+}
+
 run_custom_policy_checks() {
   log_info "Running custom policy checks"
 
   assert_regex_absent 'actions[[:space:]]*=[[:space:]]*\[[[:space:]]*"\*"[[:space:]]*\]' "$ROOT" "least-privilege-actions"
   assert_regex_absent 'Action"[[:space:]]*:[[:space:]]*"\*"' "$ROOT" "least-privilege-actions-json"
+
+  # release#282: the Lambda certification packet must preserve its service
+  # trust, tagged lifecycle boundary, and the single sanctioned wildcard grant.
+  local lambda_cert="$ROOT/examples/aws-cert/lambda-preview-cert.tf"
+  # ec2 is allowed in exactly one place: the execution-role boundary statement
+  # that lets Lambda manage the ENIs of the VPC-attached certification function
+  # (the six AWSLambdaVPCAccessExecutionRole actions, nothing else).
+  # Two sanctioned ec2 statements, each with its own action allowlist: the
+  # execution-role boundary's ENI management and the caller's VPC describes.
+  local vpc_sid vpc_allow vpc_stmt vpc_extra
+  for vpc_sid in CertificationVpcEni CertificationVpcDescribe; do
+    case "$vpc_sid" in
+      CertificationVpcEni) vpc_allow='CreateNetworkInterface|DescribeNetworkInterfaces|DescribeSubnets|DeleteNetworkInterface|AssignPrivateIpAddresses|UnassignPrivateIpAddresses' ;;
+      CertificationVpcDescribe) vpc_allow='DescribeSubnets|DescribeSecurityGroups|DescribeVpcs|DescribeNetworkInterfaces' ;;
+    esac
+    vpc_stmt="$(extract_policy_statement "$lambda_cert" "$vpc_sid")"
+    if [ -z "$vpc_stmt" ]; then
+      echo "[ERROR] Policy check failed (lambda-cert-vpc-eni-statement): expected pattern not found" >&2; echo "  ${vpc_sid} statement missing from $lambda_cert" >&2
+      exit 1
+    fi
+    vpc_extra="$(printf '%s' "$vpc_stmt" | grep -oE '"ec2:[A-Za-z]+"' | grep -vE "^\"ec2:(${vpc_allow})\"\$" || true)"
+    if [ -n "$vpc_extra" ]; then
+      echo "[ERROR] Policy check failed (lambda-cert-vpc-eni-allowlist): disallowed pattern found" >&2; echo "  unexpected ec2 action(s) in ${vpc_sid}: ${vpc_extra//$'\n'/ }" >&2
+      exit 1
+    fi
+  done
+  local lambda_cert_no_eni
+  lambda_cert_no_eni="$(mktemp)"
+  awk '
+    function flush_chunk() { if (chunk !~ /sid[ \t]*=[ \t]*"(CertificationVpcEni|CertificationVpcDescribe)"/) printf "%s", chunk; chunk = "" }
+    /^  (dynamic "statement"|statement)[ \t]*\{/ { flush_chunk() }
+    { chunk = chunk $0 "\n" }
+    END { flush_chunk() }
+  ' "$lambda_cert" > "$lambda_cert_no_eni"
+  assert_regex_absent '"ecr:SetRepositoryPolicy"|"lambda:UntagResource"|"ec2:' "$lambda_cert_no_eni" "lambda-cert-no-extra-capabilities"
+
+  # ecr:GetAuthorizationToken has no resource-level ARN form in AWS, so it is
+  # the single sanctioned Resource "*" grant here and must stay region-scoped.
+  assert_regex_present_in_statement "lambda-cert-auth-token-region" "$lambda_cert" \
+    "EcrAuthorizationTokenGlobal" 'variable[[:space:]]*=[[:space:]]*"aws:RequestedRegion"'
+  # The ENI statement's Resource "*" is sanctioned separately above (six ENI
+  # actions only); the single-wildcard rule applies to everything else.
+  assert_single_wildcard_exception "$lambda_cert_no_eni" "lambda-cert-no-global-resources" \
+    'ecr:GetAuthorizationToken' 'aws:RequestedRegion'
+  rm -f "$lambda_cert_no_eni"
+
+  # Each guard below is scoped to the block or statement that must carry the
+  # invariant. The Lambda service principal and the purpose resource tag each
+  # appear twice in this file, so a file-wide match would let a removed trust
+  # or lifecycle condition pass on the strength of the unrelated copy.
+  assert_regex_present_in_block "lambda-cert-service-trust" "$lambda_cert" \
+    'data "aws_iam_policy_document" "lambda_preview_trust"' \
+    'identifiers[[:space:]]*=[[:space:]]*\["lambda.amazonaws.com"\]'
+  assert_regex_present_in_block "lambda-cert-execution-boundary" "$lambda_cert" \
+    'resource "aws_iam_role" "lambda_preview_execution"' \
+    'permissions_boundary[[:space:]]*=[[:space:]]*aws_iam_policy.lambda_preview_execution_boundary.arn'
+  assert_regex_present_in_block "lambda-cert-immutable-images" "$lambda_cert" \
+    'resource "aws_ecr_repository" "lambda_preview"' \
+    'image_tag_mutability[[:space:]]*=[[:space:]]*"IMMUTABLE"'
+  assert_regex_present_in_statement "lambda-cert-required-run-tag" "$lambda_cert" \
+    "CreateTaggedCertificationFunction" 'variable[[:space:]]*=[[:space:]]*"aws:RequestTag/honua-cert-run"'
+  assert_regex_present_in_statement "lambda-cert-tagged-lifecycle" "$lambda_cert" \
+    "InvokeAndDeleteTaggedCertificationFunction" 'variable[[:space:]]*=[[:space:]]*"aws:ResourceTag/honua-purpose"'
+  assert_regex_present_in_statement "lambda-cert-passrole-service" "$lambda_cert" \
+    "PassOnlyCertificationExecutionRole" 'variable[[:space:]]*=[[:space:]]*"iam:PassedToService"'
+  assert_regex_present_in_statement "lambda-cert-passrole-resource" "$lambda_cert" \
+    "PassOnlyCertificationExecutionRole" 'resources[[:space:]]*=[[:space:]]*\[aws_iam_role.lambda_preview_execution.arn\]'
+  assert_regex_present_in_statement "lambda-cert-image-pull-source" "$lambda_cert" \
+    "LambdaCertificationImagePull" 'variable[[:space:]]*=[[:space:]]*"aws:SourceArn"'
+
+  # honua-iac#168: teardown can only reach what the lane created. The per-run
+  # function and log-group ARNs stay inside the run namespace that the server
+  # lane's teardown refuses to leave (honua-certrun-lambda-*).
+  assert_regex_present '^[[:space:]]*lambda_preview_function_arn[[:space:]]*=[[:space:]]*".*:function:honua-certrun-lambda-\*"[[:space:]]*$' \
+    "$lambda_cert" "lambda-cert-run-namespace"
+  assert_regex_present '^[[:space:]]*lambda_preview_log_arn[[:space:]]*=[[:space:]]*".*:log-group:/aws/lambda/honua-certrun-lambda-\*"[[:space:]]*$' \
+    "$lambda_cert" "lambda-cert-run-namespace"
+
+  # The tag grant that CreateFunction needs must never relabel a function that
+  # already carries run or purpose tags. The Deny also covers the purpose key.
+  local tag_preservation tag_pattern
+  tag_preservation="$(extract_policy_statement_containing "$lambda_cert" 'PreserveCertificationRun')"
+  for tag_pattern in \
+    'effect[[:space:]]*=[[:space:]]*"Deny"' \
+    '"lambda:TagResource"' \
+    'PreserveCertificationRun[[:space:]]*=[[:space:]]*"honua-cert-run"' \
+    'PreserveCertificationPurpose[[:space:]]*=[[:space:]]*"honua-purpose"' \
+    'test[[:space:]]*=[[:space:]]*"StringNotEquals"'; do
+    assert_scoped_pattern "lambda-cert-tag-preservation" "$lambda_cert" "$tag_pattern" "$tag_preservation"
+  done
+  # The Null condition limits the Deny to functions that already carry the tag.
+  # Without it the negated StringNotEquals also matches an untagged function, so
+  # the Deny would block CreateFunction's own initial tagging on every run.
+  # Whitespace is collapsed so the condition's three attributes match as a unit.
+  assert_scoped_pattern "lambda-cert-tag-preservation" "$lambda_cert" \
+    'test = "Null" variable = "aws:ResourceTag/\$\{statement\.value\}" values = \["false"\]' \
+    "$(grep -Ev '^[[:space:]]*#' <<<"$tag_preservation" | tr -s ' \t\n' ' ')"
+
+  # Destructive, identity-passing and tagging actions are granted by exactly
+  # one sanctioned statement each (two for DeleteFunction), and each of those
+  # statements keeps its namespaced resource scope. Adding DeleteFunction to
+  # the standing-alias statement, or the unqualified standing function ARN to
+  # the version-delete statement, would let the lane delete what it did not
+  # create.
+  assert_action_confined "lambda-cert-destructive-action-scope" "$lambda_cert" \
+    'lambda:DeleteFunction' 'InvokeAndDeleteTaggedCertificationFunction DeleteOnlyStandingFunctionVersions'
+  assert_action_confined "lambda-cert-destructive-action-scope" "$lambda_cert" \
+    'logs:DeleteLogGroup' 'CertificationLogGroupLifecycle'
+  assert_action_confined "lambda-cert-destructive-action-scope" "$lambda_cert" \
+    'ecr:BatchDeleteImage' 'ReplaceStaleCertificationMirrorTag'
+  assert_action_confined "lambda-cert-destructive-action-scope" "$lambda_cert" \
+    'iam:PassRole' 'PassOnlyCertificationExecutionRole'
+  assert_action_confined "lambda-cert-destructive-action-scope" "$lambda_cert" \
+    'lambda:CreateFunction' 'CreateTaggedCertificationFunction'
+  assert_action_confined "lambda-cert-destructive-action-scope" "$lambda_cert" \
+    'lambda:TagResource' 'CreateTaggedCertificationFunction'
+  # Confinement alone passes when an action vanishes from every statement, which
+  # would silently break lane cleanup or startup. Each sanctioned statement must
+  # still grant its action.
+  local required_grant
+  for required_grant in \
+    'InvokeAndDeleteTaggedCertificationFunction:lambda:DeleteFunction' \
+    'DeleteOnlyStandingFunctionVersions:lambda:DeleteFunction' \
+    'CertificationLogGroupLifecycle:logs:DeleteLogGroup' \
+    'ReplaceStaleCertificationMirrorTag:ecr:BatchDeleteImage' \
+    'PassOnlyCertificationExecutionRole:iam:PassRole' \
+    'CreateTaggedCertificationFunction:lambda:CreateFunction' \
+    'CreateTaggedCertificationFunction:lambda:TagResource'; do
+    assert_regex_present_in_statement "lambda-cert-required-action-grant" "$lambda_cert" \
+      "${required_grant%%:*}" "\"${required_grant#*:}\""
+  done
+  local scoped_statement
+  for scoped_statement in \
+    'CreateTaggedCertificationFunction:resources[[:space:]]*=[[:space:]]*\[local\.lambda_preview_function_arn\][[:space:]]*$' \
+    'InvokeAndDeleteTaggedCertificationFunction:resources[[:space:]]*=[[:space:]]*\[local\.lambda_preview_function_arn\][[:space:]]*$' \
+    'DeleteOnlyStandingFunctionVersions:resources[[:space:]]*=[[:space:]]*\["\$\{module\.honua\.lambda_function_arn\}:\*"\][[:space:]]*$' \
+    'CertificationLogGroupLifecycle:resources[[:space:]]*=[[:space:]]*\["\$\{local\.lambda_preview_log_arn\}:\*"\][[:space:]]*$' \
+    'ReplaceStaleCertificationMirrorTag:resources[[:space:]]*=[[:space:]]*\[aws_ecr_repository\.lambda_preview\.arn\][[:space:]]*$'; do
+    assert_regex_present_in_statement "lambda-cert-destructive-resource-scope" "$lambda_cert" \
+      "${scoped_statement%%:*}" "${scoped_statement#*:}"
+  done
+
+  # The substrate extends the certified role's permissions only: it must not
+  # declare federation, trust or subjects of its own, its policy must attach to
+  # the existing OIDC role, and that role's trust must keep its audience and
+  # subject conditions with the cert-Environment subject as the stack default.
+  assert_regex_absent 'AssumeRoleWithWebIdentity|token\.actions\.githubusercontent\.com|aws_iam_openid_connect_provider|github_oidc_subjects|UpdateAssumeRolePolicy' \
+    "$lambda_cert" "lambda-cert-oidc-trust-untouched"
+  assert_regex_present_in_block "lambda-cert-oidc-role-attachment" "$lambda_cert" \
+    'resource "aws_iam_role_policy" "lambda_preview_certification"' \
+    'role[[:space:]]*=[[:space:]]*module\.github_oidc\.role_name'
+  # Each condition is matched as a unit (test, claim, value source) on the
+  # whitespace-collapsed trust block, so a subject condition rewired to a fixed
+  # value, or an audience condition loosened to StringLike, fails. The value
+  # chain from the stack default to the trust policy is checked link by link.
+  local oidc_component="$ROOT/components/aws-github-oidc/main.tf"
+  local oidc_trust
+  oidc_trust="$(extract_hcl_block "$oidc_component" 'data "aws_iam_policy_document" "trust"' |
+    grep -Ev '^[[:space:]]*#' | tr -s ' \t\n' ' ')"
+  assert_scoped_pattern "oidc-trust-audience-condition" "$oidc_component" \
+    'test = "StringEquals" variable = "token\.actions\.githubusercontent\.com:aud" values = \[var\.oidc_audience\]' "$oidc_trust"
+  assert_scoped_pattern "oidc-trust-subject-condition" "$oidc_component" \
+    'test = "StringLike" variable = "token\.actions\.githubusercontent\.com:sub" values = local\.oidc_subjects' "$oidc_trust"
+  assert_regex_present '^[[:space:]]*oidc_subjects[[:space:]]*=[[:space:]]*length\(var\.github_oidc_subjects\)[[:space:]]*>[[:space:]]*0[[:space:]]*\?[[:space:]]*var\.github_oidc_subjects[[:space:]]*:' \
+    "$oidc_component" "oidc-trust-subject-wiring"
+  assert_regex_present_in_block "oidc-trust-subject-wiring" "$ROOT/examples/aws-cert/main.tf" \
+    'module "github_oidc"' '^[[:space:]]*github_oidc_subjects[[:space:]]*=[[:space:]]*var\.github_oidc_subjects[[:space:]]*$'
+  assert_regex_present_in_block "aws-cert-oidc-subject-scope" "$ROOT/examples/aws-cert/variables.tf" \
+    'variable "github_oidc_subjects"' 'default[[:space:]]*=[[:space:]]*\["repo:honua-io/honua-server:environment:cert"\]'
+
+  # The README inventory is what an operator checks a governed plan against
+  # before apply. A resource, statement or output missing from it would be
+  # approved blind, so every one must be named there.
+  local cert_readme="$ROOT/examples/aws-cert/README.md"
+  local inventory_item inventory_missing=""
+  while IFS= read -r inventory_item; do
+    grep -qF -- "\`${inventory_item}\`" "$cert_readme" || inventory_missing+="  ${inventory_item}"$'\n'
+  done < <(
+    sed -nE 's/^resource "([^"]+)" "([^"]+)".*/\1.\2/p; s/^output "([^"]+)".*/\1/p' "$lambda_cert"
+    sed -nE 's/^output "(REALAWS_CERT_LAMBDA_[A-Z_]+)".*/\1/p' "$ROOT/examples/aws-cert/outputs.tf"
+  )
+  while IFS= read -r inventory_item; do
+    grep -qw -- "$inventory_item" "$cert_readme" || inventory_missing+="  ${inventory_item}"$'\n'
+  done < <(
+    grep -Ev '^[[:space:]]*#' "$lambda_cert" |
+      sed -nE 's/^[[:space:]]*sid[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p; s/^[[:space:]]*(Preserve[A-Za-z]+)[[:space:]]*=.*/\1/p' |
+      sort -u
+  )
+  if [[ -n "$inventory_missing" ]]; then
+    log_error "Policy check failed (lambda-cert-readme-inventory): expected pattern not found in $cert_readme"
+    printf '%s' "$inventory_missing"
+    exit 1
+  fi
 
   local tag_files=(
     "$ROOT/modules/aws-ecs/variables.tf"
@@ -252,6 +656,7 @@ run_custom_policy_checks() {
   assert_regex_present 'storage_encrypted[[:space:]]*=[[:space:]]*true' "$ROOT/modules/aws-serverless/main.tf" "aws-serverless-rds-encryption"
   assert_regex_present 'transit_encryption_enabled[[:space:]]*=[[:space:]]*true' "$ROOT/modules/aws-ecs/main.tf" "aws-ecs-redis-transit-encryption"
   assert_regex_present 'transit_encryption_enabled[[:space:]]*=[[:space:]]*true' "$ROOT/modules/aws-serverless/main.tf" "aws-serverless-redis-transit-encryption"
+  assert_regex_present 'override_special[[:space:]]*=[[:space:]]*"!&#\$\^<>-"' "$ROOT/modules/aws-serverless/main.tf" "aws-serverless-redis-auth-character-set"
   assert_regex_present 'minimum_tls_version[[:space:]]*=[[:space:]]*"1\.2"' "$ROOT/modules/azure-aca/main.tf" "azure-aca-redis-tls12"
   assert_regex_present 'minimum_tls_version[[:space:]]*=[[:space:]]*"1\.2"' "$ROOT/modules/azure-data/main.tf" "azure-data-redis-tls12"
   assert_regex_present 'minimum_tls_version[[:space:]]*=[[:space:]]*"1\.2"' "$ROOT/modules/azure-functions/main.tf" "azure-functions-redis-tls12"
@@ -271,6 +676,11 @@ run_custom_policy_checks() {
     contract_variable="${contract_entry##*:}"
     assert_required_nullable_variable "$contract_file" "$contract_variable" "connection-encryption-key-required-input"
   done
+
+  assert_regex_present 'TF_VAR_honua_connection_encryption_master_key="\$HONUA_ADMIN_PASSWORD"' "$ROOT/validation/scripts/aws/run-aws-terraform-integration.sh" "aws-validation-connection-encryption-key"
+  assert_regex_present 'TF_VAR_honua_connection_encryption_master_key="\$HONUA_ADMIN_PASSWORD"' "$ROOT/validation/scripts/azure/lib/stacks.sh" "azure-validation-connection-encryption-key"
+  assert_regex_present '[[:space:]]-e TF_VAR_honua_connection_encryption_master_key' "$ROOT/validation/scripts/aws/run-aws-terraform-integration.sh" "aws-docker-connection-encryption-key"
+  assert_regex_present '[[:space:]]-e TF_VAR_honua_connection_encryption_master_key' "$ROOT/validation/scripts/azure/lib/runtime.sh" "azure-docker-connection-encryption-key"
 
   assert_regex_present 'multi_replica_enabled[[:space:]]*=[[:space:]]*var\.desired_count > 1 \|\| var\.max_capacity > 1' "$ROOT/modules/aws-ecs/main.tf" "aws-ecs-multinode-scale-detection"
   assert_regex_present 'condition[[:space:]]*=[[:space:]]*!local\.multi_replica_enabled \|\| local\.multi_node_topology_ready' "$ROOT/modules/aws-ecs/main.tf" "aws-ecs-multinode-precondition"
@@ -299,6 +709,72 @@ run_custom_policy_checks() {
 
   assert_regex_absent 'kubernetes[[:space:]]*=[[:space:]]*\{' "$ROOT/examples/observability/main.tf" "helm-provider-kubernetes-attribute"
   assert_regex_present '^[[:space:]]*kubernetes[[:space:]]*\{' "$ROOT/examples/observability/main.tf" "helm-provider-kubernetes-block"
+
+  run_governed_execution_policy_checks
+}
+
+# Static contract guards for the governed AWS execution substrate (honua-iac#149).
+#
+# The remote state bootstrap, the certified execution identity, and the
+# explicitly unsupported IAM-user bootstraps each carry properties that a later
+# well-meaning edit could quietly remove. These guards fail the build instead.
+run_governed_execution_policy_checks() {
+  log_info "Running governed execution substrate policy checks"
+
+  local tfstate="$ROOT/bootstrap/aws-tfstate/main.tf"
+
+  # --- backend hardening ---------------------------------------------------
+  assert_regex_present 'status[[:space:]]*=[[:space:]]*"Enabled"' "$tfstate" "tfstate-versioning-enabled"
+  assert_regex_present 'block_public_acls[[:space:]]*=[[:space:]]*true' "$tfstate" "tfstate-block-public-acls"
+  assert_regex_present 'block_public_policy[[:space:]]*=[[:space:]]*true' "$tfstate" "tfstate-block-public-policy"
+  assert_regex_present 'ignore_public_acls[[:space:]]*=[[:space:]]*true' "$tfstate" "tfstate-ignore-public-acls"
+  assert_regex_present 'restrict_public_buckets[[:space:]]*=[[:space:]]*true' "$tfstate" "tfstate-restrict-public-buckets"
+  assert_regex_present 'force_destroy[[:space:]]*=[[:space:]]*false' "$tfstate" "tfstate-force-destroy-disabled"
+  assert_regex_present 'apply_server_side_encryption_by_default' "$tfstate" "tfstate-default-encryption"
+  assert_regex_present 'aws:SecureTransport' "$tfstate" "tfstate-insecure-transport-denied"
+  assert_regex_present 'DenyStateSubstrateAdministration' "$tfstate" "tfstate-protection-tamper-denied"
+  assert_regex_present 'prevent_destroy[[:space:]]*=[[:space:]]*true' "$tfstate" "tfstate-prevent-destroy"
+
+  # --- certified execution identity: role boundaries -----------------------
+  local exec_identity="$ROOT/bootstrap/aws-exec-identity/main.tf"
+
+  assert_regex_present 'DenyStateSubstrateAccess' "$exec_identity" "exec-identity-state-substrate-denied"
+  assert_regex_present 'DenyLongLivedCredentials' "$exec_identity" "exec-identity-long-lived-credentials-denied"
+  assert_regex_present 'DenyPassingPrivilegedRoles' "$exec_identity" "exec-identity-privileged-passrole-denied"
+  assert_regex_present 'iam:PassedToService' "$exec_identity" "exec-identity-passrole-service-scoped"
+  assert_regex_present 'aws:RequestedRegion' "$exec_identity" "exec-identity-region-scoped"
+
+  # The certified identity path must never grow an IAM user or access key.
+  assert_regex_absent 'resource[[:space:]]+"aws_iam_user"' "$ROOT/bootstrap/aws-exec-identity" "exec-identity-no-iam-user"
+  assert_regex_absent 'resource[[:space:]]+"aws_iam_access_key"' "$ROOT/bootstrap/aws-exec-identity" "exec-identity-no-access-key"
+  assert_regex_absent 'resource[[:space:]]+"aws_iam_user"' "$ROOT/bootstrap/aws-terraform-oidc" "backend-identity-no-iam-user"
+  assert_regex_absent 'resource[[:space:]]+"aws_iam_access_key"' "$ROOT/bootstrap/aws-terraform-oidc" "backend-identity-no-access-key"
+
+  # --- unsupported local-only bootstraps keep their hard markers -----------
+  local unsupported_root
+  for unsupported_root in aws-ecs aws-eks aws-serverless; do
+    assert_regex_present 'HonuaReleasePosture[[:space:]]*=[[:space:]]*"unsupported-local-only"' \
+      "$ROOT/bootstrap/$unsupported_root/main.tf" "unsupported-bootstrap-posture-tag"
+    if [[ "$unsupported_root" == "aws-ecs" ]]; then
+      # The AWS ECS bootstrap now rejects create_access_key through variable
+      # validation, rather than a plan-level check. This is an earlier hard
+      # failure for the same unsafe contract and must remain policy-guarded.
+      assert_regex_present 'condition[[:space:]]*=[[:space:]]*!var\.create_access_key' \
+        "$ROOT/bootstrap/$unsupported_root/variables.tf" "unsupported-bootstrap-input-validation"
+    else
+      assert_regex_present 'check[[:space:]]+"unsupported_for_release_lane"' \
+        "$ROOT/bootstrap/$unsupported_root/main.tf" "unsupported-bootstrap-plan-warning"
+    fi
+    assert_regex_present 'output[[:space:]]+"supported_for_release"' \
+      "$ROOT/bootstrap/$unsupported_root/outputs.tf" "unsupported-bootstrap-output-marker"
+  done
+
+  # --- backend examples the operator docs promise --------------------------
+  local backend_example_stack
+  for backend_example_stack in aws aws-serverless aws-eks aws-data; do
+    assert_regex_present 'backend[[:space:]]+"s3"' \
+      "$ROOT/examples/$backend_example_stack/backend.tf.example" "backend-example-present"
+  done
 }
 
 main() {

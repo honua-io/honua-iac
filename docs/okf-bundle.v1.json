@@ -1,0 +1,57 @@
+{
+  "version": "honua.okf-bundle/v1",
+  "description": "Which honua-iac markdown is part of the Open Knowledge Format bundle. Consumed by scripts/check-okf-bundle.py.",
+  "spec": {
+    "name": "Open Knowledge Format",
+    "version": "0.2",
+    "url": "https://github.com/GoogleCloudPlatform/open-knowledge-format",
+    "note": "One markdown file is one concept; the file path is the concept's identity; relative markdown links are the graph edges. `type` is the only required frontmatter field."
+  },
+  "program": "https://github.com/honua-io/agent-delivery-spec/tree/trunk/.specifica/okf-knowledge-graph-agent-effective-docs",
+  "workstream": "WS9 — the other nine repositories. honua-iac is sixth.",
+  "root": "docs",
+  "conceptTypes": {
+    "index": "A section entry point. Enumerates what the directory holds so a reader or agent can choose before opening.",
+    "concept": "What a thing is and how it fits. No procedure.",
+    "guide": "A task someone performs, start to finish.",
+    "reference": "Lookup material: surfaces, options, contracts, matrices."
+  },
+  "excludedDirs": [
+    {
+      "path": "docs/adr",
+      "why": "Architecture decision records. They explain why this repository is shaped the way it is, for people changing it. An operator deploying the modules needs the contracts and runbooks, not the deliberation behind them. docs/module-publishing-decision.md is the exception that proves the rule and stays in the bundle, because its decision changes what a consumer types."
+    }
+  ],
+  "excludedFiles": [
+    {
+      "path": "docs/SUMMARY.md",
+      "why": "GitBook's table of contents, generated from this bundle by scripts/generate-summary.py. Navigation over the bundle, not a concept in it."
+    },
+    {
+      "path": "docs/operating-cadence.md",
+      "why": "The repeatable weekly operating rhythm for this repository's maintainers. Team process."
+    },
+    {
+      "path": "docs/devops/terraform-architecture-plan.md",
+      "why": "Turns ADR 0001 into an implementation plan for this repository. Planning for contributors; the resulting contracts are documented separately and are in the bundle."
+    },
+    {
+      "path": "docs/devops/aks-virtual-nodes-evaluation.md",
+      "why": "A technology evaluation with a delivered recommendation. The decision it fed is what an operator needs; the evaluation itself is working material."
+    },
+    {
+      "path": "docs/devops/eks-fargate-evaluation.md",
+      "why": "As above: a delivered evaluation of EKS Fargate, kept for the record rather than for consumption."
+    },
+    {
+      "path": "docs/devops/aws-marketplace-container-offer.md",
+      "why": "The AWS Marketplace submission position. Commercial listing work, not deployment documentation."
+    }
+  ],
+  "includedFiles": [],
+  "rejectedFields": {
+    "timestamp": "Not an OKF field in any version. The trust family spells the build stamp `generated`."
+  },
+  "dateFields": ["generated", "verified", "stale_after"],
+  "boundaryNote": "The split here is deliberation versus operation. Operators get the contracts (operator-contract, exact-plan, values), the runbooks they execute (backup/restore, failover drill, validation, AWS certification evidence) and the module-consumption rules. ADRs, evaluations, implementation plans and marketplace positioning stay out. docs/module-publishing-decision.md is in despite being a decision record, because it determines what a consumer writes in their source stanza."
+}

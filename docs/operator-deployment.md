@@ -1,10 +1,17 @@
+---
+type: guide
+title: "Deploy Honua as a platform operator"
+description: "The end-to-end path for an operator standing up Honua on their own cloud account, from module selection through to a running deployment."
+resource: "https://github.com/honua-io/honua-iac/tree/trunk/infrastructure/terraform/examples"
+tags: [deployment, operator, terraform]
+---
 # Operator Deployment Guide
 
 This guide is for platform operators deploying Honua into their own cloud subscriptions/accounts.
 
 ## Prerequisites
 
-- Terraform 1.8+
+- Terraform 1.5 or later (every root pins `>= 1.5, < 2.0`; the AWS release lane's S3 native state lock needs 1.10 or later, see [Plan and state lineage](operator-state.md))
 - Cloud credentials configured locally
 - Container image accessible from target runtime
 - Strong admin and database passwords
@@ -32,7 +39,23 @@ cp infrastructure/terraform/examples/<stack>/terraform.tfvars.example \
 - Set container image (`honua_image` or `honua_image_uri`)
 - Optionally wire existing DB/Redis/VPC if reusing infra
 
-3. Deploy:
+For a disposable, single-node development cell, keep secrets in
+`terraform.tfvars` and add the committed non-secret preset to both plan and
+apply:
+
+```bash
+terraform -chdir=infrastructure/terraform/examples/<stack> init
+terraform -chdir=infrastructure/terraform/examples/<stack> plan \
+  -var-file=presets/small.tfvars.example
+terraform -chdir=infrastructure/terraform/examples/<stack> apply \
+  -var-file=presets/small.tfvars.example
+```
+
+See [deployment-presets.md](deployment-presets.md) for the exact target-to-root
+mapping, secret handling, and the distinction between infrastructure size and
+the server capability deployment profile.
+
+3. Deploy without a preset when you have supplied an environment-specific size:
 
 ```bash
 terraform -chdir=infrastructure/terraform/examples/<stack> init
@@ -51,13 +74,81 @@ terraform -chdir=infrastructure/terraform/examples/<stack> apply
 terraform -chdir=infrastructure/terraform/examples/<stack> destroy
 ```
 
+The AWS ECS root enables ALB and production RDS deletion protection by
+default. Before destroying that root, make a separate approved apply with
+both protections disabled, then generate a fresh destroy plan:
+
+```bash
+terraform -chdir=infrastructure/terraform/examples/aws apply \
+  -var='alb_deletion_protection=false' \
+  -var='rds_deletion_protection=false'
+terraform -chdir=infrastructure/terraform/examples/aws destroy
+```
+
+Changing protection spends any previously generated plan; do not reuse it.
+
+## Governed AWS deployment (remote state + short-lived identity)
+
+The workflow above is the disposable-development path: local state, whatever
+credentials your shell happens to hold, and a plan that is regenerated at apply
+time. That is fine for an account you own and will delete. It is **not** the path
+for anything shared, long-lived, or release-bound.
+
+For those, three things change:
+
+1. **Remote state, created separately.** Apply `bootstrap/aws-tfstate` on its own,
+   then copy the stack's `backend.tf.example` to `backend.tf`. Backend creation is
+   never a side effect of `terraform init`.
+2. **A short-lived deployment identity.** Apply `bootstrap/aws-terraform-oidc`
+   (backend access) and `bootstrap/aws-exec-identity` (infrastructure deployment).
+   No IAM user, no access key. The shell that runs the exact-plan wrappers must
+   already be the deployment role, and `backend.tf` must assume a different
+   backend-access role. `bootstrap/aws-ecs`, `bootstrap/aws-serverless`, and
+   `bootstrap/aws-eks` create long-lived IAM users and are local-only and
+   unsupported for release.
+3. **One exact saved plan.** Produce the plan and its approval digest once, then
+   apply exactly those bytes:
+
+```bash
+scripts/terraform-exact-plan.sh \
+  --root infrastructure/terraform/examples/aws \
+  --action apply --plan-out out/honua.tfplan \
+  --actor "operator:you@example.com"
+
+scripts/terraform-exact-apply.sh \
+  --plan out/honua.tfplan --receipt-out out/receipt.json
+```
+
+The apply wrapper refuses before touching anything if the account, role, backend,
+workspace, provider lock, IaC revision, inputs, or state lineage moved since the
+plan, if the plan expired, or if it was already applied. Full field and refusal
+reference: [`docs/devops/terraform-exact-plan-contract.md`](devops/terraform-exact-plan-contract.md)
+and [`docs/operator-state.md`](operator-state.md).
+
 ## Recommended operator defaults
 
 - Pin versioned images (avoid `latest` in production)
-- Keep `enable_postgis = true`
+- The `examples/aws` root defaults to `enable_postgis = false` because the
+  database is private by default. Set it to `true` only when the Terraform
+  runner can reach PostgreSQL. The ECS module bootstraps PostGIS with local
+  `psql`, so a private
+  RDS endpoint cannot be bootstrapped from a normal laptop or external CI
+  runner. Use an in-VPC bootstrap first, or temporarily set
+  `db_publicly_accessible=true` with narrowly scoped
+  `db_additional_ingress_cidrs` for the bootstrap apply.
 - Keep DB private by default (`db_publicly_accessible = false`)
-- Use managed secrets and remote state backend
+- Use managed secrets and a remote state backend (mandatory for anything shared
+  or long-lived; see [`operator-state.md`](operator-state.md))
 - Add mandatory tags (owner, env, cost center)
+- Leave the licensing inputs alone. The 2026.1 AWS roots default to
+  `licensing_mode = "Disabled"`, which declares `Licensing__Mode=Disabled` on
+  the deployed server: no license envelope, no capacity metering, every
+  capability active. Confirm it on the live service with
+  `GET /api/v1/admin/license` — it must report `mode=disabled` and
+  `edition=Unlicensed-2026.1`. An `edition=Community` there means the mode did
+  not reach the server and paid capabilities are gated. Licensing returns in
+  2026.2; see the `aws-ecs` and `aws-serverless` module READMEs for the licensed
+  path.
 
 ## Horizontal scaling contract
 
@@ -116,3 +207,10 @@ Use this when your platform team provides shared VPCs, databases, or caches.
 
 - `infrastructure/terraform/README.md` (module and maintainer details)
 - `docs/devops/terraform-validation.md` (validation and CI runbook)
+
+### AWS deployment safety
+
+For native ECS rollout observation and recovery, use the opt-in
+[deployment safety profile](devops/aws-deployment-safety.md). The default
+single-instance stack has a service interruption during replacement; its ECS
+startup circuit breaker is not a post-activation protected-change certificate.

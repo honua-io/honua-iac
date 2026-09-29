@@ -98,3 +98,20 @@ variable "cluster_addon_versions" {
   type        = map(string)
   default     = {}
 }
+
+variable "cluster_secret_encryption_enabled" {
+  description = "Whether Kubernetes secrets are envelope-encrypted with a KMS CMK. Production shape is true; ephemeral parity/validation clusters set false so a throwaway cluster does not strand a CMK on KMS's non-negotiable 7-day deletion window (honua-release#127)."
+  type        = bool
+  default     = true
+}
+
+variable "cluster_secret_encryption_key_arn" {
+  description = "ARN of an existing KMS CMK to encrypt Kubernetes secrets with. Empty (the default) creates a module-managed key. Point ephemeral clusters at one long-lived key when the encryption path itself must stay under test without minting a key per cluster. Ignored when cluster_secret_encryption_enabled is false."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.cluster_secret_encryption_key_arn == "" || can(regex("^arn:aws[a-z-]*:kms:", var.cluster_secret_encryption_key_arn))
+    error_message = "cluster_secret_encryption_key_arn must be empty or a KMS key ARN."
+  }
+}

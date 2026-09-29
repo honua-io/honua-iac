@@ -30,6 +30,10 @@ module "honua" {
   connection_encryption_master_key = null # Deliberate auto-generation for this new deployment
   enable_postgis = true  # Required — Honua needs PostGIS + PostGIS Raster
 
+  # Optional caller-owned AI provider credential. Only the ARN is passed to Terraform.
+  ai_provider_secret_arn         = var.ai_provider_secret_arn
+  ai_provider_secret_kms_key_arn = var.ai_provider_secret_kms_key_arn
+
   additional_env = {
     HONUA_SERVE_ADMIN_UI = "true"
     HONUA_ADMIN_UI       = "true"
@@ -189,8 +193,10 @@ If your Prometheus scrape config uses different job names, override the correspo
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `image` | Required | Container image. Pin to an immutable release tag or digest. AOT builds are recommended. |
+| `ai_provider_secret_arn` | `""` | Optional caller-owned Secrets Manager ARN for `HONUA_AI_PROVIDER_API_KEY`; the module never creates or exposes the value. |
+| `ai_provider_secret_kms_key_arn` | `""` | Optional customer-managed KMS key ARN for the AI provider secret; grants decrypt only when the secret ARN is set. |
 | `connection_encryption_master_key` | Required (nullable) | Fail-closed connection-key decision. Set `null` explicitly only for a new deployment; existing deployments must supply their current key as described below. |
-| `task_cpu_architecture` | `ARM64` | Fargate CPU architecture. Honua defaults to Arm on AWS; override to `X86_64` only when required. |
+| `task_cpu_architecture` | `X86_64` | Fargate CPU architecture. `X86_64` is release-certified; use `ARM64` only with an independently verified image. |
 | `container_cpu` | 512 | Fargate CPU units (256/512/1024/2048/4096). |
 | `container_memory` | 1024 | Fargate memory in MiB. |
 | `desired_count` | 1 | Minimum number of tasks. Values greater than one require the safe MultiNode topology. |
@@ -206,7 +212,8 @@ If your Prometheus scrape config uses different job names, override the correspo
 | `canary_weight_percentage` | 0 | Percentage of default ALB traffic routed to the canary target group. |
 | `canary_header_name` | `X-Honua-Canary` | Header name that forces ALB routing to the canary target group. |
 | `canary_header_value` | `always` | Header value that forces ALB routing to the canary target group. |
-| `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster on RDS. **Set to true.** |
+| `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster on RDS. The Terraform runner must have a network path to the database. |
+| `rds_deletion_protection` | **true** | Protect the managed RDS instance from deletion; disable in a separate apply before teardown. |
 | `existing_db_endpoint` | `""` | Reuse an existing PostgreSQL endpoint (must be paired with `existing_db_connection_string`). |
 | `existing_db_connection_string` | `""` | Reuse an existing PostgreSQL connection string (skips RDS provisioning and PostGIS local-exec). |
 | `db_instance_class` | `db.t3.micro` | RDS instance class. Use `db.r6g.*` for production. |
@@ -221,8 +228,80 @@ If your Prometheus scrape config uses different job names, override the correspo
 | `enable_nat_gateway` | true | NAT gateways for private subnets (required for outbound). |
 | `log_retention_days` | 365 | CloudWatch log retention. |
 | `kms_key_arn` | `""` | Existing KMS key for logs/secrets. Creates one if empty. |
+| `licensing_mode` | `Disabled` | Licensing deployment mode declared as `Licensing__Mode`. `Disabled` is the 2026.1 contract: no license, no capacity metering, every entitlement active. Supplying `pro_license_secret_arn` implies `Enabled`. |
+| `licensing_edition` | `Pro` | Edition declared as `Licensing__Edition` **only when** a license envelope is supplied. Ignored with no envelope. |
+| `pro_license_secret_arn` | `""` | Caller-owned Secrets Manager ARN whose value is the signed license envelope JSON; injected as the ECS secret `Licensing__LicenseContent`. The module never creates, reads or deletes it. |
+| `pro_license_secret_kms_key_arn` | `""` | Optional customer-managed KMS key ARN for the license secret; grants decrypt only when the license ARN is set. |
+| `pro_license_key_id` | `honuademo2026q2` | Hyphen-free license keyId as relabeled in the envelope; builds the legal env var name `Licensing__TrustedKeys__<keyId>`. |
+| `pro_license_trusted_public_key` | `""` | Ed25519 public key (`base64url:` prefixed) that verifies the license signature. Required when `pro_license_secret_arn` is set. |
+| `request_secret_reference_allowed_environment_variables` | `[]` | Exact environment variable names a request may name as `env:NAME`. Rendered as `Security__RequestSecretReferences__AllowedEnvironmentVariables__<n>`. |
+| `request_secret_reference_allowed_environment_variable_prefixes` | `[]` | Environment variable name prefixes a request may name as `env:NAME` (never matches a name containing `__`). Rendered as `Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__<n>`. |
+| `request_secret_reference_allowed_secret_reference_prefixes` | `[]` | Whole-reference prefixes for the other providers, including the provider segment, e.g. `aws:secretsmanager:honua/imports/`. Rendered as `Security__RequestSecretReferences__AllowedSecretReferencePrefixes__<n>`. |
 
 See `variables.tf` for the complete list.
+
+## Request-supplied secret references
+
+The three `request_secret_reference_allowed_*` variables are the allowlist for
+request-supplied secret references (honua-server #5055) and bind the server's
+`Security:RequestSecretReferences` section. The server policy is deny-by-default:
+with all three lists empty (the default, which renders nothing) the server
+resolves no secret reference named in a request - import credentials, workflow
+source steps, secure-connection registration - and a secure connection that
+stores a `secretReference` does not resolve it at runtime. Connections stored
+with an encrypted password, and secret references in the server's own
+configuration, are not governed by this policy.
+
+```hcl
+request_secret_reference_allowed_environment_variable_prefixes = ["HONUA_IMPORT_"]
+request_secret_reference_allowed_secret_reference_prefixes     = ["aws:secretsmanager:honua/imports/"]
+```
+
+Entries are rendered in list order into the primary and canary container environments. For
+the whole-reference list the provider (the text before the first colon) is
+matched case-insensitively and the remainder is a case-sensitive prefix of the
+reference, so an entry must have the same form as the references it is meant to
+permit - a secret referenced by full ARN needs an ARN-form entry, one referenced by name a name-form entry. Keep entries as narrow as the deployment allows, and
+give imports and connections their own variables or secret path rather than
+listing the server's own credentials. Set the entries through these variables or
+through `additional_env`, not both, so one source owns the indexes.
+
+Server images that predate the setting ignore these variables, so they can be
+set before upgrading; deployments that already rely on request-supplied
+references should set matching entries before moving to an image that includes
+the setting.
+
+## Licensing
+
+The 2026.1 release ships with licensing **disabled** (operator ruling
+2026-09-12; honua-server #4721). With no license inputs the module declares
+
+- `Licensing__Mode = Disabled`
+
+on the primary task definition and on the canary, declares no
+`Licensing__Edition`, injects no license secret, and grants the execution role
+no access to one.
+
+The mode is declared rather than inferred. honua-server's own default is
+`Licensing__Mode=Enabled`, which with no license source resolves to the
+**Community** edition and gates editing, sync, streaming and geocoding; a
+candidate deployed with no license inputs would then look
+licensed-but-crippled instead of licensing-disabled. In `Disabled` mode the
+server validates nothing, registers no capacity meter, activates every
+`FeatureCatalog` entitlement, and `GET /api/v1/admin/license` answers
+`mode: disabled`, `edition: Unlicensed-2026.1`, `validationState: Disabled`.
+
+Because the declared mode and the deployed task definition must not disagree,
+`Licensing__*` keys are refused in `additional_env` / `canary_additional_env`;
+use the typed inputs.
+
+To supply a license (the 2026.2 path), point `pro_license_secret_arn` at an
+existing Secrets Manager secret holding the signed envelope. The module injects
+it as the ECS secret `Licensing__LicenseContent`, publishes
+`Licensing__TrustedKeys__<pro_license_key_id>`, declares
+`Licensing__Edition = licensing_edition`, and scopes the execution role's read
+grant to that ARN (plus `pro_license_secret_kms_key_arn` when the secret uses a
+customer-managed key). The plan fails if the verification public key is missing.
 
 ## Upgrade from the aliased connection key
 
@@ -243,3 +322,23 @@ See `outputs.tf` for ALB URL, ECS service names, canary routing headers, control
 1. Verify extensions: `psql $CONNECTION_STRING -c "SELECT PostGIS_Version(); SELECT extname FROM pg_extension WHERE extname IN ('postgis','postgis_raster');"`
 2. Readiness check: call `HonuaClient("https://<alb-url>").readiness()` from the supported Python SDK.
 3. If using OIDC, configure env vars per [Security Configuration](../../../../docs/devops/security.md)
+
+## Deployment safety
+
+The default ECS circuit breaker covers failed startup and requires a previous
+completed deployment. SingleInstance has an unbounded interruption while the
+replacement becomes ready. Both primary and canary task definitions are retained
+with `skip_destroy`; after teardown, explicitly deregister obsolete revisions
+only after their recovery window and evidence retention obligations end.
+
+Set `deployment_safety` to wire the native ECS/ALB backend to an existing,
+independently retained Honua controller. It requires MultiNode, Redis, shared S3,
+a running stable/canary pair, digest-pinned images, a dedicated canary Prometheus
+connection/job and an independently computed functional expectation. The module
+installs a weighted traffic rule and grants the retained controller narrowly
+scoped mutation/read permissions. It does not create a controller or telemetry
+connection and reports the handoff as `configured-unverified`.
+
+See [AWS deployment safety](../../../../docs/devops/aws-deployment-safety.md) for
+runtime registration, finite limits, IAM/secret/storage validation and the
+candidate-bound live recovery evidence required before claiming protection.

@@ -6,8 +6,8 @@ variable "aws_region" {
 
 variable "name_prefix" {
   type        = string
-  description = "Prefix for the Terraform IAM user name."
-  default     = "honua-terraform"
+  description = "Prefix for the Terraform IAM user name. The default names the posture: this path is local-only and unsupported for release."
+  default     = "honua-local-unsupported"
 }
 
 variable "environment" {
@@ -24,8 +24,13 @@ variable "user_name" {
 
 variable "create_access_key" {
   type        = bool
-  description = "Whether to create an access key for the IAM user."
+  description = "Whether to mint a long-lived access key. Leave false. Setting it true emits a plan-time warning and can never satisfy the release lane."
   default     = false
+
+  validation {
+    condition     = !var.create_access_key
+    error_message = "create_access_key must remain false; this bootstrap is local-only and unsupported for the release lane."
+  }
 }
 
 variable "tags" {

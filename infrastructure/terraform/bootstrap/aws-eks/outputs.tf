@@ -16,3 +16,20 @@ output "secret_access_key" {
   description = "Secret access key for the Terraform IAM user."
   sensitive   = true
 }
+
+output "supported_for_release" {
+  description = "HARD MARKER: always false. This bootstrap path cannot satisfy the AWS release/certification lane."
+  value       = false
+}
+
+output "release_posture" {
+  description = "HARD MARKER consumed by the release lane. Names why this path is unsupported and where the certified path lives."
+  value = {
+    schema_version        = "v1"
+    supported_for_release = false
+    posture               = "unsupported-local-only"
+    credential_kind       = var.create_access_key ? "long-lived-iam-access-key" : "long-lived-iam-user"
+    certified_alternative = "infrastructure/terraform/bootstrap/aws-exec-identity"
+    reason                = "Creates a long-lived IAM user principal. The certified lane requires short-lived SSO/OIDC/STS federation and creates no IAM user or access key."
+  }
+}
