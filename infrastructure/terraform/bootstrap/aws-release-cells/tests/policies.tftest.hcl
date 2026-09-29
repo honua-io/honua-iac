@@ -10,6 +10,12 @@ variables {
 run "policies" {
   command = plan
   variables {
+    runtime_bedrock_model_arns = [
+      "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0"
+    ]
     enable_workload_role_passing = true
     workload_vpc_arns            = ["arn:aws:ec2:us-east-1:123456789012:vpc/vpc-0123456789abcdef0"]
   }
@@ -64,4 +70,12 @@ run "reject_standing_network" {
     values = { tags = { Owner = "release-cell", ValidationRunId = "gha-208-aws-serverless", Environment = "cert" } }
   }
   expect_failures = [aws_iam_policy.workload_boundary]
+}
+
+run "reject_wildcard_bedrock_boundary" {
+  command = plan
+  variables {
+    runtime_bedrock_model_arns = ["arn:aws:bedrock:us-east-1::foundation-model/*"]
+  }
+  expect_failures = [var.runtime_bedrock_model_arns]
 }

@@ -22,15 +22,15 @@
         "ecs:List*"
       ],
       "Resource": [
-        "arn:aws:logs:${region}:${account_id}:log-group:honuar*",
+        "arn:aws:logs:${region}:${account_id}:log-group:*/honuar*",
         "arn:aws:secretsmanager:${region}:${account_id}:secret:honuar*",
         "arn:aws:ecs:${region}:${account_id}:cluster/honuar*",
         "arn:aws:ecs:${region}:${account_id}:service/honuar*",
-        "arn:aws:logs:${region}:${account_id}:log-group:honuan*",
+        "arn:aws:logs:${region}:${account_id}:log-group:*/honuan*",
         "arn:aws:secretsmanager:${region}:${account_id}:secret:honuan*",
         "arn:aws:ecs:${region}:${account_id}:cluster/honuan*",
         "arn:aws:ecs:${region}:${account_id}:service/honuan*",
-        "arn:aws:logs:${region}:${account_id}:log-group:honuaeks*",
+        "arn:aws:logs:${region}:${account_id}:log-group:*/honuaeks*",
         "arn:aws:secretsmanager:${region}:${account_id}:secret:honuaeks*",
         "arn:aws:ecs:${region}:${account_id}:cluster/honuaeks*",
         "arn:aws:ecs:${region}:${account_id}:service/honuaeks*"
@@ -130,6 +130,38 @@
       "Effect": "Allow",
       "Action": "ec2:CreateNetworkInterface",
       "Resource": "arn:aws:ec2:${region}:${account_id}:network-interface/*"
+    },
+    {
+      "Sid": "ObserveCellJobs",
+      "Effect": "Allow",
+      "Action": [
+        "batch:DescribeJobs",
+        "batch:ListJobs"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SubmitCellJobs",
+      "Effect": "Allow",
+      "Action": "batch:SubmitJob",
+      "Resource": [
+        "arn:aws:batch:${region}:${account_id}:job-queue/honuar*",
+        "arn:aws:batch:${region}:${account_id}:job-queue/honuan*",
+        "arn:aws:batch:${region}:${account_id}:job-queue/honuaeks*",
+        "arn:aws:batch:${region}:${account_id}:job-definition/honuar*",
+        "arn:aws:batch:${region}:${account_id}:job-definition/honuan*",
+        "arn:aws:batch:${region}:${account_id}:job-definition/honuaeks*"
+      ]
+    },
+    {
+      "Sid": "InvokeCellEventHandlers",
+      "Effect": "Allow",
+      "Action": "lambda:InvokeFunction",
+      "Resource": [
+        "arn:aws:lambda:${region}:${account_id}:function:honuar*",
+        "arn:aws:lambda:${region}:${account_id}:function:honuan*",
+        "arn:aws:lambda:${region}:${account_id}:function:honuaeks*"
+      ]
     }
   ]
 }

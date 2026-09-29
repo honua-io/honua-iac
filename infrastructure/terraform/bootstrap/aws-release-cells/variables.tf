@@ -49,3 +49,13 @@ variable "workload_vpc_arns" {
     error_message = "workload_vpc_arns must contain exact VPC ARNs, not wildcards."
   }
 }
+
+variable "runtime_bedrock_model_arns" {
+  description = "Exact approved Bedrock model/profile ARNs for workload boundaries; match the module model and include every inference-profile destination. Empty grants no invocation."
+  type        = set(string)
+  default     = []
+  validation {
+    condition     = alltrue([for arn in var.runtime_bedrock_model_arns : can(regex("^arn:aws:bedrock:[a-z0-9-]+:([0-9]{12})?:(foundation-model|inference-profile)/[a-zA-Z0-9.:-]+$", arn))])
+    error_message = "Supply exact foundation-model or inference-profile ARNs, never wildcards."
+  }
+}

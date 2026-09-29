@@ -23,7 +23,14 @@ locals {
     Statement = concat([for statement in jsondecode(templatefile("${path.module}/policies/runtime.json.tftpl", local.template_vars)).Statement :
       merge(statement, contains(["CellVpcNetworking", "CreateCellVpcNetworkInterface"], statement.Sid) ? { Condition = { ArnEquals = { "ec2:Vpc" = var.workload_vpc_arns } } } : {})
       if !contains(["CellVpcNetworking", "CreateCellVpcNetworkInterface", "NewCellNetworkInterface"], statement.Sid) || length(var.workload_vpc_arns) > 0
-    ], local.guardrails)
+      ], [for statement in local.guardrails : statement if !contains(["ProtectBoundary", "NeverRemoveBoundary", "RequireBoundary", "NoRetaggingOwner", "NoStandingCreation", "NoStandingLifecycle"], statement.Sid)],
+      length(var.runtime_bedrock_model_arns) == 0 ? [] : [{
+        Sid      = "InvokeApprovedBedrockModels"
+        Effect   = "Allow"
+        Action   = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
+        Resource = var.runtime_bedrock_model_arns
+      }]
+    )
   })
 }
 
