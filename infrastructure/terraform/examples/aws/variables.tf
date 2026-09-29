@@ -405,3 +405,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "permissions_boundary_arn" {
+  description = "Operator-owned boundary for every workload role in a certification cell."
+  type        = string
+  default     = null
+}

@@ -1,0 +1,186 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CertificationRegionOnly",
+      "Effect": "Deny",
+      "NotAction": [
+        "iam:*",
+        "sts:*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:RequestedRegion": "${region}"
+        }
+      }
+    },
+    {
+      "Sid": "NoRoleChaining",
+      "Effect": "Deny",
+      "Action": [
+        "sts:AssumeRole",
+        "sts:AssumeRoleWithWebIdentity",
+        "sts:AssumeRoleWithSAML",
+        "sts:GetFederationToken"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ProtectStandingEnvironment",
+      "Effect": "Deny",
+      "Action": "*",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Environment": [
+            "cert",
+            "standing",
+            "demo"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ProtectStandingLifecycle",
+      "Effect": "Deny",
+      "Action": "*",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Lifecycle": [
+            "standing",
+            "demo"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ProtectEc2Environment",
+      "Effect": "Deny",
+      "Action": "ec2:*",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "ec2:ResourceTag/Environment": [
+            "cert",
+            "standing",
+            "demo"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ProtectEc2Lifecycle",
+      "Effect": "Deny",
+      "Action": "ec2:*",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "ec2:ResourceTag/Lifecycle": [
+            "standing",
+            "demo"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ProtectStandingNames",
+      "Effect": "Deny",
+      "Action": "*",
+      "Resource": [
+        "arn:aws:s3:::honua-*",
+        "arn:aws:s3:::honua-*/*",
+        "arn:aws:iam::${account_id}:role/honua-cert-*",
+        "arn:aws:iam::${account_id}:role/honua-demo-*",
+        "arn:aws:lambda:*:${account_id}:function:honua-cert-*",
+        "arn:aws:lambda:*:${account_id}:function:honua-demo-*",
+        "arn:aws:ecr:*:${account_id}:repository/honua-cert-*",
+        "arn:aws:ecr:*:${account_id}:repository/honua-demo-*"
+      ]
+    },
+    {
+      "Sid": "ProtectBoundary",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreatePolicyVersion",
+        "iam:DeletePolicyVersion",
+        "iam:SetDefaultPolicyVersion",
+        "iam:DeletePolicy"
+      ],
+      "Resource": "${boundary_arn}"
+    },
+    {
+      "Sid": "NeverRemoveBoundary",
+      "Effect": "Deny",
+      "Action": "iam:DeleteRolePermissionsBoundary",
+      "Resource": "*"
+    },
+    {
+      "Sid": "RequireBoundary",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreateRole",
+        "iam:PutRolePermissionsBoundary"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "ArnNotEquals": {
+          "iam:PermissionsBoundary": "${boundary_arn}"
+        }
+      }
+    },
+    {
+      "Sid": "ImmutableSafetyTags",
+      "Effect": "Deny",
+      "Action": [
+        "iam:UntagRole",
+        "iam:UntagPolicy",
+        "ec2:DeleteTags",
+        "ecs:UntagResource",
+        "lambda:UntagResource",
+        "rds:RemoveTagsFromResource",
+        "elasticloadbalancing:RemoveTags",
+        "logs:UntagResource",
+        "secretsmanager:UntagResource",
+        "tag:UntagResources"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "ForAnyValue:StringEquals": {
+          "aws:TagKeys": [
+            "Owner",
+            "RunId",
+            "Environment",
+            "Lifecycle"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "NoRetaggingOwner",
+      "Effect": "Deny",
+      "Action": [
+        "iam:TagRole",
+        "iam:TagPolicy",
+        "ec2:CreateTags",
+        "ecs:TagResource",
+        "lambda:TagResource",
+        "rds:AddTagsToResource",
+        "elasticloadbalancing:AddTags",
+        "secretsmanager:TagResource",
+        "logs:TagResource",
+        "tag:TagResources"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "Null": {
+          "aws:RequestTag/Owner": "false"
+        },
+        "StringNotEquals": {
+          "aws:RequestTag/Owner": "release-cell"
+        }
+      }
+    }
+  ]
+}

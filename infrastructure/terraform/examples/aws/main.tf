@@ -7,7 +7,8 @@ provider "aws" {
 }
 
 module "honua" {
-  source = "../../modules/aws-ecs"
+  source                   = "../../modules/aws-ecs"
+  permissions_boundary_arn = var.permissions_boundary_arn
 
   deployment_safety                = var.deployment_safety
   environment                      = var.environment

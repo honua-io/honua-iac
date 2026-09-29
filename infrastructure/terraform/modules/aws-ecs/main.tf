@@ -772,9 +772,10 @@ resource "aws_cloudwatch_log_group" "this" {
 }
 
 resource "aws_iam_role" "task_execution" {
-  name               = "${local.name}-ecs-exec"
-  assume_role_policy = data.aws_iam_policy_document.ecs_task_assume.json
-  tags               = local.tags
+  permissions_boundary = var.permissions_boundary_arn
+  name                 = "${local.name}-ecs-exec"
+  assume_role_policy   = data.aws_iam_policy_document.ecs_task_assume.json
+  tags                 = local.tags
 }
 
 resource "aws_iam_role_policy_attachment" "task_execution" {
@@ -783,9 +784,10 @@ resource "aws_iam_role_policy_attachment" "task_execution" {
 }
 
 resource "aws_iam_role" "task" {
-  name               = "${local.name}-ecs-task"
-  assume_role_policy = data.aws_iam_policy_document.ecs_task_assume.json
-  tags               = local.tags
+  permissions_boundary = var.permissions_boundary_arn
+  name                 = "${local.name}-ecs-task"
+  assume_role_policy   = data.aws_iam_policy_document.ecs_task_assume.json
+  tags                 = local.tags
 }
 
 resource "aws_iam_role_policy" "file_storage_s3" {

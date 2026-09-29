@@ -381,6 +381,8 @@ select_candidates() {
     .ResourceTagMappingList[]
     | . as $r
     | ($r.Tags // []) as $tags
+    # Protection wins even if Owner/expiry accidentally match a disposable cell.
+    | select(any($tags[]; (.Key == "Environment" and (.Value == "cert" or .Value == "standing" or .Value == "demo")) or (.Key == "Lifecycle" and (.Value == "standing" or .Value == "demo"))) | not)
     | ($tags | map(select(.Key == "ValidationRunId")) | first | .Value // "") as $run
     | ($tags | map(select(.Key == "Stack")) | first | .Value // "") as $stack
     | ($tags | map(select(.Key == "ExpiresAtUTC")) | first | .Value // "") as $expires

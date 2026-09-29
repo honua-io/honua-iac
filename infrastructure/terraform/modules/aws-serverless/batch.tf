@@ -78,10 +78,11 @@ data "aws_iam_policy_document" "batch_service_assume" {
 }
 
 resource "aws_iam_role" "batch_service" {
-  count              = local.gp_batch_enabled ? 1 : 0
-  name_prefix        = "${local.gp_batch_name}-svc-"
-  assume_role_policy = data.aws_iam_policy_document.batch_service_assume[0].json
-  tags               = local.tags
+  permissions_boundary = var.permissions_boundary_arn
+  count                = local.gp_batch_enabled ? 1 : 0
+  name_prefix          = "${local.gp_batch_name}-svc-"
+  assume_role_policy   = data.aws_iam_policy_document.batch_service_assume[0].json
+  tags                 = local.tags
 }
 
 resource "aws_iam_role_policy_attachment" "batch_service" {
@@ -107,10 +108,11 @@ data "aws_iam_policy_document" "batch_execution_assume" {
 }
 
 resource "aws_iam_role" "batch_execution" {
-  count              = local.gp_batch_enabled ? 1 : 0
-  name_prefix        = "${local.gp_batch_name}-exec-"
-  assume_role_policy = data.aws_iam_policy_document.batch_execution_assume[0].json
-  tags               = local.tags
+  permissions_boundary = var.permissions_boundary_arn
+  count                = local.gp_batch_enabled ? 1 : 0
+  name_prefix          = "${local.gp_batch_name}-exec-"
+  assume_role_policy   = data.aws_iam_policy_document.batch_execution_assume[0].json
+  tags                 = local.tags
 }
 
 # Standard ECS task-execution managed policy grants ECR pull + CloudWatch Logs
@@ -145,10 +147,11 @@ locals {
 }
 
 resource "aws_iam_role" "batch_job" {
-  count              = local.gp_batch_enabled ? 1 : 0
-  name_prefix        = "${local.gp_batch_name}-job-"
-  assume_role_policy = data.aws_iam_policy_document.batch_execution_assume[0].json
-  tags               = local.tags
+  permissions_boundary = var.permissions_boundary_arn
+  count                = local.gp_batch_enabled ? 1 : 0
+  name_prefix          = "${local.gp_batch_name}-job-"
+  assume_role_policy   = data.aws_iam_policy_document.batch_execution_assume[0].json
+  tags                 = local.tags
 }
 
 # Same secrets the Lambda reads (DB connection string, admin/master key, redis).

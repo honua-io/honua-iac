@@ -3,7 +3,8 @@ provider "aws" {
 }
 
 module "honua" {
-  source = "../../modules/aws-serverless"
+  source                   = "../../modules/aws-serverless"
+  permissions_boundary_arn = var.permissions_boundary_arn
 
   environment                     = var.environment
   name_prefix                     = var.name_prefix

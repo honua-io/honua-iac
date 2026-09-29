@@ -260,3 +260,9 @@ variable "control_plane_scheduled_tick_schedules" {
     DigestFlush          = "rate(5 minutes)"
   }
 }
+
+variable "permissions_boundary_arn" {
+  description = "Operator-owned boundary for every workload role in a certification cell."
+  type        = string
+  default     = null
+}

@@ -1,0 +1,153 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "Discovery",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:Describe*",
+        "ecs:Describe*",
+        "ecs:List*",
+        "rds:Describe*",
+        "rds:ListTagsForResource",
+        "elasticloadbalancing:Describe*",
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+        "lambda:List*",
+        "logs:Describe*",
+        "tag:GetResources",
+        "iam:GetRole",
+        "iam:GetRolePolicy",
+        "iam:GetPolicy",
+        "iam:GetPolicyVersion",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListInstanceProfilesForRole",
+        "iam:ListRoleTags"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DeleteCells",
+      "Effect": "Allow",
+      "Action": [
+        "ecs:DeleteCluster",
+        "ecs:DeleteService",
+        "ecs:UpdateService",
+        "ecs:DeregisterTaskDefinition",
+        "ecs:DeleteTaskDefinitions",
+        "rds:DeleteDBInstance",
+        "rds:DeleteDBSubnetGroup",
+        "rds:DeleteDBParameterGroup",
+        "lambda:DeleteFunction",
+        "lambda:DeleteAlias",
+        "lambda:RemovePermission",
+        "logs:DeleteLogGroup",
+        "secretsmanager:DeleteSecret",
+        "elasticloadbalancing:DeleteLoadBalancer",
+        "elasticloadbalancing:DeleteTargetGroup",
+        "elasticloadbalancing:DeleteListener",
+        "elasticloadbalancing:DeleteRule"
+      ],
+      "Resource": [
+        "arn:aws:ecs:${region}:${account_id}:cluster/honuar*",
+        "arn:aws:ecs:${region}:${account_id}:service/honuar*",
+        "arn:aws:ecs:${region}:${account_id}:task-definition/honuar*",
+        "arn:aws:lambda:${region}:${account_id}:function:honuar*",
+        "arn:aws:rds:${region}:${account_id}:db:honuar*",
+        "arn:aws:rds:${region}:${account_id}:subgrp:honuar*",
+        "arn:aws:rds:${region}:${account_id}:pg:honuar*",
+        "arn:aws:logs:${region}:${account_id}:log-group:honuar*",
+        "arn:aws:secretsmanager:${region}:${account_id}:secret:honuar*",
+        "arn:aws:elasticloadbalancing:${region}:${account_id}:loadbalancer/app/honuar*",
+        "arn:aws:elasticloadbalancing:${region}:${account_id}:targetgroup/honuar*",
+        "arn:aws:elasticloadbalancing:${region}:${account_id}:listener/app/honuar*",
+        "arn:aws:elasticloadbalancing:${region}:${account_id}:listener-rule/app/honuar*",
+        "arn:aws:ecs:${region}:${account_id}:cluster/honuan*",
+        "arn:aws:ecs:${region}:${account_id}:service/honuan*",
+        "arn:aws:ecs:${region}:${account_id}:task-definition/honuan*",
+        "arn:aws:lambda:${region}:${account_id}:function:honuan*",
+        "arn:aws:rds:${region}:${account_id}:db:honuan*",
+        "arn:aws:rds:${region}:${account_id}:subgrp:honuan*",
+        "arn:aws:rds:${region}:${account_id}:pg:honuan*",
+        "arn:aws:logs:${region}:${account_id}:log-group:honuan*",
+        "arn:aws:secretsmanager:${region}:${account_id}:secret:honuan*",
+        "arn:aws:elasticloadbalancing:${region}:${account_id}:loadbalancer/app/honuan*",
+        "arn:aws:elasticloadbalancing:${region}:${account_id}:targetgroup/honuan*",
+        "arn:aws:elasticloadbalancing:${region}:${account_id}:listener/app/honuan*",
+        "arn:aws:elasticloadbalancing:${region}:${account_id}:listener-rule/app/honuan*",
+        "arn:aws:ecs:${region}:${account_id}:cluster/honuaeks*",
+        "arn:aws:ecs:${region}:${account_id}:service/honuaeks*",
+        "arn:aws:ecs:${region}:${account_id}:task-definition/honuaeks*",
+        "arn:aws:lambda:${region}:${account_id}:function:honuaeks*",
+        "arn:aws:rds:${region}:${account_id}:db:honuaeks*",
+        "arn:aws:rds:${region}:${account_id}:subgrp:honuaeks*",
+        "arn:aws:rds:${region}:${account_id}:pg:honuaeks*",
+        "arn:aws:logs:${region}:${account_id}:log-group:honuaeks*",
+        "arn:aws:secretsmanager:${region}:${account_id}:secret:honuaeks*",
+        "arn:aws:elasticloadbalancing:${region}:${account_id}:loadbalancer/app/honuaeks*",
+        "arn:aws:elasticloadbalancing:${region}:${account_id}:targetgroup/honuaeks*",
+        "arn:aws:elasticloadbalancing:${region}:${account_id}:listener/app/honuaeks*",
+        "arn:aws:elasticloadbalancing:${region}:${account_id}:listener-rule/app/honuaeks*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Owner": "release-cell"
+        },
+        "Null": {
+          "aws:ResourceTag/RunId": "false"
+        }
+      }
+    },
+    {
+      "Sid": "DeleteCellNetwork",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DeleteVpc",
+        "ec2:DeleteSubnet",
+        "ec2:DeleteSecurityGroup",
+        "ec2:DeleteRoute",
+        "ec2:DeleteRouteTable",
+        "ec2:DisassociateRouteTable",
+        "ec2:DetachInternetGateway",
+        "ec2:DeleteInternetGateway",
+        "ec2:DeleteNatGateway",
+        "ec2:ReleaseAddress",
+        "ec2:DeleteNetworkInterface",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:RevokeSecurityGroupEgress"
+      ],
+      "Resource": "arn:aws:ec2:${region}:${account_id}:*/*",
+      "Condition": {
+        "StringEquals": {
+          "ec2:ResourceTag/Owner": "release-cell"
+        },
+        "Null": {
+          "ec2:ResourceTag/RunId": "false"
+        }
+      }
+    },
+    {
+      "Sid": "DeleteCellRoles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:DeleteRole",
+        "iam:DeleteRolePolicy",
+        "iam:DetachRolePolicy"
+      ],
+      "Resource": [
+        "arn:aws:iam::${account_id}:role/honuar*",
+        "arn:aws:iam::${account_id}:role/honuan*",
+        "arn:aws:iam::${account_id}:role/honuaeks*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Owner": "release-cell"
+        },
+        "Null": {
+          "aws:ResourceTag/RunId": "false"
+        }
+      }
+    }
+  ]
+}

@@ -76,10 +76,11 @@ locals {
 # ---------------------------------------------------------------------------
 
 resource "aws_iam_role" "control_plane_events" {
-  count              = local.control_plane_events_enabled ? 1 : 0
-  name_prefix        = "${local.name}-cp-evt-"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
-  tags               = local.tags
+  permissions_boundary = var.permissions_boundary_arn
+  count                = local.control_plane_events_enabled ? 1 : 0
+  name_prefix          = "${local.name}-cp-evt-"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume.json
+  tags                 = local.tags
 }
 
 resource "aws_iam_role_policy_attachment" "control_plane_events_basic" {
@@ -423,10 +424,11 @@ data "aws_iam_policy_document" "control_plane_scheduler_assume" {
 }
 
 resource "aws_iam_role" "control_plane_scheduler" {
-  count              = local.control_plane_events_enabled ? 1 : 0
-  name_prefix        = "${local.name}-cp-sch-"
-  assume_role_policy = data.aws_iam_policy_document.control_plane_scheduler_assume[0].json
-  tags               = local.tags
+  permissions_boundary = var.permissions_boundary_arn
+  count                = local.control_plane_events_enabled ? 1 : 0
+  name_prefix          = "${local.name}-cp-sch-"
+  assume_role_policy   = data.aws_iam_policy_document.control_plane_scheduler_assume[0].json
+  tags                 = local.tags
 }
 
 resource "aws_iam_role_policy" "control_plane_scheduler" {

@@ -124,10 +124,11 @@ locals {
 # ---------------------------------------------------------------------------
 
 resource "aws_iam_role" "customcode_execution" {
-  count              = local.customcode_batch_enabled ? 1 : 0
-  name_prefix        = "${local.customcode_batch_name}-exec-"
-  assume_role_policy = data.aws_iam_policy_document.batch_execution_assume[0].json
-  tags               = local.tags
+  permissions_boundary = var.permissions_boundary_arn
+  count                = local.customcode_batch_enabled ? 1 : 0
+  name_prefix          = "${local.customcode_batch_name}-exec-"
+  assume_role_policy   = data.aws_iam_policy_document.batch_execution_assume[0].json
+  tags                 = local.tags
 }
 
 resource "aws_iam_role_policy_attachment" "customcode_execution_ecs" {
@@ -150,10 +151,11 @@ resource "aws_iam_role_policy_attachment" "customcode_execution_ecs" {
 # ---------------------------------------------------------------------------
 
 resource "aws_iam_role" "customcode_job" {
-  count              = local.customcode_batch_enabled ? 1 : 0
-  name_prefix        = "${local.customcode_batch_name}-job-"
-  assume_role_policy = data.aws_iam_policy_document.batch_execution_assume[0].json
-  tags               = local.tags
+  permissions_boundary = var.permissions_boundary_arn
+  count                = local.customcode_batch_enabled ? 1 : 0
+  name_prefix          = "${local.customcode_batch_name}-job-"
+  assume_role_policy   = data.aws_iam_policy_document.batch_execution_assume[0].json
+  tags                 = local.tags
 }
 
 # Scoped artifact S3: Get/PutObject under the per-job artifact prefix ONLY. No

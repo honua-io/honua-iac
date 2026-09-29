@@ -1168,3 +1168,13 @@ variable "request_secret_reference_kms_key_arns" {
     error_message = "Each entry must be a KMS key ARN."
   }
 }
+
+variable "permissions_boundary_arn" {
+  description = "Operator-owned permissions boundary applied to every module-created IAM role. Required by the release-cell provisioning role."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.permissions_boundary_arn == null ? true : can(regex("^arn:aws:iam::[0-9]{12}:policy/.+$", var.permissions_boundary_arn))
+    error_message = "permissions_boundary_arn must be an IAM managed policy ARN."
+  }
+}
