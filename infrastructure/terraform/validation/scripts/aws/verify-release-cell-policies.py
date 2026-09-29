@@ -97,6 +97,8 @@ def main():
     for prefix in ['honuarfixture', 'honuanfixture']:
         case('runtime', 'submit-' + prefix, 'batch:SubmitJob', f'arn:aws:batch:us-east-1:{account}:job-queue/{prefix}-gp', 'allowed')
         case('runtime', 'logs-' + prefix, 'logs:PutLogEvents', f'arn:aws:logs:us-east-1:{account}:log-group:/aws/lambda/{prefix}-honua:log-stream:fixture', 'allowed')
+    for log_path in ['/honua/honuarfixture', '/aws/batch/honuarfixture-gp']:
+        case('runtime', 'logs-' + log_path, 'logs:PutLogEvents', f'arn:aws:logs:us-east-1:{account}:log-group:{log_path}:log-stream:fixture', 'allowed')
     case('runtime', 'no-other-queue', 'batch:SubmitJob', f'arn:aws:batch:us-east-1:{account}:job-queue/customer-production', 'implicitDeny')
     case('runtime', 'invoke-cell-handler', 'lambda:InvokeFunction', function, 'allowed')
     case('runtime', 'no-other-handler', 'lambda:InvokeFunction', function.replace('honuarfixture', 'customer-production'), 'implicitDeny')
