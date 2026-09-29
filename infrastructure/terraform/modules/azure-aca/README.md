@@ -127,8 +127,42 @@ module "honua" {
 | `key_vault_default_action` | `Deny` | Key Vault network ACL default. |
 | `enable_ingress` | true | Expose Container App via external ingress. |
 | `log_analytics_enabled` | true | Enable Log Analytics workspace. |
+| `request_secret_reference_allowed_environment_variables` | `[]` | Exact environment variable names a request may name as `env:NAME`. Rendered as `Security__RequestSecretReferences__AllowedEnvironmentVariables__<n>`. |
+| `request_secret_reference_allowed_environment_variable_prefixes` | `[]` | Environment variable name prefixes a request may name as `env:NAME` (never matches a name containing `__`). Rendered as `Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__<n>`. |
+| `request_secret_reference_allowed_secret_reference_prefixes` | `[]` | Whole-reference prefixes for the other providers, including the provider segment, e.g. `azure:keyvault:honua-imports:`. Rendered as `Security__RequestSecretReferences__AllowedSecretReferencePrefixes__<n>`. |
 
 See `variables.tf` for the complete list.
+
+## Request-supplied secret references
+
+The three `request_secret_reference_allowed_*` variables are the allowlist for
+request-supplied secret references (honua-server #5055) and bind the server's
+`Security:RequestSecretReferences` section. The server policy is deny-by-default:
+with all three lists empty (the default, which renders nothing) the server
+resolves no secret reference named in a request - import credentials, workflow
+source steps, secure-connection registration - and a secure connection that
+stores a `secretReference` does not resolve it at runtime. Connections stored
+with an encrypted password, and secret references in the server's own
+configuration, are not governed by this policy.
+
+```hcl
+request_secret_reference_allowed_environment_variable_prefixes = ["HONUA_IMPORT_"]
+request_secret_reference_allowed_secret_reference_prefixes     = ["azure:keyvault:honua-imports:"]
+```
+
+Entries are rendered in list order into the container environment. For
+the whole-reference list the provider (the text before the first colon) is
+matched case-insensitively and the remainder is a case-sensitive prefix of the
+reference, so an entry must have the same form as the references it is meant to
+permit. Keep entries as narrow as the deployment allows, and
+give imports and connections their own variables or secret path rather than
+listing the server's own credentials. Set the entries through these variables or
+through `additional_env`, not both, so one source owns the indexes.
+
+Server images that predate the setting ignore these variables, so they can be
+set before upgrading; deployments that already rely on request-supplied
+references should set matching entries before moving to an image that includes
+the setting.
 
 ## Upgrade from the aliased connection key
 

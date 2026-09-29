@@ -335,7 +335,16 @@ locals {
     AZURE_CLIENT_ID = azurerm_user_assigned_identity.function.client_id
   } : {}
 
-  app_settings = merge(local.base_app_settings, local.control_plane_app_settings, local.redis_secret_settings, local.registry_settings, local.app_insights_settings, local.openai_ai_environment, local.pro_license_environment, local.managed_identity_settings, var.additional_env)
+  # Allowlist for request-supplied secret references (honua-server #5055):
+  # indexed Security__RequestSecretReferences__<List>__<n> entries in list order.
+  # Empty lists render nothing, which keeps the server's deny-by-default policy.
+  request_secret_reference_environment = merge(
+    { for index, value in var.request_secret_reference_allowed_environment_variables : "Security__RequestSecretReferences__AllowedEnvironmentVariables__${index}" => value },
+    { for index, value in var.request_secret_reference_allowed_environment_variable_prefixes : "Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__${index}" => value },
+    { for index, value in var.request_secret_reference_allowed_secret_reference_prefixes : "Security__RequestSecretReferences__AllowedSecretReferencePrefixes__${index}" => value },
+  )
+
+  app_settings = merge(local.base_app_settings, local.control_plane_app_settings, local.redis_secret_settings, local.registry_settings, local.app_insights_settings, local.openai_ai_environment, local.pro_license_environment, local.managed_identity_settings, local.request_secret_reference_environment, var.additional_env)
 
   image_parts         = split("/", var.image)
   image_registry      = local.image_parts[0]

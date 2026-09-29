@@ -156,6 +156,14 @@ locals {
   licensing_environment = {
     Licensing__Mode = local.licensing_mode
   }
+  # Allowlist for request-supplied secret references (honua-server #5055):
+  # indexed Security__RequestSecretReferences__<List>__<n> entries in list order.
+  # Empty lists render nothing, which keeps the server's deny-by-default policy.
+  request_secret_reference_environment = merge(
+    { for index, value in var.request_secret_reference_allowed_environment_variables : "Security__RequestSecretReferences__AllowedEnvironmentVariables__${index}" => value },
+    { for index, value in var.request_secret_reference_allowed_environment_variable_prefixes : "Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__${index}" => value },
+    { for index, value in var.request_secret_reference_allowed_secret_reference_prefixes : "Security__RequestSecretReferences__AllowedSecretReferencePrefixes__${index}" => value },
+  )
   # When GP-on-Batch is enabled, surface the DURABLE substrate to the server as a
   # ControlPlane:ExecutionWorkloads entry: the queue ARN and the per-TIER
   # job-definition ARNs (s/m/l/xl). The reconciler selects the
@@ -207,7 +215,7 @@ locals {
     ControlPlane__DeployTargets__0__ParameterEntries__1__Value  = var.lambda_alias_name
     ControlPlane__DeployTargets__0__ParameterEntries__2__Key    = "aws.region"
     ControlPlane__DeployTargets__0__ParameterEntries__2__Value  = data.aws_region.current.name
-  }, local.gp_batch_environment, local.bedrock_ai_environment, local.amazon_location_environment, var.additional_env, local.redis_secret_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment)
+  }, local.gp_batch_environment, local.bedrock_ai_environment, local.amazon_location_environment, var.additional_env, local.redis_secret_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment)
 }
 
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
