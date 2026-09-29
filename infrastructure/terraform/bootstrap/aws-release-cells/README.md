@@ -112,6 +112,10 @@ email subscription on the recipient's behalf.
 
 ## Qualification status, 2026-09-29
 
+After merging the #207 inputs from trunk, all 47 ECS and 32 serverless native
+module tests pass together. The bootstrap has five native policy tests and
+98 passing AWS IAM decisions with independently specified expectations.
+
 Read-only inspection of account `585192672263` found the existing $200 budget
 with actual 50%, 80%, 100% notifications, 73 `Environment=cert` tagged resources
 but no `Lifecycle=standing`, no SNS subscriptions in us-east-1, and the existing
