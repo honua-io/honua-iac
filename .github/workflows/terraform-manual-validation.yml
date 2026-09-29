@@ -18,6 +18,21 @@ on:
         required: false
         type: string
         default: ""
+      aws_ecs_previous_image:
+        description: "Prior ECS revision (digest-pinned)"
+        required: false
+        type: string
+        default: ""
+      aws_serverless_image:
+        description: "Candidate Lambda revision (ECR digest-pinned)"
+        required: false
+        type: string
+        default: ""
+      aws_serverless_previous_image:
+        description: "Prior Lambda revision (ECR digest-pinned)"
+        required: false
+        type: string
+        default: ""
       cloud:
         description: "Cloud target"
         required: true
@@ -668,10 +683,10 @@ jobs:
       HONUA_ADMIN_PASSWORD: ${{ secrets.HONUA_ADMIN_PASSWORD }}
       HONUA_DB_PASSWORD: ${{ secrets.HONUA_DB_PASSWORD }}
       HONUA_AWS_ECS_IMAGE: ${{ inputs.aws_ecs_image || vars.HONUA_AWS_ECS_IMAGE || '' }}
-      HONUA_AWS_ECS_PREVIOUS_IMAGE: ${{ vars.HONUA_AWS_ECS_PREVIOUS_IMAGE || '' }}
+      HONUA_AWS_ECS_PREVIOUS_IMAGE: ${{ inputs.aws_ecs_previous_image || vars.HONUA_AWS_ECS_PREVIOUS_IMAGE || '' }}
       HONUA_AWS_ECS_CANARY_IMAGE: ${{ vars.HONUA_AWS_ECS_CANARY_IMAGE || '' }}
-      HONUA_AWS_SERVERLESS_IMAGE: ${{ vars.HONUA_AWS_SERVERLESS_IMAGE || '' }}
-      HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE: ${{ vars.HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE || '' }}
+      HONUA_AWS_SERVERLESS_IMAGE: ${{ inputs.aws_serverless_image || vars.HONUA_AWS_SERVERLESS_IMAGE || '' }}
+      HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE: ${{ inputs.aws_serverless_previous_image || vars.HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE || '' }}
       HONUA_AWS_DATA_CACHE_FILE: ${{ github.workspace }}/.gha-cache/aws-data-reuse.env
       HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/cloud/run-cloud-post-apply-validation.sh
       HONUA_PLATFORM_VALIDATION_IMPORT_TABLE_PREFIX: ${{ inputs.deployment_profile == 'ephemeral' && inputs.no_destroy == false && format('cloud{0}{1}', github.run_id, github.run_attempt) || '' }}
@@ -935,6 +950,12 @@ jobs:
       # --this-run waives the run-completed and grace-window checks for exactly
       # the ids named here: the job knows its own run is over because it is the
       # one ending. Nothing else in the account is in scope.
+      - name: Require teardown OIDC role
+        if: ${{ always() && inputs.no_destroy == false }}
+        env:
+          ROLE_ARN: ${{ vars.HONUA_AWS_VALIDATION_REAPER_ROLE_ARN }}
+        run: ': "${ROLE_ARN:?Configure the separate OIDC teardown role ARN}"'
+
       - name: Refresh OIDC session for teardown
         if: ${{ always() && inputs.no_destroy == false }}
         uses: aws-actions/configure-aws-credentials@v4
@@ -1527,6 +1548,12 @@ jobs:
       # destroy fails and the whole VPC survives (honua-release#79). The reaper
       # sweeps those ENIs and revokes cross-referencing security group rules
       # before deleting anything, which is what makes the teardown terminate.
+      - name: Require teardown OIDC role
+        if: ${{ always() && inputs.no_destroy == false }}
+        env:
+          ROLE_ARN: ${{ vars.HONUA_AWS_VALIDATION_REAPER_ROLE_ARN }}
+        run: ': "${ROLE_ARN:?Configure the separate OIDC teardown role ARN}"'
+
       - name: Refresh OIDC session for teardown
         if: ${{ always() && inputs.no_destroy == false }}
         uses: aws-actions/configure-aws-credentials@v4

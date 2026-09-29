@@ -57,7 +57,7 @@ locals {
   customcode_batch_default_vcpus  = 1
   customcode_batch_default_memory = 2048
 
-  # Per-runtime custom-code worker image. Each runtime defaults to its own
+  # Per-runtime custom-code worker image. Explicit pins are required for each
   # worker-customcode-<runtime> ECR repo this module can create; an operator may
   # override either with a pre-built image (customcode_batch_image pins python;
   # customcode_dotnet_batch_image pins dotnet). The runtime selector
@@ -312,6 +312,12 @@ resource "aws_batch_job_queue" "customcode" {
 # ---------------------------------------------------------------------------
 
 resource "aws_batch_job_definition" "customcode" {
+  lifecycle {
+    precondition {
+      condition     = var.customcode_batch_image != "" && var.customcode_dotnet_batch_image != ""
+      error_message = "Custom-code workers require explicit digest-pinned Python and .NET worker images."
+    }
+  }
   for_each = local.customcode_batch_jobdefs
 
   name                  = "${local.customcode_batch_name}-${each.value.runtime}-${each.value.tier}"

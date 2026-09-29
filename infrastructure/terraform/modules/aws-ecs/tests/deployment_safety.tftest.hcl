@@ -232,8 +232,9 @@ run "missing_functional_expectation_is_rejected" {
 }
 run "mutable_prior_image_is_rejected" {
   command = plan
-  variables { image = "ghcr.io/honua-io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
-  expect_failures = [aws_lb_listener_rule.protected_rollout]
+  variables { image = "ghcr.io/honua-io/honua-server:latest" }
+  # All workloads now reject mutable pins at input validation, before rollout planning.
+  expect_failures = [var.image]
 }
 run "candidate_role_cannot_own_recovery" {
   command = plan
