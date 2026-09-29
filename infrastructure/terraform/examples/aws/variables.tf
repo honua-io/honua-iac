@@ -74,7 +74,7 @@ variable "existing_db_connection_string" {
 }
 
 variable "honua_image" {
-  description = "Container image to deploy to ECS. Pin to an immutable release tag or digest."
+  description = "Container image to deploy to ECS. Pin to a SHA-256 digest."
   type        = string
 }
 

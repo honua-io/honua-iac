@@ -107,7 +107,7 @@ Options:
   --region <aws-region>                AWS region (default: us-east-1)
   --environment <name>                 Environment suffix in names (default: it)
   --name-prefix-base <prefix>          Base prefix for generated resource names
-  --aot                                Map ECS tag '*-ecs' -> '*-ecs-aot' and serverless tag '*-lambda' -> '*-lambda-aot' when provided (JIT is debug fallback)
+  --aot                                Compatibility flag; select and digest-pin the AOT artifact before invocation
   --ecs-image <image>                  ECS container image
   --ecs-canary-enabled                 Enable the optional ECS ALB canary service
   --ecs-canary-image <image>           Optional canary ECS image (defaults to --ecs-image)

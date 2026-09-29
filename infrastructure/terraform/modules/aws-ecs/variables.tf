@@ -152,7 +152,7 @@ variable "assign_public_ip" {
 }
 
 variable "image" {
-  description = "Container image. Pin to an immutable release tag or digest; AOT builds are recommended for faster startup and lower memory."
+  description = "Container image. Pin to a SHA-256 digest; AOT builds are recommended for faster startup and lower memory."
   type        = string
   validation {
     condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9._-]*(:[0-9]+)?(/[A-Za-z0-9._-]+)+@sha256:[0-9a-f]{64}$", var.image))

@@ -27,7 +27,7 @@ variable "tags" {
 }
 
 variable "honua_image" {
-  description = "Lambda container image URI (ECR). Use a *-lambda-aot tag pinned to an immutable release tag or digest."
+  description = "Lambda container image URI (ECR). Use the SHA-256 digest of a Lambda AOT image."
   type        = string
 }
 
@@ -100,13 +100,13 @@ variable "enable_customcode_batch" {
 }
 
 variable "customcode_batch_image" {
-  description = "ECR image URI for the PYTHON custom-code worker (customcode.runtime=python). Defaults to the worker-customcode-python repo (when created) else honua_image."
+  description = "ECR image URI for the PYTHON custom-code worker (customcode.runtime=python). Required as an explicit digest pin when custom-code workers are enabled."
   type        = string
   default     = ""
 }
 
 variable "customcode_dotnet_batch_image" {
-  description = "ECR image URI for the DOTNET custom-code worker (customcode.runtime=dotnet; honua-server #2196). Defaults to the worker-customcode-dotnet repo (when created) else honua_image."
+  description = "ECR image URI for the DOTNET custom-code worker (customcode.runtime=dotnet; honua-server #2196). Required as an explicit digest pin when custom-code workers are enabled."
   type        = string
   default     = ""
 }

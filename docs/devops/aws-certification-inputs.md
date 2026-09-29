@@ -1,3 +1,8 @@
+---
+type: reference
+title: "AWS certification image and identity inputs"
+description: "Digest pins, Bedrock configuration, OIDC roles and the evidence required for AWS certification."
+---
 # AWS certification image and identity inputs
 
 The release promise behind #207 is a real-model Studio journey and a two-revision

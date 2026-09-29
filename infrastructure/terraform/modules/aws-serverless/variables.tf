@@ -125,7 +125,7 @@ variable "enable_deploy_control_vpc_endpoints" {
 }
 
 variable "image" {
-  description = "Lambda container image URI (ECR). Prefer Honua Lambda AOT tags (`vX.Y.Z-lambda-aot`); JIT tags (`vX.Y.Z-lambda`) are debug fallback."
+  description = "Lambda container image URI (ECR). Use a SHA-256 digest; Lambda AOT builds are preferred."
   type        = string
   validation {
     condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9._-]*(:[0-9]+)?(/[A-Za-z0-9._-]+)+@sha256:[0-9a-f]{64}$", var.image))
@@ -688,7 +688,7 @@ variable "enable_customcode_batch" {
 }
 
 variable "customcode_batch_image" {
-  description = "Container image URI for the PYTHON custom-code worker (customcode.runtime=python). Defaults to the worker-customcode-python ECR repo (when create_worker_customcode_repo) else the Lambda image. Set explicitly for a pre-built image."
+  description = "Container image URI for the PYTHON custom-code worker (customcode.runtime=python). Required as an explicit digest pin when custom-code workers are enabled."
   type        = string
   default     = ""
   validation {
@@ -698,7 +698,7 @@ variable "customcode_batch_image" {
 }
 
 variable "customcode_dotnet_batch_image" {
-  description = "Container image URI for the DOTNET custom-code worker (customcode.runtime=dotnet; honua-server #2196's worker-customcode-dotnet image). Defaults to the worker-customcode-dotnet ECR repo (when create_worker_customcode_dotnet_repo) else the Lambda image. Set explicitly for a pre-built image."
+  description = "Container image URI for the DOTNET custom-code worker (customcode.runtime=dotnet; honua-server #2196's worker-customcode-dotnet image). Required as an explicit digest pin when custom-code workers are enabled."
   type        = string
   default     = ""
   validation {
