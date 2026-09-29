@@ -682,6 +682,8 @@ jobs:
       HONUA_AWS_VALIDATION_ROLE_ARN: ${{ vars.HONUA_AWS_VALIDATION_ROLE_ARN }}
       HONUA_ADMIN_PASSWORD: ${{ secrets.HONUA_ADMIN_PASSWORD }}
       HONUA_DB_PASSWORD: ${{ secrets.HONUA_DB_PASSWORD }}
+      TF_VAR_enable_bedrock_ai: "true"
+      TF_VAR_bedrock_ai_region: ${{ vars.HONUA_AWS_VALIDATION_REGION || 'us-east-1' }}
       HONUA_AWS_ECS_IMAGE: ${{ inputs.aws_ecs_image || vars.HONUA_AWS_ECS_IMAGE || '' }}
       HONUA_AWS_ECS_PREVIOUS_IMAGE: ${{ inputs.aws_ecs_previous_image || vars.HONUA_AWS_ECS_PREVIOUS_IMAGE || '' }}
       HONUA_AWS_ECS_CANARY_IMAGE: ${{ vars.HONUA_AWS_ECS_CANARY_IMAGE || '' }}

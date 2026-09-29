@@ -363,6 +363,10 @@ jobs:
       # The infra reaper deletes live cloud resources, so its refusal rules are
       # the thing under test: run against a fake AWS + fake gh, no credentials,
       # no network. See #142.
+      - name: Certification OIDC credential contract
+        shell: bash
+        run: python3 infrastructure/terraform/validation/scripts/shared/test-certification-oidc.py
+
       - name: Certification image pins and revision orchestration
         shell: bash
         run: ./infrastructure/terraform/validation/scripts/aws/test-certification-images.sh

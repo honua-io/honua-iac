@@ -179,3 +179,20 @@ run "reject_mutable_canary_image" {
   variables { canary_image = "registry.example/honua:latest" }
   expect_failures = [var.canary_image]
 }
+
+run "bedrock_cross_region_profile" {
+  command = apply
+  variables {
+    enable_bedrock_ai = true
+    bedrock_ai_region = "us-east-1"
+  }
+  assert {
+    condition = toset(jsondecode(aws_iam_role_policy.task_bedrock_invoke[0].policy).Statement[0].Resource) == toset([
+      "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0"
+    ])
+    error_message = "The US profile grants exactly its three pinned model destinations and profile ARN."
+  }
+}
