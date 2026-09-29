@@ -15,9 +15,9 @@
 #                       prefix, only to ecs-tasks.amazonaws.com.
 #   4. APP RUNTIME      the application's own identity. Created by modules/aws-ecs.
 #
-# Terraform reaches (1) through the S3 backend's own `assume_role` block and (2)
-# through the provider's `assume_role` block, so one run holds both without
-# either role inheriting the other's permissions.
+# Terraform reaches (1) through the S3 backend's own `assume_role` block. The
+# process credential is already (2), so the provider must not assume a second
+# role: the exact-plan receipt binds the process caller.
 #
 # This root creates no IAM user and no access key. There is no variable that
 # makes it create one.

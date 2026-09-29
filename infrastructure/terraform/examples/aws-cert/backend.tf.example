@@ -32,11 +32,12 @@ terraform {
     # in bootstrap/aws-tfstate, and drop use_lockfile above.
     # dynamodb_table = "REPLACE_WITH_STATE_LOCK_TABLE_NAME"
 
-    # Backend access is its OWN role. The provider assumes the deployment role
-    # separately (see bootstrap/aws-exec-identity), so neither identity inherits
-    # the other's permissions.
-    # assume_role = {
-    #   role_arn = "REPLACE_WITH_BACKEND_ACCESS_ROLE_ARN"
-    # }
+    # Backend access is its own role. The process credential must already be
+    # the deployment role from bootstrap/aws-exec-identity. This block assumes
+    # only the backend-access role, and the two roles must differ. Do not add
+    # a provider assume_role: the exact-plan receipt binds the process caller.
+    assume_role = {
+      role_arn = "REPLACE_WITH_BACKEND_ACCESS_ROLE_ARN"
+    }
   }
 }

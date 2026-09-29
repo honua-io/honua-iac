@@ -64,10 +64,14 @@ binds to.
 
 `posture.release_qualified` is the single boolean the release lane reads. It is
 true only when the backend is remote, a locking primitive is configured, the
-source is committed, local state was not opted into, and the caller is a live
+backend assumes a backend-access role different from the caller, the source is
+committed, local state was not opted into, and the caller is a live
 STS-assumed-role session. Any development escape hatch turns it false, and
 `terraform-exact-apply.sh` refuses a false plan unless the operator passes
-`--allow-unqualified` explicitly.
+`--allow-unqualified` explicitly. The process credential is that deployment
+role. Do not add a provider `assume_role`: the receipt binds the process
+caller, and a second assume would mutate as an identity the receipt does not
+name.
 
 `qualification_status` is always `"unqualified"` and `evidence_scope` is always
 `"metadata-only-pre-apply"`: a plan is never, by itself, evidence that anything
@@ -100,6 +104,8 @@ context and refuses **before any mutation**. Each refusal prints
 | `local-state-refused` | the backend is local state |
 | `lock-posture-missing` | the remote backend names no locking primitive |
 | `backend-identity-missing` | the S3 backend lacks an explicit non-empty bucket, object key, or region |
+| `backend-role-missing` | the S3 backend does not assume a backend-access role |
+| `backend-role-not-distinct` | the caller session is that backend-access role (account and role name; IAM path ignored) |
 | `backend-encryption-missing` | the S3 backend does not set `encrypt = true` (a KMS reference alone is insufficient) |
 | `backend-credential-refused` | credentials, a web identity token, or an SSE customer key were persisted in backend configuration |
 | `lock-primitive-unsupported` | S3 native locking on Terraform < 1.10 |

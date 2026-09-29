@@ -14,7 +14,7 @@
 # Offline/test mode (HONUA_IAC_OFFLINE=1) replaces the two operations that need
 # live AWS -- STS caller identity and Terraform state pull -- with fixture files
 # so the fail-closed logic is testable without credentials. Offline runs are
-# stamped `credential_kind = "offline-test"` and can never be mistaken for
+# stamped `evidence_mode = "offline-test"` and can never be mistaken for
 # qualified evidence.
 
 set -euo pipefail
@@ -252,6 +252,9 @@ sys.exit(0 if all(isinstance(location.get(key), str) and location[key].strip()
 ' || refuse "backend-identity-missing" "S3 backend must explicitly identify bucket, object key, and region"
     [[ "$(json_get "$doc" encryption.enabled)" == "true" ]] ||
       refuse "backend-encryption-missing" "S3 backend requires encryption"
+    [[ -n "$(json_get "$doc" backend_access_role_arn)" ]] ||
+      refuse "backend-role-missing" \
+        "S3 backend must assume a backend-access role (assume_role.role_arn); the deployment session must not also be the state writer"
     if HONUA_IAC_JSON="$doc" python3 -c '
 import json, os, sys
 keys = set(json.loads(os.environ["HONUA_IAC_JSON"])["redacted_config_keys"])
@@ -349,6 +352,56 @@ doc = {
 }
 print(json.dumps(doc, sort_keys=True, separators=(",", ":")))
 PY
+}
+
+# backend_roles_separated <backend-json> <identity-json>
+# Prints "true" when the caller session and the backend-access role are not the
+# same role. STS assumed-role ARNs and IAM role ARNs do not share a string form,
+# and assumed-role ARNs drop the IAM path, so the comparison is account plus
+# role name. A missing backend role is not "the same" role; that case is
+# backend-role-missing.
+backend_roles_separated() {
+  HONUA_IAC_BACKEND_DOC="$1" HONUA_IAC_IDENTITY_DOC="$2" python3 - <<'PY'
+import json
+import os
+
+
+def role_identity(arn):
+    if not isinstance(arn, str) or not arn:
+        return "", ""
+    parts = arn.split(":")
+    account = parts[4] if len(parts) > 4 else ""
+    name = ""
+    if ":assumed-role/" in arn:
+        name = arn.split(":assumed-role/", 1)[1].split("/", 1)[0]
+    elif ":role/" in arn:
+        tail = arn.split(":role/", 1)[1].strip("/")
+        name = tail.split("/")[-1] if tail else ""
+    return account, name
+
+
+backend = json.loads(os.environ["HONUA_IAC_BACKEND_DOC"])
+identity = json.loads(os.environ["HONUA_IAC_IDENTITY_DOC"])
+if not isinstance(identity, dict):
+    identity = {}
+backend_account, backend_name = role_identity(backend.get("backend_access_role_arn") or "")
+caller_account, caller_name = role_identity(identity.get("arn") or "")
+same = bool(
+    backend_name
+    and backend_name == caller_name
+    and backend_account == caller_account
+)
+print("false" if same else "true")
+PY
+}
+
+# assert_backend_role_separated <backend-json> <identity-json>
+# The deployment session may assume the deployment role. It must not also be
+# the role that reads and writes state.
+assert_backend_role_separated() {
+  [[ "$(backend_roles_separated "$1" "$2")" == "true" ]] ||
+    refuse "backend-role-not-distinct" \
+      "caller $(json_get "$2" arn) is the backend-access role $(json_get "$1" backend_access_role_arn); state writes and infrastructure mutation require different roles"
 }
 
 # assert_short_lived_identity <identity-json>

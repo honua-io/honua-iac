@@ -1,5 +1,5 @@
 output "deployment_role_arn" {
-  description = "Infrastructure deployment role ARN. Pass this to the AWS provider's assume_role block."
+  description = "Infrastructure deployment role ARN. Assume this role in the process credential before planning. Do not put it in a provider assume_role block."
   value       = aws_iam_role.deployment.arn
 }
 

@@ -153,6 +153,7 @@ write_backend_state() {
       "encrypt": true,
       "use_lockfile": true,
       "kms_key_id": "arn:aws:kms:us-east-1:123456789012:key/fixture",
+      "assume_role": {"role_arn": "arn:aws:iam::123456789012:role/honua-terraform-backend"},
       "access_key": null,
       "secret_key": null
     }
@@ -416,6 +417,8 @@ assert_json "plan: records the KMS reference" "$META" \
   "doc['backend']['encryption']['kms_key_reference'].startswith('arn:aws:kms:')"
 assert_json "plan: records account and assumed role" "$META" \
   "doc['identity']['account_id'] == '123456789012' and 'assumed-role' in doc['identity']['assumed_role_arn']"
+assert_json "plan: binds a backend-access role distinct from the caller" "$META" \
+  "doc['backend']['backend_access_role_arn'] == 'arn:aws:iam::123456789012:role/honua-terraform-backend' and 'honua-terraform-backend' not in doc['identity']['assumed_role_arn']"
 assert_json "plan: records prior state lineage and serial" "$META" \
   "doc['state_before']['serial'] == 12 and doc['state_before']['lineage']"
 assert_json "plan: binds the saved plan sha256" "$META" \
@@ -515,6 +518,48 @@ CASE="$(new_case iam-user)"
 STS_FIXTURE="$CASE/fixtures/sts-iam-user.json" run_plan "$CASE"
 expect_refusal "plan: refuses a long-lived IAM user principal" "long-lived-credential-refused"
 
+# The deployment session must not also be the state writer. Missing and
+# same-role backends are refused before terraform plan or apply starts.
+CASE="$(new_case backend-role-missing)"
+python3 - "$CASE/$STACK_REL/.terraform/terraform.tfstate" <<'PY'
+import json, sys
+with open(sys.argv[1]) as handle:
+    document = json.load(handle)
+document["backend"]["config"].pop("assume_role", None)
+with open(sys.argv[1], "w") as handle:
+    json.dump(document, handle)
+PY
+FAKE_TF_MUTATION_LOG="$CASE/processes" run_plan "$CASE"
+expect_refusal "plan: refuses a backend with no access role" "backend-role-missing"
+if [[ -e "$CASE/processes" ]]; then
+  echo "[FAIL] missing backend role started plan"
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+else
+  echo "[PASS] missing backend role starts no plan"
+  PASS_COUNT=$((PASS_COUNT + 1))
+fi
+
+CASE="$(new_case backend-role-same)"
+python3 - "$CASE/$STACK_REL/.terraform/terraform.tfstate" <<'PY'
+import json, sys
+with open(sys.argv[1]) as handle:
+    document = json.load(handle)
+document["backend"]["config"]["assume_role"] = {
+    "role_arn": "arn:aws:iam::123456789012:role/team/honua-deploy-prod"
+}
+with open(sys.argv[1], "w") as handle:
+    json.dump(document, handle)
+PY
+FAKE_TF_MUTATION_LOG="$CASE/processes" run_plan "$CASE"
+expect_refusal "plan: refuses a caller that is the backend-access role" "backend-role-not-distinct"
+if [[ -e "$CASE/processes" ]]; then
+  echo "[FAIL] same backend role started plan"
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+else
+  echo "[PASS] same backend role starts no plan"
+  PASS_COUNT=$((PASS_COUNT + 1))
+fi
+
 CASE="$(new_case dirty-source)"
 echo '# uncommitted' >>"$CASE/$STACK_REL/main.tf"
 run_plan "$CASE"
@@ -555,6 +600,45 @@ apply_case() {
   cp -a "$TMP_DIR/case-happy/artifacts/." "$dir/artifacts/"
   printf '%s' "$dir"
 }
+
+CASE="$(apply_case backend-role-missing-apply)"
+python3 - "$CASE/$STACK_REL/.terraform/terraform.tfstate" <<'PY'
+import json, sys
+with open(sys.argv[1]) as handle:
+    document = json.load(handle)
+document["backend"]["config"].pop("assume_role", None)
+with open(sys.argv[1], "w") as handle:
+    json.dump(document, handle)
+PY
+FAKE_TF_MUTATION_LOG="$CASE/processes" run_apply "$CASE" --allow-unqualified
+expect_refusal "apply: refuses a backend with no access role" "backend-role-missing"
+if [[ -e "$CASE/processes" ]]; then
+  echo "[FAIL] missing backend role started apply"
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+else
+  echo "[PASS] missing backend role starts no apply"
+  PASS_COUNT=$((PASS_COUNT + 1))
+fi
+
+CASE="$(apply_case backend-role-same-apply)"
+cat >"$CASE/fixtures/sts-backend-role.json" <<'EOF'
+{
+  "Account": "123456789012",
+  "Arn": "arn:aws:sts::123456789012:assumed-role/honua-terraform-backend/session",
+  "UserId": "AROABACKEND:session"
+}
+EOF
+STS_FIXTURE="$CASE/fixtures/sts-backend-role.json" \
+  FAKE_TF_MUTATION_LOG="$CASE/processes" \
+  run_apply "$CASE" --allow-unqualified
+expect_refusal "apply: refuses a caller that is the backend-access role" "backend-role-not-distinct"
+if [[ -e "$CASE/processes" ]]; then
+  echo "[FAIL] same backend role started apply"
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+else
+  echo "[PASS] same backend role starts no apply"
+  PASS_COUNT=$((PASS_COUNT + 1))
+fi
 
 CASE="$(apply_case missing-plan)"
 rm -f "$CASE/artifacts/honua.tfplan"
