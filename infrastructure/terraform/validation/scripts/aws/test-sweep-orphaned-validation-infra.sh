@@ -374,6 +374,15 @@ else
   check "a settled key is not re-deleted" ok
 fi
 
+# Protected stacks win over a valid disposable owner/run/expiry, even --this-run.
+for protection in 'Environment cert' 'Environment demo' 'Environment standing' 'Lifecycle standing' 'Lifecycle demo'; do
+  read -r key value <<<"$protection"
+  protected="$(tagged 'arn:aws:ecs:us-west-2:1:cluster/protected' 'gha-999-aws-ecs' 'ecs' "$PAST" | jq --arg k "$key" --arg v "$value" '.Tags += [{Key:$k,Value:$v}]')"
+  run_sweeper "$(resources "$protected")" --this-run --run-id gha-999-aws-ecs --no-defer-on-active
+  assert_not_planned "$protection is never a teardown candidate" 'arn:aws:ecs:us-west-2:1:cluster/protected'
+  assert_no_mutations "$protection causes no mutations"
+done
+
 echo "== teardown order =="
 
 # 15. Security group rules are revoked before the groups are deleted, and

@@ -181,6 +181,35 @@
           "aws:RequestTag/Owner": "release-cell"
         }
       }
+    },
+    {
+      "Sid": "NoStandingCreation",
+      "Effect": "Deny",
+      "Action": "*",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Environment": [
+            "cert",
+            "standing",
+            "demo"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "NoStandingLifecycle",
+      "Effect": "Deny",
+      "Action": "*",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Lifecycle": [
+            "standing",
+            "demo"
+          ]
+        }
+      }
     }
   ]
 }

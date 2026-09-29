@@ -78,11 +78,7 @@
       "Sid": "LambdaNetwork",
       "Effect": "Allow",
       "Action": [
-        "ec2:CreateNetworkInterface",
-        "ec2:DescribeNetworkInterfaces",
-        "ec2:DeleteNetworkInterface",
-        "ec2:AssignPrivateIpAddresses",
-        "ec2:UnassignPrivateIpAddresses"
+        "ec2:DescribeNetworkInterfaces"
       ],
       "Resource": "*"
     },
@@ -101,6 +97,24 @@
         "arn:aws:s3:::honuar*/*",
         "arn:aws:s3:::honuan*/*"
       ]
+    },
+    {
+      "Sid": "CellNetworkInterfaces",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DeleteNetworkInterface",
+        "ec2:AssignPrivateIpAddresses",
+        "ec2:UnassignPrivateIpAddresses"
+      ],
+      "Resource": "arn:aws:ec2:${region}:${account_id}:network-interface/*",
+      "Condition": {
+        "StringEquals": {
+          "ec2:ResourceTag/Owner": "release-cell"
+        },
+        "Null": {
+          "ec2:ResourceTag/RunId": "false"
+        }
+      }
     }
   ]
 }
