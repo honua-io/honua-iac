@@ -1137,3 +1137,34 @@ variable "request_secret_reference_allowed_secret_reference_prefixes" {
     error_message = "Each entry must be '<provider>:<identifier-prefix>' for a non-environment provider."
   }
 }
+
+# Cloud authorization for the allowlist above. The allowlist only decides which
+# request-supplied references the server will try to resolve; the server then
+# reads them with its own runtime credentials, so an allowed aws:secretsmanager:
+# reference outside this module's own secrets also needs an IAM grant. Keep
+# these as narrow as the allowlist entries they back.
+variable "request_secret_reference_secret_arns" {
+  description = "Secrets Manager secret ARNs (a trailing * wildcard is allowed, e.g. arn:aws:secretsmanager:us-east-1:123456789012:secret:honua/imports/*) that the Lambda role and, when enable_gp_batch is set, the geoprocessing Batch job role may read with secretsmanager:GetSecretValue to resolve allowlisted request-supplied references. Empty grants nothing beyond the module's own secrets."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for arn in var.request_secret_reference_secret_arns : can(regex("^arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[^\\s*]+\\*?$", arn))
+    ])
+    error_message = "Each entry must be a Secrets Manager secret ARN in an explicit region and account; only a single trailing * wildcard is allowed."
+  }
+}
+
+variable "request_secret_reference_kms_key_arns" {
+  description = "Customer-managed KMS key ARNs that encrypt the secrets in request_secret_reference_secret_arns. Granted kms:Decrypt only while request_secret_reference_secret_arns is non-empty. Leave empty for secrets encrypted with the AWS-managed aws/secretsmanager key."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for arn in var.request_secret_reference_kms_key_arns : can(regex("^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$", arn))
+    ])
+    error_message = "Each entry must be a KMS key ARN."
+  }
+}

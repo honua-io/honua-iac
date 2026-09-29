@@ -222,3 +222,68 @@ run "an_invalid_environment_variable_prefix_is_rejected" {
 
   expect_failures = [var.request_secret_reference_allowed_environment_variable_prefixes]
 }
+
+# The allowlist only decides what the server may try to resolve; the Lambda and
+# the geoprocessing job read an allowed aws:secretsmanager: reference with their
+# own roles, so both need the grant, and nothing is granted by default.
+run "no_request_secret_grant_by_default" {
+  command = apply
+
+  variables {
+    enable_gp_batch = true
+  }
+
+  assert {
+    condition     = length(aws_iam_role_policy.lambda_request_secret_references) == 0 && length(aws_iam_role_policy.batch_job_request_secret_references) == 0
+    error_message = "With no secret ARNs supplied neither runtime role may receive an additional secret grant."
+  }
+}
+
+run "allowlisted_secrets_are_granted_to_the_lambda_and_batch_roles" {
+  command = apply
+
+  variables {
+    enable_gp_batch                                            = true
+    request_secret_reference_allowed_secret_reference_prefixes = ["aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:honua/imports/"]
+    request_secret_reference_secret_arns                       = ["arn:aws:secretsmanager:us-east-1:123456789012:secret:honua/imports/*"]
+  }
+
+  assert {
+    condition     = jsondecode(aws_iam_role_policy.lambda_request_secret_references[0].policy).Statement == [{ Effect = "Allow", Action = ["secretsmanager:GetSecretValue"], Resource = ["arn:aws:secretsmanager:us-east-1:123456789012:secret:honua/imports/*"] }]
+    error_message = "The Lambda role must be granted read-only access to exactly the supplied secret ARNs, and no KMS grant when no key is supplied."
+  }
+
+  assert {
+    condition     = jsondecode(aws_iam_role_policy.batch_job_request_secret_references[0].policy).Statement == jsondecode(aws_iam_role_policy.lambda_request_secret_references[0].policy).Statement
+    error_message = "The geoprocessing job role must carry the same grant as the Lambda role."
+  }
+}
+
+run "allowlisted_environment_values_travel_to_the_geoprocessing_batch_job" {
+  command = apply
+
+  variables {
+    enable_gp_batch                                                = true
+    request_secret_reference_allowed_environment_variables         = ["IMPORT_TOKEN_EXACT"]
+    request_secret_reference_allowed_environment_variable_prefixes = ["HONUA_IMPORT_"]
+    additional_env = {
+      # checkov:skip=CKV_SECRET_6: Synthetic environment names and placeholder values, not credentials.
+      IMPORT_TOKEN_EXACT        = "exact-value"
+      HONUA_IMPORT_ARCGIS       = "prefixed-value"
+      HONUA_IMPORT_Section__Key = "binds-configuration"
+      UNRELATED_SETTING         = "not-allowlisted"
+    }
+  }
+
+  # Mirrors the server rule: an exact name, or a prefix match on a name without "__".
+  assert {
+    condition = {
+      for entry in jsondecode(aws_batch_job_definition.gp["s"].container_properties).environment :
+      entry.name => entry.value if contains(["IMPORT_TOKEN_EXACT", "HONUA_IMPORT_ARCGIS", "HONUA_IMPORT_Section__Key", "UNRELATED_SETTING"], entry.name)
+      } == {
+      IMPORT_TOKEN_EXACT  = "exact-value"
+      HONUA_IMPORT_ARCGIS = "prefixed-value"
+    }
+    error_message = "The geoprocessing job must receive exactly the additional_env values the environment allowlist permits."
+  }
+}

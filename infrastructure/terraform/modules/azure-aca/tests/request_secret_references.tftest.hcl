@@ -113,3 +113,31 @@ run "an_invalid_environment_variable_prefix_is_rejected" {
 
   expect_failures = [var.request_secret_reference_allowed_environment_variable_prefixes]
 }
+
+# An allowlisted azure: reference is resolved in-process through the Azure
+# credential chain, which needs AZURE_CLIENT_ID to select the app's identity.
+run "an_azure_entry_selects_the_container_app_identity" {
+  command = plan
+
+  variables {
+    request_secret_reference_allowed_secret_reference_prefixes = ["azure:keyvault:honua-imports:"]
+  }
+
+  assert {
+    condition     = contains([for entry in azurerm_container_app.this.template[0].container[0].env : entry.name], "AZURE_CLIENT_ID")
+    error_message = "An allowlisted azure: reference must inject AZURE_CLIENT_ID for the user-assigned identity."
+  }
+}
+
+run "no_identity_selection_without_an_azure_entry" {
+  command = plan
+
+  variables {
+    request_secret_reference_allowed_secret_reference_prefixes = ["aws:secretsmanager:honua/imports/"]
+  }
+
+  assert {
+    condition     = !contains([for entry in azurerm_container_app.this.template[0].container[0].env : entry.name], "AZURE_CLIENT_ID")
+    error_message = "AZURE_CLIENT_ID must not be injected unless an azure: reference is allowlisted."
+  }
+}

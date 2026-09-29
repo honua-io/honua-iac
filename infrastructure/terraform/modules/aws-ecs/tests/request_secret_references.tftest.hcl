@@ -190,3 +190,50 @@ run "an_invalid_environment_variable_prefix_is_rejected" {
 
   expect_failures = [var.request_secret_reference_allowed_environment_variable_prefixes]
 }
+
+# The allowlist only decides what the server may try to resolve; the server
+# reads an allowed aws:secretsmanager: reference with the TASK role, so the
+# grant must land there, and nothing is granted by default.
+run "no_request_secret_grant_by_default" {
+  command = plan
+
+  assert {
+    condition     = length(aws_iam_role_policy.task_request_secret_references) == 0
+    error_message = "With no secret ARNs supplied the task role must receive no additional secret grant."
+  }
+}
+
+run "allowlisted_secrets_are_granted_to_the_task_role" {
+  command = plan
+
+  variables {
+    request_secret_reference_allowed_secret_reference_prefixes = ["aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:honua/imports/"]
+    request_secret_reference_secret_arns                       = ["arn:aws:secretsmanager:us-east-1:123456789012:secret:honua/imports/*"]
+    request_secret_reference_kms_key_arns                      = ["arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000002"]
+  }
+
+  assert {
+    condition     = jsondecode(aws_iam_role_policy.task_request_secret_references[0].policy).Statement[0].Resource == ["arn:aws:secretsmanager:us-east-1:123456789012:secret:honua/imports/*"]
+    error_message = "The task role must be granted GetSecretValue on exactly the supplied secret ARNs."
+  }
+
+  assert {
+    condition     = jsondecode(aws_iam_role_policy.task_request_secret_references[0].policy).Statement[0].Action == ["secretsmanager:GetSecretValue"]
+    error_message = "The request secret grant must be read-only."
+  }
+
+  assert {
+    condition     = jsondecode(aws_iam_role_policy.task_request_secret_references[0].policy).Statement[1].Resource == ["arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000002"]
+    error_message = "The task role must be granted kms:Decrypt on exactly the supplied keys."
+  }
+}
+
+run "a_secret_arn_with_an_open_account_is_rejected" {
+  command = plan
+
+  variables {
+    request_secret_reference_secret_arns = ["arn:aws:secretsmanager:*:*:secret:*"]
+  }
+
+  expect_failures = [var.request_secret_reference_secret_arns]
+}

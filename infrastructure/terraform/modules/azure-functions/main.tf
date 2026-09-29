@@ -330,8 +330,14 @@ locals {
   # Both the AI (Azure OpenAI) and Pro-license features authenticate to Azure as
   # the function app's user-assigned identity, so the server needs AZURE_CLIENT_ID
   # to select that identity from the managed-identity credential chain. Injected
-  # once when either feature is enabled.
-  managed_identity_settings = (local.openai_ai_enabled || local.pro_license_enabled) ? {
+  # once when either feature is enabled, or when an azure: request-supplied
+  # secret reference is allowlisted (the server resolves it in-process through
+  # the same credential chain; key_vault_reference_identity_id only covers App
+  # Service's @Microsoft.KeyVault expansion).
+  request_secret_reference_azure_enabled = anytrue([
+    for prefix in var.request_secret_reference_allowed_secret_reference_prefixes : lower(split(":", prefix)[0]) == "azure"
+  ])
+  managed_identity_settings = (local.openai_ai_enabled || local.pro_license_enabled || local.request_secret_reference_azure_enabled) ? {
     AZURE_CLIENT_ID = azurerm_user_assigned_identity.function.client_id
   } : {}
 
