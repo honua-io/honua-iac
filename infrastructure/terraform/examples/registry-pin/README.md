@@ -23,18 +23,15 @@ terraform -chdir=infrastructure/terraform/examples/registry-pin plan
 
 `terraform init` resolves `module.source`'s `?ref=` against a Git ref in this
 repository, so the ref must exist before `init` can fetch the module. The
-operator contract is to pin an immutable SemVer **tag** (e.g. `?ref=v0.1.0`) and
+operator contract is to pin an immutable SemVer **tag** (e.g. `?ref=v0.2.0`) and
 bump it to move to a newer release, then run `terraform init -upgrade`. See
 `docs/module-versioning.md` for the release process.
 
-Until the first SemVer tag is cut, `main.tf` pins `?ref=trunk` so the documented
-operator path actually resolves today. Replace `trunk` with the SemVer tag once
-it is published.
+`main.tf` pins the latest release tag, `?ref=v0.2.0`.
 
 ## CI validation
 
-Because the example now pins an existing ref (`trunk`), this root is included in
-the `static-validate` roots in `.github/workflows/terraform-ci.yml`. `init`
+This root is included in the `static-validate` roots in `.github/workflows/terraform-ci.yml`. `init`
 fetches the `aws-ecs` module from the Git source over the network (unlike the
 other roots, which use relative paths), so this root is the one place CI
 exercises the external git-source consumer contract end to end.

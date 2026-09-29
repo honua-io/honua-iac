@@ -35,6 +35,26 @@ it adds optional inputs and changes defaults that alter apply behaviour.
   `true` where the runner has database reachability.
 - `aws-ecs` and `examples/aws` add `rds_deletion_protection` (default `true`).
 
+### Stricter input validation (an upgrade plan can fail)
+
+Values v0.1.0 accepted can now fail `terraform plan`; check these before
+upgrading.
+
+- `aws-serverless`: `admin_password` must now contain uppercase, lowercase,
+  digit and special characters in addition to the 32-character minimum (the
+  server's Production policy, previously enforced only at cold start). Rotate a
+  password that lacks a character class before upgrading.
+- `aws-ecs`: `additional_env` and `canary_additional_env` may no longer set
+  deployment, file-storage or licensing settings; use the typed variables.
+  `licensing_mode`, `licensing_edition`, `pro_license_secret_arn` and
+  `pro_license_key_id` are validated.
+- `aws-ecs` preconditions now refuse inconsistent or unsafe shapes: partial
+  existing-VPC or existing-database inputs, `redis_connection_string` without
+  `redis_connection_cidrs`, canary weight/count without `canary_enabled`,
+  private-subnet tasks with neither NAT nor public IP, public `0.0.0.0/0`
+  ingress without HTTPS, and a Pro license secret without its trusted public
+  key (#171).
+
 ### aws-ecs
 
 - Added AI provider secret delivery by reference: `ai_provider_secret_arn`,
@@ -79,6 +99,22 @@ it adds optional inputs and changes defaults that alter apply behaviour.
   user-assigned identity when an `azure:` reference is allowlisted, so the
   in-process Key Vault lookup authenticates as that identity.
 
+### examples and tooling
+
+- `examples/aws`: secured remote state and short-lived execution identity for
+  exact-plan apply (#158, #174, #202), canonical operator contract v1 (#153),
+  2026.1 small presets and AI profiles (#145), and the operator-contract
+  identity input `operator_contract_identity`.
+- `examples/aws-cert`: bounded Lambda GA certification substrate and bootstrap
+  contract (#173, #176, #181, #195).
+- `examples/registry-pin` and `docs/module-versioning.md` now pin the released
+  `v0.2.0` tag instead of `trunk`.
+
+## v0.1.0
+
+First version-pinnable release of the Honua Terraform modules (tag `v0.1.0`,
+commit `cace70f`).
+
 ### aws-eks
 
 - Added `cluster_secret_encryption_enabled` (bool, default `true`) and
@@ -90,14 +126,8 @@ it adds optional inputs and changes defaults that alter apply behaviour.
   long-lived key ARN to keep the encryption path exercised without minting a key
   per cluster.
 
-### examples and tooling
+### tooling
 
-- `examples/aws`: secured remote state and short-lived execution identity for
-  exact-plan apply (#158, #174, #202), canonical operator contract v1 (#153),
-  2026.1 small presets and AI profiles (#145), and the operator-contract
-  identity input `operator_contract_identity`.
-- `examples/aws-cert`: bounded Lambda GA certification substrate and bootstrap
-  contract (#173, #176, #181, #195).
 - Added a scheduled reaper for the AWS infrastructure the manual validation
   workflow strands (`.github/workflows/terraform-validation-infra-reaper.yml` ->
   `infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-infra.sh`),
@@ -108,11 +138,6 @@ it adds optional inputs and changes defaults that alter apply behaviour.
   (`docs/devops/manual-cloud-runbook-validation.md`), a structured evidence
   schema (`docs/devops/cloud-runbook-evidence-template.json`), and an evidence
   capture helper (`scripts/capture-runbook-evidence.sh`).
-
-## v0.1.0
-
-First version-pinnable release of the Honua Terraform modules (tag `v0.1.0`,
-commit `cace70f`).
 
 ### Breaking changes
 
