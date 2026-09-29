@@ -84,6 +84,10 @@ case "$service $operation" in
     echo "${FAKE_ECS_TASKDEF_STATUS:-ACTIVE}"
     ;;
   "kms describe-key")
+    if [[ -n "${FAKE_KMS_DESCRIBE_ERROR:-}" ]]; then
+      echo "$FAKE_KMS_DESCRIBE_ERROR" >&2
+      exit 1
+    fi
     echo "${FAKE_KMS_KEY_STATE:-Enabled}"
     ;;
   "secretsmanager describe-secret")
@@ -373,6 +377,29 @@ if grep -q "schedule-key-deletion" "$AWS_CALL_LOG"; then
 else
   check "a settled key is not re-deleted" ok
 fi
+
+FAKE_KMS_DESCRIBE_ERROR=AccessDeniedException run_sweeper "$(resources "$KEY")"
+if [[ "$RC" -ne 0 ]] && ! grep -q "Already settled" <<<"$OUT"; then
+  check "a denied KMS probe is an unresolved failure" ok
+else
+  check "a denied KMS probe is an unresolved failure" no
+fi
+assert_no_mutations "a denied KMS probe does not authorize deletion"
+FAKE_KMS_DESCRIBE_ERROR=NotFoundException run_sweeper "$(resources "$KEY")"
+if [[ "$RC" -eq 0 ]] && grep -q "Already settled" <<<"$OUT"; then
+  check "a missing KMS key is settled" ok
+else
+  check "a missing KMS key is settled" no
+fi
+
+# Protected stacks win over a valid disposable owner/run/expiry, even --this-run.
+for protection in 'Environment cert' 'Environment demo' 'Environment standing' 'Lifecycle standing' 'Lifecycle demo'; do
+  read -r key value <<<"$protection"
+  protected="$(tagged 'arn:aws:ecs:us-west-2:1:cluster/protected' 'gha-999-aws-ecs' 'ecs' "$PAST" | jq --arg k "$key" --arg v "$value" '.Tags += [{Key:$k,Value:$v}]')"
+  run_sweeper "$(resources "$protected")" --this-run --run-id gha-999-aws-ecs --no-defer-on-active
+  assert_not_planned "$protection is never a teardown candidate" 'arn:aws:ecs:us-west-2:1:cluster/protected'
+  assert_no_mutations "$protection causes no mutations"
+done
 
 echo "== teardown order =="
 

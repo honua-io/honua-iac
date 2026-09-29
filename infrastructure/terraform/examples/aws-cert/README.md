@@ -685,3 +685,12 @@ python3 infrastructure/terraform/examples/aws-cert/postgis-bootstrap/test_handle
 HONUA_CERT_SEED_SQL=../honua-server/tests/seed/client-compat-v1.sql \
   python3 infrastructure/terraform/examples/aws-cert/postgis-bootstrap/test_handler.py
 ```
+
+### Release-cell containment (#208)
+
+The standing stack has non-overridable `Environment=cert`, `Lifecycle=standing`
+and `Owner=release-standing` tags, including provider default tags. The disposable
+cell role and reaper must deny those resources. See
+[the separate bootstrap and activation checklist](../../bootstrap/aws-release-cells/README.md).
+Actual-spend SNS notifications fire at absolute $100 and $200; confirm the email
+subscription after applying. A pending subscription does not deliver alerts.

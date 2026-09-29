@@ -78,14 +78,14 @@ data "aws_iam_policy_document" "batch_service_assume" {
 }
 
 resource "aws_iam_role" "batch_service" {
-  count              = local.gp_batch_enabled ? 1 : 0
+  count              = local.gp_batch_enabled && !var.use_batch_service_linked_role ? 1 : 0
   name_prefix        = "${local.gp_batch_name}-svc-"
   assume_role_policy = data.aws_iam_policy_document.batch_service_assume[0].json
   tags               = local.tags
 }
 
 resource "aws_iam_role_policy_attachment" "batch_service" {
-  count      = local.gp_batch_enabled ? 1 : 0
+  count      = local.gp_batch_enabled && !var.use_batch_service_linked_role ? 1 : 0
   role       = aws_iam_role.batch_service[0].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole"
 }
@@ -107,10 +107,11 @@ data "aws_iam_policy_document" "batch_execution_assume" {
 }
 
 resource "aws_iam_role" "batch_execution" {
-  count              = local.gp_batch_enabled ? 1 : 0
-  name_prefix        = "${local.gp_batch_name}-exec-"
-  assume_role_policy = data.aws_iam_policy_document.batch_execution_assume[0].json
-  tags               = local.tags
+  permissions_boundary = var.permissions_boundary_arn
+  count                = local.gp_batch_enabled ? 1 : 0
+  name_prefix          = "${local.gp_batch_name}-exec-"
+  assume_role_policy   = data.aws_iam_policy_document.batch_execution_assume[0].json
+  tags                 = local.tags
 }
 
 # Standard ECS task-execution managed policy grants ECR pull + CloudWatch Logs
@@ -145,10 +146,11 @@ locals {
 }
 
 resource "aws_iam_role" "batch_job" {
-  count              = local.gp_batch_enabled ? 1 : 0
-  name_prefix        = "${local.gp_batch_name}-job-"
-  assume_role_policy = data.aws_iam_policy_document.batch_execution_assume[0].json
-  tags               = local.tags
+  permissions_boundary = var.permissions_boundary_arn
+  count                = local.gp_batch_enabled ? 1 : 0
+  name_prefix          = "${local.gp_batch_name}-job-"
+  assume_role_policy   = data.aws_iam_policy_document.batch_execution_assume[0].json
+  tags                 = local.tags
 }
 
 # Same secrets the Lambda reads (DB connection string, admin/master key, redis).
@@ -301,7 +303,7 @@ resource "aws_batch_compute_environment" "gp" {
 
   name         = "${local.gp_batch_name}-ce"
   type         = "MANAGED"
-  service_role = aws_iam_role.batch_service[0].arn
+  service_role = var.use_batch_service_linked_role ? null : aws_iam_role.batch_service[0].arn
 
   compute_resources {
     type      = "FARGATE_SPOT"
@@ -318,6 +320,11 @@ resource "aws_batch_compute_environment" "gp" {
   # Avoid the documented in-place-update race where Batch keeps the old CE in
   # INVALID state while the new one comes up.
   lifecycle {
+    precondition {
+      condition     = var.permissions_boundary_arn == null || var.use_batch_service_linked_role
+      error_message = "Bounded cells require use_batch_service_linked_role=true and an operator-precreated AWSServiceRoleForBatch; a workload boundary cannot operate Batch infrastructure."
+    }
+
     create_before_destroy = true
   }
 }

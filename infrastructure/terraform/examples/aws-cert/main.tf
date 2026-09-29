@@ -36,7 +36,11 @@ locals {
     Environment = "cert"
     ManagedBy   = "terraform"
     Purpose     = "real-aws-certification"
-  }, var.tags)
+    }, var.tags, {
+    Environment = "cert"
+    Owner       = "release-standing"
+    Lifecycle   = "standing"
+  })
 
   cert_artifact_bucket_name = "${local.name}-artifacts-${random_id.bucket_suffix.hex}"
 
@@ -320,12 +324,11 @@ resource "aws_budgets_budget" "cert" {
   time_unit    = "MONTHLY"
 
   dynamic "notification" {
-    for_each = { for t in var.budget_alert_thresholds_percent : tostring(t) => t }
-
+    for_each = toset([100, 200])
     content {
       comparison_operator        = "GREATER_THAN"
       threshold                  = notification.value
-      threshold_type             = "PERCENTAGE"
+      threshold_type             = "ABSOLUTE_VALUE"
       notification_type          = "ACTUAL"
       subscriber_sns_topic_arns  = [aws_sns_topic.budget.arn]
       subscriber_email_addresses = var.budget_alert_emails

@@ -282,3 +282,15 @@ variable "bedrock_ai_timeout_seconds" {
     error_message = "bedrock_ai_timeout_seconds must be between 5 and 300 (server-side WorkflowGeneration validation range)."
   }
 }
+
+variable "permissions_boundary_arn" {
+  description = "Operator-owned boundary for every workload role in a certification cell."
+  type        = string
+  default     = null
+}
+
+variable "use_batch_service_linked_role" {
+  description = "Use the operator-precreated AWS Batch service-linked role for bounded certification cells."
+  type        = bool
+  default     = false
+}

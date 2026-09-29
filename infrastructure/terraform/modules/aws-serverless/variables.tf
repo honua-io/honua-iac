@@ -1192,3 +1192,19 @@ variable "request_secret_reference_kms_key_arns" {
     error_message = "Each entry must be a KMS key ARN."
   }
 }
+
+variable "permissions_boundary_arn" {
+  description = "Operator-owned permissions boundary applied to every module-created IAM role. Required by the release-cell provisioning role."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.permissions_boundary_arn == null ? true : can(regex("^arn:aws:iam::[0-9]{12}:policy/.+$", var.permissions_boundary_arn))
+    error_message = "permissions_boundary_arn must be an IAM managed policy ARN."
+  }
+}
+
+variable "use_batch_service_linked_role" {
+  description = "Use the operator-precreated AWSServiceRoleForBatch instead of a module-created infrastructure role. Required when workload permissions boundaries and GP Batch are enabled; the workload boundary must not cap AWS Batch's control plane."
+  type        = bool
+  default     = false
+}

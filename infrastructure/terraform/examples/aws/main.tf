@@ -7,6 +7,7 @@ provider "aws" {
 }
 
 module "honua" {
+  permissions_boundary_arn   = var.permissions_boundary_arn
   source                     = "../../modules/aws-ecs"
   enable_bedrock_ai          = var.enable_bedrock_ai
   bedrock_ai_model           = var.bedrock_ai_model

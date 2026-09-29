@@ -485,9 +485,10 @@ resource "aws_ecr_repository_policy" "lambda_image_access" {
 }
 
 resource "aws_iam_role" "lambda" {
-  name_prefix        = "${local.name}-lambda-"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
-  tags               = local.tags
+  permissions_boundary = var.permissions_boundary_arn
+  name_prefix          = "${local.name}-lambda-"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume.json
+  tags                 = local.tags
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_basic" {

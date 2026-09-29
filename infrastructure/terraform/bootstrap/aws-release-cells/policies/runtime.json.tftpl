@@ -1,0 +1,167 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "NoIdentityAdministration",
+      "Effect": "Deny",
+      "Action": [
+        "iam:*",
+        "organizations:*",
+        "account:*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "CellRuntime",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "secretsmanager:GetSecretValue",
+        "ecs:Describe*",
+        "ecs:List*"
+      ],
+      "Resource": [
+        "arn:aws:logs:${region}:${account_id}:log-group:*/honuar*:*",
+        "arn:aws:secretsmanager:${region}:${account_id}:secret:honuar*",
+        "arn:aws:ecs:${region}:${account_id}:cluster/honuar*",
+        "arn:aws:ecs:${region}:${account_id}:service/honuar*",
+        "arn:aws:logs:${region}:${account_id}:log-group:*/honuan*:*",
+        "arn:aws:secretsmanager:${region}:${account_id}:secret:honuan*",
+        "arn:aws:ecs:${region}:${account_id}:cluster/honuan*",
+        "arn:aws:ecs:${region}:${account_id}:service/honuan*",
+        "arn:aws:logs:${region}:${account_id}:log-group:*/honuaeks*:*",
+        "arn:aws:secretsmanager:${region}:${account_id}:secret:honuaeks*",
+        "arn:aws:ecs:${region}:${account_id}:cluster/honuaeks*",
+        "arn:aws:ecs:${region}:${account_id}:service/honuaeks*"
+      ]
+    },
+    {
+      "Sid": "PullImages",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:GetAuthorizationToken",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchCheckLayerAvailability"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "LambdaNetwork",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeNetworkInterfaces"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "CellObjects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::honuar*",
+        "arn:aws:s3:::honuan*",
+        "arn:aws:s3:::honuar*/*",
+        "arn:aws:s3:::honuan*/*"
+      ]
+    },
+    {
+      "Sid": "CellNetworkInterfaces",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DeleteNetworkInterface",
+        "ec2:AssignPrivateIpAddresses",
+        "ec2:UnassignPrivateIpAddresses"
+      ],
+      "Resource": "arn:aws:ec2:${region}:${account_id}:network-interface/*",
+      "Condition": {
+        "StringEquals": {
+          "ec2:ResourceTag/Owner": "release-cell"
+        },
+        "Null": {
+          "ec2:ResourceTag/ValidationRunId": "false"
+        }
+      }
+    },
+    {
+      "Sid": "ReadCellEncryptionKey",
+      "Effect": "Allow",
+      "Action": [
+        "kms:Decrypt",
+        "kms:DescribeKey"
+      ],
+      "Resource": "arn:aws:kms:${region}:${account_id}:key/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Owner": "release-cell"
+        },
+        "Null": {
+          "aws:ResourceTag/ValidationRunId": "false"
+        }
+      }
+    },
+    {
+      "Sid": "CellVpcNetworking",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DeleteNetworkInterface",
+        "ec2:AssignPrivateIpAddresses",
+        "ec2:UnassignPrivateIpAddresses"
+      ],
+      "Resource": "arn:aws:ec2:${region}:${account_id}:network-interface/*"
+    },
+    {
+      "Sid": "CreateCellVpcNetworkInterface",
+      "Effect": "Allow",
+      "Action": "ec2:CreateNetworkInterface",
+      "Resource": [
+        "arn:aws:ec2:${region}:${account_id}:subnet/*",
+        "arn:aws:ec2:${region}:${account_id}:security-group/*"
+      ]
+    },
+    {
+      "Sid": "NewCellNetworkInterface",
+      "Effect": "Allow",
+      "Action": "ec2:CreateNetworkInterface",
+      "Resource": "arn:aws:ec2:${region}:${account_id}:network-interface/*"
+    },
+    {
+      "Sid": "ObserveCellJobs",
+      "Effect": "Allow",
+      "Action": [
+        "batch:DescribeJobs",
+        "batch:ListJobs"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SubmitCellJobs",
+      "Effect": "Allow",
+      "Action": "batch:SubmitJob",
+      "Resource": [
+        "arn:aws:batch:${region}:${account_id}:job-queue/honuar*",
+        "arn:aws:batch:${region}:${account_id}:job-queue/honuan*",
+        "arn:aws:batch:${region}:${account_id}:job-queue/honuaeks*",
+        "arn:aws:batch:${region}:${account_id}:job-definition/honuar*",
+        "arn:aws:batch:${region}:${account_id}:job-definition/honuan*",
+        "arn:aws:batch:${region}:${account_id}:job-definition/honuaeks*"
+      ]
+    },
+    {
+      "Sid": "InvokeCellEventHandlers",
+      "Effect": "Allow",
+      "Action": "lambda:InvokeFunction",
+      "Resource": [
+        "arn:aws:lambda:${region}:${account_id}:function:honuar*",
+        "arn:aws:lambda:${region}:${account_id}:function:honuan*",
+        "arn:aws:lambda:${region}:${account_id}:function:honuaeks*"
+      ]
+    }
+  ]
+}
