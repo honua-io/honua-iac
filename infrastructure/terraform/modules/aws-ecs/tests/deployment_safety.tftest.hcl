@@ -232,7 +232,7 @@ run "missing_functional_expectation_is_rejected" {
 }
 run "mutable_prior_image_is_rejected" {
   command = plan
-  variables { image = "ghcr.io/honua-io/honua-server:latest" }
+  variables { image = "ghcr.io/honua-io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
   expect_failures = [aws_lb_listener_rule.protected_rollout]
 }
 run "candidate_role_cannot_own_recovery" {

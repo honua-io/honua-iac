@@ -127,6 +127,10 @@ variable "enable_deploy_control_vpc_endpoints" {
 variable "image" {
   description = "Lambda container image URI (ECR). Prefer Honua Lambda AOT tags (`vX.Y.Z-lambda-aot`); JIT tags (`vX.Y.Z-lambda`) are debug fallback."
   type        = string
+  validation {
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9._-]*(:[0-9]+)?(/[A-Za-z0-9._-]+)+@sha256:[0-9a-f]{64}$", var.image))
+    error_message = "image must be registry/repository@sha256:<64 lowercase hex>; mutable tags are refused."
+  }
 }
 
 variable "lambda_memory_size" {
@@ -507,6 +511,10 @@ variable "gp_batch_image" {
   description = "Container image URI (ECR) for the geoprocessing Batch job. Defaults to the same image as the Lambda when empty."
   type        = string
   default     = ""
+  validation {
+    condition     = var.gp_batch_image == "" || can(regex("^[A-Za-z0-9][A-Za-z0-9._-]*(:[0-9]+)?(/[A-Za-z0-9._-]+)+@sha256:[0-9a-f]{64}$", var.gp_batch_image))
+    error_message = "gp_batch_image must be registry/repository@sha256:<64 lowercase hex>; mutable tags are refused."
+  }
 }
 
 variable "gp_batch_workload_id" {
@@ -683,12 +691,20 @@ variable "customcode_batch_image" {
   description = "Container image URI for the PYTHON custom-code worker (customcode.runtime=python). Defaults to the worker-customcode-python ECR repo (when create_worker_customcode_repo) else the Lambda image. Set explicitly for a pre-built image."
   type        = string
   default     = ""
+  validation {
+    condition     = var.customcode_batch_image == "" || can(regex("^[A-Za-z0-9][A-Za-z0-9._-]*(:[0-9]+)?(/[A-Za-z0-9._-]+)+@sha256:[0-9a-f]{64}$", var.customcode_batch_image))
+    error_message = "customcode_batch_image must be registry/repository@sha256:<64 lowercase hex>; mutable tags are refused."
+  }
 }
 
 variable "customcode_dotnet_batch_image" {
   description = "Container image URI for the DOTNET custom-code worker (customcode.runtime=dotnet; honua-server #2196's worker-customcode-dotnet image). Defaults to the worker-customcode-dotnet ECR repo (when create_worker_customcode_dotnet_repo) else the Lambda image. Set explicitly for a pre-built image."
   type        = string
   default     = ""
+  validation {
+    condition     = var.customcode_dotnet_batch_image == "" || can(regex("^[A-Za-z0-9][A-Za-z0-9._-]*(:[0-9]+)?(/[A-Za-z0-9._-]+)+@sha256:[0-9a-f]{64}$", var.customcode_dotnet_batch_image))
+    error_message = "customcode_dotnet_batch_image must be registry/repository@sha256:<64 lowercase hex>; mutable tags are refused."
+  }
 }
 
 variable "customcode_batch_cpu_architecture" {
@@ -945,6 +961,10 @@ variable "bedrock_ai_model" {
   description = "Bedrock model id the server's WorkflowGeneration uses. Defaults to the cross-region Claude Sonnet 4.5 inference profile (the `us.` prefix routes across us-east-1/us-east-2/us-west-2). The IAM grant is scoped to this model's inference-profile + foundation-model ARNs."
   type        = string
   default     = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+  validation {
+    condition     = can(regex("^(us[.])?anthropic[.]claude-[a-z0-9-]+-v[0-9]+:[0-9]+$", var.bedrock_ai_model))
+    error_message = "Pin a versioned Claude foundation model or us. inference profile; wildcards and arbitrary ARN grants are forbidden."
+  }
 }
 
 variable "bedrock_ai_region" {
@@ -1043,6 +1063,10 @@ variable "control_plane_events_image" {
   description = "Container image URI (ECR) for the control-plane reconcile/backstop Lambdas. Defaults to the same image as the API Lambda (var.image) when empty; both event handlers are selected at runtime via HONUA_CONTROL_PLANE_LAMBDA_HANDLER, so the image must bundle the batch-event and backstop entrypoints."
   type        = string
   default     = ""
+  validation {
+    condition     = var.control_plane_events_image == "" || can(regex("^[A-Za-z0-9][A-Za-z0-9._-]*(:[0-9]+)?(/[A-Za-z0-9._-]+)+@sha256:[0-9a-f]{64}$", var.control_plane_events_image))
+    error_message = "control_plane_events_image must be registry/repository@sha256:<64 lowercase hex>; mutable tags are refused."
+  }
 }
 
 variable "control_plane_events_memory_size" {

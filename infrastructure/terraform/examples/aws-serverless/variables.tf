@@ -260,3 +260,25 @@ variable "control_plane_scheduled_tick_schedules" {
     DigestFlush          = "rate(5 minutes)"
   }
 }
+
+variable "bedrock_ai_max_tokens" {
+  description = "Max output tokens for Bedrock AI generation (WorkflowGeneration provider MaxTokens)."
+  type        = number
+  default     = 4096
+
+  validation {
+    condition     = var.bedrock_ai_max_tokens >= 256 && var.bedrock_ai_max_tokens <= 32768
+    error_message = "bedrock_ai_max_tokens must be between 256 and 32768 (server-side WorkflowGeneration validation range)."
+  }
+}
+
+variable "bedrock_ai_timeout_seconds" {
+  description = "Per-request timeout for Bedrock AI generation (WorkflowGeneration provider TimeoutSeconds)."
+  type        = number
+  default     = 120
+
+  validation {
+    condition     = var.bedrock_ai_timeout_seconds >= 5 && var.bedrock_ai_timeout_seconds <= 300
+    error_message = "bedrock_ai_timeout_seconds must be between 5 and 300 (server-side WorkflowGeneration validation range)."
+  }
+}

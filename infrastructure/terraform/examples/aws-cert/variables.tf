@@ -337,3 +337,13 @@ variable "pro_license_trusted_public_key" {
   type        = string
   default     = ""
 }
+
+variable "ecs_alb_image" {
+  description = "Digest-pinned HTTP fixture image (port 80), required when enable_ecs_alb_cert is true."
+  type        = string
+  default     = ""
+  validation {
+    condition     = var.ecs_alb_image == "" || can(regex("^[A-Za-z0-9][A-Za-z0-9._-]*(:[0-9]+)?(/[A-Za-z0-9._-]+)+@sha256:[0-9a-f]{64}$", var.ecs_alb_image))
+    error_message = "ecs_alb_image must be digest-pinned."
+  }
+}

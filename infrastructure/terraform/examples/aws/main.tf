@@ -7,7 +7,12 @@ provider "aws" {
 }
 
 module "honua" {
-  source = "../../modules/aws-ecs"
+  source                     = "../../modules/aws-ecs"
+  enable_bedrock_ai          = var.enable_bedrock_ai
+  bedrock_ai_model           = var.bedrock_ai_model
+  bedrock_ai_region          = var.bedrock_ai_region
+  bedrock_ai_max_tokens      = var.bedrock_ai_max_tokens
+  bedrock_ai_timeout_seconds = var.bedrock_ai_timeout_seconds
 
   deployment_safety                = var.deployment_safety
   environment                      = var.environment

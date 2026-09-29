@@ -48,6 +48,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
   actions: read
 
 concurrency:
@@ -60,9 +61,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
       AWS_DEFAULT_REGION: ${{ vars.HONUA_AWS_VALIDATION_REGION || 'us-east-1' }}
       HONUA_AWS_SWEEP_REGIONS: ${{ vars.HONUA_AWS_SWEEP_REGIONS || 'us-east-1,us-west-2' }}
       GH_TOKEN: ${{ github.token }}
@@ -70,15 +68,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Require OIDC role
+        env:
+          ROLE_ARN: ${{ vars.HONUA_AWS_VALIDATION_REAPER_ROLE_ARN }}
+        run: ': "${ROLE_ARN:?Configure the OIDC cleanup role ARN}"'
+
+      - name: Configure AWS OIDC session
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.HONUA_AWS_VALIDATION_REAPER_ROLE_ARN }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+          role-duration-seconds: 7200
+          unset-current-credentials: true
+
       - name: Reap orphaned validation infrastructure
         shell: bash
         run: |
           set -euo pipefail
 
-          if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
-            echo "AWS credentials not configured; skipping reap."
-            exit 0
-          fi
 
           args=(
             --grace-hours "${{ inputs.grace_hours || '4' }}"

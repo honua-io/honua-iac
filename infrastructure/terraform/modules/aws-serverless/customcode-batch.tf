@@ -64,10 +64,10 @@ locals {
   # (customcode.runtime) the server sends resolves to one of these keys.
   customcode_batch_images = {
     python = var.customcode_batch_image != "" ? var.customcode_batch_image : (
-      var.create_worker_customcode_repo ? "${aws_ecr_repository.worker_customcode[0].repository_url}:latest" : var.image
+      var.image
     )
     dotnet = var.customcode_dotnet_batch_image != "" ? var.customcode_dotnet_batch_image : (
-      var.create_worker_customcode_dotnet_repo ? "${aws_ecr_repository.worker_customcode_dotnet[0].repository_url}:latest" : var.image
+      var.image
     )
   }
 
