@@ -230,6 +230,8 @@ If your Prometheus scrape config uses different job names, override the correspo
 | `request_secret_reference_allowed_environment_variables` | `[]` | Exact environment variable names a request may name as `env:NAME`. Rendered as `Security__RequestSecretReferences__AllowedEnvironmentVariables__<n>`. |
 | `request_secret_reference_allowed_environment_variable_prefixes` | `[]` | Environment variable name prefixes a request may name as `env:NAME` (never matches a name containing `__`). Rendered as `Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__<n>`. |
 | `request_secret_reference_allowed_secret_reference_prefixes` | `[]` | Whole-reference prefixes for the other providers, including the provider segment, e.g. `aws:secretsmanager:honua/imports/`. Rendered as `Security__RequestSecretReferences__AllowedSecretReferencePrefixes__<n>`. |
+| `request_secret_reference_secret_arns` | `[]` | Secrets Manager ARNs (trailing `*` allowed) that the ECS task role may read to resolve allowlisted `aws:secretsmanager:` references outside this module's own secrets. The allowlist alone does not authorize the read. |
+| `request_secret_reference_kms_key_arns` | `[]` | Customer-managed KMS keys for those secrets, granted `kms:Decrypt` alongside them. |
 
 See `variables.tf` for the complete list.
 
@@ -258,6 +260,11 @@ permit - a secret referenced by full ARN needs an ARN-form entry, one referenced
 give imports and connections their own variables or secret path rather than
 listing the server's own credentials. Set the entries through these variables or
 through `additional_env`, not both, so one source owns the indexes.
+
+The server resolves an allowed `aws:secretsmanager:` reference with its own
+runtime role, so a reference outside this module's own secrets also needs
+`request_secret_reference_secret_arns` (and `request_secret_reference_kms_key_arns`
+for customer-managed keys); keep them as narrow as the allowlist entries.
 
 Server images that predate the setting ignore these variables, so they can be
 set before upgrading; deployments that already rely on request-supplied

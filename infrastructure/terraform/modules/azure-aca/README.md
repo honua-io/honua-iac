@@ -159,6 +159,11 @@ give imports and connections their own variables or secret path rather than
 listing the server's own credentials. Set the entries through these variables or
 through `additional_env`, not both, so one source owns the indexes.
 
+An allowed `azure:` reference is resolved in-process as the module's
+user-assigned identity; the module sets `AZURE_CLIENT_ID` to select it whenever
+an `azure:` entry is allowlisted. Grant that identity read access (for example
+Key Vault Secrets User) on any vault other than this module's.
+
 Server images that predate the setting ignore these variables, so they can be
 set before upgrading; deployments that already rely on request-supplied
 references should set matching entries before moving to an image that includes

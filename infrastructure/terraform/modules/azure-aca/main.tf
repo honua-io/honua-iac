@@ -17,6 +17,19 @@ locals {
     { for index, value in var.request_secret_reference_allowed_secret_reference_prefixes : "Security__RequestSecretReferences__AllowedSecretReferencePrefixes__${index}" => value },
   )
 
+  # An allowlisted azure: reference is resolved in-process through the Azure
+  # credential chain, which needs AZURE_CLIENT_ID to select the Container App's
+  # user-assigned identity (the per-secret `identity` fields below only cover the
+  # platform's own Key Vault secret references). Injected only when an azure:
+  # entry is allowlisted and additional_env does not already set it. The
+  # identity still needs read access (for example Key Vault Secrets User) on
+  # any vault other than this module's.
+  request_secret_reference_azure_identity_environment = anytrue([
+    for prefix in var.request_secret_reference_allowed_secret_reference_prefixes : lower(split(":", prefix)[0]) == "azure"
+    ]) && !contains(keys(var.additional_env), "AZURE_CLIENT_ID") ? {
+    AZURE_CLIENT_ID = azurerm_user_assigned_identity.this.client_id
+  } : {}
+
   db_use_existing = var.existing_db_connection_string != ""
 }
 
@@ -399,7 +412,7 @@ resource "azurerm_container_app" "this" {
       }
 
       dynamic "env" {
-        for_each = local.request_secret_reference_environment
+        for_each = merge(local.request_secret_reference_environment, local.request_secret_reference_azure_identity_environment)
         content {
           name  = env.key
           value = env.value

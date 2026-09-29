@@ -528,6 +528,30 @@ resource "aws_iam_role_policy_attachment" "lambda_secrets" {
   policy_arn = aws_iam_policy.lambda_secrets.arn
 }
 
+# Request-supplied secret references allowlisted under Security:RequestSecretReferences
+# are resolved in-process with the Lambda role. Nothing is granted while the
+# list is empty.
+resource "aws_iam_role_policy" "lambda_request_secret_references" {
+  count = length(var.request_secret_reference_secret_arns) > 0 ? 1 : 0
+  name  = "${local.name}-request-secret-references"
+  role  = aws_iam_role.lambda.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = concat([
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = var.request_secret_reference_secret_arns
+      }
+      ], length(var.request_secret_reference_kms_key_arns) > 0 ? [{
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = var.request_secret_reference_kms_key_arns
+    }] : [])
+  })
+}
+
 #checkov:skip=CKV2_AWS_57: Secrets rotation is managed outside this module.
 resource "aws_secretsmanager_secret" "connection_string" {
   #checkov:skip=CKV2_AWS_57: Secrets rotation is managed outside this module.

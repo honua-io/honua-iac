@@ -127,6 +127,23 @@ resource "aws_iam_role_policy_attachment" "batch_execution_ecs" {
 # and, when FileStorage is on S3, the data bucket. Scoped least-privilege.
 # ---------------------------------------------------------------------------
 
+locals {
+  # An allowlisted env:NAME reference resolves from the process environment, and
+  # the Batch job does not receive var.additional_env. Carry exactly the
+  # additional_env entries the allowlist permits (an exact name, or a prefix
+  # match on a name without "__", mirroring the server's rule) so a job that
+  # reads through a secure connection can resolve the same reference as the
+  # Lambda. Nothing is copied while both environment allowlists are empty.
+  request_secret_reference_batch_values = {
+    for name, value in var.additional_env : name => value
+    if contains(var.request_secret_reference_allowed_environment_variables, name) || (
+      !strcontains(name, "__") && anytrue([
+        for prefix in var.request_secret_reference_allowed_environment_variable_prefixes : startswith(name, prefix)
+      ])
+    )
+  }
+}
+
 resource "aws_iam_role" "batch_job" {
   count              = local.gp_batch_enabled ? 1 : 0
   name_prefix        = "${local.gp_batch_name}-job-"
@@ -152,6 +169,29 @@ resource "aws_iam_role_policy" "batch_job_secrets" {
         ])
       }
     ]
+  })
+}
+
+# The geoprocessing job runs the same server and resolves allowlisted request-
+# supplied references with the job role, so it gets the same grant as the Lambda.
+resource "aws_iam_role_policy" "batch_job_request_secret_references" {
+  count = local.gp_batch_enabled && length(var.request_secret_reference_secret_arns) > 0 ? 1 : 0
+  name  = "${local.gp_batch_name}-request-secret-references"
+  role  = aws_iam_role.batch_job[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = concat([
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = var.request_secret_reference_secret_arns
+      }
+      ], length(var.request_secret_reference_kms_key_arns) > 0 ? [{
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = var.request_secret_reference_kms_key_arns
+    }] : [])
   })
 }
 
@@ -381,6 +421,11 @@ resource "aws_batch_job_definition" "gp" {
       }
       ], [
       for name, value in local.request_secret_reference_environment : {
+        name  = name
+        value = value
+      }
+      ], [
+      for name, value in local.request_secret_reference_batch_values : {
         name  = name
         value = value
       }

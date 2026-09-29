@@ -56,6 +56,17 @@ module input/output contracts may still change.
   definitions). Empty lists render nothing, so existing deployments plan no
   change and the server's deny-by-default policy is preserved. Server images
   that predate the setting ignore the variables.
+- Added `request_secret_reference_secret_arns` and
+  `request_secret_reference_kms_key_arns` (`aws-ecs`, `aws-serverless`): the
+  server reads an allowlisted `aws:secretsmanager:` reference with its runtime
+  role, so these grant read-only access on the ECS task role, the Lambda role
+  and the geoprocessing Batch job role. Empty grants nothing.
+- `aws-serverless` copies the `additional_env` values the environment
+  allowlists permit to the geoprocessing Batch job, so an allowlisted
+  `env:NAME` reference resolves there as it does in the Lambda.
+- `azure-aca` and `azure-functions` set `AZURE_CLIENT_ID` to the module's
+  user-assigned identity when an `azure:` reference is allowlisted, so the
+  in-process Key Vault lookup authenticates as that identity.
 
 ## v0.1.0 (planned — not yet tagged)
 
