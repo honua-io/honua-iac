@@ -57,17 +57,14 @@ locals {
   customcode_batch_default_vcpus  = 1
   customcode_batch_default_memory = 2048
 
-  # Per-runtime custom-code worker image. Each runtime defaults to its own
-  # worker-customcode-<runtime> ECR repo this module can create; an operator may
-  # override either with a pre-built image (customcode_batch_image pins python;
-  # customcode_dotnet_batch_image pins dotnet). The runtime selector
-  # (customcode.runtime) the server sends resolves to one of these keys.
+  # Runtime-specific digest pins are required by the job-definition precondition.
+  # A repository being created here does not imply that it contains a worker image.
   customcode_batch_images = {
     python = var.customcode_batch_image != "" ? var.customcode_batch_image : (
-      var.create_worker_customcode_repo ? "${aws_ecr_repository.worker_customcode[0].repository_url}:latest" : var.image
+      var.image
     )
     dotnet = var.customcode_dotnet_batch_image != "" ? var.customcode_dotnet_batch_image : (
-      var.create_worker_customcode_dotnet_repo ? "${aws_ecr_repository.worker_customcode_dotnet[0].repository_url}:latest" : var.image
+      var.image
     )
   }
 
@@ -314,6 +311,12 @@ resource "aws_batch_job_queue" "customcode" {
 # ---------------------------------------------------------------------------
 
 resource "aws_batch_job_definition" "customcode" {
+  lifecycle {
+    precondition {
+      condition     = var.customcode_batch_image != "" && var.customcode_dotnet_batch_image != ""
+      error_message = "Custom-code workers require explicit digest-pinned Python and .NET worker images."
+    }
+  }
   for_each = local.customcode_batch_jobdefs
 
   name                  = "${local.customcode_batch_name}-${each.value.runtime}-${each.value.tier}"

@@ -1,0 +1,32 @@
+{
+  "cases": [
+    {
+      "run": "bedrock_studio",
+      "action": "bedrock:InvokeModel",
+      "resource": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "run": "bedrock_studio",
+      "action": "bedrock:InvokeModelWithResponseStream",
+      "resource": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "run": "bedrock_studio",
+      "action": "bedrock:InvokeModel",
+      "resource": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "run": "bedrock_studio",
+      "action": "bedrock:CreateModelCustomizationJob",
+      "resource": "*",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    }
+  ]
+}

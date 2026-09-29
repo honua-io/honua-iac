@@ -26,12 +26,6 @@ STACK="both"
 REGION="${AWS_REGION_OVERRIDE:-us-east-1}"
 ENVIRONMENT="${AWS_TF_ENVIRONMENT:-it}"
 NAME_PREFIX_BASE="${AWS_TF_NAME_PREFIX_BASE:-h$(date -u +%m%d%H%M)$((RANDOM % 10))}"
-DEFAULT_HONUA_IMAGE="ghcr.io/honua-io/honua-server:latest"
-DEFAULT_HONUA_AOT_IMAGE="ghcr.io/honua-io/honua-server:latest-aot"
-DEFAULT_ECS_TAG_SUFFIX="-ecs"
-DEFAULT_ECS_AOT_TAG_SUFFIX="-ecs-aot"
-DEFAULT_LAMBDA_TAG_SUFFIX="-lambda"
-DEFAULT_LAMBDA_AOT_TAG_SUFFIX="-lambda-aot"
 USE_AOT="${HONUA_USE_AOT:-false}"
 ECS_IMAGE="${HONUA_AWS_ECS_IMAGE:-}"
 SERVERLESS_IMAGE="${HONUA_AWS_SERVERLESS_IMAGE:-}"
@@ -113,7 +107,7 @@ Options:
   --region <aws-region>                AWS region (default: us-east-1)
   --environment <name>                 Environment suffix in names (default: it)
   --name-prefix-base <prefix>          Base prefix for generated resource names
-  --aot                                Map ECS tag '*-ecs' -> '*-ecs-aot' and serverless tag '*-lambda' -> '*-lambda-aot' when provided (JIT is debug fallback)
+  --aot                                Compatibility flag; select and digest-pin the AOT artifact before invocation
   --ecs-image <image>                  ECS container image
   --ecs-canary-enabled                 Enable the optional ECS ALB canary service
   --ecs-canary-image <image>           Optional canary ECS image (defaults to --ecs-image)
@@ -220,27 +214,22 @@ require_env() {
 }
 
 validate_requested_images() {
+  source "$SCRIPT_DIR/../shared/certification-images.sh"
   if [[ "$STACK" == "ecs" || "$STACK" == "both" ]]; then
-    if [[ -z "$ECS_IMAGE" ]]; then
-      log_error "ECS image is required. Set HONUA_AWS_ECS_IMAGE or pass --ecs-image."
-      exit 1
-    fi
-
-    if [[ "$RUN_UPGRADE_ROLLBACK" == "true" && -z "$ECS_PREVIOUS_IMAGE" ]]; then
-      log_error "ECS upgrade/rollback requires HONUA_AWS_ECS_PREVIOUS_IMAGE or --ecs-previous-image."
-      exit 1
+    require_digest_image ECS_IMAGE "$ECS_IMAGE" || exit 1
+    [[ -z "$ECS_CANARY_IMAGE" ]] || require_digest_image ECS_CANARY_IMAGE "$ECS_CANARY_IMAGE" || exit 1
+    if [[ "$RUN_UPGRADE_ROLLBACK" == "true" ]]; then
+      require_revision_pair "$ECS_PREVIOUS_IMAGE" "$ECS_IMAGE" || exit 1
+    elif [[ -n "$ECS_PREVIOUS_IMAGE" ]]; then
+      require_digest_image ECS_PREVIOUS_IMAGE "$ECS_PREVIOUS_IMAGE" || exit 1
     fi
   fi
-
   if [[ "$STACK" == "serverless" || "$STACK" == "both" ]]; then
-    if [[ -z "$SERVERLESS_IMAGE" ]]; then
-      log_error "Serverless image is required. Set HONUA_AWS_SERVERLESS_IMAGE or pass --serverless-image."
-      exit 1
-    fi
-
-    if [[ "$RUN_UPGRADE_ROLLBACK" == "true" && -z "$SERVERLESS_PREVIOUS_IMAGE" ]]; then
-      log_error "Serverless upgrade/rollback requires HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE or --serverless-previous-image."
-      exit 1
+    require_digest_image SERVERLESS_IMAGE "$SERVERLESS_IMAGE" || exit 1
+    if [[ "$RUN_UPGRADE_ROLLBACK" == "true" ]]; then
+      require_revision_pair "$SERVERLESS_PREVIOUS_IMAGE" "$SERVERLESS_IMAGE" || exit 1
+    elif [[ -n "$SERVERLESS_PREVIOUS_IMAGE" ]]; then
+      require_digest_image SERVERLESS_PREVIOUS_IMAGE "$SERVERLESS_PREVIOUS_IMAGE" || exit 1
     fi
   fi
 }
@@ -669,27 +658,8 @@ parse_args() {
 }
 
 apply_aot_mode() {
-  if [[ "$USE_AOT" != "true" ]]; then
-    return
-  fi
-
-  if [[ -n "$ECS_IMAGE" && "$ECS_IMAGE" == *:* ]]; then
-    local ecs_tag
-    ecs_tag="${ECS_IMAGE##*:}"
-    if [[ "$ecs_tag" == *"$DEFAULT_ECS_TAG_SUFFIX" && "$ecs_tag" != *"$DEFAULT_ECS_AOT_TAG_SUFFIX" ]]; then
-      ECS_IMAGE="${ECS_IMAGE%:*}:${ecs_tag}-aot"
-    fi
-  elif [[ "$ECS_IMAGE" == "$DEFAULT_HONUA_IMAGE" ]]; then
-    ECS_IMAGE="$DEFAULT_HONUA_AOT_IMAGE"
-  fi
-
-  if [[ -n "$SERVERLESS_IMAGE" && "$SERVERLESS_IMAGE" == *:* ]]; then
-    local serverless_tag
-    serverless_tag="${SERVERLESS_IMAGE##*:}"
-    if [[ "$serverless_tag" == *"$DEFAULT_LAMBDA_TAG_SUFFIX" && "$serverless_tag" != *"$DEFAULT_LAMBDA_AOT_TAG_SUFFIX" ]]; then
-      SERVERLESS_IMAGE="${SERVERLESS_IMAGE%:*}:${serverless_tag}-aot"
-    fi
-  fi
+  # Architecture/AOT selection happens before pinning. Never rewrite pinned bytes.
+  return 0
 }
 
 normalize_identifiers() {
@@ -814,6 +784,11 @@ run_tf() {
       -e TF_VAR_existing_vpc_cidr \
       -e TF_VAR_existing_public_subnet_ids \
       -e TF_VAR_existing_private_subnet_ids \
+      -e TF_VAR_enable_bedrock_ai \
+      -e TF_VAR_bedrock_ai_model \
+      -e TF_VAR_bedrock_ai_region \
+      -e TF_VAR_bedrock_ai_max_tokens \
+      -e TF_VAR_bedrock_ai_timeout_seconds \
       -e TF_VAR_honua_image \
       -e TF_VAR_honua_image_uri \
       -e TF_VAR_enable_postgis \

@@ -95,7 +95,7 @@ mock_provider "random" {}
 mock_provider "null" {}
 
 variables {
-  image                            = "ghcr.io/honua-io/honua-server:v1.5.0"
+  image                            = "ghcr.io/honua-io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   admin_password                   = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   connection_encryption_master_key = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 

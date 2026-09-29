@@ -36,7 +36,7 @@ locals {
   ecs_alb_enabled = var.enable_ecs_alb_cert
   ecs_alb_name    = "${local.name}-cutover"
   # nginx:stable-alpine serves HTTP 200 on "/" — the health-check + evidence path.
-  ecs_alb_image = "public.ecr.aws/nginx/nginx:stable-alpine"
+  ecs_alb_image = var.ecs_alb_image
 }
 
 # ---------------------------------------------------------------------------
@@ -278,6 +278,12 @@ resource "aws_lb_listener" "cert_cutover" {
 # ---------------------------------------------------------------------------
 
 resource "aws_ecs_task_definition" "cert_cutover" {
+  lifecycle {
+    precondition {
+      condition     = var.ecs_alb_image != ""
+      error_message = "enable_ecs_alb_cert requires a digest-pinned ecs_alb_image serving HTTP on port 80."
+    }
+  }
   count                    = local.ecs_alb_enabled ? 1 : 0
   family                   = "${local.ecs_alb_name}-task"
   network_mode             = "awsvpc"

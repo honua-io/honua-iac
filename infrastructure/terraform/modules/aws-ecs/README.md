@@ -349,3 +349,10 @@ connection and reports the handoff as `configured-unverified`.
 See [AWS deployment safety](../../../../docs/devops/aws-deployment-safety.md) for
 runtime registration, finite limits, IAM/secret/storage validation and the
 candidate-bound live recovery evidence required before claiming protection.
+
+## Certification inputs
+
+Workload images must be digest-pinned (`registry/repository@sha256:<64 hex>`).
+Bedrock uses the workload IAM role and configures `StudioAiProxy` as well as
+`WorkflowGeneration`. See [AWS certification inputs](../../../../docs/devops/aws-certification-inputs.md)
+for N-1/N pins, custom-code worker requirements, OIDC roles and live evidence limits.

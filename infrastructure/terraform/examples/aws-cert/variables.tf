@@ -27,7 +27,7 @@ variable "tags" {
 }
 
 variable "honua_image" {
-  description = "Lambda container image URI (ECR). Use a *-lambda-aot tag pinned to an immutable release tag or digest."
+  description = "Lambda container image URI (ECR). Use the SHA-256 digest of a Lambda AOT image."
   type        = string
 }
 
@@ -100,13 +100,13 @@ variable "enable_customcode_batch" {
 }
 
 variable "customcode_batch_image" {
-  description = "ECR image URI for the PYTHON custom-code worker (customcode.runtime=python). Defaults to the worker-customcode-python repo (when created) else honua_image."
+  description = "ECR image URI for the PYTHON custom-code worker (customcode.runtime=python). Required as an explicit digest pin when custom-code workers are enabled."
   type        = string
   default     = ""
 }
 
 variable "customcode_dotnet_batch_image" {
-  description = "ECR image URI for the DOTNET custom-code worker (customcode.runtime=dotnet; honua-server #2196). Defaults to the worker-customcode-dotnet repo (when created) else honua_image."
+  description = "ECR image URI for the DOTNET custom-code worker (customcode.runtime=dotnet; honua-server #2196). Required as an explicit digest pin when custom-code workers are enabled."
   type        = string
   default     = ""
 }
@@ -336,4 +336,14 @@ variable "pro_license_trusted_public_key" {
   description = "The Ed25519 public key (base64url: prefix) that verifies the license signature; injected as Licensing__TrustedKeys__<pro_license_key_id>. A public key only verifies and is not secret."
   type        = string
   default     = ""
+}
+
+variable "ecs_alb_image" {
+  description = "Digest-pinned HTTP fixture image (port 80), required when enable_ecs_alb_cert is true."
+  type        = string
+  default     = ""
+  validation {
+    condition     = var.ecs_alb_image == "" || can(regex("^[A-Za-z0-9][A-Za-z0-9._-]*(:[0-9]+)?(/[A-Za-z0-9._-]+)+@sha256:[0-9a-f]{64}$", var.ecs_alb_image))
+    error_message = "ecs_alb_image must be digest-pinned."
+  }
 }

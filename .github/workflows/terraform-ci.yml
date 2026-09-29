@@ -15,6 +15,7 @@ on:
       - 'scripts/test-operator-contract.sh'
       - 'scripts/check-marketplace-paths.sh'
       - 'scripts/check-tfvars-examples.sh'
+      - 'scripts/bootstrap-gh-vars.sh'
       - 'scripts/check-backend-examples.sh'
       - 'scripts/package-customer-dist.sh'
       - 'scripts/new-terraform-lineage-contract.ps1'
@@ -44,6 +45,8 @@ on:
       - '.github/workflows/cloud-demo-smoke.yml'
       - '.github/workflows/terraform-ci.yml'
       - '.github/workflows/terraform-manual-validation.yml'
+      - '.github/workflows/terraform-validation-infra-reaper.yml'
+      - '.github/workflows/terraform-validation-iam-sweeper.yml'
   push:
     branches:
       - trunk
@@ -60,6 +63,7 @@ on:
       - 'scripts/test-operator-contract.sh'
       - 'scripts/check-marketplace-paths.sh'
       - 'scripts/check-tfvars-examples.sh'
+      - 'scripts/bootstrap-gh-vars.sh'
       - 'scripts/check-backend-examples.sh'
       - 'scripts/package-customer-dist.sh'
       - 'scripts/new-terraform-lineage-contract.ps1'
@@ -89,6 +93,8 @@ on:
       - '.github/workflows/cloud-demo-smoke.yml'
       - '.github/workflows/terraform-ci.yml'
       - '.github/workflows/terraform-manual-validation.yml'
+      - '.github/workflows/terraform-validation-infra-reaper.yml'
+      - '.github/workflows/terraform-validation-iam-sweeper.yml'
 
 permissions:
   contents: read
@@ -361,6 +367,14 @@ jobs:
       # The infra reaper deletes live cloud resources, so its refusal rules are
       # the thing under test: run against a fake AWS + fake gh, no credentials,
       # no network. See #142.
+      - name: Certification OIDC credential contract
+        shell: bash
+        run: python3 infrastructure/terraform/validation/scripts/shared/test-certification-oidc.py
+
+      - name: Certification image pins and revision orchestration
+        shell: bash
+        run: ./infrastructure/terraform/validation/scripts/aws/test-certification-images.sh
+
       - name: Live licensing-mode check regression test (Community fallback refusal)
         shell: bash
         run: ./infrastructure/terraform/validation/scripts/aws/test-licensing-mode-check.sh
