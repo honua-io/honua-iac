@@ -21,8 +21,8 @@ locals {
   runtime_boundary = jsonencode({
     Version = "2012-10-17"
     Statement = concat([for statement in jsondecode(templatefile("${path.module}/policies/runtime.json.tftpl", local.template_vars)).Statement :
-      merge(statement, statement.Sid == "CellVpcNetworking" ? { Condition = { ArnEquals = { "ec2:Vpc" = var.workload_vpc_arns } } } : {})
-      if statement.Sid != "CellVpcNetworking" || length(var.workload_vpc_arns) > 0
+      merge(statement, contains(["CellVpcNetworking", "CreateCellVpcNetworkInterface"], statement.Sid) ? { Condition = { ArnEquals = { "ec2:Vpc" = var.workload_vpc_arns } } } : {})
+      if !contains(["CellVpcNetworking", "CreateCellVpcNetworkInterface", "NewCellNetworkInterface"], statement.Sid) || length(var.workload_vpc_arns) > 0
     ], local.guardrails)
   })
 }

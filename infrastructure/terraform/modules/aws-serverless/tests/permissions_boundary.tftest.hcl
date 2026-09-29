@@ -1,16 +1,5 @@
-# Licensing contract for the 2026.1 candidate (honua-iac #191, honua-server #4721).
-#
-# The 2026.1 release ships with licensing DISABLED. The module must DECLARE
-# Licensing__Mode=Disabled rather than leave the Lambda on the server's own
-# default (Mode=Enabled), which with no license source resolves to the Community
-# edition and gates editing/sync/streaming/geocoding; and with no envelope it
-# must create no license secret and grant the execution role no access to one.
-#
-# The expected values are the server's published contract, not a snapshot of this
-# module's output: Licensing:Mode parses only "Enabled" | "Disabled"
-# (honua-server src/Honua.Hosting/Features/Licensing/LicenseOptions.cs), and the
-# envelope is resolved from Licensing:LicenseContentSecretRef =
-# aws:secretsmanager:<arn> at startup.
+# Workload boundaries must survive every optional compute and event path.
+# Batch infrastructure uses its separate operator-created service-linked role.
 
 mock_provider "aws" {
   mock_data "aws_availability_zones" {

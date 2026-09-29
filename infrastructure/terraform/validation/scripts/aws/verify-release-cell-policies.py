@@ -5,6 +5,7 @@ Input is `terraform test -json -verbose` from bootstrap/aws-release-cells.
 Expected decisions below follow the isolation contract, not current policy output.
 AWS credentials need iam:SimulateCustomPolicy. No assume-role or resource deletion.
 """
+from concurrent.futures import ThreadPoolExecutor
 import argparse
 import json
 import subprocess
@@ -43,8 +44,8 @@ def main():
     function = f'arn:aws:lambda:us-east-1:{account}:function:honuarfixture-it'
     role = f'arn:aws:iam::{account}:role/honuarfixture-it'
     boundary = f'arn:aws:iam::{account}:policy/honua-release-cell-workload-boundary'
-    tags = {'aws:ResourceTag/Owner': 'release-cell', 'aws:ResourceTag/ValidationRunId': 'fixture-208'}
-    request = {'aws:RequestTag/Owner': 'release-cell', 'aws:RequestTag/ValidationRunId': 'fixture-208'}
+    tags = {'aws:ResourceTag/Owner': 'release-cell', 'aws:ResourceTag/ValidationRunId': 'gha-208-aws-ecs'}
+    request = {'aws:RequestTag/Owner': 'release-cell', 'aws:RequestTag/ValidationRunId': 'gha-208-aws-ecs'}
     cases = []
     def case(lane, name, action, resource, expected, context=None):
         cases.append((lane, name, action, resource, expected, {'aws:RequestedRegion': 'us-east-1', **(context or {})}))
@@ -59,13 +60,13 @@ def main():
         case(lane, 'no-safety-tag-removal', 'lambda:UntagResource', function, 'explicitDeny', {**tags, 'aws:TagKeys': ['Owner']})
     case('provision', 'bounded-role-create', 'iam:CreateRole', role, 'allowed', {**request, 'iam:PermissionsBoundary': boundary})
     case('provision', 'unbounded-role-create', 'iam:CreateRole', role, 'explicitDeny', request)
-    case('provision', 'missing-owner', 'iam:CreateRole', role, 'implicitDeny', {'aws:RequestTag/ValidationRunId': 'fixture-208', 'iam:PermissionsBoundary': boundary})
+    case('provision', 'missing-owner', 'iam:CreateRole', role, 'implicitDeny', {'aws:RequestTag/ValidationRunId': 'gha-208-aws-ecs', 'iam:PermissionsBoundary': boundary})
     case('provision', 'missing-run', 'iam:CreateRole', role, 'implicitDeny', {'aws:RequestTag/Owner': 'release-cell', 'iam:PermissionsBoundary': boundary})
     case('provision', 'update-own-cell', 'lambda:UpdateFunctionCode', function, 'allowed', tags)
     case('provision', 'no-teardown', 'lambda:DeleteFunction', function, 'implicitDeny', tags)
     case('provision', 'no-mirror-push', 'ecr:PutImage', f'arn:aws:ecr:us-east-1:{account}:repository/honua-server', 'implicitDeny')
     case('reaper', 'delete-own-cell', 'lambda:DeleteFunction', function, 'allowed', tags)
-    case('reaper', 'unowned-resource', 'lambda:DeleteFunction', function, 'implicitDeny', {'aws:ResourceTag/ValidationRunId': 'fixture-208'})
+    case('reaper', 'unowned-resource', 'lambda:DeleteFunction', function, 'implicitDeny', {'aws:ResourceTag/ValidationRunId': 'gha-208-aws-ecs'})
     case('reaper', 'no-run-resource', 'lambda:DeleteFunction', function, 'implicitDeny', {'aws:ResourceTag/Owner': 'release-cell'})
     case('reaper', 'outside-namespace', 'lambda:DeleteFunction', function.replace('honuarfixture', 'customer-production'), 'implicitDeny', tags)
     case('reaper', 'no-create', 'lambda:CreateFunction', function, 'implicitDeny', request)
@@ -90,10 +91,15 @@ def main():
     for action in ['ec2:CreateNetworkInterface', 'ec2:DeleteNetworkInterface', 'ec2:AssignPrivateIpAddresses', 'ec2:UnassignPrivateIpAddresses']:
         case('runtime', 'approved-vpc-' + action, action, eni, 'allowed', {'ec2:Vpc': f'arn:aws:ec2:us-east-1:{account}:vpc/vpc-0123456789abcdef0'})
         case('runtime', 'other-vpc-' + action, action, eni, 'implicitDeny', {'ec2:Vpc': f'arn:aws:ec2:us-east-1:{account}:vpc/vpc-other'})
-    receipts = []
-    for lane, name, action, resource, expected, context in cases:
+    def evaluate(fixture):
+        lane, name, action, resource, expected, context = fixture
         entries = [{'ContextKeyName': k, 'ContextKeyValues': v if isinstance(v, list) else [v], 'ContextKeyType': 'stringList' if isinstance(v, list) else 'string'} for k, v in context.items()]
-        payload = dict(ActionNames=[action], ResourceArns=[resource], ContextEntries=entries)
+        resources = [resource]
+        # CreateNetworkInterface authorizes three resources. ec2:Vpc is available
+        # on the subnet/security-group checks, not the new interface check.
+        if action == 'ec2:CreateNetworkInterface':
+            resources += [f'arn:aws:ec2:us-east-1:{account}:subnet/subnet-0123456789abcdef0', f'arn:aws:ec2:us-east-1:{account}:security-group/sg-0123456789abcdef0']
+        payload = dict(ActionNames=[action], ResourceArns=resources, ContextEntries=entries)
         if lane == 'runtime':
             payload['PolicyInputList'] = [json.dumps({'Version': '2012-10-17', 'Statement': [{'Effect': 'Allow', 'Action': '*', 'Resource': '*'}]})]
             payload['PermissionsBoundaryPolicyInputList'] = [output['runtime_boundary']]
@@ -101,8 +107,11 @@ def main():
             payload['PolicyInputList'] = [output['policies'][lane]]
         response = aws(payload)['EvaluationResults']
         actual = response[0]['EvalDecision']
-        receipts.append(dict(lane=lane, case=name, action=action, resource=resource, expected=expected, actual=actual))
+        receipt = dict(lane=lane, case=name, action=action, resource=resource, expected=expected, actual=actual)
         print(f'{lane}/{name}: {actual}', flush=True)
+        return receipt
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        receipts = list(pool.map(evaluate, cases))
     args.receipt.write_text(json.dumps({'source': str(args.terraform_test_jsonl), 'cases': receipts}, indent=2) + '\n')
     failures = [r for r in receipts if r['expected'] != r['actual']]
     if failures:
