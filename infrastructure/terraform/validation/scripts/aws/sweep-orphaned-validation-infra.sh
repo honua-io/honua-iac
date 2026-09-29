@@ -727,9 +727,13 @@ already_settled() {
 
   case "$arn" in
     arn:aws:kms:*)
-      state="$(aws_read kms describe-key --region "$region" --key-id "$arn" \
-        --query 'KeyMetadata.KeyState' --output text 2>/dev/null || echo MISSING)"
-      [[ "$state" == "PendingDeletion" || "$state" == "PendingReplicaDeletion" || "$state" == "MISSING" ]]
+      if ! state="$(aws_read kms describe-key --region "$region" --key-id "$arn" \
+        --query 'KeyMetadata.KeyState' --output text 2>&1)"; then
+        [[ "$state" == *NotFoundException* ]] && return 0
+        log_warn "Could not establish KMS key state: $arn"
+        return 3
+      fi
+      [[ "$state" == "PendingDeletion" || "$state" == "PendingReplicaDeletion" ]]
       ;;
     arn:aws:secretsmanager:*)
       state="$(aws_read secretsmanager describe-secret --region "$region" --secret-id "$arn" \
@@ -947,6 +951,12 @@ main() {
     already_settled "$region" "$arn"
     settled=$?
     set -e
+    if [[ "$settled" -eq 3 ]]; then
+      SURVIVOR_ARNS+=("$arn")
+      SURVIVOR_LINES+=("$arn (run=$run_id; state probe failed)")
+      FAILURES=1
+      continue
+    fi
     if [[ "$settled" -eq 0 ]]; then
       SETTLED_ARNS+=("$arn")
       log_info "Already settled (tag index lagging): $arn"
