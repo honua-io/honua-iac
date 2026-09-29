@@ -39,6 +39,10 @@ The second command calls IAM SimulateCustomPolicy with the actual rendered
 policies and independent allow/deny fixtures. It never deletes or changes a cloud
 resource. Its caller needs `iam:SimulateCustomPolicy`. Simulator results establish
 policy decisions for the supplied context, not end-to-end service authorization.
+CloudWatch cases use log-group authorization ARNs ending in `:*`; the simulator
+returns a false implicit deny for concrete log-stream ARNs even with an isolated
+allow-all policy. The verifier additionally checks exact ECS/Lambda/Batch stream
+ARNs against the rendered resource ceiling and rejects an unrelated stream.
 
 ## Caller migration (required before activation)
 

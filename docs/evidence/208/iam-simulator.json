@@ -1,5 +1,5 @@
 {
-  "source": "/tmp/iac208-policies-final.jsonl",
+  "source": "/tmp/iac208-policies-runtime.jsonl",
   "cases": [
     {
       "lane": "provision",
@@ -664,6 +664,126 @@
       "resource": "arn:aws:ec2:us-east-1:123456789012:network-interface/eni-0123456789abcdef0",
       "expected": "implicitDeny",
       "actual": "implicitDeny"
+    },
+    {
+      "lane": "runtime",
+      "case": "approved-model-bedrock:InvokeModel",
+      "action": "bedrock:InvokeModel",
+      "resource": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "runtime",
+      "case": "other-model-bedrock:InvokeModel",
+      "action": "bedrock:InvokeModel",
+      "resource": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "lane": "runtime",
+      "case": "approved-model-bedrock:InvokeModelWithResponseStream",
+      "action": "bedrock:InvokeModelWithResponseStream",
+      "resource": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "runtime",
+      "case": "other-model-bedrock:InvokeModelWithResponseStream",
+      "action": "bedrock:InvokeModelWithResponseStream",
+      "resource": "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "lane": "runtime",
+      "case": "submit-honuarfixture",
+      "action": "batch:SubmitJob",
+      "resource": "arn:aws:batch:us-east-1:123456789012:job-queue/honuarfixture-gp",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "runtime",
+      "case": "logs-honuarfixture",
+      "action": "logs:PutLogEvents",
+      "resource": "arn:aws:logs:us-east-1:123456789012:log-group:/aws/lambda/honuarfixture-honua:*",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "runtime",
+      "case": "submit-honuanfixture",
+      "action": "batch:SubmitJob",
+      "resource": "arn:aws:batch:us-east-1:123456789012:job-queue/honuanfixture-gp",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "runtime",
+      "case": "logs-honuanfixture",
+      "action": "logs:PutLogEvents",
+      "resource": "arn:aws:logs:us-east-1:123456789012:log-group:/aws/lambda/honuanfixture-honua:*",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "runtime",
+      "case": "logs-/honua/honuarfixture",
+      "action": "logs:PutLogEvents",
+      "resource": "arn:aws:logs:us-east-1:123456789012:log-group:/honua/honuarfixture:*",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "runtime",
+      "case": "logs-/aws/batch/honuarfixture-gp",
+      "action": "logs:PutLogEvents",
+      "resource": "arn:aws:logs:us-east-1:123456789012:log-group:/aws/batch/honuarfixture-gp:*",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "runtime",
+      "case": "no-other-queue",
+      "action": "batch:SubmitJob",
+      "resource": "arn:aws:batch:us-east-1:123456789012:job-queue/customer-production",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "lane": "runtime",
+      "case": "invoke-cell-handler",
+      "action": "lambda:InvokeFunction",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "runtime",
+      "case": "no-other-handler",
+      "action": "lambda:InvokeFunction",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:customer-production-it",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "lane": "runtime",
+      "case": "no-other-logs",
+      "action": "logs:PutLogEvents",
+      "resource": "arn:aws:logs:us-east-1:123456789012:log-group:/aws/lambda/customer-production:*",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "lane": "runtime",
+      "case": "no-standing-logs",
+      "action": "logs:PutLogEvents",
+      "resource": "arn:aws:logs:us-east-1:123456789012:log-group:/aws/lambda/honuarfixture:*",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
     }
   ]
 }

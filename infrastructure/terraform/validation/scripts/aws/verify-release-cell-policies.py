@@ -6,6 +6,7 @@ Expected decisions below follow the isolation contract, not current policy outpu
 AWS credentials need iam:SimulateCustomPolicy. No assume-role or resource deletion.
 """
 from concurrent.futures import ThreadPoolExecutor
+from fnmatch import fnmatchcase
 import argparse
 import json
 import subprocess
@@ -96,12 +97,26 @@ def main():
         case('runtime', 'other-model-' + action, action, 'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0', 'implicitDeny')
     for prefix in ['honuarfixture', 'honuanfixture']:
         case('runtime', 'submit-' + prefix, 'batch:SubmitJob', f'arn:aws:batch:us-east-1:{account}:job-queue/{prefix}-gp', 'allowed')
-        case('runtime', 'logs-' + prefix, 'logs:PutLogEvents', f'arn:aws:logs:us-east-1:{account}:log-group:/aws/lambda/{prefix}-honua:log-stream:fixture', 'allowed')
+        case('runtime', 'logs-' + prefix, 'logs:PutLogEvents', f'arn:aws:logs:us-east-1:{account}:log-group:/aws/lambda/{prefix}-honua:*', 'allowed')
     for log_path in ['/honua/honuarfixture', '/aws/batch/honuarfixture-gp']:
-        case('runtime', 'logs-' + log_path, 'logs:PutLogEvents', f'arn:aws:logs:us-east-1:{account}:log-group:{log_path}:log-stream:fixture', 'allowed')
+        case('runtime', 'logs-' + log_path, 'logs:PutLogEvents', f'arn:aws:logs:us-east-1:{account}:log-group:{log_path}:*', 'allowed')
     case('runtime', 'no-other-queue', 'batch:SubmitJob', f'arn:aws:batch:us-east-1:{account}:job-queue/customer-production', 'implicitDeny')
     case('runtime', 'invoke-cell-handler', 'lambda:InvokeFunction', function, 'allowed')
     case('runtime', 'no-other-handler', 'lambda:InvokeFunction', function.replace('honuarfixture', 'customer-production'), 'implicitDeny')
+    case('runtime', 'no-other-logs', 'logs:PutLogEvents', f'arn:aws:logs:us-east-1:{account}:log-group:/aws/lambda/customer-production:*', 'implicitDeny')
+    case('runtime', 'no-standing-logs', 'logs:PutLogEvents', f'arn:aws:logs:us-east-1:{account}:log-group:/aws/lambda/honuarfixture:*', 'explicitDeny', {'aws:ResourceTag/Environment': 'standing'})
+    # IAM simulation accepts the log group's authorization ARN ending in :*.
+    # A concrete :log-stream: ARN returns implicitDeny even under isolated
+    # Allow * (AWS simulator limitation, reproduced 2026-09-29). Independently
+    # assert that the real stream ARNs also match the rendered resource ceiling.
+    runtime = json.loads(output['runtime_boundary'])
+    log_resources = [resource for statement in runtime['Statement']
+                     if statement.get('Sid') == 'CellRuntime'
+                     for resource in statement['Resource'] if ':logs:' in resource]
+    for path in ['/aws/lambda/honuarfixture-honua', '/aws/lambda/honuanfixture-honua', '/honua/honuarfixture', '/aws/batch/honuarfixture-gp']:
+        stream = f'arn:aws:logs:us-east-1:{account}:log-group:{path}:log-stream:fixture'
+        assert any(fnmatchcase(stream, pattern) for pattern in log_resources), stream
+    assert not any(fnmatchcase(f'arn:aws:logs:us-east-1:{account}:log-group:/aws/lambda/customer-production:log-stream:fixture', pattern) for pattern in log_resources)
     def evaluate(fixture):
         lane, name, action, resource, expected, context = fixture
         entries = [{'ContextKeyName': k, 'ContextKeyValues': v if isinstance(v, list) else [v], 'ContextKeyType': 'stringList' if isinstance(v, list) else 'string'} for k, v in context.items()]
