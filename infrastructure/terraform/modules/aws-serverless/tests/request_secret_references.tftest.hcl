@@ -267,6 +267,7 @@ run "allowlisted_environment_values_travel_to_the_geoprocessing_batch_job" {
     request_secret_reference_allowed_environment_variables         = ["IMPORT_TOKEN_EXACT"]
     request_secret_reference_allowed_environment_variable_prefixes = ["HONUA_IMPORT_"]
     additional_env = {
+      # checkov:skip=CKV_SECRET_6: Synthetic environment names and placeholder values, not credentials.
       IMPORT_TOKEN_EXACT        = "exact-value"
       HONUA_IMPORT_ARCGIS       = "prefixed-value"
       HONUA_IMPORT_Section__Key = "binds-configuration"
