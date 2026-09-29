@@ -282,7 +282,7 @@ two-revision (blue/green with a distinct canary task set) variant is
 needs **no public exposure** — an internal scheme keeps the cell off the public
 internet.
 
-**Image — `public.ecr.aws/nginx/nginx:stable-alpine`.** A tiny, long-term-stable,
+**Image — `public.ecr.aws/nginx/nginx@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`.** A tiny, long-term-stable,
 unauthenticated public image that serves HTTP 200 on `/` at port 80, so the
 target-group health checks pass and the tasks converge to healthy with no Honua
 build. It is pulled over the base cert stack's **existing NAT egress** from the

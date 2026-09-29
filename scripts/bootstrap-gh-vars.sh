@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../infrastructure/terraform/validation/scripts/shared/certification-images.sh"
 
 REPO="honua-io/honua-terraform"
 SOURCE_REPO="honua-io/honua-server"
@@ -125,100 +126,37 @@ resolve_generic_image() {
   fi
 }
 
+resolve_ecr_tag_digest() {
+  local tag="$1" account_id digest
+  ECR_REGION="${ECR_REGION:-$(get_source_var AWS_ECR_REGION)}"
+  ECR_REPOSITORY="${ECR_REPOSITORY:-$(get_source_var AWS_ECR_REPOSITORY)}"
+  ECR_REPOSITORY="${ECR_REPOSITORY:-honua-server}"
+  [[ -n "$ECR_REGION" ]] || return 1
+  account_id="$(aws sts get-caller-identity --query Account --output text)" || return 1
+  digest="$(aws ecr describe-images --region "$ECR_REGION" --repository-name "$ECR_REPOSITORY" \
+    --image-ids "imageTag=$tag" --query 'imageDetails[0].imageDigest' --output text)" || return 1
+  [[ "$account_id" =~ ^[0-9]{12}$ && "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+  printf '%s.dkr.ecr.%s.amazonaws.com/%s@%s' "$account_id" "$ECR_REGION" "$ECR_REPOSITORY" "$digest"
+}
+
 resolve_aws_ecs_image() {
-  local ecs_tag="latest-ecs-aot"
-  local account_id=""
-
   if [[ -n "$AWS_ECS_IMAGE" ]]; then
-    return 0
+    require_digest_image AWS_ECS_IMAGE "$AWS_ECS_IMAGE"
+    return
   fi
-
-  if [[ "$USE_AOT" != "true" ]]; then
-    ecs_tag="latest-ecs"
-  fi
-
-  if [[ -z "$ECR_REGION" ]]; then
-    ECR_REGION="$(get_source_var AWS_ECR_REGION)"
-  fi
-
-  if [[ -z "$ECR_REPOSITORY" ]]; then
-    ECR_REPOSITORY="$(get_source_var AWS_ECR_REPOSITORY)"
-  fi
-
-  if [[ -z "$ECR_REPOSITORY" ]]; then
-    ECR_REPOSITORY="honua-server"
-  fi
-
-  if [[ -n "$ECR_REGION" ]] && command -v aws >/dev/null 2>&1; then
-    if account_id="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)"; then
-      if aws ecr describe-images \
-        --region "$ECR_REGION" \
-        --repository-name "$ECR_REPOSITORY" \
-        --image-ids imageTag="$ecs_tag" >/dev/null 2>&1; then
-        AWS_ECS_IMAGE="${account_id}.dkr.ecr.${ECR_REGION}.amazonaws.com/${ECR_REPOSITORY}:${ecs_tag}"
-        return 0
-      fi
-
-      log_warn "ECR image tag '$ecs_tag' was not found in ${account_id}.dkr.ecr.${ECR_REGION}.amazonaws.com/${ECR_REPOSITORY}; leaving HONUA_AWS_ECS_IMAGE unset."
-      return 0
-    fi
-  fi
-
-  if [[ -n "$ECR_REGION" ]]; then
-    log_warn "AWS credentials are not available in the current shell; leaving HONUA_AWS_ECS_IMAGE unset."
-  else
-    log_warn "AWS_ECR_REGION is not configured in $SOURCE_REPO; leaving HONUA_AWS_ECS_IMAGE unset."
-  fi
+  local tag=latest-ecs-aot
+  [[ "$USE_AOT" == true ]] || tag=latest-ecs
+  AWS_ECS_IMAGE="$(resolve_ecr_tag_digest "$tag")" || { log_warn 'Unable to resolve the ECS tag to a digest; supply --aws-ecs-image.'; return 1; }
 }
 
 resolve_aws_serverless_image() {
-  local lambda_tag="latest-lambda-aot-arm64"
-  local account_id=""
-
   if [[ -n "$AWS_SERVERLESS_IMAGE" ]]; then
-    return 0
+    require_digest_image AWS_SERVERLESS_IMAGE "$AWS_SERVERLESS_IMAGE"
+    return
   fi
-
-  if [[ "$USE_AOT" != "true" ]]; then
-    lambda_tag="latest-lambda-arm64"
-  fi
-
-  if [[ -z "$ECR_REGION" ]]; then
-    ECR_REGION="$(get_source_var AWS_ECR_REGION)"
-  fi
-
-  if [[ -z "$ECR_REPOSITORY" ]]; then
-    ECR_REPOSITORY="$(get_source_var AWS_ECR_REPOSITORY)"
-  fi
-
-  if [[ -z "$ECR_REPOSITORY" ]]; then
-    ECR_REPOSITORY="honua-server"
-  fi
-
-  if [[ -z "$ECR_REGION" ]]; then
-    log_warn "AWS_ECR_REGION is not configured in $SOURCE_REPO; skipping Lambda image variable."
-    return 0
-  fi
-
-  if ! command -v aws >/dev/null 2>&1; then
-    log_warn "aws CLI is not available; skipping Lambda image variable."
-    return 0
-  fi
-
-  if ! account_id="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)"; then
-    log_warn "AWS credentials are not available in the current shell; skipping Lambda image variable."
-    return 0
-  fi
-
-  if ! aws ecr describe-images \
-    --region "$ECR_REGION" \
-    --repository-name "$ECR_REPOSITORY" \
-    --image-ids imageTag="$lambda_tag" >/dev/null 2>&1; then
-    log_warn "ECR image tag '$lambda_tag' was not found in ${account_id}.dkr.ecr.${ECR_REGION}.amazonaws.com/${ECR_REPOSITORY}; skipping Lambda image variable."
-    return 0
-  fi
-
-  AWS_SERVERLESS_IMAGE="${account_id}.dkr.ecr.${ECR_REGION}.amazonaws.com/${ECR_REPOSITORY}:${lambda_tag}"
+  local tag=latest-lambda-aot-arm64
+  [[ "$USE_AOT" == true ]] || tag=latest-lambda-arm64
+  AWS_SERVERLESS_IMAGE="$(resolve_ecr_tag_digest "$tag")" || { log_warn 'Unable to resolve the Lambda tag to a digest; supply --aws-serverless-image.'; return 1; }
 }
 
 resolve_azure_aca_image() {
@@ -342,51 +280,16 @@ resolve_azure_registry_resource_id() {
 }
 
 resolve_aws_eks_image() {
-  local eks_tag="latest-aot"
-  local account_id=""
-
   if [[ -n "$EKS_IMAGE" ]]; then
-    return 0
+    require_digest_image EKS_IMAGE "$EKS_IMAGE"
+    return
   fi
-
-  if [[ "$USE_AOT" != "true" ]]; then
-    eks_tag="latest"
+  local tag=latest-aot
+  [[ "$USE_AOT" == true ]] || tag=latest
+  if EKS_IMAGE="$(resolve_ecr_tag_digest "$tag")"; then
+    return
   fi
-
-  if [[ -z "$ECR_REGION" ]]; then
-    ECR_REGION="$(get_source_var AWS_ECR_REGION)"
-  fi
-
-  if [[ -z "$ECR_REPOSITORY" ]]; then
-    ECR_REPOSITORY="$(get_source_var AWS_ECR_REPOSITORY)"
-  fi
-
-  if [[ -z "$ECR_REPOSITORY" ]]; then
-    ECR_REPOSITORY="honua-server"
-  fi
-
-  if [[ -n "$ECR_REGION" ]] && command -v aws >/dev/null 2>&1; then
-    if account_id="$(aws sts get-caller-identity --query Account --output text 2>/dev/null)"; then
-      if aws ecr describe-images \
-        --region "$ECR_REGION" \
-        --repository-name "$ECR_REPOSITORY" \
-        --image-ids imageTag="$eks_tag" >/dev/null 2>&1; then
-        EKS_IMAGE="${account_id}.dkr.ecr.${ECR_REGION}.amazonaws.com/${ECR_REPOSITORY}:${eks_tag}"
-        return 0
-      fi
-
-      log_warn "ECR image tag '$eks_tag' was not found in ${account_id}.dkr.ecr.${ECR_REGION}.amazonaws.com/${ECR_REPOSITORY}; falling back to generic EKS image."
-      EKS_IMAGE="$K8S_IMAGE"
-      return 0
-    fi
-  fi
-
-  if [[ -n "$ECR_REGION" ]]; then
-    log_warn "AWS credentials are not available in the current shell; falling back to generic EKS image."
-  else
-    log_warn "AWS_ECR_REGION is not configured in $SOURCE_REPO; falling back to generic EKS image."
-  fi
-
+  require_digest_image K8S_IMAGE "$K8S_IMAGE" || { log_warn 'EKS fallback must already be digest-pinned; supply --eks-image.'; return 1; }
   EKS_IMAGE="$K8S_IMAGE"
 }
 
@@ -579,4 +482,6 @@ main() {
   log_info "Terraform validation repo-variable bootstrap complete for $REPO"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

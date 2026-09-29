@@ -784,6 +784,11 @@ run_tf() {
       -e TF_VAR_existing_vpc_cidr \
       -e TF_VAR_existing_public_subnet_ids \
       -e TF_VAR_existing_private_subnet_ids \
+      -e TF_VAR_enable_bedrock_ai \
+      -e TF_VAR_bedrock_ai_model \
+      -e TF_VAR_bedrock_ai_region \
+      -e TF_VAR_bedrock_ai_max_tokens \
+      -e TF_VAR_bedrock_ai_timeout_seconds \
       -e TF_VAR_honua_image \
       -e TF_VAR_honua_image_uri \
       -e TF_VAR_enable_postgis \

@@ -49,3 +49,44 @@ apply_ecs_stack >/dev/null
 expected="$(printf 'ecs-previous %s\nserve %s\necs-upgrade %s\nserve %s\necs-rollback %s\nserve %s' "$old" "$old" "$new" "$new" "$old" "$old")"
 [[ "$(cat "$log_file")" == "$expected" ]] || { cat "$log_file"; exit 1; }
 echo 'PASS: digest rejection, distinct revisions, unchanged AOT pins, and N-1 -> N -> N-1 ECS orchestration'
+# Docker fallback must receive the same Bedrock configuration as host Terraform.
+export TF_VAR_enable_bedrock_ai=true TF_VAR_bedrock_ai_region=us-east-1
+USE_DOCKER_TF=true
+TEMP_TF_ROOT=/tmp/cert-image-test
+# Shell functions shadow external I/O only; the real run_tf constructs the argv.
+docker() { printf '%s\n' "$@" > "$log_file"; }
+run_tf() { :; } # restore the real helper after the orchestration stubs
+source "$TEST_DIR/run-aws-terraform-integration.sh"
+USE_DOCKER_TF=true
+TEMP_TF_ROOT=/tmp/cert-image-test
+run_tf plan
+for name in enable_bedrock_ai bedrock_ai_model bedrock_ai_region bedrock_ai_max_tokens bedrock_ai_timeout_seconds; do
+  grep -qx "TF_VAR_$name" "$log_file"
+done
+# ECR returns independently specified digest metadata. Producers must store it,
+# never reconstruct the selected mutable tag as the deployment reference.
+source "$TEST_DIR/../../../../../scripts/bootstrap-gh-vars.sh"
+ECR_REGION=us-east-1
+ECR_REPOSITORY=honua-server
+fixture_digest="sha256:$(printf 'c%.0s' {1..64})"
+aws() {
+  if [[ "$1 $2" == 'sts get-caller-identity' ]]; then
+    printf '%s\n' 123456789012
+  elif [[ "$1 $2" == 'ecr describe-images' ]]; then
+    printf '%s\n' "$fixture_digest"
+  else
+    return 1
+  fi
+}
+resolve_aws_ecs_image
+resolve_aws_serverless_image
+resolve_aws_eks_image
+expected="123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server@$fixture_digest"
+[[ "$AWS_ECS_IMAGE" == "$expected" && "$AWS_SERVERLESS_IMAGE" == "$expected" && "$EKS_IMAGE" == "$expected" ]]
+if ( AWS_ECS_IMAGE=registry.example/honua:latest; resolve_aws_ecs_image ) 2>/dev/null; then
+  echo 'Explicit mutable override was accepted by the variable bootstrap' >&2; exit 1
+fi
+if ( aws() { return 1; }; EKS_IMAGE=''; K8S_IMAGE=registry.example/honua:latest; resolve_aws_eks_image ) 2>/dev/null; then
+  echo 'Mutable EKS fallback was accepted by the variable bootstrap' >&2; exit 1
+fi
+echo 'PASS: Docker Bedrock inputs, ECR digest resolution, and mutable producer rejection'
