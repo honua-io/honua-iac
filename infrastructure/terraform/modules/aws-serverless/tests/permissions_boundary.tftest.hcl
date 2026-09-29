@@ -113,7 +113,7 @@ mock_provider "random" {}
 mock_provider "null" {}
 
 variables {
-  image          = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server:v1.5.0"
+  image          = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   admin_password = "Synthetic-Terraform-Test-Admin-4721!aA1"
 
   # ElastiCache validates the auth token in-provider and the random provider is
@@ -129,5 +129,29 @@ run "workload_boundary" {
   assert {
     condition     = aws_iam_role.lambda.permissions_boundary == var.permissions_boundary_arn
     error_message = "lambda must retain the operator boundary."
+  }
+}
+
+run "auxiliary_roles_keep_the_boundary" {
+  command = plan
+  variables {
+    permissions_boundary_arn      = "arn:aws:iam::123456789012:policy/honua-release-cell-workload-boundary"
+    enable_gp_batch               = true
+    enable_customcode_batch       = true
+    customcode_batch_image        = "registry.example/python@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    customcode_dotnet_batch_image = "registry.example/dotnet@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    enable_control_plane_events   = true
+  }
+  assert {
+    condition = alltrue([
+      aws_iam_role.batch_service[0].permissions_boundary == var.permissions_boundary_arn,
+      aws_iam_role.batch_execution[0].permissions_boundary == var.permissions_boundary_arn,
+      aws_iam_role.batch_job[0].permissions_boundary == var.permissions_boundary_arn,
+      aws_iam_role.customcode_execution[0].permissions_boundary == var.permissions_boundary_arn,
+      aws_iam_role.customcode_job[0].permissions_boundary == var.permissions_boundary_arn,
+      aws_iam_role.control_plane_events[0].permissions_boundary == var.permissions_boundary_arn,
+      aws_iam_role.control_plane_scheduler[0].permissions_boundary == var.permissions_boundary_arn
+    ])
+    error_message = "All auxiliary Batch, custom-code and event roles must retain the operator boundary."
   }
 }
