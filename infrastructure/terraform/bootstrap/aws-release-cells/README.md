@@ -64,13 +64,14 @@ policy decisions for the supplied context, not end-to-end service authorization.
   apply succeed. Capture the actual denied API and qualify a narrow alternative.
 - This initial policy intentionally does not authorize EKS provisioning  . That path still requires a scoped
   service-specific policy and a live positive lifecycle receipt before replacing
-  the existing six-cell workflow role. The workload boundary excludes IAM and
-  role chaining even if a task receives a broad inline policy.
+  the existing six-cell workflow role. The runtime allowlist still needs exact-model Bedrock and full Batch job/event
+  qualification for #207. The workload boundary excludes IAM and role chaining even if a task receives a broad inline policy.
 
 For Lambda VPC networking, an operator can add exact `workload_vpc_arns` after
 creating and tagging the ephemeral VPC. Terraform rejects standing/demo,
 unowned, wrong-account and wrong-region VPCs. ENI operations require that exact
-VPC context; an empty allowlist grants none. This two-stage setup and the
+VPC context on the subnet/security-group authorization checks for creation
+and on existing ENIs for mutations; an empty allowlist grants none. This two-stage setup and the
 service-linked Batch role must be qualified with real deployments before use.
 
 ## Standing stack and alerts

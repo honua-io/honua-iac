@@ -1,5 +1,5 @@
 {
-  "source": "terraform test -json -verbose (bootstrap/aws-release-cells/tests/policies.tftest.hcl)",
+  "source": "/tmp/iac208-policies-final.jsonl",
   "cases": [
     {
       "lane": "provision",
@@ -480,7 +480,190 @@
       "resource": "arn:aws:iam::123456789012:user/escalation",
       "expected": "explicitDeny",
       "actual": "explicitDeny"
+    },
+    {
+      "lane": "provision",
+      "case": "owned-key-kms:EnableKeyRotation",
+      "action": "kms:EnableKeyRotation",
+      "resource": "arn:aws:kms:us-east-1:123456789012:key/fixture-208",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "provision",
+      "case": "unowned-key-kms:EnableKeyRotation",
+      "action": "kms:EnableKeyRotation",
+      "resource": "arn:aws:kms:us-east-1:123456789012:key/fixture-208",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "lane": "reaper",
+      "case": "owned-key-kms:DescribeKey",
+      "action": "kms:DescribeKey",
+      "resource": "arn:aws:kms:us-east-1:123456789012:key/fixture-208",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "reaper",
+      "case": "unowned-key-kms:DescribeKey",
+      "action": "kms:DescribeKey",
+      "resource": "arn:aws:kms:us-east-1:123456789012:key/fixture-208",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "lane": "reaper",
+      "case": "owned-key-kms:ScheduleKeyDeletion",
+      "action": "kms:ScheduleKeyDeletion",
+      "resource": "arn:aws:kms:us-east-1:123456789012:key/fixture-208",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "reaper",
+      "case": "unowned-key-kms:ScheduleKeyDeletion",
+      "action": "kms:ScheduleKeyDeletion",
+      "resource": "arn:aws:kms:us-east-1:123456789012:key/fixture-208",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "lane": "runtime",
+      "case": "owned-key-kms:Decrypt",
+      "action": "kms:Decrypt",
+      "resource": "arn:aws:kms:us-east-1:123456789012:key/fixture-208",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "runtime",
+      "case": "unowned-key-kms:Decrypt",
+      "action": "kms:Decrypt",
+      "resource": "arn:aws:kms:us-east-1:123456789012:key/fixture-208",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "lane": "provision",
+      "case": "tagged-key-create",
+      "action": "kms:CreateKey",
+      "resource": "*",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "provision",
+      "case": "untagged-key-create",
+      "action": "kms:CreateKey",
+      "resource": "*",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "lane": "provision",
+      "case": "tagged-api-create",
+      "action": "apigateway:POST",
+      "resource": "arn:aws:apigateway:us-east-1::/apis",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "provision",
+      "case": "owned-api-update",
+      "action": "apigateway:PATCH",
+      "resource": "arn:aws:apigateway:us-east-1::/apis/fixture",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "reaper",
+      "case": "owned-api-delete",
+      "action": "apigateway:DELETE",
+      "resource": "arn:aws:apigateway:us-east-1::/apis/fixture",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "provision",
+      "case": "tagged-scaling-create",
+      "action": "application-autoscaling:RegisterScalableTarget",
+      "resource": "arn:aws:application-autoscaling:us-east-1:123456789012:scalable-target/fixture",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "reaper",
+      "case": "owned-scaling-delete",
+      "action": "application-autoscaling:DeregisterScalableTarget",
+      "resource": "arn:aws:application-autoscaling:us-east-1:123456789012:scalable-target/fixture",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "runtime",
+      "case": "approved-vpc-ec2:CreateNetworkInterface",
+      "action": "ec2:CreateNetworkInterface",
+      "resource": "arn:aws:ec2:us-east-1:123456789012:network-interface/eni-0123456789abcdef0",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "runtime",
+      "case": "other-vpc-ec2:CreateNetworkInterface",
+      "action": "ec2:CreateNetworkInterface",
+      "resource": "arn:aws:ec2:us-east-1:123456789012:network-interface/eni-0123456789abcdef0",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "lane": "runtime",
+      "case": "approved-vpc-ec2:DeleteNetworkInterface",
+      "action": "ec2:DeleteNetworkInterface",
+      "resource": "arn:aws:ec2:us-east-1:123456789012:network-interface/eni-0123456789abcdef0",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "runtime",
+      "case": "other-vpc-ec2:DeleteNetworkInterface",
+      "action": "ec2:DeleteNetworkInterface",
+      "resource": "arn:aws:ec2:us-east-1:123456789012:network-interface/eni-0123456789abcdef0",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "lane": "runtime",
+      "case": "approved-vpc-ec2:AssignPrivateIpAddresses",
+      "action": "ec2:AssignPrivateIpAddresses",
+      "resource": "arn:aws:ec2:us-east-1:123456789012:network-interface/eni-0123456789abcdef0",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "runtime",
+      "case": "other-vpc-ec2:AssignPrivateIpAddresses",
+      "action": "ec2:AssignPrivateIpAddresses",
+      "resource": "arn:aws:ec2:us-east-1:123456789012:network-interface/eni-0123456789abcdef0",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "lane": "runtime",
+      "case": "approved-vpc-ec2:UnassignPrivateIpAddresses",
+      "action": "ec2:UnassignPrivateIpAddresses",
+      "resource": "arn:aws:ec2:us-east-1:123456789012:network-interface/eni-0123456789abcdef0",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "runtime",
+      "case": "other-vpc-ec2:UnassignPrivateIpAddresses",
+      "action": "ec2:UnassignPrivateIpAddresses",
+      "resource": "arn:aws:ec2:us-east-1:123456789012:network-interface/eni-0123456789abcdef0",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
     }
-  ],
-  "observedAt": "2026-09-29"
+  ]
 }
