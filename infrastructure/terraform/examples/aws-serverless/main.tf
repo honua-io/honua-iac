@@ -3,7 +3,12 @@ provider "aws" {
 }
 
 module "honua" {
-  source = "../../modules/aws-serverless"
+  source                     = "../../modules/aws-serverless"
+  enable_bedrock_ai          = var.enable_bedrock_ai
+  bedrock_ai_model           = var.bedrock_ai_model
+  bedrock_ai_region          = var.bedrock_ai_region
+  bedrock_ai_max_tokens      = var.bedrock_ai_max_tokens
+  bedrock_ai_timeout_seconds = var.bedrock_ai_timeout_seconds
 
   environment                     = var.environment
   name_prefix                     = var.name_prefix
@@ -40,9 +45,6 @@ module "honua" {
   pro_license_key_id             = var.pro_license_key_id
   pro_license_trusted_public_key = var.pro_license_trusted_public_key
 
-  enable_bedrock_ai = var.enable_bedrock_ai
-  bedrock_ai_model  = var.bedrock_ai_model
-  bedrock_ai_region = var.bedrock_ai_region
 
   enable_control_plane_events            = var.enable_control_plane_events
   control_plane_events_image             = var.control_plane_events_image

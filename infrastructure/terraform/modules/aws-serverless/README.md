@@ -486,3 +486,10 @@ The module also emits Honua control-plane handoff metadata:
 - `control_plane_current_revision`
 - `control_plane_desired_revision`
 - `control_plane_telemetry_policy = "honua-http"`
+
+## Certification inputs
+
+Workload images must be digest-pinned (`registry/repository@sha256:<64 hex>`).
+Bedrock uses the workload IAM role and configures `StudioAiProxy` as well as
+`WorkflowGeneration`. See [AWS certification inputs](../../../../docs/devops/aws-certification-inputs.md)
+for N-1/N pins, custom-code worker requirements, OIDC roles and live evidence limits.

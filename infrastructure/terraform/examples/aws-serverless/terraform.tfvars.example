@@ -1,3 +1,4 @@
+# Replace the illustrative sha256:aaaa... pins below with verified image digests before applying.
 # Copy to terraform.tfvars and fill in real values.
 # NEVER commit terraform.tfvars — it contains secrets.
 #
@@ -18,8 +19,8 @@ name_prefix = "honua"
 
 # Lambda container image. It MUST be pushed to ECR — Lambda requires ECR and does
 # not pull from GHCR directly. Prefer the AOT image (*-lambda-aot) for short cold
-# starts; the *-lambda image is a debug fallback. Pin to an immutable tag/digest.
-honua_image_uri = "123456789012.dkr.ecr.us-west-2.amazonaws.com/honua-server:v1.5.0-lambda-aot"
+# starts; the *-lambda image is a debug fallback. Pin to a SHA-256 digest.
+honua_image_uri = "123456789012.dkr.ecr.us-west-2.amazonaws.com/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 # Admin API password (minimum 32 characters).
 # Generate: openssl rand -hex 32

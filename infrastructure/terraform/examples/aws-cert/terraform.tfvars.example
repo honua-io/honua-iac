@@ -1,3 +1,4 @@
+# Replace the illustrative sha256:aaaa... pins below with verified image digests before applying.
 # Honua real-AWS certification tier (examples/aws-cert, honua-iac#2164)
 # Copy to terraform.tfvars and fill in. Never commit terraform.tfvars.
 
@@ -5,8 +6,8 @@ region      = "us-east-1"
 name_prefix = "honua-cert"
 environment = "cert"
 
-# Honua Lambda image — pin to an immutable *-lambda-aot release tag or digest.
-honua_image = "<account-id>.dkr.ecr.us-east-1.amazonaws.com/honua-server:vX.Y.Z-lambda-aot"
+# Honua Lambda image — pin to the SHA-256 digest of the Lambda AOT build.
+honua_image = "<account-id>.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 # Admin password (>= 32 chars; also the connection-encryption master key).
 honua_admin_password = "REPLACE_WITH_A_32_PLUS_CHAR_SECRET"
@@ -15,12 +16,12 @@ honua_admin_password = "REPLACE_WITH_A_32_PLUS_CHAR_SECRET"
 # HONUA_JOB_KIND, or point at the dedicated worker-gdal image once pushed. The
 # module mints a fixed pool of job-def size tiers (gp-s/m/l/xl); per-job
 # vCPU/memory/timeout/retry are runtime SubmitJob overrides, not tfvars.
-# gp_batch_image            = "<account-id>.dkr.ecr.us-east-1.amazonaws.com/honua-cert-cert-worker-gdal:vX.Y.Z"
+# gp_batch_image            = "<account-id>.dkr.ecr.us-east-1.amazonaws.com/honua-cert-cert-worker-gdal@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 gp_batch_cpu_architecture = "X86_64"
 # Certification substrate: job definitions must run a trivially-succeeding container.
 # The *-lambda-aot server image expects the Lambda runtime API and exits immediately in
 # Batch, so point gp_batch_image at a tiny always-succeed image for the cert stack:
-gp_batch_image = "public.ecr.aws/docker/library/busybox:stable"
+gp_batch_image = "public.ecr.aws/docker/library/busybox@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 create_worker_gdal_repo   = true
 
 # Custom-code (UNTRUSTED user code) Batch substrate — SEPARATE + HARDENED.
@@ -35,8 +36,8 @@ create_worker_gdal_repo   = true
 # enable_customcode_batch              = true
 # create_worker_customcode_repo        = true
 # create_worker_customcode_dotnet_repo = true
-# customcode_batch_image               = "<account-id>.dkr.ecr.us-east-1.amazonaws.com/honua-cert-cert-worker-customcode-python:vX.Y.Z"
-# customcode_dotnet_batch_image        = "<account-id>.dkr.ecr.us-east-1.amazonaws.com/honua-cert-cert-worker-customcode-dotnet:vX.Y.Z"
+# customcode_batch_image               = "<account-id>.dkr.ecr.us-east-1.amazonaws.com/honua-cert-cert-worker-customcode-python@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+# customcode_dotnet_batch_image        = "<account-id>.dkr.ecr.us-east-1.amazonaws.com/honua-cert-cert-worker-customcode-dotnet@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 customcode_batch_cpu_architecture = "X86_64"
 # Tighten egress for MVP to PyPI/GitHub/Honua-API/artifact-S3 CIDRs; empty = VPC CIDR only.
 # customcode_egress_https_cidrs = ["0.0.0.0/0"]
@@ -98,3 +99,6 @@ tags = {
 # pro_license_secret_arn         = "arn:aws:secretsmanager:us-east-1:<account>:secret:<name>-<suffix>"
 # pro_license_key_id             = "honuademo2026q2"
 # pro_license_trusted_public_key = "base64url:<public-key>"
+
+# Required only when enable_ecs_alb_cert=true; use an HTTP port-80 fixture.
+# ecs_alb_image = "public.ecr.aws/nginx/nginx@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

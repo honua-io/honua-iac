@@ -95,7 +95,7 @@ locals {
     FileStorage__AwsS3__BucketName = var.file_storage_aws_s3_bucket_name
     FileStorage__AwsS3__Region     = local.file_storage_aws_s3_region
     FileStorage__AwsS3__KeyPrefix  = var.file_storage_aws_s3_key_prefix
-  } : {}, local.licensing_environment, local.request_secret_reference_environment)
+  } : {}, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment)
   primary_container_environment = [
     for key, value in merge(var.additional_env, local.runtime_environment) : {
       name  = key

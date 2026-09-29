@@ -113,7 +113,7 @@ mock_provider "random" {}
 mock_provider "null" {}
 
 variables {
-  image          = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server:v1.5.0"
+  image          = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   admin_password = "Synthetic-Terraform-Test-Admin-4721!aA1"
 
   # ElastiCache validates the auth token in-provider and the random provider is

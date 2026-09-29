@@ -148,14 +148,12 @@ require_env() {
 }
 
 validate_requested_images() {
-  if [[ -z "$K8S_IMAGE" ]]; then
-    log_error "Kubernetes image is required. Set HONUA_K8S_IMAGE or pass --image."
-    exit 1
-  fi
-
-  if [[ "$RUN_UPGRADE_ROLLBACK" == "true" && -z "$K8S_PREVIOUS_IMAGE" ]]; then
-    log_error "Upgrade/rollback requires HONUA_K8S_PREVIOUS_IMAGE or --previous-image."
-    exit 1
+  source "$SCRIPT_DIR/../shared/certification-images.sh"
+  require_digest_image K8S_IMAGE "$K8S_IMAGE" || exit 1
+  if [[ "$RUN_UPGRADE_ROLLBACK" == "true" ]]; then
+    require_revision_pair "$K8S_PREVIOUS_IMAGE" "$K8S_IMAGE" || exit 1
+  elif [[ -n "$K8S_PREVIOUS_IMAGE" ]]; then
+    require_digest_image K8S_PREVIOUS_IMAGE "$K8S_PREVIOUS_IMAGE" || exit 1
   fi
 }
 

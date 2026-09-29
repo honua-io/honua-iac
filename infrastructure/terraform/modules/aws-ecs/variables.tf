@@ -152,8 +152,12 @@ variable "assign_public_ip" {
 }
 
 variable "image" {
-  description = "Container image. Pin to an immutable release tag or digest; AOT builds are recommended for faster startup and lower memory."
+  description = "Container image. Pin to a SHA-256 digest; AOT builds are recommended for faster startup and lower memory."
   type        = string
+  validation {
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9._-]*(:[0-9]+)?(/[A-Za-z0-9._-]+)+@sha256:[0-9a-f]{64}$", var.image))
+    error_message = "image must be registry/repository@sha256:<64 lowercase hex>; mutable tags are refused."
+  }
 }
 
 variable "task_cpu_architecture" {
@@ -485,6 +489,10 @@ variable "canary_image" {
   description = "Optional image for the canary ECS service. Leave empty to reuse image."
   type        = string
   default     = ""
+  validation {
+    condition     = var.canary_image == "" || can(regex("^[A-Za-z0-9][A-Za-z0-9._-]*(:[0-9]+)?(/[A-Za-z0-9._-]+)+@sha256:[0-9a-f]{64}$", var.canary_image))
+    error_message = "canary_image must be registry/repository@sha256:<64 lowercase hex>; mutable tags are refused."
+  }
 }
 
 variable "canary_desired_count" {
@@ -761,5 +769,50 @@ variable "request_secret_reference_kms_key_arns" {
       for arn in var.request_secret_reference_kms_key_arns : can(regex("^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$", arn))
     ])
     error_message = "Each entry must be a KMS key ARN."
+  }
+}
+
+
+variable "enable_bedrock_ai" {
+  description = "Grant the ECS task role bedrock:InvokeModel / InvokeModelWithResponseStream for the configured Claude model and route the server's AI studio (WorkflowGeneration) flows to Amazon Bedrock. Off by default so existing deploys are unchanged."
+  type        = bool
+  default     = false
+}
+
+variable "bedrock_ai_model" {
+  description = "Bedrock model id the server's WorkflowGeneration uses. Defaults to the cross-region Claude Sonnet 4.5 inference profile (the `us.` prefix routes across us-east-1/us-east-2/us-west-2). The IAM grant is scoped to this model's inference-profile + foundation-model ARNs."
+  type        = string
+  default     = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+  validation {
+    condition     = can(regex("^(us[.])?anthropic[.]claude-[a-z0-9-]+-v[0-9]+:[0-9]+$", var.bedrock_ai_model))
+    error_message = "Pin a versioned Claude foundation model or us. inference profile; wildcards and arbitrary ARN grants are forbidden."
+  }
+}
+
+variable "bedrock_ai_region" {
+  description = "AWS region the server invokes Bedrock in (WorkflowGeneration provider Region). Defaults to us-west-2."
+  type        = string
+  default     = "us-west-2"
+}
+
+variable "bedrock_ai_max_tokens" {
+  description = "Max output tokens for Bedrock AI generation (WorkflowGeneration provider MaxTokens)."
+  type        = number
+  default     = 4096
+
+  validation {
+    condition     = var.bedrock_ai_max_tokens >= 256 && var.bedrock_ai_max_tokens <= 32768
+    error_message = "bedrock_ai_max_tokens must be between 256 and 32768 (server-side WorkflowGeneration validation range)."
+  }
+}
+
+variable "bedrock_ai_timeout_seconds" {
+  description = "Per-request timeout for Bedrock AI generation (WorkflowGeneration provider TimeoutSeconds)."
+  type        = number
+  default     = 120
+
+  validation {
+    condition     = var.bedrock_ai_timeout_seconds >= 5 && var.bedrock_ai_timeout_seconds <= 300
+    error_message = "bedrock_ai_timeout_seconds must be between 5 and 300 (server-side WorkflowGeneration validation range)."
   }
 }
