@@ -206,7 +206,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          sed -i "/modules\/aws-ecs?ref=/s/ref=trunk/ref=${HONUA_REGISTRY_PIN_VALIDATION_REF}/" \
+          # Rewrite whatever ref the example pins (a release tag) to the commit
+          # under test, then prove the rewrite happened.
+          sed -i "/modules\/aws-ecs?ref=/s/ref=[^\"]*\"/ref=${HONUA_REGISTRY_PIN_VALIDATION_REF}\"/" \
+            infrastructure/terraform/examples/registry-pin/main.tf
+          grep -q "modules/aws-ecs?ref=${HONUA_REGISTRY_PIN_VALIDATION_REF}\"" \
             infrastructure/terraform/examples/registry-pin/main.tf
 
           roots=(

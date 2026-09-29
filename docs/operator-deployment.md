@@ -179,14 +179,14 @@ Operators who template their own root module (instead of using the in-repo
 
 ```hcl
 module "honua" {
-  source = "git::https://github.com/honua-io/honua-iac.git//infrastructure/terraform/modules/aws-ecs?ref=trunk"
+  source = "git::https://github.com/honua-io/honua-iac.git//infrastructure/terraform/modules/aws-ecs?ref=v0.2.0"
   connection_encryption_master_key = null # New deployments only; upgrades must supply the current key
   # ...module inputs...
 }
 ```
 
-Swap `aws-ecs` for any Tier 1 / Tier 2 module. After the first release, replace
-`trunk` with a tag that contains the required connection-key input.
+Swap `aws-ecs` for any Tier 1 / Tier 2 module and pin the newest release tag
+listed in `CHANGELOG.md`.
 Run `terraform init` (or `terraform init -upgrade` to move to a newer tag). A
 ready-to-copy example lives at
 `infrastructure/terraform/examples/registry-pin/`.

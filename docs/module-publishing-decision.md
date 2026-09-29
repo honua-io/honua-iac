@@ -28,7 +28,7 @@ That snippet is replaced with the resolvable Git-source form documented in
 
 ```hcl
 module "honua" {
-  source = "git::https://github.com/honua-io/honua-iac.git//infrastructure/terraform/modules/aws-ecs?ref=trunk"
+  source = "git::https://github.com/honua-io/honua-iac.git//infrastructure/terraform/modules/aws-ecs?ref=v0.2.0"
   connection_encryption_master_key = null # New deployments only; upgrades must supply the current key
   # ...module inputs...
 }
@@ -40,9 +40,8 @@ process) live in [`module-versioning.md`](module-versioning.md). The
 `infrastructure/terraform/examples/registry-pin/` example exercises the
 Git-source consumer contract end-to-end.
 
-Remaining manual step: cut and push the first `v0.1.0` tag and publish the
-matching GitHub Release. Tagging requires push access to the repository and is
-performed by a maintainer; see the release process in `module-versioning.md`.
+Releases are cut by a maintainer following the release process in
+`module-versioning.md`; `v0.1.0` and `v0.2.0` are tagged.
 
 ## Recommendation
 
@@ -55,7 +54,7 @@ publish-candidate module by Git source at a tag, for example:
 
 ```hcl
 module "honua" {
-  source = "git::https://github.com/honua-io/honua-iac.git//infrastructure/terraform/modules/aws-ecs?ref=trunk"
+  source = "git::https://github.com/honua-io/honua-iac.git//infrastructure/terraform/modules/aws-ecs?ref=v0.2.0"
   connection_encryption_master_key = null # New deployments only; upgrades must supply the current key
   # ...
 }
