@@ -1,0 +1,486 @@
+{
+  "source": "terraform test -json -verbose (bootstrap/aws-release-cells/tests/policies.tftest.hcl)",
+  "cases": [
+    {
+      "lane": "provision",
+      "case": "protect-standing-lambda:DeleteFunction",
+      "action": "lambda:DeleteFunction",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "provision",
+      "case": "protect-standing-lambda:UpdateFunctionCode",
+      "action": "lambda:UpdateFunctionCode",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "provision",
+      "case": "protect-cert-lambda:DeleteFunction",
+      "action": "lambda:DeleteFunction",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "provision",
+      "case": "protect-cert-lambda:UpdateFunctionCode",
+      "action": "lambda:UpdateFunctionCode",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "provision",
+      "case": "protect-demo-lambda:DeleteFunction",
+      "action": "lambda:DeleteFunction",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "provision",
+      "case": "protect-demo-lambda:UpdateFunctionCode",
+      "action": "lambda:UpdateFunctionCode",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "provision",
+      "case": "outside-region",
+      "action": "lambda:UpdateFunctionCode",
+      "resource": "arn:aws:lambda:us-west-2:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "provision",
+      "case": "no-role-chaining",
+      "action": "sts:AssumeRole",
+      "resource": "arn:aws:iam::123456789012:role/honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "provision",
+      "case": "no-boundary-removal",
+      "action": "iam:DeleteRolePermissionsBoundary",
+      "resource": "arn:aws:iam::123456789012:role/honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "provision",
+      "case": "no-boundary-replacement",
+      "action": "iam:PutRolePermissionsBoundary",
+      "resource": "arn:aws:iam::123456789012:role/honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "provision",
+      "case": "no-safety-tag-removal",
+      "action": "lambda:UntagResource",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "reaper",
+      "case": "protect-standing-lambda:DeleteFunction",
+      "action": "lambda:DeleteFunction",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "reaper",
+      "case": "protect-standing-lambda:UpdateFunctionCode",
+      "action": "lambda:UpdateFunctionCode",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "reaper",
+      "case": "protect-cert-lambda:DeleteFunction",
+      "action": "lambda:DeleteFunction",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "reaper",
+      "case": "protect-cert-lambda:UpdateFunctionCode",
+      "action": "lambda:UpdateFunctionCode",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "reaper",
+      "case": "protect-demo-lambda:DeleteFunction",
+      "action": "lambda:DeleteFunction",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "reaper",
+      "case": "protect-demo-lambda:UpdateFunctionCode",
+      "action": "lambda:UpdateFunctionCode",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "reaper",
+      "case": "outside-region",
+      "action": "lambda:UpdateFunctionCode",
+      "resource": "arn:aws:lambda:us-west-2:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "reaper",
+      "case": "no-role-chaining",
+      "action": "sts:AssumeRole",
+      "resource": "arn:aws:iam::123456789012:role/honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "reaper",
+      "case": "no-boundary-removal",
+      "action": "iam:DeleteRolePermissionsBoundary",
+      "resource": "arn:aws:iam::123456789012:role/honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "reaper",
+      "case": "no-boundary-replacement",
+      "action": "iam:PutRolePermissionsBoundary",
+      "resource": "arn:aws:iam::123456789012:role/honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "reaper",
+      "case": "no-safety-tag-removal",
+      "action": "lambda:UntagResource",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "mirror",
+      "case": "protect-standing-lambda:DeleteFunction",
+      "action": "lambda:DeleteFunction",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "mirror",
+      "case": "protect-standing-lambda:UpdateFunctionCode",
+      "action": "lambda:UpdateFunctionCode",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "mirror",
+      "case": "protect-cert-lambda:DeleteFunction",
+      "action": "lambda:DeleteFunction",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "mirror",
+      "case": "protect-cert-lambda:UpdateFunctionCode",
+      "action": "lambda:UpdateFunctionCode",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "mirror",
+      "case": "protect-demo-lambda:DeleteFunction",
+      "action": "lambda:DeleteFunction",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "mirror",
+      "case": "protect-demo-lambda:UpdateFunctionCode",
+      "action": "lambda:UpdateFunctionCode",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "mirror",
+      "case": "outside-region",
+      "action": "lambda:UpdateFunctionCode",
+      "resource": "arn:aws:lambda:us-west-2:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "mirror",
+      "case": "no-role-chaining",
+      "action": "sts:AssumeRole",
+      "resource": "arn:aws:iam::123456789012:role/honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "mirror",
+      "case": "no-boundary-removal",
+      "action": "iam:DeleteRolePermissionsBoundary",
+      "resource": "arn:aws:iam::123456789012:role/honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "mirror",
+      "case": "no-boundary-replacement",
+      "action": "iam:PutRolePermissionsBoundary",
+      "resource": "arn:aws:iam::123456789012:role/honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "mirror",
+      "case": "no-safety-tag-removal",
+      "action": "lambda:UntagResource",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "runtime",
+      "case": "protect-standing-lambda:DeleteFunction",
+      "action": "lambda:DeleteFunction",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "runtime",
+      "case": "protect-standing-lambda:UpdateFunctionCode",
+      "action": "lambda:UpdateFunctionCode",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "runtime",
+      "case": "protect-cert-lambda:DeleteFunction",
+      "action": "lambda:DeleteFunction",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "runtime",
+      "case": "protect-cert-lambda:UpdateFunctionCode",
+      "action": "lambda:UpdateFunctionCode",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "runtime",
+      "case": "protect-demo-lambda:DeleteFunction",
+      "action": "lambda:DeleteFunction",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "runtime",
+      "case": "protect-demo-lambda:UpdateFunctionCode",
+      "action": "lambda:UpdateFunctionCode",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "runtime",
+      "case": "outside-region",
+      "action": "lambda:UpdateFunctionCode",
+      "resource": "arn:aws:lambda:us-west-2:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "runtime",
+      "case": "no-role-chaining",
+      "action": "sts:AssumeRole",
+      "resource": "arn:aws:iam::123456789012:role/honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "runtime",
+      "case": "no-boundary-removal",
+      "action": "iam:DeleteRolePermissionsBoundary",
+      "resource": "arn:aws:iam::123456789012:role/honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "runtime",
+      "case": "no-boundary-replacement",
+      "action": "iam:PutRolePermissionsBoundary",
+      "resource": "arn:aws:iam::123456789012:role/honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "runtime",
+      "case": "no-safety-tag-removal",
+      "action": "lambda:UntagResource",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "provision",
+      "case": "bounded-role-create",
+      "action": "iam:CreateRole",
+      "resource": "arn:aws:iam::123456789012:role/honuarfixture-it",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "provision",
+      "case": "unbounded-role-create",
+      "action": "iam:CreateRole",
+      "resource": "arn:aws:iam::123456789012:role/honuarfixture-it",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    },
+    {
+      "lane": "provision",
+      "case": "missing-owner",
+      "action": "iam:CreateRole",
+      "resource": "arn:aws:iam::123456789012:role/honuarfixture-it",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "lane": "provision",
+      "case": "missing-run",
+      "action": "iam:CreateRole",
+      "resource": "arn:aws:iam::123456789012:role/honuarfixture-it",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "lane": "provision",
+      "case": "update-own-cell",
+      "action": "lambda:UpdateFunctionCode",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "provision",
+      "case": "no-teardown",
+      "action": "lambda:DeleteFunction",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "lane": "provision",
+      "case": "no-mirror-push",
+      "action": "ecr:PutImage",
+      "resource": "arn:aws:ecr:us-east-1:123456789012:repository/honua-server",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "lane": "reaper",
+      "case": "delete-own-cell",
+      "action": "lambda:DeleteFunction",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "reaper",
+      "case": "unowned-resource",
+      "action": "lambda:DeleteFunction",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "lane": "reaper",
+      "case": "no-run-resource",
+      "action": "lambda:DeleteFunction",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "lane": "reaper",
+      "case": "outside-namespace",
+      "action": "lambda:DeleteFunction",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:customer-production-it",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "lane": "reaper",
+      "case": "no-create",
+      "action": "lambda:CreateFunction",
+      "resource": "arn:aws:lambda:us-east-1:123456789012:function:honuarfixture-it",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "lane": "mirror",
+      "case": "push-exact-repository",
+      "action": "ecr:PutImage",
+      "resource": "arn:aws:ecr:us-east-1:123456789012:repository/honua-server",
+      "expected": "allowed",
+      "actual": "allowed"
+    },
+    {
+      "lane": "mirror",
+      "case": "no-other-repository",
+      "action": "ecr:PutImage",
+      "resource": "arn:aws:ecr:us-east-1:123456789012:repository/other",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "lane": "mirror",
+      "case": "no-delete-mirror",
+      "action": "ecr:DeleteRepository",
+      "resource": "arn:aws:ecr:us-east-1:123456789012:repository/honua-server",
+      "expected": "implicitDeny",
+      "actual": "implicitDeny"
+    },
+    {
+      "lane": "runtime",
+      "case": "broad-inline-cannot-create-user",
+      "action": "iam:CreateUser",
+      "resource": "arn:aws:iam::123456789012:user/escalation",
+      "expected": "explicitDeny",
+      "actual": "explicitDeny"
+    }
+  ],
+  "observedAt": "2026-09-29"
+}
