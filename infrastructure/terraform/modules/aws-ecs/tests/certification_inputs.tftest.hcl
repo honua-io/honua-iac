@@ -196,3 +196,68 @@ run "bedrock_cross_region_profile" {
     error_message = "The US profile grants exactly its three pinned model destinations and profile ARN."
   }
 }
+
+run "redis_on_requires_operation_certificate" {
+  command = plan
+  variables { redis_enabled = true }
+  expect_failures = [aws_security_group.alb]
+}
+
+run "redis_off_has_no_certificate_dependency" {
+  command = apply
+  assert {
+    condition     = !contains([for s in jsondecode(aws_ecs_task_definition.this.container_definitions)[0].secrets : s.name], "Operations__SecretChannel__KeyRingCertificatePkcs12")
+    error_message = "Redis-off must not request operation certificate material."
+  }
+}
+
+run "redis_on_injects_protected_certificate_for_both_slots" {
+  command = apply
+  variables {
+    redis_enabled                             = true
+    canary_enabled                            = true
+    operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+  }
+  assert {
+    condition = alltrue([
+      for definition in [aws_ecs_task_definition.this.container_definitions, aws_ecs_task_definition.canary[0].container_definitions] :
+      one([for s in jsondecode(definition)[0].secrets : s.valueFrom if s.name == "Operations__SecretChannel__KeyRingCertificatePkcs12"]) == "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123" &&
+      !contains([for e in jsondecode(definition)[0].environment : e.name], "Operations__SecretChannel__KeyRingCertificatePkcs12")
+    ])
+    error_message = "Every Redis-backed task must resolve the operator-owned PKCS#12 secret through ECS, never a plaintext environment value."
+  }
+}
+
+run "external_redis_also_requires_operation_certificate" {
+  command = plan
+  variables {
+    redis_enabled           = false
+    redis_connection_string = "redis.example.internal:6379,password=test,ssl=true"
+    redis_connection_cidrs  = ["10.0.0.0/16"]
+  }
+  expect_failures = [aws_security_group.alb]
+}
+
+run "reject_plain_certificate_input" {
+  command = plan
+  variables { operation_key_ring_certificate_secret_arn = "base64-private-key-material" }
+  expect_failures = [var.operation_key_ring_certificate_secret_arn]
+}
+
+run "reject_certificate_wildcard" {
+  command = plan
+  variables { operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-*" }
+  expect_failures = [var.operation_key_ring_certificate_secret_arn]
+}
+
+run "reject_plain_certificate_environment" {
+  command = plan
+  variables { additional_env = { "operations:secretchannel:keyringcertificatepkcs12" = "private-material" } }
+  expect_failures = [var.additional_env]
+}
+
+run "reject_canary_certificate_override" {
+  command = plan
+  variables { canary_additional_env = { Operations__SecretChannel__KeyRingCertificatePath = "/tmp/unprotected.pfx" } }
+  expect_failures = [var.canary_additional_env]
+}

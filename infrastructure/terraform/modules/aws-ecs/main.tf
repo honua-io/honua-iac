@@ -139,6 +139,12 @@ locals {
     {
       name      = "ConnectionStrings__redis"
       valueFrom = aws_secretsmanager_secret.redis_connection[0].arn
+    },
+    {
+      # ECS resolves the operator's bundle; Terraform never reads its value.
+      # The server materializes it privately and keeps key-ring protection on.
+      name      = "Operations__SecretChannel__KeyRingCertificatePkcs12"
+      valueFrom = var.operation_key_ring_certificate_secret_arn
     }
   ] : [])
   container_log_configuration = {
@@ -237,6 +243,11 @@ resource "aws_security_group" "alb" {
         (var.existing_vpc_id != "" && var.existing_vpc_cidr != "" && length(var.existing_public_subnet_ids) > 0 && length(var.existing_private_subnet_ids) > 0)
       )
       error_message = "existing_vpc_id, existing_vpc_cidr, existing_public_subnet_ids, and existing_private_subnet_ids must be set together."
+    }
+
+    precondition {
+      condition     = !local.redis_enabled || var.operation_key_ring_certificate_secret_arn != ""
+      error_message = "Redis-backed Production tasks require operation_key_ring_certificate_secret_arn: supply an existing operator-owned Secrets Manager PKCS#12 bundle with a private key and authorize the execution role to read/decrypt it. Terraform must not receive private-key material."
     }
 
     precondition {
