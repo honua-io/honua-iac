@@ -285,13 +285,14 @@ run "aws_managed_certificate_key_needs_no_extra_kms_grant" {
 run "redis_off_does_not_authorize_certificate_or_key" {
   command = apply
   variables {
-    redis_connection_string = ""
-    redis_connection_cidrs  = []
-    deployment_mode         = "SingleInstance"
-    deployment_safety       = null
-    desired_count           = 1
-    max_capacity            = 1
-    canary_enabled          = false
+    redis_connection_string  = ""
+    redis_connection_cidrs   = []
+    deployment_mode          = "SingleInstance"
+    deployment_safety        = null
+    desired_count            = 1
+    max_capacity             = 1
+    canary_enabled           = false
+    canary_weight_percentage = 0
   }
   assert {
     condition = (
