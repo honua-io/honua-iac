@@ -133,6 +133,31 @@ variable "image" {
   }
 }
 
+# Who owns the repository policy that lets Lambda pull `image` (honua-iac #214).
+# ECR has one policy document per repository, so writing it replaces whatever the
+# repository owner installed and destroying it deletes the policy for every stack
+# that shares the repository.
+#   owned -> this stack owns the repository: it installs the Lambda retrieval
+#            policy and deletes it on destroy. The repository must be in the
+#            deploying account and region.
+#   reuse -> the repository is shared and its owner has already authorized
+#            Lambda retrieval for this account: the module neither reads, writes
+#            nor deletes its policy. Use for certification cells and any stack
+#            that consumes a standing repository it does not own.
+# Switching an existing stack from owned to reuse plans a policy DELETE; run
+# `terraform state rm 'module.<name>.aws_ecr_repository_policy.lambda_image_access[0]'`
+# first if the policy must survive.
+variable "image_repository_policy_mode" {
+  description = "Ownership of the ECR repository policy that authorizes Lambda to pull image: \"owned\" (this stack installs and deletes the Lambda retrieval policy; the repository must be in the deploying account and region) or \"reuse\" (the shared repository is already authorized by its owner; the module never reads, writes or deletes its policy)."
+  type        = string
+  default     = "owned"
+  nullable    = false
+  validation {
+    condition     = contains(["owned", "reuse"], var.image_repository_policy_mode)
+    error_message = "image_repository_policy_mode must be \"owned\" or \"reuse\"."
+  }
+}
+
 variable "lambda_memory_size" {
   description = "Lambda memory size in MB."
   type        = number

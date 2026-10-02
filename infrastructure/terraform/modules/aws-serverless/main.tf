@@ -24,6 +24,7 @@ locals {
   image_ref          = split("@", var.image)[0]
   image_repo_path    = join("/", slice(split("/", local.image_ref), 1, length(split("/", local.image_ref))))
   image_repo_name    = split(":", local.image_repo_path)[0]
+  image_registry     = split("/", local.image_ref)[0]
   redis_auth_token   = var.redis_auth_token != "" ? var.redis_auth_token : (local.redis_create ? random_password.redis_auth[0].result : "")
   redis_connection   = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true" : "")
   redis_egress_cidrs = local.redis_create ? [local.vpc_cidr_block] : var.redis_connection_cidrs
@@ -450,11 +451,24 @@ data "aws_iam_policy_document" "lambda_assume" {
   }
 }
 
+# Repository-policy ownership (honua-iac #214): only an owned repository gets its
+# policy written here. In reuse mode the module makes no ECR control-plane call at
+# all, so a cell explicitly denied ecr:SetRepositoryPolicy on a standing
+# repository can install from it without touching (or later deleting) the
+# policy its owner installed.
+locals {
+  manage_image_repository_policy = var.image_repository_policy_mode == "owned"
+  owned_image_registry           = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${data.aws_region.current.name}.amazonaws.com"
+}
+
 data "aws_ecr_repository" "image" {
-  name = local.image_repo_name
+  count = local.manage_image_repository_policy ? 1 : 0
+  name  = local.image_repo_name
 }
 
 data "aws_iam_policy_document" "lambda_ecr_access" {
+  count = local.manage_image_repository_policy ? 1 : 0
+
   statement {
     sid    = "AllowLambdaImageRetrieval"
     effect = "Allow"
@@ -480,8 +494,19 @@ data "aws_iam_policy_document" "lambda_ecr_access" {
 }
 
 resource "aws_ecr_repository_policy" "lambda_image_access" {
-  repository = data.aws_ecr_repository.image.name
-  policy     = data.aws_iam_policy_document.lambda_ecr_access.json
+  count      = local.manage_image_repository_policy ? 1 : 0
+  repository = data.aws_ecr_repository.image[0].name
+  policy     = data.aws_iam_policy_document.lambda_ecr_access[0].json
+
+  lifecycle {
+    # SetRepositoryPolicy replaces the whole document, so an owned policy may
+    # only be written on a repository in the deploying account and region. A
+    # repository anywhere else belongs to someone else: consume it in reuse mode.
+    precondition {
+      condition     = contains([local.owned_image_registry, "${local.owned_image_registry}.cn"], local.image_registry)
+      error_message = "image_repository_policy_mode = \"owned\" writes the ECR repository policy, so image must be in this account's registry (${local.owned_image_registry}); got registry \"${local.image_registry}\". Set image_repository_policy_mode = \"reuse\" to consume a shared repository whose owner already authorizes Lambda retrieval."
+    }
+  }
 }
 
 resource "aws_iam_role" "lambda" {

@@ -87,6 +87,7 @@ module "honua" {
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `image` | *(required)* | ECR image URI. Must implement Lambda Runtime API. |
+| `image_repository_policy_mode` | `"owned"` | `owned` installs (and on destroy deletes) the Lambda retrieval policy on `image`'s repository, which must be in the deploying account and region. `reuse` consumes a shared repository whose owner already authorizes Lambda retrieval and never reads, writes or deletes its policy. See [Image repository policy](#image-repository-policy). |
 | `lambda_memory_size` | 1024 | Lambda memory in MB (128–10240). |
 | `lambda_timeout_seconds` | 30 | Keep at or below 30 (API Gateway limit). |
 | `lambda_architectures` | `["arm64"]` | `arm64` by default; override to `x86_64` only when you explicitly need it. |
@@ -125,6 +126,35 @@ module "honua" {
 | `request_secret_reference_kms_key_arns` | `[]` | Customer-managed KMS keys for those secrets, granted `kms:Decrypt` alongside them. |
 
 See `variables.tf` for the complete list.
+
+## Image repository policy
+
+Lambda pulls a container image only when the image's ECR repository policy lets
+the Lambda service retrieve it. ECR keeps one policy document per repository, so
+whoever writes it replaces every statement in it, and whoever destroys it removes
+it for every stack that shares the repository. `image_repository_policy_mode`
+names the owner:
+
+- `owned` (default): this stack owns the repository. The module installs a policy
+  that grants `lambda.amazonaws.com` `ecr:BatchGetImage` and
+  `ecr:GetDownloadUrlForLayer` for this account's functions in this region, and
+  deletes it on destroy. A plan is refused when `image` is in another account's
+  or region's registry, because that repository's policy is not this stack's to
+  write.
+- `reuse`: the repository is shared, for example the standing `honua-server`
+  repository certification cells install from. Its owner must already authorize
+  Lambda retrieval for the deploying account. The module makes no ECR
+  control-plane call: it neither reads, writes nor deletes the policy, so a role
+  explicitly denied `ecr:SetRepositoryPolicy` on the shared repository can still
+  install from it. The digest pin on `image` and `lambda_architectures` apply
+  exactly as in `owned`.
+
+Changing an applied stack from `owned` to `reuse` plans a delete of the policy
+it installed. If other stacks now depend on that policy, remove it from state
+first (`terraform state rm 'module.<name>.aws_ecr_repository_policy.lambda_image_access[0]'`).
+An applied `owned` stack upgrading to this version plans a move from
+`aws_ecr_repository_policy.lambda_image_access` to `...lambda_image_access[0]`
+and no policy change.
 
 ## Request-supplied secret references
 

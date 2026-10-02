@@ -71,6 +71,13 @@ variable "honua_image_uri" {
   type        = string
 }
 
+variable "image_repository_policy_mode" {
+  description = "\"owned\" (default) installs the Lambda retrieval policy on honua_image_uri's repository, which must be in this account and region. \"reuse\" consumes a shared repository whose owner already authorizes Lambda retrieval and never reads, writes or deletes its policy; certification cells installing from the standing honua-server repository must use reuse."
+  type        = string
+  default     = "owned"
+  nullable    = false
+}
+
 variable "lambda_architectures" {
   description = "Lambda architectures for validation. arm64 is the default."
   type        = list(string)
