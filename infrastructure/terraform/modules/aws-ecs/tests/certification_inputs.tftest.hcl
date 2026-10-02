@@ -214,7 +214,7 @@ run "redis_off_has_no_certificate_dependency" {
 run "redis_on_injects_protected_certificate_for_both_slots" {
   command = apply
   variables {
-    redis_auth_token                          = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    redis_auth_token                          = "HonuaRedisTest12345678901234567890"
     deployment_mode                           = "MultiNode"
     file_storage_provider                     = "AwsS3"
     file_storage_aws_s3_bucket_name           = "honua-test-files"
