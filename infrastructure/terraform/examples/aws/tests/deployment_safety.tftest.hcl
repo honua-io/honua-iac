@@ -101,9 +101,10 @@ mock_provider "random" {}
 mock_provider "null" {}
 
 variables {
-  honua_image                            = "ghcr.io/honua-io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  honua_admin_password                   = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  honua_connection_encryption_master_key = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+  honua_image                               = "ghcr.io/honua-io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  honua_admin_password                      = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  honua_connection_encryption_master_key    = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
   existing_vpc_id             = "vpc-0123456789abcdef0"
   existing_vpc_cidr           = "10.0.0.0/16"
