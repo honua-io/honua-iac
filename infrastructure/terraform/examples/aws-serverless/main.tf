@@ -19,6 +19,7 @@ module "honua" {
   existing_public_subnet_ids      = local.install_net_pub_sub
   existing_private_subnet_ids     = local.install_net_prv_sub
   image                           = local.install_image
+  image_repository_policy_mode    = var.image_repository_policy_mode
   lambda_architectures            = var.lambda_architectures
   lambda_alias_name               = var.lambda_alias_name
   lambda_alias_version            = var.lambda_alias_version
