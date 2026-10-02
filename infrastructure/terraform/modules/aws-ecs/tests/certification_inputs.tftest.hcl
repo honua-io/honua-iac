@@ -214,6 +214,9 @@ run "redis_off_has_no_certificate_dependency" {
 run "redis_on_injects_protected_certificate_for_both_slots" {
   command = apply
   variables {
+    deployment_mode                           = "MultiNode"
+    file_storage_provider                     = "AwsS3"
+    file_storage_aws_s3_bucket_name           = "honua-test-files"
     redis_enabled                             = true
     canary_enabled                            = true
     operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"

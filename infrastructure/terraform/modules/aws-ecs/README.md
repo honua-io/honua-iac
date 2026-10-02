@@ -356,3 +356,76 @@ Workload images must be digest-pinned (`registry/repository@sha256:<64 hex>`).
 Bedrock uses the workload IAM role and configures `StudioAiProxy` as well as
 `WorkflowGeneration`. See [AWS certification inputs](../../../../docs/devops/aws-certification-inputs.md)
 for N-1/N pins, custom-code worker requirements, OIDC roles and live evidence limits.
+
+## Redis operation key-ring certificate
+
+Every Redis-backed Production task, including a caller-owned Redis endpoint,
+requires `operation_key_ring_certificate_secret_arn`. Omission fails planning
+with an actionable error; Redis-off neither requires nor injects a certificate.
+The example stack forwards the same input and defaults to an empty ARN so a
+new disposable cell fails closed until protected material is supplied. It does
+not generate a private key in Terraform state or use a shared test key.
+
+The ARN must identify an existing operator-owned Secrets Manager secret. Its
+value must be standard base64 PKCS#12 with a private key, or a JSON bundle
+`{"pkcs12":"<base64>","password":"<PKCS#12 password>"}`. Retain the same
+certificate for the lifetime of the Redis key ring and across task replacements
+and stable/canary slots; a new certificate cannot decrypt the old ring. Store
+and rotate it separately from Redis. Never put the bundle, its password, or a
+private key into tfvars, `additional_env`, or `canary_additional_env`.
+
+```hcl
+redis_enabled = true
+operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+```
+
+ECS resolves the bundle as the secret
+`Operations__SecretChannel__KeyRingCertificatePkcs12` in both task definitions.
+The existing server boundary writes a unique private temporary file (Unix mode
+0600) and loads its certificate; the Redis data-protection ring still requires
+certificate encryption. Use an image containing that materialization boundary.
+No secret value is read or written by this module.
+
+**Runtime authorization is an operator prerequisite.** This change does not
+alter IAM policy code. Before deployment, the execution role must be authorized
+to `secretsmanager:GetSecretValue` on exactly this secret and, for a
+customer-managed encryption key, `kms:Decrypt` on that key. A valid ARN alone
+does not prove the secret exists, is accessible, or contains valid PKCS#12.
+Terraform checks the input contract without reading the private key; ECS and the
+server reject missing/inaccessible/invalid content before a serving target is
+ready. Validate the operator's bundle privately before its separate provisioning
+operation. No live IAM or secret provisioning is included here.
+
+## Failed-cell diagnostics
+
+Capture evidence **before teardown**: ECS stopped-task history is short-lived
+and teardown deletes the cell's CloudWatch log group. The read-only collector
+retains service events, stopped/running task descriptions (including stop
+reason, container reason and exit code), and every container log stream. Run it
+for both slots when canary is enabled:
+
+```bash
+python3 infrastructure/terraform/modules/aws-ecs/scripts/capture-task-diagnostics.py \
+  --region us-east-1 --cluster '<ecs_cluster_name>' \
+  --service '<ecs_service_name>' --service '<canary_ecs_service_name>' \
+  --log-group '/honua/<name_prefix>-<environment>' \
+  --output-dir '<new-private-evidence-directory>'
+```
+
+Omit the second `--service` for a single-slot cell. Upload that directory as a
+restricted certification artifact on failure, even if the collector exits 1.
+`collection.json` records incomplete reads; collection continues after read
+errors so available logs survive. The collector reads no secret values or
+task-definition environment. Its output can contain application/operator data
+and is created with private permissions. It requires existing read permissions
+for ECS services/tasks and CloudWatch logs; it grants none. Collection and
+artifact upload must run before the runner's teardown/reaper, preserving the
+original failure verdict and the existing fail-closed cleanup behavior.
+
+Offline Terraform tests establish the injection/refusal contract, and mocked
+collector tests establish evidence retention under task exit and read failures.
+They do not prove an exact-candidate AWS cell healthy. The historical ALB 503s
+had no stopped-task logs, so their exact task exit cause remains unverified.
+Release runner wiring, protected disposable-cell material/authorization, and a
+live Redis-on cell with healthy targets, 200 live/ready and the full protocol
+sweep remain required before closing #213.
