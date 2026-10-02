@@ -15,10 +15,17 @@ locals {
 
   secret_encryption_key_arn = local.create_secret_encryption_key ? one(aws_kms_key.eks[*].arn) : var.cluster_secret_encryption_key_arn
 
-  cluster_encryption_config = var.cluster_secret_encryption_enabled ? {
-    provider_key_arn = local.secret_encryption_key_arn
-    resources        = ["secrets"]
-  } : {}
+  # The pinned EKS module enables encryption_config only when this object is non-empty. A
+  # `cond ? { provider_key_arn, resources } : {}` conditional cannot unify those two object
+  # types and fails at plan (honua-iac#215), so filter the attributes instead: the disabled
+  # shape is still an empty object.
+  cluster_encryption_config = {
+    for attribute, value in {
+      provider_key_arn = local.secret_encryption_key_arn
+      resources        = ["secrets"]
+    } : attribute => value if var.cluster_secret_encryption_enabled
+  }
+
   tags = merge({
     Project     = "honua-server"
     Environment = var.environment
