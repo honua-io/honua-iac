@@ -5,6 +5,7 @@ Read-only AWS calls. Never retrieve secret values or task-definition environment
 The caller must upload the output directory even when collection is incomplete.
 """
 import argparse
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -27,7 +28,12 @@ def capture(cluster, services, log_group, output_dir, region, run=subprocess.run
             if result.returncode:
                 failures.append(label)
                 return None
-            return json.loads(result.stdout)
+            response = json.loads(result.stdout)
+            # ECS can return HTTP success with per-resource failures (for example
+            # a stopped task expiring between list-tasks and describe-tasks).
+            if response.get("failures"):
+                failures.append(label)
+            return response
         except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError) as error:
             (output_dir / f"{label}.error.txt").write_text(str(error))
             failures.append(label)
@@ -48,7 +54,8 @@ def capture(cluster, services, log_group, output_dir, region, run=subprocess.run
     # The log group is cell-scoped. Capture all streams (including init failures)
     # while they still exist, even when no stopped task remains in ECS's short history.
     aws("container-logs", "logs", "filter-log-events", "--log-group-name", log_group)
-    summary = {"cluster": cluster, "services": services, "log_group": log_group,
+    summary = {"collected_at": datetime.now(timezone.utc).isoformat(),
+               "cluster": cluster, "services": services, "log_group": log_group,
                "complete": not failures, "failed_collections": failures}
     (output_dir / "collection.json").write_text(json.dumps(summary, indent=2) + "\n")
     return summary

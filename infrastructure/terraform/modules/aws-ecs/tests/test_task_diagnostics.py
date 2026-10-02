@@ -13,6 +13,27 @@ SPEC.loader.exec_module(diagnostics)
 
 
 class DiagnosticsTests(unittest.TestCase):
+    def test_batches_task_descriptions_and_records_partial_ecs_failures(self):
+        batches = []
+
+        def run(command, **kwargs):
+            if "list-tasks" in command:
+                value = {"taskArns": [f"task-{i}" for i in range(101)] if "STOPPED" in command else []}
+            elif "describe-tasks" in command:
+                batches.append(command[command.index("--tasks") + 1:])
+                value = {"tasks": [], "failures": [{"reason": "MISSING"}]}
+            else:
+                value = {}
+            return subprocess.CompletedProcess(command, 0, json.dumps(value), "")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "evidence"
+            result = diagnostics.capture("cluster", ["primary"], "/honua/cell", output, "us-east-1", run)
+            self.assertEqual([100, 1], [len(batch) for batch in batches])
+            self.assertFalse(result["complete"])
+            self.assertEqual(["service-0-stopped-details-0", "service-0-stopped-details-1"], result["failed_collections"])
+            self.assertTrue((output / "container-logs.json").exists())
+
     def test_retains_stopped_tasks_exit_code_and_container_logs(self):
         calls = []
 
