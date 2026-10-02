@@ -393,9 +393,12 @@ variable "additional_env" {
       "licensing__mode",
       "licensing__edition",
       "licensing__licensecontent",
-      "licensing__licensecontentsecretref"
+      "licensing__licensecontentsecretref",
+      "operations__secretchannel__keyringcertificatepath",
+      "operations__secretchannel__keyringcertificatepassword",
+      "operations__secretchannel__keyringcertificatepkcs12"
     ]))) == 0
-    error_message = "Set deployment, file-storage and licensing settings through the typed module variables, not additional_env."
+    error_message = "Set deployment, file-storage, licensing and operation certificate settings through the typed module variables, not additional_env."
   }
 }
 
@@ -529,9 +532,12 @@ variable "canary_additional_env" {
       "licensing__mode",
       "licensing__edition",
       "licensing__licensecontent",
-      "licensing__licensecontentsecretref"
+      "licensing__licensecontentsecretref",
+      "operations__secretchannel__keyringcertificatepath",
+      "operations__secretchannel__keyringcertificatepassword",
+      "operations__secretchannel__keyringcertificatepkcs12"
     ]))) == 0
-    error_message = "Set deployment, file-storage and licensing settings through the typed module variables, not canary_additional_env."
+    error_message = "Set deployment, file-storage, licensing and operation certificate settings through the typed module variables, not canary_additional_env."
   }
 }
 
@@ -598,6 +604,30 @@ variable "redis_auth_token" {
       ]) >= 3
     )
     error_message = "redis_auth_token must be 16-128 characters, contain only letters, digits, or !&#$^<>-, and use at least three character classes."
+  }
+}
+
+variable "operation_key_ring_certificate_secret_kms_key_arn" {
+  description = "Customer-managed KMS key ARN encrypting the operation key-ring certificate secret. Leave empty for the AWS-managed aws/secretsmanager key. Granted to the execution role only when Redis is configured."
+  type        = string
+  default     = ""
+  nullable    = false
+
+  validation {
+    condition     = var.operation_key_ring_certificate_secret_kms_key_arn == "" || can(regex("^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$", var.operation_key_ring_certificate_secret_kms_key_arn))
+    error_message = "operation_key_ring_certificate_secret_kms_key_arn must be an exact KMS key ARN or empty."
+  }
+}
+
+variable "operation_key_ring_certificate_secret_arn" {
+  description = "ARN of an existing operator-owned Secrets Manager secret containing base64 PKCS#12 or a JSON {pkcs12,password} bundle with a private key. Required for Redis, including an existing Redis connection. Only the ARN enters Terraform; never pass certificate material in additional_env or tfvars. The module grants the execution role read access; supply operation_key_ring_certificate_secret_kms_key_arn for a customer-managed key."
+  type        = string
+  default     = ""
+  nullable    = false
+
+  validation {
+    condition     = var.operation_key_ring_certificate_secret_arn == "" || can(regex("^arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+-[A-Za-z0-9]{6}$", var.operation_key_ring_certificate_secret_arn))
+    error_message = "operation_key_ring_certificate_secret_arn must be a complete Secrets Manager secret ARN (including its six-character suffix), not PKCS#12 material, a wildcard, or a JSON-key selector."
   }
 }
 

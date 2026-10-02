@@ -28,6 +28,8 @@ ENVIRONMENT="${AWS_TF_ENVIRONMENT:-it}"
 NAME_PREFIX_BASE="${AWS_TF_NAME_PREFIX_BASE:-h$(date -u +%m%d%H%M)$((RANDOM % 10))}"
 USE_AOT="${HONUA_USE_AOT:-false}"
 ECS_IMAGE="${HONUA_AWS_ECS_IMAGE:-}"
+ECS_KEY_RING_CERTIFICATE_SECRET_ARN="${HONUA_AWS_OPERATION_KEY_RING_CERTIFICATE_SECRET_ARN:-}"
+ECS_KEY_RING_CERTIFICATE_SECRET_KMS_KEY_ARN="${HONUA_AWS_OPERATION_KEY_RING_CERTIFICATE_SECRET_KMS_KEY_ARN:-}"
 SERVERLESS_IMAGE="${HONUA_AWS_SERVERLESS_IMAGE:-}"
 ECS_PREVIOUS_IMAGE="${HONUA_AWS_ECS_PREVIOUS_IMAGE:-}"
 SERVERLESS_PREVIOUS_IMAGE="${HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE:-}"
@@ -153,6 +155,7 @@ Required environment variables:
   HONUA_ADMIN_PASSWORD (at least 32 chars)
   HONUA_DB_PASSWORD
   HONUA_AWS_ECS_IMAGE (when --stack ecs|both)
+  HONUA_AWS_OPERATION_KEY_RING_CERTIFICATE_SECRET_ARN (when --stack ecs|both; separately provisioned PKCS#12 secret ARN)
   HONUA_AWS_ECS_CANARY_ENABLED
   HONUA_AWS_ECS_CANARY_IMAGE
   HONUA_AWS_ECS_CANARY_DESIRED_COUNT
@@ -163,6 +166,7 @@ Required environment variables:
 
 Optional environment variables:
   AWS_SESSION_TOKEN
+  HONUA_AWS_OPERATION_KEY_RING_CERTIFICATE_SECRET_KMS_KEY_ARN (customer-managed key ARN)
   HONUA_AWS_EXISTING_DB_ENDPOINT
   HONUA_AWS_EXISTING_DB_CONNECTION_STRING
   HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING
@@ -216,6 +220,7 @@ require_env() {
 validate_requested_images() {
   source "$SCRIPT_DIR/../shared/certification-images.sh"
   if [[ "$STACK" == "ecs" || "$STACK" == "both" ]]; then
+    require_env HONUA_AWS_OPERATION_KEY_RING_CERTIFICATE_SECRET_ARN
     require_digest_image ECS_IMAGE "$ECS_IMAGE" || exit 1
     [[ -z "$ECS_CANARY_IMAGE" ]] || require_digest_image ECS_CANARY_IMAGE "$ECS_CANARY_IMAGE" || exit 1
     if [[ "$RUN_UPGRADE_ROLLBACK" == "true" ]]; then
@@ -794,6 +799,8 @@ run_tf() {
       -e TF_VAR_enable_postgis \
       -e TF_VAR_redis_enabled \
       -e TF_VAR_redis_connection_string \
+      -e TF_VAR_operation_key_ring_certificate_secret_arn \
+      -e TF_VAR_operation_key_ring_certificate_secret_kms_key_arn \
       -e TF_VAR_db_publicly_accessible \
       -e TF_VAR_db_additional_ingress_cidrs \
       -e TF_VAR_desired_count \
@@ -2139,6 +2146,8 @@ set_ecs_tf_vars() {
   set_common_tf_vars "ecs"
   export TF_VAR_name_prefix="$ECS_NAME_PREFIX"
   export TF_VAR_honua_image="$ECS_IMAGE"
+  export TF_VAR_operation_key_ring_certificate_secret_arn="$ECS_KEY_RING_CERTIFICATE_SECRET_ARN"
+  export TF_VAR_operation_key_ring_certificate_secret_kms_key_arn="$ECS_KEY_RING_CERTIFICATE_SECRET_KMS_KEY_ARN"
   export TF_VAR_desired_count="$ECS_DESIRED_COUNT"
   export TF_VAR_alb_deletion_protection="false"
   export TF_VAR_alb_access_logs_enabled="false"

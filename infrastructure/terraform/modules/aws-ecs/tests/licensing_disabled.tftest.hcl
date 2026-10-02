@@ -175,16 +175,17 @@ run "canary_task_shares_the_declared_licensing_mode" {
   command = apply
 
   variables {
-    canary_enabled                  = true
-    canary_desired_count            = 1
-    canary_weight_percentage        = 10
-    desired_count                   = 2
-    max_capacity                    = 4
-    deployment_mode                 = "MultiNode"
-    redis_connection_string         = "redis.example.internal:6379,password=test,ssl=true"
-    redis_connection_cidrs          = ["10.0.0.0/16"]
-    file_storage_provider           = "AwsS3"
-    file_storage_aws_s3_bucket_name = "honua-test-files"
+    operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+    canary_enabled                            = true
+    canary_desired_count                      = 1
+    canary_weight_percentage                  = 10
+    desired_count                             = 2
+    max_capacity                              = 4
+    deployment_mode                           = "MultiNode"
+    redis_connection_string                   = "redis.example.internal:6379,password=test,ssl=true"
+    redis_connection_cidrs                    = ["10.0.0.0/16"]
+    file_storage_provider                     = "AwsS3"
+    file_storage_aws_s3_bucket_name           = "honua-test-files"
   }
 
   # A canary running a different licensing mode than the primary would serve

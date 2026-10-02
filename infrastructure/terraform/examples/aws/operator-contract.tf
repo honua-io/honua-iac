@@ -205,6 +205,7 @@ locals {
     db_connection                    = module.honua.db_connection_secret_arn
     redis_connection                 = nonsensitive(module.honua.redis_connection_secret_arn)
     ai_provider_api_key              = var.ai_provider_secret_arn != "" ? var.ai_provider_secret_arn : null
+    operation_key_ring_certificate   = module.honua.cache_configured ? var.operation_key_ring_certificate_secret_arn : null
   } : name => arn if arn != null }
 
   operator_contract_secret_registry = { for name, ref in {
@@ -235,6 +236,13 @@ locals {
       id          = nonsensitive(module.honua.redis_connection_secret_arn)
       kms_key_ref = null
       managed_by  = "honua-iac"
+    }
+    operation_key_ring_certificate = !module.honua.cache_configured ? null : {
+      kind        = "operation_key_ring_certificate"
+      provider    = "aws-secretsmanager"
+      id          = var.operation_key_ring_certificate_secret_arn
+      kms_key_ref = var.operation_key_ring_certificate_secret_kms_key_arn != "" ? var.operation_key_ring_certificate_secret_kms_key_arn : null
+      managed_by  = "operator"
     }
     ai_provider_api_key = var.ai_provider_secret_arn == "" ? null : {
       kind        = "ai_provider_api_key"

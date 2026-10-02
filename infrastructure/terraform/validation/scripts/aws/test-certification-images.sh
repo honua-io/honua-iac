@@ -15,6 +15,7 @@ if require_revision_pair "$old" "other.example/honua@${old##*@}" 2>/dev/null; th
   echo 'Accepted identical bytes under another repository name' >&2; exit 1
 fi
 source "$TEST_DIR/run-aws-terraform-integration.sh"
+export HONUA_AWS_OPERATION_KEY_RING_CERTIFICATE_SECRET_ARN="arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
 RUN_UPGRADE_ROLLBACK=true
 STACK=both
 ECS_IMAGE="$new"

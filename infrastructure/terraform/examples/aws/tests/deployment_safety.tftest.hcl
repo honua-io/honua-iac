@@ -101,9 +101,11 @@ mock_provider "random" {}
 mock_provider "null" {}
 
 variables {
-  honua_image                            = "ghcr.io/honua-io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  honua_admin_password                   = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  honua_connection_encryption_master_key = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  operation_key_ring_certificate_secret_kms_key_arn = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000002"
+  operation_key_ring_certificate_secret_arn         = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+  honua_image                                       = "ghcr.io/honua-io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  honua_admin_password                              = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  honua_connection_encryption_master_key            = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
   existing_vpc_id             = "vpc-0123456789abcdef0"
   existing_vpc_cidr           = "10.0.0.0/16"
@@ -137,6 +139,15 @@ variables {
 
 run "native_profile_is_projected_without_live_claims" {
   command = apply
+  assert {
+    condition = (
+      output.deployment_contract.secret_refs.operation_key_ring_certificate == var.operation_key_ring_certificate_secret_arn &&
+      output.operations_contract.secrets.references.operation_key_ring_certificate.id == var.operation_key_ring_certificate_secret_arn &&
+      output.operations_contract.secrets.references.operation_key_ring_certificate.managed_by == "operator" &&
+      output.operations_contract.secrets.references.operation_key_ring_certificate.kms_key_ref == var.operation_key_ring_certificate_secret_kms_key_arn
+    )
+    error_message = "Install and day-2 contracts must agree on the operator-owned certificate and its KMS reference."
+  }
   assert {
     condition = (
       output.operations_contract.resilience.protection_profile.execution.backend_name == "honua-aws-ecs-alb" &&
@@ -192,5 +203,25 @@ override_resource {
   target = module.honua.aws_lb_target_group.canary[0]
   values = {
     arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/honua-canary/2222222222222222"
+  }
+}
+
+run "redis_off_omits_certificate_from_contracts" {
+  command = apply
+  variables {
+    redis_connection_string = ""
+    redis_connection_cidrs  = []
+    deployment_mode         = "SingleInstance"
+    deployment_safety       = null
+    desired_count           = 1
+    max_capacity            = 1
+    canary_enabled          = false
+  }
+  assert {
+    condition = (
+      !contains(keys(output.deployment_contract.secret_refs), "operation_key_ring_certificate") &&
+      !contains(keys(output.operations_contract.secrets.references), "operation_key_ring_certificate")
+    )
+    error_message = "Redis-off must omit the unused certificate from both operator contract surfaces."
   }
 }

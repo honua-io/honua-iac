@@ -91,9 +91,11 @@ mock_provider "random" {}
 mock_provider "null" {}
 
 variables {
-  image                            = "ghcr.io/honua-io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  admin_password                   = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  connection_encryption_master_key = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  operation_key_ring_certificate_secret_kms_key_arn = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000002"
+  operation_key_ring_certificate_secret_arn         = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+  image                                             = "ghcr.io/honua-io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  admin_password                                    = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  connection_encryption_master_key                  = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
   existing_vpc_id             = "vpc-0123456789abcdef0"
   existing_vpc_cidr           = "10.0.0.0/16"
@@ -133,6 +135,13 @@ variables {
 run "native_safety_wires_bounded_runtime_and_retained_actuator" {
   command = apply
 
+  assert {
+    condition = (
+      contains(jsondecode(aws_iam_policy.secrets.policy).Statement[0].Resource, var.operation_key_ring_certificate_secret_arn) &&
+      length([for statement in jsondecode(aws_iam_policy.secrets.policy).Statement : statement if contains(statement.Action, "kms:Decrypt") && statement.Resource == [var.operation_key_ring_certificate_secret_kms_key_arn]]) == 1
+    )
+    error_message = "External Redis must authorize the exact certificate secret and customer-managed KMS key on the execution role."
+  }
   assert {
     condition = (
       output.deployment_safety.status == "configured-unverified" &&
@@ -259,4 +268,37 @@ run "single_service_cannot_enable_native_canary_backend" {
   command = plan
   variables { canary_enabled = false }
   expect_failures = [aws_security_group.alb]
+}
+
+run "aws_managed_certificate_key_needs_no_extra_kms_grant" {
+  command = apply
+  variables { operation_key_ring_certificate_secret_kms_key_arn = "" }
+  assert {
+    condition = (
+      contains(jsondecode(aws_iam_policy.secrets.policy).Statement[0].Resource, var.operation_key_ring_certificate_secret_arn) &&
+      length(jsondecode(aws_iam_policy.secrets.policy).Statement) == 2
+    )
+    error_message = "The AWS-managed secret key must not add a customer-managed KMS grant."
+  }
+}
+
+run "redis_off_does_not_authorize_certificate_or_key" {
+  command = apply
+  variables {
+    redis_connection_string  = ""
+    redis_connection_cidrs   = []
+    deployment_mode          = "SingleInstance"
+    deployment_safety        = null
+    desired_count            = 1
+    max_capacity             = 1
+    canary_enabled           = false
+    canary_weight_percentage = 0
+  }
+  assert {
+    condition = (
+      !contains(jsondecode(aws_iam_policy.secrets.policy).Statement[0].Resource, var.operation_key_ring_certificate_secret_arn) &&
+      length(jsondecode(aws_iam_policy.secrets.policy).Statement) == 2
+    )
+    error_message = "Redis-off must grant neither certificate-secret access nor its KMS key, even if inputs are supplied."
+  }
 }
