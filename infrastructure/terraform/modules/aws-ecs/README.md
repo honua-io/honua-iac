@@ -386,10 +386,11 @@ The existing server boundary writes a unique private temporary file (Unix mode
 certificate encryption. Use an image containing that materialization boundary.
 No secret value is read or written by this module.
 
-**Runtime authorization is an operator prerequisite.** This change does not
-alter IAM policy code. Before deployment, the execution role must be authorized
-to `secretsmanager:GetSecretValue` on exactly this secret and, for a
-customer-managed encryption key, `kms:Decrypt` on that key. A valid ARN alone
+The module grants the execution role read access to exactly this secret while
+Redis is configured. For a customer-managed encryption key, supply
+`operation_key_ring_certificate_secret_kms_key_arn`; the module grants
+`kms:Decrypt` and `kms:DescribeKey` on that exact key. The operator must also
+ensure the secret resource policy and KMS key policy permit this role. A valid ARN alone
 does not prove the secret exists, is accessible, or contains valid PKCS#12.
 Terraform checks the input contract without reading the private key; ECS and the
 server reject missing/inaccessible/invalid content before a serving target is

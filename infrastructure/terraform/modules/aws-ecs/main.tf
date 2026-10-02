@@ -849,6 +849,7 @@ resource "aws_iam_policy" "secrets" {
           aws_secretsmanager_secret.master_key.arn,
           var.ai_provider_secret_arn != "" ? var.ai_provider_secret_arn : null,
           local.pro_license_enabled ? trimspace(var.pro_license_secret_arn) : null,
+          local.redis_enabled ? var.operation_key_ring_certificate_secret_arn : null,
           local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null
         ])
       },
@@ -865,6 +866,10 @@ resource "aws_iam_policy" "secrets" {
         Effect   = "Allow"
         Action   = ["kms:Decrypt", "kms:DescribeKey"]
         Resource = [trimspace(var.pro_license_secret_kms_key_arn)]
+        }] : [], local.redis_enabled && var.operation_key_ring_certificate_secret_kms_key_arn != "" ? [{
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt", "kms:DescribeKey"]
+        Resource = [var.operation_key_ring_certificate_secret_kms_key_arn]
     }] : [])
   })
 }

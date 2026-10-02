@@ -684,6 +684,8 @@ jobs:
       HONUA_DB_PASSWORD: ${{ secrets.HONUA_DB_PASSWORD }}
       TF_VAR_enable_bedrock_ai: "true"
       TF_VAR_bedrock_ai_region: ${{ vars.HONUA_AWS_VALIDATION_REGION || 'us-east-1' }}
+      HONUA_AWS_OPERATION_KEY_RING_CERTIFICATE_SECRET_ARN: ${{ secrets.HONUA_AWS_OPERATION_KEY_RING_CERTIFICATE_SECRET_ARN }}
+      HONUA_AWS_OPERATION_KEY_RING_CERTIFICATE_SECRET_KMS_KEY_ARN: ${{ secrets.HONUA_AWS_OPERATION_KEY_RING_CERTIFICATE_SECRET_KMS_KEY_ARN }}
       HONUA_AWS_ECS_IMAGE: ${{ inputs.aws_ecs_image || vars.HONUA_AWS_ECS_IMAGE || '' }}
       HONUA_AWS_ECS_PREVIOUS_IMAGE: ${{ inputs.aws_ecs_previous_image || vars.HONUA_AWS_ECS_PREVIOUS_IMAGE || '' }}
       HONUA_AWS_ECS_CANARY_IMAGE: ${{ vars.HONUA_AWS_ECS_CANARY_IMAGE || '' }}
@@ -768,6 +770,7 @@ jobs:
           done
 
           if [[ "$AWS_VALIDATION_STACK" == "ecs" || "$AWS_VALIDATION_STACK" == "both" ]]; then
+            [[ -n "${HONUA_AWS_OPERATION_KEY_RING_CERTIFICATE_SECRET_ARN:-}" ]] || { echo "Missing protected certificate ARN: HONUA_AWS_OPERATION_KEY_RING_CERTIFICATE_SECRET_ARN"; exit 1; }
             [[ -n "${HONUA_AWS_ECS_IMAGE:-}" ]] || { echo "Missing required AWS image configuration: HONUA_AWS_ECS_IMAGE"; exit 1; }
             if [[ "$HONUA_RUN_UPGRADE_ROLLBACK" == "true" ]]; then
               [[ -n "${HONUA_AWS_ECS_PREVIOUS_IMAGE:-}" ]] || { echo "Missing required AWS image configuration: HONUA_AWS_ECS_PREVIOUS_IMAGE"; exit 1; }
