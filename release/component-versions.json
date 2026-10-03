@@ -1,0 +1,13 @@
+{
+  "format": "honua.component-versions/v1",
+  "component": "honua-iac",
+  "contractVersions": {
+    "operator-contract": "honua.operator-contract/v1"
+  },
+  "schemaVersions": {
+    "terraform-exact-plan": "v1",
+    "terraform-exec-receipt": "v1",
+    "terraform-plan-lineage": "v1",
+    "terraform-backend-identity": "v1"
+  }
+}

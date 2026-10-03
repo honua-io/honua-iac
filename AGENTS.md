@@ -119,6 +119,10 @@ docs/           operator-deployment.md, module-publishing-decision.md
                     cloud-demo-smoke.yml
 ```
 
+## Release declarations
+
+`release/component-versions.json` is read by the honua-release nightly resolver at the exact commit it selects. The resolver refuses this component when the file is missing or invalid, so any bump of a contract or schema version this repository serves must land in the same pull request as the matching change to that file.
+
 ## Conventions & Gotchas
 
 - Every Terraform root pins `required_version` and provider versions in
