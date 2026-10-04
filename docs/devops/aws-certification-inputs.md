@@ -75,7 +75,12 @@ must match the selected `terraform-ephemeral` / `terraform-live-approval` GitHub
 environment; drift and scheduled jobs use their exact authorized workflow ref.
 Protect environments and keep the teardown identity separate. Do not point these
 variables at the partially qualified #208 staging roles without completing their
-caller/tag/policy migration. Missing roles fail, with no static-key fallback.
+caller/tag/policy migration. Missing roles fail, with no static-key fallback,
+except on the two scheduled cleanup workflows: when `HONUA_AWS_VALIDATION_REAPER_ROLE_ARN`
+or `HONUA_AWS_VALIDATION_IAM_SWEEPER_ROLE_ARN` is unset, their precondition job
+names the variable and the cleanup job concludes `skipped` instead of failing the
+trunk head (honua-release#376 R18/R21). Nothing is reaped until the operator
+provisions the #208 cleanup role and sets the variable.
 The scheduled IAM sweeper remains to remove historical leaks; new runs create no
 per-run bootstrap users.
 
