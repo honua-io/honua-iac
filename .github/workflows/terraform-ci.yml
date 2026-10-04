@@ -47,6 +47,7 @@ on:
       - '.github/workflows/terraform-manual-validation.yml'
       - '.github/workflows/terraform-validation-infra-reaper.yml'
       - '.github/workflows/terraform-validation-iam-sweeper.yml'
+      - 'tests/workflows/**'
   push:
     branches:
       - trunk
@@ -95,6 +96,7 @@ on:
       - '.github/workflows/terraform-manual-validation.yml'
       - '.github/workflows/terraform-validation-infra-reaper.yml'
       - '.github/workflows/terraform-validation-iam-sweeper.yml'
+      - 'tests/workflows/**'
 
 permissions:
   contents: read
@@ -370,6 +372,10 @@ jobs:
       - name: Certification OIDC credential contract
         shell: bash
         run: python3 infrastructure/terraform/validation/scripts/shared/test-certification-oidc.py
+
+      - name: Scheduled cleanup role precondition contract
+        shell: bash
+        run: python3 tests/workflows/test_cleanup_role_precondition.py
 
       - name: Certification image pins and revision orchestration
         shell: bash

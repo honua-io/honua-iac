@@ -37,8 +37,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The schedule fires on every trunk head whether or not the operator has
+  # provisioned the cleanup role yet. An unprovisioned role is an absent
+  # environment, not a failed cleanup: report it here and let the sweeper job
+  # conclude `skipped` (honua-release#376 R18/R21) instead of reddening the
+  # head. This is the ONLY condition that skips the sweeper; once the variable is
+  # set every run assumes the role exactly as before.
+  precondition:
+    name: Require sweeper OIDC role
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      configured: ${{ steps.role.outputs.configured }}
+    steps:
+      - name: Check HONUA_AWS_VALIDATION_IAM_SWEEPER_ROLE_ARN
+        id: role
+        env:
+          ROLE_ARN: ${{ vars.HONUA_AWS_VALIDATION_IAM_SWEEPER_ROLE_ARN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${ROLE_ARN}" ]]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          reason="SKIPPED: HONUA_AWS_VALIDATION_IAM_SWEEPER_ROLE_ARN is not set; provision the #208 OIDC cleanup role (scoped role with the standing/demo teardown deny) and set the repository variable to run the sweeper."
+          echo "configured=false" >> "$GITHUB_OUTPUT"
+          echo "::notice title=sweeper skipped::${reason}"
+          echo "${reason}" >> "$GITHUB_STEP_SUMMARY"
+
   sweep:
     name: Sweep orphaned validation IAM principals
+    needs: precondition
+    if: ${{ needs.precondition.outputs.configured == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
