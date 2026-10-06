@@ -43,6 +43,15 @@ honua_connection_encryption_master_key = null
 # ElastiCache Redis (enabled by default; required for /healthz/ready in Production).
 # redis_enabled = true
 
+# Provision an operator-owned Secrets Manager secret separately containing base64
+# PKCS#12 with a private key, or JSON {pkcs12,password}. Retain the certificate
+# across replacements and stable/canary tasks; never put private material here.
+# Replace this illustrative complete ARN with the separately provisioned secret.
+operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:REPLACE_WITH_OPERATOR_KEYRING-ABC123"
+# For a customer-managed encryption key, also supply its exact ARN. The module
+# grants execution-role read/decrypt; the key policy must permit that role.
+# operation_key_ring_certificate_secret_kms_key_arn = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000001"
+
 # Safe single-instance is the default. To enable ECS HA or auto-scaling, set all
 # of these together and provide an existing S3 bucket. The module grants its ECS
 # task role access to that bucket; it does not create the bucket.

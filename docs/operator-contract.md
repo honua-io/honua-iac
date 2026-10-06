@@ -164,6 +164,11 @@ The admin-password secret ARN appears in both: as
 `operations_contract.secrets.references.admin_password`. Both are required by
 the schema.
 
+When Redis is configured, the operator-owned protected operation key-ring
+certificate appears in both surfaces as `operation_key_ring_certificate`
+(`kind = "operation_key_ring_certificate"`, `managed_by = "operator"`). It is
+omitted when Redis is off. Older v1 producers never emit this additive kind.
+
 ## Protection profile
 
 `operations_contract.resilience.protection_profile` describes installed AWS
