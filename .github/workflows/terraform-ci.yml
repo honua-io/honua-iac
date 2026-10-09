@@ -315,6 +315,7 @@ jobs:
           terraform -chdir=infrastructure/terraform/examples/aws test -json -verbose > "$RUNNER_TEMP/aws-safety-tests.jsonl"
           node infrastructure/terraform/validation/scripts/shared/test-deployment-safety-output.mjs "$RUNNER_TEMP/aws-safety-tests.jsonl"
           terraform -chdir=infrastructure/terraform/modules/aws-serverless test -no-color
+          terraform -chdir=infrastructure/terraform/examples/aws-serverless test -no-color
           terraform -chdir=infrastructure/terraform/modules/azure-aca test -no-color
 
       - name: Post-apply caller and named-evidence contract

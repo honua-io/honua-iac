@@ -24,6 +24,13 @@ max_capacity    = 1
 redis_enabled   = true
 canary_enabled  = false
 
+# Reachability. With both ingress lists empty and no certificate the ALB admits
+# only in-VPC traffic and the service is unreachable from your machine (a plan
+# check warns). Admit your own address over HTTP for a development cell, or
+# configure HTTPS (alb_certificate_arn, or domain_name + route53_zone_id):
+#
+# allow_http_ingress_cidrs = ["203.0.113.10/32"]
+
 # Development cells are disposable. Production should keep both protections on.
 alb_deletion_protection       = false
 alb_access_logs_enabled       = false

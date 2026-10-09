@@ -222,6 +222,31 @@ output "gp_compute_environment_arn" {
   value       = local.gp_batch_enabled ? aws_batch_compute_environment.gp[0].arn : null
 }
 
+output "gp_batch_image" {
+  description = "Effective image the GP job definitions run (gp_batch_image, or the Lambda image when that is empty); null when enable_gp_batch is false."
+  value       = local.gp_batch_enabled ? local.gp_batch_image : null
+}
+
+output "gp_batch_cpu_architecture" {
+  description = "Fargate CPU architecture of the GP job definitions; null when enable_gp_batch is false."
+  value       = local.gp_batch_enabled ? var.gp_batch_cpu_architecture : null
+}
+
+output "gp_job_queue_name" {
+  description = "Name of the GP Fargate Spot Batch job queue (null when enable_gp_batch is false)."
+  value       = local.gp_batch_enabled ? aws_batch_job_queue.gp[0].name : null
+}
+
+output "gp_job_definition_names" {
+  description = "Map of GP job-definition size tier => job-definition name ({ s, m, l, xl }); null when enable_gp_batch is false."
+  value       = local.gp_batch_enabled ? { for tier, jd in aws_batch_job_definition.gp : tier => jd.name } : null
+}
+
+output "gp_compute_environment_name" {
+  description = "Name of the GP Fargate Spot Batch compute environment (null when enable_gp_batch is false)."
+  value       = local.gp_batch_enabled ? aws_batch_compute_environment.gp[0].name : null
+}
+
 output "gp_job_role_arn" {
   description = "ARN of the IAM role the running GP container assumes (task/job role)."
   value       = local.gp_batch_enabled ? aws_iam_role.batch_job[0].arn : null
@@ -420,4 +445,9 @@ output "customcode_dotnet_repository_url" {
 output "customcode_dotnet_repository_arn" {
   description = "ARN of the dedicated worker-customcode-dotnet ECR repository (null unless create_worker_customcode_dotnet_repo)."
   value       = var.create_worker_customcode_dotnet_repo ? aws_ecr_repository.worker_customcode_dotnet[0].arn : null
+}
+
+output "lambda_architectures" {
+  description = "Instruction-set architectures of the Honua Lambda function."
+  value       = aws_lambda_function.this.architectures
 }

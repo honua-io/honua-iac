@@ -101,6 +101,11 @@ mock_provider "random" {}
 mock_provider "null" {}
 
 variables {
+  # A reachable cell: without an ingress list or certificate the root's
+  # alb_reachable_from_outside_vpc check fails, which terraform test reports
+  # as a failed run. 203.0.113.0/24 is TEST-NET-3 (RFC 5737).
+  allow_http_ingress_cidrs = ["203.0.113.10/32"]
+
   operation_key_ring_certificate_secret_kms_key_arn = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000002"
   operation_key_ring_certificate_secret_arn         = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
   honua_image                                       = "ghcr.io/honua-io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
