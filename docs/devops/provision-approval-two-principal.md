@@ -1,3 +1,9 @@
+---
+type: guide
+title: "Approve provisioning with two principals"
+description: "Split provision-approval receipts across a GenerateMac-only approver role and a VerifyMac-only cell role, and the owner steps to turn it on."
+tags: [aws, kms, approval, provisioning]
+---
 # Provision approvals with two principals
 
 honua-devops refuses a Terraform `apply` or `destroy` through
