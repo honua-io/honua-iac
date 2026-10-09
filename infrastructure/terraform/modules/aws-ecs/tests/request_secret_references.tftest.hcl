@@ -237,3 +237,43 @@ run "a_secret_arn_with_an_open_account_is_rejected" {
 
   expect_failures = [var.request_secret_reference_secret_arns]
 }
+
+# Browser origins (honua-server cloud-deployments guide: Cors__AllowedOrigins__0
+# is required for Console/Studio). Nothing by default; supplied origins render
+# as indexed variables in list order on the primary and the canary.
+run "no_cors_origin_is_rendered_by_default" {
+  command = plan
+
+  assert {
+    condition     = length([for entry in local.primary_container_environment : entry.name if startswith(entry.name, "Cors__")]) == 0
+    error_message = "API-only cells need no CORS origin; none may be rendered by default."
+  }
+}
+
+run "cors_origins_render_as_indexed_variables" {
+  command = plan
+
+  variables {
+    cors_allowed_origins = ["https://console.example.com", "https://studio.example.com"]
+  }
+
+  assert {
+    condition = {
+      for entry in local.primary_container_environment : entry.name => entry.value if startswith(entry.name, "Cors__")
+      } == {
+      Cors__AllowedOrigins__0 = "https://console.example.com"
+      Cors__AllowedOrigins__1 = "https://studio.example.com"
+    }
+    error_message = "The primary container must carry the origins as Cors__AllowedOrigins__<n> in list order."
+  }
+
+  assert {
+    condition = {
+      for entry in local.canary_container_environment : entry.name => entry.value if startswith(entry.name, "Cors__")
+      } == {
+      Cors__AllowedOrigins__0 = "https://console.example.com"
+      Cors__AllowedOrigins__1 = "https://studio.example.com"
+    }
+    error_message = "The canary container must carry the same origins."
+  }
+}

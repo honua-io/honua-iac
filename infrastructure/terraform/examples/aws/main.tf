@@ -71,11 +71,28 @@ module "honua" {
   allow_https_ingress_cidrs        = local.install_net_https
   allow_http_ingress_cidrs         = local.install_net_http
   waf_web_acl_arn                  = var.waf_web_acl_arn
+  cors_allowed_origins             = var.cors_allowed_origins
   tags                             = var.tags
 
   additional_env = {
     HONUA_SERVE_ADMIN_UI    = "true"
     HONUA_ADMIN_UI          = "true"
     HostValidation__Enabled = "false"
+  }
+}
+
+# The ALB admits only in-VPC traffic unless an ingress list is set. With both
+# lists empty and no TLS certificate, apply succeeds but nothing outside the VPC
+# can reach the service, which is how release cells "passed" while unreachable.
+# A warning, not an error: an internal-only deployment is a legitimate choice.
+check "alb_reachable_from_outside_vpc" {
+  assert {
+    condition = (
+      length(local.install_net_http) > 0 ||
+      length(local.install_net_https) > 0 ||
+      var.alb_certificate_arn != "" ||
+      (var.domain_name != "" && var.route53_zone_id != "")
+    )
+    error_message = "allow_http_ingress_cidrs and allow_https_ingress_cidrs are both empty and no certificate is configured (alb_certificate_arn, or domain_name + route53_zone_id): the ALB admits only in-VPC traffic, so the service is unreachable from outside the VPC. Set allow_http_ingress_cidrs (for example your runner or office CIDR) or configure HTTPS if that is not intended."
   }
 }

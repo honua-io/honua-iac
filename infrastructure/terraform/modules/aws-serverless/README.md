@@ -40,7 +40,7 @@ module "honua" {
 
 - **ECR image**: Lambda container images must be stored in ECR. Push the Honua Lambda image (`*-lambda-aot` preferred; `*-lambda` debug fallback) to your ECR repository before applying.
 - **PostGIS + PostGIS Raster**: Set `enable_postgis = true` (requires `psql` on the apply machine with network access to RDS). For controlled temporary access from CI/local runners, use `db_additional_ingress_cidrs`.
-- **Migrations**: `skip_migrations` defaults to `true` for serverless. Run migrations out-of-band (e.g. via a one-off ECS task or local `psql`) before first use.
+- **Migrations**: `skip_migrations` defaults to `true` for serverless, so the Lambda never migrates the database. Run migrations out-of-band before first use: run the generic (ECS) server image once against the `db_connection_secret_arn` connection string until `/healthz/ready` answers, then stop it. The deployable root `examples/aws-serverless` publishes the inputs for that step as `migrate_*` outputs; see its README, "Migrations on the serverless root". A server `HONUA_MIGRATE_ONLY` exit mode that makes this a single run-to-completion command is planned for 2026.1.x.
 
 ## Production example
 
@@ -90,7 +90,8 @@ module "honua" {
 | `image_repository_policy_mode` | `"owned"` | `owned` installs (and on destroy deletes) the Lambda retrieval policy on `image`'s repository, which must be in the deploying account and region. `reuse` consumes a shared repository whose owner already authorizes Lambda retrieval and never reads, writes or deletes its policy. See [Image repository policy](#image-repository-policy). |
 | `lambda_memory_size` | 1024 | Lambda memory in MB (128–10240). |
 | `lambda_timeout_seconds` | 30 | Keep at or below 30 (API Gateway limit). |
-| `lambda_architectures` | `["arm64"]` | `arm64` by default; override to `x86_64` only when you explicitly need it. |
+| `lambda_architectures` | `["x86_64"]` | `x86_64` by default, matching the 2026.1 platform manifest (`awsLambdaArchitecture: x86_64`). Use `arm64` only with an independently verified arm64 image. |
+| `cors_allowed_origins` | `[]` | Browser origins (Console/Studio) rendered as `Cors__AllowedOrigins__<n>` and as API Gateway CORS. Empty or `null` configures no CORS; API-only cells need none. |
 | `lambda_alias_name` | `live` | Stable alias used for API Gateway traffic and control-plane rollback. |
 | `lambda_alias_version` | `null` | Optional published version to pin the stable alias to; defaults to the version published by the current apply. |
 | `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster on RDS. **Set to true.** |
@@ -391,7 +392,7 @@ module "honua" {
   # ... existing serverless inputs ...
 
   enable_gp_batch = true
-  gp_batch_image  = var.gp_image_uri   # ECR image for the GP worker; defaults to `image` when empty
+  gp_batch_image  = var.gp_image_uri   # digest-pinned GENERIC (ECS) server image; see note below
 
   # Substrate-level inputs only (defaults shown).
   gp_batch_cpu_architecture = "X86_64"  # or ARM64 (Graviton Spot is cheaper)
@@ -406,6 +407,14 @@ module "honua" {
   gp_batch_data_bucket_enabled = true
 }
 ```
+
+> **Which image for `gp_batch_image`:** the job definitions set no `command` or
+> `entryPoint`, so the Batch container runs the image's own entrypoint. Pass the
+> digest-pinned generic server image (the ECS image, `dotnet Honua.Server.dll`,
+> x86_64 per the 2026.1 manifest), not the Lambda AOT image: the Lambda image's
+> entrypoint is built for the Lambda runtime. Leaving `gp_batch_image` empty
+> falls back to `image` (the Lambda image) and is only correct for images that
+> serve both roles. `gp_batch_cpu_architecture` must match the image.
 
 ### Durable substrate + a POOL of size tiers — NOT per-job terraform
 
@@ -453,7 +462,7 @@ What it creates:
 
 **Cost posture** (budget-tight demo): Fargate Spot is ~70% cheaper than on-demand Fargate; the compute environment scales to zero so you pay only for the seconds a job's container runs (no idle/warm cost). At the 1 vCPU / 2 GB default, a job costs roughly **$0.012/hour** (us-east-1 Fargate Spot ~$0.0096/vCPU-hr + ~$0.00105/GB-hr) — about **$0.012 for a one-hour job, ~$0.003 for a 15-minute job**. Spot interruptions cause Batch to retry per the job-def retry baseline (server overrides per job).
 
-Outputs (the runtime contract; ARNs are opaque config, not variable names): `gp_job_queue_arn`, `gp_job_definition_arns` (map `{ s, m, l, xl }`), `gp_compute_environment_arn`, `gp_job_role_arn`, `gp_execution_role_arn`, `gp_batch_workload_id`, `gp_batch_control_plane_backend_name` (all `null` when disabled), plus `gp_worker_gdal_repository_url` / `worker_gdal_repository_arn` (`null` unless `create_worker_gdal_repo`).
+Outputs (the runtime contract; ARNs are opaque config, not variable names): `gp_job_queue_arn`, `gp_job_queue_name`, `gp_job_definition_arns` (map `{ s, m, l, xl }`), `gp_job_definition_names` (same map, names), `gp_compute_environment_arn`, `gp_compute_environment_name`, `gp_job_role_arn`, `gp_execution_role_arn`, `gp_batch_workload_id`, `gp_batch_control_plane_backend_name` (all `null` when disabled), plus `gp_worker_gdal_repository_url` / `worker_gdal_repository_arn` (`null` unless `create_worker_gdal_repo`).
 
 ## Custom-code (UNTRUSTED user code) on AWS Batch — locked down
 

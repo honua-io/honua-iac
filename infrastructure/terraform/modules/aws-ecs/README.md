@@ -228,6 +228,7 @@ If your Prometheus scrape config uses different job names, override the correspo
 | `enable_nat_gateway` | true | NAT gateways for private subnets (required for outbound). |
 | `log_retention_days` | 365 | CloudWatch log retention. |
 | `kms_key_arn` | `""` | Existing KMS key for logs/secrets. Creates one if empty. |
+| `cors_allowed_origins` | `[]` | Browser origins rendered as `Cors__AllowedOrigins__<n>`. API-only cells need none. See [Browser origins (CORS)](#browser-origins-cors). |
 | `licensing_mode` | `Disabled` | Licensing deployment mode declared as `Licensing__Mode`. `Disabled` is the 2026.1 contract: no license, no capacity metering, every entitlement active. Supplying `pro_license_secret_arn` implies `Enabled`. |
 | `licensing_edition` | `Pro` | Edition declared as `Licensing__Edition` **only when** a license envelope is supplied. Ignored with no envelope. |
 | `pro_license_secret_arn` | `""` | Caller-owned Secrets Manager ARN whose value is the signed license envelope JSON; injected as the ECS secret `Licensing__LicenseContent`. The module never creates, reads or deletes it. |
@@ -278,6 +279,21 @@ set before upgrading; deployments that already rely on request-supplied
 references should set matching entries before moving to an image that includes
 the setting.
 
+## Browser origins (CORS)
+
+Browser clients such as the Honua Console or Studio need their origin on the
+server's CORS allowlist. Set them with the typed `cors_allowed_origins` input;
+each entry is rendered in list order as `Cors__AllowedOrigins__<n>` on the
+primary and canary containers:
+
+```hcl
+cors_allowed_origins = ["https://console.example.com"]
+```
+
+The default is `[]`, which renders nothing. API-only cells, called by SDKs, the
+CLI or server-side clients, need no origins. Set the origins here or through
+`additional_env`, not both, so one source owns the indexes.
+
 ## Licensing
 
 The 2026.1 release ships with licensing **disabled** (operator ruling
@@ -298,9 +314,19 @@ server validates nothing, registers no capacity meter, activates every
 `FeatureCatalog` entitlement, and `GET /api/v1/admin/license` answers
 `mode: disabled`, `edition: Unlicensed-2026.1`, `validationState: Disabled`.
 
-Because the declared mode and the deployed task definition must not disagree,
-`Licensing__*` keys are refused in `additional_env` / `canary_additional_env`;
-use the typed inputs.
+Set the mode with the typed `licensing_mode` input (`"Disabled"`, the default,
+or `"Enabled"`), never through `additional_env`. Because the declared mode and
+the deployed task definition must not disagree, `Licensing__*` keys (including
+`Licensing__Mode`) are refused in `additional_env` / `canary_additional_env` and
+fail the plan; use `licensing_mode` and the `pro_license_*` / `licensing_edition`
+inputs below.
+
+```hcl
+module "honua" {
+  # ...
+  licensing_mode = "Disabled" # rendered as Licensing__Mode; not via additional_env
+}
+```
 
 To supply a license (the 2026.2 path), point `pro_license_secret_arn` at an
 existing Secrets Manager secret holding the signed envelope. The module injects

@@ -58,7 +58,8 @@ Notes:
     credentials are available in the current shell.
   - AWS ECS resolves to the `*-ecs-aot` image family and its Terraform default
     targets x86_64. Lambda resolves to the `*-lambda-aot` image family and
-    targets arm64 by default.
+    the serverless Terraform root defaults to x86_64 (the 2026.1 manifest);
+    an arm64 Lambda tag needs lambda_architectures = ["arm64"].
   - ACA/Functions images are derived from ACR when ACR is configured in the
     source repo.
   - Azure Container Apps and Azure Functions should use amd64 cloud images.

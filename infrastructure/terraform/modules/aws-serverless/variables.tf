@@ -181,9 +181,9 @@ variable "lambda_ephemeral_storage_mb" {
 }
 
 variable "lambda_architectures" {
-  description = "Lambda architectures (x86_64 or arm64)."
+  description = "Lambda architectures (x86_64 or arm64). Defaults to x86_64, the architecture the 2026.1 platform manifest pins for Lambda (awsLambdaArchitecture); set arm64 only with an independently verified arm64 image."
   type        = list(string)
-  default     = ["arm64"]
+  default     = ["x86_64"]
 }
 
 variable "lambda_reserved_concurrent_executions" {
@@ -457,9 +457,9 @@ variable "api_throttle_rate_limit" {
 }
 
 variable "cors_allowed_origins" {
-  description = "List of allowed CORS origins. Set to null to disable CORS."
+  description = "Browser origins allowed to call the API (for example the Honua Console/Studio origin). Each entry is rendered to the server as Cors__AllowedOrigins__<n> and configures API Gateway CORS. Empty (default) or null configures no CORS: API-only cells called by SDKs, the CLI or server-side clients need none."
   type        = list(string)
-  default     = null
+  default     = []
 }
 
 variable "db_engine_version" {

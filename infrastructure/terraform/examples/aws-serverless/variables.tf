@@ -79,9 +79,9 @@ variable "image_repository_policy_mode" {
 }
 
 variable "lambda_architectures" {
-  description = "Lambda architectures for validation. arm64 is the default."
+  description = "Lambda architectures. Defaults to x86_64, the architecture the 2026.1 platform manifest pins for Lambda (awsLambdaArchitecture: x86_64). Set [\"arm64\"] only with an independently verified arm64 image."
   type        = list(string)
-  default     = ["arm64"]
+  default     = ["x86_64"]
 }
 
 variable "lambda_alias_name" {
@@ -146,7 +146,7 @@ variable "redis_connection_cidrs" {
 }
 
 variable "skip_migrations" {
-  description = "Skip migrations on Lambda startup."
+  description = "Skip migrations on Lambda startup (default true). The database must then be migrated out-of-band before serving; the migrate_* outputs carry the inputs for that step (see README, \"Migrations on the serverless root\")."
   type        = bool
   default     = true
 }
@@ -298,6 +298,53 @@ variable "permissions_boundary_arn" {
 
 variable "use_batch_service_linked_role" {
   description = "Use the operator-precreated AWS Batch service-linked role for bounded certification cells."
+  type        = bool
+  default     = false
+}
+
+variable "cors_allowed_origins" {
+  description = "Browser origins allowed to call the API (for example the Honua Console/Studio origin), rendered as Cors__AllowedOrigins__<n> and as API Gateway CORS. Empty (default) configures no CORS; API-only cells need none."
+  type        = list(string)
+  default     = []
+  nullable    = false
+}
+
+# --- GP on AWS Batch (Fargate Spot) -----------------------------------------
+# The Lambda+Batch GA cell: the Lambda serves the API and geoprocessing/import
+# jobs run on a scale-to-zero Fargate Spot Batch queue. Off by default.
+
+variable "enable_gp_batch" {
+  description = "Provision the AWS Batch (Fargate Spot) backend for geoprocessing/import jobs and wire it into the server's ControlPlane execution-workload catalog (the Lambda+Batch cell). Off by default."
+  type        = bool
+  default     = false
+}
+
+variable "gp_batch_image" {
+  description = "Digest-pinned image (registry/repository@sha256:<64 hex>) for the GP Batch job. Use the generic (ECS) server image: the job definitions set no command or entryPoint, so the container runs the image's own entrypoint, and the Lambda AOT image's entrypoint is built for the Lambda runtime. Empty falls back to honua_image_uri, which is only correct for an image that serves both roles."
+  type        = string
+  default     = ""
+}
+
+variable "gp_batch_cpu_architecture" {
+  description = "Fargate CPU architecture for the GP job (X86_64 or ARM64). Must match gp_batch_image. Defaults to X86_64, the architecture the 2026.1 platform manifest pins for the generic ECS image (awsEcsArchitecture: x86_64)."
+  type        = string
+  default     = "X86_64"
+}
+
+variable "gp_batch_max_vcpus" {
+  description = "Maximum aggregate vCPUs the GP Fargate Spot compute environment may scale to. Caps concurrent jobs and cost; scales to zero between jobs."
+  type        = number
+  default     = 16
+}
+
+variable "gp_batch_data_bucket_arn" {
+  description = "Optional S3 bucket ARN the GP job role may read and write. Only used when gp_batch_data_bucket_enabled is true."
+  type        = string
+  default     = ""
+}
+
+variable "gp_batch_data_bucket_enabled" {
+  description = "Grant the GP job role S3 access to gp_batch_data_bucket_arn. A separate plan-time-known flag because the ARN may be unknown until apply; set both together."
   type        = bool
   default     = false
 }

@@ -287,3 +287,38 @@ run "allowlisted_environment_values_travel_to_the_geoprocessing_batch_job" {
     error_message = "The geoprocessing job must receive exactly the additional_env values the environment allowlist permits."
   }
 }
+
+# Browser origins (honua-server cloud-deployments guide: Cors__AllowedOrigins__0
+# is required for Console/Studio). Nothing by default (no server variable and no
+# API Gateway CORS); supplied origins render as indexed variables in list order.
+run "no_cors_origin_is_rendered_by_default" {
+  command = plan
+
+  assert {
+    condition     = length([for key in keys(local.lambda_environment) : key if startswith(key, "Cors__")]) == 0 && length(aws_apigatewayv2_api.this.cors_configuration) == 0
+    error_message = "API-only cells need no CORS; neither the server variable nor API Gateway CORS may be configured by default."
+  }
+}
+
+run "cors_origins_render_as_indexed_variables" {
+  command = plan
+
+  variables {
+    cors_allowed_origins = ["https://console.example.com", "https://studio.example.com"]
+  }
+
+  assert {
+    condition = {
+      for key, value in local.lambda_environment : key => value if startswith(key, "Cors__")
+      } == {
+      Cors__AllowedOrigins__0 = "https://console.example.com"
+      Cors__AllowedOrigins__1 = "https://studio.example.com"
+    }
+    error_message = "The Lambda must carry the origins as Cors__AllowedOrigins__<n> in list order."
+  }
+
+  assert {
+    condition     = toset(aws_apigatewayv2_api.this.cors_configuration[0].allow_origins) == toset(["https://console.example.com", "https://studio.example.com"])
+    error_message = "API Gateway CORS must admit the same origins."
+  }
+}

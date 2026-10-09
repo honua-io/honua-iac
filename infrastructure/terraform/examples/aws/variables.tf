@@ -413,7 +413,7 @@ variable "allow_https_ingress_cidrs" {
 }
 
 variable "allow_http_ingress_cidrs" {
-  description = "CIDRs allowed to reach the ALB over HTTP during validation."
+  description = "CIDRs allowed to reach the ALB over HTTP. With this and allow_https_ingress_cidrs both empty and no certificate, the ALB admits only in-VPC traffic (a plan-time check warns)."
   type        = list(string)
   default     = []
 }
@@ -478,4 +478,11 @@ variable "permissions_boundary_arn" {
   description = "Operator-owned boundary for every workload role in a certification cell."
   type        = string
   default     = null
+}
+
+variable "cors_allowed_origins" {
+  description = "Browser origins allowed to call the API (for example the Honua Console/Studio origin), rendered as Cors__AllowedOrigins__<n>. Empty (default) renders nothing; API-only cells need none."
+  type        = list(string)
+  default     = []
+  nullable    = false
 }

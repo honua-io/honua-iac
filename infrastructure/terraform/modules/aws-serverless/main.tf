@@ -191,6 +191,11 @@ locals {
     ControlPlane__ExecutionWorkloads__0__ParameterEntries__5__Key   = "batch.job_definition_arn.xl"
     ControlPlane__ExecutionWorkloads__0__ParameterEntries__5__Value = aws_batch_job_definition.gp["xl"].arn
   } : {}
+  # Browser origins (honua-server cloud-deployments guide lists
+  # Cors__AllowedOrigins__0 as required for Console/Studio). Indexed in list
+  # order; an empty or null list renders nothing, so API-only cells keep the
+  # server's no-CORS default.
+  cors_environment = { for index, origin in coalesce(var.cors_allowed_origins, []) : "Cors__AllowedOrigins__${index}" => origin }
   # API Gateway is HTTPS-only, but Lambda Web Adapter's final in-process hop is HTTP.
   # Emit HSTS for that trusted topology instead of suppressing it based on the internal scheme.
   lambda_environment = merge({ for i, h in var.additional_allowed_hosts : "HostValidation__AllowedHosts__${i + 1}" => h }, {
@@ -216,7 +221,7 @@ locals {
     ControlPlane__DeployTargets__0__ParameterEntries__1__Value  = var.lambda_alias_name
     ControlPlane__DeployTargets__0__ParameterEntries__2__Key    = "aws.region"
     ControlPlane__DeployTargets__0__ParameterEntries__2__Value  = data.aws_region.current.name
-  }, local.gp_batch_environment, local.amazon_location_environment, var.additional_env, local.redis_secret_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment)
+  }, local.gp_batch_environment, local.amazon_location_environment, var.additional_env, local.redis_secret_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment)
 }
 
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
@@ -775,7 +780,7 @@ resource "aws_apigatewayv2_api" "this" {
   protocol_type = "HTTP"
 
   dynamic "cors_configuration" {
-    for_each = var.cors_allowed_origins != null ? [1] : []
+    for_each = length(coalesce(var.cors_allowed_origins, [])) > 0 ? [1] : []
     content {
       allow_origins = var.cors_allowed_origins
       allow_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]

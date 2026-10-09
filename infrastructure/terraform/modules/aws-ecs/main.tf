@@ -88,6 +88,11 @@ locals {
     { for index, value in var.request_secret_reference_allowed_environment_variable_prefixes : "Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__${index}" => value },
     { for index, value in var.request_secret_reference_allowed_secret_reference_prefixes : "Security__RequestSecretReferences__AllowedSecretReferencePrefixes__${index}" => value },
   )
+  # Browser origins (honua-server cloud-deployments guide lists
+  # Cors__AllowedOrigins__0 as required for Console/Studio). Indexed in list
+  # order; an empty list renders nothing, so API-only cells keep the server's
+  # no-CORS default.
+  cors_environment = { for index, origin in var.cors_allowed_origins : "Cors__AllowedOrigins__${index}" => origin }
   runtime_environment = merge({
     Deployment__Mode      = var.deployment_mode
     FileStorage__Provider = var.file_storage_provider
@@ -95,7 +100,7 @@ locals {
     FileStorage__AwsS3__BucketName = var.file_storage_aws_s3_bucket_name
     FileStorage__AwsS3__Region     = local.file_storage_aws_s3_region
     FileStorage__AwsS3__KeyPrefix  = var.file_storage_aws_s3_key_prefix
-  } : {}, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment)
+  } : {}, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment)
   primary_container_environment = [
     for key, value in merge(var.additional_env, local.runtime_environment) : {
       name  = key

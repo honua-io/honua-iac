@@ -376,6 +376,13 @@ variable "waf_web_acl_arn" {
   default     = ""
 }
 
+variable "cors_allowed_origins" {
+  description = "Browser origins allowed to call the API (for example the Honua Console/Studio origin). Each entry is rendered to the primary and canary containers as Cors__AllowedOrigins__<n> in list order. Empty (default) renders nothing: API-only cells called by SDKs, the CLI or server-side clients need none. Set the origins here or through additional_env, not both."
+  type        = list(string)
+  default     = []
+  nullable    = false
+}
+
 variable "additional_env" {
   description = "Additional environment variables for the container."
   type        = map(string)

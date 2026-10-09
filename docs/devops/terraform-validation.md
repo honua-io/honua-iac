@@ -133,7 +133,7 @@ Recommended tag shapes:
 - Azure Functions: ACR URI with `*-functions-aot` preferred; `*-functions` is the debug fallback; Functions custom containers are treated as `amd64`
 - AKS: generic multi-arch image tag (`latest-aot` preferred, `latest` debug fallback); Arm node pools should pull the `arm64` variant automatically
 - AWS ECS: ECR URI with `*-ecs-aot` preferred; `*-ecs` is the debug fallback; ECS validation defaults to release-certified `X86_64` (`ARM64` is opt-in and must use an independently verified image)
-- AWS Lambda: ECR URI with concrete `*-lambda-aot-arm64` preferred; `*-lambda-arm64` is the debug fallback; Lambda validation defaults to `arm64`
+- AWS Lambda: ECR URI with a concrete, digest-pinned `*-lambda-aot` image; the `examples/aws-serverless` root defaults `lambda_architectures` to `x86_64`, matching the 2026.1 platform manifest (`awsLambdaArchitecture: x86_64`). An `*-lambda-aot-arm64` image needs `TF_VAR_lambda_architectures='["arm64"]'`
 
 For local runs, prefer explicit script flags instead of exporting image refs as secrets:
 
