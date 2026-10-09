@@ -109,9 +109,10 @@ mock_provider "null" {}
 variables {
   honua_image_uri      = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   honua_admin_password = "Synthetic-Terraform-Test-Admin-4721!aA1"
-  db_password          = "Synthetic-Terraform-Test-Db-4721aA1"
-  redis_enabled        = false
-  enable_postgis       = false
+  # checkov:skip=CKV_SECRET_6: Synthetic test-only database password for mocked providers, not a credential.
+  db_password    = "Synthetic-Terraform-Test-Db-4721aA1"
+  redis_enabled  = false
+  enable_postgis = false
 }
 
 run "defaults_match_the_manifest_and_leave_batch_off" {
