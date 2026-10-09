@@ -125,15 +125,21 @@ does not create; silently defaulting it to the verifier would rebuild the exact
 problem the key exists to remove.
 
 ```bash
+# Release lane: see release-approval.tfvars.example and
+# docs/devops/provision-approval-two-principal.md. Apply aws-release-cells first;
+# it creates both roles this key policy names.
 terraform -chdir=bootstrap/aws-exec-identity apply \
   -var='enable_approval_mac_key=true' \
   -var='approval_signer_role_names=["honua-release-approver"]' \
+  -var='approval_verifier_role_names=["honua-release-cell-provision"]' \
   ...
 
-# Wire the verifier (the honua-devops agent):
+# Wire BOTH the issuer (`honua-devops --issue-provision-approval`, run as the
+# approver role) and the verifier (the honua-devops agent, run as the cell role).
+# The issuer identity is the signer role name.
 export HONUA_DEVOPS_PROVISION_APPROVAL_SIGNING_MODE=kms-mac
-export HONUA_DEVOPS_PROVISION_APPROVAL_ISSUER_KEY_ARNS="release://approver=$(
-  terraform -chdir=bootstrap/aws-exec-identity output -raw approval_mac_key_arn)"
+export HONUA_DEVOPS_PROVISION_APPROVAL_ISSUER_KEY_ARNS="$(
+  terraform -chdir=bootstrap/aws-exec-identity output -raw approval_mac_issuer_key_arns)"
 ```
 
 Rotation is operator-driven: KMS does not offer automatic rotation for HMAC keys,

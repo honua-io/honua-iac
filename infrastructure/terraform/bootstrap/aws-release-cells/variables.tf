@@ -59,3 +59,33 @@ variable "runtime_bedrock_model_arns" {
     error_message = "Supply exact foundation-model or inference-profile ARNs, never wildcards."
   }
 }
+
+variable "approver_role_name" {
+  description = "Role that issues honua-devops provision-approval receipts (kms:GenerateMac only). Pass it to aws-exec-identity approval_signer_role_names."
+  type        = string
+  default     = "honua-release-approver"
+  validation {
+    condition     = can(regex("^honua-release-[a-z0-9-]+$", var.approver_role_name)) && !can(regex("^(honuar|honuan|honuaeks)", var.approver_role_name))
+    error_message = "Keep the approver outside the agent-managed cell namespaces."
+  }
+}
+
+variable "approver_oidc_subject" {
+  description = "Exact GitHub environment subject allowed to assume the approver. Protect that environment with required reviewers; it is the human approval gate."
+  type        = string
+  default     = "repo:honua-io/honua-release:environment:terraform-live-approval"
+  validation {
+    condition     = can(regex("^repo:honua-io/[A-Za-z0-9_.-]+:environment:[A-Za-z0-9_-]+$", var.approver_oidc_subject))
+    error_message = "The approver needs an exact GitHub environment subject (no wildcard, no branch ref)."
+  }
+}
+
+variable "approval_verifier_lane" {
+  description = "Cell lane whose role runs the honua-devops agent that verifies approval receipts (kms:VerifyMac only). Pass that role name to aws-exec-identity approval_verifier_role_names."
+  type        = string
+  default     = "provision"
+  validation {
+    condition     = contains(["provision", "reaper", "mirror"], var.approval_verifier_lane)
+    error_message = "approval_verifier_lane must be a cell lane."
+  }
+}

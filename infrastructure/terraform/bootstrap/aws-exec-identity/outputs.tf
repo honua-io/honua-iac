@@ -59,3 +59,8 @@ output "approval_mac_contract_digest" {
   description = "SHA-256 digest of the canonical approval MAC contract."
   value       = sha256(jsonencode(local.approval_mac_contract))
 }
+
+output "approval_mac_issuer_key_arns" {
+  description = "Ready-made value for honua-devops HONUA_DEVOPS_PROVISION_APPROVAL_ISSUER_KEY_ARNS on BOTH the issuer (approver role) and the verifier (applying agent): `<signer role name>=<key ARN>` per signer, semicolon-separated. The issuer identity is the signer role name. Null when enable_approval_mac_key is false."
+  value       = local.approval_mac_enabled ? join(";", [for name in local.approval_signer_role_names : "${name}=${local.approval_mac_key_arn}"]) : null
+}

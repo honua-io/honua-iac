@@ -12,6 +12,7 @@
 * [Run a failover drill](devops/failover-drill-runbook.md)
 * [Execute the cloud runbooks manually](devops/manual-cloud-runbook-validation.md)
 * [Validate Terraform on demand](devops/terraform-validation.md)
+* [Approve provisioning with two principals](devops/provision-approval-two-principal.md)
 * [Deploy Honua as a platform operator](operator-deployment.md)
 
 ## Concepts
