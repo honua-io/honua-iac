@@ -1,0 +1,30 @@
+# Release-lane provision approvals (2026.1 rc.3 fix unit C1).
+#
+# Apply bootstrap/aws-release-cells FIRST: it creates both roles named below,
+# and the KMS key policy this root writes names their ARNs (KMS rejects a key
+# policy whose principal does not exist).
+#
+#   terraform -chdir=infrastructure/terraform/bootstrap/aws-exec-identity plan \
+#     -var-file=release-approval.tfvars
+#
+# aws_region must equal the release-cells `region`: the cell lane guardrails deny
+# every non-IAM action outside that region, kms:VerifyMac included. Do not set
+# environment to cert/standing/demo: the key carries Environment=<environment>
+# and the cell guardrails deny every action on resources with those tags.
+
+aws_region  = "us-east-1"
+name_prefix = "honua"
+environment = "release"
+
+enable_approval_mac_key = true
+
+# Issuer: kms:GenerateMac only. Reached only from the honua-release GitHub
+# environment `terraform-live-approval` (required reviewers).
+approval_signer_role_names = ["honua-release-approver"]
+
+# Verifier: kms:VerifyMac only. The provision lane role runs the honua-devops
+# agent that checks the receipt and applies the saved plan (honua-iac#208).
+approval_verifier_role_names = ["honua-release-cell-provision"]
+
+# Plus the inputs this root always needs (state_bucket_arn, trust_mode and its
+# federation inputs); see README.md.

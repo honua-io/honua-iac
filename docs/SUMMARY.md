@@ -11,6 +11,7 @@
 * [Prove backups actually restore](devops/backup-restore-runbook.md)
 * [Run a failover drill](devops/failover-drill-runbook.md)
 * [Execute the cloud runbooks manually](devops/manual-cloud-runbook-validation.md)
+* [Approve provisioning with two principals](devops/provision-approval-two-principal.md)
 * [Validate Terraform on demand](devops/terraform-validation.md)
 * [Deploy Honua as a platform operator](operator-deployment.md)
 

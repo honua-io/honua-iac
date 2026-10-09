@@ -123,3 +123,13 @@ but no `Lifecycle=standing`, no SNS subscriptions in us-east-1, and the existing
 The new role policy simulator and hermetic reaper tests do not close the live
 activation, six-cell positive lifecycle, standing-tag apply, or confirmed-alert
 criteria. These remain pre-cut work under #208, not candidate-dependent releases.
+
+## Provision-approval approver
+
+`approval.tf` adds `honua-release-approver`, a fourth OIDC role trusted only by
+the `terraform-live-approval` environment of `honua-io/honua-release`. It is
+denied every action except `kms:GenerateMac`; the provision lane is denied
+`kms:GenerateMac`. The key and the scoped Allows come from
+`bootstrap/aws-exec-identity` (`enable_approval_mac_key`), applied after this
+root. See
+[docs/devops/provision-approval-two-principal.md](../../../../docs/devops/provision-approval-two-principal.md).

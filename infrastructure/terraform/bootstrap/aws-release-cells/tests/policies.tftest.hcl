@@ -79,3 +79,55 @@ run "reject_wildcard_bedrock_boundary" {
   }
   expect_failures = [var.runtime_bedrock_model_arns]
 }
+
+run "approver_is_a_separate_generate_mac_only_principal" {
+  command = plan
+  assert {
+    condition = (
+      jsondecode(aws_iam_role.approver.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:honua-io/honua-release:environment:terraform-live-approval" &&
+      jsondecode(aws_iam_role.approver.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:aud"] == "sts.amazonaws.com" &&
+      length(jsondecode(aws_iam_role.approver.assume_role_policy).Statement) == 1
+    )
+    error_message = "The approver must be assumable only from the protected terraform-live-approval environment."
+  }
+  assert {
+    condition     = aws_iam_role.approver.name == "honua-release-approver" && !contains([for role in aws_iam_role.cell : role.name], aws_iam_role.approver.name)
+    error_message = "The approver must be its own role, not a cell lane."
+  }
+  assert {
+    condition = anytrue([for s in jsondecode(aws_iam_role_policy.approver.policy).Statement :
+    s.Effect == "Deny" && s.NotAction == ["kms:GenerateMac"] && s.Resource == "*" && !can(s.Condition)])
+    error_message = "The approver must be denied every action except kms:GenerateMac."
+  }
+  assert {
+    condition     = alltrue([for s in jsondecode(aws_iam_role_policy.approver.policy).Statement : s.Effect == "Deny"])
+    error_message = "This root grants the approver nothing; the GenerateMac Allow is scoped to the key by aws-exec-identity."
+  }
+  assert {
+    condition = (
+      aws_iam_role_policy.verifier.role == "honua-release-cell-provision" &&
+      anytrue([for s in jsondecode(aws_iam_role_policy.verifier.policy).Statement : s.Effect == "Deny" && s.Action == ["kms:GenerateMac"]])
+    )
+    error_message = "The provision lane verifies receipts and must be denied kms:GenerateMac."
+  }
+  assert {
+    condition     = alltrue([for lane, policy in local.grant_policies : !strcontains(policy, "kms:GenerateMac") && !strcontains(policy, "kms:VerifyMac")])
+    error_message = "No cell lane grant may carry a MAC action; the verifier's VerifyMac comes only from the approval key's own policy."
+  }
+}
+
+run "reject_approver_sharing_a_lane_subject" {
+  command = plan
+  variables {
+    approver_oidc_subject = "repo:honua-io/honua-release:environment:aws-cell-provision"
+  }
+  expect_failures = [aws_iam_role.approver]
+}
+
+run "reject_wildcard_approver_subject" {
+  command = plan
+  variables {
+    approver_oidc_subject = "repo:honua-io/honua-release:*"
+  }
+  expect_failures = [var.approver_oidc_subject]
+}
