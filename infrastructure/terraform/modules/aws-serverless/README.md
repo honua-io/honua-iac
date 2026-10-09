@@ -71,6 +71,8 @@ module "honua" {
   redis_enabled            = true
   redis_node_type          = "cache.r6g.large"
   redis_num_cache_clusters = 2
+  # Required with Redis; see "Redis operation key-ring certificate".
+  operation_key_ring_certificate_secret_arn = var.operation_key_ring_certificate_secret_arn
 
   # Networking
   enable_nat_gateway = true  # Required for outbound access (OIDC, external APIs)
@@ -103,6 +105,8 @@ module "honua" {
 | `redis_enabled` | true | Provision ElastiCache Redis. |
 | `redis_connection_string` | `""` | Reuse an existing Redis connection string instead of provisioning ElastiCache. |
 | `redis_connection_cidrs` | `[]` | Trusted CIDRs for Redis egress when `redis_connection_string` points to an existing endpoint. |
+| `operation_key_ring_certificate_secret_arn` | `""` | **Required whenever Redis is configured.** ARN of an operator-owned Secrets Manager PKCS#12 bundle; see [Redis operation key-ring certificate](#redis-operation-key-ring-certificate). |
+| `operation_key_ring_certificate_secret_kms_key_arn` | `""` | Customer-managed KMS key encrypting that secret; empty for the AWS-managed key. |
 | `enable_nat_gateway` | true | NAT gateways for outbound access. Required for OIDC. |
 | `enable_dashboard` | false | Create a CloudWatch dashboard (Lambda duration/errors/throttles/concurrency, API Gateway, cold-start, and custom Honua metrics). |
 | `enable_xray_tracing` | false | Enable Lambda X-Ray active tracing, grant least-privilege `xray:PutTraceSegments`/sampling reads, and set the app-side `Tracing__XRay__Enabled` flag. |
@@ -127,6 +131,57 @@ module "honua" {
 | `request_secret_reference_kms_key_arns` | `[]` | Customer-managed KMS keys for those secrets, granted `kms:Decrypt` alongside them. |
 
 See `variables.tf` for the complete list.
+
+## Redis operation key-ring certificate
+
+Whenever Redis is configured (`redis_enabled = true`, the default, or a
+caller-owned `redis_connection_string`), the server composes the durable
+operation secret channel and refuses to start without its key-ring certificate.
+Every Redis-backed deployment therefore requires
+`operation_key_ring_certificate_secret_arn`. Omission fails planning with an
+actionable error; Redis-off neither requires nor injects a certificate. The
+example stack forwards the same input and defaults to an empty ARN, so a new
+Redis-on cell fails closed until protected material is supplied. The module does
+not generate a private key in Terraform state or use a shared test key.
+
+The ARN must identify an existing operator-owned Secrets Manager secret. Its
+value must be standard base64 PKCS#12 with a private key, or a JSON bundle
+`{"pkcs12":"<base64>","password":"<PKCS#12 password>"}`. Retain the same
+certificate for the lifetime of the Redis key ring and across function versions
+and alias rollbacks; a new certificate cannot decrypt the old ring. Store and
+rotate it separately from Redis. Never put the bundle, its password, or a
+private key into tfvars or `additional_env` (the module rejects the
+`Operations__SecretChannel__KeyRingCertificate*` keys there).
+
+```hcl
+redis_enabled                             = true
+operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+```
+
+Lambda cannot resolve Secrets Manager into environment variables the way ECS
+task `secrets` do, so the function (and the control-plane event functions that
+share its environment) receives only a reference:
+`Operations__SecretChannel__KeyRingCertificatePkcs12 = "aws:secretsmanager:<arn>"`.
+At startup the server resolves that reference with the function role, writes
+the bundle to a unique private temporary file (Unix mode 0600) and loads its
+certificate; the Redis data-protection ring still requires certificate
+encryption. Use a server image containing that resolution boundary (honua-server
+`StartupConfigurationHelpers.EnsureKeyRingCertificateMaterializedAsync`). No
+secret value is read or written by this module, and the value never appears in
+the Lambda configuration.
+
+The module grants `secretsmanager:GetSecretValue` on exactly this secret to the
+API function role and, when `enable_control_plane_events = true`, to the event
+function role, only while Redis is configured. For a customer-managed
+encryption key, supply `operation_key_ring_certificate_secret_kms_key_arn`; the
+module grants `kms:Decrypt` and `kms:DescribeKey` on that exact key to the API
+function role (the event role already holds `kms:Decrypt`). The operator must
+also ensure the secret resource policy and KMS key policy permit these roles. A
+valid ARN alone does not prove the secret exists, is accessible, or contains
+valid PKCS#12: Terraform checks the input contract without reading the private
+key, and the server rejects missing, inaccessible or invalid content at startup
+(the function never reports ready). The GP Batch job definition carries no Redis
+connection and so needs no certificate.
 
 ## Image repository policy
 

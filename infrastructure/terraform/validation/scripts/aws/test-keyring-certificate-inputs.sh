@@ -12,12 +12,24 @@ if (unset HONUA_AWS_OPERATION_KEY_RING_CERTIFICATE_SECRET_ARN; validate_requeste
   echo "Missing ECS certificate ARN was accepted" >&2
   exit 1
 fi
+STACK=serverless
+SERVERLESS_IMAGE="123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+validate_requested_images
+if (unset HONUA_AWS_OPERATION_KEY_RING_CERTIFICATE_SECRET_ARN; validate_requested_images) >/dev/null 2>&1; then
+  echo "Missing serverless certificate ARN was accepted" >&2
+  exit 1
+fi
 STACK=data
 (unset HONUA_AWS_OPERATION_KEY_RING_CERTIFICATE_SECRET_ARN; validate_requested_images)
 HONUA_ADMIN_PASSWORD=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 HONUA_DB_PASSWORD=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 HTTP_INGRESS_CIDR=127.0.0.1/32
 ECS_NAME_PREFIX=keyring-test
+SERVERLESS_NAME_PREFIX=keyring-test
+ensure_existing_vpc_private_egress() { :; }
+set_serverless_tf_vars
+[[ "$TF_VAR_operation_key_ring_certificate_secret_arn" == "$HONUA_AWS_OPERATION_KEY_RING_CERTIFICATE_SECRET_ARN" ]]
+[[ "$TF_VAR_operation_key_ring_certificate_secret_kms_key_arn" == "$HONUA_AWS_OPERATION_KEY_RING_CERTIFICATE_SECRET_KMS_KEY_ARN" ]]
 set_ecs_tf_vars
 terraform() {
   [[ "$TF_VAR_operation_key_ring_certificate_secret_arn" == "$HONUA_AWS_OPERATION_KEY_RING_CERTIFICATE_SECRET_ARN" ]]
@@ -48,4 +60,4 @@ docker() {
 }
 USE_DOCKER_TF=true
 run_tf version
-printf 'PASS: required ECS certificate input and native/Docker ARN forwarding\n'
+printf 'PASS: required ECS/serverless certificate input and native/Docker ARN forwarding\n'

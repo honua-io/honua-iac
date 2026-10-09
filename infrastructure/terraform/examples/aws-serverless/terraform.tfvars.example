@@ -29,6 +29,18 @@ honua_admin_password = "REPLACE_WITH_STRONG_SECRET_MIN_32_CHARS"
 # Leave unset (null) to let Terraform auto-generate the PostgreSQL password.
 # db_password = null
 
+# ElastiCache Redis is enabled by default, and a Redis-connected server refuses to
+# start without its operation key-ring certificate. Provision an operator-owned
+# Secrets Manager secret separately containing base64 PKCS#12 with a private key,
+# or JSON {pkcs12,password}, and keep it across replacements. Only the ARN goes
+# here: the Lambda receives an aws:secretsmanager: reference and reads the value
+# with its own role. Never put private material in this file.
+# Replace this illustrative complete ARN with the separately provisioned secret.
+operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-west-2:123456789012:secret:REPLACE_WITH_OPERATOR_KEYRING-ABC123"
+# For a customer-managed encryption key, also supply its exact ARN. The module
+# grants the Lambda roles decrypt; the key policy must permit those roles.
+# operation_key_ring_certificate_secret_kms_key_arn = "arn:aws:kms:us-west-2:123456789012:key/00000000-0000-0000-0000-000000000001"
+
 tags = {
   Owner      = "platform"
   CostCentre = "honua"
