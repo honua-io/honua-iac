@@ -129,6 +129,23 @@ alb_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/..."
 
 HTTP-to-HTTPS redirect is enabled by default when a certificate is provided. Disable with `alb_enable_http_redirect = false`.
 
+### TLS termination at the ALB
+
+The ALB terminates TLS and forwards plain HTTP to the task. With any certificate
+(`alb_certificate_arn`, or the managed certificate below) the module sets on
+both the stable and canary task definitions:
+
+| Variable | Value | Why |
+|----------|-------|-----|
+| `SecurityHeaders__HstsHttpsOnly` | `false` | Emit `Strict-Transport-Security` even though the in-VPC hop is HTTP (the same contract as `modules/aws-serverless`). |
+| `ASPNETCORE_FORWARDEDHEADERS_ENABLED` | `true` | Honour the ALB's `X-Forwarded-Proto` and `X-Forwarded-For`, so the request scheme is `https` and the client IP is the caller's. The ALB preserves `Host`. |
+
+The forwarded headers are trusted from any peer because the task security group
+admits the container port only from the ALB security group; ALB node IPs change,
+so a fixed `ForwardedHeaders__KnownProxies__*` list is not usable. Do not attach
+other ingress to the task security group while relying on this. These entries
+take precedence over `additional_env`. Without a certificate nothing is set.
+
 ### ACM with Route 53 (auto-provisioned)
 
 If you own a Route 53 zone, the module can create and validate the certificate for you:
