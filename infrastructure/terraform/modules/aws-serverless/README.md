@@ -94,6 +94,8 @@ module "honua" {
 | `lambda_timeout_seconds` | 30 | Keep at or below 30 (API Gateway limit). |
 | `lambda_architectures` | `["x86_64"]` | `x86_64` by default, matching the 2026.1 platform manifest (`awsLambdaArchitecture: x86_64`). Use `arm64` only with an independently verified arm64 image. |
 | `cors_allowed_origins` | `[]` | Browser origins (Console/Studio) rendered as `Cors__AllowedOrigins__<n>` and as API Gateway CORS. Empty or `null` configures no CORS; API-only cells need none. |
+| `domain_name` | `""` | Optional custom API hostname (for example `<run label>.cert.demo.honua.io`). With `route53_zone_id`, creates the certificate, API Gateway custom domain, mapping and alias described in [Custom domain](#custom-domain). Same input as `modules/aws-ecs`. |
+| `route53_zone_id` | `""` | Route53 hosted zone that owns `domain_name`, for certificate validation and the alias record. Set together with `domain_name`; one without the other creates nothing and fails the `custom_domain_inputs` check. |
 | `lambda_alias_name` | `live` | Stable alias used for API Gateway traffic and control-plane rollback. |
 | `lambda_alias_version` | `null` | Optional published version to pin the stable alias to; defaults to the version published by the current apply. |
 | `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster on RDS. **Set to true.** |
@@ -645,6 +647,63 @@ a server-side change, for example a single `aws:secretsmanager:` reference to a
 JSON settings bundle that the server expands into configuration at startup; the
 server has no such source today.
 
+## Custom domain
+
+Lambda cells take the same per-cell domain inputs as the ECS module
+(`modules/aws-ecs`: `domain_name`, `route53_zone_id`), so browser clients
+whose CSP admits only HTTPS hosts under your own domain (for example the
+honua-site demo scenarios) can reach a Lambda cell. With both set, the module
+creates and owns:
+
+| Resource | Purpose |
+|----------|---------|
+| `aws_acm_certificate.api` | Certificate for `domain_name`, DNS-validated. |
+| `aws_route53_record.api_cert_validation` | Validation CNAME(s) in `route53_zone_id`. |
+| `aws_acm_certificate_validation.api` | Waits for issuance before the domain is created. |
+| `aws_apigatewayv2_domain_name.this` | `REGIONAL` API Gateway custom domain, `TLS_1_2` policy. |
+| `aws_apigatewayv2_api_mapping.this` | Maps the domain to the HTTP API's `$default` stage. |
+| `aws_route53_record.api_alias` | Alias `A` record `domain_name` -> the custom domain's regional target. |
+
+`terraform destroy` removes all of them, so a teardown that checks the cell's
+own certificate and DNS records finds nothing left. The execute-api endpoint
+stays enabled (`api_endpoint`); `service_url` becomes `https://<domain_name>`
+(else it equals `api_endpoint`), and `custom_domain_url`,
+`custom_domain_name`, `custom_domain_alias_fqdn` and
+`custom_domain_certificate_arn` are set (else `null`). The Lambda function,
+its alias and any Function URL are unchanged.
+
+Server settings behind the custom domain, compared with the ECS module's
+`alb_tls_environment`:
+
+- **Host validation.** The Lambda allowlists `*.execute-api.<region>.amazonaws.com`.
+  API Gateway passes the client's `Host` (the custom domain) in the event and
+  Lambda Web Adapter replays it, so the module appends `domain_name` to
+  `HostValidation__AllowedHosts__<n>` (after `additional_allowed_hosts`,
+  without duplicating it). This is the one Lambda environment entry the domain
+  adds; it counts against the [4 KB budget](#lambda-environment-budget).
+- **HSTS.** `SecurityHeaders__HstsHttpsOnly = "false"` is already set on every
+  Lambda (API Gateway is HTTPS-only and Lambda Web Adapter's last hop is HTTP),
+  which matches what ECS sets once its ALB terminates TLS.
+- **Forwarded headers.** API Gateway sets `X-Forwarded-Proto: https` and Lambda
+  Web Adapter forwards it, but `ASPNETCORE_FORWARDEDHEADERS_ENABLED` is not set
+  here, on the custom domain or on execute-api. honua-server builds absolute
+  links from `Public:BaseUrl` / `PUBLIC_BASE_URL`, never from the request host
+  or scheme, and HSTS does not depend on the scheme here, so the domain does not
+  need it. Set `Public__BaseUrl` through `additional_env` if clients need
+  absolute links on the custom domain (as on ECS).
+- **CORS.** `cors_allowed_origins` configures the API Gateway API itself and
+  `Cors__AllowedOrigins__<n>`, so it behaves the same on the custom domain and
+  on execute-api. List the browser origins (Console, site), not the API domain.
+
+```hcl
+module "honua" {
+  source = "../../modules/aws-serverless"
+  # ...
+  domain_name     = "run-123.cert.demo.honua.io"
+  route53_zone_id = "Z0123456789ABCDEFGHIJ"
+}
+```
+
 ## Constraints
 
 - **API Gateway timeout**: HTTP API has a 30-second max integration timeout. Keep `lambda_timeout_seconds` in sync.
@@ -653,7 +712,7 @@ server has no such source today.
 
 ## Outputs
 
-See `outputs.tf` for the API endpoint URL, RDS connection string, and secret
+See `outputs.tf` and `custom-domain.tf` for the API endpoint URL (`api_endpoint`, and `service_url`, which is the custom domain when one is configured), RDS connection string, and secret
 references. `admin_password_secret_arn` is the always-present, non-sensitive
 string ARN of the module-managed admin-password secret. Treat it as opaque and
 pass it directly to consumers: AWS appends a random suffix to Secrets Manager

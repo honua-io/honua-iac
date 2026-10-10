@@ -296,7 +296,7 @@ locals {
   #   TargetName (the same function name), aws.lambda.alias_name to "live", and
   #   aws.region to the SDK default, i.e. the AWS_REGION Lambda sets. A
   #   non-default alias is still passed.
-  lambda_environment = merge({ for i, h in var.additional_allowed_hosts : "HostValidation__AllowedHosts__${i + 1}" => h },
+  lambda_environment = merge({ for i, h in local.lambda_additional_allowed_hosts : "HostValidation__AllowedHosts__${i + 1}" => h },
     var.skip_migrations ? { HONUA_SKIP_MIGRATIONS = "true" } : {},
     var.serve_admin_ui ? { HONUA_SERVE_ADMIN_UI = "true", HONUA_ADMIN_UI = "true" } : {},
     {

@@ -62,6 +62,25 @@ Honua Console or Studio, that may call the API. Each entry becomes
 `Cors__AllowedOrigins__<n>` on the server and an API Gateway CORS origin. API-only
 cells called by SDKs, the CLI or server-side clients need none.
 
+## Custom domain
+
+The root takes the ECS root's custom-domain inputs under the same names and
+passes them to the module (see the module's
+[Custom domain](../../modules/aws-serverless/README.md#custom-domain) section):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `domain_name` | `""` | Custom API hostname, for example `<run label>.cert.demo.honua.io`. Set together with `route53_zone_id`. |
+| `route53_zone_id` | `""` | Route53 hosted zone that owns `domain_name`; the module validates the ACM certificate and creates the alias record there. |
+
+With both set, `honua_url` and the deploy contract's `endpoint` are
+`https://<domain_name>`; without them they are the execute-api endpoint. The
+root also outputs `api_endpoint` (always the execute-api endpoint),
+`custom_domain_url`, `custom_domain_alias_fqdn` and
+`custom_domain_certificate_arn` (`null` without a domain). The certificate,
+validation records, API Gateway custom domain and alias record belong to this
+root's state and are removed by `terraform destroy`.
+
 ## Migrations on the serverless root
 
 `skip_migrations` defaults to `true`: concurrent Lambda cold starts must not race
