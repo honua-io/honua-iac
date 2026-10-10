@@ -95,8 +95,9 @@ resource "aws_iam_role_policy_attachment" "control_plane_events_vpc" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
-# Same secret grants the API host gets (DB connection string, admin/master key,
-# redis connection, pro license) so the reconcile host builds its DI exactly like
+# Same secret grants the API host gets (local.lambda_secret_arns: DB connection
+# string, admin password, connection-encryption master key, redis connection, pro
+# license, key-ring certificate, audit-chain key) so the reconcile host builds its DI exactly like
 # the API host, plus batch:DescribeJobs to observe Batch job transitions.
 #checkov:skip=CKV_AWS_355: KMS Decrypt/GenerateDataKey target the AWS-managed Secrets Manager key, whose ARN is not knowable in-module; no CMK var/resource exists to scope the resource to.
 #checkov:skip=CKV_AWS_290: The KMS grant is limited to Decrypt/GenerateDataKey on the unscopable AWS-managed Secrets Manager key (reading the Honua secrets), not unconstrained write/admin access.
@@ -113,12 +114,11 @@ resource "aws_iam_role_policy" "control_plane_events" {
         Sid    = "ReadHonuaSecrets"
         Effect = "Allow"
         Action = ["secretsmanager:GetSecretValue"]
-        Resource = concat(compact([
-          aws_secretsmanager_secret.connection_string.arn,
-          aws_secretsmanager_secret.admin_password.arn,
-          local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null,
-          local.pro_license_effective_secret_arn
-        ]), local.operation_key_ring_certificate_secret_arns, local.audit_chain_key_secret_arns)
+        # Exactly the API role's set (local.lambda_secret_arns, main.tf): these
+        # functions run with local.lambda_environment, so every aws:secretsmanager:
+        # reference in it, including the connection-encryption master key, must
+        # resolve with this role too.
+        Resource = local.lambda_secret_arns
       },
       {
         # DescribeJobs does not support resource-level scoping in IAM; the

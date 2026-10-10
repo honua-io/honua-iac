@@ -126,6 +126,18 @@ locals {
   } : {}
   audit_chain_key_secret_arns  = var.audit_chain_key_secret_arn != "" ? [var.audit_chain_key_secret_arn] : []
   audit_chain_key_kms_key_arns = var.audit_chain_key_secret_arn != "" && var.audit_chain_key_secret_kms_key_arn != "" ? [var.audit_chain_key_secret_kms_key_arn] : []
+  # Every secret local.lambda_environment references. The API Lambda role and the
+  # control-plane event Lambda role compose the same DI from that environment,
+  # so both read exactly this list; a secret granted to one but not the other
+  # crashes the other at init (honua-release e2e-cloud-aws run 38066103745: the
+  # event functions could not read the connection-encryption master key).
+  lambda_secret_arns = concat(compact([
+    aws_secretsmanager_secret.connection_string.arn,
+    aws_secretsmanager_secret.admin_password.arn,
+    aws_secretsmanager_secret.master_key.arn,
+    local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null,
+    local.pro_license_effective_secret_arn
+  ]), local.operation_key_ring_certificate_secret_arns, local.audit_chain_key_secret_arns)
   # Lambda environment budget: AWS Lambda rejects a function whose environment
   # (every key and value) exceeds 4 KB, and the reference VALUES dominate it. A
   # full Secrets Manager ARN costs 59 bytes more than the secret's name
@@ -686,13 +698,7 @@ resource "aws_iam_policy" "lambda_secrets" {
         Action = [
           "secretsmanager:GetSecretValue"
         ]
-        Resource = concat(compact([
-          aws_secretsmanager_secret.connection_string.arn,
-          aws_secretsmanager_secret.admin_password.arn,
-          aws_secretsmanager_secret.master_key.arn,
-          local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null,
-          local.pro_license_effective_secret_arn
-        ]), local.operation_key_ring_certificate_secret_arns, local.audit_chain_key_secret_arns)
+        Resource = local.lambda_secret_arns
       }
       ], length(concat(local.operation_key_ring_certificate_kms_key_arns, local.audit_chain_key_kms_key_arns)) > 0 ? [{
         Effect   = "Allow"
