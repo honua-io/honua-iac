@@ -82,19 +82,16 @@ resource "aws_acm_certificate" "api" {
   }
 }
 
+# Keyed by the certificate's (only) domain, which is known at plan time, rather
+# than by domain_validation_options, which a first plan may not know yet; the
+# record values are looked up from the options at apply.
 resource "aws_route53_record" "api_cert_validation" {
-  for_each = local.use_custom_domain ? {
-    for dvo in aws_acm_certificate.api[0].domain_validation_options : dvo.domain_name => {
-      name   = dvo.resource_record_name
-      record = dvo.resource_record_value
-      type   = dvo.resource_record_type
-    }
-  } : {}
+  for_each = local.use_custom_domain ? toset([var.domain_name]) : toset([])
 
   zone_id = var.route53_zone_id
-  name    = each.value.name
-  type    = each.value.type
-  records = [each.value.record]
+  name    = one([for dvo in aws_acm_certificate.api[0].domain_validation_options : dvo.resource_record_name if dvo.domain_name == each.key])
+  type    = one([for dvo in aws_acm_certificate.api[0].domain_validation_options : dvo.resource_record_type if dvo.domain_name == each.key])
+  records = [one([for dvo in aws_acm_certificate.api[0].domain_validation_options : dvo.resource_record_value if dvo.domain_name == each.key])]
   ttl     = 60
 }
 

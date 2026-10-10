@@ -168,13 +168,6 @@ run "domain_creates_certificate_custom_domain_mapping_and_alias" {
     values = {
       id  = "honuarawsse380460-it.cert.demo.honua.io"
       arn = "arn:aws:apigateway:us-east-1::/domainnames/honuarawsse380460-it.cert.demo.honua.io"
-      domain_name_configuration = [{
-        certificate_arn    = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
-        endpoint_type      = "REGIONAL"
-        security_policy    = "TLS_1_2"
-        target_domain_name = "d-abcdefghij.execute-api.us-east-1.amazonaws.com"
-        hosted_zone_id     = "Z1UJRXOUMOOFQ8"
-      }]
     }
   }
 
@@ -216,8 +209,8 @@ run "domain_creates_certificate_custom_domain_mapping_and_alias" {
       aws_route53_record.api_alias[0].zone_id == "Z089181827C9GKIKHXUTT" &&
       aws_route53_record.api_alias[0].name == "honuarawsse380460-it.cert.demo.honua.io" &&
       aws_route53_record.api_alias[0].type == "A" &&
-      one(aws_route53_record.api_alias[0].alias).name == "d-abcdefghij.execute-api.us-east-1.amazonaws.com" &&
-      one(aws_route53_record.api_alias[0].alias).zone_id == "Z1UJRXOUMOOFQ8"
+      one(aws_route53_record.api_alias[0].alias).name == aws_apigatewayv2_domain_name.this[0].domain_name_configuration[0].target_domain_name &&
+      one(aws_route53_record.api_alias[0].alias).zone_id == aws_apigatewayv2_domain_name.this[0].domain_name_configuration[0].hosted_zone_id
     )
     error_message = "The Route53 alias must point domain_name at the API Gateway custom domain's regional target."
   }

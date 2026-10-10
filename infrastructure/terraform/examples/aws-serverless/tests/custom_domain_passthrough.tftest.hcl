@@ -140,6 +140,26 @@ run "domain_inputs_pass_through_and_honua_url_is_https" {
     route53_zone_id = "Z089181827C9GKIKHXUTT"
   }
 
+  override_resource {
+    target = module.honua.aws_acm_certificate.api
+    values = {
+      arn = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
+      domain_validation_options = [{
+        domain_name           = "honuarawsse380460-it.cert.demo.honua.io"
+        resource_record_name  = "_abc.honuarawsse380460-it.cert.demo.honua.io."
+        resource_record_type  = "CNAME"
+        resource_record_value = "_def.acm-validations.aws."
+      }]
+    }
+  }
+
+  override_resource {
+    target = module.honua.aws_apigatewayv2_domain_name.this
+    values = {
+      id = "honuarawsse380460-it.cert.demo.honua.io"
+    }
+  }
+
   assert {
     condition     = output.honua_url == "https://honuarawsse380460-it.cert.demo.honua.io" && output.custom_domain_url == output.honua_url
     error_message = "With domain_name and route53_zone_id honua_url must be the https custom domain."
