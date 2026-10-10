@@ -317,7 +317,7 @@ jobs:
           # root's other test files run separately.
           terraform -chdir=infrastructure/terraform/examples/aws test -json -verbose -filter=tests/deployment_safety.tftest.hcl > "$RUNNER_TEMP/aws-safety-tests.jsonl"
           node infrastructure/terraform/validation/scripts/shared/test-deployment-safety-output.mjs "$RUNNER_TEMP/aws-safety-tests.jsonl"
-          terraform -chdir=infrastructure/terraform/examples/aws test -no-color -filter=tests/operations_policy_passthrough.tftest.hcl
+          terraform -chdir=infrastructure/terraform/examples/aws test -no-color -filter=tests/operations_policy_passthrough.tftest.hcl -filter=tests/http_redirect_passthrough.tftest.hcl
           terraform -chdir=infrastructure/terraform/modules/aws-serverless test -no-color
           terraform -chdir=infrastructure/terraform/examples/aws-serverless test -no-color
           terraform -chdir=infrastructure/terraform/modules/azure-aca test -no-color

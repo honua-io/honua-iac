@@ -24,6 +24,9 @@ module input/output contracts may still change.
   operation (for example `service.publish`) until a rule allows it, so an
   install needs rules before operations can run. `decision` is validated
   against `Allow`, `RequireApproval`, `DryRunFirst` and `Deny`.
+- `examples/aws` exposes the module's `alb_enable_http_redirect` (default
+  `true`, as in the module), and `aws-ecs` outputs
+  `alb_http_redirect_enabled`.
 
 ### Fixed
 

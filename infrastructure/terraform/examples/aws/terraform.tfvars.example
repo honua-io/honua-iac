@@ -40,6 +40,9 @@ honua_connection_encryption_master_key = null
 # Optional: bring your own ACM certificate instead of Terraform-managed validation.
 # alb_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/REPLACE"
 
+# With HTTPS, redirect port 80 to HTTPS (default true); false closes port 80.
+# alb_enable_http_redirect = true
+
 # ElastiCache Redis (enabled by default; required for /healthz/ready in Production).
 # redis_enabled = true
 
