@@ -163,7 +163,7 @@ run "redis_on_passes_only_a_secret_reference" {
   }
 
   assert {
-    condition     = aws_lambda_function.this.environment[0].variables["Operations__SecretChannel__KeyRingCertificatePkcs12"] == "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+    condition     = aws_lambda_function.this.environment[0].variables["Operations__SecretChannel__KeyRingCertificatePkcs12"] == "aws:secretsmanager:operator-keyring"
     error_message = "The Lambda must carry the key-ring certificate as an aws:secretsmanager: reference the server resolves with the function role."
   }
 
@@ -218,7 +218,7 @@ run "control_plane_event_functions_can_read_the_certificate" {
   # The event functions share the API host's environment, so they carry the same
   # reference and need the same read grant.
   assert {
-    condition     = aws_lambda_function.control_plane_reconcile[0].environment[0].variables["Operations__SecretChannel__KeyRingCertificatePkcs12"] == "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+    condition     = aws_lambda_function.control_plane_reconcile[0].environment[0].variables["Operations__SecretChannel__KeyRingCertificatePkcs12"] == "aws:secretsmanager:operator-keyring"
     error_message = "The reconcile function must carry the same certificate reference as the API function."
   }
 

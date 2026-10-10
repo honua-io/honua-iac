@@ -147,9 +147,15 @@ run "redis_on_gp_job_carries_redis_and_key_ring_references" {
   assert {
     condition = alltrue([
       for tier, jd in aws_batch_job_definition.gp :
-      one([for e in jsondecode(jd.container_properties).environment : e.value if e.name == "ConnectionStrings__redis"]) == aws_lambda_function.this.environment[0].variables["ConnectionStrings__redis"]
+      # Same secret: the job definition by ARN, the Lambda by name (4 KB environment cap).
+      one([for e in jsondecode(jd.container_properties).environment : e.value if e.name == "ConnectionStrings__redis"]) == "aws:secretsmanager:${aws_secretsmanager_secret.redis_connection[0].arn}"
     ])
     error_message = "Every GP job-definition tier must carry the same ConnectionStrings__redis reference as the Lambda."
+  }
+
+  assert {
+    condition     = aws_lambda_function.this.environment[0].variables["ConnectionStrings__redis"] == "aws:secretsmanager:${aws_secretsmanager_secret.redis_connection[0].name}"
+    error_message = "The Lambda must reference the same Redis secret, by name."
   }
 
   assert {

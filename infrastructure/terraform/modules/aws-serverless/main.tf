@@ -126,6 +126,61 @@ locals {
   } : {}
   audit_chain_key_secret_arns  = var.audit_chain_key_secret_arn != "" ? [var.audit_chain_key_secret_arn] : []
   audit_chain_key_kms_key_arns = var.audit_chain_key_secret_arn != "" && var.audit_chain_key_secret_kms_key_arn != "" ? [var.audit_chain_key_secret_kms_key_arn] : []
+  # Lambda environment budget: AWS Lambda rejects a function whose environment
+  # (every key and value) exceeds 4 KB, and the reference VALUES dominate it. A
+  # full Secrets Manager ARN costs 59 bytes more than the secret's name
+  # ("arn:aws:secretsmanager:<region>:<account>:secret:" plus "-XXXXXX"), so
+  # the Lambda functions carry aws:secretsmanager:<name> where that is
+  # unambiguous. The server hands everything after the prefix to GetSecretValue
+  # as SecretId (AwsSecretsManagerResolver, AwsSecretsManagerLicenseContentResolver)
+  # and, for a non-ARN id, signs for the AWS_REGION Lambda always sets, so a
+  # same-account, same-region name resolves the same secret. IAM is evaluated
+  # against the secret's ARN either way, so the grants below are unchanged.
+  #
+  # A name is used only when it cannot be mistaken for a partial ARN: Secrets
+  # Manager warns that a name ending in "-" plus six characters can be confused
+  # with its random ARN suffix, so such names (e.g. "<name>/connection-string") keep the full ARN. Operator ARNs
+  # are shortened only when they are in this account and region. The GP Batch
+  # job definitions keep full ARNs (no 4 KB cap there).
+  secret_arn_parts      = "^arn:[^:]+:secretsmanager:([^:]+):([0-9]{12}):secret:(.+)-[A-Za-z0-9]{6}$"
+  ambiguous_secret_name = "-[A-Za-z0-9]{6}$"
+  lambda_operator_secret_ids = {
+    for arn in compact([
+      var.operation_key_ring_certificate_secret_arn,
+      var.audit_chain_key_secret_arn,
+      local.pro_license_adopted ? trimspace(var.pro_license_secret_arn) : "",
+      ]) : arn => try(
+      regex(local.secret_arn_parts, arn)[0] == data.aws_region.current.name &&
+      regex(local.secret_arn_parts, arn)[1] == data.aws_caller_identity.current.account_id &&
+      !can(regex(local.ambiguous_secret_name, regex(local.secret_arn_parts, arn)[2]))
+      ? regex(local.secret_arn_parts, arn)[2] : arn,
+      arn
+    )
+  }
+  lambda_module_secret_ids = {
+    for key, secret in merge(
+      {
+        connection_string = aws_secretsmanager_secret.connection_string
+        admin_password    = aws_secretsmanager_secret.admin_password
+        master_key        = aws_secretsmanager_secret.master_key
+      },
+      local.redis_connection != "" ? { redis_connection = aws_secretsmanager_secret.redis_connection[0] } : {},
+      local.pro_license_manage_secret ? { pro_license = aws_secretsmanager_secret.pro_license[0] } : {},
+    ) : key => can(regex(local.ambiguous_secret_name, secret.name)) ? secret.arn : secret.name
+  }
+  # Same keys and precedence as the ARN-valued *_environment locals above, which
+  # the GP Batch job definitions keep using.
+  lambda_secret_reference_environment = merge(
+    local.redis_connection != "" ? {
+      ConnectionStrings__redis = "aws:secretsmanager:${local.lambda_module_secret_ids.redis_connection}"
+    } : {},
+    local.redis_enabled && var.operation_key_ring_certificate_secret_arn != "" ? {
+      Operations__SecretChannel__KeyRingCertificatePkcs12 = "aws:secretsmanager:${local.lambda_operator_secret_ids[var.operation_key_ring_certificate_secret_arn]}"
+    } : {},
+    var.audit_chain_key_secret_arn != "" ? {
+      AuditLog__ChainVerification__Key = "aws:secretsmanager:${local.lambda_operator_secret_ids[var.audit_chain_key_secret_arn]}"
+    } : {},
+  )
   xray_environment = var.enable_xray_tracing ? {
     Tracing__XRay__Enabled = "true"
   } : {}
@@ -160,7 +215,7 @@ locals {
     null
   )
   pro_license_environment = local.pro_license_enabled ? {
-    Licensing__LicenseContentSecretRef                  = "aws:secretsmanager:${local.pro_license_effective_secret_arn}"
+    Licensing__LicenseContentSecretRef                  = "aws:secretsmanager:${local.pro_license_adopted ? local.lambda_operator_secret_ids[trimspace(var.pro_license_secret_arn)] : local.lambda_module_secret_ids.pro_license}"
     "Licensing__TrustedKeys__${var.pro_license_key_id}" = var.pro_license_trusted_public_key
   } : {}
   # Licensing deployment mode (operator ruling, 2026-09-12; honua-server #4721).
@@ -188,11 +243,21 @@ locals {
     { for index, value in var.request_secret_reference_allowed_secret_reference_prefixes : "Security__RequestSecretReferences__AllowedSecretReferencePrefixes__${index}" => value },
   )
   # When GP-on-Batch is enabled, surface the DURABLE substrate to the server as a
-  # ControlPlane:ExecutionWorkloads entry: the queue ARN and the per-TIER
-  # job-definition ARNs (s/m/l/xl). The reconciler selects the
-  # AwsBatchComputeBackend by Backend=honua-aws-batch + TargetKind=AwsBatch,
-  # picks the size tier per job, and applies vCPU/memory/timeout/retry as
-  # SubmitJob overrides at run time — terraform does NOT template those per job.
+  # ControlPlane:ExecutionWorkloads entry: the queue and the per-TIER job
+  # definitions (s/m/l/xl). The reconciler selects the AwsBatchComputeBackend by
+  # Backend=honua-aws-batch + TargetKind=AwsBatch, picks the size tier per job,
+  # and applies vCPU/memory/timeout/retry as SubmitJob overrides at run time —
+  # terraform does NOT template those per job.
+  #
+  # Lambda environment budget (see lambda_environment_bytes): the values are the
+  # queue NAME and the job-definition NAME:REVISION, not their ARNs. The server
+  # passes them to SubmitJob/ListJobs verbatim (AwsBatchComputeBackend ->
+  # AwsBatchJobClient), and AWS Batch accepts a name or name:revision for a
+  # same-account, same-region queue/definition, so the pinned immutable
+  # revision is unchanged. The parameter KEYS keep their *_arn contract names.
+  # batch.region is not emitted: the backend treats it as optional and, when
+  # absent, the SDK client uses the function's own AWS_REGION, which is the
+  # region the queue was created in.
   gp_batch_environment = local.gp_batch_enabled ? {
     ControlPlane__ExecutionWorkloads__0__WorkloadId                 = var.gp_batch_workload_id
     ControlPlane__ExecutionWorkloads__0__WorkloadName               = var.gp_batch_workload_name
@@ -201,17 +266,15 @@ locals {
     ControlPlane__ExecutionWorkloads__0__Kind                       = "Geoprocessing"
     ControlPlane__ExecutionWorkloads__0__ArtifactReference          = local.gp_batch_image
     ControlPlane__ExecutionWorkloads__0__ParameterEntries__0__Key   = "batch.job_queue_arn"
-    ControlPlane__ExecutionWorkloads__0__ParameterEntries__0__Value = aws_batch_job_queue.gp[0].arn
-    ControlPlane__ExecutionWorkloads__0__ParameterEntries__1__Key   = "batch.region"
-    ControlPlane__ExecutionWorkloads__0__ParameterEntries__1__Value = data.aws_region.current.name
-    ControlPlane__ExecutionWorkloads__0__ParameterEntries__2__Key   = "batch.job_definition_arn.s"
-    ControlPlane__ExecutionWorkloads__0__ParameterEntries__2__Value = aws_batch_job_definition.gp["s"].arn
-    ControlPlane__ExecutionWorkloads__0__ParameterEntries__3__Key   = "batch.job_definition_arn.m"
-    ControlPlane__ExecutionWorkloads__0__ParameterEntries__3__Value = aws_batch_job_definition.gp["m"].arn
-    ControlPlane__ExecutionWorkloads__0__ParameterEntries__4__Key   = "batch.job_definition_arn.l"
-    ControlPlane__ExecutionWorkloads__0__ParameterEntries__4__Value = aws_batch_job_definition.gp["l"].arn
-    ControlPlane__ExecutionWorkloads__0__ParameterEntries__5__Key   = "batch.job_definition_arn.xl"
-    ControlPlane__ExecutionWorkloads__0__ParameterEntries__5__Value = aws_batch_job_definition.gp["xl"].arn
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__0__Value = aws_batch_job_queue.gp[0].name
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__1__Key   = "batch.job_definition_arn.s"
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__1__Value = "${aws_batch_job_definition.gp["s"].name}:${aws_batch_job_definition.gp["s"].revision}"
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__2__Key   = "batch.job_definition_arn.m"
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__2__Value = "${aws_batch_job_definition.gp["m"].name}:${aws_batch_job_definition.gp["m"].revision}"
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__3__Key   = "batch.job_definition_arn.l"
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__3__Value = "${aws_batch_job_definition.gp["l"].name}:${aws_batch_job_definition.gp["l"].revision}"
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__4__Key   = "batch.job_definition_arn.xl"
+    ControlPlane__ExecutionWorkloads__0__ParameterEntries__4__Value = "${aws_batch_job_definition.gp["xl"].name}:${aws_batch_job_definition.gp["xl"].revision}"
   } : {}
   # Browser origins (honua-server cloud-deployments guide lists
   # Cors__AllowedOrigins__0 as required for Console/Studio). Indexed in list
@@ -220,30 +283,75 @@ locals {
   cors_environment = { for index, origin in coalesce(var.cors_allowed_origins, []) : "Cors__AllowedOrigins__${index}" => origin }
   # API Gateway is HTTPS-only, but Lambda Web Adapter's final in-process hop is HTTP.
   # Emit HSTS for that trusted topology instead of suppressing it based on the internal scheme.
-  lambda_environment = merge({ for i, h in var.additional_allowed_hosts : "HostValidation__AllowedHosts__${i + 1}" => h }, {
-    HONUA_SKIP_MIGRATIONS                                       = var.skip_migrations ? "true" : "false"
-    HostValidation__AllowedHosts__0                             = "*.execute-api.${data.aws_region.current.name}.amazonaws.com"
-    SecurityHeaders__HstsHttpsOnly                              = "false"
-    ConnectionStrings__DefaultConnection                        = "aws:secretsmanager:${aws_secretsmanager_secret.connection_string.arn}"
-    HONUA_ADMIN_PASSWORD                                        = "aws:secretsmanager:${aws_secretsmanager_secret.admin_password.arn}"
-    Security__ConnectionEncryption__MasterKey                   = "aws:secretsmanager:${aws_secretsmanager_secret.master_key.arn}"
-    HONUA_SERVE_ADMIN_UI                                        = var.serve_admin_ui ? "true" : "false"
-    HONUA_ADMIN_UI                                              = var.serve_admin_ui ? "true" : "false"
-    HONUA_OBSERVABILITY                                         = "true"
-    ControlPlane__DeployTargets__0__TargetId                    = local.lambda_target_id
-    ControlPlane__DeployTargets__0__TargetKind                  = "AwsLambda"
-    ControlPlane__DeployTargets__0__Backend                     = "honua-gitops-aws-lambda"
-    ControlPlane__DeployTargets__0__Environment                 = var.environment
-    ControlPlane__DeployTargets__0__TargetName                  = local.lambda_function_name
-    ControlPlane__DeployTargets__0__ArtifactReference           = var.image
-    ControlPlane__DeployTargets__0__RequiresOutOfBandMigrations = "true"
-    ControlPlane__DeployTargets__0__ParameterEntries__0__Key    = "aws.lambda.function_name"
-    ControlPlane__DeployTargets__0__ParameterEntries__0__Value  = local.lambda_function_name
-    ControlPlane__DeployTargets__0__ParameterEntries__1__Key    = "aws.lambda.alias_name"
-    ControlPlane__DeployTargets__0__ParameterEntries__1__Value  = var.lambda_alias_name
-    ControlPlane__DeployTargets__0__ParameterEntries__2__Key    = "aws.region"
-    ControlPlane__DeployTargets__0__ParameterEntries__2__Value  = data.aws_region.current.name
-  }, local.gp_batch_environment, local.amazon_location_environment, var.additional_env, local.redis_secret_environment, local.operation_key_ring_certificate_environment, local.audit_chain_key_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment)
+  #
+  # Lambda environment budget (lambda_environment_bytes below): values equal to
+  # the server's defaults are not emitted.
+  # - HONUA_SKIP_MIGRATIONS is read as a bool that defaults to false (Program.cs),
+  #   so it is emitted only when true.
+  # - HONUA_SERVE_ADMIN_UI / HONUA_ADMIN_UI are emitted only when true (absent
+  #   and "false" are the same to every reader).
+  # - The deploy target's ParameterEntries are omitted where the
+  #   honua-gitops-aws-lambda backend derives the same value
+  #   (AwsLambdaGitOpsDeployBackend): aws.lambda.function_name falls back to
+  #   TargetName (the same function name), aws.lambda.alias_name to "live", and
+  #   aws.region to the SDK default, i.e. the AWS_REGION Lambda sets. A
+  #   non-default alias is still passed.
+  lambda_environment = merge({ for i, h in var.additional_allowed_hosts : "HostValidation__AllowedHosts__${i + 1}" => h },
+    var.skip_migrations ? { HONUA_SKIP_MIGRATIONS = "true" } : {},
+    var.serve_admin_ui ? { HONUA_SERVE_ADMIN_UI = "true", HONUA_ADMIN_UI = "true" } : {},
+    {
+      HostValidation__AllowedHosts__0                             = "*.execute-api.${data.aws_region.current.name}.amazonaws.com"
+      SecurityHeaders__HstsHttpsOnly                              = "false"
+      ConnectionStrings__DefaultConnection                        = "aws:secretsmanager:${local.lambda_module_secret_ids.connection_string}"
+      HONUA_ADMIN_PASSWORD                                        = "aws:secretsmanager:${local.lambda_module_secret_ids.admin_password}"
+      Security__ConnectionEncryption__MasterKey                   = "aws:secretsmanager:${local.lambda_module_secret_ids.master_key}"
+      HONUA_OBSERVABILITY                                         = "true"
+      ControlPlane__DeployTargets__0__TargetId                    = local.lambda_target_id
+      ControlPlane__DeployTargets__0__TargetKind                  = "AwsLambda"
+      ControlPlane__DeployTargets__0__Backend                     = "honua-gitops-aws-lambda"
+      ControlPlane__DeployTargets__0__Environment                 = var.environment
+      ControlPlane__DeployTargets__0__TargetName                  = local.lambda_function_name
+      ControlPlane__DeployTargets__0__ArtifactReference           = var.image
+      ControlPlane__DeployTargets__0__RequiresOutOfBandMigrations = "true"
+      }, var.lambda_alias_name != "live" ? {
+      ControlPlane__DeployTargets__0__ParameterEntries__0__Key   = "aws.lambda.alias_name"
+      ControlPlane__DeployTargets__0__ParameterEntries__0__Value = var.lambda_alias_name
+  } : {}, local.gp_batch_environment, local.amazon_location_environment, var.additional_env, local.lambda_secret_reference_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment)
+
+  # AWS Lambda refuses a function whose environment exceeds 4 KB ("exceeded the
+  # 4KB limit. Measured size: N bytes") and only says so at CreateFunction /
+  # UpdateFunctionConfiguration, after everything else has been applied. Lambda
+  # measures the variables as a JSON object: every key and value plus six bytes
+  # of quoting and separators per entry and the two braces. That formula
+  # reproduces exactly the 4118 bytes Lambda measured for honua-release
+  # e2e-cloud-aws run 38046060497 (aws-serverless/redis-on). The function
+  # resources assert it at plan time.
+  #
+  # Some values are unknown on a first plan: a secret ARN's random suffix and a
+  # job definition's revision. Their LENGTHS are known, so the estimate uses
+  # same-length stand-ins (a 3-digit revision; Lambda rejects a 4 KB+ revision
+  # long before revision 1000 matters), keeping the check a plan-time error.
+  # The environment inherits sensitivity from the Redis inputs; a byte count
+  # reveals nothing, so it is unwrapped (sensitive() first, because nonsensitive()
+  # refuses an already non-sensitive value on older Terraform) for the message.
+  lambda_environment_limit_bytes = 4096
+  lambda_environment_size_stand_ins = merge(
+    {
+      ConnectionStrings__DefaultConnection = "aws:secretsmanager:${can(regex(local.ambiguous_secret_name, aws_secretsmanager_secret.connection_string.name)) ? "arn:${split(":", data.aws_caller_identity.current.arn)[1]}:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:${aws_secretsmanager_secret.connection_string.name}-XXXXXX" : aws_secretsmanager_secret.connection_string.name}"
+    },
+    local.gp_batch_enabled ? {
+      for index, tier in ["s", "m", "l", "xl"] :
+      "ControlPlane__ExecutionWorkloads__0__ParameterEntries__${index + 1}__Value" => "${aws_batch_job_definition.gp[tier].name}:000"
+    } : {},
+  )
+  lambda_environment_bytes = {
+    for function, environment in {
+      api                     = local.lambda_environment
+      control_plane_reconcile = local.control_plane_reconcile_environment
+      control_plane_backstop  = local.control_plane_backstop_environment
+      control_plane_tick      = local.control_plane_tick_environment
+    } : function => nonsensitive(sensitive(sum(concat([1], [for key, value in merge(environment, local.lambda_environment_size_stand_ins) : length(key) + length(value) + 6]))))
+  }
 }
 
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
@@ -760,6 +868,11 @@ resource "aws_lambda_function" "this" {
     precondition {
       condition     = var.db_max_allocated_storage >= var.db_allocated_storage
       error_message = "db_max_allocated_storage must be >= db_allocated_storage."
+    }
+
+    precondition {
+      condition     = local.lambda_environment_bytes.api <= local.lambda_environment_limit_bytes
+      error_message = "The ${local.lambda_function_name} environment would be about ${local.lambda_environment_bytes.api} bytes; AWS Lambda refuses more than ${local.lambda_environment_limit_bytes}. Turn off an optional feature that adds variables (Bedrock AI, Amazon Location geocoding, CORS origins, request-secret allowlists, additional_env, additional_allowed_hosts) or shorten name_prefix/environment."
     }
 
     precondition {

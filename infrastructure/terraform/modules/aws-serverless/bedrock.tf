@@ -46,25 +46,30 @@ locals {
     [for region in local.bedrock_inference_member_regions : "arn:aws:bedrock:${region}::foundation-model/${local.bedrock_foundation_model_id}"]
   ) : ["arn:aws:bedrock:${var.bedrock_ai_region}::foundation-model/${var.bedrock_ai_model}"]
 
-  # WorkflowGeneration env that routes the AI studio flows to Bedrock. Mirrors
-  # the config in honua-server#1737 (WorkflowGeneration:DefaultProvider=bedrock
-  # + the bedrock provider Model/Region/MaxTokens/TimeoutSeconds), expressed in
-  # ASP.NET Core double-underscore env-var form.
-  bedrock_ai_environment = local.bedrock_ai_enabled ? {
-    StudioAiProxy__Enabled                                 = "true"
-    StudioAiProxy__DefaultProvider                         = "bedrock"
-    StudioAiProxy__Providers__bedrock__Kind                = "bedrock"
-    StudioAiProxy__Providers__bedrock__Model               = var.bedrock_ai_model
-    StudioAiProxy__Providers__bedrock__Region              = var.bedrock_ai_region
-    StudioAiProxy__Providers__bedrock__MaxTokens           = tostring(var.bedrock_ai_max_tokens)
-    StudioAiProxy__Providers__bedrock__TimeoutSeconds      = tostring(var.bedrock_ai_timeout_seconds)
-    WorkflowGeneration__Enabled                            = "true"
-    WorkflowGeneration__DefaultProvider                    = "bedrock"
-    WorkflowGeneration__Providers__bedrock__Model          = var.bedrock_ai_model
-    WorkflowGeneration__Providers__bedrock__Region         = var.bedrock_ai_region
-    WorkflowGeneration__Providers__bedrock__MaxTokens      = tostring(var.bedrock_ai_max_tokens)
-    WorkflowGeneration__Providers__bedrock__TimeoutSeconds = tostring(var.bedrock_ai_timeout_seconds)
-  } : {}
+  # StudioAiProxy env that routes the AI studio flows to Bedrock.
+  #
+  # Lambda environment budget (main.tf lambda_environment_bytes): only settings
+  # the server reads, and only where they differ from its defaults.
+  # - WorkflowGeneration:* is not emitted: honua-server removed the
+  #   provider-backed planner and its WorkflowGeneration options (ADR-0076,
+  #   #3255; AiBuilderServiceCollectionExtensions), so nothing reads them.
+  # - MaxTokens/TimeoutSeconds are emitted only when they differ from the
+  #   StudioAiProxy provider defaults (4096 / 120 s, StudioAiProxyConfiguration).
+  # - Region is emitted only when it is not us-west-2: an empty Region falls
+  #   back to the adapter's fixed DefaultBedrockRegion "us-west-2"
+  #   (BedrockChatClientAdapter), not to the function's region.
+  # Kind, DefaultProvider and Model stay explicit: they have no default and
+  # startup validation fails without them.
+  bedrock_ai_environment = local.bedrock_ai_enabled ? merge({
+    StudioAiProxy__Enabled                   = "true"
+    StudioAiProxy__DefaultProvider           = "bedrock"
+    StudioAiProxy__Providers__bedrock__Kind  = "bedrock"
+    StudioAiProxy__Providers__bedrock__Model = var.bedrock_ai_model
+    },
+    var.bedrock_ai_region != "us-west-2" ? { StudioAiProxy__Providers__bedrock__Region = var.bedrock_ai_region } : {},
+    var.bedrock_ai_max_tokens != 4096 ? { StudioAiProxy__Providers__bedrock__MaxTokens = tostring(var.bedrock_ai_max_tokens) } : {},
+    var.bedrock_ai_timeout_seconds != 120 ? { StudioAiProxy__Providers__bedrock__TimeoutSeconds = tostring(var.bedrock_ai_timeout_seconds) } : {},
+  ) : {}
 }
 
 # Least-privilege Bedrock invoke grant on the Lambda execution role, scoped to

@@ -162,8 +162,9 @@ run "every_audit_writer_gets_the_same_reference_and_grant" {
 
   assert {
     condition = alltrue([
-      aws_lambda_function.this.environment[0].variables["AuditLog__ChainVerification__Key"] == "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123",
-      aws_lambda_function.control_plane_reconcile[0].environment[0].variables["AuditLog__ChainVerification__Key"] == "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123",
+      # Lambda carries the same-account, same-region secret by NAME (4 KB environment cap).
+      aws_lambda_function.this.environment[0].variables["AuditLog__ChainVerification__Key"] == "aws:secretsmanager:operator-audit-chain",
+      aws_lambda_function.control_plane_reconcile[0].environment[0].variables["AuditLog__ChainVerification__Key"] == "aws:secretsmanager:operator-audit-chain",
       one([for e in jsondecode(aws_batch_job_definition.gp["s"].container_properties).environment : e.value if e.name == "AuditLog__ChainVerification__Key"]) == "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123",
     ])
     error_message = "API, event and GP processes must all carry the same audit-chain key reference, never the value."
