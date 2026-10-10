@@ -462,3 +462,8 @@ output "lambda_architectures" {
   description = "Instruction-set architectures of the Honua Lambda function."
   value       = aws_lambda_function.this.architectures
 }
+
+output "operations_policy_environment" {
+  description = "The Operations__Policy__Rules__<n>__<Field> environment entries rendered from operations_policy_rules on every Honua server process. Empty when no rules are set."
+  value       = local.operations_policy_environment
+}

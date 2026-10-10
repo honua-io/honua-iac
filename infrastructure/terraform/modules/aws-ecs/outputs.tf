@@ -178,3 +178,13 @@ output "database_managed" {
   description = "Whether this module manages RDS, including the resolved operator database inputs."
   value       = nonsensitive(!local.db_use_existing)
 }
+
+output "operations_policy_environment" {
+  description = "The Operations__Policy__Rules__<n>__<Field> environment entries rendered from operations_policy_rules on every Honua server process. Empty when no rules are set."
+  value       = local.operations_policy_environment
+}
+
+output "alb_http_redirect_enabled" {
+  description = "Whether the ALB has the port 80 listener that redirects HTTP to HTTPS (alb_enable_http_redirect on an HTTPS deployment with HTTP ingress)."
+  value       = length(aws_lb_listener.http_redirect) > 0
+}

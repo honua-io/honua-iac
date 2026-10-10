@@ -396,6 +396,12 @@ variable "alb_certificate_arn" {
   default     = ""
 }
 
+variable "alb_enable_http_redirect" {
+  description = "Add a port 80 listener that redirects HTTP to HTTPS when the ALB serves HTTPS (alb_certificate_arn, or domain_name + route53_zone_id). With it off, an HTTPS ALB does not listen on port 80."
+  type        = bool
+  default     = true
+}
+
 variable "domain_name" {
   description = "Optional custom API hostname for ACM-managed TLS and Route53 ALB alias DNS."
   type        = string
@@ -499,4 +505,18 @@ variable "cors_allowed_origins" {
   type        = list(string)
   default     = []
   nullable    = false
+}
+
+variable "operations_policy_rules" {
+  description = "Ordered first-match-wins operation policy rules passed to the module and rendered as Operations__Policy__Rules__<n>__<Field>. The server runs in Production, where Operations:Policy denies every typed operation (for example service.publish) unless a rule allows it. decision is Allow, RequireApproval, DryRunFirst or Deny; operation_id defaults to \"*\". Empty (default) keeps the fail-closed default."
+  type = list(object({
+    operation_id  = optional(string, "*")
+    role          = optional(string)
+    tier          = optional(string)
+    decision      = string
+    reason        = optional(string)
+    approval_lane = optional(string)
+  }))
+  default  = []
+  nullable = false
 }

@@ -410,6 +410,30 @@ variable "additional_env" {
   }
 }
 
+variable "operations_policy_rules" {
+  description = "Ordered first-match-wins operation policy rules, rendered as Operations__Policy__Rules__<n>__{OperationId,Role,Tier,Decision,Reason,ApprovalLane}. The server image runs in Production, where Operations:Policy is enabled with DefaultDecision Deny, so every typed operation (for example service.publish) is denied until a rule allows it. operation_id defaults to \"*\" (any operation, otherwise matched exactly); role and tier are optional case-insensitive filters; decision is Allow, RequireApproval, DryRunFirst or Deny. Empty (default) renders nothing and keeps the fail-closed default."
+  type = list(object({
+    operation_id  = optional(string, "*")
+    role          = optional(string)
+    tier          = optional(string)
+    decision      = string
+    reason        = optional(string)
+    approval_lane = optional(string)
+  }))
+  default  = []
+  nullable = false
+
+  validation {
+    condition     = alltrue([for rule in var.operations_policy_rules : contains(["Allow", "RequireApproval", "DryRunFirst", "Deny"], rule.decision)])
+    error_message = "Each operations_policy_rules decision must be one of Allow, RequireApproval, DryRunFirst or Deny (the server's PolicyDecisionKind names)."
+  }
+
+  validation {
+    condition     = alltrue([for rule in var.operations_policy_rules : rule.operation_id != null && trimspace(rule.operation_id) != ""])
+    error_message = "operations_policy_rules operation_id must be an operation id or \"*\"; omit it to match any operation."
+  }
+}
+
 variable "ai_provider_secret_arn" {
   description = "Optional customer-owned Secrets Manager ARN containing HONUA_AI_PROVIDER_API_KEY. The module references but never creates, reads, or deletes this secret."
   type        = string
