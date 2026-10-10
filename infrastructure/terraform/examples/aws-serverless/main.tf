@@ -63,8 +63,9 @@ module "honua" {
   control_plane_events_timeout_seconds   = var.control_plane_events_timeout_seconds
   control_plane_scheduled_tick_schedules = var.control_plane_scheduled_tick_schedules
 
-  cors_allowed_origins    = var.cors_allowed_origins
-  operations_policy_rules = var.operations_policy_rules
+  cors_allowed_origins          = var.cors_allowed_origins
+  operations_policy_rules       = var.operations_policy_rules
+  studio_end_user_authorization = var.studio_end_user_authorization
 
   # Optional per-cell custom domain (custom-domain.tf).
   domain_name     = var.domain_name

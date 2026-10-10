@@ -17,6 +17,13 @@ module input/output contracts may still change.
 ### Added
 
 - `aws-serverless`, `aws-ecs` and the `aws-serverless` and `aws` example roots
+  add `studio_end_user_authorization` (default `false`). When `true`, it renders
+  `Studio__EndUserAuthorization__Enabled=true`, so authenticated non-admins can
+  use the Studio authoring API subject to the server's per-resource Studio
+  authorization. Off keeps the server default (admins only). Both modules
+  output `studio_end_user_authorization_enabled`.
+
+- `aws-serverless`, `aws-ecs` and the `aws-serverless` and `aws` example roots
   add `operations_policy_rules` (default `[]`), rendered as
   `Operations__Policy__Rules__<n>__{OperationId,Role,Tier,Decision,Reason,ApprovalLane}`
   on every server process, and an `operations_policy_environment` output. The

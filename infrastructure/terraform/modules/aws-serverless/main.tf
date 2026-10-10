@@ -254,6 +254,13 @@ locals {
     { for index, value in var.request_secret_reference_allowed_environment_variable_prefixes : "Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__${index}" => value },
     { for index, value in var.request_secret_reference_allowed_secret_reference_prefixes : "Security__RequestSecretReferences__AllowedSecretReferencePrefixes__${index}" => value },
   )
+  # Studio end-user authorization (honua-server Studio:EndUserAuthorization:Enabled).
+  # The server admits admins to the Studio authoring API unconditionally and other
+  # authenticated principals only when this flag is on. Off renders nothing, which
+  # keeps the server default (admins only).
+  studio_end_user_authorization_environment = var.studio_end_user_authorization ? {
+    Studio__EndUserAuthorization__Enabled = "true"
+  } : {}
   # Operation policy rules (honua-server Operations:Policy:Rules). The image's
   # Production settings enable the policy with DefaultDecision Deny, so every
   # typed operation is denied until a rule allows it. Rules are first-match-wins
@@ -345,7 +352,7 @@ locals {
       }, var.lambda_alias_name != "live" ? {
       ControlPlane__DeployTargets__0__ParameterEntries__0__Key   = "aws.lambda.alias_name"
       ControlPlane__DeployTargets__0__ParameterEntries__0__Value = var.lambda_alias_name
-  } : {}, local.gp_batch_environment, local.amazon_location_environment, var.additional_env, local.operations_policy_environment, local.lambda_secret_reference_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment)
+  } : {}, local.gp_batch_environment, local.amazon_location_environment, var.additional_env, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.lambda_secret_reference_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment)
 
   # AWS Lambda refuses a function whose environment exceeds 4 KB ("exceeded the
   # 4KB limit. Measured size: N bytes") and only says so at CreateFunction /
@@ -907,7 +914,7 @@ resource "aws_lambda_function" "this" {
 
     precondition {
       condition     = local.lambda_environment_bytes.api <= local.lambda_environment_limit_bytes
-      error_message = "The ${local.lambda_function_name} environment would be about ${local.lambda_environment_bytes.api} bytes; AWS Lambda refuses more than ${local.lambda_environment_limit_bytes}. Turn off an optional feature that adds variables (Bedrock AI, Amazon Location geocoding, CORS origins, request-secret allowlists, operations_policy_rules, additional_env, additional_allowed_hosts) or shorten name_prefix/environment."
+      error_message = "The ${local.lambda_function_name} environment would be about ${local.lambda_environment_bytes.api} bytes; AWS Lambda refuses more than ${local.lambda_environment_limit_bytes}. Turn off an optional feature that adds variables (Bedrock AI, Amazon Location geocoding, CORS origins, request-secret allowlists, operations_policy_rules, studio_end_user_authorization, additional_env, additional_allowed_hosts) or shorten name_prefix/environment."
     }
 
     precondition {

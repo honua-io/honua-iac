@@ -391,6 +391,13 @@ variable "operations_policy_rules" {
   }
 }
 
+variable "studio_end_user_authorization" {
+  description = "Let any authenticated principal use the Studio authoring API subject to the server's per-resource Studio authorization; off = admins only (server default). Rendered as Studio__EndUserAuthorization__Enabled=true only when true."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "redis_connection_string" {
   description = "Redis connection string for multi-node mode. Leave empty to create Redis."
   type        = string

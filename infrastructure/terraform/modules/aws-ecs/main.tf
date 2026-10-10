@@ -88,6 +88,13 @@ locals {
     { for index, value in var.request_secret_reference_allowed_environment_variable_prefixes : "Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__${index}" => value },
     { for index, value in var.request_secret_reference_allowed_secret_reference_prefixes : "Security__RequestSecretReferences__AllowedSecretReferencePrefixes__${index}" => value },
   )
+  # Studio end-user authorization (honua-server Studio:EndUserAuthorization:Enabled).
+  # The server admits admins to the Studio authoring API unconditionally and other
+  # authenticated principals only when this flag is on. Off renders nothing, which
+  # keeps the server default (admins only).
+  studio_end_user_authorization_environment = var.studio_end_user_authorization ? {
+    Studio__EndUserAuthorization__Enabled = "true"
+  } : {}
   # Operation policy rules (honua-server Operations:Policy:Rules). The image's
   # Production settings enable the policy with DefaultDecision Deny, so every
   # typed operation is denied until a rule allows it. Rules are first-match-wins
@@ -137,7 +144,7 @@ locals {
     FileStorage__AwsS3__BucketName = var.file_storage_aws_s3_bucket_name
     FileStorage__AwsS3__Region     = local.file_storage_aws_s3_region
     FileStorage__AwsS3__KeyPrefix  = var.file_storage_aws_s3_key_prefix
-  } : {}, local.licensing_environment, local.operations_policy_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment, local.alb_tls_environment)
+  } : {}, local.licensing_environment, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment, local.alb_tls_environment)
   primary_container_environment = [
     for key, value in merge(var.additional_env, local.runtime_environment) : {
       name  = key

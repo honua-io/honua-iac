@@ -434,6 +434,13 @@ variable "operations_policy_rules" {
   }
 }
 
+variable "studio_end_user_authorization" {
+  description = "Let any authenticated principal use the Studio authoring API subject to the server's per-resource Studio authorization; off = admins only (server default). Rendered as Studio__EndUserAuthorization__Enabled=true only when true."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "ai_provider_secret_arn" {
   description = "Optional customer-owned Secrets Manager ARN containing HONUA_AI_PROVIDER_API_KEY. The module references but never creates, reads, or deletes this secret."
   type        = string

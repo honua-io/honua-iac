@@ -467,3 +467,8 @@ output "operations_policy_environment" {
   description = "The Operations__Policy__Rules__<n>__<Field> environment entries rendered from operations_policy_rules on every Honua server process. Empty when no rules are set."
   value       = local.operations_policy_environment
 }
+
+output "studio_end_user_authorization_enabled" {
+  description = "Whether the server environment carries Studio__EndUserAuthorization__Enabled=true, admitting authenticated non-admins to the Studio authoring API."
+  value       = length(local.studio_end_user_authorization_environment) > 0
+}

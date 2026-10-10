@@ -188,3 +188,8 @@ output "alb_http_redirect_enabled" {
   description = "Whether the ALB has the port 80 listener that redirects HTTP to HTTPS (alb_enable_http_redirect on an HTTPS deployment with HTTP ingress)."
   value       = length(aws_lb_listener.http_redirect) > 0
 }
+
+output "studio_end_user_authorization_enabled" {
+  description = "Whether the server environment carries Studio__EndUserAuthorization__Enabled=true, admitting authenticated non-admins to the Studio authoring API."
+  value       = length(local.studio_end_user_authorization_environment) > 0
+}
