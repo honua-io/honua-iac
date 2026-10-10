@@ -176,12 +176,18 @@ function role, only while Redis is configured. For a customer-managed
 encryption key, supply `operation_key_ring_certificate_secret_kms_key_arn`; the
 module grants `kms:Decrypt` and `kms:DescribeKey` on that exact key to the API
 function role (the event role already holds `kms:Decrypt`). The operator must
-also ensure the secret resource policy and KMS key policy permit these roles. A
+also ensure the secret resource policy and KMS key policy permit these roles,
+and that any `permissions_boundary_arn` admits the secret: the release-cell
+boundary from `bootstrap/aws-release-cells` admits only cell-namespaced secrets
+unless its `runtime_operation_key_ring_certificate_secret_arns` (and
+`..._kms_key_arns`) name this one. A
 valid ARN alone does not prove the secret exists, is accessible, or contains
 valid PKCS#12: Terraform checks the input contract without reading the private
 key, and the server rejects missing, inaccessible or invalid content at startup
 (the function never reports ready). The GP Batch job definition carries no Redis
-connection and so needs no certificate.
+connection and so needs no certificate. The serverless root's deploy contract
+lists the ARN as `secret_refs.operation_key_ring_certificate` while Redis is
+configured (module output `operation_key_ring_certificate_secret_arn`).
 
 ## Image repository policy
 

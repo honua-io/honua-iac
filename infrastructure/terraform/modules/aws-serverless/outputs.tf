@@ -130,6 +130,12 @@ output "redis_connection_string" {
   sensitive = true
 }
 
+output "operation_key_ring_certificate_secret_arn" {
+  description = "Operator-owned key-ring certificate secret the Lambda references while Redis is configured; null when Redis is off."
+  # redis_enabled derives from the sensitive redis_connection_string; whether Redis is on is not secret.
+  value = nonsensitive(local.redis_enabled) && var.operation_key_ring_certificate_secret_arn != "" ? var.operation_key_ring_certificate_secret_arn : null
+}
+
 output "redis_connection_secret_arn" {
   value     = local.redis_connection != "" ? aws_secretsmanager_secret.redis_connection[0].arn : null
   sensitive = true

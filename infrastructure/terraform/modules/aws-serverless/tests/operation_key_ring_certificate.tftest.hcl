@@ -282,7 +282,8 @@ run "reject_certificate_kms_alias" {
   command = plan
 
   variables {
-    operation_key_ring_certificate_secret_arn         = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+    operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+    # checkov:skip=CKV_SECRET_6: The AWS-managed key alias name, not a credential.
     operation_key_ring_certificate_secret_kms_key_arn = "alias/aws/secretsmanager"
   }
 

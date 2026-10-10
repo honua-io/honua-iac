@@ -60,6 +60,26 @@ variable "runtime_bedrock_model_arns" {
   }
 }
 
+variable "runtime_operation_key_ring_certificate_secret_arns" {
+  description = "Exact operator-owned Secrets Manager ARNs holding the Redis operation key-ring certificate (operation_key_ring_certificate_secret_arn on examples/aws and examples/aws-serverless). Workload boundaries otherwise admit only cell-namespaced secrets. Empty grants no read."
+  type        = set(string)
+  default     = []
+  validation {
+    condition     = alltrue([for arn in var.runtime_operation_key_ring_certificate_secret_arns : can(regex("^arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+-[A-Za-z0-9]{6}$", arn))])
+    error_message = "Supply complete Secrets Manager secret ARNs (including the six-character suffix), never wildcards."
+  }
+}
+
+variable "runtime_operation_key_ring_certificate_kms_key_arns" {
+  description = "Exact customer-managed KMS key ARNs encrypting those certificate secrets. Leave empty for the AWS-managed aws/secretsmanager key."
+  type        = set(string)
+  default     = []
+  validation {
+    condition     = alltrue([for arn in var.runtime_operation_key_ring_certificate_kms_key_arns : can(regex("^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$", arn))])
+    error_message = "Supply exact KMS key ARNs, never aliases or wildcards."
+  }
+}
+
 variable "approver_role_name" {
   description = "Role that issues honua-devops provision-approval receipts (kms:GenerateMac only). Pass it to aws-exec-identity approval_signer_role_names."
   type        = string

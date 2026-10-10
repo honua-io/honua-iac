@@ -111,7 +111,7 @@ variables {
 }
 
 run "redis_on_root_forwards_the_certificate_arn" {
-  command = plan
+  command = apply
 
   variables {
     redis_enabled                                     = true
@@ -120,8 +120,22 @@ run "redis_on_root_forwards_the_certificate_arn" {
   }
 
   assert {
-    condition     = var.redis_enabled && var.operation_key_ring_certificate_secret_arn != ""
-    error_message = "The Redis-on root must plan once the operator certificate ARN is supplied."
+    condition     = output.deploy_contract.secret_refs["operation_key_ring_certificate"] == "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+    error_message = "The deploy contract must advertise the operator-owned certificate a Redis-on cell depends on."
+  }
+}
+
+run "redis_off_deploy_contract_omits_the_certificate" {
+  command = apply
+
+  variables {
+    redis_enabled                             = false
+    operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+  }
+
+  assert {
+    condition     = !contains(keys(output.deploy_contract.secret_refs), "operation_key_ring_certificate")
+    error_message = "Redis-off must not advertise the unused certificate."
   }
 }
 
@@ -139,7 +153,8 @@ run "root_rejects_a_kms_alias" {
   command = plan
 
   variables {
-    operation_key_ring_certificate_secret_arn         = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+    operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+    # checkov:skip=CKV_SECRET_6: The AWS-managed key alias name, not a credential.
     operation_key_ring_certificate_secret_kms_key_arn = "alias/aws/secretsmanager"
   }
 

@@ -134,6 +134,8 @@ locals {
       db_connection    = module.honua.db_connection_secret_arn
       redis_connection = nonsensitive(module.honua.redis_connection_secret_arn)
       pro_license      = module.honua.pro_license_secret_arn
+      # Operator-owned; a runtime dependency only while Redis is configured.
+      operation_key_ring_certificate = module.honua.operation_key_ring_certificate_secret_arn
     } : k => v if v != null }
     object_storage_refs = {
       enabled = local.install_storage_enabled

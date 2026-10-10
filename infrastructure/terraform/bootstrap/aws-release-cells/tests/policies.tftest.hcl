@@ -72,6 +72,41 @@ run "reject_standing_network" {
   expect_failures = [aws_iam_policy.workload_boundary]
 }
 
+run "operation_key_ring_certificate_is_admitted_exactly" {
+  command = plan
+  variables {
+    runtime_operation_key_ring_certificate_secret_arns  = ["arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"]
+    runtime_operation_key_ring_certificate_kms_key_arns = ["arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000002"]
+  }
+  assert {
+    condition = (
+      one([for s in jsondecode(output.runtime_boundary).Statement : s.Resource if s.Sid == "ReadOperationKeyRingCertificate"]) == ["arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"] &&
+      one([for s in jsondecode(output.runtime_boundary).Statement : s.Resource if s.Sid == "DecryptOperationKeyRingCertificate"]) == ["arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000002"]
+    )
+    error_message = "The workload boundary must admit exactly the operator's key-ring certificate secret and key."
+  }
+  assert {
+    condition     = length(output.runtime_boundary) <= 6144
+    error_message = "The workload boundary must still fit the managed policy quota."
+  }
+}
+
+run "no_operation_key_ring_certificate_by_default" {
+  command = plan
+  assert {
+    condition     = length([for s in jsondecode(output.runtime_boundary).Statement : s if contains(["ReadOperationKeyRingCertificate", "DecryptOperationKeyRingCertificate"], s.Sid)]) == 0
+    error_message = "An empty certificate input must grant nothing."
+  }
+}
+
+run "reject_wildcard_operation_key_ring_certificate" {
+  command = plan
+  variables {
+    runtime_operation_key_ring_certificate_secret_arns = ["arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-*"]
+  }
+  expect_failures = [var.runtime_operation_key_ring_certificate_secret_arns]
+}
+
 run "reject_wildcard_bedrock_boundary" {
   command = plan
   variables {
