@@ -175,7 +175,17 @@ data "aws_iam_policy_document" "terraform" {
       "ecr:GetLifecyclePolicy",
       "ecr:PutLifecyclePolicy",
       "ecr:DeleteLifecyclePolicy",
-      "ecr:PutImageScanningConfiguration"
+      "ecr:PutImageScanningConfiguration",
+      # Optional custom domain (modules/aws-serverless custom-domain.tf): the
+      # ACM certificate. The API Gateway /domainnames and /apimappings calls are
+      # covered by the apigateway verbs above.
+      "acm:AddTagsToCertificate",
+      "acm:DeleteCertificate",
+      "acm:DescribeCertificate",
+      "acm:ListCertificates",
+      "acm:ListTagsForCertificate",
+      "acm:RemoveTagsFromCertificate",
+      "acm:RequestCertificate"
     ]
     resources = ["*"]
 
@@ -184,6 +194,33 @@ data "aws_iam_policy_document" "terraform" {
       variable = "aws:RequestedRegion"
       values   = [var.aws_region]
     }
+  }
+
+  # --- Optional custom domain: Route53 validation and alias records --------
+  # Route53 is a global service whose calls are not made in the deploy region,
+  # so these sit outside the RequestedRegion-bounded statement above, scoped to
+  # hosted zones and change IDs (ListHostedZones has no resource scoping).
+  statement {
+    sid = "CustomDomainDnsRecords"
+    actions = [
+      "route53:ChangeResourceRecordSets",
+      "route53:GetHostedZone",
+      "route53:ListResourceRecordSets",
+      "route53:ListTagsForResource",
+    ]
+    resources = ["arn:aws:route53:::hostedzone/*"]
+  }
+
+  statement {
+    sid       = "CustomDomainDnsChanges"
+    actions   = ["route53:GetChange"]
+    resources = ["arn:aws:route53:::change/*"]
+  }
+
+  statement {
+    sid       = "CustomDomainDnsDiscovery"
+    actions   = ["route53:ListHostedZones"]
+    resources = ["*"]
   }
 
   # --- GP on AWS Batch (Fargate Spot) -------------------------------------
