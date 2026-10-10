@@ -278,8 +278,8 @@ variable "postgis_readiness_sleep_seconds" {
 
 # --- GA cell: Redis -------------------------------------------------------------
 
-variable "redis_enabled" {
-  description = "Provision ElastiCache Redis (TLS + AUTH). Requires operation_key_ring_certificate_secret_arn."
+variable "enable_redis" {
+  description = "Provision ElastiCache Redis (TLS + AUTH). Requires operation_key_ring_certificate_secret_arn. The ECS and Lambda roots spell this redis_enabled; the release harness passes whichever the pinned root declares."
   type        = bool
   default     = false
 }
@@ -293,7 +293,7 @@ variable "redis_node_type" {
 # --- GA cell: operation policy --------------------------------------------------
 
 variable "operations_policy_rules" {
-  description = "Ordered first-match-wins operation policy rules rendered as Operations__Policy__Rules__<n>__<Field> into the honua_server_environment output. Production denies every typed operation until a rule allows it."
+  description = "Ordered first-match-wins operation policy rules passed to the module and rendered as Operations__Policy__Rules__<n>__<Field>. The server runs in Production, where Operations:Policy denies every typed operation (for example service.publish) unless a rule allows it. decision is Allow, RequireApproval, DryRunFirst or Deny; operation_id defaults to \"*\". Empty (default) keeps the fail-closed default."
   type = list(object({
     operation_id  = optional(string, "*")
     role          = optional(string)
@@ -304,6 +304,13 @@ variable "operations_policy_rules" {
   }))
   default  = []
   nullable = false
+}
+
+variable "cors_allowed_origins" {
+  description = "Browser origins allowed to call the API (for example the Honua Console/Studio origin), rendered as Cors__AllowedOrigins__<n>. Empty (default) renders nothing; API-only cells need none."
+  type        = list(string)
+  default     = []
+  nullable    = false
 }
 
 # --- GA cell: custom domain -----------------------------------------------------

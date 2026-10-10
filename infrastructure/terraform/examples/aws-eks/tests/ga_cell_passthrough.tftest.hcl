@@ -35,6 +35,12 @@ mock_provider "aws" {
     }
   }
 
+  mock_data "aws_iam_session_context" {
+    defaults = {
+      issuer_arn = "arn:aws:iam::123456789012:role/honua-release-cicd"
+    }
+  }
+
   mock_data "aws_iam_policy_document" {
     defaults = {
       json          = "{\"Version\":\"2012-10-17\",\"Statement\":[]}"
@@ -78,7 +84,7 @@ run "ga_cell_redis_on" {
 
   variables {
     honua_admin_password                      = "Honua-Cert-Admin-Aa1!xxxxxxxxxxxxxxxx"
-    redis_enabled                             = true
+    enable_redis                              = true
     operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-release/cert/operation-key-ring-zDn618"
     enable_postgis                            = true
     db_publicly_accessible                    = true
@@ -90,8 +96,9 @@ run "ga_cell_redis_on" {
       { operation_id = "*", role = "scoped-admin-key", decision = "Allow", reason = "Release cell: scoped admin keys run typed operations" },
       { operation_id = "*", role = "admin", decision = "Allow", reason = "Release cell: bootstrap and full admins run typed operations" },
     ]
-    domain_name     = "run-aws-eks-redis-on.cert.demo.example.com"
-    route53_zone_id = "Z0123456789ABCDEFGHIJ"
+    cors_allowed_origins = ["http://127.0.0.1:18099"]
+    domain_name          = "run-aws-eks-redis-on.cert.demo.example.com"
+    route53_zone_id      = "Z0123456789ABCDEFGHIJ"
   }
 
   assert {
@@ -111,6 +118,20 @@ run "ga_cell_redis_on" {
   }
 
   assert {
+    condition = (
+      output.chart_config_env["Cors__AllowedOrigins__0"] == "http://127.0.0.1:18099" &&
+      output.chart_config_env["Operations__Policy__Rules__0__Role"] == "scoped-admin-key" &&
+      output.chart_config_env["ControlPlane__Kubernetes__DefaultServiceAccount"] == "honua-gp-job" &&
+      output.chart_config_env["Operations__SecretChannel__KeyRingCertificatePkcs12"] == "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-release/cert/operation-key-ring-zDn618" &&
+      !contains(keys(output.chart_config_env), "ConnectionStrings__DefaultConnection") &&
+      !contains(keys(output.chart_config_env), "HONUA_ADMIN_PASSWORD") &&
+      !contains(keys(output.chart_config_env), "Security__ConnectionEncryption__MasterKey") &&
+      !contains(keys(output.chart_config_env), "ConnectionStrings__redis")
+    )
+    error_message = "chart_config_env must carry the non-credential settings and none of the Secret's credentials."
+  }
+
+  assert {
     condition     = output.kubernetes_namespace == "honua-cert" && output.gp_job_namespace == "honua-cert" && output.gp_job_service_account_name == "honua-gp-job"
     error_message = "The GP job namespace defaults to the release namespace."
   }
@@ -125,7 +146,7 @@ run "ga_cell_redis_off_second_apply_with_load_balancer" {
   command = plan
 
   variables {
-    redis_enabled                  = false
+    enable_redis                   = false
     domain_name                    = "run-aws-eks-redis-off.cert.demo.example.com"
     route53_zone_id                = "Z0123456789ABCDEFGHIJ"
     ingress_load_balancer_hostname = "a1b2c3-123456789.us-east-1.elb.amazonaws.com"

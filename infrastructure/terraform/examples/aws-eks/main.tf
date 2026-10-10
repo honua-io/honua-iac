@@ -52,10 +52,11 @@ module "eks" {
   postgis_readiness_max_attempts  = var.postgis_readiness_max_attempts
   postgis_readiness_sleep_seconds = var.postgis_readiness_sleep_seconds
 
-  redis_enabled   = var.redis_enabled
+  redis_enabled   = var.enable_redis
   redis_node_type = var.redis_node_type
 
   operations_policy_rules = var.operations_policy_rules
+  cors_allowed_origins    = var.cors_allowed_origins
 
   domain_name                    = var.domain_name
   route53_zone_id                = var.route53_zone_id

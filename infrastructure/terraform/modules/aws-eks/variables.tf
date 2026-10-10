@@ -475,7 +475,7 @@ variable "redis_port" {
 # --- Operation policy -----------------------------------------------------------
 
 variable "operations_policy_rules" {
-  description = "Ordered first-match-wins operation policy rules, rendered as Operations__Policy__Rules__<n>__{OperationId,Role,Tier,Decision,Reason,ApprovalLane} into the honua_server_environment output for the chart. The server image runs in Production, where Operations:Policy is enabled with DefaultDecision Deny, so every typed operation (for example service.publish) is denied until a rule allows it. operation_id defaults to \"*\" (any operation, otherwise matched exactly); role and tier are optional case-insensitive filters; decision is Allow, RequireApproval, DryRunFirst or Deny. Empty (default) renders nothing and keeps the fail-closed default."
+  description = "Ordered first-match-wins operation policy rules, rendered as Operations__Policy__Rules__<n>__{OperationId,Role,Tier,Decision,Reason,ApprovalLane}. The server image runs in Production, where Operations:Policy is enabled with DefaultDecision Deny, so every typed operation (for example service.publish) is denied until a rule allows it. operation_id defaults to \"*\" (any operation, otherwise matched exactly); role and tier are optional case-insensitive filters; decision is Allow, RequireApproval, DryRunFirst or Deny. Empty (default) renders nothing and keeps the fail-closed default."
   type = list(object({
     operation_id  = optional(string, "*")
     role          = optional(string)
@@ -496,6 +496,13 @@ variable "operations_policy_rules" {
     condition     = alltrue([for rule in var.operations_policy_rules : rule.operation_id != null && trimspace(rule.operation_id) != ""])
     error_message = "operations_policy_rules operation_id must be an operation id or \"*\"; omit it to match any operation."
   }
+}
+
+variable "cors_allowed_origins" {
+  description = "Browser origins allowed to call the API (for example the Honua Console/Studio origin). Each entry is rendered into chart_config_env and honua_server_environment as Cors__AllowedOrigins__<n> in list order. Empty (default) renders nothing: API-only cells called by SDKs, the CLI or server-side clients need none. Set the origins here or in the chart values, not both."
+  type        = list(string)
+  default     = []
+  nullable    = false
 }
 
 # --- Custom domain (ACM + Route53) ----------------------------------------------

@@ -166,3 +166,27 @@ output "honua_url" {
   description = "https://<domain_name> once the domain record is managed; empty before (use the chart load balancer hostname)."
   value       = module.eks.honua_url
 }
+
+# --- Release harness contract (honua-release e2e/targets/aws_eks.py) --------------
+
+output "chart_config_env" {
+  description = "Non-credential server environment for the chart's config.env (ControlPlane__Kubernetes__*, policy rules, CORS, operator secret references)."
+  value       = module.eks.chart_config_env
+}
+
+output "certificate_arn" {
+  description = "Validated ACM certificate ARN for domain_name; the chart's Service terminates TLS with it."
+  value       = module.eks.certificate_arn
+}
+
+output "db_connection_string" {
+  description = "Database connection string, for the chart's Secret."
+  value       = module.eks.db_connection_string
+  sensitive   = true
+}
+
+output "redis_connection_string" {
+  description = "Redis connection string, for the chart's Secret. Empty when Redis is off."
+  value       = module.eks.redis_connection_string
+  sensitive   = true
+}

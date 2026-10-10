@@ -501,7 +501,8 @@ run "domain_second_apply_points_at_the_load_balancer" {
     condition = (
       length(aws_route53_record.service_alias) == 1 &&
       aws_route53_record.service_alias[0].name == "cell.cert.demo.example.com" &&
-      tolist(aws_route53_record.service_alias[0].records) == ["a1b2c3-123456789.us-east-1.elb.amazonaws.com"]
+      length(aws_route53_record.service_alias[0].records) == 1 &&
+      contains(aws_route53_record.service_alias[0].records, "a1b2c3-123456789.us-east-1.elb.amazonaws.com")
     )
     error_message = "The domain must point at the chart's load balancer."
   }
@@ -509,5 +510,49 @@ run "domain_second_apply_points_at_the_load_balancer" {
   assert {
     condition     = output.honua_url == "https://cell.cert.demo.example.com"
     error_message = "honua_url must be the HTTPS custom domain once the record exists."
+  }
+}
+
+# --- Release harness contract --------------------------------------------------
+
+run "chart_config_env_carries_settings_not_credentials" {
+  command = plan
+
+  variables {
+    cors_allowed_origins = ["http://127.0.0.1:18099", "https://console.example.com"]
+    operations_policy_rules = [
+      { operation_id = "*", role = "admin", decision = "Allow" },
+    ]
+  }
+
+  assert {
+    condition = (
+      output.chart_config_env["Cors__AllowedOrigins__0"] == "http://127.0.0.1:18099" &&
+      output.chart_config_env["Cors__AllowedOrigins__1"] == "https://console.example.com" &&
+      output.chart_config_env["Operations__Policy__Rules__0__Role"] == "admin" &&
+      output.chart_config_env["ControlPlane__Kubernetes__DefaultNamespace"] == "honua" &&
+      output.chart_config_env["AuditLog__ChainVerification__Key"] == "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
+    )
+    error_message = "chart_config_env must carry CORS, policy rules, ControlPlane:Kubernetes and operator secret references."
+  }
+
+  assert {
+    condition = length(setintersection(toset(keys(output.chart_config_env)), toset([
+      "ConnectionStrings__DefaultConnection",
+      "HONUA_ADMIN_PASSWORD",
+      "Security__ConnectionEncryption__MasterKey",
+      "ConnectionStrings__redis",
+    ]))) == 0
+    error_message = "chart_config_env must not carry the credentials that belong in the chart's Secret."
+  }
+
+  assert {
+    condition     = output.honua_server_environment["Cors__AllowedOrigins__1"] == "https://console.example.com" && contains(keys(output.honua_server_environment), "ConnectionStrings__DefaultConnection")
+    error_message = "honua_server_environment is the complete environment, credentials by reference included."
+  }
+
+  assert {
+    condition     = output.certificate_arn == ""
+    error_message = "No certificate without a managed domain."
   }
 }

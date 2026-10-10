@@ -32,6 +32,12 @@ module's outputs are the values the chart and the release harness need.
 | `pod_identity` (default) | EKS Pod Identity associations made through the EKS API; the eks-pod-identity-agent add-on is installed. No IAM OIDC provider. | Run the server as `server_service_account_name` in `kubernetes_namespace` and GP Jobs as `gp_job_service_account_name` in `gp_job_namespace`. No annotations. |
 | `irsa` | The EKS module creates the cluster's IAM OIDC provider; each role trusts exactly one `system:serviceaccount:<ns>:<sa>`. | Also apply `server_service_account_annotations` / `gp_job_service_account_annotations` (`eks.amazonaws.com/role-arn`). |
 
+Under `pod_identity`, do **not** put the `eks.amazonaws.com/role-arn` annotation
+on the service accounts: the EKS IRSA webhook would inject a web-identity token
+for a role that does not trust any OIDC provider, and the AWS SDK tries web
+identity before the Pod Identity container credentials. Annotate only with the
+`*_service_account_annotations` outputs, which are empty in this mode.
+
 Pod Identity is the default because an IAM OIDC provider is an account-level
 object: the release account's cell guardrail denies `iam:*OpenIDConnectProvider*`
 outright, which is half of why e2e-cloud-aws run 38057015781 never provisioned
@@ -61,6 +67,19 @@ belong to the chart (honua-helm#77); the IAM role behind it is `gp_job_role_arn`
 
 ## Server environment
 
+Two maps, both name => value and both free of secret values:
+
+- `chart_config_env` — what the chart's `config.env` needs **besides** the
+  credentials: `ControlPlane__Kubernetes__*`, `Operations__Policy__Rules__*`,
+  `Cors__AllowedOrigins__*`, and `aws:secretsmanager:` references to the
+  operator-owned key-ring and audit-chain secrets. The release harness renders
+  it into the chart values and writes the database, admin password, master key
+  and Redis credentials into the chart's own Secret (from the sensitive
+  `db_connection_string` / `redis_connection_string` outputs).
+- `honua_server_environment` — the complete environment: `chart_config_env`
+  plus the generated credentials as `aws:secretsmanager:` references, for an
+  install that resolves every secret through the server's workload role.
+
 `honua_server_environment` is the server's environment as a name/value map for
 the chart's `env` values. Secrets never appear in it: each is an
 `aws:secretsmanager:<arn>` reference the server resolves at startup with its
@@ -76,6 +95,7 @@ containers use.
 | `Operations__SecretChannel__KeyRingCertificatePkcs12` | `redis_enabled` with `operation_key_ring_certificate_secret_arn` |
 | `AuditLog__ChainVerification__Key` | `audit_chain_key_secret_arn` set |
 | `Operations__Policy__Rules__<n>__<Field>` | `operations_policy_rules` |
+| `Cors__AllowedOrigins__<n>` | `cors_allowed_origins` |
 | `ControlPlane__Kubernetes__*` | always (image only when set) |
 
 ## Inputs (GA cell)
@@ -105,11 +125,12 @@ the names and semantics of `modules/aws-ecs` and `modules/aws-serverless`:
 | `admin_password` | generated | Bootstrap admin password (root: `honua_admin_password`). |
 | `connection_encryption_master_key` | generated | New deployments only; existing ones pass their key (root: `honua_connection_encryption_master_key`). |
 | `secrets_kms_key_arn` | `""` | CMK for the module's secrets; empty uses `aws/secretsmanager` so a throwaway cluster strands no CMK. |
-| `redis_enabled` | `false` | ElastiCache Redis; requires the key-ring certificate. |
+| `redis_enabled` | `false` | ElastiCache Redis; requires the key-ring certificate. The `examples/aws-eks` root spells it `enable_redis` (the name the release harness passes to this root). |
 | `redis_auth_token`, `redis_node_type`, `redis_engine_version`, `redis_parameter_group_name`, `redis_num_cache_clusters`, `redis_port` | generated, `cache.t3.micro`, `7.0`, `default.redis7`, 1, 6379 | Redis shape. |
 | `operation_key_ring_certificate_secret_arn` / `_kms_key_arn` | `""` | Operator-owned PKCS#12 bundle; required with Redis. Only the ARN enters Terraform. |
 | `audit_chain_key_secret_arn` / `_kms_key_arn` | `""` | Operator-owned audit hash-chain key; recommended (a check warns when empty). |
 | `operations_policy_rules` | `[]` | Ordered first-match-wins rules, same shape as aws-ecs; rendered as `Operations__Policy__Rules__<n>__<Field>`. Production denies every typed operation until a rule allows it. |
+| `cors_allowed_origins` | `[]` | Browser origins, same definition as aws-ecs; rendered as `Cors__AllowedOrigins__<n>`. |
 | `domain_name` / `route53_zone_id` | `""` | Set together: DNS-validated ACM certificate. |
 | `subject_alternative_names` | `[]` | Extra certificate names. |
 | `ingress_load_balancer_hostname` | `""` | The chart's load balancer DNS name, on a second apply: creates the Route53 CNAME for `domain_name`. |
@@ -175,3 +196,4 @@ GA cell handoff:
 | `database_managed`, `db_endpoint`, `db_connection_secret_arn`, `admin_password_secret_arn`, `master_key_secret_arn`, `postgis_enabled` | harness / operator |
 | `redis_enabled`, `redis_endpoint`, `redis_connection_secret_arn`, `operation_key_ring_certificate_secret_arn`, `audit_chain_key_secret_arn` | harness / operator |
 | `domain_name`, `ingress_certificate_arn`, `ingress_service_annotations`, `domain_record_managed`, `honua_url` | chart Service, harness |
+| `chart_config_env`, `certificate_arn` (= `ingress_certificate_arn`), `db_connection_string` (sensitive), `redis_connection_string` (sensitive) | release harness (`e2e/targets/aws_eks.py`) |

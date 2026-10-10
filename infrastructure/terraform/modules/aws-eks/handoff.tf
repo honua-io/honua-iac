@@ -51,9 +51,32 @@ locals {
     } : {},
   )
 
+  # Browser origins, same rendering as modules/aws-ecs.
+  cors_environment = { for index, origin in var.cors_allowed_origins : "Cors__AllowedOrigins__${index}" => origin }
+
+  # Operator-owned secrets (never generated here) travel by reference in both
+  # maps; the release harness puts the module-generated credentials into its
+  # own Kubernetes Secret instead.
+  operator_secret_reference_environment = {
+    for name, value in local.secret_reference_environment : name => value
+    if contains(["Operations__SecretChannel__KeyRingCertificatePkcs12", "AuditLog__ChainVerification__Key"], name)
+  }
+
+  # chart_config_env: everything the chart's config.env needs EXCEPT the
+  # credentials that belong in the chart's Secret (database, admin password,
+  # master key, Redis). Safe to render into release values.
+  chart_config_env = merge(
+    local.operator_secret_reference_environment,
+    local.operations_policy_environment,
+    local.cors_environment,
+    local.control_plane_kubernetes_environment,
+  )
+
+  # honua_server_environment: the complete environment, with the generated
+  # credentials as aws:secretsmanager: references too, for a chart install
+  # that resolves every secret through the server's workload role.
   honua_server_environment = merge(
     local.secret_reference_environment,
-    local.operations_policy_environment,
-    local.control_plane_kubernetes_environment,
+    local.chart_config_env,
   )
 }
