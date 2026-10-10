@@ -44,16 +44,22 @@ locals {
   # would still hang its own ~15.8s outbound-connect timeout before failing —
   # compounding, not fixing, the latency on any amazon-location error. Explicitly
   # disabling it makes a place-index misconfiguration fail fast instead.
-  amazon_location_environment = local.amazon_location_geocoding_enabled ? {
-    Geocoding__Enabled                                   = "true"
+  #
+  # Lambda environment budget (main.tf lambda_environment_bytes): settings equal
+  # to the server's defaults are not emitted. Geocoding:Enabled defaults to true
+  # (GeocodingOptions), AmazonLocation UseIamRole defaults to true and
+  # MaxResults to 10 (ProviderConfigurations / ProviderCapabilities).
+  # AmazonLocation Enabled (default false) and Region (default us-east-1, no
+  # AWS_REGION fallback) stay explicit.
+  amazon_location_environment = local.amazon_location_geocoding_enabled ? merge({
     Geocoding__DefaultProvider                           = "amazon-location"
     Geocoding__Providers__Nominatim__Enabled             = "false"
     Geocoding__Providers__AmazonLocation__Enabled        = "true"
     Geocoding__Providers__AmazonLocation__Region         = data.aws_region.current.name
     Geocoding__Providers__AmazonLocation__PlaceIndexName = local.amazon_location_place_index_name
-    Geocoding__Providers__AmazonLocation__UseIamRole     = "true"
-    Geocoding__Providers__AmazonLocation__MaxResults     = tostring(var.amazon_location_max_results)
-  } : {}
+    },
+    var.amazon_location_max_results != 10 ? { Geocoding__Providers__AmazonLocation__MaxResults = tostring(var.amazon_location_max_results) } : {},
+  ) : {}
 }
 
 # The place index itself. SingleUse (default) matches a live query-only

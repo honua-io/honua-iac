@@ -163,7 +163,9 @@ operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:12
 Lambda cannot resolve Secrets Manager into environment variables the way ECS
 task `secrets` do, so the function (and the control-plane event functions that
 share its environment) receives only a reference:
-`Operations__SecretChannel__KeyRingCertificatePkcs12 = "aws:secretsmanager:<arn>"`.
+`Operations__SecretChannel__KeyRingCertificatePkcs12 = "aws:secretsmanager:<name-or-arn>"`
+(the secret's name when it is in the function's account and region; see
+[Lambda environment budget](#lambda-environment-budget)).
 At startup the server resolves that reference with the function role, writes
 the bundle to a unique private temporary file (Unix mode 0600) and loads its
 certificate; the Redis data-protection ring still requires certificate
@@ -224,7 +226,9 @@ verification. The module rejects `AuditLog__ChainVerification__Key` in
 Lambda cannot resolve Secrets Manager into environment variables, so the API
 function, the control-plane event functions and the GP Batch job definitions
 all receive the reference
-`AuditLog__ChainVerification__Key = "aws:secretsmanager:<arn>"`, which the
+`AuditLog__ChainVerification__Key = "aws:secretsmanager:<name-or-arn>"` (the
+Lambdas carry the name when the secret is in their account and region, the job
+definitions the ARN; see [Lambda environment budget](#lambda-environment-budget)), which the
 server resolves at startup with each process's own role (honua-server
 `StartupConfigurationHelpers.SecuritySecretReferenceKeys`; use an image that
 includes it). The module grants `secretsmanager:GetSecretValue` on exactly
@@ -335,7 +339,7 @@ the module stores the envelope in a dedicated Secrets Manager secret
 (`<name_prefix>-<environment>/license-pro`), grants the Lambda role
 `secretsmanager:GetSecretValue` on it, and injects:
 
-- `Licensing__LicenseContentSecretRef = aws:secretsmanager:<secret-arn>` — the server
+- `Licensing__LicenseContentSecretRef = aws:secretsmanager:<secret-name-or-arn>` — the server
   resolves and validates the envelope at startup (`Honua.Aws` Secrets Manager resolver).
 - `Licensing__TrustedKeys__<pro_license_key_id> = <pro_license_trusted_public_key>` — the
   Ed25519 public key that verifies the signature.
@@ -364,9 +368,12 @@ module "honua" {
 Optional, **off by default**. When `enable_bedrock_ai = true`, the module grants
 the Lambda execution role a least-privilege `bedrock:InvokeModel` /
 `bedrock:InvokeModelWithResponseStream` policy scoped to the single Claude model
-the server's `WorkflowGeneration` uses, and injects the `WorkflowGeneration__*`
-env so the AI console's workflow / dashboard / report generation route to Bedrock
-(see honua-server#1737). The server authenticates via the AWS credential chain
+the server's Studio AI proxy uses, and injects the `StudioAiProxy__*` env
+(`Enabled`, `DefaultProvider`, the `bedrock` provider's `Kind` and `Model`, plus
+`Region`/`MaxTokens`/`TimeoutSeconds` only where they differ from the server's
+defaults of us-west-2/4096/120) so the AI console routes to Bedrock. The
+`WorkflowGeneration__*` settings are no longer emitted: honua-server removed the
+options that read them (ADR-0076, #3255). The server authenticates via the AWS credential chain
 (the Lambda execution role) — without this grant the AI console gets
 `AccessDenied`.
 
@@ -395,15 +402,16 @@ index (`geo:SearchPlaceIndexForText`, `geo:SearchPlaceIndexForPosition`,
 becomes the default:
 
 ```
-Geocoding__Enabled                                   = true
 Geocoding__DefaultProvider                           = amazon-location
 Geocoding__Providers__Nominatim__Enabled             = false
 Geocoding__Providers__AmazonLocation__Enabled        = true
 Geocoding__Providers__AmazonLocation__Region         = <module's region>
 Geocoding__Providers__AmazonLocation__PlaceIndexName = <amazon_location_place_index_name>
-Geocoding__Providers__AmazonLocation__UseIamRole     = true
-Geocoding__Providers__AmazonLocation__MaxResults     = <amazon_location_max_results>
+Geocoding__Providers__AmazonLocation__MaxResults     = <amazon_location_max_results>  # only when not 10
 ```
+
+`Geocoding__Enabled` and `AmazonLocation__UseIamRole` are server defaults
+(`true`) and are not emitted.
 
 **Why this exists (honua-server#2948):** an external Nominatim (OpenStreetMap)
 provider needs general internet egress. A VPC with no NAT/internet gateway
@@ -562,7 +570,7 @@ What it creates:
 - A **Fargate Spot** Batch compute environment (`MANAGED`, scale-to-zero — no `min_vcpus`/`desired_vcpus`, so nothing stays warm), a **job queue**, and a **pool of 4 job definitions** (`gp-s`/`gp-m`/`gp-l`/`gp-xl`) for the GP container, differing only by ephemeral storage.
 - Optionally (`create_worker_gdal_repo = true`) a dedicated **`<name>-worker-gdal` ECR repository** for the GP/GDAL worker image — scan-on-push, KMS encryption, and a lifecycle policy that retains the most recent `worker_gdal_repo_max_image_count` images. Off by default; GP otherwise reuses the Lambda image via `HONUA_JOB_KIND`. The repo name is stable regardless of the flag, so an operator can pre-create + push, then enable.
 - IAM: the Lambda execution role gets scoped `batch:SubmitJob` / `batch:TerminateJob` / `batch:CancelJob` on the queue + every tier's job-definition (revision wildcard), plus account-wide `batch:DescribeJobs` / `batch:ListJobs` (these do not support resource scoping). The Batch execution role gets ECR pull + CloudWatch Logs; the job role gets the same DB, Redis and operation key-ring certificate secret access the Lambda has (and optional S3), and the job definitions carry the same Redis and key-ring certificate references.
-- A `ControlPlane:ExecutionWorkloads` entry injected into the Lambda env (`Backend=honua-aws-batch`, `TargetKind=AwsBatch`, `Kind=Geoprocessing`) carrying `batch.job_queue_arn`, `batch.region`, and the per-tier `batch.job_definition_arn.{s,m,l,xl}` parameters the backend reads at submit time.
+- A `ControlPlane:ExecutionWorkloads` entry injected into the Lambda env (`Backend=honua-aws-batch`, `TargetKind=AwsBatch`, `Kind=Geoprocessing`) carrying `batch.job_queue_arn` and the per-tier `batch.job_definition_arn.{s,m,l,xl}` parameters the backend reads at submit time. To fit Lambda's 4 KB environment their values are the queue **name** and each job definition's **`name:revision`** (AWS Batch accepts both for same-account resources, and the server passes them to `SubmitJob`/`ListJobs` verbatim); `batch.region` is omitted because the backend then uses the function's own region. The `gp_job_*_arn(s)` outputs still carry full ARNs.
 
 > **Deploy identity:** enabling `enable_gp_batch` needs `batch:*` (scoped) + `iam:PassRole` for the Batch/ECS-tasks service roles. The `bootstrap/aws-serverless` deploy identity now grants these; an older bootstrap apply must be refreshed first or the Batch create calls fail.
 
@@ -597,6 +605,45 @@ The reconcile/backstop/tick execution role mirrors the API Lambda role (`AWSLamb
 Because the handlers live in the same image and are selected by `HONUA_CONTROL_PLANE_LAMBDA_HANDLER`, the image must bundle the `batch-event`, `backstop`, and `scheduled-tick` entrypoints (provided by the server build). Point `control_plane_events_image` at a tag that includes them if it differs from the API image. Tune `control_plane_events_memory_size` / `control_plane_events_timeout_seconds` (these Lambdas are invoked asynchronously, so they are not bound by the API Gateway 30s ceiling). Outputs: `control_plane_reconcile_function_name`/`_arn`, `control_plane_backstop_function_name`/`_arn`, `control_plane_tick_function_name`/`_arn`, `control_plane_batch_event_rule_arn`, `control_plane_scheduler_group_name`, and `control_plane_scheduled_tick_schedule_arns` (map of tick kind → schedule ARN).
 
 > **FileStorageCleanup alternative.** On AWS the `FileStorageCleanup` tick can instead be served by an S3 lifecycle policy (cheaper, no compute). The schedule is kept by default for portability and non-S3 backends; drop the `FileStorageCleanup` key from `control_plane_scheduled_tick_schedules` if you prefer the lifecycle-policy route.
+
+## Lambda environment budget
+
+AWS Lambda refuses a function whose environment variables exceed **4 KB**
+(keys plus values, measured as a JSON object). The API function and the three
+control-plane event functions carry the same environment, so the module keeps
+it compact and checks it:
+
+- **Plan-time check.** Each function has a `precondition` that estimates the
+  environment size (every key and value plus 6 bytes per entry plus 1, which
+  reproduces Lambda's own measurement exactly) and fails the plan with the size
+  when it exceeds 4096 bytes, instead of an `InvalidParameterValueException` at
+  `CreateFunction` after everything else has been applied (honua-release
+  e2e-cloud-aws run 38046060497 measured 4118 bytes).
+- **Secrets by name.** `aws:secretsmanager:` references carry the secret's
+  **name** rather than its ARN (59 bytes shorter each) when the secret is in
+  the function's account and region. The server passes the id straight to
+  `GetSecretValue` and signs for the function's `AWS_REGION`, and IAM still
+  evaluates the secret's ARN, so the grants are unchanged. A name ending in `-`
+  plus six characters (for example `<name>/connection-string`) is ambiguous
+  with an ARN suffix and keeps the full ARN, as do cross-account or
+  cross-region operator secrets. The GP Batch job definitions keep full ARNs.
+- **No defaults restated.** Settings equal to the server's defaults are not
+  emitted (`HONUA_SKIP_MIGRATIONS=false`, `HONUA_SERVE_ADMIN_UI`/`HONUA_ADMIN_UI`
+  `=false`, the deploy target's `aws.lambda.function_name`/`aws.region`/
+  `aws.lambda.alias_name=live` parameters, `batch.region`, and the Bedrock and
+  Amazon Location defaults above).
+
+Measured with `tests/lambda_environment_budget.tftest.hcl` (cell name
+`honuarawsse380460-it`, 12-digit account, release secret names): the release
+Redis-on cell with the key ring, audit key and GP Batch is **2934** bytes (was
+4118). Every optional 2026.1 feature at once (also Bedrock, Amazon Location,
+X-Ray, two CORS origins, request-secret allowlists and the control-plane event
+functions) is **3981** bytes on the scheduled-tick function, under the cap but
+with only 115 bytes to spare. Adding the 2026.2 Pro license on top no longer
+fits the event functions, and the plan fails with the size. More headroom needs
+a server-side change, for example a single `aws:secretsmanager:` reference to a
+JSON settings bundle that the server expands into configuration at startup; the
+server has no such source today.
 
 ## Constraints
 

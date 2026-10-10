@@ -224,6 +224,13 @@ resource "aws_lambda_function" "control_plane_reconcile" {
     variables = local.control_plane_reconcile_environment
   }
 
+  lifecycle {
+    precondition {
+      condition     = local.lambda_environment_bytes.control_plane_reconcile <= local.lambda_environment_limit_bytes
+      error_message = "The ${local.control_plane_reconcile_function_name} environment would be about ${local.lambda_environment_bytes.control_plane_reconcile} bytes; AWS Lambda refuses more than ${local.lambda_environment_limit_bytes}. It carries the API function's environment plus the event-handler selectors; see the precondition on aws_lambda_function.this."
+    }
+  }
+
   depends_on = [
     aws_ecr_repository_policy.lambda_image_access,
     aws_cloudwatch_log_group.control_plane_reconcile,
@@ -283,6 +290,13 @@ resource "aws_lambda_function" "control_plane_backstop" {
 
   environment {
     variables = local.control_plane_backstop_environment
+  }
+
+  lifecycle {
+    precondition {
+      condition     = local.lambda_environment_bytes.control_plane_backstop <= local.lambda_environment_limit_bytes
+      error_message = "The ${local.control_plane_backstop_function_name} environment would be about ${local.lambda_environment_bytes.control_plane_backstop} bytes; AWS Lambda refuses more than ${local.lambda_environment_limit_bytes}. It carries the API function's environment plus the event-handler selectors; see the precondition on aws_lambda_function.this."
+    }
   }
 
   depends_on = [
@@ -358,6 +372,13 @@ resource "aws_lambda_function" "control_plane_tick" {
 
   environment {
     variables = local.control_plane_tick_environment
+  }
+
+  lifecycle {
+    precondition {
+      condition     = local.lambda_environment_bytes.control_plane_tick <= local.lambda_environment_limit_bytes
+      error_message = "The ${local.control_plane_tick_function_name} environment would be about ${local.lambda_environment_bytes.control_plane_tick} bytes; AWS Lambda refuses more than ${local.lambda_environment_limit_bytes}. It carries the API function's environment plus the event-handler selectors; see the precondition on aws_lambda_function.this."
+    }
   }
 
   depends_on = [

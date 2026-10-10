@@ -242,7 +242,7 @@ run "supplying_an_envelope_enables_licensing_and_scopes_access" {
   }
 
   assert {
-    condition     = local.lambda_environment["Licensing__LicenseContentSecretRef"] == "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-license-pro-AbCdEf"
+    condition     = local.lambda_environment["Licensing__LicenseContentSecretRef"] == "aws:secretsmanager:honua-license-pro"
     error_message = "The adopted envelope must be referenced through Licensing__LicenseContentSecretRef."
   }
 
