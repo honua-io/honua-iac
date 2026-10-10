@@ -130,6 +130,11 @@ output "redis_connection_string" {
   sensitive = true
 }
 
+output "audit_chain_key_secret_arn" {
+  description = "Operator-owned audit hash-chain key secret the functions and GP jobs reference; null when unset."
+  value       = var.audit_chain_key_secret_arn != "" ? var.audit_chain_key_secret_arn : null
+}
+
 output "operation_key_ring_certificate_secret_arn" {
   description = "Operator-owned key-ring certificate secret the Lambda references while Redis is configured; null when Redis is off."
   # redis_enabled derives from the sensitive redis_connection_string; whether Redis is on is not secret.

@@ -9,6 +9,8 @@ provider "aws" {
 module "honua" {
   operation_key_ring_certificate_secret_arn         = var.operation_key_ring_certificate_secret_arn
   operation_key_ring_certificate_secret_kms_key_arn = var.operation_key_ring_certificate_secret_kms_key_arn
+  audit_chain_key_secret_arn                        = var.audit_chain_key_secret_arn
+  audit_chain_key_secret_kms_key_arn                = var.audit_chain_key_secret_kms_key_arn
 
   permissions_boundary_arn   = var.permissions_boundary_arn
   source                     = "../../modules/aws-ecs"

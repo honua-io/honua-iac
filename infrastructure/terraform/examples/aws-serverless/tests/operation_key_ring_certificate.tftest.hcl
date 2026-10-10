@@ -103,6 +103,9 @@ mock_provider "random" {}
 mock_provider "null" {}
 
 variables {
+  # Recommended in Production; unset only plans with a check warning.
+  audit_chain_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
+
   honua_image_uri      = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   honua_admin_password = "Synthetic-Terraform-Test-Admin-4721!aA1"
   # checkov:skip=CKV_SECRET_6: Synthetic test-only database password for mocked providers, not a credential.
@@ -159,4 +162,18 @@ run "root_rejects_a_kms_alias" {
   }
 
   expect_failures = [var.operation_key_ring_certificate_secret_kms_key_arn]
+}
+
+run "deploy_contract_lists_the_audit_chain_key" {
+  command = apply
+
+  variables {
+    redis_enabled              = false
+    audit_chain_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
+  }
+
+  assert {
+    condition     = output.deploy_contract.secret_refs["audit_chain_key"] == "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
+    error_message = "The deploy contract must advertise the operator-owned audit-chain key."
+  }
 }

@@ -41,6 +41,14 @@ operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-west-2:12
 # grants the Lambda roles decrypt; the key policy must permit those roles.
 # operation_key_ring_certificate_secret_kms_key_arn = "arn:aws:kms:us-west-2:123456789012:key/00000000-0000-0000-0000-000000000001"
 
+# Recommended for Production: an operator-owned Secrets Manager secret whose value
+# is a base64 audit hash-chain key of at least 32 bytes (openssl rand -base64 32).
+# Without it audit rows are still written but chain verification never succeeds and
+# the audit-chain-integrity health check is Unhealthy. Set it at first install and
+# keep it for the deployment's lifetime. Only the ARN goes here.
+# audit_chain_key_secret_arn = "arn:aws:secretsmanager:REGION:123456789012:secret:REPLACE_WITH_AUDIT_CHAIN_KEY-ABC123"
+# audit_chain_key_secret_kms_key_arn = "arn:aws:kms:REGION:123456789012:key/00000000-0000-0000-0000-000000000001"
+
 tags = {
   Owner      = "platform"
   CostCentre = "honua"

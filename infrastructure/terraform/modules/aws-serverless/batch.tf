@@ -160,17 +160,21 @@ resource "aws_iam_role_policy" "batch_job_secrets" {
   role  = aws_iam_role.batch_job[0].id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat([
       {
         Effect = "Allow"
         Action = ["secretsmanager:GetSecretValue"]
-        Resource = compact([
+        Resource = concat(compact([
           aws_secretsmanager_secret.connection_string.arn,
           aws_secretsmanager_secret.admin_password.arn,
           local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null
-        ])
+        ]), local.audit_chain_key_secret_arns)
       }
-    ]
+      ], length(local.audit_chain_key_kms_key_arns) > 0 ? [{
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt", "kms:DescribeKey"]
+        Resource = local.audit_chain_key_kms_key_arns
+    }] : [])
   })
 }
 
@@ -425,6 +429,12 @@ resource "aws_batch_job_definition" "gp" {
       {
         name  = "Licensing__Mode"
         value = local.licensing_mode
+      }
+      ], [
+      # A GP job that appends audit rows without the key would break the chain.
+      for name, value in local.audit_chain_key_environment : {
+        name  = name
+        value = value
       }
       ], [
       for name, value in local.request_secret_reference_environment : {

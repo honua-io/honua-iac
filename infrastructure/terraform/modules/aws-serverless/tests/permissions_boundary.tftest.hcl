@@ -102,6 +102,9 @@ mock_provider "random" {}
 mock_provider "null" {}
 
 variables {
+  # Recommended in Production; unset only plans with a check warning.
+  audit_chain_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
+
   image          = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   admin_password = "Synthetic-Terraform-Test-Admin-4721!aA1"
 

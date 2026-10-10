@@ -169,6 +169,11 @@ certificate appears in both surfaces as `operation_key_ring_certificate`
 (`kind = "operation_key_ring_certificate"`, `managed_by = "operator"`). It is
 omitted when Redis is off. Older v1 producers never emit this additive kind.
 
+When `audit_chain_key_secret_arn` is set, the operator-owned audit hash-chain
+key appears in both surfaces as `audit_chain_key` (`kind = "audit_chain_key"`,
+`managed_by = "operator"`). It is omitted when unset. This kind is also
+additive.
+
 ## Protection profile
 
 `operations_contract.resilience.protection_profile` describes installed AWS

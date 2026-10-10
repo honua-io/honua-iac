@@ -360,9 +360,10 @@ variable "additional_env" {
     condition = length(setintersection(toset([for name in keys(var.additional_env) : lower(replace(name, ":", "__"))]), toset([
       "operations__secretchannel__keyringcertificatepath",
       "operations__secretchannel__keyringcertificatepassword",
-      "operations__secretchannel__keyringcertificatepkcs12"
+      "operations__secretchannel__keyringcertificatepkcs12",
+      "auditlog__chainverification__key"
     ]))) == 0
-    error_message = "Set the operation key-ring certificate through operation_key_ring_certificate_secret_arn, not additional_env: a Lambda environment value is plaintext, so certificate material must stay in Secrets Manager."
+    error_message = "Set the operation key-ring certificate and the audit-chain key through operation_key_ring_certificate_secret_arn and audit_chain_key_secret_arn, not additional_env: a Lambda environment value is plaintext, so key material must stay in Secrets Manager."
   }
 }
 
@@ -403,6 +404,30 @@ variable "additional_allowed_hosts" {
   description = "Extra host patterns the server accepts besides the API Gateway domain (HostValidation__AllowedHosts__N), e.g. \"*.lambda-url.<region>.on.aws\" when a Function URL fronts the alias."
   type        = list(string)
   default     = []
+}
+
+variable "audit_chain_key_secret_kms_key_arn" {
+  description = "Customer-managed KMS key ARN encrypting the audit-chain key secret. Leave empty for the AWS-managed aws/secretsmanager key."
+  type        = string
+  default     = ""
+  nullable    = false
+
+  validation {
+    condition     = var.audit_chain_key_secret_kms_key_arn == "" || can(regex("^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$", var.audit_chain_key_secret_kms_key_arn))
+    error_message = "audit_chain_key_secret_kms_key_arn must be an exact KMS key ARN or empty."
+  }
+}
+
+variable "audit_chain_key_secret_arn" {
+  description = "ARN of an existing operator-owned Secrets Manager secret whose value is the base64 audit hash-chain key (at least 32 decoded bytes; AuditLog:ChainVerification:Key). Recommended for every Production deployment: without it audit rows are still written but scheduled chain verification never succeeds and the audit-chain-integrity health check is Unhealthy. Only the ARN enters Terraform; the Lambda (and the GP Batch job) receive an aws:secretsmanager: reference that the server resolves at startup with its own role, never the value. Set it at first install, or follow the server's phased activation for a deployment that already has audit rows."
+  type        = string
+  default     = ""
+  nullable    = false
+
+  validation {
+    condition     = var.audit_chain_key_secret_arn == "" || can(regex("^arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+-[A-Za-z0-9]{6}$", var.audit_chain_key_secret_arn))
+    error_message = "audit_chain_key_secret_arn must be a complete Secrets Manager secret ARN (including its six-character suffix), not key material, a wildcard, or a JSON-key selector."
+  }
 }
 
 variable "operation_key_ring_certificate_secret_kms_key_arn" {

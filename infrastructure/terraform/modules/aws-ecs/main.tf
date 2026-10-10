@@ -151,6 +151,13 @@ locals {
       name      = "Operations__SecretChannel__KeyRingCertificatePkcs12"
       valueFrom = var.operation_key_ring_certificate_secret_arn
     }
+    ] : [], var.audit_chain_key_secret_arn != "" ? [
+    {
+      # Every audit writer must carry the same key, so stable and canary
+      # tasks share it. Terraform never reads the value.
+      name      = "AuditLog__ChainVerification__Key"
+      valueFrom = var.audit_chain_key_secret_arn
+    }
   ] : [])
   container_log_configuration = {
     logDriver = "awslogs"
@@ -855,7 +862,8 @@ resource "aws_iam_policy" "secrets" {
           var.ai_provider_secret_arn != "" ? var.ai_provider_secret_arn : null,
           local.pro_license_enabled ? trimspace(var.pro_license_secret_arn) : null,
           local.redis_enabled ? var.operation_key_ring_certificate_secret_arn : null,
-          local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null
+          local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null,
+          var.audit_chain_key_secret_arn != "" ? var.audit_chain_key_secret_arn : null
         ])
       },
       {
@@ -875,6 +883,10 @@ resource "aws_iam_policy" "secrets" {
         Effect   = "Allow"
         Action   = ["kms:Decrypt", "kms:DescribeKey"]
         Resource = [var.operation_key_ring_certificate_secret_kms_key_arn]
+        }] : [], var.audit_chain_key_secret_arn != "" && var.audit_chain_key_secret_kms_key_arn != "" ? [{
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt", "kms:DescribeKey"]
+        Resource = [var.audit_chain_key_secret_kms_key_arn]
     }] : [])
   })
 }
@@ -1413,4 +1425,11 @@ resource "null_resource" "enable_postgis" {
   }
 
   depends_on = [module.rds]
+}
+
+check "audit_chain_key_configured" {
+  assert {
+    condition     = var.audit_chain_key_secret_arn != ""
+    error_message = "audit_chain_key_secret_arn is empty: audit rows are still written, but scheduled hash-chain verification cannot succeed and the server's audit-chain-integrity health check reports Unhealthy. Supply an operator-owned Secrets Manager secret holding a base64 key of at least 32 bytes (set it at first install; see the module README for activating it on a deployment that already has audit rows)."
+  }
 }

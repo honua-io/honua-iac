@@ -107,6 +107,8 @@ module "honua" {
 | `redis_connection_cidrs` | `[]` | Trusted CIDRs for Redis egress when `redis_connection_string` points to an existing endpoint. |
 | `operation_key_ring_certificate_secret_arn` | `""` | **Required whenever Redis is configured.** ARN of an operator-owned Secrets Manager PKCS#12 bundle; see [Redis operation key-ring certificate](#redis-operation-key-ring-certificate). |
 | `operation_key_ring_certificate_secret_kms_key_arn` | `""` | Customer-managed KMS key encrypting that secret; empty for the AWS-managed key. |
+| `audit_chain_key_secret_arn` | `""` | **Recommended.** ARN of an operator-owned Secrets Manager secret holding the base64 audit hash-chain key; see [Audit hash-chain key](#audit-hash-chain-key). |
+| `audit_chain_key_secret_kms_key_arn` | `""` | Customer-managed KMS key encrypting that secret; empty for the AWS-managed key. |
 | `enable_nat_gateway` | true | NAT gateways for outbound access. Required for OIDC. |
 | `enable_dashboard` | false | Create a CloudWatch dashboard (Lambda duration/errors/throttles/concurrency, API Gateway, cold-start, and custom Honua metrics). |
 | `enable_xray_tracing` | false | Enable Lambda X-Ray active tracing, grant least-privilege `xray:PutTraceSegments`/sampling reads, and set the app-side `Tracing__XRay__Enabled` flag. |
@@ -188,6 +190,42 @@ key, and the server rejects missing, inaccessible or invalid content at startup
 connection and so needs no certificate. The serverless root's deploy contract
 lists the ARN as `secret_refs.operation_key_ring_certificate` while Redis is
 configured (module output `operation_key_ring_certificate_secret_arn`).
+
+## Audit hash-chain key
+
+The server hash-chains every audit row. With `AuditLog:ChainVerification:Key`
+set to a base64 key of at least 32 decoded bytes, each row's hash is an
+HMAC-SHA256 under that key, which is held outside the database. Without it
+audit rows are still written and requests are served, but scheduled chain
+verification never succeeds and the `audit-chain-integrity` health check
+reports Unhealthy (the server logs `Audit hash-chain integrity FAILED ...
+audit chain key is not configured`). The key is therefore recommended rather
+than required: an empty `audit_chain_key_secret_arn` produces a plan-time
+warning (`check.audit_chain_key_configured`), not an error.
+
+Supply the ARN of an operator-owned Secrets Manager secret whose value is the
+base64 key (for example `openssl rand -base64 32`), plus
+`audit_chain_key_secret_kms_key_arn` for a customer-managed key. Only the ARN
+enters Terraform. Keep the same key for the deployment's lifetime and give it
+to every audit writer. Set it at first install. On a deployment that already
+has audit rows, follow the server's phased activation (roll out with the key
+unset, then stop every writer, set the key everywhere and restart): a writer
+without the key appending after the first keyed row permanently breaks
+verification. The module rejects `AuditLog__ChainVerification__Key` in
+`additional_env`.
+
+Lambda cannot resolve Secrets Manager into environment variables, so the API
+function, the control-plane event functions and the GP Batch job definitions
+all receive the reference
+`AuditLog__ChainVerification__Key = "aws:secretsmanager:<arn>"`, which the
+server resolves at startup with each process's own role (honua-server
+`StartupConfigurationHelpers.SecuritySecretReferenceKeys`; use an image that
+includes it). The module grants `secretsmanager:GetSecretValue` on exactly
+that secret to the function, event and GP job roles, and `kms:Decrypt` on a
+supplied customer-managed key. The serverless root's deploy contract lists the
+ARN as `secret_refs.audit_chain_key`. Under the release-cell permissions
+boundary the secret must also be admitted: list it in
+`bootstrap/aws-release-cells` `runtime_audit_chain_key_secret_arns`.
 
 ## Image repository policy
 

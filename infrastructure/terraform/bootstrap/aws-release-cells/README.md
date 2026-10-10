@@ -95,7 +95,10 @@ operator-owned key-ring certificate secret that the cells pass as
 key). That secret deliberately lives outside the cell namespaces so it outlives
 every cell and the reaper never touches it; without this input the boundary
 denies the read and the Redis-on server never becomes ready. Wildcards are
-rejected and an empty set grants nothing.
+rejected and an empty set grants nothing. The audit hash-chain key secret
+(`audit_chain_key_secret_arn`) is admitted the same way through
+`runtime_audit_chain_key_secret_arns`; a customer-managed key for it is listed
+in `runtime_operation_key_ring_certificate_kms_key_arns`.
 
 ## Standing stack and alerts
 

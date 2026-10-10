@@ -108,6 +108,7 @@ variables {
 
   operation_key_ring_certificate_secret_kms_key_arn = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000002"
   operation_key_ring_certificate_secret_arn         = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+  audit_chain_key_secret_arn                        = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
   honua_image                                       = "ghcr.io/honua-io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   honua_admin_password                              = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   honua_connection_encryption_master_key            = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -152,6 +153,15 @@ run "native_profile_is_projected_without_live_claims" {
       output.operations_contract.secrets.references.operation_key_ring_certificate.kms_key_ref == var.operation_key_ring_certificate_secret_kms_key_arn
     )
     error_message = "Install and day-2 contracts must agree on the operator-owned certificate and its KMS reference."
+  }
+  assert {
+    condition = (
+      output.deployment_contract.secret_refs.audit_chain_key == var.audit_chain_key_secret_arn &&
+      output.operations_contract.secrets.references.audit_chain_key.id == var.audit_chain_key_secret_arn &&
+      output.operations_contract.secrets.references.audit_chain_key.kind == "audit_chain_key" &&
+      output.operations_contract.secrets.references.audit_chain_key.managed_by == "operator"
+    )
+    error_message = "Install and day-2 contracts must agree on the operator-owned audit-chain key."
   }
   assert {
     condition = (

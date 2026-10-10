@@ -95,6 +95,9 @@ mock_provider "random" {}
 mock_provider "null" {}
 
 variables {
+  # Recommended in Production; unset only plans with a check warning.
+  audit_chain_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
+
   image                            = "ghcr.io/honua-io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   admin_password                   = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   connection_encryption_master_key = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -263,5 +266,74 @@ run "reject_plain_certificate_environment" {
 run "reject_canary_certificate_override" {
   command = plan
   variables { canary_additional_env = { Operations__SecretChannel__KeyRingCertificatePath = "/tmp/unprotected.pfx" } }
+  expect_failures = [var.canary_additional_env]
+}
+
+# ---- Audit hash-chain key (AuditLog:ChainVerification:Key) ----------------------------------------
+# Recommended, not required: without it the server still writes audit rows but chain verification
+# never succeeds, so planning warns (check block) instead of failing.
+
+run "audit_chain_key_unset_warns" {
+  command = plan
+  variables { audit_chain_key_secret_arn = "" }
+  expect_failures = [check.audit_chain_key_configured]
+}
+
+run "audit_chain_key_is_injected_for_both_slots" {
+  command = apply
+  variables {
+    redis_auth_token                          = "aA1aaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    deployment_mode                           = "MultiNode"
+    file_storage_provider                     = "AwsS3"
+    file_storage_aws_s3_bucket_name           = "honua-test-files"
+    redis_enabled                             = true
+    canary_enabled                            = true
+    operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+    audit_chain_key_secret_arn                = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
+    audit_chain_key_secret_kms_key_arn        = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000003"
+  }
+  assert {
+    condition = alltrue([
+      for definition in [aws_ecs_task_definition.this.container_definitions, aws_ecs_task_definition.canary[0].container_definitions] :
+      one([for s in jsondecode(definition)[0].secrets : s.valueFrom if s.name == "AuditLog__ChainVerification__Key"]) == "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123" &&
+      !contains([for e in jsondecode(definition)[0].environment : e.name], "AuditLog__ChainVerification__Key")
+    ])
+    error_message = "Every audit writer (stable and canary) must resolve the same audit-chain key through ECS secrets, never a plaintext environment value."
+  }
+  assert {
+    condition     = contains(jsondecode(aws_iam_policy.secrets.policy).Statement[0].Resource, "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123")
+    error_message = "The execution role must be able to read the audit-chain key secret."
+  }
+  assert {
+    condition     = length([for s in jsondecode(aws_iam_policy.secrets.policy).Statement : s if s.Resource == ["arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000003"]]) == 1
+    error_message = "A customer-managed key for the audit-chain secret must be granted exactly."
+  }
+}
+
+run "audit_chain_key_absent_requests_nothing" {
+  command = apply
+  variables { audit_chain_key_secret_arn = "" }
+  expect_failures = [check.audit_chain_key_configured]
+  assert {
+    condition     = !contains([for s in jsondecode(aws_ecs_task_definition.this.container_definitions)[0].secrets : s.name], "AuditLog__ChainVerification__Key")
+    error_message = "Without an ARN the task must not request the audit-chain key."
+  }
+}
+
+run "reject_plain_audit_chain_key" {
+  command = plan
+  variables { audit_chain_key_secret_arn = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" }
+  expect_failures = [var.audit_chain_key_secret_arn]
+}
+
+run "reject_audit_chain_key_environment" {
+  command = plan
+  variables { additional_env = { "AuditLog:ChainVerification:Key" = "plaintext" } }
+  expect_failures = [var.additional_env]
+}
+
+run "reject_canary_audit_chain_key_override" {
+  command = plan
+  variables { canary_additional_env = { AuditLog__ChainVerification__Key = "plaintext" } }
   expect_failures = [var.canary_additional_env]
 }

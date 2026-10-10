@@ -126,6 +126,20 @@ variable "postgis_readiness_sleep_seconds" {
   default     = 10
 }
 
+variable "audit_chain_key_secret_kms_key_arn" {
+  description = "Customer-managed KMS key ARN encrypting the audit-chain key secret. Leave empty for the AWS-managed aws/secretsmanager key."
+  type        = string
+  default     = ""
+  nullable    = false
+}
+
+variable "audit_chain_key_secret_arn" {
+  description = "ARN of an existing operator-owned Secrets Manager secret holding the base64 audit hash-chain key (at least 32 decoded bytes). Recommended for Production; the module validates the ARN. Never pass the key itself in tfvars."
+  type        = string
+  default     = ""
+  nullable    = false
+}
+
 variable "operation_key_ring_certificate_secret_kms_key_arn" {
   description = "Customer-managed KMS key ARN encrypting the operation key-ring certificate secret. Leave empty for the AWS-managed aws/secretsmanager key. Granted to the Lambda roles only when Redis is configured."
   type        = string
