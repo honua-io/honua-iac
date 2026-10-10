@@ -177,7 +177,8 @@ API function role and, when `enable_control_plane_events = true`, to the event
 function role, only while Redis is configured. For a customer-managed
 encryption key, supply `operation_key_ring_certificate_secret_kms_key_arn`; the
 module grants `kms:Decrypt` and `kms:DescribeKey` on that exact key to the API
-function role (the event role already holds `kms:Decrypt`). The operator must
+function role and, when `enable_gp_batch` is on, the GP Batch job role (the
+event role already holds `kms:Decrypt`). The operator must
 also ensure the secret resource policy and KMS key policy permit these roles,
 and that any `permissions_boundary_arn` admits the secret: the release-cell
 boundary from `bootstrap/aws-release-cells` admits only cell-namespaced secrets
@@ -186,8 +187,14 @@ unless its `runtime_operation_key_ring_certificate_secret_arns` (and
 valid ARN alone does not prove the secret exists, is accessible, or contains
 valid PKCS#12: Terraform checks the input contract without reading the private
 key, and the server rejects missing, inaccessible or invalid content at startup
-(the function never reports ready). The GP Batch job definition carries no Redis
-connection and so needs no certificate. The serverless root's deploy contract
+(the function never reports ready). When `enable_gp_batch` is on, the GP Batch
+job definitions carry the same `ConnectionStrings__redis` and
+`Operations__SecretChannel__KeyRingCertificatePkcs12` references as the Lambda:
+the worker runs the same server image and reports job state through the same
+durable Redis job store, so without them a submitted job never leaves
+`running`. The job role is granted read on both secrets, the Batch security
+group gets Redis egress, and a module-managed Redis admits the Batch security
+group. The serverless root's deploy contract
 lists the ARN as `secret_refs.operation_key_ring_certificate` while Redis is
 configured (module output `operation_key_ring_certificate_secret_arn`).
 
@@ -554,7 +561,7 @@ What it creates:
 
 - A **Fargate Spot** Batch compute environment (`MANAGED`, scale-to-zero — no `min_vcpus`/`desired_vcpus`, so nothing stays warm), a **job queue**, and a **pool of 4 job definitions** (`gp-s`/`gp-m`/`gp-l`/`gp-xl`) for the GP container, differing only by ephemeral storage.
 - Optionally (`create_worker_gdal_repo = true`) a dedicated **`<name>-worker-gdal` ECR repository** for the GP/GDAL worker image — scan-on-push, KMS encryption, and a lifecycle policy that retains the most recent `worker_gdal_repo_max_image_count` images. Off by default; GP otherwise reuses the Lambda image via `HONUA_JOB_KIND`. The repo name is stable regardless of the flag, so an operator can pre-create + push, then enable.
-- IAM: the Lambda execution role gets scoped `batch:SubmitJob` / `batch:TerminateJob` / `batch:CancelJob` on the queue + every tier's job-definition (revision wildcard), plus account-wide `batch:DescribeJobs` / `batch:ListJobs` (these do not support resource scoping). The Batch execution role gets ECR pull + CloudWatch Logs; the job role gets the same DB-secret access the Lambda has (and optional S3).
+- IAM: the Lambda execution role gets scoped `batch:SubmitJob` / `batch:TerminateJob` / `batch:CancelJob` on the queue + every tier's job-definition (revision wildcard), plus account-wide `batch:DescribeJobs` / `batch:ListJobs` (these do not support resource scoping). The Batch execution role gets ECR pull + CloudWatch Logs; the job role gets the same DB, Redis and operation key-ring certificate secret access the Lambda has (and optional S3), and the job definitions carry the same Redis and key-ring certificate references.
 - A `ControlPlane:ExecutionWorkloads` entry injected into the Lambda env (`Backend=honua-aws-batch`, `TargetKind=AwsBatch`, `Kind=Geoprocessing`) carrying `batch.job_queue_arn`, `batch.region`, and the per-tier `batch.job_definition_arn.{s,m,l,xl}` parameters the backend reads at submit time.
 
 > **Deploy identity:** enabling `enable_gp_batch` needs `batch:*` (scoped) + `iam:PassRole` for the Batch/ECS-tasks service roles. The `bootstrap/aws-serverless` deploy identity now grants these; an older bootstrap apply must be refreshed first or the Batch create calls fail.
