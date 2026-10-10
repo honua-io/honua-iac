@@ -224,3 +224,32 @@ run "gp_batch_job_uses_and_reads_the_master_key" {
     error_message = "The GP job role must be able to read the master-key secret its job definition references."
   }
 }
+
+# The event functions carry the request-secret-reference allowlist in the API
+# environment, so they need the same read grant as the API role.
+run "control_plane_event_role_reads_request_secret_references" {
+  command = apply
+
+  variables {
+    request_secret_reference_allowed_secret_reference_prefixes = ["aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:honua/imports/"]
+    request_secret_reference_secret_arns                       = ["arn:aws:secretsmanager:us-east-1:123456789012:secret:honua/imports/*"]
+    request_secret_reference_kms_key_arns                      = ["arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000003"]
+  }
+
+  assert {
+    condition = (
+      jsondecode(aws_iam_role_policy.control_plane_events_request_secret_references[0].policy) ==
+      jsondecode(aws_iam_role_policy.lambda_request_secret_references[0].policy)
+    )
+    error_message = "The control-plane event role must get the same request-secret-reference grant as the API Lambda role."
+  }
+}
+
+run "no_request_secret_references_grants_nothing" {
+  command = plan
+
+  assert {
+    condition     = length(aws_iam_role_policy.control_plane_events_request_secret_references) == 0
+    error_message = "With no request_secret_reference_secret_arns the event role must get no extra grant."
+  }
+}

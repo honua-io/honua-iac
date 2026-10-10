@@ -149,6 +149,32 @@ resource "aws_iam_role_policy" "control_plane_events" {
   })
 }
 
+# The event functions run the same server and resolve allowlisted request-
+# supplied secret references (Security:RequestSecretReferences, carried in
+# local.lambda_environment) with their own role, so they get the same grant as
+# aws_iam_role_policy.lambda_request_secret_references. Nothing is granted
+# while the list is empty.
+resource "aws_iam_role_policy" "control_plane_events_request_secret_references" {
+  count = local.control_plane_events_enabled && length(var.request_secret_reference_secret_arns) > 0 ? 1 : 0
+  name  = "${local.name}-cp-evt-request-secret-references"
+  role  = aws_iam_role.control_plane_events[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = concat([
+      {
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = var.request_secret_reference_secret_arns
+      }
+      ], length(var.request_secret_reference_kms_key_arns) > 0 ? [{
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = var.request_secret_reference_kms_key_arns
+    }] : [])
+  })
+}
+
 # ---------------------------------------------------------------------------
 # CloudWatch log groups for the reconcile/backstop Lambdas.
 # ---------------------------------------------------------------------------
@@ -236,6 +262,7 @@ resource "aws_lambda_function" "control_plane_reconcile" {
     aws_cloudwatch_log_group.control_plane_reconcile,
     aws_secretsmanager_secret_version.connection_string,
     aws_secretsmanager_secret_version.admin_password,
+    aws_secretsmanager_secret_version.master_key,
     aws_secretsmanager_secret_version.redis_connection,
     aws_secretsmanager_secret_version.pro_license
   ]
@@ -304,6 +331,7 @@ resource "aws_lambda_function" "control_plane_backstop" {
     aws_cloudwatch_log_group.control_plane_backstop,
     aws_secretsmanager_secret_version.connection_string,
     aws_secretsmanager_secret_version.admin_password,
+    aws_secretsmanager_secret_version.master_key,
     aws_secretsmanager_secret_version.redis_connection,
     aws_secretsmanager_secret_version.pro_license
   ]
@@ -386,6 +414,7 @@ resource "aws_lambda_function" "control_plane_tick" {
     aws_cloudwatch_log_group.control_plane_tick,
     aws_secretsmanager_secret_version.connection_string,
     aws_secretsmanager_secret_version.admin_password,
+    aws_secretsmanager_secret_version.master_key,
     aws_secretsmanager_secret_version.redis_connection,
     aws_secretsmanager_secret_version.pro_license
   ]
