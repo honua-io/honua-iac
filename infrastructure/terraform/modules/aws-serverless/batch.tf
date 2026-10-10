@@ -461,6 +461,13 @@ resource "aws_batch_job_definition" "gp" {
         value = value
       }
       ], [
+      # The worker runs the same Production server, so it evaluates operations
+      # under the same policy rules as the Lambda.
+      for name, value in local.operations_policy_environment : {
+        name  = name
+        value = value
+      }
+      ], [
       for name, value in local.request_secret_reference_environment : {
         name  = name
         value = value

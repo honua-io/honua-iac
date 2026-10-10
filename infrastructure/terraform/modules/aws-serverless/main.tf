@@ -254,6 +254,23 @@ locals {
     { for index, value in var.request_secret_reference_allowed_environment_variable_prefixes : "Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__${index}" => value },
     { for index, value in var.request_secret_reference_allowed_secret_reference_prefixes : "Security__RequestSecretReferences__AllowedSecretReferencePrefixes__${index}" => value },
   )
+  # Operation policy rules (honua-server Operations:Policy:Rules). The image's
+  # Production settings enable the policy with DefaultDecision Deny, so every
+  # typed operation is denied until a rule allows it. Rules are first-match-wins
+  # in list order and render as indexed Operations__Policy__Rules__<n>__<Field>
+  # entries; unset optional fields render nothing (a wildcard on the server).
+  operations_policy_environment = merge({}, [
+    for index, rule in var.operations_policy_rules : {
+      for field, value in {
+        OperationId  = rule.operation_id
+        Role         = rule.role
+        Tier         = rule.tier
+        Decision     = rule.decision
+        Reason       = rule.reason
+        ApprovalLane = rule.approval_lane
+      } : "Operations__Policy__Rules__${index}__${field}" => value if value != null
+    }
+  ]...)
   # When GP-on-Batch is enabled, surface the DURABLE substrate to the server as a
   # ControlPlane:ExecutionWorkloads entry: the queue and the per-TIER job
   # definitions (s/m/l/xl). The reconciler selects the AwsBatchComputeBackend by
@@ -328,7 +345,7 @@ locals {
       }, var.lambda_alias_name != "live" ? {
       ControlPlane__DeployTargets__0__ParameterEntries__0__Key   = "aws.lambda.alias_name"
       ControlPlane__DeployTargets__0__ParameterEntries__0__Value = var.lambda_alias_name
-  } : {}, local.gp_batch_environment, local.amazon_location_environment, var.additional_env, local.lambda_secret_reference_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment)
+  } : {}, local.gp_batch_environment, local.amazon_location_environment, var.additional_env, local.operations_policy_environment, local.lambda_secret_reference_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment)
 
   # AWS Lambda refuses a function whose environment exceeds 4 KB ("exceeded the
   # 4KB limit. Measured size: N bytes") and only says so at CreateFunction /
@@ -878,7 +895,7 @@ resource "aws_lambda_function" "this" {
 
     precondition {
       condition     = local.lambda_environment_bytes.api <= local.lambda_environment_limit_bytes
-      error_message = "The ${local.lambda_function_name} environment would be about ${local.lambda_environment_bytes.api} bytes; AWS Lambda refuses more than ${local.lambda_environment_limit_bytes}. Turn off an optional feature that adds variables (Bedrock AI, Amazon Location geocoding, CORS origins, request-secret allowlists, additional_env, additional_allowed_hosts) or shorten name_prefix/environment."
+      error_message = "The ${local.lambda_function_name} environment would be about ${local.lambda_environment_bytes.api} bytes; AWS Lambda refuses more than ${local.lambda_environment_limit_bytes}. Turn off an optional feature that adds variables (Bedrock AI, Amazon Location geocoding, CORS origins, request-secret allowlists, operations_policy_rules, additional_env, additional_allowed_hosts) or shorten name_prefix/environment."
     }
 
     precondition {

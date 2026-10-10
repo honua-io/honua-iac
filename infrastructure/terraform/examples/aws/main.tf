@@ -74,6 +74,7 @@ module "honua" {
   allow_http_ingress_cidrs         = local.install_net_http
   waf_web_acl_arn                  = var.waf_web_acl_arn
   cors_allowed_origins             = var.cors_allowed_origins
+  operations_policy_rules          = var.operations_policy_rules
   tags                             = var.tags
 
   additional_env = {

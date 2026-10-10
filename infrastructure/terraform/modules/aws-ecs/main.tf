@@ -88,6 +88,23 @@ locals {
     { for index, value in var.request_secret_reference_allowed_environment_variable_prefixes : "Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__${index}" => value },
     { for index, value in var.request_secret_reference_allowed_secret_reference_prefixes : "Security__RequestSecretReferences__AllowedSecretReferencePrefixes__${index}" => value },
   )
+  # Operation policy rules (honua-server Operations:Policy:Rules). The image's
+  # Production settings enable the policy with DefaultDecision Deny, so every
+  # typed operation is denied until a rule allows it. Rules are first-match-wins
+  # in list order and render as indexed Operations__Policy__Rules__<n>__<Field>
+  # entries; unset optional fields render nothing (a wildcard on the server).
+  operations_policy_environment = merge({}, [
+    for index, rule in var.operations_policy_rules : {
+      for field, value in {
+        OperationId  = rule.operation_id
+        Role         = rule.role
+        Tier         = rule.tier
+        Decision     = rule.decision
+        Reason       = rule.reason
+        ApprovalLane = rule.approval_lane
+      } : "Operations__Policy__Rules__${index}__${field}" => value if value != null
+    }
+  ]...)
   # Browser origins (honua-server cloud-deployments guide lists
   # Cors__AllowedOrigins__0 as required for Console/Studio). Indexed in list
   # order; an empty list renders nothing, so API-only cells keep the server's
@@ -120,7 +137,7 @@ locals {
     FileStorage__AwsS3__BucketName = var.file_storage_aws_s3_bucket_name
     FileStorage__AwsS3__Region     = local.file_storage_aws_s3_region
     FileStorage__AwsS3__KeyPrefix  = var.file_storage_aws_s3_key_prefix
-  } : {}, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment, local.alb_tls_environment)
+  } : {}, local.licensing_environment, local.operations_policy_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment, local.alb_tls_environment)
   primary_container_environment = [
     for key, value in merge(var.additional_env, local.runtime_environment) : {
       name  = key

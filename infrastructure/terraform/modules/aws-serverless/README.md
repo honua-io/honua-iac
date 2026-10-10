@@ -94,6 +94,7 @@ module "honua" {
 | `lambda_timeout_seconds` | 30 | Keep at or below 30 (API Gateway limit). |
 | `lambda_architectures` | `["x86_64"]` | `x86_64` by default, matching the 2026.1 platform manifest (`awsLambdaArchitecture: x86_64`). Use `arm64` only with an independently verified arm64 image. |
 | `cors_allowed_origins` | `[]` | Browser origins (Console/Studio) rendered as `Cors__AllowedOrigins__<n>` and as API Gateway CORS. Empty or `null` configures no CORS; API-only cells need none. |
+| `operations_policy_rules` | `[]` | Ordered operation policy rules rendered as `Operations__Policy__Rules__<n>__<Field>`. Production denies every typed operation until a rule allows it. See [Operation policy rules](#operation-policy-rules). |
 | `lambda_alias_name` | `live` | Stable alias used for API Gateway traffic and control-plane rollback. |
 | `lambda_alias_version` | `null` | Optional published version to pin the stable alias to; defaults to the version published by the current apply. |
 | `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster on RDS. **Set to true.** |
@@ -266,6 +267,41 @@ first (`terraform state rm 'module.<name>.aws_ecr_repository_policy.lambda_image
 An applied `owned` stack upgrading to this version plans a move from
 `aws_ecr_repository_policy.lambda_image_access` to `...lambda_image_access[0]`
 and no policy change.
+
+## Operation policy rules
+
+The server image runs with its default environment, `Production`, whose
+`appsettings.Production.json` enables `Operations:Policy` with
+`DefaultDecision: Deny` ("Operations require an explicit production policy
+rule."), and the server refuses to start in Production without an enabled,
+fail-closed policy. Every typed operation, for example `service.publish`
+(`honua_publish_service`), is therefore denied until the operator authors
+rules. Set them with `operations_policy_rules`:
+
+```hcl
+operations_policy_rules = [
+  # Admins publish services directly.
+  { operation_id = "service.publish", role = "admin", decision = "Allow" },
+  # Any other operation an admin starts waits for a second reviewer.
+  {
+    role          = "admin"
+    decision      = "RequireApproval"
+    reason        = "Production changes need a second reviewer."
+    approval_lane = "control-plane"
+  },
+]
+```
+
+Rules are evaluated first-match-wins in list order; an operation no rule
+matches keeps the `Deny` default. `operation_id` defaults to `"*"` (any
+operation) and is otherwise matched exactly; `role` and `tier` are optional,
+case-insensitive filters; `decision` is `Allow`, `RequireApproval`,
+`DryRunFirst` or `Deny`; `reason` and `approval_lane` are optional (the lane is
+used only by `RequireApproval`). Each rule renders as
+`Operations__Policy__Rules__<n>__{OperationId,Role,Tier,Decision,Reason,ApprovalLane}`
+on the API Lambda, the control-plane event Lambdas and the GP Batch job definitions (the Rules count toward the [Lambda environment budget](#lambda-environment-budget)); unset fields render nothing, and the `operations_policy_environment`
+output shows what was rendered. Set rules here or through `additional_env`, not
+both, so one source owns the indexes.
 
 ## Request-supplied secret references
 

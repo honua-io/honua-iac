@@ -71,6 +71,14 @@ operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:12
 # file_storage_aws_s3_bucket_name = "honua-prod-files"
 # file_storage_aws_s3_region      = "us-east-1"
 
+# Production denies every typed operation (for example service.publish) until a
+# rule allows it: Operations:Policy is enabled with DefaultDecision Deny. Rules
+# are first-match-wins; decision is Allow, RequireApproval, DryRunFirst or Deny.
+# operations_policy_rules = [
+#   { operation_id = "service.publish", role = "admin", decision = "Allow" },
+#   { role = "admin", decision = "RequireApproval", approval_lane = "control-plane" },
+# ]
+
 tags = {
   Owner      = "platform"
   CostCentre = "honua"

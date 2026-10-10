@@ -62,6 +62,23 @@ Honua Console or Studio, that may call the API. Each entry becomes
 `Cors__AllowedOrigins__<n>` on the server and an API Gateway CORS origin. API-only
 cells called by SDKs, the CLI or server-side clients need none.
 
+## Operation policy rules
+
+The server runs in `Production`, where `Operations:Policy` denies every typed
+operation (for example `service.publish`) until a rule allows it.
+`operations_policy_rules` (default `[]`) passes ordered first-match-wins rules
+to the module, which renders them on the API Lambda, the control-plane event
+Lambdas and the GP Batch jobs; see the module README's
+[Operation policy rules](../../modules/aws-serverless/README.md#operation-policy-rules)
+for the fields. For example:
+
+```hcl
+operations_policy_rules = [
+  { operation_id = "service.publish", role = "admin", decision = "Allow" },
+  { role = "admin", decision = "RequireApproval", approval_lane = "control-plane" },
+]
+```
+
 ## Migrations on the serverless root
 
 `skip_migrations` defaults to `true`: concurrent Lambda cold starts must not race

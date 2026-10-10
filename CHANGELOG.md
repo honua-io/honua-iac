@@ -14,7 +14,27 @@ module input/output contracts may still change.
 
 ## Unreleased
 
-No changes yet.
+### Added
+
+- `aws-serverless`, `aws-ecs` and the `aws-serverless` and `aws` example roots
+  add `operations_policy_rules` (default `[]`), rendered as
+  `Operations__Policy__Rules__<n>__{OperationId,Role,Tier,Decision,Reason,ApprovalLane}`
+  on every server process, and an `operations_policy_environment` output. The
+  server image runs in Production, where `Operations:Policy` denies every typed
+  operation (for example `service.publish`) until a rule allows it, so an
+  install needs rules before operations can run. `decision` is validated
+  against `Allow`, `RequireApproval`, `DryRunFirst` and `Deny`.
+
+### Fixed
+
+- `aws-serverless`: the control-plane event Lambdas (reconcile, backstop,
+  scheduled tick) can read the connection-encryption master-key secret; they
+  crashed at init without it. Their role now reads exactly the API Lambda
+  role's secret set.
+- `aws-serverless`: the GP Batch job definitions take
+  `Security__ConnectionEncryption__MasterKey` from the master-key secret
+  instead of the admin-password secret, and the job role can read it, so the
+  worker can decrypt connection secrets the API stored.
 
 ## v0.2.0
 
