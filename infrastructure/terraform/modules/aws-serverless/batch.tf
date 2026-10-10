@@ -153,7 +153,8 @@ resource "aws_iam_role" "batch_job" {
   tags                 = local.tags
 }
 
-# Same secrets the Lambda reads (DB connection string, admin/master key, redis).
+# Same secrets the Lambda reads (DB connection string, admin/master key, redis,
+# and the operation key-ring certificate a connected Redis requires).
 resource "aws_iam_role_policy" "batch_job_secrets" {
   count = local.gp_batch_enabled ? 1 : 0
   name  = "${local.gp_batch_name}-job-secrets"
@@ -168,12 +169,12 @@ resource "aws_iam_role_policy" "batch_job_secrets" {
           aws_secretsmanager_secret.connection_string.arn,
           aws_secretsmanager_secret.admin_password.arn,
           local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null
-        ]), local.audit_chain_key_secret_arns)
+        ]), local.operation_key_ring_certificate_secret_arns, local.audit_chain_key_secret_arns)
       }
-      ], length(local.audit_chain_key_kms_key_arns) > 0 ? [{
+      ], length(concat(local.operation_key_ring_certificate_kms_key_arns, local.audit_chain_key_kms_key_arns)) > 0 ? [{
         Effect   = "Allow"
         Action   = ["kms:Decrypt", "kms:DescribeKey"]
-        Resource = local.audit_chain_key_kms_key_arns
+        Resource = concat(local.operation_key_ring_certificate_kms_key_arns, local.audit_chain_key_kms_key_arns)
     }] : [])
   })
 }
@@ -228,9 +229,9 @@ resource "aws_iam_role_policy" "batch_job_s3" {
 }
 
 # ---------------------------------------------------------------------------
-# Security group — egress only (DB + HTTPS for ECR/Secrets/S3).
-# The GP container needs the same DB reach as the Lambda; ingress to RDS is
-# granted below.
+# Security group — egress only (DB + Redis + HTTPS for ECR/Secrets/S3).
+# The GP container needs the same DB and Redis reach as the Lambda; ingress to
+# RDS is granted below, ingress to module-managed Redis on aws_security_group.redis.
 # ---------------------------------------------------------------------------
 
 #checkov:skip=CKV2_AWS_5: Security group is attached to Batch Fargate tasks via the compute environment.
@@ -257,6 +258,19 @@ resource "aws_security_group" "batch" {
       to_port     = 5432
       protocol    = "tcp"
       cidr_blocks = ["0.0.0.0/0"]
+    }
+  }
+
+  # The GP worker reports job state through the same durable Redis job store
+  # the Lambda uses, so it needs the same Redis reach (mirrors the Lambda SG).
+  dynamic "egress" {
+    for_each = local.redis_enabled ? [1] : []
+    content {
+      description = "Redis access"
+      from_port   = var.redis_port
+      to_port     = var.redis_port
+      protocol    = "tcp"
+      cidr_blocks = local.redis_egress_cidrs
     }
   }
 
@@ -413,6 +427,13 @@ resource "aws_batch_job_definition" "gp" {
     # the same reason: a job that reads through a secure connection resolves
     # that connection's stored reference under the same server policy. Empty
     # lists add no entries.
+    #
+    # Redis and the operation key-ring certificate travel together, exactly as
+    # on the Lambda: the GP worker records job state in the durable Redis job
+    # store (without it the job stays "running" forever because the server never
+    # sees the worker's result), and a server with Redis connected refuses to
+    # start in Production without the key-ring certificate. Both are empty when
+    # Redis is off.
     environment = concat([
       {
         name  = "ConnectionStrings__DefaultConnection"
@@ -443,6 +464,11 @@ resource "aws_batch_job_definition" "gp" {
       }
       ], [
       for name, value in local.request_secret_reference_batch_values : {
+        name  = name
+        value = value
+      }
+      ], [
+      for name, value in merge(local.redis_secret_environment, local.operation_key_ring_certificate_environment) : {
         name  = name
         value = value
       }

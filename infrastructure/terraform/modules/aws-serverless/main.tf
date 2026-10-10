@@ -368,6 +368,21 @@ resource "aws_security_group" "redis" {
     security_groups = [aws_security_group.lambda.id]
   }
 
+  # GP Batch tasks share the durable Redis job store with the Lambda. Kept
+  # inline (not a standalone aws_security_group_rule) because this group
+  # declares inline ingress, which the provider treats as authoritative; the
+  # Batch SG only references CIDRs, so there is no dependency cycle.
+  dynamic "ingress" {
+    for_each = local.gp_batch_enabled ? [1] : []
+    content {
+      description     = "Redis from GP Batch tasks"
+      from_port       = var.redis_port
+      to_port         = var.redis_port
+      protocol        = "tcp"
+      security_groups = [aws_security_group.batch[0].id]
+    }
+  }
+
   tags = local.tags
 }
 
