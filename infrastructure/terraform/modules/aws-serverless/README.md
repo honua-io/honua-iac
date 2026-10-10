@@ -681,6 +681,37 @@ a server-side change, for example a single `aws:secretsmanager:` reference to a
 JSON settings bundle that the server expands into configuration at startup; the
 server has no such source today.
 
+## RDS security group rules
+
+The module-managed RDS security group declares no inline rules. Every
+PostgreSQL rule is a standalone `aws_security_group_rule`: `rds_from_lambda`,
+`rds_from_cidrs` (one per `db_additional_ingress_cidrs` entry),
+`rds_from_batch`, and the custom-code `rds_from_batch_provisioning` and
+`rds_from_batch_execution`. Terraform does not support inline rules alongside
+standalone rules on one group (the inline set is authoritative and strips the
+others on every other apply).
+
+**Upgrading a deployment created before this change.** The Lambda and CIDR
+rules already exist in AWS as former inline rules, so creating them as
+standalone resources fails with `InvalidPermission.Duplicate`. Import them
+once, from the root that calls the module, before the upgrade apply (the rule
+stays in place throughout, so the Lambda keeps database access):
+
+```hcl
+import {
+  to = module.honua.aws_security_group_rule.rds_from_lambda[0]
+  id = "<rds sg id>_ingress_tcp_5432_5432_<lambda sg id>"
+}
+
+# One per db_additional_ingress_cidrs entry.
+import {
+  to = module.honua.aws_security_group_rule.rds_from_cidrs["203.0.113.10/32"]
+  id = "<rds sg id>_ingress_tcp_5432_5432_203.0.113.10/32"
+}
+```
+
+New deployments need nothing.
+
 ## Constraints
 
 - **API Gateway timeout**: HTTP API has a 30-second max integration timeout. Keep `lambda_timeout_seconds` in sync.

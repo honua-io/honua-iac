@@ -469,26 +469,38 @@ resource "aws_security_group" "rds" {
   description = "RDS security group"
   vpc_id      = local.vpc_id
 
-  ingress {
-    description     = "PostgreSQL from Lambda"
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [aws_security_group.lambda.id]
-  }
-
-  dynamic "ingress" {
-    for_each = toset(var.db_additional_ingress_cidrs)
-    content {
-      description = "PostgreSQL additional CIDR ingress"
-      from_port   = 5432
-      to_port     = 5432
-      protocol    = "tcp"
-      cidr_blocks = [ingress.value]
-    }
-  }
+  # No inline ingress/egress: every RDS rule is a standalone
+  # aws_security_group_rule (rds_from_lambda and rds_from_cidrs below,
+  # rds_from_batch in batch.tf, rds_from_batch_provisioning/execution in
+  # egress-isolation.tf). Terraform does not support inline rules alongside
+  # standalone rules on one group: the inline set is authoritative, so each
+  # apply would strip the standalone rules and the next would re-add them.
 
   tags = local.tags
+}
+
+resource "aws_security_group_rule" "rds_from_lambda" {
+  count                    = local.db_use_existing ? 0 : 1
+  type                     = "ingress"
+  description              = "PostgreSQL from Lambda"
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.rds[0].id
+  source_security_group_id = aws_security_group.lambda.id
+}
+
+resource "aws_security_group_rule" "rds_from_cidrs" {
+  # Whether an existing database is used reveals nothing about its connection
+  # string, and for_each refuses sensitive values.
+  for_each          = nonsensitive(local.db_use_existing) ? toset([]) : toset(var.db_additional_ingress_cidrs)
+  type              = "ingress"
+  description       = "PostgreSQL additional CIDR ingress"
+  from_port         = 5432
+  to_port           = 5432
+  protocol          = "tcp"
+  security_group_id = aws_security_group.rds[0].id
+  cidr_blocks       = [each.value]
 }
 
 resource "aws_security_group" "redis" {
@@ -907,6 +919,7 @@ resource "aws_lambda_function" "this" {
   depends_on = [
     aws_ecr_repository_policy.lambda_image_access,
     aws_cloudwatch_log_group.lambda,
+    aws_security_group_rule.rds_from_lambda,
     aws_secretsmanager_secret_version.connection_string,
     aws_secretsmanager_secret_version.admin_password,
     aws_secretsmanager_secret_version.master_key,
@@ -1177,7 +1190,9 @@ resource "null_resource" "enable_postgis" {
     }
   }
 
-  depends_on = [module.rds]
+  # The runner reaches the database through the additional CIDR rules, which
+  # are standalone resources rather than part of the RDS security group.
+  depends_on = [module.rds, aws_security_group_rule.rds_from_cidrs]
 }
 
 check "audit_chain_key_configured" {

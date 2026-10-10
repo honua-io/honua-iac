@@ -35,6 +35,14 @@ module input/output contracts may still change.
   `Security__ConnectionEncryption__MasterKey` from the master-key secret
   instead of the admin-password secret, and the job role can read it, so the
   worker can decrypt connection secrets the API stored.
+- `aws-serverless`: the RDS security group no longer mixes inline ingress with
+  standalone `aws_security_group_rule` resources, which made applies strip
+  and re-add the GP Batch and custom-code rules. Its Lambda and
+  `db_additional_ingress_cidrs` rules are now standalone
+  (`rds_from_lambda`, `rds_from_cidrs`). **Upgrade note:** an existing
+  deployment must import those two rule sets before the upgrade apply, or it
+  fails with `InvalidPermission.Duplicate`; see the module README's
+  "RDS security group rules".
 
 ## v0.2.0
 
