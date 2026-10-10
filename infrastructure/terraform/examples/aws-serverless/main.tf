@@ -66,6 +66,10 @@ module "honua" {
   cors_allowed_origins    = var.cors_allowed_origins
   operations_policy_rules = var.operations_policy_rules
 
+  # Optional per-cell custom domain (custom-domain.tf).
+  domain_name     = var.domain_name
+  route53_zone_id = var.route53_zone_id
+
   # GP on AWS Batch: the Lambda+Batch cell. use_batch_service_linked_role is
   # wired above with the other certification-cell inputs.
   enable_gp_batch              = var.enable_gp_batch
@@ -90,7 +94,8 @@ output "dashboard_url" {
 }
 
 output "honua_url" {
-  value = module.honua.api_endpoint
+  description = "Public base URL: https://<domain_name> when the custom domain is configured, else the execute-api endpoint."
+  value       = module.honua.service_url
 }
 
 output "environment" {

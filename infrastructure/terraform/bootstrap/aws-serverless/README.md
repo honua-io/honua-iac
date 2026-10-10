@@ -31,5 +31,6 @@ terraform apply
 ## Notes
 - This is a baseline for Lambda + API Gateway + container image deployments.
 - Includes Postgres (RDS) and Redis permissions for serverless Honua stacks.
+- Includes ACM and Route53 record permissions for the module's optional custom domain (`domain_name` + `route53_zone_id`). Remove them if you do not use one.
 - If you are not using ECR or S3, remove those permissions.
 - If you set `create_access_key`, treat the key as a secret and rotate it out; the certified lane will not accept it.
