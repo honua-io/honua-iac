@@ -11,6 +11,18 @@ terraform init
 terraform plan -var-file=presets/small.tfvars.example
 ```
 
+## Redis and the operation key-ring certificate
+
+`redis_enabled` defaults to `true`, and a Redis-connected server refuses to start
+without its operation key-ring certificate. Set
+`operation_key_ring_certificate_secret_arn` (and
+`operation_key_ring_certificate_secret_kms_key_arn` for a customer-managed key)
+to an operator-owned Secrets Manager PKCS#12 bundle; planning fails with an
+actionable error when Redis is on and it is missing. Only the ARN enters
+Terraform: the Lambda receives an `aws:secretsmanager:` reference and the server
+reads the value with the function role. See the module README, "Redis operation
+key-ring certificate".
+
 ## Architecture defaults
 
 `lambda_architectures` defaults to `["x86_64"]` and `gp_batch_cpu_architecture`

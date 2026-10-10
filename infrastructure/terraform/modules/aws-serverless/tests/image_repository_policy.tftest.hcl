@@ -115,6 +115,9 @@ variables {
   # ElastiCache validates the auth token in-provider and the random provider is
   # mocked here, so supply one explicitly instead of auto-generating it.
   redis_auth_token = "aaaaAAAA1111&&&&aaaaAAAA1111&&&&"
+
+  # Redis is on by default, which requires the operator key-ring certificate.
+  operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
 }
 
 run "reuse_shared_repository_manages_no_policy" {

@@ -104,6 +104,20 @@ locals {
   redis_secret_environment = local.redis_connection != "" ? {
     ConnectionStrings__redis = "aws:secretsmanager:${aws_secretsmanager_secret.redis_connection[0].arn}"
   } : {}
+  # A connected Redis makes the server compose the durable operation secret
+  # channel, which refuses to start without the key-ring certificate. Lambda
+  # cannot resolve Secrets Manager into env the way ECS `secrets` does, so the
+  # function carries an aws:secretsmanager: REFERENCE that the server resolves
+  # with the function role and materializes privately at startup. Terraform
+  # never reads the bundle.
+  operation_key_ring_certificate_environment = local.redis_enabled && var.operation_key_ring_certificate_secret_arn != "" ? {
+    Operations__SecretChannel__KeyRingCertificatePkcs12 = "aws:secretsmanager:${var.operation_key_ring_certificate_secret_arn}"
+  } : {}
+  # Secret/KMS grants for every Lambda role that composes the server DI from
+  # local.lambda_environment. Empty when Redis is off, so Redis-off cells take
+  # no dependency on the certificate.
+  operation_key_ring_certificate_secret_arns  = local.redis_enabled && var.operation_key_ring_certificate_secret_arn != "" ? [var.operation_key_ring_certificate_secret_arn] : []
+  operation_key_ring_certificate_kms_key_arns = local.redis_enabled && var.operation_key_ring_certificate_secret_kms_key_arn != "" ? [var.operation_key_ring_certificate_secret_kms_key_arn] : []
   xray_environment = var.enable_xray_tracing ? {
     Tracing__XRay__Enabled = "true"
   } : {}
@@ -221,7 +235,7 @@ locals {
     ControlPlane__DeployTargets__0__ParameterEntries__1__Value  = var.lambda_alias_name
     ControlPlane__DeployTargets__0__ParameterEntries__2__Key    = "aws.region"
     ControlPlane__DeployTargets__0__ParameterEntries__2__Value  = data.aws_region.current.name
-  }, local.gp_batch_environment, local.amazon_location_environment, var.additional_env, local.redis_secret_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment)
+  }, local.gp_batch_environment, local.amazon_location_environment, var.additional_env, local.redis_secret_environment, local.operation_key_ring_certificate_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment)
 }
 
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
@@ -535,21 +549,25 @@ resource "aws_iam_policy" "lambda_secrets" {
   name = "${local.name}-lambda-secrets"
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat([
       {
         Effect = "Allow"
         Action = [
           "secretsmanager:GetSecretValue"
         ]
-        Resource = compact([
+        Resource = concat(compact([
           aws_secretsmanager_secret.connection_string.arn,
           aws_secretsmanager_secret.admin_password.arn,
           aws_secretsmanager_secret.master_key.arn,
           local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null,
           local.pro_license_effective_secret_arn
-        ])
+        ]), local.operation_key_ring_certificate_secret_arns)
       }
-    ]
+      ], length(local.operation_key_ring_certificate_kms_key_arns) > 0 ? [{
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt", "kms:DescribeKey"]
+        Resource = local.operation_key_ring_certificate_kms_key_arns
+    }] : [])
   })
   tags = local.tags
 }
@@ -719,6 +737,11 @@ resource "aws_lambda_function" "this" {
     precondition {
       condition     = var.db_max_allocated_storage >= var.db_allocated_storage
       error_message = "db_max_allocated_storage must be >= db_allocated_storage."
+    }
+
+    precondition {
+      condition     = !local.redis_enabled || var.operation_key_ring_certificate_secret_arn != ""
+      error_message = "Redis-backed Production functions require operation_key_ring_certificate_secret_arn: supply an existing operator-owned Secrets Manager PKCS#12 bundle with a private key (base64 or JSON {pkcs12,password}); the module passes only its aws:secretsmanager: reference and grants the function role read access. Terraform must not receive private-key material. Without it the server refuses to start whenever Redis is connected."
     }
   }
 

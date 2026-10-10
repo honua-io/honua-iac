@@ -29,6 +29,20 @@ locals {
         Effect   = "Allow"
         Action   = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
         Resource = var.runtime_bedrock_model_arns
+      }],
+      # The operator-owned key-ring certificate lives outside the cell namespaces (it must
+      # outlive every cell), so CellRuntime's honuar*/honuan* secret ceiling would deny it.
+      length(var.runtime_operation_key_ring_certificate_secret_arns) == 0 ? [] : [{
+        Sid      = "ReadOperationKeyRingCertificate"
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = var.runtime_operation_key_ring_certificate_secret_arns
+      }],
+      length(var.runtime_operation_key_ring_certificate_kms_key_arns) == 0 ? [] : [{
+        Sid      = "DecryptOperationKeyRingCertificate"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt", "kms:DescribeKey"]
+        Resource = var.runtime_operation_key_ring_certificate_kms_key_arns
       }]
     )
   })

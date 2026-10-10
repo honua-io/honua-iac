@@ -87,6 +87,16 @@ workload role must still carry its own scoped grants. Standing/region denies
 continue to apply. The native fixture checks the IAM policy size with networking
 and the four certification model/profile ARNs enabled together.
 
+For a Redis-on ECS or Lambda cell, set
+`runtime_operation_key_ring_certificate_secret_arns` to the exact ARN of the
+operator-owned key-ring certificate secret that the cells pass as
+`operation_key_ring_certificate_secret_arn` (and
+`runtime_operation_key_ring_certificate_kms_key_arns` for a customer-managed
+key). That secret deliberately lives outside the cell namespaces so it outlives
+every cell and the reaper never touches it; without this input the boundary
+denies the read and the Redis-on server never becomes ready. Wildcards are
+rejected and an empty set grants nothing.
+
 ## Standing stack and alerts
 
 `examples/aws-cert` fixes `Owner=release-standing`, `Lifecycle=standing` and

@@ -155,7 +155,7 @@ Required environment variables:
   HONUA_ADMIN_PASSWORD (at least 32 chars)
   HONUA_DB_PASSWORD
   HONUA_AWS_ECS_IMAGE (when --stack ecs|both)
-  HONUA_AWS_OPERATION_KEY_RING_CERTIFICATE_SECRET_ARN (when --stack ecs|both; separately provisioned PKCS#12 secret ARN)
+  HONUA_AWS_OPERATION_KEY_RING_CERTIFICATE_SECRET_ARN (when --stack ecs|serverless|both; separately provisioned PKCS#12 secret ARN)
   HONUA_AWS_ECS_CANARY_ENABLED
   HONUA_AWS_ECS_CANARY_IMAGE
   HONUA_AWS_ECS_CANARY_DESIRED_COUNT
@@ -230,6 +230,7 @@ validate_requested_images() {
     fi
   fi
   if [[ "$STACK" == "serverless" || "$STACK" == "both" ]]; then
+    require_env HONUA_AWS_OPERATION_KEY_RING_CERTIFICATE_SECRET_ARN
     require_digest_image SERVERLESS_IMAGE "$SERVERLESS_IMAGE" || exit 1
     if [[ "$RUN_UPGRADE_ROLLBACK" == "true" ]]; then
       require_revision_pair "$SERVERLESS_PREVIOUS_IMAGE" "$SERVERLESS_IMAGE" || exit 1
@@ -2169,6 +2170,9 @@ set_serverless_tf_vars() {
   export TF_VAR_name_prefix="$SERVERLESS_NAME_PREFIX"
   export TF_VAR_honua_image_uri="$SERVERLESS_IMAGE"
   export TF_VAR_skip_migrations="true"
+  # Redis-on Lambda carries only an aws:secretsmanager: reference to this secret.
+  export TF_VAR_operation_key_ring_certificate_secret_arn="$ECS_KEY_RING_CERTIFICATE_SECRET_ARN"
+  export TF_VAR_operation_key_ring_certificate_secret_kms_key_arn="$ECS_KEY_RING_CERTIFICATE_SECRET_KMS_KEY_ARN"
 
   unset TF_VAR_honua_image
   unset TF_VAR_desired_count

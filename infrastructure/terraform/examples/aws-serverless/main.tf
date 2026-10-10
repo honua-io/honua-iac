@@ -38,6 +38,10 @@ module "honua" {
   skip_migrations                 = var.skip_migrations
   tags                            = var.tags
 
+  # Required with Redis: the Lambda receives only an aws:secretsmanager: reference.
+  operation_key_ring_certificate_secret_arn         = var.operation_key_ring_certificate_secret_arn
+  operation_key_ring_certificate_secret_kms_key_arn = var.operation_key_ring_certificate_secret_kms_key_arn
+
   enable_dashboard       = var.enable_dashboard
   enable_xray_tracing    = var.enable_xray_tracing
   enable_lambda_insights = var.enable_lambda_insights

@@ -778,6 +778,7 @@ jobs:
           fi
 
           if [[ "$AWS_VALIDATION_STACK" == "serverless" || "$AWS_VALIDATION_STACK" == "both" ]]; then
+            [[ -n "${HONUA_AWS_OPERATION_KEY_RING_CERTIFICATE_SECRET_ARN:-}" ]] || { echo "Missing protected certificate ARN: HONUA_AWS_OPERATION_KEY_RING_CERTIFICATE_SECRET_ARN"; exit 1; }
             [[ -n "${HONUA_AWS_SERVERLESS_IMAGE:-}" ]] || { echo "Missing required AWS image configuration: HONUA_AWS_SERVERLESS_IMAGE"; exit 1; }
             if [[ "$HONUA_RUN_UPGRADE_ROLLBACK" == "true" ]]; then
               [[ -n "${HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE:-}" ]] || { echo "Missing required AWS image configuration: HONUA_AWS_SERVERLESS_PREVIOUS_IMAGE"; exit 1; }
