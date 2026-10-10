@@ -168,6 +168,7 @@ resource "aws_iam_role_policy" "batch_job_secrets" {
         Resource = concat(compact([
           aws_secretsmanager_secret.connection_string.arn,
           aws_secretsmanager_secret.admin_password.arn,
+          aws_secretsmanager_secret.master_key.arn,
           local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null
         ]), local.operation_key_ring_certificate_secret_arns, local.audit_chain_key_secret_arns)
       }
@@ -444,8 +445,10 @@ resource "aws_batch_job_definition" "gp" {
         value = "aws:secretsmanager:${aws_secretsmanager_secret.admin_password.arn}"
       },
       {
+        # The same master key the Lambda derives connection encryption from, so
+        # the worker can decrypt connection secrets the API stored.
         name  = "Security__ConnectionEncryption__MasterKey"
-        value = "aws:secretsmanager:${aws_secretsmanager_secret.admin_password.arn}"
+        value = "aws:secretsmanager:${aws_secretsmanager_secret.master_key.arn}"
       },
       {
         name  = "Licensing__Mode"

@@ -202,3 +202,25 @@ run "control_plane_event_role_reads_the_api_secret_set" {
     error_message = "Every control-plane event function must reference the API's master-key secret."
   }
 }
+
+# The GP Batch worker derived its master key from the ADMIN PASSWORD secret, so
+# it could not decrypt connection secrets the API encrypted with the master key.
+run "gp_batch_job_uses_and_reads_the_master_key" {
+  command = apply
+
+  assert {
+    condition = alltrue([
+      for tier, jd in aws_batch_job_definition.gp :
+      one([for e in jsondecode(jd.container_properties).environment : e.value if e.name == "Security__ConnectionEncryption__MasterKey"]) == "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test/connection-encryption-master-key-Ab12Cd"
+    ])
+    error_message = "Every GP job-definition tier must reference the connection-encryption master-key secret, not the admin password."
+  }
+
+  assert {
+    condition = contains(
+      flatten([for s in jsondecode(aws_iam_role_policy.batch_job_secrets[0].policy).Statement : s.Resource if contains(s.Action, "secretsmanager:GetSecretValue")]),
+      "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test/connection-encryption-master-key-Ab12Cd"
+    )
+    error_message = "The GP job role must be able to read the master-key secret its job definition references."
+  }
+}
