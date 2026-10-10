@@ -93,6 +93,26 @@ locals {
   # order; an empty list renders nothing, so API-only cells keep the server's
   # no-CORS default.
   cors_environment = { for index, origin in var.cors_allowed_origins : "Cors__AllowedOrigins__${index}" => origin }
+  # The HTTPS ALB terminates TLS and forwards plain HTTP to the task, so without
+  # this the server sees an http request and suppresses Strict-Transport-Security
+  # on a public https:// endpoint (honua-release e2e-cloud-aws run 38047168879).
+  # Mirrors modules/aws-serverless: emit HSTS for that trusted topology instead of
+  # suppressing it based on the internal scheme.
+  #
+  # ASPNETCORE_FORWARDEDHEADERS_ENABLED is the ASP.NET Core host switch that runs
+  # the forwarded-headers middleware first for X-Forwarded-For/-Proto with the
+  # known proxy/network lists cleared, so Request.Scheme becomes the ALB's
+  # listener scheme (absolute links, redirects) and RemoteIpAddress the client
+  # address the ALB appended (ForwardLimit defaults to 1). Host is not forwarded;
+  # the ALB preserves it. honua-server's own ForwardedHeaders:* settings only
+  # trust fixed KnownProxies IPs, which ALB nodes do not have. Trusting any peer
+  # is safe here only because aws_security_group.ecs admits the container port
+  # from the ALB security group alone, so the ALB is the only peer that can set
+  # these headers. Plain-HTTP deployments keep today's behaviour (nothing set).
+  alb_tls_environment = local.use_https ? {
+    SecurityHeaders__HstsHttpsOnly      = "false"
+    ASPNETCORE_FORWARDEDHEADERS_ENABLED = "true"
+  } : {}
   runtime_environment = merge({
     Deployment__Mode      = var.deployment_mode
     FileStorage__Provider = var.file_storage_provider
@@ -100,7 +120,7 @@ locals {
     FileStorage__AwsS3__BucketName = var.file_storage_aws_s3_bucket_name
     FileStorage__AwsS3__Region     = local.file_storage_aws_s3_region
     FileStorage__AwsS3__KeyPrefix  = var.file_storage_aws_s3_key_prefix
-  } : {}, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment)
+  } : {}, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment, local.alb_tls_environment)
   primary_container_environment = [
     for key, value in merge(var.additional_env, local.runtime_environment) : {
       name  = key
