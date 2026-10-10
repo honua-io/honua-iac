@@ -23,6 +23,14 @@ Terraform: the Lambda receives an `aws:secretsmanager:` reference and the server
 reads the value with the function role. See the module README, "Redis operation
 key-ring certificate".
 
+## Audit hash-chain key
+
+Set `audit_chain_key_secret_arn` (recommended) to an operator-owned Secrets
+Manager secret holding a base64 key of at least 32 bytes. Without it audit rows
+are still written but chain verification never succeeds and the
+`audit-chain-integrity` health check is Unhealthy; planning warns. See the
+module README, "Audit hash-chain key".
+
 ## Architecture defaults
 
 `lambda_architectures` defaults to `["x86_64"]` and `gp_batch_cpu_architecture`

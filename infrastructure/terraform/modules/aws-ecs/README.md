@@ -423,6 +423,34 @@ server reject missing/inaccessible/invalid content before a serving target is
 ready. Validate the operator's bundle privately before its separate provisioning
 operation. No live IAM or secret provisioning is included here.
 
+## Audit hash-chain key
+
+The server hash-chains every audit row. With `AuditLog:ChainVerification:Key`
+set to a base64 key of at least 32 decoded bytes, each row's hash is an
+HMAC-SHA256 under that key, which is held outside the database. Without it
+audit rows are still written and requests are served, but scheduled chain
+verification never succeeds and the `audit-chain-integrity` health check
+reports Unhealthy (the server logs `Audit hash-chain integrity FAILED ...
+audit chain key is not configured`). The key is therefore recommended rather
+than required: an empty `audit_chain_key_secret_arn` produces a plan-time
+warning (`check.audit_chain_key_configured`), not an error.
+
+Supply the ARN of an operator-owned Secrets Manager secret whose value is the
+base64 key (for example `openssl rand -base64 32`), plus
+`audit_chain_key_secret_kms_key_arn` for a customer-managed key. Only the ARN
+enters Terraform. Keep the same key for the deployment's lifetime and give it
+to every audit writer. Set it at first install. On a deployment that already
+has audit rows, follow the server's phased activation (roll out with the key
+unset, then stop every writer, set the key everywhere and restart): a writer
+without the key appending after the first keyed row permanently breaks
+verification. The module rejects `AuditLog__ChainVerification__Key` in
+`additional_env`.
+
+ECS resolves the secret as `AuditLog__ChainVerification__Key` in both the
+stable and canary task definitions, and the module grants the execution role
+read on exactly that secret (and `kms:Decrypt`/`kms:DescribeKey` on a supplied
+customer-managed key).
+
 ## Failed-cell diagnostics
 
 Capture evidence **before teardown**: ECS stopped-task history is short-lived

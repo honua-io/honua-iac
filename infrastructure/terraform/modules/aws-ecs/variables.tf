@@ -403,9 +403,10 @@ variable "additional_env" {
       "licensing__licensecontentsecretref",
       "operations__secretchannel__keyringcertificatepath",
       "operations__secretchannel__keyringcertificatepassword",
-      "operations__secretchannel__keyringcertificatepkcs12"
+      "operations__secretchannel__keyringcertificatepkcs12",
+      "auditlog__chainverification__key"
     ]))) == 0
-    error_message = "Set deployment, file-storage, licensing and operation certificate settings through the typed module variables, not additional_env."
+    error_message = "Set deployment, file-storage, licensing, operation certificate and audit-chain key settings through the typed module variables, not additional_env."
   }
 }
 
@@ -542,9 +543,10 @@ variable "canary_additional_env" {
       "licensing__licensecontentsecretref",
       "operations__secretchannel__keyringcertificatepath",
       "operations__secretchannel__keyringcertificatepassword",
-      "operations__secretchannel__keyringcertificatepkcs12"
+      "operations__secretchannel__keyringcertificatepkcs12",
+      "auditlog__chainverification__key"
     ]))) == 0
-    error_message = "Set deployment, file-storage, licensing and operation certificate settings through the typed module variables, not canary_additional_env."
+    error_message = "Set deployment, file-storage, licensing, operation certificate and audit-chain key settings through the typed module variables, not canary_additional_env."
   }
 }
 
@@ -611,6 +613,30 @@ variable "redis_auth_token" {
       ]) >= 3
     )
     error_message = "redis_auth_token must be 16-128 characters, contain only letters, digits, or !&#$^<>-, and use at least three character classes."
+  }
+}
+
+variable "audit_chain_key_secret_kms_key_arn" {
+  description = "Customer-managed KMS key ARN encrypting the audit-chain key secret. Leave empty for the AWS-managed aws/secretsmanager key."
+  type        = string
+  default     = ""
+  nullable    = false
+
+  validation {
+    condition     = var.audit_chain_key_secret_kms_key_arn == "" || can(regex("^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$", var.audit_chain_key_secret_kms_key_arn))
+    error_message = "audit_chain_key_secret_kms_key_arn must be an exact KMS key ARN or empty."
+  }
+}
+
+variable "audit_chain_key_secret_arn" {
+  description = "ARN of an existing operator-owned Secrets Manager secret whose value is the base64 audit hash-chain key (at least 32 decoded bytes; AuditLog:ChainVerification:Key). Recommended for every Production deployment: without it audit rows are still written but scheduled chain verification never succeeds and the audit-chain-integrity health check is Unhealthy. Only the ARN enters Terraform; ECS resolves the secret into the task and the module grants the execution role read access. Set it at first install, or follow the server's phased activation for a deployment that already has audit rows."
+  type        = string
+  default     = ""
+  nullable    = false
+
+  validation {
+    condition     = var.audit_chain_key_secret_arn == "" || can(regex("^arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+-[A-Za-z0-9]{6}$", var.audit_chain_key_secret_arn))
+    error_message = "audit_chain_key_secret_arn must be a complete Secrets Manager secret ARN (including its six-character suffix), not key material, a wildcard, or a JSON-key selector."
   }
 }
 

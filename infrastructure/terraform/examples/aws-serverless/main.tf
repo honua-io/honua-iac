@@ -42,6 +42,10 @@ module "honua" {
   operation_key_ring_certificate_secret_arn         = var.operation_key_ring_certificate_secret_arn
   operation_key_ring_certificate_secret_kms_key_arn = var.operation_key_ring_certificate_secret_kms_key_arn
 
+  # Recommended: audit rows are hash-chained under this key (reference only).
+  audit_chain_key_secret_arn         = var.audit_chain_key_secret_arn
+  audit_chain_key_secret_kms_key_arn = var.audit_chain_key_secret_kms_key_arn
+
   enable_dashboard       = var.enable_dashboard
   enable_xray_tracing    = var.enable_xray_tracing
   enable_lambda_insights = var.enable_lambda_insights

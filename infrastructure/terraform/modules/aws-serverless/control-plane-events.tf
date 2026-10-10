@@ -118,7 +118,7 @@ resource "aws_iam_role_policy" "control_plane_events" {
           aws_secretsmanager_secret.admin_password.arn,
           local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null,
           local.pro_license_effective_secret_arn
-        ]), local.operation_key_ring_certificate_secret_arns)
+        ]), local.operation_key_ring_certificate_secret_arns, local.audit_chain_key_secret_arns)
       },
       {
         # DescribeJobs does not support resource-level scoping in IAM; the

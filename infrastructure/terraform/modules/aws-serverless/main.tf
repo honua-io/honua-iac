@@ -118,6 +118,14 @@ locals {
   # no dependency on the certificate.
   operation_key_ring_certificate_secret_arns  = local.redis_enabled && var.operation_key_ring_certificate_secret_arn != "" ? [var.operation_key_ring_certificate_secret_arn] : []
   operation_key_ring_certificate_kms_key_arns = local.redis_enabled && var.operation_key_ring_certificate_secret_kms_key_arn != "" ? [var.operation_key_ring_certificate_secret_kms_key_arn] : []
+  # Audit hash-chain key: every process that writes audit rows (API and event
+  # functions, GP Batch jobs) must carry the same key, so all of them receive
+  # the same aws:secretsmanager: reference and read grant.
+  audit_chain_key_environment = var.audit_chain_key_secret_arn != "" ? {
+    AuditLog__ChainVerification__Key = "aws:secretsmanager:${var.audit_chain_key_secret_arn}"
+  } : {}
+  audit_chain_key_secret_arns  = var.audit_chain_key_secret_arn != "" ? [var.audit_chain_key_secret_arn] : []
+  audit_chain_key_kms_key_arns = var.audit_chain_key_secret_arn != "" && var.audit_chain_key_secret_kms_key_arn != "" ? [var.audit_chain_key_secret_kms_key_arn] : []
   xray_environment = var.enable_xray_tracing ? {
     Tracing__XRay__Enabled = "true"
   } : {}
@@ -235,7 +243,7 @@ locals {
     ControlPlane__DeployTargets__0__ParameterEntries__1__Value  = var.lambda_alias_name
     ControlPlane__DeployTargets__0__ParameterEntries__2__Key    = "aws.region"
     ControlPlane__DeployTargets__0__ParameterEntries__2__Value  = data.aws_region.current.name
-  }, local.gp_batch_environment, local.amazon_location_environment, var.additional_env, local.redis_secret_environment, local.operation_key_ring_certificate_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment)
+  }, local.gp_batch_environment, local.amazon_location_environment, var.additional_env, local.redis_secret_environment, local.operation_key_ring_certificate_environment, local.audit_chain_key_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment)
 }
 
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
@@ -561,12 +569,12 @@ resource "aws_iam_policy" "lambda_secrets" {
           aws_secretsmanager_secret.master_key.arn,
           local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null,
           local.pro_license_effective_secret_arn
-        ]), local.operation_key_ring_certificate_secret_arns)
+        ]), local.operation_key_ring_certificate_secret_arns, local.audit_chain_key_secret_arns)
       }
-      ], length(local.operation_key_ring_certificate_kms_key_arns) > 0 ? [{
+      ], length(concat(local.operation_key_ring_certificate_kms_key_arns, local.audit_chain_key_kms_key_arns)) > 0 ? [{
         Effect   = "Allow"
         Action   = ["kms:Decrypt", "kms:DescribeKey"]
-        Resource = local.operation_key_ring_certificate_kms_key_arns
+        Resource = concat(local.operation_key_ring_certificate_kms_key_arns, local.audit_chain_key_kms_key_arns)
     }] : [])
   })
   tags = local.tags
@@ -1019,4 +1027,11 @@ resource "null_resource" "enable_postgis" {
   }
 
   depends_on = [module.rds]
+}
+
+check "audit_chain_key_configured" {
+  assert {
+    condition     = var.audit_chain_key_secret_arn != ""
+    error_message = "audit_chain_key_secret_arn is empty: audit rows are still written, but scheduled hash-chain verification cannot succeed and the server's audit-chain-integrity health check reports Unhealthy. Supply an operator-owned Secrets Manager secret holding a base64 key of at least 32 bytes (set it at first install; see the module README for activating it on a deployment that already has audit rows)."
+  }
 }

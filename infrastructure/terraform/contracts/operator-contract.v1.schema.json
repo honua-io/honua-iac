@@ -101,6 +101,7 @@
             "redis_connection",
             "ai_provider_api_key",
             "operation_key_ring_certificate",
+            "audit_chain_key",
             "other"
           ]
         },
