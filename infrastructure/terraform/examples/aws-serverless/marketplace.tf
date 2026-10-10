@@ -121,7 +121,7 @@ locals {
     target_name    = module.honua.control_plane_target_name
     resource_id    = module.honua.control_plane_target_resource_id
     resource_group = null
-    endpoint       = module.honua.api_endpoint
+    endpoint       = module.honua.service_url
     artifact_reference = {
       kind    = "container_image"
       current = local.install_image
