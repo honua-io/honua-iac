@@ -31,5 +31,8 @@ terraform apply
 
 ## Notes
 - The policy is scoped to AWS services used by the EKS/VPC modules
-  (EKS, VPC/EC2, IAM, autoscaling, CloudWatch Logs, KMS).
+  (EKS, VPC/EC2, IAM, autoscaling, CloudWatch Logs, KMS) and the GA cell's data
+  plane (RDS, ElastiCache, Secrets Manager, ACM, Route53 record changes).
+- The default `workload_identity_mode = "pod_identity"` needs no IAM OIDC
+  provider; the OIDC actions remain only for operators who choose `irsa`.
 - If you set `create_access_key`, treat the key as a secret and rotate it out; the certified lane will not accept it.

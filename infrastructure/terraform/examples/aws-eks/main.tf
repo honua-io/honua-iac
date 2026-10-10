@@ -22,6 +22,45 @@ module "eks" {
   enable_cluster_creator_admin_permissions = var.enable_cluster_creator_admin_permissions
   cluster_secret_encryption_enabled        = var.cluster_secret_encryption_enabled
   cluster_secret_encryption_key_arn        = var.cluster_secret_encryption_key_arn
+
+  workload_identity_mode      = var.workload_identity_mode
+  kubernetes_namespace        = var.kubernetes_namespace
+  server_service_account_name = var.server_service_account_name
+  gp_job_namespace            = var.gp_job_namespace
+  gp_job_service_account_name = var.gp_job_service_account_name
+  gp_job_image                = var.gp_job_image
+  gp_job_data_bucket_arn      = var.gp_job_data_bucket_arn
+  gp_job_data_bucket_enabled  = var.gp_job_data_bucket_enabled
+  permissions_boundary_arn    = var.permissions_boundary_arn
+
+  admin_password                                    = var.honua_admin_password
+  connection_encryption_master_key                  = var.honua_connection_encryption_master_key
+  secrets_kms_key_arn                               = var.secrets_kms_key_arn
+  audit_chain_key_secret_arn                        = var.audit_chain_key_secret_arn
+  audit_chain_key_secret_kms_key_arn                = var.audit_chain_key_secret_kms_key_arn
+  operation_key_ring_certificate_secret_arn         = var.operation_key_ring_certificate_secret_arn
+  operation_key_ring_certificate_secret_kms_key_arn = var.operation_key_ring_certificate_secret_kms_key_arn
+
+  db_password                     = var.db_password
+  existing_db_endpoint            = var.existing_db_endpoint
+  existing_db_connection_string   = var.existing_db_connection_string
+  db_instance_class               = var.db_instance_class
+  db_publicly_accessible          = var.db_publicly_accessible
+  db_additional_ingress_cidrs     = var.db_additional_ingress_cidrs
+  rds_deletion_protection         = var.rds_deletion_protection
+  enable_postgis                  = var.enable_postgis
+  postgis_readiness_max_attempts  = var.postgis_readiness_max_attempts
+  postgis_readiness_sleep_seconds = var.postgis_readiness_sleep_seconds
+
+  redis_enabled   = var.redis_enabled
+  redis_node_type = var.redis_node_type
+
+  operations_policy_rules = var.operations_policy_rules
+
+  domain_name                    = var.domain_name
+  route53_zone_id                = var.route53_zone_id
+  subject_alternative_names      = var.subject_alternative_names
+  ingress_load_balancer_hostname = var.ingress_load_balancer_hostname
 }
 
 output "cluster_name" {

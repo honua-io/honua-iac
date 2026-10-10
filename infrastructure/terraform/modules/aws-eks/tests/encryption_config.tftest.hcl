@@ -46,6 +46,10 @@ mock_provider "null" {}
 variables {
   name_prefix = "honua"
   environment = "test"
+
+  # Recommended in Production; unset only plans with a check warning, which a
+  # test run would count as a failure.
+  audit_chain_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
 }
 
 run "encryption_disabled" {

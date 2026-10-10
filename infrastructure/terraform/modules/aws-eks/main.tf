@@ -26,6 +26,38 @@ locals {
     } : attribute => value if var.cluster_secret_encryption_enabled
   }
 
+  # IAM names the cluster owns all start with local.name. The release account's
+  # cell guardrail (honua-release-cicd: DenyIamOutsideCellNamespace) refuses any
+  # role outside the run-scoped name prefix, and the upstream module's default
+  # node-group role name ("<node group key>-eks-node-group-") is not under it:
+  # e2e-cloud-aws run 38057015781 died on iam:CreateRole for
+  # role/default-eks-node-group-2026101014522336640000000a.
+  node_group_role_name = "${local.name}-eks-node"
+
+  # Workload identity. Pod Identity binds IAM roles to service accounts through
+  # the EKS API and needs no account-level IAM OIDC provider; IRSA needs one per
+  # cluster, which the same guardrail denies outright (iam:*OpenIDConnectProvider*,
+  # the other half of run 38057015781's failure). IRSA stays available for
+  # operators who standardise on it.
+  irsa_enabled         = var.workload_identity_mode == "irsa"
+  pod_identity_enabled = var.workload_identity_mode == "pod_identity"
+
+  cluster_addons = merge({
+    coredns = {
+      addon_version = lookup(var.cluster_addon_versions, "coredns", null)
+    }
+    kube-proxy = {
+      addon_version = lookup(var.cluster_addon_versions, "kube-proxy", null)
+    }
+    vpc-cni = {
+      addon_version = lookup(var.cluster_addon_versions, "vpc-cni", null)
+    }
+    }, local.pod_identity_enabled ? {
+    eks-pod-identity-agent = {
+      addon_version = lookup(var.cluster_addon_versions, "eks-pod-identity-agent", null)
+    }
+  } : {})
+
   tags = merge({
     Project     = "honua-server"
     Environment = var.environment
@@ -98,17 +130,10 @@ module "eks" {
   create_kms_key            = false
   cluster_encryption_config = local.cluster_encryption_config
 
-  cluster_addons = {
-    coredns = {
-      addon_version = lookup(var.cluster_addon_versions, "coredns", null)
-    }
-    kube-proxy = {
-      addon_version = lookup(var.cluster_addon_versions, "kube-proxy", null)
-    }
-    vpc-cni = {
-      addon_version = lookup(var.cluster_addon_versions, "vpc-cni", null)
-    }
-  }
+  cluster_addons = local.cluster_addons
+
+  # No account-level OIDC provider unless the operator chose IRSA (see locals).
+  enable_irsa = local.irsa_enabled
 
   cluster_enabled_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
 
@@ -126,6 +151,9 @@ module "eks" {
       max_size       = var.node_max_size
       desired_size   = var.node_desired_size
       subnet_ids     = module.vpc.private_subnets
+
+      iam_role_name            = local.node_group_role_name
+      iam_role_use_name_prefix = false
     }
   }
 

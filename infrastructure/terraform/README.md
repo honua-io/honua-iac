@@ -54,7 +54,7 @@ Operator guide: `docs/operator-deployment.md`
 - `modules/azure-aca` - Azure Container Apps + PostgreSQL Flexible Server + Key Vault
 - `modules/aws-serverless` - Lambda + API Gateway + RDS
 - `modules/azure-functions` - Azure Functions + PostgreSQL Flexible Server
-- `modules/aws-eks` - EKS + VPC for managed Kubernetes
+- `modules/aws-eks` - EKS + VPC + RDS/PostGIS, optional Redis, workload IAM (Pod Identity) for the Helm chart and GP Kubernetes Jobs
 - `modules/azure-aks` - AKS for managed Kubernetes
 - `modules/observability-stack` - optional Prometheus + Grafana add-on
 
