@@ -91,6 +91,17 @@ run "operation_key_ring_certificate_is_admitted_exactly" {
   }
 }
 
+run "audit_chain_key_is_admitted_exactly" {
+  command = plan
+  variables {
+    runtime_audit_chain_key_secret_arns = ["arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"]
+  }
+  assert {
+    condition     = one([for s in jsondecode(output.runtime_boundary).Statement : s.Resource if s.Sid == "ReadAuditChainKey"]) == ["arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"]
+    error_message = "The workload boundary must admit exactly the operator's audit-chain key secret."
+  }
+}
+
 run "no_operation_key_ring_certificate_by_default" {
   command = plan
   assert {

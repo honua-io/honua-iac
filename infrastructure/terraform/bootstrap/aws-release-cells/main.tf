@@ -43,6 +43,13 @@ locals {
         Effect   = "Allow"
         Action   = ["kms:Decrypt", "kms:DescribeKey"]
         Resource = var.runtime_operation_key_ring_certificate_kms_key_arns
+      }],
+      # The operator-owned audit hash-chain key likewise outlives every cell.
+      length(var.runtime_audit_chain_key_secret_arns) == 0 ? [] : [{
+        Sid      = "ReadAuditChainKey"
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = var.runtime_audit_chain_key_secret_arns
       }]
     )
   })

@@ -224,8 +224,8 @@ includes it). The module grants `secretsmanager:GetSecretValue` on exactly
 that secret to the function, event and GP job roles, and `kms:Decrypt` on a
 supplied customer-managed key. The serverless root's deploy contract lists the
 ARN as `secret_refs.audit_chain_key`. Under the release-cell permissions
-boundary the secret must also be admitted (name it in the cell namespace or
-extend `bootstrap/aws-release-cells` the same way as the key-ring certificate).
+boundary the secret must also be admitted: list it in
+`bootstrap/aws-release-cells` `runtime_audit_chain_key_secret_arns`.
 
 ## Image repository policy
 
