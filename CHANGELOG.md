@@ -14,7 +14,38 @@ module input/output contracts may still change.
 
 ## Unreleased
 
-No changes yet.
+### Added
+
+- `aws-serverless`, `aws-ecs` and the `aws-serverless` and `aws` example roots
+  add `operations_policy_rules` (default `[]`), rendered as
+  `Operations__Policy__Rules__<n>__{OperationId,Role,Tier,Decision,Reason,ApprovalLane}`
+  on every server process, and an `operations_policy_environment` output. The
+  server image runs in Production, where `Operations:Policy` denies every typed
+  operation (for example `service.publish`) until a rule allows it, so an
+  install needs rules before operations can run. `decision` is validated
+  against `Allow`, `RequireApproval`, `DryRunFirst` and `Deny`.
+- `examples/aws` exposes the module's `alb_enable_http_redirect` (default
+  `true`, as in the module), and `aws-ecs` outputs
+  `alb_http_redirect_enabled`.
+
+### Fixed
+
+- `aws-serverless`: the control-plane event Lambdas (reconcile, backstop,
+  scheduled tick) can read the connection-encryption master-key secret; they
+  crashed at init without it. Their role now reads exactly the API Lambda
+  role's secret set.
+- `aws-serverless`: the GP Batch job definitions take
+  `Security__ConnectionEncryption__MasterKey` from the master-key secret
+  instead of the admin-password secret, and the job role can read it, so the
+  worker can decrypt connection secrets the API stored.
+- `aws-serverless`: the RDS security group no longer mixes inline ingress with
+  standalone `aws_security_group_rule` resources, which made applies strip
+  and re-add the GP Batch and custom-code rules. Its Lambda and
+  `db_additional_ingress_cidrs` rules are now standalone
+  (`rds_from_lambda`, `rds_from_cidrs`). **Upgrade note:** an existing
+  deployment must import those two rule sets before the upgrade apply, or it
+  fails with `InvalidPermission.Duplicate`; see the module README's
+  "RDS security group rules".
 
 ## v0.2.0
 

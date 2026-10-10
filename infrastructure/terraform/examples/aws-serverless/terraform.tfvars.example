@@ -49,6 +49,14 @@ operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-west-2:12
 # audit_chain_key_secret_arn = "arn:aws:secretsmanager:REGION:123456789012:secret:REPLACE_WITH_AUDIT_CHAIN_KEY-ABC123"
 # audit_chain_key_secret_kms_key_arn = "arn:aws:kms:REGION:123456789012:key/00000000-0000-0000-0000-000000000001"
 
+# Production denies every typed operation (for example service.publish) until a
+# rule allows it: Operations:Policy is enabled with DefaultDecision Deny. Rules
+# are first-match-wins; decision is Allow, RequireApproval, DryRunFirst or Deny.
+# operations_policy_rules = [
+#   { operation_id = "service.publish", role = "admin", decision = "Allow" },
+#   { role = "admin", decision = "RequireApproval", approval_lane = "control-plane" },
+# ]
+
 tags = {
   Owner      = "platform"
   CostCentre = "honua"

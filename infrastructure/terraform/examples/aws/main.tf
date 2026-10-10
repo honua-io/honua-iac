@@ -66,6 +66,7 @@ module "honua" {
   alb_access_logs_enabled          = var.alb_access_logs_enabled
   alb_access_logs_force_destroy    = var.alb_access_logs_force_destroy
   alb_certificate_arn              = var.alb_certificate_arn
+  alb_enable_http_redirect         = var.alb_enable_http_redirect
   domain_name                      = var.domain_name
   route53_zone_id                  = var.route53_zone_id
   domain_alias_record_enabled      = var.domain_alias_record_enabled
@@ -74,6 +75,7 @@ module "honua" {
   allow_http_ingress_cidrs         = local.install_net_http
   waf_web_acl_arn                  = var.waf_web_acl_arn
   cors_allowed_origins             = var.cors_allowed_origins
+  operations_policy_rules          = var.operations_policy_rules
   tags                             = var.tags
 
   additional_env = {

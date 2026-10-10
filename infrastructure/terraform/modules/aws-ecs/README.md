@@ -246,6 +246,7 @@ If your Prometheus scrape config uses different job names, override the correspo
 | `log_retention_days` | 365 | CloudWatch log retention. |
 | `kms_key_arn` | `""` | Existing KMS key for logs/secrets. Creates one if empty. |
 | `cors_allowed_origins` | `[]` | Browser origins rendered as `Cors__AllowedOrigins__<n>`. API-only cells need none. See [Browser origins (CORS)](#browser-origins-cors). |
+| `operations_policy_rules` | `[]` | Ordered operation policy rules rendered as `Operations__Policy__Rules__<n>__<Field>`. Production denies every typed operation until a rule allows it. See [Operation policy rules](#operation-policy-rules). |
 | `licensing_mode` | `Disabled` | Licensing deployment mode declared as `Licensing__Mode`. `Disabled` is the 2026.1 contract: no license, no capacity metering, every entitlement active. Supplying `pro_license_secret_arn` implies `Enabled`. |
 | `licensing_edition` | `Pro` | Edition declared as `Licensing__Edition` **only when** a license envelope is supplied. Ignored with no envelope. |
 | `pro_license_secret_arn` | `""` | Caller-owned Secrets Manager ARN whose value is the signed license envelope JSON; injected as the ECS secret `Licensing__LicenseContent`. The module never creates, reads or deletes it. |
@@ -295,6 +296,41 @@ Server images that predate the setting ignore these variables, so they can be
 set before upgrading; deployments that already rely on request-supplied
 references should set matching entries before moving to an image that includes
 the setting.
+
+## Operation policy rules
+
+The server image runs with its default environment, `Production`, whose
+`appsettings.Production.json` enables `Operations:Policy` with
+`DefaultDecision: Deny` ("Operations require an explicit production policy
+rule."), and the server refuses to start in Production without an enabled,
+fail-closed policy. Every typed operation, for example `service.publish`
+(`honua_publish_service`), is therefore denied until the operator authors
+rules. Set them with `operations_policy_rules`:
+
+```hcl
+operations_policy_rules = [
+  # Admins publish services directly.
+  { operation_id = "service.publish", role = "admin", decision = "Allow" },
+  # Any other operation an admin starts waits for a second reviewer.
+  {
+    role          = "admin"
+    decision      = "RequireApproval"
+    reason        = "Production changes need a second reviewer."
+    approval_lane = "control-plane"
+  },
+]
+```
+
+Rules are evaluated first-match-wins in list order; an operation no rule
+matches keeps the `Deny` default. `operation_id` defaults to `"*"` (any
+operation) and is otherwise matched exactly; `role` and `tier` are optional,
+case-insensitive filters; `decision` is `Allow`, `RequireApproval`,
+`DryRunFirst` or `Deny`; `reason` and `approval_lane` are optional (the lane is
+used only by `RequireApproval`). Each rule renders as
+`Operations__Policy__Rules__<n>__{OperationId,Role,Tier,Decision,Reason,ApprovalLane}`
+on the primary and canary containers; unset fields render nothing, and the `operations_policy_environment`
+output shows what was rendered. Set rules here or through `additional_env`, not
+both, so one source owns the indexes.
 
 ## Browser origins (CORS)
 

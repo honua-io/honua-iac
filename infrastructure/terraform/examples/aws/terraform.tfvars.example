@@ -40,6 +40,9 @@ honua_connection_encryption_master_key = null
 # Optional: bring your own ACM certificate instead of Terraform-managed validation.
 # alb_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/REPLACE"
 
+# With HTTPS, redirect port 80 to HTTPS (default true); false closes port 80.
+# alb_enable_http_redirect = true
+
 # ElastiCache Redis (enabled by default; required for /healthz/ready in Production).
 # redis_enabled = true
 
@@ -70,6 +73,14 @@ operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:12
 # file_storage_provider           = "AwsS3"
 # file_storage_aws_s3_bucket_name = "honua-prod-files"
 # file_storage_aws_s3_region      = "us-east-1"
+
+# Production denies every typed operation (for example service.publish) until a
+# rule allows it: Operations:Policy is enabled with DefaultDecision Deny. Rules
+# are first-match-wins; decision is Allow, RequireApproval, DryRunFirst or Deny.
+# operations_policy_rules = [
+#   { operation_id = "service.publish", role = "admin", decision = "Allow" },
+#   { role = "admin", decision = "RequireApproval", approval_lane = "control-plane" },
+# ]
 
 tags = {
   Owner      = "platform"

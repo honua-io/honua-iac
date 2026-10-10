@@ -347,6 +347,20 @@ variable "cors_allowed_origins" {
   nullable    = false
 }
 
+variable "operations_policy_rules" {
+  description = "Ordered first-match-wins operation policy rules passed to the module and rendered as Operations__Policy__Rules__<n>__<Field>. The server runs in Production, where Operations:Policy denies every typed operation (for example service.publish) unless a rule allows it. decision is Allow, RequireApproval, DryRunFirst or Deny; operation_id defaults to \"*\". Empty (default) keeps the fail-closed default."
+  type = list(object({
+    operation_id  = optional(string, "*")
+    role          = optional(string)
+    tier          = optional(string)
+    decision      = string
+    reason        = optional(string)
+    approval_lane = optional(string)
+  }))
+  default  = []
+  nullable = false
+}
+
 # --- GP on AWS Batch (Fargate Spot) -----------------------------------------
 # The Lambda+Batch GA cell: the Lambda serves the API and geoprocessing/import
 # jobs run on a scale-to-zero Fargate Spot Batch queue. Off by default.

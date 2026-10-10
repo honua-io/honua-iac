@@ -63,7 +63,8 @@ module "honua" {
   control_plane_events_timeout_seconds   = var.control_plane_events_timeout_seconds
   control_plane_scheduled_tick_schedules = var.control_plane_scheduled_tick_schedules
 
-  cors_allowed_origins = var.cors_allowed_origins
+  cors_allowed_origins    = var.cors_allowed_origins
+  operations_policy_rules = var.operations_policy_rules
 
   # GP on AWS Batch: the Lambda+Batch cell. use_batch_service_linked_role is
   # wired above with the other certification-cell inputs.

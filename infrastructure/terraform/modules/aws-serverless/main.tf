@@ -126,6 +126,18 @@ locals {
   } : {}
   audit_chain_key_secret_arns  = var.audit_chain_key_secret_arn != "" ? [var.audit_chain_key_secret_arn] : []
   audit_chain_key_kms_key_arns = var.audit_chain_key_secret_arn != "" && var.audit_chain_key_secret_kms_key_arn != "" ? [var.audit_chain_key_secret_kms_key_arn] : []
+  # Every secret local.lambda_environment references. The API Lambda role and the
+  # control-plane event Lambda role compose the same DI from that environment,
+  # so both read exactly this list; a secret granted to one but not the other
+  # crashes the other at init (honua-release e2e-cloud-aws run 38066103745: the
+  # event functions could not read the connection-encryption master key).
+  lambda_secret_arns = concat(compact([
+    aws_secretsmanager_secret.connection_string.arn,
+    aws_secretsmanager_secret.admin_password.arn,
+    aws_secretsmanager_secret.master_key.arn,
+    local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null,
+    local.pro_license_effective_secret_arn
+  ]), local.operation_key_ring_certificate_secret_arns, local.audit_chain_key_secret_arns)
   # Lambda environment budget: AWS Lambda rejects a function whose environment
   # (every key and value) exceeds 4 KB, and the reference VALUES dominate it. A
   # full Secrets Manager ARN costs 59 bytes more than the secret's name
@@ -242,6 +254,23 @@ locals {
     { for index, value in var.request_secret_reference_allowed_environment_variable_prefixes : "Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__${index}" => value },
     { for index, value in var.request_secret_reference_allowed_secret_reference_prefixes : "Security__RequestSecretReferences__AllowedSecretReferencePrefixes__${index}" => value },
   )
+  # Operation policy rules (honua-server Operations:Policy:Rules). The image's
+  # Production settings enable the policy with DefaultDecision Deny, so every
+  # typed operation is denied until a rule allows it. Rules are first-match-wins
+  # in list order and render as indexed Operations__Policy__Rules__<n>__<Field>
+  # entries; unset optional fields render nothing (a wildcard on the server).
+  operations_policy_environment = merge({}, [
+    for index, rule in var.operations_policy_rules : {
+      for field, value in {
+        OperationId  = rule.operation_id
+        Role         = rule.role
+        Tier         = rule.tier
+        Decision     = rule.decision
+        Reason       = rule.reason
+        ApprovalLane = rule.approval_lane
+      } : "Operations__Policy__Rules__${index}__${field}" => value if value != null
+    }
+  ]...)
   # When GP-on-Batch is enabled, surface the DURABLE substrate to the server as a
   # ControlPlane:ExecutionWorkloads entry: the queue and the per-TIER job
   # definitions (s/m/l/xl). The reconciler selects the AwsBatchComputeBackend by
@@ -316,7 +345,7 @@ locals {
       }, var.lambda_alias_name != "live" ? {
       ControlPlane__DeployTargets__0__ParameterEntries__0__Key   = "aws.lambda.alias_name"
       ControlPlane__DeployTargets__0__ParameterEntries__0__Value = var.lambda_alias_name
-  } : {}, local.gp_batch_environment, local.amazon_location_environment, var.additional_env, local.lambda_secret_reference_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment)
+  } : {}, local.gp_batch_environment, local.amazon_location_environment, var.additional_env, local.operations_policy_environment, local.lambda_secret_reference_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment)
 
   # AWS Lambda refuses a function whose environment exceeds 4 KB ("exceeded the
   # 4KB limit. Measured size: N bytes") and only says so at CreateFunction /
@@ -440,26 +469,38 @@ resource "aws_security_group" "rds" {
   description = "RDS security group"
   vpc_id      = local.vpc_id
 
-  ingress {
-    description     = "PostgreSQL from Lambda"
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [aws_security_group.lambda.id]
-  }
-
-  dynamic "ingress" {
-    for_each = toset(var.db_additional_ingress_cidrs)
-    content {
-      description = "PostgreSQL additional CIDR ingress"
-      from_port   = 5432
-      to_port     = 5432
-      protocol    = "tcp"
-      cidr_blocks = [ingress.value]
-    }
-  }
+  # No inline ingress/egress: every RDS rule is a standalone
+  # aws_security_group_rule (rds_from_lambda and rds_from_cidrs below,
+  # rds_from_batch in batch.tf, rds_from_batch_provisioning/execution in
+  # egress-isolation.tf). Terraform does not support inline rules alongside
+  # standalone rules on one group: the inline set is authoritative, so each
+  # apply would strip the standalone rules and the next would re-add them.
 
   tags = local.tags
+}
+
+resource "aws_security_group_rule" "rds_from_lambda" {
+  count                    = local.db_use_existing ? 0 : 1
+  type                     = "ingress"
+  description              = "PostgreSQL from Lambda"
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.rds[0].id
+  source_security_group_id = aws_security_group.lambda.id
+}
+
+resource "aws_security_group_rule" "rds_from_cidrs" {
+  # Whether an existing database is used reveals nothing about its connection
+  # string, and for_each refuses sensitive values.
+  for_each          = nonsensitive(local.db_use_existing) ? toset([]) : toset(var.db_additional_ingress_cidrs)
+  type              = "ingress"
+  description       = "PostgreSQL additional CIDR ingress"
+  from_port         = 5432
+  to_port           = 5432
+  protocol          = "tcp"
+  security_group_id = aws_security_group.rds[0].id
+  cidr_blocks       = [each.value]
 }
 
 resource "aws_security_group" "redis" {
@@ -686,13 +727,7 @@ resource "aws_iam_policy" "lambda_secrets" {
         Action = [
           "secretsmanager:GetSecretValue"
         ]
-        Resource = concat(compact([
-          aws_secretsmanager_secret.connection_string.arn,
-          aws_secretsmanager_secret.admin_password.arn,
-          aws_secretsmanager_secret.master_key.arn,
-          local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null,
-          local.pro_license_effective_secret_arn
-        ]), local.operation_key_ring_certificate_secret_arns, local.audit_chain_key_secret_arns)
+        Resource = local.lambda_secret_arns
       }
       ], length(concat(local.operation_key_ring_certificate_kms_key_arns, local.audit_chain_key_kms_key_arns)) > 0 ? [{
         Effect   = "Allow"
@@ -872,7 +907,7 @@ resource "aws_lambda_function" "this" {
 
     precondition {
       condition     = local.lambda_environment_bytes.api <= local.lambda_environment_limit_bytes
-      error_message = "The ${local.lambda_function_name} environment would be about ${local.lambda_environment_bytes.api} bytes; AWS Lambda refuses more than ${local.lambda_environment_limit_bytes}. Turn off an optional feature that adds variables (Bedrock AI, Amazon Location geocoding, CORS origins, request-secret allowlists, additional_env, additional_allowed_hosts) or shorten name_prefix/environment."
+      error_message = "The ${local.lambda_function_name} environment would be about ${local.lambda_environment_bytes.api} bytes; AWS Lambda refuses more than ${local.lambda_environment_limit_bytes}. Turn off an optional feature that adds variables (Bedrock AI, Amazon Location geocoding, CORS origins, request-secret allowlists, operations_policy_rules, additional_env, additional_allowed_hosts) or shorten name_prefix/environment."
     }
 
     precondition {
@@ -884,6 +919,7 @@ resource "aws_lambda_function" "this" {
   depends_on = [
     aws_ecr_repository_policy.lambda_image_access,
     aws_cloudwatch_log_group.lambda,
+    aws_security_group_rule.rds_from_lambda,
     aws_secretsmanager_secret_version.connection_string,
     aws_secretsmanager_secret_version.admin_password,
     aws_secretsmanager_secret_version.master_key,
@@ -1154,7 +1190,9 @@ resource "null_resource" "enable_postgis" {
     }
   }
 
-  depends_on = [module.rds]
+  # The runner reaches the database through the additional CIDR rules, which
+  # are standalone resources rather than part of the RDS security group.
+  depends_on = [module.rds, aws_security_group_rule.rds_from_cidrs]
 }
 
 check "audit_chain_key_configured" {
