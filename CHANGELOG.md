@@ -16,6 +16,27 @@ module input/output contracts may still change.
 
 ### Added
 
+- `aws-serverless` with `enable_rds_proxy`: every server process that reads the
+  proxy connection string (API Lambda, control-plane event Lambdas, GP Batch
+  and custom-code provisioning job definitions) gets
+  `Database__SessionSettings__Mode=role-defaults` (honua-server #5874), so the
+  server issues no per-connection `SET` and RDS Proxy can multiplex instead of
+  pinning each client connection (honua-release e2e-cloud-aws run 38163689854:
+  `53300` through the proxy). `null_resource.db_role_session_defaults` runs
+  `ALTER ROLE "<db_username>" SET lock_timeout = '30s'`, `statement_timeout =
+  '30s'` and `idle_in_transaction_session_timeout = '60s'` (the server's
+  `Limits:Connections` defaults) on the direct endpoint before the proxy target
+  registers; it follows `enable_postgis` unless the new
+  `rds_proxy_set_role_session_defaults` input overrides it. New outputs
+  `rds_proxy_role_session_defaults_sql`, `rds_proxy_role_session_defaults_applied`
+  and `rds_proxy_connection_pool`. The `aws-serverless` example root passes
+  through `rds_proxy_max_connections_percent`,
+  `rds_proxy_max_idle_connections_percent` and
+  `rds_proxy_connection_borrow_timeout_seconds` (module defaults 90 / 50 /
+  120); a `db.t3.micro` cell that migrates and seeds directly should set the
+  ceiling to `70`. Requires a honua-server image with #5874; an older image
+  ignores the setting and keeps pinning.
+
 - `aws-serverless` and the `aws-serverless` example root add `enable_rds_proxy`
   (default `false`). When `true`, Amazon RDS Proxy fronts the module-managed
   PostgreSQL (TLS required, Secrets Manager auth, default target group at 90%

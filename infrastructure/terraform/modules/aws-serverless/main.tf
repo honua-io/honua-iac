@@ -128,6 +128,11 @@ locals {
   # both to the same cap. The validator's other connection checks apply only
   # with AdaptiveConcurrencyEnabled (default off), and the pool factory clamps
   # MinConnectionPoolSize to the cap itself.
+  #
+  # Behind RDS Proxy every process also carries
+  # local.db_session_settings_environment (rds-proxy.tf), which moves the
+  # server's session timeouts from a per-connection SET onto the database
+  # role's defaults so the proxy can multiplex instead of pinning.
   db_pool_environment = {
     for process, size in {
       lambda        = var.lambda_db_max_pool_size
@@ -139,7 +144,7 @@ locals {
         }, process == "gp_batch" ? {
         Limits__Connections__MinConnectionPoolSize         = "0"
         Limits__Connections__ConnectionIdleLifetimeSeconds = tostring(var.db_connection_idle_lifetime_seconds)
-    } : {})
+    } : {}, local.db_session_settings_environment)
   }
   lambda_function_name = "${local.name}-honua"
   lambda_target_id     = "${local.lambda_function_name}-${var.lambda_alias_name}"
@@ -980,6 +985,8 @@ resource "aws_lambda_function" "this" {
     aws_db_proxy_target.this,
     aws_secretsmanager_secret_version.connection_string,
     aws_secretsmanager_secret_version.proxy_connection_string,
+    # role-defaults mode: start no client before the role carries its defaults.
+    null_resource.db_role_session_defaults,
     aws_secretsmanager_secret_version.admin_password,
     aws_secretsmanager_secret_version.master_key,
     aws_secretsmanager_secret_version.redis_connection,
@@ -1255,6 +1262,153 @@ resource "null_resource" "enable_postgis" {
   # The runner reaches the database through the additional CIDR rules, which
   # are standalone resources rather than part of the RDS security group.
   depends_on = [module.rds, aws_security_group_rule.rds_from_cidrs]
+}
+
+# --- Role session defaults behind RDS Proxy ----------------------------------
+# Behind the proxy the server processes run with
+# Database__SessionSettings__Mode=role-defaults (rds-proxy.tf, Pinning): they
+# issue no per-connection SET, so PostgreSQL must supply the session timeouts
+# as defaults of the database role. honua-server verifies them at startup and
+# only logs (event 5870) the ALTER ROLE statements when they are missing; it
+# never runs ALTER ROLE itself (honua-server #5874), so the module does, once,
+# as the master user on the DIRECT endpoint (the runner's CIDR is admitted on
+# the RDS security group only, like null_resource.enable_postgis).
+#
+# The values are what the server's connection mode would SET: its
+# Limits:Connections LockTimeout 30 s, StatementTimeout 30 s and
+# IdleInTransactionTimeout 60 s (honua-server LimitsOptions.cs, ConnectionLimits
+# defaults). The module sets none of Limits__Connections__LockTimeout /
+# StatementTimeout / IdleInTransactionTimeout, so the server defaults are the
+# effective values; check "db_role_session_defaults_match" flags an
+# additional_env override that would make them drift. The server compares
+# whole seconds.
+#
+# Like enable_postgis this needs psql on the machine running Terraform and a
+# route to the instance, so it follows enable_postgis unless
+# rds_proxy_set_role_session_defaults says otherwise. When the module does not
+# run them, the rds_proxy_role_session_defaults_sql output carries the
+# statements for the operator.
+#
+# The defaults apply to every session of the role, including the direct
+# migration, seeding and operator sessions, which can override them with their
+# own SET (for example SET statement_timeout = 0 for a long migration). When the
+# resource is destroyed (enable_rds_proxy turned off, or before a re-run on a
+# change) a destroy-time provisioner RESETs the three settings, so the role
+# returns to the instance defaults; it continues on failure, so an unreachable
+# instance (teardown) never blocks destroy.
+#
+# ALTER ROLE ... SET applies to sessions that start afterwards. The proxy
+# target and every Lambda function depend on this resource, so a new
+# deployment (or an upgrade that adds role-defaults mode) starts no proxied
+# client before the defaults exist. When the values change later (or the
+# proxy is turned on for an existing deployment), backends the proxy already
+# holds keep their old settings until the proxy retires them: idle ones above
+# rds_proxy_max_idle_connections_percent close, and a pinned backend closes
+# with its client (rds_proxy_idle_client_timeout_seconds). See the README.
+locals {
+  db_role_session_defaults_enabled = coalesce(var.rds_proxy_set_role_session_defaults, var.enable_postgis)
+  db_role_session_settings = {
+    lock_timeout                        = "30s"
+    statement_timeout                   = "30s"
+    idle_in_transaction_session_timeout = "60s"
+  }
+  db_role_session_settings_sql = join("\n", [
+    for setting, value in local.db_role_session_settings :
+    "ALTER ROLE \"${replace(var.db_username, "\"", "\"\"")}\" SET ${setting} = '${value}';"
+  ])
+  db_role_session_settings_reset_sql = join("\n", [
+    for setting, value in local.db_role_session_settings :
+    "ALTER ROLE \"${replace(var.db_username, "\"", "\"\"")}\" RESET ${setting};"
+  ])
+}
+
+resource "null_resource" "db_role_session_defaults" {
+  count = local.rds_proxy_enabled && !local.db_use_existing && local.db_role_session_defaults_enabled ? 1 : 0
+
+  # A destroy-time provisioner can read only self, so the triggers carry what
+  # the RESET needs. db_password is sensitive (Terraform redacts the triggers
+  # in plans) and already in state through the RDS instance and the
+  # connection-string secret.
+  triggers = {
+    db_endpoint      = local.db_endpoint
+    db_name          = var.db_name
+    db_username      = var.db_username
+    db_password      = local.db_password
+    statements       = local.db_role_session_settings_sql
+    reset_statements = local.db_role_session_settings_reset_sql
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      set -e
+      echo "Waiting for PostgreSQL readiness on ${local.db_endpoint}"
+      for attempt in $(seq 1 ${var.postgis_readiness_max_attempts}); do
+        if PGCONNECT_TIMEOUT=5 psql \
+          --host=${local.db_endpoint} \
+          --username=${var.db_username} \
+          --dbname=${var.db_name} \
+          --command="SELECT 1;" >/dev/null 2>&1; then
+          break
+        fi
+        if [ "$attempt" -eq ${var.postgis_readiness_max_attempts} ]; then
+          echo "PostgreSQL readiness check failed after ${var.postgis_readiness_max_attempts} attempts" >&2
+          exit 1
+        fi
+        sleep ${var.postgis_readiness_sleep_seconds}
+      done
+
+      echo "Setting the session defaults of role ${var.db_username} for RDS Proxy multiplexing"
+      PGCONNECT_TIMEOUT=5 psql \
+        --host=${local.db_endpoint} \
+        --username=${var.db_username} \
+        --dbname=${var.db_name} \
+        --set=ON_ERROR_STOP=1 <<'SQL'
+      ${local.db_role_session_settings_sql}
+      SQL
+    EOT
+    environment = {
+      PGPASSWORD = local.db_password
+    }
+  }
+
+  provisioner "local-exec" {
+    when       = destroy
+    on_failure = continue
+    command    = <<-EOT
+      echo "Resetting the session defaults of role ${self.triggers.db_username}"
+      PGCONNECT_TIMEOUT=5 psql \
+        --host=${self.triggers.db_endpoint} \
+        --username=${self.triggers.db_username} \
+        --dbname=${self.triggers.db_name} \
+        --set=ON_ERROR_STOP=1 <<'SQL'
+      ${self.triggers.reset_statements}
+      SQL
+    EOT
+    environment = {
+      PGPASSWORD = self.triggers.db_password
+    }
+  }
+
+  depends_on = [module.rds, aws_security_group_rule.rds_from_cidrs, null_resource.enable_postgis]
+}
+
+# The role defaults reproduce the server's default Limits:Connections timeouts
+# and no search_path. Overriding those through additional_env behind the proxy
+# makes the server's startup verification report drift (event 5870).
+check "db_role_session_defaults_match" {
+  assert {
+    condition = !local.rds_proxy_enabled || length(setintersection(
+      toset([for name in keys(var.additional_env) : lower(replace(name, ":", "__"))]),
+      toset([
+        "limits__connections__locktimeout",
+        "limits__connections__statementtimeout",
+        "limits__connections__idleintransactiontimeout",
+        "database__schema",
+      ])
+    )) == 0
+    error_message = "Behind RDS Proxy the module sets the database role's session defaults to the server's default timeouts (lock_timeout 30s, statement_timeout 30s, idle_in_transaction_session_timeout 60s) and no search_path. additional_env overrides Limits__Connections__LockTimeout / StatementTimeout / IdleInTransactionTimeout or Database__Schema, so honua-server (Database:SessionSettings:Mode=role-defaults) will report drift; run the ALTER ROLE statements it logs (event 5870)."
+  }
+
 }
 
 check "audit_chain_key_configured" {

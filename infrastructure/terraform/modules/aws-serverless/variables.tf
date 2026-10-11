@@ -1456,6 +1456,12 @@ variable "rds_proxy_connection_borrow_timeout_seconds" {
   }
 }
 
+variable "rds_proxy_set_role_session_defaults" {
+  description = "With enable_rds_proxy: run ALTER ROLE <db_username> SET lock_timeout / statement_timeout / idle_in_transaction_session_timeout on the direct endpoint during apply (local-exec psql, like enable_postgis), so the server's Database__SessionSettings__Mode=role-defaults finds its session timeouts. Null (default) follows enable_postgis, because both need psql on the machine running Terraform and network access to the instance. When false, run the statements the server logs (event 5870) yourself; until then sessions run without those timeouts."
+  type        = bool
+  default     = null
+}
+
 variable "rds_proxy_idle_client_timeout_seconds" {
   description = "Seconds a client connection may sit idle before RDS Proxy closes it. This is what returns database connections held (and pinned) by frozen Lambda environments; AWS's default is 1800."
   type        = number

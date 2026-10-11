@@ -325,6 +325,40 @@ run "every_optional_feature_fits" {
   }
 }
 
+# The same with RDS Proxy (honua-release run 38163689854): the proxy adds
+# Database__SessionSettings__Mode=role-defaults (50 bytes) to every function,
+# and the proxy connection-string secret is referenced by its shorter name, so
+# the scheduled-tick function measures 4070 bytes, still under the margin.
+run "every_optional_feature_with_rds_proxy_fits" {
+  command = apply
+
+  variables {
+    enable_rds_proxy                                               = true
+    operation_key_ring_certificate_secret_kms_key_arn              = "arn:aws:kms:us-east-1:585192672263:key/00000000-0000-0000-0000-000000000002"
+    audit_chain_key_secret_kms_key_arn                             = "arn:aws:kms:us-east-1:585192672263:key/00000000-0000-0000-0000-000000000003"
+    enable_bedrock_ai                                              = true
+    enable_xray_tracing                                            = true
+    enable_amazon_location_geocoding                               = true
+    enable_control_plane_events                                    = true
+    cors_allowed_origins                                           = ["https://console.honua.example.com", "https://studio.honua.example.com"]
+    request_secret_reference_allowed_environment_variables         = ["HONUA_IMPORT_TOKEN"]
+    request_secret_reference_allowed_environment_variable_prefixes = ["HONUA_IMPORT_"]
+    request_secret_reference_allowed_secret_reference_prefixes     = ["aws:secretsmanager:honua/imports/"]
+  }
+
+  assert {
+    condition = alltrue([
+      for env in [
+        aws_lambda_function.this.environment[0].variables,
+        aws_lambda_function.control_plane_reconcile[0].environment[0].variables,
+        aws_lambda_function.control_plane_backstop[0].environment[0].variables,
+        aws_lambda_function.control_plane_tick[0].environment[0].variables,
+      ] : lookup(env, "Database__SessionSettings__Mode", null) == "role-defaults" && nonsensitive(sum([for k, v in env : length(k) + length(v) + 6]) + 1) <= 4096 - 16
+    ])
+    error_message = "With RDS Proxy and every optional feature on, each Lambda environment must carry the role-defaults mode and stay at least 16 bytes under 4096 (API ${nonsensitive(sum([for k, v in aws_lambda_function.this.environment[0].variables : length(k) + length(v) + 6]) + 1)}, scheduled-tick ${nonsensitive(sum([for k, v in aws_lambda_function.control_plane_tick[0].environment[0].variables : length(k) + length(v) + 6]) + 1)} bytes)."
+  }
+}
+
 # The 2026.2 Pro license adds its secret reference and an inline trusted public
 # key. On top of every other feature neither the API function (about 4134
 # bytes since the database pool cap) nor the control-plane event functions

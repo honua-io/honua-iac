@@ -289,6 +289,8 @@ resource "aws_lambda_function" "control_plane_reconcile" {
     aws_cloudwatch_log_group.control_plane_reconcile,
     aws_secretsmanager_secret_version.connection_string,
     aws_secretsmanager_secret_version.proxy_connection_string,
+    # role-defaults mode: start no client before the role carries its defaults.
+    null_resource.db_role_session_defaults,
     aws_secretsmanager_secret_version.admin_password,
     aws_secretsmanager_secret_version.master_key,
     aws_secretsmanager_secret_version.redis_connection,
@@ -359,6 +361,8 @@ resource "aws_lambda_function" "control_plane_backstop" {
     aws_cloudwatch_log_group.control_plane_backstop,
     aws_secretsmanager_secret_version.connection_string,
     aws_secretsmanager_secret_version.proxy_connection_string,
+    # role-defaults mode: start no client before the role carries its defaults.
+    null_resource.db_role_session_defaults,
     aws_secretsmanager_secret_version.admin_password,
     aws_secretsmanager_secret_version.master_key,
     aws_secretsmanager_secret_version.redis_connection,
@@ -443,6 +447,8 @@ resource "aws_lambda_function" "control_plane_tick" {
     aws_cloudwatch_log_group.control_plane_tick,
     aws_secretsmanager_secret_version.connection_string,
     aws_secretsmanager_secret_version.proxy_connection_string,
+    # role-defaults mode: start no client before the role carries its defaults.
+    null_resource.db_role_session_defaults,
     aws_secretsmanager_secret_version.admin_password,
     aws_secretsmanager_secret_version.master_key,
     aws_secretsmanager_secret_version.redis_connection,

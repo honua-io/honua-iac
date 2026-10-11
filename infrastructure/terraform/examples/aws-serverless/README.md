@@ -59,7 +59,10 @@ Outputs (all `null` when Batch is off): `gp_batch_enabled`, `gp_batch_image`
 
 | Variable | Default | Notes |
 |----------|---------|-------|
-| `enable_rds_proxy` | `false` | Puts Amazon RDS Proxy in front of the cell's PostgreSQL and routes the Lambda functions and GP Batch jobs through it, so Lambda scale-out cannot exhaust the instance's connection slots (`53300`). Migrations keep the direct endpoint: `migrate_db_connection_secret_arn` is unchanged. About $0.03/hour on a `db.t3.micro`. See the module README's [database connection budget](../../modules/aws-serverless/README.md#database-connection-budget). |
+| `enable_rds_proxy` | `false` | Puts Amazon RDS Proxy in front of the cell's PostgreSQL and routes the Lambda functions and GP Batch jobs through it, so Lambda scale-out cannot exhaust the instance's connection slots (`53300`). Migrations keep the direct endpoint: `migrate_db_connection_secret_arn` is unchanged. About $0.03/hour on a `db.t3.micro`. See the module README's [database connection budget](../../modules/aws-serverless/README.md#database-connection-budget). Behind the proxy the server runs with `Database__SessionSettings__Mode=role-defaults`, and with `enable_postgis` (default `true`) the module sets the matching `ALTER ROLE` session defaults during apply. |
+| `rds_proxy_max_connections_percent` | `90` | The proxy's ceiling, as a percentage of the instance's `max_connections`. The rest stays free for direct sessions: migrations and fixture seeding from the runner, the PostGIS bootstrap, operators. A `db.t3.micro` cell whose runner migrates and seeds directly should set `70` (about 60 proxy connections, about 21 direct slots of the about 82 usable). |
+| `rds_proxy_max_idle_connections_percent` | `50` | Idle connections the proxy keeps open, as a percentage of `max_connections`; at most `rds_proxy_max_connections_percent`. Lower recycles proxy backends sooner. |
+| `rds_proxy_connection_borrow_timeout_seconds` | `120` | Seconds a client waits for a connection at the ceiling before the proxy returns an error (instead of PostgreSQL's `53300`). |
 
 Outputs: `rds_proxy_endpoint`, `rds_proxy_arn` (`null` when off).
 

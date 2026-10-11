@@ -414,3 +414,39 @@ variable "enable_rds_proxy" {
   default     = false
   nullable    = false
 }
+
+variable "rds_proxy_max_connections_percent" {
+  description = "With enable_rds_proxy: the proxy's ceiling on database connections, as a percentage of the instance's max_connections. The remainder stays free for direct sessions (migrations and fixture seeding from the runner, the PostGIS bootstrap, operators). 70 suits a db.t3.micro cell whose runner migrates and seeds directly; see the module README's database connection budget."
+  type        = number
+  default     = 90
+  nullable    = false
+
+  validation {
+    condition     = var.rds_proxy_max_connections_percent >= 1 && var.rds_proxy_max_connections_percent <= 100 && floor(var.rds_proxy_max_connections_percent) == var.rds_proxy_max_connections_percent
+    error_message = "rds_proxy_max_connections_percent must be a whole number from 1 to 100."
+  }
+}
+
+variable "rds_proxy_max_idle_connections_percent" {
+  description = "With enable_rds_proxy: idle database connections the proxy keeps open, as a percentage of the instance's max_connections. At most rds_proxy_max_connections_percent."
+  type        = number
+  default     = 50
+  nullable    = false
+
+  validation {
+    condition     = var.rds_proxy_max_idle_connections_percent >= 0 && var.rds_proxy_max_idle_connections_percent <= 100 && floor(var.rds_proxy_max_idle_connections_percent) == var.rds_proxy_max_idle_connections_percent
+    error_message = "rds_proxy_max_idle_connections_percent must be a whole number from 0 to 100."
+  }
+}
+
+variable "rds_proxy_connection_borrow_timeout_seconds" {
+  description = "With enable_rds_proxy: seconds a client waits for a free database connection when the proxy is at its ceiling, before the proxy returns an error (instead of PostgreSQL's 53300)."
+  type        = number
+  default     = 120
+  nullable    = false
+
+  validation {
+    condition     = var.rds_proxy_connection_borrow_timeout_seconds >= 0 && var.rds_proxy_connection_borrow_timeout_seconds <= 3600 && floor(var.rds_proxy_connection_borrow_timeout_seconds) == var.rds_proxy_connection_borrow_timeout_seconds
+    error_message = "rds_proxy_connection_borrow_timeout_seconds must be a whole number from 0 to 3600."
+  }
+}
