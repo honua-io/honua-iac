@@ -985,6 +985,8 @@ resource "aws_lambda_function" "this" {
     aws_db_proxy_target.this,
     aws_secretsmanager_secret_version.connection_string,
     aws_secretsmanager_secret_version.proxy_connection_string,
+    # role-defaults mode: start no client before the role carries its defaults.
+    null_resource.db_role_session_defaults,
     aws_secretsmanager_secret_version.admin_password,
     aws_secretsmanager_secret_version.master_key,
     aws_secretsmanager_secret_version.redis_connection,
@@ -1287,9 +1289,18 @@ resource "null_resource" "enable_postgis" {
 # run them, the rds_proxy_role_session_defaults_sql output carries the
 # statements for the operator.
 #
+# The defaults apply to every session of the role, including the direct
+# migration, seeding and operator sessions, which can override them with their
+# own SET (for example SET statement_timeout = 0 for a long migration). When the
+# resource is destroyed (enable_rds_proxy turned off, or before a re-run on a
+# change) a destroy-time provisioner RESETs the three settings, so the role
+# returns to the instance defaults; it continues on failure, so an unreachable
+# instance (teardown) never blocks destroy.
+#
 # ALTER ROLE ... SET applies to sessions that start afterwards. The proxy
-# target depends on this resource, so a new deployment opens no proxied
-# backend before the defaults exist. When the values change later (or the
+# target and every Lambda function depend on this resource, so a new
+# deployment (or an upgrade that adds role-defaults mode) starts no proxied
+# client before the defaults exist. When the values change later (or the
 # proxy is turned on for an existing deployment), backends the proxy already
 # holds keep their old settings until the proxy retires them: idle ones above
 # rds_proxy_max_idle_connections_percent close, and a pinned backend closes
@@ -1305,15 +1316,26 @@ locals {
     for setting, value in local.db_role_session_settings :
     "ALTER ROLE \"${replace(var.db_username, "\"", "\"\"")}\" SET ${setting} = '${value}';"
   ])
+  db_role_session_settings_reset_sql = join("\n", [
+    for setting, value in local.db_role_session_settings :
+    "ALTER ROLE \"${replace(var.db_username, "\"", "\"\"")}\" RESET ${setting};"
+  ])
 }
 
 resource "null_resource" "db_role_session_defaults" {
   count = local.rds_proxy_enabled && !local.db_use_existing && local.db_role_session_defaults_enabled ? 1 : 0
 
+  # A destroy-time provisioner can read only self, so the triggers carry what
+  # the RESET needs. db_password is sensitive (Terraform redacts the triggers
+  # in plans) and already in state through the RDS instance and the
+  # connection-string secret.
   triggers = {
-    db_endpoint = local.db_endpoint
-    db_username = var.db_username
-    statements  = local.db_role_session_settings_sql
+    db_endpoint      = local.db_endpoint
+    db_name          = var.db_name
+    db_username      = var.db_username
+    db_password      = local.db_password
+    statements       = local.db_role_session_settings_sql
+    reset_statements = local.db_role_session_settings_reset_sql
   }
 
   provisioner "local-exec" {
@@ -1346,6 +1368,24 @@ resource "null_resource" "db_role_session_defaults" {
     EOT
     environment = {
       PGPASSWORD = local.db_password
+    }
+  }
+
+  provisioner "local-exec" {
+    when       = destroy
+    on_failure = continue
+    command    = <<-EOT
+      echo "Resetting the session defaults of role ${self.triggers.db_username}"
+      PGCONNECT_TIMEOUT=5 psql \
+        --host=${self.triggers.db_endpoint} \
+        --username=${self.triggers.db_username} \
+        --dbname=${self.triggers.db_name} \
+        --set=ON_ERROR_STOP=1 <<'SQL'
+      ${self.triggers.reset_statements}
+      SQL
+    EOT
+    environment = {
+      PGPASSWORD = self.triggers.db_password
     }
   }
 

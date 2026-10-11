@@ -884,7 +884,14 @@ instead. With the proxy on, the module:
   `StatementTimeout` 30 s, `IdleInTransactionTimeout` 60 s). The module sets
   none of those limits; a check warns when `additional_env` overrides them or
   `Database__Schema`, because the server would then report drift. It re-runs
-  when the endpoint, `db_username` or the statements change. It needs `psql`
+  when the endpoint, `db_username` or the statements change, and the API and
+  control-plane Lambda functions depend on it, so an upgrade starts no
+  role-defaults client before the role carries the values. Destroying it
+  (turning the proxy off, or before a re-run) runs `ALTER ROLE ... RESET` for
+  the three settings, continuing on failure so an unreachable instance never
+  blocks teardown. The defaults apply to every session of the master role,
+  including direct migration, seeding and operator sessions; a long-running
+  one should `SET statement_timeout = 0` for itself. It needs `psql`
   and a route to the instance like `enable_postgis`, so it follows
   `enable_postgis` unless `rds_proxy_set_role_session_defaults` says
   otherwise. When the module does not run it,

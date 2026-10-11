@@ -414,6 +414,17 @@ run "role_session_defaults_follow_enable_postgis" {
     )
     error_message = "Behind the proxy the module must set the role's lock_timeout 30s, statement_timeout 30s and idle_in_transaction_session_timeout 60s defaults (server Limits:Connections defaults), re-running when the role or values change."
   }
+
+  # Turning the proxy off (or a re-run) destroys the resource, which RESETs
+  # the role so direct sessions return to the instance defaults.
+  assert {
+    condition = null_resource.db_role_session_defaults[0].triggers.reset_statements == join("\n", [
+      "ALTER ROLE \"honua\" RESET idle_in_transaction_session_timeout;",
+      "ALTER ROLE \"honua\" RESET lock_timeout;",
+      "ALTER ROLE \"honua\" RESET statement_timeout;",
+    ])
+    error_message = "The role-defaults resource must carry the RESET statements its destroy-time provisioner runs."
+  }
 }
 
 run "role_session_defaults_can_be_forced_on" {
