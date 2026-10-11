@@ -114,6 +114,7 @@ module "honua" {
 | `enable_rds_proxy` | `false` | Put RDS Proxy in front of the module-managed PostgreSQL and route the Lambda functions and GP Batch jobs through it; migrations keep the direct endpoint. See [Database connection budget](#database-connection-budget). |
 | `rds_proxy_max_connections_percent` / `rds_proxy_max_idle_connections_percent` | `90` / `50` | Proxy ceiling and idle connections, as a percentage of the instance's `max_connections`. |
 | `rds_proxy_connection_borrow_timeout_seconds` / `rds_proxy_idle_client_timeout_seconds` | `120` / `600` | How long a client waits for a connection at the ceiling, and how long an idle client connection (a frozen Lambda environment's) is kept. |
+| `rds_proxy_set_role_session_defaults` | `null` | With the proxy: run `ALTER ROLE <db_username> SET` for the server's session timeouts during apply (psql, like `enable_postgis`). Null follows `enable_postgis`. See [Database connection budget](#database-connection-budget), Pinning. |
 | `db_multi_az` | false | Enable Multi-AZ failover. |
 | `redis_enabled` | true | Provision ElastiCache Redis. |
 | `redis_connection_string` | `""` | Reuse an existing Redis connection string instead of provisioning ElastiCache. |
@@ -807,9 +808,33 @@ out.
 to RDS Proxy and only the proxy connects to PostgreSQL, with at most
 `rds_proxy_max_connections_percent` (90) of `max_connections`: about **78** on
 a `db.t3.micro`, whatever the number of Lambda environments or Batch jobs. The
-remaining slots (about 9, less the reserved ones) stay free for the direct
-sessions that bypass the proxy: migrations, the `enable_postgis` bootstrap,
-fixture seeding and operators. Demand above the ceiling waits up to
+remaining slots stay free for the direct sessions that bypass the proxy:
+migrations, the `enable_postgis` and role-defaults bootstrap, fixture seeding
+and operators. The proxy logs in as the master user, which is not a
+PostgreSQL superuser on RDS, so it competes for the same non-superuser slots
+as those direct sessions: `max_connections` less
+`superuser_reserved_connections` (3) and
+`rds.rds_superuser_reserved_connections` (2), about **82** on a `db.t3.micro`
+(`max_connections` about 87).
+
+| `db.t3.micro`, about 82 usable slots | Proxy ceiling | Left for direct sessions |
+|--------------------------------------|---------------|--------------------------|
+| No proxy | none | every slot; each warm Lambda environment holds its own pool (worst case 128, below) |
+| Proxy at 90% (default), server in connection mode (before honua-server #5874) | about 78, each pinned 1:1 to a client connection | about 4 |
+| Proxy at 90% (default), role defaults | about 78, multiplexed | about 4 |
+| Proxy at 70%, role defaults (certification cell) | about 60, multiplexed | about 21 |
+
+Size the ceiling from the direct sessions, not from the server: with role
+defaults the proxy multiplexes transactions, so a few dozen database
+connections serve many more client connections. A release runner that
+migrates and seeds through the direct `connection_string` (each pool capped at
+`Maximum Pool Size=8` when it uses the module-built string), the PostGIS and
+role-defaults `psql` sessions (one each) and an operator session or two need
+up to about 20 slots, so a `db.t3.micro` cell should set
+`rds_proxy_max_connections_percent = 70` (the example root passes it
+through). At 90% a concurrent migration and seed can exhaust the remaining 4
+slots with `53300` while the proxy itself is healthy (honua-release
+e2e-cloud-aws run 38163689854). Demand above the ceiling waits up to
 `rds_proxy_connection_borrow_timeout_seconds` (120) for a connection instead
 of failing with `53300`, and a client connection idle for
 `rds_proxy_idle_client_timeout_seconds` (600) is closed, which returns the
@@ -824,18 +849,72 @@ string therefore adds `No Reset On Close=true` (no `DISCARD ALL` when Npgsql
 returns a connection to its pool; honua-server's main data source already sets
 this itself, so the keyword covers the pools opened straight from the string,
 such as the preflight) and `Max Auto Prepare=0` (no automatic server-side
-prepared statements; the Npgsql default, set explicitly). honua-server's main
-data source still runs `SET lock_timeout / statement_timeout /
-idle_in_transaction_session_timeout` when it opens each physical connection
-(`PostgresDataSourceFactory`; accepted for RDS Proxy in honua-server #1638), so
-each of its pooled connections is pinned for its lifetime. Behind the proxy
-the database is then protected by the proxy's ceiling, its borrow queue and
-its idle-client reaping, not by transaction multiplexing: about 78 pinned
-client connections can be open at once, and the rest wait. Watch
+prepared statements; the Npgsql default, set explicitly).
+
+By default honua-server's main data source runs `SET lock_timeout /
+statement_timeout / idle_in_transaction_session_timeout` when it opens each
+physical connection (`PostgresDataSourceFactory`), which pins every pooled
+client connection for its lifetime: behind the proxy that meant about 78
+pinned connections, with the direct sessions competing for the rest
+(honua-release e2e-cloud-aws run 38163689854: `53300` through the proxy).
+honua-server #5874 adds role defaults: with
+`Database__SessionSettings__Mode=role-defaults` the data source issues no
+session `SET` and PostgreSQL applies the values from the database role
+instead. With the proxy on, the module:
+
+- sets `Database__SessionSettings__Mode=role-defaults` on every server process
+  that reads the proxy string: the API Lambda, the control-plane event Lambdas,
+  the GP Batch job definitions and the custom-code provisioning job
+  definitions. With the proxy off nothing is set and the server keeps its
+  per-connection `SET` (direct connections do not pin). The variable costs 50
+  bytes of the [Lambda environment budget](#lambda-environment-budget); the
+  proxy secret is referenced by name, so with every optional feature on the
+  scheduled-tick function still measures 4070 bytes.
+- runs, as the master user on the direct endpoint during apply
+  (`null_resource.db_role_session_defaults`, the `enable_postgis` `psql`
+  pattern, before the proxy target is registered):
+
+  ```sql
+  ALTER ROLE "<db_username>" SET idle_in_transaction_session_timeout = '60s';
+  ALTER ROLE "<db_username>" SET lock_timeout = '30s';
+  ALTER ROLE "<db_username>" SET statement_timeout = '30s';
+  ```
+
+  These are the server's `Limits:Connections` defaults (`LockTimeout` 30 s,
+  `StatementTimeout` 30 s, `IdleInTransactionTimeout` 60 s). The module sets
+  none of those limits; a check warns when `additional_env` overrides them or
+  `Database__Schema`, because the server would then report drift. It re-runs
+  when the endpoint, `db_username` or the statements change. It needs `psql`
+  and a route to the instance like `enable_postgis`, so it follows
+  `enable_postgis` unless `rds_proxy_set_role_session_defaults` says
+  otherwise. When the module does not run it,
+  `rds_proxy_role_session_defaults_applied` is `false` and
+  `rds_proxy_role_session_defaults_sql` holds the statements to run; until
+  then sessions run without these timeouts.
+
+The server verifies the role defaults once at startup and logs event 5870 with
+the exact `ALTER ROLE` statements when they are missing or differ. `ALTER ROLE
+... SET` reaches only sessions that start afterwards. On a new deployment the
+proxy opens no backend before the statements ran, but when you turn role
+defaults on for an existing proxy (or change the values), backends the proxy
+already holds keep the old settings until it retires them: idle backends above
+`rds_proxy_max_idle_connections_percent` are closed, and a pinned backend
+closes with its client (`rds_proxy_idle_client_timeout_seconds`). A lower idle
+percentage (for example 20) recycles them sooner; rebooting the instance once
+starts clean.
+
+What can still pin a client connection with role defaults: the server's
+prepared-statement cache (`Database:QueryCache:EnableAutomaticCaching`, on by
+default; `PREPARE` pins), session advisory locks (migrations, background
+schedulers) and the tenant `set_config` calls of some feature-store paths.
+Those pins end when the client disconnects, so the ceiling, the borrow queue
+and idle-client reaping still protect the database. The module leaves the
+query-cache default alone; if `DatabaseConnectionsCurrentlySessionPinned`
+stays high, set `Database__QueryCache__EnableAutomaticCaching=false` through
+`additional_env` (55 bytes of the Lambda environment budget, which the
+every-feature combination no longer has). Watch
 `DatabaseConnectionsCurrentlySessionPinned` and
-`DatabaseConnectionsBorrowLatency` in CloudWatch. Full multiplexing needs the
-server to take those settings from the proxy's `init_query` or role defaults
-instead of a per-connection `SET`.
+`DatabaseConnectionsBorrowLatency` in CloudWatch.
 
 **What stays on the direct endpoint.** The proxy is reachable only inside the
 VPC, so the `connection_string` secret (`db_connection_secret_arn`, the
@@ -1007,6 +1086,12 @@ proxy (both `null` when it is off), and `runtime_db_connection_secret_arn` is
 the connection-string secret the Lambda functions and GP Batch jobs read (the
 proxy string; without the proxy it equals `db_connection_secret_arn`, which
 always holds the direct instance endpoint for migrations).
+`rds_proxy_connection_pool` reports the default target group's
+`max_connections_percent`, `max_idle_connections_percent` and
+`connection_borrow_timeout`, `rds_proxy_role_session_defaults_sql` the
+`ALTER ROLE` statements the server expects, and
+`rds_proxy_role_session_defaults_applied` whether the module ran them (`null`,
+`null` and `false` when the proxy is off).
 
 The module also emits Honua control-plane handoff metadata:
 
