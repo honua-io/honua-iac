@@ -217,7 +217,7 @@ run "off_keeps_the_direct_endpoint_everywhere" {
   }
 
   assert {
-    condition     = output.rds_proxy_role_session_defaults_sql == null && output.rds_proxy_role_session_defaults_applied == false
+    condition     = output.rds_proxy_connection_pool == null && output.rds_proxy_role_session_defaults_sql == null && output.rds_proxy_role_session_defaults_applied == false
     error_message = "With the proxy off there are no role defaults to set."
   }
 
@@ -279,6 +279,11 @@ run "on_creates_the_proxy_and_routes_every_process_through_it" {
       one(aws_db_proxy_default_target_group.this[0].connection_pool_config).connection_borrow_timeout == 120
     )
     error_message = "The default target group must cap the proxy at 90% of max_connections, keep up to 50% idle and wait 120 s to borrow."
+  }
+
+  assert {
+    condition     = output.rds_proxy_connection_pool == { max_connections_percent = 90, max_idle_connections_percent = 50, connection_borrow_timeout = 120 }
+    error_message = "rds_proxy_connection_pool must report the default target group's pool settings."
   }
 
   assert {
