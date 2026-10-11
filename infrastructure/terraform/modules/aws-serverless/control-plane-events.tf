@@ -39,6 +39,31 @@ locals {
   control_plane_backstop_function_name  = "${local.name}-cp-backstop"
   control_plane_tick_function_name      = "${local.name}-cp-tick"
 
+  # Reserved concurrency per event function. Every Lambda instance holds its own
+  # database pool and a frozen instance never gives its connections back, so
+  # without a ceiling the per-kind schedules (several ticks a minute) fan out
+  # into new cold instances until RDS is full (honua-release e2e-cloud-aws run
+  # 38125145738: 14x "53300: remaining connection slots are reserved" and 3x
+  # "PostGIS preflight check failed ... Startup aborted", all in cp-tick). With
+  # a ceiling, invocations beyond it are throttled and wait in Lambda's
+  # asynchronous queue (EventBridge Scheduler and EventBridge rules both invoke
+  # asynchronously) instead of starting another instance; see the event invoke
+  # configs below. The legacy control_plane_events_reserved_concurrent_executions,
+  # when set, still applies to all three.
+  control_plane_reserved_concurrency = {
+    reconcile = coalesce(var.control_plane_events_reserved_concurrent_executions, var.control_plane_reconcile_reserved_concurrency)
+    backstop  = coalesce(var.control_plane_events_reserved_concurrent_executions, var.control_plane_backstop_reserved_concurrency)
+    tick      = coalesce(var.control_plane_events_reserved_concurrent_executions, var.control_plane_tick_reserved_concurrency)
+  }
+
+  # How long a throttled tick or backstop event may wait: long enough to
+  # outlast a cold start and the ticks queued ahead of it on one instance,
+  # short enough that a stale periodic tick is dropped rather than replayed.
+  control_plane_event_max_age_seconds = {
+    tick     = 900
+    backstop = 600
+  }
+
   # Phase 3 PERIODIC ticks: one EventBridge Scheduler rule per tick KIND, each invoking the
   # scheduled-tick Lambda with { kind = "<ScheduledTickKind>" } as its input. Only materialised
   # when control-plane events are enabled (Event mode); empty otherwise so Poll deploys are unchanged.
@@ -234,7 +259,7 @@ resource "aws_lambda_function" "control_plane_reconcile" {
     size = var.lambda_ephemeral_storage_mb
   }
 
-  reserved_concurrent_executions = var.control_plane_events_reserved_concurrent_executions
+  reserved_concurrent_executions = local.control_plane_reserved_concurrency.reconcile
 
   vpc_config {
     subnet_ids         = local.private_subnets
@@ -303,7 +328,7 @@ resource "aws_lambda_function" "control_plane_backstop" {
     size = var.lambda_ephemeral_storage_mb
   }
 
-  reserved_concurrent_executions = var.control_plane_events_reserved_concurrent_executions
+  reserved_concurrent_executions = local.control_plane_reserved_concurrency.backstop
 
   vpc_config {
     subnet_ids         = local.private_subnets
@@ -386,7 +411,7 @@ resource "aws_lambda_function" "control_plane_tick" {
     size = var.lambda_ephemeral_storage_mb
   }
 
-  reserved_concurrent_executions = var.control_plane_events_reserved_concurrent_executions
+  reserved_concurrent_executions = local.control_plane_reserved_concurrency.tick
 
   vpc_config {
     subnet_ids         = local.private_subnets
@@ -526,6 +551,15 @@ resource "aws_scheduler_schedule" "control_plane_backstop" {
   target {
     arn      = aws_lambda_function.control_plane_backstop[0].arn
     role_arn = aws_iam_role.control_plane_scheduler[0].arn
+
+    # Retry a failed delivery instead of dropping it. A throttle on the
+    # reserved-concurrency ceiling does not fail delivery: Lambda accepts the
+    # asynchronous event and retries it from its own queue
+    # (aws_lambda_function_event_invoke_config.control_plane_backstop).
+    retry_policy {
+      maximum_event_age_in_seconds = local.control_plane_event_max_age_seconds.backstop
+      maximum_retry_attempts       = 10
+    }
   }
 }
 
@@ -565,5 +599,37 @@ resource "aws_scheduler_schedule" "control_plane_tick" {
     arn      = aws_lambda_function.control_plane_tick[0].arn
     role_arn = aws_iam_role.control_plane_scheduler[0].arn
     input    = jsonencode({ kind = each.key })
+
+    # As for the backstop: retry a failed delivery; a throttled tick waits in
+    # Lambda's asynchronous queue
+    # (aws_lambda_function_event_invoke_config.control_plane_tick).
+    retry_policy {
+      maximum_event_age_in_seconds = local.control_plane_event_max_age_seconds.tick
+      maximum_retry_attempts       = 10
+    }
   }
+}
+
+# ---------------------------------------------------------------------------
+# Asynchronous invocation settings. With reserved concurrency, an invocation
+# beyond the ceiling is throttled; Lambda keeps the asynchronous event and
+# retries it (throttle retries do not count against maximum_retry_attempts)
+# until maximum_event_age_in_seconds. The ticks and the backstop are periodic
+# and idempotent, so one older than its window is dropped rather than queued
+# behind newer ones. The reconcile function keeps Lambda's defaults (6 hours,
+# 2 retries): a Batch state change is not repeated by a schedule.
+# ---------------------------------------------------------------------------
+
+resource "aws_lambda_function_event_invoke_config" "control_plane_tick" {
+  count                        = local.control_plane_events_enabled ? 1 : 0
+  function_name                = aws_lambda_function.control_plane_tick[0].function_name
+  maximum_event_age_in_seconds = local.control_plane_event_max_age_seconds.tick
+  maximum_retry_attempts       = 1
+}
+
+resource "aws_lambda_function_event_invoke_config" "control_plane_backstop" {
+  count                        = local.control_plane_events_enabled ? 1 : 0
+  function_name                = aws_lambda_function.control_plane_backstop[0].function_name
+  maximum_event_age_in_seconds = local.control_plane_event_max_age_seconds.backstop
+  maximum_retry_attempts       = 1
 }

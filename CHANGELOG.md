@@ -37,6 +37,18 @@ module input/output contracts may still change.
 
 ### Fixed
 
+- `aws-serverless`: the control-plane event Lambdas get reserved concurrency
+  (`control_plane_reconcile_reserved_concurrency` 2,
+  `control_plane_backstop_reserved_concurrency` 1,
+  `control_plane_tick_reserved_concurrency` 1) so overlapping scheduled ticks
+  queue on one instance instead of starting new instances that each hold a
+  database pool (e2e-cloud-aws run 38125145738 exhausted RDS from the tick
+  function). The tick and backstop schedules gain a `retry_policy`, and their
+  functions an `aws_lambda_function_event_invoke_config` (event age 900 and 600
+  seconds), so a throttled tick waits instead of being dropped.
+  `control_plane_events_reserved_concurrent_executions`, when set, still
+  overrides all three.
+
 - `aws-serverless`: every process now also sets
   `Limits__Connections__MaxConcurrentQueries` to its pool cap. With only the
   cap from the previous change, honua-server refused to start
