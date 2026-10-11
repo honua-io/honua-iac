@@ -471,6 +471,26 @@ delete_rds() {
     pg|og)
       aws_write rds delete-db-parameter-group --region "$region" --db-parameter-group-name "$name" >/dev/null 2>&1 || true
       ;;
+    db-proxy)
+      # The ARN carries the proxy's resource id (prx-...), but DeleteDBProxy
+      # takes its name. Deleting the proxy deregisters its targets and removes
+      # its target groups and network interfaces; it must go before the DB
+      # instance (delete_rank) and before the VPC's subnets.
+      local proxy
+      if ! proxy="$(aws_read rds describe-db-proxies --region "$region"         --query "DBProxies[?DBProxyArn=='$arn'].DBProxyName | [0]" --output text 2>/dev/null)"; then
+        return 1
+      fi
+      if [[ -z "$proxy" || "$proxy" == "None" ]]; then
+        log_info "RDS proxy already gone: $arn"
+        return 0
+      fi
+      aws_write rds delete-db-proxy --region "$region" --db-proxy-name "$proxy" >/dev/null 2>&1 || return 1
+      wait_gone 900 aws rds describe-db-proxies --region "$region" --db-proxy-name "$proxy" ||         log_warn "RDS proxy still present after waiting: $proxy"
+      ;;
+    target-group)
+      # A proxy target group has no delete API; it goes with its proxy.
+      return 2
+      ;;
     *) return 1 ;;
   esac
 }
@@ -777,7 +797,10 @@ delete_arn() {
     ec2) delete_ec2 "$region" "$arn"; rc=$? ;;
     *) delete_simple "$region" "$arn"; rc=$? ;;
   esac
-  set -e
+  # Do not re-enable errexit here: the caller runs this under `set +e` and
+  # reads the status. Turning it back on made a nonzero return (a failed
+  # delete, or 2 for "no deletion path") abort the whole sweep, so every
+  # resource ranked after it was left behind and no summary was written.
   return "$rc"
 }
 
@@ -796,6 +819,8 @@ delete_rank() {
     elasticloadbalancing:listener/*) echo 20 ;;
     elasticloadbalancing:loadbalancer/*) echo 21 ;;
     elasticloadbalancing:targetgroup/*) echo 22 ;;
+    rds:db-proxy:*) echo 28 ;;
+    rds:target-group:*) echo 29 ;;
     rds:db:*) echo 30 ;;
     rds:subgrp:*) echo 31 ;;
     elasticache:replicationgroup:*) echo 35 ;;
