@@ -546,7 +546,7 @@ variable "api_throttle_rate_limit" {
 }
 
 variable "cors_allowed_origins" {
-  description = "Browser origins allowed to call the API (for example the Honua Console/Studio origin). Each entry is rendered to the server as Cors__AllowedOrigins__<n> and configures API Gateway CORS. Empty (default) or null configures no CORS: API-only cells called by SDKs, the CLI or server-side clients need none."
+  description = "Browser origins allowed to call the API (for example the Honua Console/Studio origin). Each entry is rendered to the server as Cors__AllowedOrigins__<n>; the server is the only CORS source (API Gateway CORS is not configured, so preflights reach the server). Empty (default) or null configures no CORS: API-only cells called by SDKs, the CLI or server-side clients need none."
   type        = list(string)
   default     = []
 }

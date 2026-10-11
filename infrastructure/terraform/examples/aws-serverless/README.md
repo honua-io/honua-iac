@@ -59,8 +59,10 @@ Outputs (all `null` when Batch is off): `gp_batch_enabled`, `gp_batch_image`
 
 `cors_allowed_origins` (default `[]`) lists the browser origins, such as the
 Honua Console or Studio, that may call the API. Each entry becomes
-`Cors__AllowedOrigins__<n>` on the server and an API Gateway CORS origin. API-only
-cells called by SDKs, the CLI or server-side clients need none.
+`Cors__AllowedOrigins__<n>` on the server, which is the only CORS source, as on
+the ECS root: API Gateway has no CORS configuration, so preflights reach the
+server and its full policy applies. API-only cells called by SDKs, the CLI or
+server-side clients need none.
 
 ## Operation policy rules
 
