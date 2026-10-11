@@ -48,7 +48,9 @@ locals {
   # then flip the server to event-driven reconciliation (TriggerMode=Event) and
   # select which handler the image runs. The selector value is the ONLY env
   # difference between the reconcile and backstop functions.
-  control_plane_events_base_environment = merge(local.lambda_environment, {
+  # Each event function gets its own, smaller database pool cap
+  # (control_plane_db_max_pool_size) in place of the API's.
+  control_plane_events_base_environment = merge(local.lambda_environment, local.db_pool_environment.control_plane, {
     ControlPlane__TriggerMode = "Event"
   })
   control_plane_reconcile_environment = merge(local.control_plane_events_base_environment, {

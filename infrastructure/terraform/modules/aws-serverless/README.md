@@ -109,6 +109,8 @@ module "honua" {
 | `existing_db_connection_string` | `""` | Reuse an existing PostgreSQL connection string (skips RDS provisioning and PostGIS local-exec). |
 | `skip_migrations` | true | Skip auto-migrations. Run them out-of-band for serverless. |
 | `db_instance_class` | `db.t3.micro` | RDS instance class. |
+| `lambda_db_max_pool_size` / `control_plane_db_max_pool_size` / `gp_batch_db_max_pool_size` | `8` / `2` / `4` | PostgreSQL pool cap per warm API Lambda instance, per warm control-plane Lambda instance and per running GP Batch job. See [Database connection budget](#database-connection-budget). |
+| `db_connection_idle_lifetime_seconds` | `60` | Idle pooled connection lifetime (10-3600). |
 | `db_multi_az` | false | Enable Multi-AZ failover. |
 | `redis_enabled` | true | Provision ElastiCache Redis. |
 | `redis_connection_string` | `""` | Reuse an existing Redis connection string instead of provisioning ElastiCache. |
@@ -678,15 +680,68 @@ it compact and checks it:
 
 Measured with `tests/lambda_environment_budget.tftest.hcl` (cell name
 `honuarawsse380460-it`, 12-digit account, release secret names): the release
-Redis-on cell with the key ring, audit key and GP Batch is **2934** bytes (was
-4118). Every optional 2026.1 feature at once (also Bedrock, Amazon Location,
-X-Ray, two CORS origins, request-secret allowlists and the control-plane event
-functions) is **3981** bytes on the scheduled-tick function, under the cap but
-with only 115 bytes to spare. Adding the 2026.2 Pro license on top no longer
-fits the event functions, and the plan fails with the size. More headroom needs
-a server-side change, for example a single `aws:secretsmanager:` reference to a
-JSON settings bundle that the server expands into configuration at startup; the
-server has no such source today.
+Redis-on cell with the key ring, audit key, GP Batch and the control-plane event
+functions is **2983** bytes on the API function and **3073** on the
+scheduled-tick function (4118 before the budget work). Every optional 2026.1
+feature at once (also Bedrock, Amazon Location, X-Ray, two CORS origins and the
+request-secret allowlists) is **4030** bytes on the scheduled-tick function,
+under the cap with 66 bytes to spare; the database pool cap
+(`Limits__Connections__MaxConnectionPoolSize`, 49 bytes) is the most recent
+addition. Adding the 2026.2 Pro license on top no longer fits any of the
+functions, and the plan fails with the size. More headroom needs a server-side
+change, for example a single `aws:secretsmanager:` reference to a JSON settings
+bundle that the server expands into configuration at startup; the server has no
+such source today.
+
+## Database connection budget
+
+Every process that runs the server opens its own PostgreSQL connection pools:
+each warm API Lambda instance, each warm control-plane event Lambda instance
+(reconcile, backstop, scheduled tick) and each running GP Batch job. With
+Npgsql's and the server's defaults (`Limits:Connections:MaxConnectionPoolSize`
+200, `MinConnectionPoolSize` 20) a few warm instances exhaust a small RDS:
+honua-release e2e-cloud-aws run 38107383082 (`db.t3.micro`, `max_connections`
+about 87) failed with `53300: remaining connection slots are reserved` and an
+API Lambda init crash in the PostGIS preflight. The module caps each process:
+
+| Input | Default | Rendered as |
+|-------|---------|-------------|
+| `lambda_db_max_pool_size` | `8` | `Limits__Connections__MaxConnectionPoolSize` on the API Lambda, and `Maximum Pool Size` on the module-built connection string |
+| `control_plane_db_max_pool_size` | `2` | `Limits__Connections__MaxConnectionPoolSize` on each control-plane event Lambda |
+| `gp_batch_db_max_pool_size` | `4` | `Limits__Connections__MaxConnectionPoolSize` on the GP Batch job, with `MinConnectionPoolSize` `0` |
+| `db_connection_idle_lifetime_seconds` | `60` | `Connection Idle Lifetime` on the connection string and `ConnectionIdleLifetimeSeconds` on the GP Batch job |
+
+The module-built connection string also carries `Connection Pruning Interval=10`
+and `Timeout=15` (connect timeout); `db_connection_string_options` is appended
+after them, so an operator keyword wins. The server's main `NpgsqlDataSource`
+takes its bounds from `Limits:Connections`, not from the connection string,
+which is why the caps are environment settings; the connection-string keywords
+bound the pools the server opens straight from the configured string (for
+example the startup PostGIS preflight). One secret serves every process, so it
+carries the API's cap. With `existing_db_connection_string` the module does
+not rewrite your string; the environment caps still apply.
+
+The Lambda functions carry only the cap, within the
+[4 KB budget](#lambda-environment-budget). A Lambda instance is frozen between
+invocations, so idle pruning barely runs there and its connections stay open
+until the instance is retired; the cap is what bounds them.
+
+Keep the worst case under the database's `max_connections` (minus the slots
+RDS reserves for superusers and `rds_reserved`):
+
+```
+warm API instances x lambda_db_max_pool_size
+  + warm control-plane instances (3 functions) x control_plane_db_max_pool_size
+  + concurrent GP Batch jobs x gp_batch_db_max_pool_size
+  + one-off connections (migrations, PostGIS bootstrap)
+```
+
+For example, on a `db.t3.micro` (about 87 connections, a few reserved): 8 warm
+API instances x 8 + 3 x 2 + 4 jobs x 4 = 86, which is already at the limit, so
+cap the API function with `lambda_reserved_concurrent_executions` or use a
+larger instance class. For production Lambda deployments put RDS Proxy in front
+of the database so warm instances share a bounded set of server connections
+(the module has no RDS Proxy input yet).
 
 ## RDS security group rules
 

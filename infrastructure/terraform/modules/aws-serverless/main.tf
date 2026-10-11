@@ -87,12 +87,51 @@ resource "random_password" "master_key" {
 }
 
 locals {
-  db_password          = var.db_password != null ? var.db_password : (local.db_use_existing ? "" : random_password.db[0].result)
-  master_key           = var.connection_encryption_master_key != null ? var.connection_encryption_master_key : random_password.master_key[0].result
-  db_ssl               = var.db_require_ssl ? ";SSL Mode=Require;Trust Server Certificate=false" : ""
-  db_endpoint          = local.db_use_existing ? var.existing_db_endpoint : module.rds[0].db_instance_address
-  db_conn_options      = var.db_connection_string_options != "" ? ";${var.db_connection_string_options}" : ""
-  db_connection_string = local.db_use_existing ? var.existing_db_connection_string : "Host=${local.db_endpoint};Port=5432;Database=${var.db_name};Username=${var.db_username};Password=${local.db_password}${local.db_ssl}${local.db_conn_options}"
+  db_password     = var.db_password != null ? var.db_password : (local.db_use_existing ? "" : random_password.db[0].result)
+  master_key      = var.connection_encryption_master_key != null ? var.connection_encryption_master_key : random_password.master_key[0].result
+  db_ssl          = var.db_require_ssl ? ";SSL Mode=Require;Trust Server Certificate=false" : ""
+  db_endpoint     = local.db_use_existing ? var.existing_db_endpoint : module.rds[0].db_instance_address
+  db_conn_options = var.db_connection_string_options != "" ? ";${var.db_connection_string_options}" : ""
+  # Npgsql pool bounds for the module-built connection string. Every warm Lambda
+  # instance (API and control-plane) and every GP Batch job opens its own pools,
+  # so the defaults (Maximum Pool Size 100, idle connections kept 300 s) let a
+  # handful of warm instances exhaust a small RDS (honua-release e2e-cloud-aws
+  # run 38107383082: "53300: remaining connection slots are reserved").
+  #
+  # These keywords bound the pools the server opens straight from the
+  # configured string (for example the startup PostGIS preflight). One secret
+  # serves the API, control-plane and GP Batch processes, so it carries the
+  # API's cap. The server's main NpgsqlDataSource ignores them and takes its
+  # bounds from Limits:Connections (local.db_pool_environment, per process).
+  # db_connection_string_options comes last, so an operator keyword wins.
+  db_pool_options      = ";Maximum Pool Size=${var.lambda_db_max_pool_size};Connection Idle Lifetime=${var.db_connection_idle_lifetime_seconds};Connection Pruning Interval=10;Timeout=15"
+  db_connection_string = local.db_use_existing ? var.existing_db_connection_string : "Host=${local.db_endpoint};Port=5432;Database=${var.db_name};Username=${var.db_username};Password=${local.db_password}${local.db_ssl}${local.db_pool_options}${local.db_conn_options}"
+  # The server's NpgsqlDataSource (PostgresDataSourceFactory) overwrites the
+  # connection string's pool keywords with Limits:Connections, whose defaults
+  # are MaxConnectionPoolSize 200, MinConnectionPoolSize 20 (never pruned below)
+  # and ConnectionIdleLifetimeSeconds 600, so each process gets its cap through
+  # the environment.
+  #
+  # The Lambda functions carry only the cap (Lambda 4 KB environment budget).
+  # A Lambda instance is frozen between invocations, so Npgsql's idle pruning
+  # barely runs there and its connections last until the instance is retired;
+  # the cap is what bounds them. The GP Batch job runs continuously, has no
+  # 4 KB cap, and also gets MinConnectionPoolSize 0 and the idle lifetime so a
+  # long job gives back connections it no longer uses.
+  # ConnectionPruningIntervalSeconds already defaults to 10.
+  db_pool_environment = {
+    lambda = {
+      Limits__Connections__MaxConnectionPoolSize = tostring(var.lambda_db_max_pool_size)
+    }
+    control_plane = {
+      Limits__Connections__MaxConnectionPoolSize = tostring(var.control_plane_db_max_pool_size)
+    }
+    gp_batch = {
+      Limits__Connections__MaxConnectionPoolSize         = tostring(var.gp_batch_db_max_pool_size)
+      Limits__Connections__MinConnectionPoolSize         = "0"
+      Limits__Connections__ConnectionIdleLifetimeSeconds = tostring(var.db_connection_idle_lifetime_seconds)
+    }
+  }
   lambda_function_name = "${local.name}-honua"
   lambda_target_id     = "${local.lambda_function_name}-${var.lambda_alias_name}"
   # SNS targets for CloudWatch alarm/OK notifications: caller-supplied topic
@@ -353,7 +392,7 @@ locals {
       }, var.lambda_alias_name != "live" ? {
       ControlPlane__DeployTargets__0__ParameterEntries__0__Key   = "aws.lambda.alias_name"
       ControlPlane__DeployTargets__0__ParameterEntries__0__Value = var.lambda_alias_name
-  } : {}, local.gp_batch_environment, local.amazon_location_environment, local.public_base_url_environment, var.additional_env, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.lambda_secret_reference_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment)
+  } : {}, local.gp_batch_environment, local.amazon_location_environment, local.public_base_url_environment, var.additional_env, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.db_pool_environment.lambda, local.lambda_secret_reference_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment)
 
   # AWS Lambda refuses a function whose environment exceeds 4 KB ("exceeded the
   # 4KB limit. Measured size: N bytes") and only says so at CreateFunction /

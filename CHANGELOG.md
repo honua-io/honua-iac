@@ -37,6 +37,18 @@ module input/output contracts may still change.
 
 ### Fixed
 
+- `aws-serverless`: each server process now caps its PostgreSQL pool so warm
+  Lambda instances and GP Batch jobs cannot exhaust a small RDS (e2e-cloud-aws
+  run 38107383082 hit `53300: remaining connection slots are reserved`). New
+  inputs `lambda_db_max_pool_size` (8), `control_plane_db_max_pool_size` (2),
+  `gp_batch_db_max_pool_size` (4) and `db_connection_idle_lifetime_seconds`
+  (60) render `Limits__Connections__*` per process. The module-built
+  connection string also gains `Maximum Pool Size`, `Connection Idle Lifetime`,
+  `Connection Pruning Interval=10` and `Timeout=15`, so its secret value
+  changes on upgrade. The cap adds 49 bytes to each Lambda environment; the
+  Pro license on top of every other optional feature no longer fits the API
+  function either. See the module README, "Database connection budget".
+
 - `aws-serverless`: the control-plane event Lambdas (reconcile, backstop,
   scheduled tick) can read the connection-encryption master-key secret; they
   crashed at init without it. Their role now reads exactly the API Lambda
