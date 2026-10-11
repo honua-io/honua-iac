@@ -131,7 +131,10 @@ resource "aws_secretsmanager_secret_version" "proxy_connection_string" {
 }
 
 # --- IAM -------------------------------------------------------------------
-# The proxy reads only its own credentials secret. The secret is encrypted with
+# The trust policy carries no aws:SourceAccount / aws:SourceArn condition: RDS
+# Proxy does not supply global condition context keys when it assumes the role,
+# so such a condition would deny it and the proxy could not read its
+# credentials. The proxy reads only its own credentials secret. The secret is encrypted with
 # the AWS-managed Secrets Manager key, whose key policy already admits callers in
 # this account through Secrets Manager, so no kms grant is needed.
 resource "aws_iam_role" "rds_proxy" {
@@ -144,9 +147,6 @@ resource "aws_iam_role" "rds_proxy" {
       Effect    = "Allow"
       Principal = { Service = "rds.amazonaws.com" }
       Action    = "sts:AssumeRole"
-      Condition = {
-        StringEquals = { "aws:SourceAccount" = data.aws_caller_identity.current.account_id }
-      }
     }]
   })
   tags = local.tags
