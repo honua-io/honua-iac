@@ -33,11 +33,16 @@ module "honua" {
   postgis_readiness_max_attempts  = local.install_db_rdy_max
   postgis_readiness_sleep_seconds = local.install_db_rdy_sleep
   enable_rds_proxy                = var.enable_rds_proxy
-  redis_enabled                   = var.redis_enabled
-  redis_connection_string         = var.redis_connection_string
-  redis_connection_cidrs          = var.redis_connection_cidrs
-  skip_migrations                 = var.skip_migrations
-  tags                            = var.tags
+  # Proxy headroom: the share of max_connections the proxy may open; the rest
+  # stays for direct sessions (migrate/seed from the runner, PostGIS bootstrap).
+  rds_proxy_max_connections_percent           = var.rds_proxy_max_connections_percent
+  rds_proxy_max_idle_connections_percent      = var.rds_proxy_max_idle_connections_percent
+  rds_proxy_connection_borrow_timeout_seconds = var.rds_proxy_connection_borrow_timeout_seconds
+  redis_enabled                               = var.redis_enabled
+  redis_connection_string                     = var.redis_connection_string
+  redis_connection_cidrs                      = var.redis_connection_cidrs
+  skip_migrations                             = var.skip_migrations
+  tags                                        = var.tags
 
   # Required with Redis: the Lambda receives only an aws:secretsmanager: reference.
   operation_key_ring_certificate_secret_arn         = var.operation_key_ring_certificate_secret_arn

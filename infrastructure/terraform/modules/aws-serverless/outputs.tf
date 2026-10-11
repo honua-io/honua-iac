@@ -483,6 +483,15 @@ output "rds_proxy_arn" {
   value       = one(aws_db_proxy.this[*].arn)
 }
 
+output "rds_proxy_connection_pool" {
+  description = "Connection-pool settings of the RDS Proxy default target group (max_connections_percent, max_idle_connections_percent, connection_borrow_timeout seconds) when enable_rds_proxy is true; null otherwise."
+  value = local.rds_proxy_enabled ? {
+    max_connections_percent      = var.rds_proxy_max_connections_percent
+    max_idle_connections_percent = var.rds_proxy_max_idle_connections_percent
+    connection_borrow_timeout    = var.rds_proxy_connection_borrow_timeout_seconds
+  } : null
+}
+
 output "runtime_db_connection_secret_arn" {
   description = "ARN of the connection-string secret the Lambda functions and GP Batch jobs read: the RDS Proxy string when enable_rds_proxy is true, else the same secret as db_connection_secret_arn (which always holds the direct instance endpoint, for migrations)."
   value       = local.runtime_connection_secret.arn

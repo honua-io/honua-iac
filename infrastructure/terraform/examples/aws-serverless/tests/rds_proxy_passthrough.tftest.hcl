@@ -132,8 +132,13 @@ run "proxy_is_off_by_default" {
   command = plan
 
   assert {
-    condition     = var.enable_rds_proxy == false && length(module.honua.rds_proxy_endpoint[*]) == 0
+    condition     = var.enable_rds_proxy == false && length(module.honua.rds_proxy_endpoint[*]) == 0 && module.honua.rds_proxy_connection_pool == null
     error_message = "enable_rds_proxy must default to false and provision no proxy."
+  }
+
+  assert {
+    condition     = var.rds_proxy_max_connections_percent == 90 && var.rds_proxy_max_idle_connections_percent == 50 && var.rds_proxy_connection_borrow_timeout_seconds == 120
+    error_message = "The proxy pool pass-through variables must default to the module's defaults (90 / 50 / 120)."
   }
 }
 
@@ -153,4 +158,46 @@ run "proxy_passes_through_to_the_module" {
     condition     = output.migrate_db_connection_secret_arn == module.honua.db_connection_secret_arn
     error_message = "The migration input must stay the direct-endpoint connection secret."
   }
+}
+
+run "proxy_defaults_reach_the_module" {
+  command = plan
+
+  variables {
+    enable_rds_proxy = true
+  }
+
+  assert {
+    condition     = module.honua.rds_proxy_connection_pool == { max_connections_percent = 90, max_idle_connections_percent = 50, connection_borrow_timeout = 120 }
+    error_message = "Without overrides the proxy must use the module's pool defaults."
+  }
+}
+
+# The certification cell (db.t3.micro, runner migrate/seed on the direct
+# endpoint) declares a lower ceiling so direct sessions keep headroom.
+run "proxy_pool_settings_pass_through" {
+  command = plan
+
+  variables {
+    enable_rds_proxy                            = true
+    rds_proxy_max_connections_percent           = 70
+    rds_proxy_max_idle_connections_percent      = 20
+    rds_proxy_connection_borrow_timeout_seconds = 60
+  }
+
+  assert {
+    condition     = module.honua.rds_proxy_connection_pool == { max_connections_percent = 70, max_idle_connections_percent = 20, connection_borrow_timeout = 60 }
+    error_message = "rds_proxy_max_connections_percent, rds_proxy_max_idle_connections_percent and rds_proxy_connection_borrow_timeout_seconds must reach the module."
+  }
+}
+
+run "proxy_percent_out_of_range_is_rejected" {
+  command = plan
+
+  variables {
+    enable_rds_proxy                  = true
+    rds_proxy_max_connections_percent = 0
+  }
+
+  expect_failures = [var.rds_proxy_max_connections_percent]
 }
