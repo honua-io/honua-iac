@@ -76,6 +76,7 @@ module "honua" {
   waf_web_acl_arn                  = var.waf_web_acl_arn
   cors_allowed_origins             = var.cors_allowed_origins
   operations_policy_rules          = var.operations_policy_rules
+  studio_end_user_authorization    = var.studio_end_user_authorization
   tags                             = var.tags
 
   additional_env = {

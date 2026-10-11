@@ -361,6 +361,13 @@ variable "operations_policy_rules" {
   nullable = false
 }
 
+variable "studio_end_user_authorization" {
+  description = "Let any authenticated principal use the Studio authoring API subject to the server's per-resource Studio authorization; off = admins only (server default). Rendered as Studio__EndUserAuthorization__Enabled=true only when true."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 # --- GP on AWS Batch (Fargate Spot) -----------------------------------------
 # The Lambda+Batch GA cell: the Lambda serves the API and geoprocessing/import
 # jobs run on a scale-to-zero Fargate Spot Batch queue. Off by default.

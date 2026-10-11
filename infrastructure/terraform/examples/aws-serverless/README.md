@@ -98,6 +98,15 @@ root also outputs `api_endpoint` (always the execute-api endpoint),
 validation records, API Gateway custom domain and alias record belong to this
 root's state and are removed by `terraform destroy`.
 
+## Studio end-user authorization
+
+`studio_end_user_authorization` (default `false`) lets any authenticated
+principal use the Studio authoring API, subject to the server's per-resource
+Studio authorization. The module renders `Studio__EndUserAuthorization__Enabled=true`
+only when it is `true`. Off keeps the server default: only admins can author
+Studio content, and a non-admin gets HTTP 403 from routes such as
+`GET /api/v1/studio/package-families`.
+
 ## Migrations on the serverless root
 
 `skip_migrations` defaults to `true`: concurrent Lambda cold starts must not race

@@ -247,6 +247,7 @@ If your Prometheus scrape config uses different job names, override the correspo
 | `kms_key_arn` | `""` | Existing KMS key for logs/secrets. Creates one if empty. |
 | `cors_allowed_origins` | `[]` | Browser origins rendered as `Cors__AllowedOrigins__<n>`. API-only cells need none. See [Browser origins (CORS)](#browser-origins-cors). |
 | `operations_policy_rules` | `[]` | Ordered operation policy rules rendered as `Operations__Policy__Rules__<n>__<Field>`. Production denies every typed operation until a rule allows it. See [Operation policy rules](#operation-policy-rules). |
+| `studio_end_user_authorization` | `false` | Let any authenticated principal use the Studio authoring API, subject to the server's per-resource Studio authorization; rendered as `Studio__EndUserAuthorization__Enabled=true` only when `true`. Off keeps the server default: only admins can author Studio content. |
 | `licensing_mode` | `Disabled` | Licensing deployment mode declared as `Licensing__Mode`. `Disabled` is the 2026.1 contract: no license, no capacity metering, every entitlement active. Supplying `pro_license_secret_arn` implies `Enabled`. |
 | `licensing_edition` | `Pro` | Edition declared as `Licensing__Edition` **only when** a license envelope is supplied. Ignored with no envelope. |
 | `pro_license_secret_arn` | `""` | Caller-owned Secrets Manager ARN whose value is the signed license envelope JSON; injected as the ECS secret `Licensing__LicenseContent`. The module never creates, reads or deletes it. |
