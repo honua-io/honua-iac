@@ -166,7 +166,7 @@ resource "aws_iam_role_policy" "batch_job_secrets" {
         Effect = "Allow"
         Action = ["secretsmanager:GetSecretValue"]
         Resource = concat(compact([
-          aws_secretsmanager_secret.connection_string.arn,
+          local.runtime_connection_secret.arn,
           aws_secretsmanager_secret.admin_password.arn,
           aws_secretsmanager_secret.master_key.arn,
           local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null
@@ -438,7 +438,7 @@ resource "aws_batch_job_definition" "gp" {
     environment = concat([
       {
         name  = "ConnectionStrings__DefaultConnection"
-        value = "aws:secretsmanager:${aws_secretsmanager_secret.connection_string.arn}"
+        value = "aws:secretsmanager:${local.runtime_connection_secret.arn}"
       },
       {
         name  = "HONUA_ADMIN_PASSWORD"

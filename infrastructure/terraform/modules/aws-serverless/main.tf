@@ -180,7 +180,7 @@ locals {
   # crashes the other at init (honua-release e2e-cloud-aws run 38066103745: the
   # event functions could not read the connection-encryption master key).
   lambda_secret_arns = concat(compact([
-    aws_secretsmanager_secret.connection_string.arn,
+    local.runtime_connection_secret.arn,
     aws_secretsmanager_secret.admin_password.arn,
     aws_secretsmanager_secret.master_key.arn,
     local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null,
@@ -220,7 +220,7 @@ locals {
   lambda_module_secret_ids = {
     for key, secret in merge(
       {
-        connection_string = aws_secretsmanager_secret.connection_string
+        connection_string = local.runtime_connection_secret
         admin_password    = aws_secretsmanager_secret.admin_password
         master_key        = aws_secretsmanager_secret.master_key
       },
@@ -422,7 +422,7 @@ locals {
   lambda_environment_limit_bytes = 4096
   lambda_environment_size_stand_ins = merge(
     {
-      ConnectionStrings__DefaultConnection = "aws:secretsmanager:${can(regex(local.ambiguous_secret_name, aws_secretsmanager_secret.connection_string.name)) ? "arn:${split(":", data.aws_caller_identity.current.arn)[1]}:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:${aws_secretsmanager_secret.connection_string.name}-XXXXXX" : aws_secretsmanager_secret.connection_string.name}"
+      ConnectionStrings__DefaultConnection = "aws:secretsmanager:${can(regex(local.ambiguous_secret_name, local.runtime_connection_secret.name)) ? "arn:${split(":", data.aws_caller_identity.current.arn)[1]}:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:${local.runtime_connection_secret.name}-XXXXXX" : local.runtime_connection_secret.name}"
     },
     local.gp_batch_enabled ? {
       for index, tier in ["s", "m", "l", "xl"] :
@@ -976,7 +976,10 @@ resource "aws_lambda_function" "this" {
     aws_ecr_repository_policy.lambda_image_access,
     aws_cloudwatch_log_group.lambda,
     aws_security_group_rule.rds_from_lambda,
+    aws_security_group_rule.rds_proxy_from_clients,
+    aws_db_proxy_target.this,
     aws_secretsmanager_secret_version.connection_string,
+    aws_secretsmanager_secret_version.proxy_connection_string,
     aws_secretsmanager_secret_version.admin_password,
     aws_secretsmanager_secret_version.master_key,
     aws_secretsmanager_secret_version.redis_connection,

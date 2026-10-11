@@ -111,6 +111,9 @@ module "honua" {
 | `db_instance_class` | `db.t3.micro` | RDS instance class. |
 | `lambda_db_max_pool_size` / `control_plane_db_max_pool_size` / `gp_batch_db_max_pool_size` | `8` / `2` / `4` | PostgreSQL pool cap per warm API Lambda instance, per warm control-plane Lambda instance and per running GP Batch job. See [Database connection budget](#database-connection-budget). |
 | `db_connection_idle_lifetime_seconds` | `60` | Idle pooled connection lifetime (10-3600). |
+| `enable_rds_proxy` | `false` | Put RDS Proxy in front of the module-managed PostgreSQL and route the Lambda functions and GP Batch jobs through it; migrations keep the direct endpoint. See [Database connection budget](#database-connection-budget). |
+| `rds_proxy_max_connections_percent` / `rds_proxy_max_idle_connections_percent` | `90` / `50` | Proxy ceiling and idle connections, as a percentage of the instance's `max_connections`. |
+| `rds_proxy_connection_borrow_timeout_seconds` / `rds_proxy_idle_client_timeout_seconds` | `120` / `600` | How long a client waits for a connection at the ceiling, and how long an idle client connection (a frozen Lambda environment's) is kept. |
 | `db_multi_az` | false | Enable Multi-AZ failover. |
 | `redis_enabled` | true | Provision ElastiCache Redis. |
 | `redis_connection_string` | `""` | Reuse an existing Redis connection string instead of provisioning ElastiCache. |
@@ -774,9 +777,89 @@ discarded. The schedules also carry a `retry_policy` (10 attempts within the
 same age) for delivery failures. Reserved concurrency comes out of the
 account's Lambda concurrency, which must keep at least 100 unreserved.
 
-For production Lambda deployments put RDS Proxy in front of the database so
-instances share a bounded set of server connections (the module has no RDS
-Proxy input yet).
+### The budget without and with RDS Proxy
+
+`db.t3.micro` (1 GiB) has `max_connections` about 87, of which about 82 are
+usable after the superuser and `rds_reserved` slots. Per process, with the
+defaults:
+
+| Consumer | Connections |
+|----------|-------------|
+| Each API Lambda environment | 8 (`Limits:Connections` pool) + 1 (the startup PostGIS preflight opens its own pool from the connection string) = **9**, held while the environment is frozen |
+| Control-plane event functions | reconcile 2 x 2 + backstop 1 x 2 + tick 1 x 2 = **8** |
+| Each running GP Batch job | **4** (`gp_batch_db_max_pool_size`) |
+| Migrations, PostGIS bootstrap, fixture seeding | **1-2** each, one-off |
+
+GP Batch concurrency is bounded by `gp_batch_max_vcpus` divided by each job's
+vCPUs: at the default 16 and the 1-vCPU `s` tier that is 16 concurrent jobs,
+or **16 x 4 = 64** connections from Batch alone.
+
+**Without the proxy** (honua-release e2e-cloud-aws run 38133126673): 6 API
+environments x 9 + 8 + 2 jobs x 4 + 2 = **72**, and a seventh API environment
+or a few more jobs reach 82 before any browser burst; at the Batch ceiling
+(16 jobs) the worst case is 6 x 9 + 8 + 64 + 2 = **128**. PostgreSQL then
+refuses with `53300: remaining connection slots are reserved`, which reaches
+the API host as a failed cold start in the preflight. Pool caps and reserved
+concurrency only move this line; they cannot close it while the API scales
+out.
+
+**With the proxy** (`enable_rds_proxy = true`): the server processes connect
+to RDS Proxy and only the proxy connects to PostgreSQL, with at most
+`rds_proxy_max_connections_percent` (90) of `max_connections`: about **78** on
+a `db.t3.micro`, whatever the number of Lambda environments or Batch jobs. The
+remaining slots (about 9, less the reserved ones) stay free for the direct
+sessions that bypass the proxy: migrations, the `enable_postgis` bootstrap,
+fixture seeding and operators. Demand above the ceiling waits up to
+`rds_proxy_connection_borrow_timeout_seconds` (120) for a connection instead
+of failing with `53300`, and a client connection idle for
+`rds_proxy_idle_client_timeout_seconds` (600) is closed, which returns the
+connections a frozen Lambda environment was holding.
+
+**Pinning.** RDS Proxy multiplexes transactions over shared connections until
+a session changes state: `SET` / `set_config`, `PREPARE` / `DISCARD`
+(including a pooler's `DISCARD ALL` reset), session advisory locks, `LISTEN`,
+temporary tables, cursors or a statement over 16 KB pin the client connection
+to one database connection until the client disconnects. The proxy connection
+string therefore adds `No Reset On Close=true` (no `DISCARD ALL` when Npgsql
+returns a connection to its pool; honua-server's main data source already sets
+this itself, so the keyword covers the pools opened straight from the string,
+such as the preflight) and `Max Auto Prepare=0` (no automatic server-side
+prepared statements; the Npgsql default, set explicitly). honua-server's main
+data source still runs `SET lock_timeout / statement_timeout /
+idle_in_transaction_session_timeout` when it opens each physical connection
+(`PostgresDataSourceFactory`; accepted for RDS Proxy in honua-server #1638), so
+each of its pooled connections is pinned for its lifetime. Behind the proxy
+the database is then protected by the proxy's ceiling, its borrow queue and
+its idle-client reaping, not by transaction multiplexing: about 78 pinned
+client connections can be open at once, and the rest wait. Watch
+`DatabaseConnectionsCurrentlySessionPinned` and
+`DatabaseConnectionsBorrowLatency` in CloudWatch. Full multiplexing needs the
+server to take those settings from the proxy's `init_query` or role defaults
+instead of a per-connection `SET`.
+
+**What stays on the direct endpoint.** The proxy is reachable only inside the
+VPC, so the `connection_string` secret (`db_connection_secret_arn`, the
+example root's `migrate_db_connection_secret_arn`, the `db_connection_string`
+output) keeps the instance endpoint for migrations and seeding from a runner
+admitted through `db_publicly_accessible` + `db_additional_ingress_cidrs`. The
+Lambda functions and GP Batch jobs read a second secret,
+`<name>/db-proxy-connection` (`runtime_db_connection_secret_arn`), whose Host
+is the proxy. The `enable_postgis` local-exec (`CREATE EXTENSION` as the master
+user) also stays direct: the runner's CIDR is admitted on the RDS security
+group only. The direct Lambda and Batch ingress rules on the RDS security
+group stay in place, so an in-VPC migration task on the Lambda security group
+still works. The proxy is not available with `existing_db_endpoint`; put a
+proxy in front of your own database and pass its endpoint instead.
+
+**Cost.** RDS Proxy bills per vCPU-hour of the target instance (us-east-1
+about $0.015/vCPU-hour, minimum two vCPUs): a `db.t3.micro` (2 vCPUs) costs
+about $0.03/hour, roughly $22/month.
+
+**Deploy identity.** Creating the proxy needs `rds:CreateDBProxy`,
+`rds:ModifyDBProxy`, `rds:ModifyDBProxyTargetGroup`,
+`rds:RegisterDBProxyTargets`, `rds:DeregisterDBProxyTargets`,
+`rds:DeleteDBProxy`, and `iam:PassRole` of the proxy role to
+`rds.amazonaws.com`; the `bootstrap/aws-serverless` identity grants them.
 
 ## RDS security group rules
 
@@ -914,6 +997,12 @@ string ARN of the module-managed admin-password secret. Treat it as opaque and
 pass it directly to consumers: AWS appends a random suffix to Secrets Manager
 ARNs, so callers must not derive it from the configured secret name. This
 output does not expose the admin-password value.
+
+With `enable_rds_proxy`, `rds_proxy_endpoint` and `rds_proxy_arn` describe the
+proxy (both `null` when it is off), and `runtime_db_connection_secret_arn` is
+the connection-string secret the Lambda functions and GP Batch jobs read (the
+proxy string; without the proxy it equals `db_connection_secret_arn`, which
+always holds the direct instance endpoint for migrations).
 
 The module also emits Honua control-plane handoff metadata:
 
