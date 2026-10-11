@@ -70,6 +70,7 @@ module "honua" {
   # Optional per-cell custom domain (custom-domain.tf).
   domain_name     = var.domain_name
   route53_zone_id = var.route53_zone_id
+  public_base_url = var.public_base_url
 
   # GP on AWS Batch: the Lambda+Batch cell. use_batch_service_linked_role is
   # wired above with the other certification-cell inputs.

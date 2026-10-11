@@ -62,6 +62,18 @@ locals {
     if contains(["Operations__SecretChannel__KeyRingCertificatePkcs12", "AuditLog__ChainVerification__Key"], name)
   }
 
+  # Public:BaseUrl. honua-server builds absolute links (publication URLs,
+  # OGC/STAC self links, admin OIDC redirect URIs) only from Public:BaseUrl /
+  # PUBLIC_BASE_URL, never from the request Host; the chart defaults
+  # config.env.Public__BaseUrl to "". With a managed custom domain (domain_name
+  # + route53_zone_id, TLS on the chart's Service) it is https://<domain_name>;
+  # public_base_url overrides it (for example a customer ingress or CDN host).
+  # Any customer FQDN works; nothing assumes a DNS suffix.
+  public_base_url = trimsuffix(var.public_base_url, "/") != "" ? trimsuffix(var.public_base_url, "/") : (
+    local.use_managed_cert ? "https://${var.domain_name}" : ""
+  )
+  public_base_url_environment = local.public_base_url != "" ? { Public__BaseUrl = local.public_base_url } : {}
+
   # chart_config_env: everything the chart's config.env needs EXCEPT the
   # credentials that belong in the chart's Secret (database, admin password,
   # master key, Redis). Safe to render into release values.
@@ -70,6 +82,7 @@ locals {
     local.operations_policy_environment,
     local.cors_environment,
     local.control_plane_kubernetes_environment,
+    local.public_base_url_environment,
   )
 
   # honua_server_environment: the complete environment, with the generated

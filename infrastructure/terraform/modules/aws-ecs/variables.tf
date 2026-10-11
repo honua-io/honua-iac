@@ -299,9 +299,21 @@ variable "alb_certificate_arn" {
 }
 
 variable "domain_name" {
-  description = "Optional domain name for ACM-managed certificate."
+  description = "Optional public hostname on any domain you own (for example gis.example.com). With route53_zone_id the module issues a DNS-validated ACM certificate and an alias record; with alb_certificate_arn you manage both. Once the ALB serves HTTPS, service_url and Public__BaseUrl become https://<domain_name>."
   type        = string
   default     = ""
+}
+
+variable "public_base_url" {
+  description = "Public origin honua-server uses for absolute links (Public__BaseUrl), for example https://gis.example.com or https://example.org/gis. Empty (default) uses https://<domain_name> when the ALB serves HTTPS on a custom domain and sets nothing otherwise. Set it when clients reach the service through another front door (a CDN or proxy on your own domain). A Public__BaseUrl or PUBLIC_BASE_URL in additional_env takes precedence."
+  type        = string
+  default     = ""
+  nullable    = false
+
+  validation {
+    condition     = var.public_base_url == "" || can(regex("^https?://[^/?#@[:space:]]+(/[^?#[:space:]]*)?$", var.public_base_url))
+    error_message = "public_base_url must be an absolute http(s) URL such as https://gis.example.com, without query, fragment or credentials: honua-server ignores a bare host name and falls back to loopback links."
+  }
 }
 
 variable "route53_zone_id" {

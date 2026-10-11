@@ -316,13 +316,19 @@ variable "cors_allowed_origins" {
 # --- GA cell: custom domain -----------------------------------------------------
 
 variable "domain_name" {
-  description = "Optional custom API hostname for the ACM-managed certificate and Route53 record."
+  description = "Optional custom API hostname on any domain you own (for example gis.example.com) for the ACM-managed certificate and Route53 record."
   type        = string
   default     = ""
 }
 
 variable "route53_zone_id" {
   description = "Route53 hosted zone ID that owns domain_name."
+  type        = string
+  default     = ""
+}
+
+variable "public_base_url" {
+  description = "Optional public origin for server-built absolute links (Public__BaseUrl), for example https://gis.example.com. Empty uses https://<domain_name> when the custom domain is configured. Must include the http(s) scheme."
   type        = string
   default     = ""
 }

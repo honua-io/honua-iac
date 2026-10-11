@@ -5,13 +5,19 @@
 # Route53 alias; see modules/aws-serverless/custom-domain.tf.
 
 variable "domain_name" {
-  description = "Optional custom API hostname for ACM-managed TLS, an API Gateway custom domain and Route53 alias DNS (for example <run label>.cert.demo.honua.io). Set together with route53_zone_id."
+  description = "Optional custom API hostname for ACM-managed TLS, an API Gateway custom domain and Route53 alias DNS on any domain you own (for example gis.example.com). Set together with route53_zone_id."
   type        = string
   default     = ""
 }
 
 variable "route53_zone_id" {
   description = "Route53 hosted zone ID that owns domain_name when Terraform should manage certificate validation and the API Gateway alias DNS."
+  type        = string
+  default     = ""
+}
+
+variable "public_base_url" {
+  description = "Optional public origin for server-built absolute links (Public__BaseUrl), for example https://gis.example.com. Empty uses https://<domain_name> when the custom domain is configured. Must include the http(s) scheme."
   type        = string
   default     = ""
 }

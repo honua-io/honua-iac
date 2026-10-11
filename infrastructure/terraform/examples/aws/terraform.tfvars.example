@@ -36,6 +36,9 @@ honua_connection_encryption_master_key = null
 # Optional custom hostname + Route53 zone for ACM-managed TLS and ALB alias DNS.
 # domain_name     = "honua.example.com"
 # route53_zone_id = "ZXXXXXXXXXXXXXXXXX"
+# Public origin for absolute links (Public__BaseUrl). Defaults to https://<domain_name>;
+# set it only when another front door (for example a CDN on your domain) serves the API.
+# public_base_url = "https://maps.example.com"
 
 # Optional: bring your own ACM certificate instead of Terraform-managed validation.
 # alb_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/REPLACE"

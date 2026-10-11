@@ -242,7 +242,7 @@ output "honua_url" {
 # --- Release harness contract (honua-release e2e/targets/aws_eks.py) --------------
 
 output "chart_config_env" {
-  description = "Non-credential server environment for the chart's config.env: ControlPlane__Kubernetes__*, Operations__Policy__Rules__*, Cors__AllowedOrigins__*, and aws:secretsmanager: references to the operator-owned key-ring and audit-chain secrets. The generated credentials (database, admin password, master key, Redis) are excluded; they belong in the chart's Secret."
+  description = "Non-credential server environment for the chart's config.env: ControlPlane__Kubernetes__*, Operations__Policy__Rules__*, Cors__AllowedOrigins__*, Public__BaseUrl (custom domain or public_base_url), and aws:secretsmanager: references to the operator-owned key-ring and audit-chain secrets. The generated credentials (database, admin password, master key, Redis) are excluded; they belong in the chart's Secret."
   value       = local.chart_config_env
 }
 
@@ -261,4 +261,9 @@ output "redis_connection_string" {
   description = "Redis connection string (TLS + AUTH; also in redis_connection_secret_arn). Empty when Redis is off."
   value       = local.redis_connection
   sensitive   = true
+}
+
+output "public_base_url" {
+  description = "Public__BaseUrl rendered into chart_config_env (public_base_url, else https://<domain_name> with a managed domain), or null when none."
+  value       = lookup(local.public_base_url_environment, "Public__BaseUrl", null)
 }

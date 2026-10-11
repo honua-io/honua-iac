@@ -77,9 +77,12 @@ module "honua" {
   # Networking
   enable_nat_gateway = true  # Required for outbound access (OIDC, external APIs)
 
+  # Custom domain on any domain you own; also sets Public__BaseUrl.
+  domain_name     = "gis.example.com"
+  route53_zone_id = var.route53_zone_id
+
   additional_env = {
     HONUA_OBSERVABILITY = "true"
-    Public__BaseUrl     = "https://gis.example.com"
   }
 }
 ```
@@ -96,7 +99,8 @@ module "honua" {
 | `cors_allowed_origins` | `[]` | Browser origins (Console/Studio) rendered as `Cors__AllowedOrigins__<n>`. honua-server is the only CORS source, as on ECS: API Gateway has no CORS configuration, so preflights reach the server. See [CORS](#cors). Empty or `null` configures no CORS; API-only cells need none. |
 | `operations_policy_rules` | `[]` | Ordered operation policy rules rendered as `Operations__Policy__Rules__<n>__<Field>`. Production denies every typed operation until a rule allows it. See [Operation policy rules](#operation-policy-rules). |
 | `studio_end_user_authorization` | `false` | Let any authenticated principal use the Studio authoring API, subject to the server's per-resource Studio authorization; rendered as `Studio__EndUserAuthorization__Enabled=true` only when `true`. Off keeps the server default: only admins can author Studio content. |
-| `domain_name` | `""` | Optional custom API hostname (for example `<run label>.cert.demo.honua.io`). With `route53_zone_id`, creates the certificate, API Gateway custom domain, mapping and alias described in [Custom domain](#custom-domain). Same input as `modules/aws-ecs`. |
+| `domain_name` | `""` | Optional custom API hostname on any domain you own (for example `gis.example.com`; any TLD, including punycode `xn--` names). With `route53_zone_id`, creates the certificate, API Gateway custom domain, mapping and alias described in [Custom domain](#custom-domain), and sets `Public__BaseUrl`. Same input as `modules/aws-ecs`. |
+| `public_base_url` | `""` | Public origin for server-built absolute links (`Public__BaseUrl`), for example `https://gis.example.com`. Empty uses `https://<domain_name>` when the custom domain is configured. See [Custom domain](#custom-domain). |
 | `route53_zone_id` | `""` | Route53 hosted zone that owns `domain_name`, for certificate validation and the alias record. Set together with `domain_name`; one without the other creates nothing and fails the `custom_domain_inputs` check. |
 | `lambda_alias_name` | `live` | Stable alias used for API Gateway traffic and control-plane rollback. |
 | `lambda_alias_version` | `null` | Optional published version to pin the stable alias to; defaults to the version published by the current apply. |
@@ -735,11 +739,11 @@ CORS middleware answers them. Server CORS settings such as
 
 ## Custom domain
 
-Lambda cells take the same per-cell domain inputs as the ECS module
-(`modules/aws-ecs`: `domain_name`, `route53_zone_id`), so browser clients
-whose CSP admits only HTTPS hosts under your own domain (for example the
-honua-site demo scenarios) can reach a Lambda cell. With both set, the module
-creates and owns:
+Lambda deployments take the same domain inputs as the ECS module
+(`modules/aws-ecs`: `domain_name`, `route53_zone_id`), so the API can be served
+on any domain you own (any TLD; the Route 53 hosted zone must be in the
+deploying account), and browser clients whose CSP admits only HTTPS hosts under
+your own domain can reach it. With both set, the module creates and owns:
 
 | Resource | Purpose |
 |----------|---------|
@@ -765,18 +769,32 @@ Server settings behind the custom domain, compared with the ECS module's
   API Gateway passes the client's `Host` (the custom domain) in the event and
   Lambda Web Adapter replays it, so the module appends `domain_name` to
   `HostValidation__AllowedHosts__<n>` (after `additional_allowed_hosts`,
-  without duplicating it). This is the one Lambda environment entry the domain
-  adds; it counts against the [4 KB budget](#lambda-environment-budget).
+  without duplicating it). It counts against the
+  [4 KB budget](#lambda-environment-budget).
+- **Public base URL.** honua-server builds absolute links (publication URLs,
+  OGC and STAC self links, admin OIDC redirect URIs) only from
+  `Public:BaseUrl` / `PUBLIC_BASE_URL`, never from the request host; without it
+  they fall back to a loopback origin and admin OIDC refuses to start outside
+  Development. The module therefore sets `Public__BaseUrl = https://<domain_name>`
+  (reported by the `public_base_url` output). `public_base_url` overrides it,
+  for example when a CDN on your domain fronts the API, and works without a
+  custom domain too; it must be an absolute `http`/`https` URL (optionally with
+  a port or path prefix) because the server ignores a bare host name. A
+  `Public__BaseUrl` or `PUBLIC_BASE_URL` already in `additional_env` is kept and
+  wins; setting both fails the `public_base_url_single_source` check. The entry
+  is about 30 bytes plus the host name against the 4 KB budget; the release
+  Redis-on cell on a 55-character customer domain keeps its 256-byte margin
+  (`tests/lambda_environment_budget.tftest.hcl`). If `public_base_url` names a
+  host other than `domain_name` that reaches the Lambda with its own `Host`
+  header, add it to `additional_allowed_hosts`.
 - **HSTS.** `SecurityHeaders__HstsHttpsOnly = "false"` is already set on every
   Lambda (API Gateway is HTTPS-only and Lambda Web Adapter's last hop is HTTP),
   which matches what ECS sets once its ALB terminates TLS.
 - **Forwarded headers.** API Gateway sets `X-Forwarded-Proto: https` and Lambda
   Web Adapter forwards it, but `ASPNETCORE_FORWARDEDHEADERS_ENABLED` is not set
   here, on the custom domain or on execute-api. honua-server builds absolute
-  links from `Public:BaseUrl` / `PUBLIC_BASE_URL`, never from the request host
-  or scheme, and HSTS does not depend on the scheme here, so the domain does not
-  need it. Set `Public__BaseUrl` through `additional_env` if clients need
-  absolute links on the custom domain (as on ECS).
+  links from `Public:BaseUrl` (above), never from the request host or scheme,
+  and HSTS does not depend on the scheme here, so the domain does not need it.
 - **CORS.** The server answers CORS from `Cors__AllowedOrigins__<n>` on the
   custom domain and on execute-api alike (see [CORS](#cors)). List the browser
   origins (Console, site), not the API domain.
@@ -785,8 +803,10 @@ Server settings behind the custom domain, compared with the ECS module's
 module "honua" {
   source = "../../modules/aws-serverless"
   # ...
-  domain_name     = "run-123.cert.demo.honua.io"
+  domain_name     = "gis.example.com"
   route53_zone_id = "Z0123456789ABCDEFGHIJ"
+  # Optional: a different public origin, for example a CDN on your domain.
+  # public_base_url = "https://maps.example.com"
 }
 ```
 

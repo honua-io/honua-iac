@@ -403,13 +403,19 @@ variable "alb_enable_http_redirect" {
 }
 
 variable "domain_name" {
-  description = "Optional custom API hostname for ACM-managed TLS and Route53 ALB alias DNS."
+  description = "Optional custom API hostname on any domain you own (for example gis.example.com) for ACM-managed TLS and Route53 ALB alias DNS."
   type        = string
   default     = ""
 }
 
 variable "route53_zone_id" {
   description = "Route53 hosted zone ID that owns domain_name when Terraform should manage certificate validation and ALB alias DNS."
+  type        = string
+  default     = ""
+}
+
+variable "public_base_url" {
+  description = "Optional public origin for server-built absolute links (Public__BaseUrl), for example https://gis.example.com. Empty uses https://<domain_name> when the custom domain is configured. Must include the http(s) scheme."
   type        = string
   default     = ""
 }

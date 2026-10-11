@@ -133,6 +133,25 @@ locals {
   # is safe here only because aws_security_group.ecs admits the container port
   # from the ALB security group alone, so the ALB is the only peer that can set
   # these headers. Plain-HTTP deployments keep today's behaviour (nothing set).
+  # honua-server builds absolute links (publication URLs, OGC/STAC self links,
+  # admin OIDC redirect URIs) only from Public:BaseUrl / PUBLIC_BASE_URL
+  # (BaseUrlResolver), never from the request Host, and admin OIDC refuses to
+  # start outside Development without it. On a custom domain (domain_name with
+  # an HTTPS listener) the module therefore sets Public__BaseUrl to
+  # https://<domain_name>; an explicit public_base_url wins, and a
+  # Public__BaseUrl or PUBLIC_BASE_URL already in additional_env wins over both.
+  # When no HostValidation allowlist is configured the server also accepts this
+  # URL's host. Any customer FQDN works; nothing assumes a DNS suffix.
+  additional_env_sets_public_base_url = length(setintersection(
+    toset([for name in(var.additional_env == null ? [] : keys(var.additional_env)) : lower(replace(name, ":", "__"))]),
+    toset(["public__baseurl", "public_base_url"]),
+  )) > 0
+  public_base_url = trimsuffix(var.public_base_url, "/") != "" ? trimsuffix(var.public_base_url, "/") : (
+    local.use_custom_domain ? "https://${var.domain_name}" : ""
+  )
+  public_base_url_environment = local.public_base_url != "" && !local.additional_env_sets_public_base_url ? {
+    Public__BaseUrl = local.public_base_url
+  } : {}
   alb_tls_environment = local.use_https ? {
     SecurityHeaders__HstsHttpsOnly      = "false"
     ASPNETCORE_FORWARDEDHEADERS_ENABLED = "true"
@@ -144,7 +163,7 @@ locals {
     FileStorage__AwsS3__BucketName = var.file_storage_aws_s3_bucket_name
     FileStorage__AwsS3__Region     = local.file_storage_aws_s3_region
     FileStorage__AwsS3__KeyPrefix  = var.file_storage_aws_s3_key_prefix
-  } : {}, local.licensing_environment, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment, local.alb_tls_environment)
+  } : {}, local.licensing_environment, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment, local.alb_tls_environment, local.public_base_url_environment)
   primary_container_environment = [
     for key, value in merge(var.additional_env, local.runtime_environment) : {
       name  = key
@@ -1475,5 +1494,12 @@ check "audit_chain_key_configured" {
   assert {
     condition     = var.audit_chain_key_secret_arn != ""
     error_message = "audit_chain_key_secret_arn is empty: audit rows are still written, but scheduled hash-chain verification cannot succeed and the server's audit-chain-integrity health check reports Unhealthy. Supply an operator-owned Secrets Manager secret holding a base64 key of at least 32 bytes (set it at first install; see the module README for activating it on a deployment that already has audit rows)."
+  }
+}
+
+check "public_base_url_single_source" {
+  assert {
+    condition     = var.public_base_url == "" || !local.additional_env_sets_public_base_url
+    error_message = "public_base_url is ignored because additional_env already sets Public__BaseUrl or PUBLIC_BASE_URL; set the public origin in one place."
   }
 }
