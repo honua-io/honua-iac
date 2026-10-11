@@ -472,3 +472,18 @@ output "studio_end_user_authorization_enabled" {
   description = "Whether the server environment carries Studio__EndUserAuthorization__Enabled=true, admitting authenticated non-admins to the Studio authoring API."
   value       = length(local.studio_end_user_authorization_environment) > 0
 }
+
+output "rds_proxy_endpoint" {
+  description = "RDS Proxy endpoint the server processes connect to when enable_rds_proxy is true; null otherwise."
+  value       = one(aws_db_proxy.this[*].endpoint)
+}
+
+output "rds_proxy_arn" {
+  description = "ARN of the RDS Proxy when enable_rds_proxy is true; null otherwise."
+  value       = one(aws_db_proxy.this[*].arn)
+}
+
+output "runtime_db_connection_secret_arn" {
+  description = "ARN of the connection-string secret the Lambda functions and GP Batch jobs read: the RDS Proxy string when enable_rds_proxy is true, else the same secret as db_connection_secret_arn (which always holds the direct instance endpoint, for migrations)."
+  value       = local.runtime_connection_secret.arn
+}

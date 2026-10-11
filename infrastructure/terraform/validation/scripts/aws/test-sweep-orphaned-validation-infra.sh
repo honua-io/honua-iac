@@ -90,6 +90,11 @@ case "$service $operation" in
     fi
     echo "${FAKE_KMS_KEY_STATE:-Enabled}"
     ;;
+  "rds describe-db-proxies")
+    # By ARN (name lookup) the proxy exists; by name (wait_gone) it is gone.
+    if has_flag --db-proxy-name; then exit 1; fi
+    echo "${FAKE_DB_PROXY_NAME:-honua-it-pg-proxy}"
+    ;;
   "secretsmanager describe-secret")
     echo "${FAKE_SECRET_DELETED_DATE:-None}"
     ;;
@@ -434,6 +439,32 @@ if [[ -n "$vpc_line" && -n "$subnet_line" ]] && (( subnet_line < vpc_line )); th
   check "the VPC is deleted last" ok
 else
   check "the VPC is deleted last" no
+fi
+
+# 15b. An RDS Proxy is resolved from its ARN (prx-... id) to its name and
+#      deleted before the DB instance it targets; its target group has no delete
+#      API and is left to the proxy.
+PROXY="$(tagged 'arn:aws:rds:us-west-2:1:db-proxy:prx-0123456789abcdef0' 'gha-111-aws-ecs' 'data' "$PAST")"
+PROXY_TG="$(tagged 'arn:aws:rds:us-west-2:1:target-group:prx-tg-0123456789abcdef0' 'gha-111-aws-ecs' 'data' "$PAST")"
+PROXY_DB="$(tagged 'arn:aws:rds:us-west-2:1:db:honua-it-postgres' 'gha-111-aws-ecs' 'data' "$PAST")"
+run_sweeper "$(resources "$PROXY_DB" "$PROXY_TG" "$PROXY")"
+assert_deleted "an expired RDS proxy is deleted" 'arn:aws:rds:us-west-2:1:db-proxy:prx-0123456789abcdef0'
+if grep -q -- 'delete-db-proxy --region us-west-2 --db-proxy-name honua-it-pg-proxy' "$AWS_CALL_LOG"; then
+  check "the proxy is deleted by its name, not its resource id" ok
+else
+  check "the proxy is deleted by its name, not its resource id" no
+fi
+proxy_line="$(order_of 'delete-db-proxy' || true)"
+instance_line="$(order_of 'delete-db-instance' || true)"
+if [[ -n "$proxy_line" && -n "$instance_line" ]] && (( proxy_line < instance_line )); then
+  check "the proxy is deleted before the DB instance it targets" ok
+else
+  check "the proxy is deleted before the DB instance it targets" no
+fi
+if grep -q 'target-group' "$AWS_CALL_LOG"; then
+  check "a proxy target group gets no delete call" no
+else
+  check "a proxy target group gets no delete call" ok
 fi
 
 # 16. A dry run does not merely skip the delete calls -- it returns before the

@@ -55,6 +55,14 @@ Outputs (all `null` when Batch is off): `gp_batch_enabled`, `gp_batch_image`
 (maps keyed `s`, `m`, `l`, `xl`), `gp_compute_environment_name`,
 `gp_compute_environment_arn`.
 
+## Database connections (RDS Proxy)
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `enable_rds_proxy` | `false` | Puts Amazon RDS Proxy in front of the cell's PostgreSQL and routes the Lambda functions and GP Batch jobs through it, so Lambda scale-out cannot exhaust the instance's connection slots (`53300`). Migrations keep the direct endpoint: `migrate_db_connection_secret_arn` is unchanged. About $0.03/hour on a `db.t3.micro`. See the module README's [database connection budget](../../modules/aws-serverless/README.md#database-connection-budget). |
+
+Outputs: `rds_proxy_endpoint`, `rds_proxy_arn` (`null` when off).
+
 ## Browser origins (CORS)
 
 `cors_allowed_origins` (default `[]`) lists the browser origins, such as the

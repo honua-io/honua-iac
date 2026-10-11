@@ -484,7 +484,7 @@ resource "aws_batch_job_definition" "gp_provisioning" {
       },
       {
         name  = "ConnectionStrings__DefaultConnection"
-        value = "aws:secretsmanager:${aws_secretsmanager_secret.connection_string.arn}"
+        value = "aws:secretsmanager:${local.runtime_connection_secret.arn}"
       }
     ]
 

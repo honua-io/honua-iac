@@ -85,6 +85,26 @@ def main():
     case('provision', 'tagged-api-create', 'apigateway:POST', api, 'allowed', request)
     case('provision', 'owned-api-update', 'apigateway:PATCH', api + '/fixture', 'allowed', tags)
     case('reaper', 'owned-api-delete', 'apigateway:DELETE', api + '/fixture', 'allowed', tags)
+    # RDS Proxy (aws-serverless enable_rds_proxy): proxy ARNs carry a random
+    # prx- id, not the cell name, so the grants are tag-scoped like KMS keys.
+    # The simulator authorizes CreateDBProxy only against "*" and target
+    # registration / target-group changes against the target-group ARN
+    # (Allow * returns implicitDeny for the db-proxy ARN; reproduced 2026-10-11).
+    proxy = f'arn:aws:rds:us-east-1:{account}:db-proxy:prx-0123456789abcdef0'
+    proxy_tg = f'arn:aws:rds:us-east-1:{account}:target-group:prx-tg-0123456789abcdef0'
+    case('provision', 'tagged-proxy-create', 'rds:CreateDBProxy', '*', 'allowed', request)
+    case('provision', 'untagged-proxy-create', 'rds:CreateDBProxy', '*', 'implicitDeny')
+    case('provision', 'owned-proxy-modify', 'rds:ModifyDBProxy', proxy, 'allowed', tags)
+    case('provision', 'owned-proxy-register', 'rds:RegisterDBProxyTargets', proxy_tg, 'allowed', tags)
+    case('provision', 'unowned-proxy-register', 'rds:RegisterDBProxyTargets', proxy_tg, 'implicitDeny')
+    case('provision', 'owned-proxy-target-group', 'rds:ModifyDBProxyTargetGroup', proxy_tg, 'allowed', tags)
+    case('provision', 'no-proxy-delete', 'rds:DeleteDBProxy', proxy, 'implicitDeny', tags)
+    case('provision', 'pass-role-to-rds-proxy', 'iam:PassRole', role, 'allowed', {'iam:PassedToService': 'rds.amazonaws.com'})
+    case('provision', 'no-pass-role-to-ec2', 'iam:PassRole', role, 'implicitDeny', {'iam:PassedToService': 'ec2.amazonaws.com'})
+    case('reaper', 'owned-proxy-delete', 'rds:DeleteDBProxy', proxy, 'allowed', tags)
+    case('reaper', 'unowned-proxy-delete', 'rds:DeleteDBProxy', proxy, 'implicitDeny')
+    case('reaper', 'no-proxy-create', 'rds:CreateDBProxy', '*', 'implicitDeny', request)
+    case('reaper', 'owned-proxy-deregister', 'rds:DeregisterDBProxyTargets', proxy_tg, 'allowed', tags)
     scaling = f'arn:aws:application-autoscaling:us-east-1:{account}:scalable-target/fixture'
     case('provision', 'tagged-scaling-create', 'application-autoscaling:RegisterScalableTarget', scaling, 'allowed', request)
     case('reaper', 'owned-scaling-delete', 'application-autoscaling:DeregisterScalableTarget', scaling, 'allowed', tags)

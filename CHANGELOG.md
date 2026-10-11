@@ -16,6 +16,20 @@ module input/output contracts may still change.
 
 ### Added
 
+- `aws-serverless` and the `aws-serverless` example root add `enable_rds_proxy`
+  (default `false`). When `true`, Amazon RDS Proxy fronts the module-managed
+  PostgreSQL (TLS required, Secrets Manager auth, default target group at 90%
+  of `max_connections`) and the API Lambda, the control-plane event Lambdas and
+  the GP Batch job definitions read a new proxy connection-string secret, so
+  Lambda scale-out can no longer exhaust the instance (`53300`). The existing
+  connection-string secret, `db_connection_secret_arn` and the migration
+  outputs keep the direct endpoint. New outputs `rds_proxy_endpoint`,
+  `rds_proxy_arn` and `runtime_db_connection_secret_arn`; tuning inputs
+  `rds_proxy_max_connections_percent`, `rds_proxy_max_idle_connections_percent`,
+  `rds_proxy_connection_borrow_timeout_seconds` and
+  `rds_proxy_idle_client_timeout_seconds`. `bootstrap/aws-serverless` grants
+  `rds:RegisterDBProxyTargets` / `rds:DeregisterDBProxyTargets`.
+
 - `aws-serverless`, `aws-ecs` and the `aws-serverless` and `aws` example roots
   add `studio_end_user_authorization` (default `false`). When `true`, it renders
   `Studio__EndUserAuthorization__Enabled=true`, so authenticated non-admins can

@@ -103,6 +103,28 @@
       }
     },
     {
+      "Sid": "DeleteCellDbProxy",
+      "Effect": "Allow",
+      "Action": [
+        "rds:DeleteDBProxy",
+        "rds:DeregisterDBProxyTargets"
+      ],
+      "Resource": [
+        "arn:aws:rds:${region}:${account_id}:db-proxy:*",
+        "arn:aws:rds:${region}:${account_id}:target-group:*",
+        "arn:aws:rds:${region}:${account_id}:db:honuar*",
+        "arn:aws:rds:${region}:${account_id}:db:honuan*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Owner": "release-cell"
+        },
+        "Null": {
+          "aws:ResourceTag/ValidationRunId": "false"
+        }
+      }
+    },
+    {
       "Sid": "DeleteCellNetwork",
       "Effect": "Allow",
       "Action": [
