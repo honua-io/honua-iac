@@ -39,6 +39,16 @@ run "policies" {
     condition     = alltrue([for lane, role in aws_iam_role.cell : jsondecode(role.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == var.oidc_subjects[lane]])
     error_message = "Lane trust must use exact distinct OIDC subjects."
   }
+  assert {
+    condition = (
+      contains(one([for statement in jsondecode(local.grant_policies.provision).Statement : statement if statement.Sid == "TaggedCreation"]).Action, "rds:CreateDBProxy") &&
+      contains(one([for statement in jsondecode(local.grant_policies.provision).Statement : statement if statement.Sid == "PassCellRoles"]).Condition.StringEquals["iam:PassedToService"], "rds.amazonaws.com") &&
+      one([for statement in jsondecode(local.grant_policies.provision).Statement : statement if statement.Sid == "CellDbProxy"]).Condition.StringEquals["aws:ResourceTag/Owner"] == "release-cell" &&
+      one([for statement in jsondecode(local.grant_policies.reaper).Statement : statement if statement.Sid == "DeleteCellDbProxy"]).Condition.StringEquals["aws:ResourceTag/Owner"] == "release-cell" &&
+      !contains(flatten([for statement in jsondecode(local.grant_policies.provision).Statement : statement.Action]), "rds:DeleteDBProxy")
+    )
+    error_message = "The provision lane must create (tagged) and wire (owned) an RDS Proxy and pass its role to rds.amazonaws.com; only the reaper lane may delete an owned proxy."
+  }
 }
 run "reject_shared_trust" {
   command = plan

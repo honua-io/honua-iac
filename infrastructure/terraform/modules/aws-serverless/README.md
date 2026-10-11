@@ -859,7 +859,11 @@ about $0.03/hour, roughly $22/month.
 `rds:ModifyDBProxy`, `rds:ModifyDBProxyTargetGroup`,
 `rds:RegisterDBProxyTargets`, `rds:DeregisterDBProxyTargets`,
 `rds:DeleteDBProxy`, and `iam:PassRole` of the proxy role to
-`rds.amazonaws.com`; the `bootstrap/aws-serverless` identity grants them.
+`rds.amazonaws.com`; the `bootstrap/aws-serverless` identity grants them, and
+the `bootstrap/aws-release-cells` provision lane grants them for tagged
+release cells (its reaper lane deletes an owned proxy). The validation reaper
+(`sweep-orphaned-validation-infra.sh`) deletes a leaked proxy by name before
+the DB instance it targets.
 
 ## RDS security group rules
 

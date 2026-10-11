@@ -47,6 +47,7 @@
         "rds:CreateDBInstance",
         "rds:CreateDBSubnetGroup",
         "rds:CreateDBParameterGroup",
+        "rds:CreateDBProxy",
         "lambda:CreateFunction",
         "logs:CreateLogGroup",
         "secretsmanager:CreateSecret",
@@ -126,6 +127,29 @@
         "arn:aws:elasticloadbalancing:${region}:${account_id}:targetgroup/honuaeks*",
         "arn:aws:elasticloadbalancing:${region}:${account_id}:listener/app/honuaeks*",
         "arn:aws:elasticloadbalancing:${region}:${account_id}:listener-rule/app/honuaeks*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Owner": "release-cell"
+        },
+        "Null": {
+          "aws:ResourceTag/ValidationRunId": "false"
+        }
+      }
+    },
+    {
+      "Sid": "CellDbProxy",
+      "Effect": "Allow",
+      "Action": [
+        "rds:ModifyDBProxy",
+        "rds:ModifyDBProxyTargetGroup",
+        "rds:RegisterDBProxyTargets"
+      ],
+      "Resource": [
+        "arn:aws:rds:${region}:${account_id}:db-proxy:*",
+        "arn:aws:rds:${region}:${account_id}:target-group:*",
+        "arn:aws:rds:${region}:${account_id}:db:honuar*",
+        "arn:aws:rds:${region}:${account_id}:db:honuan*"
       ],
       "Condition": {
         "StringEquals": {
@@ -220,7 +244,8 @@
             "lambda.amazonaws.com",
             "batch.amazonaws.com",
             "events.amazonaws.com",
-            "scheduler.amazonaws.com"
+            "scheduler.amazonaws.com",
+            "rds.amazonaws.com"
           ]
         }
       }
