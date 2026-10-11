@@ -1250,9 +1250,50 @@ variable "control_plane_events_timeout_seconds" {
 }
 
 variable "control_plane_events_reserved_concurrent_executions" {
-  description = "Reserved concurrency for the control-plane reconcile/backstop Lambdas (null for unreserved)."
+  description = "Legacy: one reserved concurrency for all three control-plane Lambdas (reconcile, backstop, scheduled tick). When set it overrides control_plane_reconcile_reserved_concurrency, control_plane_backstop_reserved_concurrency and control_plane_tick_reserved_concurrency; leave null to use those."
   type        = number
   default     = null
+
+  validation {
+    condition     = var.control_plane_events_reserved_concurrent_executions == null || try(var.control_plane_events_reserved_concurrent_executions >= 1, false)
+    error_message = "control_plane_events_reserved_concurrent_executions must be null or at least 1 (0 would stop the functions)."
+  }
+}
+
+variable "control_plane_reconcile_reserved_concurrency" {
+  description = "Reserved concurrency for the control-plane reconcile (Batch job state change) Lambda. Each instance holds its own database pool (control_plane_db_max_pool_size) and keeps it while frozen, so this ceiling bounds the function's connections; invocations above it wait in Lambda's asynchronous queue. Ignored when control_plane_events_reserved_concurrent_executions is set."
+  type        = number
+  default     = 2
+  nullable    = false
+
+  validation {
+    condition     = var.control_plane_reconcile_reserved_concurrency >= 1 && floor(var.control_plane_reconcile_reserved_concurrency) == var.control_plane_reconcile_reserved_concurrency
+    error_message = "control_plane_reconcile_reserved_concurrency must be a whole number of at least 1 (0 would stop the function)."
+  }
+}
+
+variable "control_plane_backstop_reserved_concurrency" {
+  description = "Reserved concurrency for the control-plane backstop Lambda. Each instance holds its own database pool (control_plane_db_max_pool_size) and keeps it while frozen, so this ceiling bounds the function's connections; invocations above it wait in Lambda's asynchronous queue. Ignored when control_plane_events_reserved_concurrent_executions is set."
+  type        = number
+  default     = 1
+  nullable    = false
+
+  validation {
+    condition     = var.control_plane_backstop_reserved_concurrency >= 1 && floor(var.control_plane_backstop_reserved_concurrency) == var.control_plane_backstop_reserved_concurrency
+    error_message = "control_plane_backstop_reserved_concurrency must be a whole number of at least 1 (0 would stop the function)."
+  }
+}
+
+variable "control_plane_tick_reserved_concurrency" {
+  description = "Reserved concurrency for the control-plane scheduled-tick Lambda. Each instance holds its own database pool (control_plane_db_max_pool_size) and keeps it while frozen, so this ceiling bounds the function's connections; invocations above it wait in Lambda's asynchronous queue. Ignored when control_plane_events_reserved_concurrent_executions is set."
+  type        = number
+  default     = 1
+  nullable    = false
+
+  validation {
+    condition     = var.control_plane_tick_reserved_concurrency >= 1 && floor(var.control_plane_tick_reserved_concurrency) == var.control_plane_tick_reserved_concurrency
+    error_message = "control_plane_tick_reserved_concurrency must be a whole number of at least 1 (0 would stop the function)."
+  }
 }
 
 variable "control_plane_scheduled_tick_schedules" {

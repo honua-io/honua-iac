@@ -734,21 +734,49 @@ invocations, so idle pruning barely runs there and its connections stay open
 until the instance is retired; the cap is what bounds them.
 
 Keep the worst case under the database's `max_connections` (minus the slots
-RDS reserves for superusers and `rds_reserved`):
+RDS reserves for superusers and `rds_reserved`). A frozen Lambda instance keeps
+its connections, so count every instance that can exist, not just the busy
+ones; reserved concurrency is what bounds that number:
 
 ```
-warm API instances x lambda_db_max_pool_size
-  + warm control-plane instances (3 functions) x control_plane_db_max_pool_size
+API instances (lambda_reserved_concurrent_executions) x lambda_db_max_pool_size
+  + control_plane_reconcile_reserved_concurrency x control_plane_db_max_pool_size
+  + control_plane_backstop_reserved_concurrency  x control_plane_db_max_pool_size
+  + control_plane_tick_reserved_concurrency      x control_plane_db_max_pool_size
   + concurrent GP Batch jobs x gp_batch_db_max_pool_size
   + one-off connections (migrations, PostGIS bootstrap)
 ```
 
-For example, on a `db.t3.micro` (about 87 connections, a few reserved): 8 warm
-API instances x 8 + 3 x 2 + 4 jobs x 4 = 86, which is already at the limit, so
-cap the API function with `lambda_reserved_concurrent_executions` or use a
-larger instance class. For production Lambda deployments put RDS Proxy in front
-of the database so warm instances share a bounded set of server connections
-(the module has no RDS Proxy input yet).
+With the defaults that is `API x 8 + 2 x 2 + 1 x 2 + 1 x 2 + jobs x 4`, so the
+control plane holds at most 8 connections. On a `db.t3.micro` (about 87
+connections, a few reserved) with 4 concurrent GP jobs: 7 API instances x 8 +
+8 + 16 = 80. The API function has no reserved concurrency by default, so set
+`lambda_reserved_concurrent_executions` to the instance count your database can
+carry, or use a larger instance class.
+
+**Control-plane concurrency.** EventBridge Scheduler fires one tick per kind
+(several a minute with the default `control_plane_scheduled_tick_schedules`)
+and the backstop every two minutes. Without a ceiling each overlapping
+invocation started a new instance with its own pool, and the instances
+accumulated until RDS was full (honua-release e2e-cloud-aws run 38125145738:
+14x `53300` and 3x `PostGIS preflight check failed ... Startup aborted`, all in
+the scheduled-tick function). The three event functions therefore have reserved
+concurrency (`control_plane_reconcile_reserved_concurrency` 2,
+`control_plane_backstop_reserved_concurrency` 1,
+`control_plane_tick_reserved_concurrency` 1; the legacy
+`control_plane_events_reserved_concurrent_executions`, when set, overrides all
+three). Invocations above the ceiling are throttled and **queued, not
+dropped**: the scheduler and the EventBridge rule invoke asynchronously, Lambda
+keeps a throttled event and retries it, and the tick and backstop functions
+keep an event for up to 15 and 10 minutes
+(`aws_lambda_function_event_invoke_config`) before a stale periodic run is
+discarded. The schedules also carry a `retry_policy` (10 attempts within the
+same age) for delivery failures. Reserved concurrency comes out of the
+account's Lambda concurrency, which must keep at least 100 unreserved.
+
+For production Lambda deployments put RDS Proxy in front of the database so
+instances share a bounded set of server connections (the module has no RDS
+Proxy input yet).
 
 ## RDS security group rules
 
