@@ -154,6 +154,7 @@ run "defaults_cap_every_process" {
         for e in jsondecode(jd.container_properties).environment : e.name => e.value if startswith(e.name, "Limits__Connections__")
         } == {
         Limits__Connections__MaxConnectionPoolSize         = "4"
+        Limits__Connections__MaxConcurrentQueries          = "4"
         Limits__Connections__MinConnectionPoolSize         = "0"
         Limits__Connections__ConnectionIdleLifetimeSeconds = "60"
       }
@@ -240,4 +241,64 @@ run "zero_pool_size_is_rejected" {
   }
 
   expect_failures = [var.lambda_db_max_pool_size]
+}
+
+# honua-server's LimitsOptionsValidator.ValidateConnectionLimits refuses to
+# start unless MaxConcurrentQueries <= MaxConnectionPoolSize (MaxConcurrentQueries
+# defaults to 200), and the pool needs MinConnectionPoolSize <= the cap
+# (default 20, clamped by the server when absent). honua-release e2e-cloud-aws
+# run 38116311885: every Lambda exited at startup with "Invalid limits
+# configuration: Connections.MaxConcurrentQueries must be less than or equal to
+# Connections.MaxConnectionPoolSize". Assert both for every process, with the
+# defaults and with overrides.
+run "server_limit_invariants_hold_by_default" {
+  command = apply
+
+  assert {
+    condition = alltrue([
+      for env in concat(
+        [
+          aws_lambda_function.this.environment[0].variables,
+          aws_lambda_function.control_plane_reconcile[0].environment[0].variables,
+          aws_lambda_function.control_plane_backstop[0].environment[0].variables,
+          aws_lambda_function.control_plane_tick[0].environment[0].variables,
+        ],
+        [for tier, jd in aws_batch_job_definition.gp : { for e in jsondecode(jd.container_properties).environment : e.name => e.value }],
+        ) : (
+        can(tonumber(env["Limits__Connections__MaxConnectionPoolSize"])) &&
+        tonumber(lookup(env, "Limits__Connections__MaxConcurrentQueries", "200")) <= tonumber(env["Limits__Connections__MaxConnectionPoolSize"]) &&
+        tonumber(lookup(env, "Limits__Connections__MinConnectionPoolSize", "0")) <= tonumber(env["Limits__Connections__MaxConnectionPoolSize"])
+      )
+    ])
+    error_message = "Every process must set MaxConnectionPoolSize, with MaxConcurrentQueries (server default 200) and MinConnectionPoolSize at or below it."
+  }
+}
+
+run "server_limit_invariants_hold_with_overrides" {
+  command = apply
+
+  variables {
+    lambda_db_max_pool_size        = 1
+    control_plane_db_max_pool_size = 1
+    gp_batch_db_max_pool_size      = 1
+  }
+
+  assert {
+    condition = alltrue([
+      for env in concat(
+        [
+          aws_lambda_function.this.environment[0].variables,
+          aws_lambda_function.control_plane_reconcile[0].environment[0].variables,
+          aws_lambda_function.control_plane_backstop[0].environment[0].variables,
+          aws_lambda_function.control_plane_tick[0].environment[0].variables,
+        ],
+        [for tier, jd in aws_batch_job_definition.gp : { for e in jsondecode(jd.container_properties).environment : e.name => e.value }],
+        ) : (
+        env["Limits__Connections__MaxConnectionPoolSize"] == "1" &&
+        env["Limits__Connections__MaxConcurrentQueries"] == "1" &&
+        tonumber(lookup(env, "Limits__Connections__MinConnectionPoolSize", "0")) <= 1
+      )
+    ])
+    error_message = "With every cap at 1, every process must set MaxConcurrentQueries to 1 and keep MinConnectionPoolSize at or below it."
+  }
 }

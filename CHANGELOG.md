@@ -37,6 +37,15 @@ module input/output contracts may still change.
 
 ### Fixed
 
+- `aws-serverless`: every process now also sets
+  `Limits__Connections__MaxConcurrentQueries` to its pool cap. With only the
+  cap from the previous change, honua-server refused to start
+  (`LimitsOptionsValidator`: "Connections.MaxConcurrentQueries must be less
+  than or equal to Connections.MaxConnectionPoolSize"; the default is 200), and
+  every Lambda failed at init on e2e-cloud-aws run 38116311885. This adds 48
+  bytes per Lambda environment; every optional feature at once now leaves 18
+  bytes of the 4 KB.
+
 - `aws-serverless`: each server process now caps its PostgreSQL pool so warm
   Lambda instances and GP Batch jobs cannot exhaust a small RDS (e2e-cloud-aws
   run 38107383082 hit `53300: remaining connection slots are reserved`). New
