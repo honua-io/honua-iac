@@ -49,7 +49,8 @@
 #     e2e-cloud-aws run 38163689854: 53300 through the proxy). With it the
 #     server issues no SET (honua-server #5870 / #5874) and expects the values
 #     as defaults on the database role (it logs event 5870 with the ALTER ROLE
-#     statements when they are missing).
+#     statements when they are missing); null_resource.db_role_session_defaults
+#     (main.tf) sets them on the direct endpoint before the proxy target exists.
 # What can still pin: the server's own prepared-statement cache
 # (Database:QueryCache:EnableAutomaticCaching, default on; PREPARE pins),
 # session advisory locks (migrations, schedulers) and tenant set_config calls.
@@ -276,4 +277,8 @@ resource "aws_db_proxy_target" "this" {
   db_proxy_name          = aws_db_proxy.this[0].name
   target_group_name      = aws_db_proxy_default_target_group.this[0].name
   db_instance_identifier = module.rds[0].db_instance_identifier
+
+  # No proxied backend opens before the role carries the session defaults the
+  # server (role-defaults mode) relies on.
+  depends_on = [null_resource.db_role_session_defaults]
 }

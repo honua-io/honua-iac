@@ -487,3 +487,13 @@ output "runtime_db_connection_secret_arn" {
   description = "ARN of the connection-string secret the Lambda functions and GP Batch jobs read: the RDS Proxy string when enable_rds_proxy is true, else the same secret as db_connection_secret_arn (which always holds the direct instance endpoint, for migrations)."
   value       = local.runtime_connection_secret.arn
 }
+
+output "rds_proxy_role_session_defaults_sql" {
+  description = "With enable_rds_proxy: the ALTER ROLE statements that give the database role the session timeouts honua-server expects in Database__SessionSettings__Mode=role-defaults. The module runs them itself when enable_postgis or rds_proxy_set_role_session_defaults is true (rds_proxy_role_session_defaults_applied); otherwise run them as the master user. Null when the proxy is off."
+  value       = local.rds_proxy_enabled ? local.db_role_session_settings_sql : null
+}
+
+output "rds_proxy_role_session_defaults_applied" {
+  description = "True when the module runs rds_proxy_role_session_defaults_sql against the instance during apply (enable_rds_proxy with enable_postgis or rds_proxy_set_role_session_defaults); false otherwise."
+  value       = length(null_resource.db_role_session_defaults) > 0
+}

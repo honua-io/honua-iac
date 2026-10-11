@@ -183,7 +183,8 @@ run "off_by_default_creates_no_proxy" {
       length(aws_secretsmanager_secret.proxy_connection_string) == 0 &&
       length(aws_iam_role.rds_proxy) == 0 &&
       length(aws_iam_role_policy.rds_proxy) == 0 &&
-      length(terraform_data.rds_proxy_inputs) == 0
+      length(terraform_data.rds_proxy_inputs) == 0 &&
+      length(null_resource.db_role_session_defaults) == 0
     )
     error_message = "enable_rds_proxy defaults to false and must create no proxy resources."
   }
@@ -213,6 +214,11 @@ run "off_keeps_the_direct_endpoint_everywhere" {
   assert {
     condition     = output.rds_proxy_endpoint == null && output.rds_proxy_arn == null && output.runtime_db_connection_secret_arn == aws_secretsmanager_secret.connection_string.arn
     error_message = "With the proxy off the proxy outputs are null and the runtime secret is the direct one."
+  }
+
+  assert {
+    condition     = output.rds_proxy_role_session_defaults_sql == null && output.rds_proxy_role_session_defaults_applied == false
+    error_message = "With the proxy off there are no role defaults to set."
   }
 
   # Direct connections keep the server's per-connection SETs (the default
@@ -357,6 +363,17 @@ run "on_creates_the_proxy_and_routes_every_process_through_it" {
     error_message = "Behind the proxy every GP Batch job-definition tier must set Database__SessionSettings__Mode=role-defaults."
   }
 
+  # The module runs ALTER ROLE through psql like enable_postgis, which these
+  # inputs leave off, so nothing runs here (role_session_defaults_* below).
+  assert {
+    condition     = length(null_resource.db_role_session_defaults) == 0
+    error_message = "Without enable_postgis or rds_proxy_set_role_session_defaults the module must not run psql."
+  }
+
+  assert {
+    condition     = output.rds_proxy_role_session_defaults_applied == false && output.rds_proxy_role_session_defaults_sql != null
+    error_message = "When the module does not run ALTER ROLE it must report so and output the statements."
+  }
 
   assert {
     condition     = contains(local.lambda_secret_arns, aws_secretsmanager_secret.proxy_connection_string[0].arn) && !contains(local.lambda_secret_arns, aws_secretsmanager_secret.connection_string.arn)
@@ -366,6 +383,71 @@ run "on_creates_the_proxy_and_routes_every_process_through_it" {
   assert {
     condition     = output.rds_proxy_endpoint == aws_db_proxy.this[0].endpoint && output.rds_proxy_arn == aws_db_proxy.this[0].arn && output.runtime_db_connection_secret_arn == aws_secretsmanager_secret.proxy_connection_string[0].arn && output.db_connection_secret_arn == aws_secretsmanager_secret.connection_string.arn
     error_message = "The module must output the proxy endpoint and ARN and the runtime secret, and keep db_connection_secret_arn on the direct secret."
+  }
+}
+
+# role-defaults expects the timeouts on the database role; the module sets
+# them (server defaults, Limits:Connections) on the instance it owns. Plan
+# only: the local-exec would run psql on apply.
+run "role_session_defaults_follow_enable_postgis" {
+  command = plan
+
+  variables {
+    enable_rds_proxy = true
+    enable_postgis   = true
+  }
+
+  assert {
+    condition = (
+      length(null_resource.db_role_session_defaults) == 1 &&
+      null_resource.db_role_session_defaults[0].triggers.db_username == "honua" &&
+      null_resource.db_role_session_defaults[0].triggers.statements == join("\n", [
+        "ALTER ROLE \"honua\" SET idle_in_transaction_session_timeout = '60s';",
+        "ALTER ROLE \"honua\" SET lock_timeout = '30s';",
+        "ALTER ROLE \"honua\" SET statement_timeout = '30s';",
+      ])
+    )
+    error_message = "Behind the proxy the module must set the role's lock_timeout 30s, statement_timeout 30s and idle_in_transaction_session_timeout 60s defaults (server Limits:Connections defaults), re-running when the role or values change."
+  }
+}
+
+run "role_session_defaults_can_be_forced_on" {
+  command = plan
+
+  variables {
+    enable_rds_proxy                    = true
+    enable_postgis                      = false
+    rds_proxy_set_role_session_defaults = true
+  }
+
+  assert {
+    condition     = length(null_resource.db_role_session_defaults) == 1
+    error_message = "rds_proxy_set_role_session_defaults = true must run ALTER ROLE without enable_postgis."
+  }
+}
+
+# Left to the operator: nothing runs, and the module outputs the statements.
+run "role_session_defaults_can_be_left_to_the_operator" {
+  command = plan
+
+  variables {
+    enable_rds_proxy                    = true
+    enable_postgis                      = true
+    rds_proxy_set_role_session_defaults = false
+  }
+
+  assert {
+    condition     = length(null_resource.db_role_session_defaults) == 0 && output.rds_proxy_role_session_defaults_applied == false
+    error_message = "rds_proxy_set_role_session_defaults = false must not run ALTER ROLE."
+  }
+
+  assert {
+    condition = output.rds_proxy_role_session_defaults_sql == join("\n", [
+      "ALTER ROLE \"honua\" SET idle_in_transaction_session_timeout = '60s';",
+      "ALTER ROLE \"honua\" SET lock_timeout = '30s';",
+      "ALTER ROLE \"honua\" SET statement_timeout = '30s';",
+    ])
+    error_message = "The module must output the ALTER ROLE statements for the operator to run."
   }
 }
 
@@ -410,6 +492,7 @@ run "idle_above_the_ceiling_is_rejected" {
 
   variables {
     enable_rds_proxy                       = true
+    enable_postgis                         = true
     rds_proxy_max_connections_percent      = 40
     rds_proxy_max_idle_connections_percent = 60
   }
@@ -417,3 +500,37 @@ run "idle_above_the_ceiling_is_rejected" {
   expect_failures = [terraform_data.rds_proxy_inputs]
 }
 
+# Overriding the server's session timeouts (or Database:Schema) through
+# additional_env would make them differ from the role defaults the module sets.
+run "on_with_overridden_session_timeouts_warns" {
+  command = plan
+
+  variables {
+    enable_rds_proxy = true
+    enable_postgis   = true
+    additional_env = {
+      Limits__Connections__StatementTimeout = "00:01:00"
+    }
+  }
+
+  expect_failures = [check.db_role_session_defaults_match]
+}
+
+# The role defaults are applied only to the module-managed instance: with the
+# proxy off there is nothing to set, and the proxy itself refuses an existing
+# database (on_with_an_existing_database_is_rejected).
+run "existing_database_gets_no_role_defaults" {
+  command = plan
+
+  variables {
+    enable_gp_batch               = false
+    enable_control_plane_events   = false
+    existing_db_endpoint          = "postgres.example.internal"
+    existing_db_connection_string = "Host=postgres.example.internal;Database=honua;Username=honua;Password=test;SSL Mode=Require"
+  }
+
+  assert {
+    condition     = length(null_resource.db_role_session_defaults) == 0
+    error_message = "With an existing database the module must not run ALTER ROLE."
+  }
+}

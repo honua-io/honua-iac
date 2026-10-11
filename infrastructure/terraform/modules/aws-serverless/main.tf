@@ -1262,6 +1262,115 @@ resource "null_resource" "enable_postgis" {
   depends_on = [module.rds, aws_security_group_rule.rds_from_cidrs]
 }
 
+# --- Role session defaults behind RDS Proxy ----------------------------------
+# Behind the proxy the server processes run with
+# Database__SessionSettings__Mode=role-defaults (rds-proxy.tf, Pinning): they
+# issue no per-connection SET, so PostgreSQL must supply the session timeouts
+# as defaults of the database role. honua-server verifies them at startup and
+# only logs (event 5870) the ALTER ROLE statements when they are missing; it
+# never runs ALTER ROLE itself (honua-server #5874), so the module does, once,
+# as the master user on the DIRECT endpoint (the runner's CIDR is admitted on
+# the RDS security group only, like null_resource.enable_postgis).
+#
+# The values are what the server's connection mode would SET: its
+# Limits:Connections LockTimeout 30 s, StatementTimeout 30 s and
+# IdleInTransactionTimeout 60 s (honua-server LimitsOptions.cs, ConnectionLimits
+# defaults). The module sets none of Limits__Connections__LockTimeout /
+# StatementTimeout / IdleInTransactionTimeout, so the server defaults are the
+# effective values; check "db_role_session_defaults_match" flags an
+# additional_env override that would make them drift. The server compares
+# whole seconds.
+#
+# Like enable_postgis this needs psql on the machine running Terraform and a
+# route to the instance, so it follows enable_postgis unless
+# rds_proxy_set_role_session_defaults says otherwise. When the module does not
+# run them, the rds_proxy_role_session_defaults_sql output carries the
+# statements for the operator.
+#
+# ALTER ROLE ... SET applies to sessions that start afterwards. The proxy
+# target depends on this resource, so a new deployment opens no proxied
+# backend before the defaults exist. When the values change later (or the
+# proxy is turned on for an existing deployment), backends the proxy already
+# holds keep their old settings until the proxy retires them: idle ones above
+# rds_proxy_max_idle_connections_percent close, and a pinned backend closes
+# with its client (rds_proxy_idle_client_timeout_seconds). See the README.
+locals {
+  db_role_session_defaults_enabled = coalesce(var.rds_proxy_set_role_session_defaults, var.enable_postgis)
+  db_role_session_settings = {
+    lock_timeout                        = "30s"
+    statement_timeout                   = "30s"
+    idle_in_transaction_session_timeout = "60s"
+  }
+  db_role_session_settings_sql = join("\n", [
+    for setting, value in local.db_role_session_settings :
+    "ALTER ROLE \"${replace(var.db_username, "\"", "\"\"")}\" SET ${setting} = '${value}';"
+  ])
+}
+
+resource "null_resource" "db_role_session_defaults" {
+  count = local.rds_proxy_enabled && !local.db_use_existing && local.db_role_session_defaults_enabled ? 1 : 0
+
+  triggers = {
+    db_endpoint = local.db_endpoint
+    db_username = var.db_username
+    statements  = local.db_role_session_settings_sql
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      set -e
+      echo "Waiting for PostgreSQL readiness on ${local.db_endpoint}"
+      for attempt in $(seq 1 ${var.postgis_readiness_max_attempts}); do
+        if PGCONNECT_TIMEOUT=5 psql \
+          --host=${local.db_endpoint} \
+          --username=${var.db_username} \
+          --dbname=${var.db_name} \
+          --command="SELECT 1;" >/dev/null 2>&1; then
+          break
+        fi
+        if [ "$attempt" -eq ${var.postgis_readiness_max_attempts} ]; then
+          echo "PostgreSQL readiness check failed after ${var.postgis_readiness_max_attempts} attempts" >&2
+          exit 1
+        fi
+        sleep ${var.postgis_readiness_sleep_seconds}
+      done
+
+      echo "Setting the session defaults of role ${var.db_username} for RDS Proxy multiplexing"
+      PGCONNECT_TIMEOUT=5 psql \
+        --host=${local.db_endpoint} \
+        --username=${var.db_username} \
+        --dbname=${var.db_name} \
+        --set=ON_ERROR_STOP=1 <<'SQL'
+      ${local.db_role_session_settings_sql}
+      SQL
+    EOT
+    environment = {
+      PGPASSWORD = local.db_password
+    }
+  }
+
+  depends_on = [module.rds, aws_security_group_rule.rds_from_cidrs, null_resource.enable_postgis]
+}
+
+# The role defaults reproduce the server's default Limits:Connections timeouts
+# and no search_path. Overriding those through additional_env behind the proxy
+# makes the server's startup verification report drift (event 5870).
+check "db_role_session_defaults_match" {
+  assert {
+    condition = !local.rds_proxy_enabled || length(setintersection(
+      toset([for name in keys(var.additional_env) : lower(replace(name, ":", "__"))]),
+      toset([
+        "limits__connections__locktimeout",
+        "limits__connections__statementtimeout",
+        "limits__connections__idleintransactiontimeout",
+        "database__schema",
+      ])
+    )) == 0
+    error_message = "Behind RDS Proxy the module sets the database role's session defaults to the server's default timeouts (lock_timeout 30s, statement_timeout 30s, idle_in_transaction_session_timeout 60s) and no search_path. additional_env overrides Limits__Connections__LockTimeout / StatementTimeout / IdleInTransactionTimeout or Database__Schema, so honua-server (Database:SessionSettings:Mode=role-defaults) will report drift; run the ALTER ROLE statements it logs (event 5870)."
+  }
+
+}
+
 check "audit_chain_key_configured" {
   assert {
     condition     = var.audit_chain_key_secret_arn != ""
