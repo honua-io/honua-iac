@@ -147,6 +147,72 @@ data "aws_iam_policy_document" "terraform" {
     }
   }
 
+  # GA cell data plane: RDS PostgreSQL, ElastiCache Redis, runtime secrets and
+  # the custom-domain certificate (modules/aws-eks data-plane.tf / ingress.tf).
+  statement {
+    sid = "EksCellDataPlane"
+    actions = [
+      "rds:AddTagsToResource",
+      "rds:CreateDBInstance",
+      "rds:CreateDBParameterGroup",
+      "rds:CreateDBSubnetGroup",
+      "rds:DeleteDBInstance",
+      "rds:DeleteDBParameterGroup",
+      "rds:DeleteDBSubnetGroup",
+      "rds:Describe*",
+      "rds:ListTagsForResource",
+      "rds:ModifyDBInstance",
+      "rds:ModifyDBParameterGroup",
+      "rds:ModifyDBSubnetGroup",
+      "rds:RemoveTagsFromResource",
+      "elasticache:AddTagsToResource",
+      "elasticache:CreateCacheSubnetGroup",
+      "elasticache:CreateReplicationGroup",
+      "elasticache:DeleteCacheSubnetGroup",
+      "elasticache:DeleteReplicationGroup",
+      "elasticache:Describe*",
+      "elasticache:ListTagsForResource",
+      "elasticache:ModifyCacheSubnetGroup",
+      "elasticache:ModifyReplicationGroup",
+      "elasticache:RemoveTagsFromResource",
+      "secretsmanager:CreateSecret",
+      "secretsmanager:DeleteSecret",
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:GetResourcePolicy",
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:PutSecretValue",
+      "secretsmanager:TagResource",
+      "secretsmanager:UntagResource",
+      "secretsmanager:UpdateSecret",
+      "acm:AddTagsToCertificate",
+      "acm:DeleteCertificate",
+      "acm:DescribeCertificate",
+      "acm:ListTagsForCertificate",
+      "acm:RemoveTagsFromCertificate",
+      "acm:RequestCertificate"
+    ]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
+
+  # Route53 is global, so it cannot carry the region condition above.
+  statement {
+    sid = "EksCellDns"
+    actions = [
+      "route53:ChangeResourceRecordSets",
+      "route53:GetChange",
+      "route53:GetHostedZone",
+      "route53:ListResourceRecordSets",
+      "route53:ListTagsForResource"
+    ]
+    resources = ["*"]
+  }
+
   statement {
     sid = "IamForEks"
     actions = [

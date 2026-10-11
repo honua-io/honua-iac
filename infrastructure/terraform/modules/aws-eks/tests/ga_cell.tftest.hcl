@@ -1,0 +1,558 @@
+# GA certification cell contract for the EKS module (rc.3 owner decisions 12/18).
+#
+# Offline plans against mocked providers covering every new feature on and off:
+#   * the release-account IAM guardrail fixes behind e2e-cloud-aws run
+#     38057015781 (node-group role outside the cell prefix, IAM OIDC provider);
+#   * Pod Identity / IRSA workload roles for the server and GP Job pods;
+#   * RDS PostgreSQL + PostGIS bootstrap, ElastiCache Redis, runtime secrets;
+#   * operations_policy_rules rendering (same shape as aws-ecs/aws-serverless);
+#   * ACM certificate + Route53 record for the chart's load balancer;
+#   * the ControlPlane:Kubernetes handoff for GP on Kubernetes.
+
+mock_provider "aws" {
+  mock_data "aws_availability_zones" {
+    defaults = {
+      names = ["us-east-1a", "us-east-1b", "us-east-1c"]
+    }
+  }
+
+  mock_data "aws_partition" {
+    defaults = {
+      dns_suffix         = "amazonaws.com"
+      id                 = "aws"
+      partition          = "aws"
+      reverse_dns_prefix = "com.amazonaws"
+    }
+  }
+
+  mock_data "aws_caller_identity" {
+    defaults = {
+      account_id = "123456789012"
+      arn        = "arn:aws:iam::123456789012:user/terraform-test"
+      user_id    = "AIDATEST"
+    }
+  }
+
+  mock_data "aws_region" {
+    defaults = {
+      id     = "us-east-1"
+      name   = "us-east-1"
+      region = "us-east-1"
+    }
+  }
+
+  mock_data "aws_iam_policy_document" {
+    defaults = {
+      json          = "{\"Version\":\"2012-10-17\",\"Statement\":[]}"
+      minified_json = "{\"Version\":\"2012-10-17\",\"Statement\":[]}"
+    }
+  }
+}
+
+mock_provider "tls" {}
+mock_provider "time" {}
+mock_provider "cloudinit" {}
+mock_provider "null" {}
+mock_provider "random" {}
+
+# Pin the module-owned secret ARNs at plan time so policy and environment
+# assertions compare known values.
+override_resource {
+  target          = aws_secretsmanager_secret.db_connection
+  override_during = plan
+  values = {
+    arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test-db-AAAAAA"
+  }
+}
+
+override_resource {
+  target          = aws_secretsmanager_secret.admin_password
+  override_during = plan
+  values = {
+    arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test-admin-BBBBBB"
+  }
+}
+
+override_resource {
+  target          = aws_secretsmanager_secret.master_key
+  override_during = plan
+  values = {
+    arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test-connection-encryption-CCCCCC"
+  }
+}
+
+override_resource {
+  target          = aws_secretsmanager_secret.redis_connection
+  override_during = plan
+  values = {
+    arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test-redis-DDDDDD"
+  }
+}
+
+variables {
+  name_prefix = "honua"
+  environment = "test"
+
+  cluster_secret_encryption_enabled = false
+  audit_chain_key_secret_arn        = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
+}
+
+# --- IAM guardrail (run 38057015781) -------------------------------------------
+
+run "node_group_role_is_inside_the_cell_name_prefix" {
+  command = plan
+
+  variables {
+    name_prefix = "honuaeksn123456"
+    environment = "it"
+  }
+
+  assert {
+    condition     = module.eks.eks_managed_node_groups["default"].iam_role_name == "honuaeksn123456-it-eks-node"
+    error_message = "The node-group role must be named under the cell prefix (the guardrail denies role/default-eks-node-group-*)."
+  }
+
+  assert {
+    condition     = alltrue([for role in aws_iam_role.workload : startswith(role.name, "honuaeksn123456-it-")])
+    error_message = "Every workload role must be named under the cell prefix."
+  }
+}
+
+run "pod_identity_is_the_default_and_creates_no_oidc_provider" {
+  command = plan
+
+  assert {
+    condition     = module.eks.oidc_provider_arn == null
+    error_message = "The default mode must not create an IAM OIDC provider (the guardrail denies iam:*OpenIDConnectProvider*)."
+  }
+
+  assert {
+    condition     = contains(keys(local.cluster_addons), "eks-pod-identity-agent")
+    error_message = "Pod Identity needs the eks-pod-identity-agent add-on."
+  }
+
+  assert {
+    condition = (
+      length(aws_eks_pod_identity_association.workload) == 2 &&
+      aws_eks_pod_identity_association.workload["server"].namespace == "honua" &&
+      aws_eks_pod_identity_association.workload["server"].service_account == "honua" &&
+      aws_eks_pod_identity_association.workload["gp-job"].namespace == "honua" &&
+      aws_eks_pod_identity_association.workload["gp-job"].service_account == "honua-gp-job"
+    )
+    error_message = "The server and GP job service accounts must each be bound to their role."
+  }
+
+  assert {
+    condition = alltrue([
+      for role in aws_iam_role.workload :
+      jsondecode(role.assume_role_policy).Statement[0].Principal.Service == "pods.eks.amazonaws.com" &&
+      contains(jsondecode(role.assume_role_policy).Statement[0].Action, "sts:TagSession")
+    ])
+    error_message = "Workload roles must trust the EKS Pod Identity service."
+  }
+
+  assert {
+    condition     = length(output.server_service_account_annotations) == 0 && length(output.gp_job_service_account_annotations) == 0
+    error_message = "Pod Identity needs no service-account annotations."
+  }
+}
+
+run "irsa_mode_uses_the_oidc_provider" {
+  command = plan
+
+  variables {
+    workload_identity_mode = "irsa"
+  }
+
+  assert {
+    condition     = length(aws_eks_pod_identity_association.workload) == 0 && !contains(keys(local.cluster_addons), "eks-pod-identity-agent")
+    error_message = "IRSA mode must not create Pod Identity associations or the agent add-on."
+  }
+
+  assert {
+    condition     = local.irsa_enabled && output.workload_identity_mode == "irsa"
+    error_message = "IRSA mode must enable the EKS module's OIDC provider."
+  }
+}
+
+run "unknown_workload_identity_mode_is_rejected" {
+  command = plan
+
+  variables {
+    workload_identity_mode = "static-keys"
+  }
+
+  expect_failures = [var.workload_identity_mode]
+}
+
+# --- Secrets and data plane ----------------------------------------------------
+
+run "managed_database_by_default_redis_off" {
+  command = plan
+
+  assert {
+    condition     = length(module.rds) == 1 && output.database_managed
+    error_message = "The root must manage an RDS PostgreSQL instance by default."
+  }
+
+  assert {
+    condition     = length(null_resource.enable_postgis) == 0 && !output.postgis_enabled
+    error_message = "PostGIS bootstrap is opt-in."
+  }
+
+  assert {
+    condition     = length(aws_elasticache_replication_group.redis) == 0 && length(aws_secretsmanager_secret.redis_connection) == 0
+    error_message = "Redis is off by default."
+  }
+
+  assert {
+    condition = (
+      output.honua_server_environment["ConnectionStrings__DefaultConnection"] == "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test-db-AAAAAA" &&
+      output.honua_server_environment["HONUA_ADMIN_PASSWORD"] == "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test-admin-BBBBBB" &&
+      output.honua_server_environment["Security__ConnectionEncryption__MasterKey"] == "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test-connection-encryption-CCCCCC" &&
+      output.honua_server_environment["AuditLog__ChainVerification__Key"] == "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
+    )
+    error_message = "The server environment must carry aws:secretsmanager: references to the runtime secrets."
+  }
+
+  assert {
+    condition     = !contains(keys(output.honua_server_environment), "ConnectionStrings__redis") && !contains(keys(output.honua_server_environment), "Operations__SecretChannel__KeyRingCertificatePkcs12")
+    error_message = "A Redis-off cell must carry neither the Redis connection nor the key ring."
+  }
+
+  assert {
+    condition = alltrue([
+      for policy in aws_iam_role_policy.workload_secrets :
+      toset(jsondecode(policy.policy).Statement[0].Resource) == toset([
+        "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test-db-AAAAAA",
+        "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test-admin-BBBBBB",
+        "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test-connection-encryption-CCCCCC",
+        "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123",
+      ])
+    ])
+    error_message = "Server and GP job roles must read exactly the runtime secrets in play."
+  }
+
+  assert {
+    condition     = alltrue([for secret in [aws_secretsmanager_secret.db_connection, aws_secretsmanager_secret.admin_password, aws_secretsmanager_secret.master_key] : secret.kms_key_id == null])
+    error_message = "Secrets default to the AWS-managed key so an ephemeral cluster strands no CMK."
+  }
+}
+
+run "postgis_bootstrap_on_public_cell_database" {
+  command = plan
+
+  variables {
+    enable_postgis              = true
+    db_publicly_accessible      = true
+    db_additional_ingress_cidrs = ["203.0.113.10/32"]
+    rds_deletion_protection     = false
+  }
+
+  assert {
+    condition     = length(null_resource.enable_postgis) == 1 && output.postgis_enabled
+    error_message = "enable_postgis must run the PostGIS bootstrap against the managed database."
+  }
+
+  assert {
+    condition     = contains(flatten([for rule in aws_security_group.rds[0].ingress : rule.cidr_blocks]), "203.0.113.10/32")
+    error_message = "The runner CIDR must be admitted to PostgreSQL."
+  }
+}
+
+run "postgis_bootstrap_requires_reachable_database" {
+  command = plan
+
+  variables {
+    enable_postgis = true
+  }
+
+  expect_failures = [null_resource.enable_postgis]
+}
+
+run "existing_database_skips_rds" {
+  command = plan
+
+  variables {
+    existing_db_endpoint          = "postgres.example.internal"
+    existing_db_connection_string = "Host=postgres.example.internal;Database=honua;Username=honua;Password=test;SSL Mode=Require"
+  }
+
+  assert {
+    condition     = length(module.rds) == 0 && length(aws_security_group.rds) == 0 && !output.database_managed
+    error_message = "An existing database must not create RDS."
+  }
+}
+
+run "redis_on_with_key_ring" {
+  command = plan
+
+  variables {
+    redis_enabled                                     = true
+    operation_key_ring_certificate_secret_arn         = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+    operation_key_ring_certificate_secret_kms_key_arn = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000001"
+  }
+
+  assert {
+    condition = (
+      length(aws_elasticache_replication_group.redis) == 1 &&
+      aws_elasticache_replication_group.redis[0].transit_encryption_enabled &&
+      aws_elasticache_replication_group.redis[0].at_rest_encryption_enabled
+    )
+    error_message = "Redis must be provisioned with TLS in transit and encryption at rest."
+  }
+
+  assert {
+    condition = (
+      output.honua_server_environment["ConnectionStrings__redis"] == "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test-redis-DDDDDD" &&
+      output.honua_server_environment["Operations__SecretChannel__KeyRingCertificatePkcs12"] == "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+    )
+    error_message = "A Redis-on cell must reference the Redis connection and the key-ring certificate."
+  }
+
+  assert {
+    condition = alltrue([
+      for policy in aws_iam_role_policy.workload_secrets :
+      contains(jsondecode(policy.policy).Statement[0].Resource, "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123") &&
+      contains(jsondecode(policy.policy).Statement[0].Resource, "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test-redis-DDDDDD") &&
+      jsondecode(policy.policy).Statement[1].Resource == ["arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000001"]
+    ])
+    error_message = "Both workload roles must read the key ring and Redis secrets and decrypt the key-ring CMK."
+  }
+}
+
+run "redis_on_without_key_ring_fails_the_check" {
+  command = plan
+
+  variables {
+    redis_enabled = true
+  }
+
+  expect_failures = [check.redis_requires_operation_key_ring]
+}
+
+# --- Operation policy ----------------------------------------------------------
+
+run "operations_policy_rules_render_in_order" {
+  command = plan
+
+  variables {
+    operations_policy_rules = [
+      { operation_id = "service.publish", role = "publisher", decision = "Allow" },
+      {
+        role          = "operator"
+        tier          = "enterprise"
+        decision      = "RequireApproval"
+        reason        = "Operator changes need a second reviewer."
+        approval_lane = "ops-review"
+      },
+    ]
+  }
+
+  assert {
+    condition = output.operations_policy_environment == {
+      Operations__Policy__Rules__0__OperationId  = "service.publish"
+      Operations__Policy__Rules__0__Role         = "publisher"
+      Operations__Policy__Rules__0__Decision     = "Allow"
+      Operations__Policy__Rules__1__OperationId  = "*"
+      Operations__Policy__Rules__1__Role         = "operator"
+      Operations__Policy__Rules__1__Tier         = "enterprise"
+      Operations__Policy__Rules__1__Decision     = "RequireApproval"
+      Operations__Policy__Rules__1__Reason       = "Operator changes need a second reviewer."
+      Operations__Policy__Rules__1__ApprovalLane = "ops-review"
+    }
+    error_message = "Rules must flatten in order, omitting unset fields, with operation_id defaulting to *."
+  }
+
+  assert {
+    condition     = output.honua_server_environment["Operations__Policy__Rules__1__Decision"] == "RequireApproval"
+    error_message = "The rules must reach the server environment."
+  }
+}
+
+run "no_operations_policy_rules_render_nothing" {
+  command = plan
+
+  assert {
+    condition     = length(output.operations_policy_environment) == 0 && length([for k in keys(output.honua_server_environment) : k if startswith(k, "Operations__Policy__")]) == 0
+    error_message = "No rules must render no Operations__Policy__ entries."
+  }
+}
+
+run "unknown_policy_decision_is_rejected" {
+  command = plan
+
+  variables {
+    operations_policy_rules = [{ operation_id = "service.publish", decision = "Permit" }]
+  }
+
+  expect_failures = [var.operations_policy_rules]
+}
+
+# --- GP on Kubernetes handoff -------------------------------------------------
+
+run "control_plane_kubernetes_defaults" {
+  command = plan
+
+  assert {
+    condition = output.control_plane_kubernetes_environment == {
+      ControlPlane__Kubernetes__DefaultNamespace      = "honua"
+      ControlPlane__Kubernetes__DefaultServiceAccount = "honua-gp-job"
+    }
+    error_message = "Without an image the handoff carries the namespace and service account only."
+  }
+
+  assert {
+    condition     = length(aws_iam_role_policy.workload_data_bucket) == 0 && output.gp_job_data_bucket_arn == ""
+    error_message = "No data bucket grant unless enabled."
+  }
+}
+
+run "control_plane_kubernetes_custom_namespace_image_and_bucket" {
+  command = plan
+
+  variables {
+    kubernetes_namespace        = "honua-cert"
+    gp_job_namespace            = "honua-gp"
+    gp_job_service_account_name = "gp-runner"
+    gp_job_image                = "ghcr.io/honua-io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    gp_job_data_bucket_arn      = "arn:aws:s3:::honuaeks-gp-data"
+    gp_job_data_bucket_enabled  = true
+  }
+
+  assert {
+    condition     = output.honua_server_environment["ControlPlane__Kubernetes__DefaultNamespace"] == "honua-gp" && output.honua_server_environment["ControlPlane__Kubernetes__DefaultServiceAccount"] == "gp-runner" && output.honua_server_environment["ControlPlane__Kubernetes__DefaultImage"] == "ghcr.io/honua-io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    error_message = "The ControlPlane:Kubernetes defaults must follow the inputs."
+  }
+
+  assert {
+    condition = (
+      aws_eks_pod_identity_association.workload["server"].namespace == "honua-cert" &&
+      aws_eks_pod_identity_association.workload["gp-job"].namespace == "honua-gp" &&
+      aws_eks_pod_identity_association.workload["gp-job"].service_account == "gp-runner"
+    )
+    error_message = "Role bindings must follow the namespaces and service accounts."
+  }
+
+  assert {
+    condition = length(aws_iam_role_policy.workload_data_bucket) == 2 && alltrue([
+      for policy in aws_iam_role_policy.workload_data_bucket :
+      jsondecode(policy.policy).Statement[0].Resource == ["arn:aws:s3:::honuaeks-gp-data/*"]
+    ])
+    error_message = "Both workload roles must get the GP data bucket."
+  }
+}
+
+run "data_bucket_flag_requires_an_arn" {
+  command = plan
+
+  variables {
+    gp_job_data_bucket_enabled = true
+  }
+
+  expect_failures = [aws_iam_role_policy.workload_data_bucket]
+}
+
+# --- Custom domain -------------------------------------------------------------
+
+run "no_domain_manages_no_certificate" {
+  command = plan
+
+  assert {
+    condition     = length(aws_acm_certificate.this) == 0 && length(aws_route53_record.service_alias) == 0 && length(output.ingress_service_annotations) == 0 && output.honua_url == ""
+    error_message = "Without a domain no certificate, record or TLS annotation is managed."
+  }
+}
+
+run "domain_first_apply_issues_certificate_only" {
+  command = plan
+
+  variables {
+    domain_name     = "cell.cert.demo.example.com"
+    route53_zone_id = "Z0123456789ABCDEFGHIJ"
+  }
+
+  assert {
+    condition     = length(aws_acm_certificate.this) == 1 && length(aws_acm_certificate_validation.this) == 1
+    error_message = "A domain must get a DNS-validated ACM certificate."
+  }
+
+  assert {
+    condition     = length(aws_route53_record.service_alias) == 0 && !output.domain_record_managed
+    error_message = "No service record before the chart's load balancer exists."
+  }
+
+  assert {
+    condition     = length(output.ingress_service_annotations) == 3 && output.ingress_service_annotations["service.beta.kubernetes.io/aws-load-balancer-ssl-ports"] == "443"
+    error_message = "The chart must receive the TLS Service annotations."
+  }
+}
+
+run "domain_second_apply_points_at_the_load_balancer" {
+  command = plan
+
+  variables {
+    domain_name                    = "cell.cert.demo.example.com"
+    route53_zone_id                = "Z0123456789ABCDEFGHIJ"
+    ingress_load_balancer_hostname = "a1b2c3-123456789.us-east-1.elb.amazonaws.com"
+  }
+
+  assert {
+    condition = (
+      length(aws_route53_record.service_alias) == 1 &&
+      aws_route53_record.service_alias[0].name == "cell.cert.demo.example.com" &&
+      length(aws_route53_record.service_alias[0].records) == 1 &&
+      contains(aws_route53_record.service_alias[0].records, "a1b2c3-123456789.us-east-1.elb.amazonaws.com")
+    )
+    error_message = "The domain must point at the chart's load balancer."
+  }
+
+  assert {
+    condition     = output.honua_url == "https://cell.cert.demo.example.com"
+    error_message = "honua_url must be the HTTPS custom domain once the record exists."
+  }
+}
+
+# --- Release harness contract --------------------------------------------------
+
+run "chart_config_env_carries_settings_not_credentials" {
+  command = plan
+
+  variables {
+    cors_allowed_origins = ["http://127.0.0.1:18099", "https://console.example.com"]
+    operations_policy_rules = [
+      { operation_id = "*", role = "admin", decision = "Allow" },
+    ]
+  }
+
+  assert {
+    condition = (
+      output.chart_config_env["Cors__AllowedOrigins__0"] == "http://127.0.0.1:18099" &&
+      output.chart_config_env["Cors__AllowedOrigins__1"] == "https://console.example.com" &&
+      output.chart_config_env["Operations__Policy__Rules__0__Role"] == "admin" &&
+      output.chart_config_env["ControlPlane__Kubernetes__DefaultNamespace"] == "honua" &&
+      output.chart_config_env["AuditLog__ChainVerification__Key"] == "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
+    )
+    error_message = "chart_config_env must carry CORS, policy rules, ControlPlane:Kubernetes and operator secret references."
+  }
+
+  assert {
+    condition = length(setintersection(toset(keys(output.chart_config_env)), toset([
+      "ConnectionStrings__DefaultConnection",
+      "HONUA_ADMIN_PASSWORD",
+      "Security__ConnectionEncryption__MasterKey",
+      "ConnectionStrings__redis",
+    ]))) == 0
+    error_message = "chart_config_env must not carry the credentials that belong in the chart's Secret."
+  }
+
+  assert {
+    condition     = output.honua_server_environment["Cors__AllowedOrigins__1"] == "https://console.example.com" && contains(keys(output.honua_server_environment), "ConnectionStrings__DefaultConnection")
+    error_message = "honua_server_environment is the complete environment, credentials by reference included."
+  }
+
+  assert {
+    condition     = output.certificate_arn == ""
+    error_message = "No certificate without a managed domain."
+  }
+}
