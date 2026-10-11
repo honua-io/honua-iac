@@ -119,18 +119,27 @@ locals {
   # 4 KB cap, and also gets MinConnectionPoolSize 0 and the idle lifetime so a
   # long job gives back connections it no longer uses.
   # ConnectionPruningIntervalSeconds already defaults to 10.
+  #
+  # The server refuses to start unless MaxConcurrentQueries (default 200) is
+  # at most MaxConnectionPoolSize (LimitsOptionsValidator.ValidateConnectionLimits;
+  # honua-release e2e-cloud-aws run 38116311885: every Lambda exited with
+  # "Invalid limits configuration: Connections.MaxConcurrentQueries must be less
+  # than or equal to Connections.MaxConnectionPoolSize"), so every process sets
+  # both to the same cap. The validator's other connection checks apply only
+  # with AdaptiveConcurrencyEnabled (default off), and the pool factory clamps
+  # MinConnectionPoolSize to the cap itself.
   db_pool_environment = {
-    lambda = {
-      Limits__Connections__MaxConnectionPoolSize = tostring(var.lambda_db_max_pool_size)
-    }
-    control_plane = {
-      Limits__Connections__MaxConnectionPoolSize = tostring(var.control_plane_db_max_pool_size)
-    }
-    gp_batch = {
-      Limits__Connections__MaxConnectionPoolSize         = tostring(var.gp_batch_db_max_pool_size)
-      Limits__Connections__MinConnectionPoolSize         = "0"
-      Limits__Connections__ConnectionIdleLifetimeSeconds = tostring(var.db_connection_idle_lifetime_seconds)
-    }
+    for process, size in {
+      lambda        = var.lambda_db_max_pool_size
+      control_plane = var.control_plane_db_max_pool_size
+      gp_batch      = var.gp_batch_db_max_pool_size
+      } : process => merge({
+        Limits__Connections__MaxConnectionPoolSize = tostring(size)
+        Limits__Connections__MaxConcurrentQueries  = tostring(size)
+        }, process == "gp_batch" ? {
+        Limits__Connections__MinConnectionPoolSize         = "0"
+        Limits__Connections__ConnectionIdleLifetimeSeconds = tostring(var.db_connection_idle_lifetime_seconds)
+    } : {})
   }
   lambda_function_name = "${local.name}-honua"
   lambda_target_id     = "${local.lambda_function_name}-${var.lambda_alias_name}"

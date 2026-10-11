@@ -681,13 +681,14 @@ it compact and checks it:
 Measured with `tests/lambda_environment_budget.tftest.hcl` (cell name
 `honuarawsse380460-it`, 12-digit account, release secret names): the release
 Redis-on cell with the key ring, audit key, GP Batch and the control-plane event
-functions is **2983** bytes on the API function and **3073** on the
+functions is **3031** bytes on the API function and **3121** on the
 scheduled-tick function (4118 before the budget work). Every optional 2026.1
 feature at once (also Bedrock, Amazon Location, X-Ray, two CORS origins and the
-request-secret allowlists) is **4030** bytes on the scheduled-tick function,
-under the cap with 66 bytes to spare; the database pool cap
-(`Limits__Connections__MaxConnectionPoolSize`, 49 bytes) is the most recent
-addition. Adding the 2026.2 Pro license on top no longer fits any of the
+request-secret allowlists) is **4078** bytes on the scheduled-tick function,
+under the cap with only 18 bytes to spare; the database pool cap and its
+matching `MaxConcurrentQueries` (97 bytes together, see
+[Database connection budget](#database-connection-budget)) are the most recent
+additions, and the next environment entry will not fit that combination. Adding the 2026.2 Pro license on top no longer fits any of the
 functions, and the plan fails with the size. More headroom needs a server-side
 change, for example a single `aws:secretsmanager:` reference to a JSON settings
 bundle that the server expands into configuration at startup; the server has no
@@ -706,9 +707,9 @@ API Lambda init crash in the PostGIS preflight. The module caps each process:
 
 | Input | Default | Rendered as |
 |-------|---------|-------------|
-| `lambda_db_max_pool_size` | `8` | `Limits__Connections__MaxConnectionPoolSize` on the API Lambda, and `Maximum Pool Size` on the module-built connection string |
-| `control_plane_db_max_pool_size` | `2` | `Limits__Connections__MaxConnectionPoolSize` on each control-plane event Lambda |
-| `gp_batch_db_max_pool_size` | `4` | `Limits__Connections__MaxConnectionPoolSize` on the GP Batch job, with `MinConnectionPoolSize` `0` |
+| `lambda_db_max_pool_size` | `8` | `Limits__Connections__MaxConnectionPoolSize` and `MaxConcurrentQueries` on the API Lambda, and `Maximum Pool Size` on the module-built connection string |
+| `control_plane_db_max_pool_size` | `2` | `Limits__Connections__MaxConnectionPoolSize` and `MaxConcurrentQueries` on each control-plane event Lambda |
+| `gp_batch_db_max_pool_size` | `4` | `Limits__Connections__MaxConnectionPoolSize` and `MaxConcurrentQueries` on the GP Batch job, with `MinConnectionPoolSize` `0` |
 | `db_connection_idle_lifetime_seconds` | `60` | `Connection Idle Lifetime` on the connection string and `ConnectionIdleLifetimeSeconds` on the GP Batch job |
 
 The module-built connection string also carries `Connection Pruning Interval=10`
@@ -721,7 +722,13 @@ example the startup PostGIS preflight). One secret serves every process, so it
 carries the API's cap. With `existing_db_connection_string` the module does
 not rewrite your string; the environment caps still apply.
 
-The Lambda functions carry only the cap, within the
+`MaxConcurrentQueries` is set to the same value because the server refuses to
+start when it exceeds `MaxConnectionPoolSize` (`LimitsOptionsValidator`; its
+default is 200). The validator's adaptive-concurrency checks apply only when
+`Limits__Connections__AdaptiveConcurrencyEnabled` is on (default off); if you
+turn it on through `additional_env`, keep its query limits at or below the cap.
+
+The Lambda functions carry only the cap and its query limit, within the
 [4 KB budget](#lambda-environment-budget). A Lambda instance is frozen between
 invocations, so idle pruning barely runs there and its connections stay open
 until the instance is retired; the cap is what bounds them.

@@ -291,8 +291,9 @@ run "release_redis_on_cell_on_a_long_customer_domain_fits" {
 
 # Every optional 2026.1 feature at once (the Pro license is 2026.2, below). The
 # iac-only reductions bring this under the cap but NOT under the 256-byte margin
-# the release cell keeps: the scheduled-tick function measures 4030 bytes
-# (3981 before the Limits__Connections__MaxConnectionPoolSize pool cap).
+# the release cell keeps: the scheduled-tick function measures 4078 bytes
+# (3981 before the database pool cap and its matching MaxConcurrentQueries,
+# 49 + 48 bytes, which the server requires together).
 # A wider margin needs a server change (see the module README, "Lambda
 # environment budget"), so this run asserts the margin actually achieved.
 run "every_optional_feature_fits" {
@@ -318,9 +319,9 @@ run "every_optional_feature_fits" {
         aws_lambda_function.control_plane_reconcile[0].environment[0].variables,
         aws_lambda_function.control_plane_backstop[0].environment[0].variables,
         aws_lambda_function.control_plane_tick[0].environment[0].variables,
-      ] : nonsensitive(sum([for k, v in env : length(k) + length(v) + 6]) + 1) <= 4096 - 64
+      ] : nonsensitive(sum([for k, v in env : length(k) + length(v) + 6]) + 1) <= 4096 - 16
     ])
-    error_message = "With every optional feature on, each Lambda environment must stay at least 64 bytes under 4096 (API ${nonsensitive(sum([for k, v in aws_lambda_function.this.environment[0].variables : length(k) + length(v) + 6]) + 1)}, scheduled-tick ${nonsensitive(sum([for k, v in aws_lambda_function.control_plane_tick[0].environment[0].variables : length(k) + length(v) + 6]) + 1)} bytes)."
+    error_message = "With every optional feature on, each Lambda environment must stay at least 16 bytes under 4096 (API ${nonsensitive(sum([for k, v in aws_lambda_function.this.environment[0].variables : length(k) + length(v) + 6]) + 1)}, scheduled-tick ${nonsensitive(sum([for k, v in aws_lambda_function.control_plane_tick[0].environment[0].variables : length(k) + length(v) + 6]) + 1)} bytes)."
   }
 }
 
