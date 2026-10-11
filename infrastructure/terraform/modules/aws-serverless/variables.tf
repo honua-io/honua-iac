@@ -574,6 +574,55 @@ variable "db_connection_string_options" {
   }
 }
 
+variable "lambda_db_max_pool_size" {
+  description = "Maximum PostgreSQL connections each warm API Lambda instance may hold (Limits:Connections:MaxConnectionPoolSize, and Maximum Pool Size on the module-built connection string). Keep warm instances x this + event functions + GP jobs under the RDS max_connections; see the README's database connection budget."
+  type        = number
+  default     = 8
+  nullable    = false
+
+  validation {
+    condition     = var.lambda_db_max_pool_size >= 1 && var.lambda_db_max_pool_size <= 1000 && floor(var.lambda_db_max_pool_size) == var.lambda_db_max_pool_size
+    error_message = "lambda_db_max_pool_size must be a whole number from 1 to 1000."
+  }
+}
+
+variable "control_plane_db_max_pool_size" {
+  description = "Maximum PostgreSQL connections each warm control-plane event Lambda instance (reconcile, backstop, scheduled tick) may hold (Limits:Connections:MaxConnectionPoolSize)."
+  type        = number
+  default     = 2
+  nullable    = false
+
+  validation {
+    condition     = var.control_plane_db_max_pool_size >= 1 && var.control_plane_db_max_pool_size <= 1000 && floor(var.control_plane_db_max_pool_size) == var.control_plane_db_max_pool_size
+    error_message = "control_plane_db_max_pool_size must be a whole number from 1 to 1000."
+  }
+}
+
+variable "gp_batch_db_max_pool_size" {
+  description = "Maximum PostgreSQL connections each running GP Batch job may hold (Limits:Connections:MaxConnectionPoolSize)."
+  type        = number
+  default     = 4
+  nullable    = false
+
+  validation {
+    condition     = var.gp_batch_db_max_pool_size >= 1 && var.gp_batch_db_max_pool_size <= 1000 && floor(var.gp_batch_db_max_pool_size) == var.gp_batch_db_max_pool_size
+    error_message = "gp_batch_db_max_pool_size must be a whole number from 1 to 1000."
+  }
+}
+
+variable "db_connection_idle_lifetime_seconds" {
+  description = "Seconds an idle pooled PostgreSQL connection is kept before it is closed: Connection Idle Lifetime on the module-built connection string, and Limits:Connections:ConnectionIdleLifetimeSeconds (with MinConnectionPoolSize 0) on the GP Batch job. A frozen Lambda instance does not prune, so on Lambda the pool caps are what bound connections."
+  type        = number
+  default     = 60
+  nullable    = false
+
+  validation {
+    # Npgsql refuses an idle lifetime shorter than the pruning interval (10 s).
+    condition     = var.db_connection_idle_lifetime_seconds >= 10 && var.db_connection_idle_lifetime_seconds <= 3600 && floor(var.db_connection_idle_lifetime_seconds) == var.db_connection_idle_lifetime_seconds
+    error_message = "db_connection_idle_lifetime_seconds must be a whole number from 10 (the pruning interval) to 3600."
+  }
+}
+
 variable "db_apply_immediately" {
   description = "Apply RDS instance modifications (e.g. instance class changes) immediately instead of waiting for the maintenance window. Causes a short outage on resize; acceptable for non-prod stacks."
   type        = bool

@@ -291,7 +291,8 @@ run "release_redis_on_cell_on_a_long_customer_domain_fits" {
 
 # Every optional 2026.1 feature at once (the Pro license is 2026.2, below). The
 # iac-only reductions bring this under the cap but NOT under the 256-byte margin
-# the release cell keeps: the scheduled-tick function measures 3981 bytes.
+# the release cell keeps: the scheduled-tick function measures 4030 bytes
+# (3981 before the Limits__Connections__MaxConnectionPoolSize pool cap).
 # A wider margin needs a server change (see the module README, "Lambda
 # environment budget"), so this run asserts the margin actually achieved.
 run "every_optional_feature_fits" {
@@ -324,10 +325,10 @@ run "every_optional_feature_fits" {
 }
 
 # The 2026.2 Pro license adds its secret reference and an inline trusted public
-# key. On top of every other feature the API function still fits, but the
-# control-plane event functions (API environment plus their selectors) no
-# longer fit Lambda's 4 KB, and the module must say so at PLAN time instead of
-# letting CreateFunction fail.
+# key. On top of every other feature neither the API function (about 4134
+# bytes since the database pool cap) nor the control-plane event functions
+# (API environment plus their selectors) fit Lambda's 4 KB, and the module must
+# say so at PLAN time instead of letting CreateFunction fail.
 run "pro_license_on_top_of_every_feature_fails_at_plan" {
   command = plan
 
@@ -346,6 +347,7 @@ run "pro_license_on_top_of_every_feature_fails_at_plan" {
   }
 
   expect_failures = [
+    aws_lambda_function.this,
     aws_lambda_function.control_plane_reconcile,
     aws_lambda_function.control_plane_backstop,
     aws_lambda_function.control_plane_tick,

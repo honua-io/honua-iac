@@ -461,6 +461,13 @@ resource "aws_batch_job_definition" "gp" {
         value = value
       }
       ], [
+      # Each running job opens its own database pools; cap them
+      # (gp_batch_db_max_pool_size) so concurrent jobs cannot exhaust RDS.
+      for name, value in local.db_pool_environment.gp_batch : {
+        name  = name
+        value = value
+      }
+      ], [
       # The worker runs the same Production server, so it evaluates operations
       # under the same policy rules as the Lambda.
       for name, value in local.operations_policy_environment : {
