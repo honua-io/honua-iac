@@ -295,8 +295,12 @@ run "allowlisted_environment_values_travel_to_the_geoprocessing_batch_job" {
 }
 
 # Browser origins (honua-server cloud-deployments guide: Cors__AllowedOrigins__0
-# is required for Console/Studio). Nothing by default (no server variable and no
-# API Gateway CORS); supplied origins render as indexed variables in list order.
+# is required for Console/Studio). Nothing by default; supplied origins render as
+# indexed server variables in list order, and the server is the ONLY CORS
+# source, as on ECS. honua-release e2e-cloud-aws run 38099175519: with API
+# Gateway CORS also configured, the gateway answered preflights and replaced the
+# server's CORS headers with its narrower policy, and the authenticated
+# honua-site demo lanes (geoprocessing, editing) failed only on Lambda cells.
 run "no_cors_origin_is_rendered_by_default" {
   command = plan
 
@@ -324,7 +328,21 @@ run "cors_origins_render_as_indexed_variables" {
   }
 
   assert {
-    condition     = toset(aws_apigatewayv2_api.this.cors_configuration[0].allow_origins) == toset(["https://console.example.com", "https://studio.example.com"])
-    error_message = "API Gateway CORS must admit the same origins."
+    condition     = length(aws_apigatewayv2_api.this.cors_configuration) == 0
+    error_message = "The server must be the single CORS source: API Gateway CORS would answer preflights itself and override the server's CORS headers."
+  }
+
+  # Preflights must reach the server: OPTIONS is matched by the ANY routes,
+  # which carry no authorizer that would reject an unauthenticated preflight.
+  assert {
+    condition = (
+      aws_apigatewayv2_route.root.route_key == "ANY /" &&
+      aws_apigatewayv2_route.proxy.route_key == "ANY /{proxy+}" &&
+      try(coalesce(aws_apigatewayv2_route.root.authorization_type, "NONE"), "NONE") == "NONE" &&
+      try(coalesce(aws_apigatewayv2_route.proxy.authorization_type, "NONE"), "NONE") == "NONE" &&
+      aws_apigatewayv2_route.root.authorizer_id == null &&
+      aws_apigatewayv2_route.proxy.authorizer_id == null
+    )
+    error_message = "OPTIONS preflights must route to the Lambda integration through unauthenticated ANY routes."
   }
 }

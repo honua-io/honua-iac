@@ -341,7 +341,7 @@ variable "use_batch_service_linked_role" {
 }
 
 variable "cors_allowed_origins" {
-  description = "Browser origins allowed to call the API (for example the Honua Console/Studio origin), rendered as Cors__AllowedOrigins__<n> and as API Gateway CORS. Empty (default) configures no CORS; API-only cells need none."
+  description = "Browser origins allowed to call the API (for example the Honua Console/Studio origin), rendered as Cors__AllowedOrigins__<n>; the server answers CORS, API Gateway does not. Empty (default) configures no CORS; API-only cells need none."
   type        = list(string)
   default     = []
   nullable    = false

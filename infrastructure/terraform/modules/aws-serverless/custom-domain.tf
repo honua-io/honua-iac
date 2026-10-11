@@ -31,8 +31,8 @@
 #   loopback origin) and HSTS does not depend on the scheme here, so it is not
 #   required for the domain; operators who need absolute links set
 #   Public__BaseUrl through additional_env as on ECS.
-# - CORS: the API Gateway cors_configuration belongs to the API, so it applies
-#   identically on the custom domain and on execute-api.
+# - CORS: the server answers CORS (API Gateway has no cors_configuration), so
+#   it behaves identically on the custom domain and on execute-api.
 
 locals {
   use_custom_domain = var.domain_name != "" && var.route53_zone_id != ""

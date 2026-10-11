@@ -93,7 +93,7 @@ module "honua" {
 | `lambda_memory_size` | 1024 | Lambda memory in MB (128–10240). |
 | `lambda_timeout_seconds` | 30 | Keep at or below 30 (API Gateway limit). |
 | `lambda_architectures` | `["x86_64"]` | `x86_64` by default, matching the 2026.1 platform manifest (`awsLambdaArchitecture: x86_64`). Use `arm64` only with an independently verified arm64 image. |
-| `cors_allowed_origins` | `[]` | Browser origins (Console/Studio) rendered as `Cors__AllowedOrigins__<n>` and as API Gateway CORS. Empty or `null` configures no CORS; API-only cells need none. |
+| `cors_allowed_origins` | `[]` | Browser origins (Console/Studio) rendered as `Cors__AllowedOrigins__<n>`. honua-server is the only CORS source, as on ECS: API Gateway has no CORS configuration, so preflights reach the server. See [CORS](#cors). Empty or `null` configures no CORS; API-only cells need none. |
 | `operations_policy_rules` | `[]` | Ordered operation policy rules rendered as `Operations__Policy__Rules__<n>__<Field>`. Production denies every typed operation until a rule allows it. See [Operation policy rules](#operation-policy-rules). |
 | `studio_end_user_authorization` | `false` | Let any authenticated principal use the Studio authoring API, subject to the server's per-resource Studio authorization; rendered as `Studio__EndUserAuthorization__Enabled=true` only when `true`. Off keeps the server default: only admins can author Studio content. |
 | `domain_name` | `""` | Optional custom API hostname (for example `<run label>.cert.demo.honua.io`). With `route53_zone_id`, creates the certificate, API Gateway custom domain, mapping and alias described in [Custom domain](#custom-domain). Same input as `modules/aws-ecs`. |
@@ -715,6 +715,24 @@ import {
 
 New deployments need nothing.
 
+## CORS
+
+honua-server is the only CORS source on this module, exactly as on
+`modules/aws-ecs`. `cors_allowed_origins` renders `Cors__AllowedOrigins__<n>`
+and nothing else; the HTTP API has no `cors_configuration`.
+
+An HTTP API with `cors_configuration` answers every `OPTIONS` preflight itself
+and replaces the integration's CORS response headers with its own fixed
+policy. That policy cannot follow the server's: honua-server also allows
+`PATCH` and `HEAD`, its own allowed-header list, its exposed headers
+(`ETag`, `Content-Range`, gRPC status headers and so on) and, when
+`Cors__AllowCredentials` is set, credentialed requests. Without gateway CORS,
+preflights match the `ANY /` and `ANY /{proxy+}` routes (`ANY` includes
+`OPTIONS`; the routes have no authorizer), reach the Lambda, and the server's
+CORS middleware answers them. Server CORS settings such as
+`Cors__AllowCredentials` or `Cors__PreflightMaxAgeMinutes` go through
+`additional_env`.
+
 ## Custom domain
 
 Lambda cells take the same per-cell domain inputs as the ECS module
@@ -759,9 +777,9 @@ Server settings behind the custom domain, compared with the ECS module's
   or scheme, and HSTS does not depend on the scheme here, so the domain does not
   need it. Set `Public__BaseUrl` through `additional_env` if clients need
   absolute links on the custom domain (as on ECS).
-- **CORS.** `cors_allowed_origins` configures the API Gateway API itself and
-  `Cors__AllowedOrigins__<n>`, so it behaves the same on the custom domain and
-  on execute-api. List the browser origins (Console, site), not the API domain.
+- **CORS.** The server answers CORS from `Cors__AllowedOrigins__<n>` on the
+  custom domain and on execute-api alike (see [CORS](#cors)). List the browser
+  origins (Console, site), not the API domain.
 
 ```hcl
 module "honua" {

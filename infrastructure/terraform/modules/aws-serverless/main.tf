@@ -315,7 +315,8 @@ locals {
   # Browser origins (honua-server cloud-deployments guide lists
   # Cors__AllowedOrigins__0 as required for Console/Studio). Indexed in list
   # order; an empty or null list renders nothing, so API-only cells keep the
-  # server's no-CORS default.
+  # server's no-CORS default. The server is the only CORS source: API Gateway
+  # has no cors_configuration (see aws_apigatewayv2_api.this).
   cors_environment = { for index, origin in coalesce(var.cors_allowed_origins, []) : "Cors__AllowedOrigins__${index}" => origin }
   # API Gateway is HTTPS-only, but Lambda Web Adapter's final in-process hop is HTTP.
   # Emit HSTS for that trusted topology instead of suppressing it based on the internal scheme.
@@ -977,19 +978,17 @@ resource "aws_cloudwatch_log_group" "api_gateway" {
   tags              = local.tags
 }
 
+# No cors_configuration: honua-server is the single CORS source, as on ECS.
+# With gateway CORS configured, API Gateway answers every OPTIONS preflight
+# itself and replaces the integration's CORS response headers with its own, so
+# the server's policy (all methods it serves incl. PATCH/HEAD, its allowed and
+# exposed headers, Cors:AllowCredentials) never reaches the browser. Without it,
+# preflights match the ANY / and ANY /{proxy+} routes below (ANY includes
+# OPTIONS, and the routes have no authorizer), reach the Lambda, and the
+# server's CORS middleware answers them from Cors__AllowedOrigins__<n>.
 resource "aws_apigatewayv2_api" "this" {
   name          = "${local.name}-honua"
   protocol_type = "HTTP"
-
-  dynamic "cors_configuration" {
-    for_each = length(coalesce(var.cors_allowed_origins, [])) > 0 ? [1] : []
-    content {
-      allow_origins = var.cors_allowed_origins
-      allow_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-      allow_headers = ["Content-Type", "Authorization", "X-API-Key"]
-      max_age       = 300
-    }
-  }
 
   tags = local.tags
 }
