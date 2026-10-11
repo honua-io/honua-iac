@@ -1092,6 +1092,11 @@ resource "aws_apigatewayv2_stage" "this" {
       path           = "$context.path"
       status         = "$context.status"
       responseLength = "$context.responseLength"
+      # Why a request failed between API Gateway and the Lambda (an init crash,
+      # a timeout, a throttle) rather than only that it returned 5xx.
+      integrationStatus       = "$context.integrationStatus"
+      integrationErrorMessage = "$context.integrationErrorMessage"
+      errorMessage            = "$context.error.message"
     })
   }
 
