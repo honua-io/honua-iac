@@ -32,6 +32,7 @@ module "honua" {
   enable_postgis                  = local.install_db_postgis
   postgis_readiness_max_attempts  = local.install_db_rdy_max
   postgis_readiness_sleep_seconds = local.install_db_rdy_sleep
+  enable_rds_proxy                = var.enable_rds_proxy
   redis_enabled                   = var.redis_enabled
   redis_connection_string         = var.redis_connection_string
   redis_connection_cidrs          = var.redis_connection_cidrs
@@ -277,6 +278,16 @@ output "gp_compute_environment_name" {
 output "gp_compute_environment_arn" {
   description = "ARN of the GP Fargate Spot Batch compute environment."
   value       = module.honua.gp_compute_environment_arn
+}
+
+output "rds_proxy_endpoint" {
+  description = "RDS Proxy endpoint the Lambda functions and GP Batch jobs connect through when enable_rds_proxy is true; null otherwise. Migrations keep the direct endpoint (migrate_db_connection_secret_arn)."
+  value       = module.honua.rds_proxy_endpoint
+}
+
+output "rds_proxy_arn" {
+  description = "ARN of the RDS Proxy when enable_rds_proxy is true; null otherwise."
+  value       = module.honua.rds_proxy_arn
 }
 
 # --- Out-of-band migration inputs ---------------------------------------------

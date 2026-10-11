@@ -407,3 +407,10 @@ variable "gp_batch_data_bucket_enabled" {
   type        = bool
   default     = false
 }
+
+variable "enable_rds_proxy" {
+  description = "Put Amazon RDS Proxy in front of the cell's PostgreSQL and route the Lambda functions and GP Batch jobs through it, so Lambda scale-out cannot exhaust the instance's connection slots. Migrations keep the direct endpoint. Off by default; see the module README's database connection budget."
+  type        = bool
+  default     = false
+  nullable    = false
+}
