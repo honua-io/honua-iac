@@ -109,7 +109,6 @@ module "honua" {
     HONUA_ADMIN_UI       = "true"
     HONUA_OBSERVABILITY  = "true"
     HONUA_OPENTELEMETRY  = "true"
-    Public__BaseUrl      = "https://gis.example.com"
   }
 
   tags = {
@@ -156,6 +155,30 @@ route53_zone_id = "Z1234567890ABC"
 ```
 
 When both values are set, the module also creates a Route 53 alias `A` record for `domain_name` that points at the ALB, and `service_url` uses the custom HTTPS hostname. Disable that DNS record with `domain_alias_record_enabled = false` if another DNS provider owns the public zone; in that case, create the external DNS record yourself and keep using `service_url` as the custom HTTPS endpoint.
+
+### Public base URL on your own domain
+
+Honua runs on any domain you own; nothing in this module assumes a particular
+DNS suffix. honua-server builds absolute links (publication URLs, OGC and STAC
+self links, admin OIDC redirect URIs) only from `Public:BaseUrl` /
+`PUBLIC_BASE_URL`, never from the request `Host`. Without it those links fall
+back to a loopback origin, and admin OIDC refuses to start outside Development.
+
+| Inputs | `Public__BaseUrl` the module sets |
+|--------|-----------------------------------|
+| `public_base_url` set | `public_base_url` (trailing `/` trimmed) |
+| `domain_name` with an HTTPS listener (`alb_certificate_arn`, or `route53_zone_id`) | `https://<domain_name>` |
+| Neither | nothing (links stay loopback; set one of the above for a public deployment) |
+
+`public_base_url` must be an absolute `http`/`https` URL, optionally with a port
+or path prefix (`https://example.org/gis`); the server ignores a bare host name,
+so the module rejects one. Use it when clients reach the service through another
+front door on your domain, such as a CDN. A `Public__BaseUrl` or
+`PUBLIC_BASE_URL` already in `additional_env` is kept and wins (setting both
+fails the `public_base_url_single_source` check). The value is set on the stable
+and canary task definitions and reported by the `public_base_url` output. When
+no `HostValidation__AllowedHosts__*` list is configured, honua-server also
+accepts requests whose `Host` is this URL's host.
 
 For public API hosts, allow HTTPS from the intended client CIDRs:
 
@@ -210,6 +233,8 @@ If your Prometheus scrape config uses different job names, override the correspo
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `image` | Required | Container image. Pin to an immutable release tag or digest. AOT builds are recommended. |
+| `domain_name` | `""` | Optional public hostname on any domain you own. With `route53_zone_id` the module issues the certificate and alias record; with `alb_certificate_arn` you manage both. Over HTTPS it becomes `service_url` and `Public__BaseUrl`. See [HTTPS](#https). |
+| `public_base_url` | `""` | Public origin for server-built absolute links (`Public__BaseUrl`), for example `https://gis.example.com`. Empty uses `https://<domain_name>` on an HTTPS custom domain. See [Public base URL on your own domain](#public-base-url-on-your-own-domain). |
 | `ai_provider_secret_arn` | `""` | Optional caller-owned Secrets Manager ARN for `HONUA_AI_PROVIDER_API_KEY`; the module never creates or exposes the value. |
 | `ai_provider_secret_kms_key_arn` | `""` | Optional customer-managed KMS key ARN for the AI provider secret; grants decrypt only when the secret ARN is set. |
 | `connection_encryption_master_key` | Required (nullable) | Fail-closed connection-key decision. Set `null` explicitly only for a new deployment; existing deployments must supply their current key as described below. |

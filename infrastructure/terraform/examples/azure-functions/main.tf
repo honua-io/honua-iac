@@ -47,11 +47,10 @@ module "honua" {
   pro_license_key_id             = var.pro_license_key_id
   pro_license_trusted_public_key = var.pro_license_trusted_public_key
 
-  additional_env = {
-    HONUA_SERVE_ADMIN_UI            = "true"
-    HONUA_ADMIN_UI                  = "true"
-    HostValidation__AllowedHosts__0 = "*.azurewebsites.net"
-  }
+  additional_env = merge({
+    HONUA_SERVE_ADMIN_UI = "true"
+    HONUA_ADMIN_UI       = "true"
+  }, local.host_environment)
 }
 
 output "honua_url" {
@@ -133,4 +132,21 @@ output "db_fqdn" {
 
 output "resource_group_name" {
   value = module.honua.resource_group_name
+}
+
+locals {
+  # Host validation and Public:BaseUrl for the platform hostname and your own
+  # domain. A non-empty allowlist disables the server's implicit Public:BaseUrl
+  # host, so the public_base_url host is listed explicitly.
+  public_base_url      = trimsuffix(var.public_base_url, "/")
+  public_base_url_host = local.public_base_url == "" ? "" : lower(regex("^https?://([^/:?#]+)", local.public_base_url)[0])
+  allowed_hosts = distinct(concat(
+    ["*.azurewebsites.net"],
+    var.additional_allowed_hosts,
+    local.public_base_url_host == "" ? [] : [local.public_base_url_host],
+  ))
+  host_environment = merge(
+    { for index, host in local.allowed_hosts : "HostValidation__AllowedHosts__${index}" => host },
+    local.public_base_url == "" ? {} : { Public__BaseUrl = local.public_base_url },
+  )
 }

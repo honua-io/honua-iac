@@ -71,8 +71,9 @@ Two maps, both name => value and both free of secret values:
 
 - `chart_config_env` — what the chart's `config.env` needs **besides** the
   credentials: `ControlPlane__Kubernetes__*`, `Operations__Policy__Rules__*`,
-  `Cors__AllowedOrigins__*`, and `aws:secretsmanager:` references to the
-  operator-owned key-ring and audit-chain secrets. The release harness renders
+  `Cors__AllowedOrigins__*`, `Public__BaseUrl` (see [Custom domain](#custom-domain)),
+  and `aws:secretsmanager:` references to the operator-owned key-ring and
+  audit-chain secrets. The release harness renders
   it into the chart values and writes the database, admin password, master key
   and Redis credentials into the chart's own Secret (from the sensitive
   `db_connection_string` / `redis_connection_string` outputs).
@@ -131,7 +132,8 @@ the names and semantics of `modules/aws-ecs` and `modules/aws-serverless`:
 | `audit_chain_key_secret_arn` / `_kms_key_arn` | `""` | Operator-owned audit hash-chain key; recommended (a check warns when empty). |
 | `operations_policy_rules` | `[]` | Ordered first-match-wins rules, same shape as aws-ecs; rendered as `Operations__Policy__Rules__<n>__<Field>`. Production denies every typed operation until a rule allows it. |
 | `cors_allowed_origins` | `[]` | Browser origins, same definition as aws-ecs; rendered as `Cors__AllowedOrigins__<n>`. |
-| `domain_name` / `route53_zone_id` | `""` | Set together: DNS-validated ACM certificate. |
+| `domain_name` / `route53_zone_id` | `""` | Set together: DNS-validated ACM certificate for a hostname on any domain you own, and `Public__BaseUrl = https://<domain_name>` in `chart_config_env`. |
+| `public_base_url` | `""` | Public origin for server-built absolute links, rendered as `Public__BaseUrl`; overrides the domain. Absolute `http`/`https` URL. |
 | `subject_alternative_names` | `[]` | Extra certificate names. |
 | `ingress_load_balancer_hostname` | `""` | The chart's load balancer DNS name, on a second apply: creates the Route53 CNAME for `domain_name`. |
 
@@ -147,6 +149,18 @@ is two applies:
 2. Install the chart, read the Service's load balancer hostname, and apply again
    with `ingress_load_balancer_hostname`. The module creates the CNAME, and
    `honua_url` becomes `https://<domain_name>`. Destroy removes the record.
+
+`domain_name` can be any hostname in a Route 53 zone you own; nothing assumes a
+particular DNS suffix. From the first apply, `chart_config_env` (and
+`honua_server_environment`) carry `Public__BaseUrl = https://<domain_name>`:
+honua-server builds absolute links (publication URLs, OGC and STAC self links,
+admin OIDC redirect URIs) only from `Public:BaseUrl`, never from the request
+`Host`, and the chart defaults `config.env.Public__BaseUrl` to `""`. Set
+`public_base_url` instead when clients reach the chart through your own
+ingress or CDN host (for example `https://maps.example.com`); it must be an
+absolute `http`/`https` URL because the server ignores a bare host name. Do not
+also set `config.env.Public__BaseUrl` in the chart values. The `public_base_url`
+output reports the rendered value.
 
 ## Secret encryption
 

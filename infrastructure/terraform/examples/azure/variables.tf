@@ -188,3 +188,28 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+# --- Your own domain ------------------------------------------------------------
+# honua-server answers only allow-listed hosts and builds absolute links (OGC/STAC
+# self links, admin OIDC redirect URIs) only from Public:BaseUrl. Bind your
+# custom domain and certificate to the Container App out of band, then set
+# public_base_url to it; its host is added to host validation.
+
+variable "public_base_url" {
+  description = "Public origin on your own domain for server-built absolute links (Public__BaseUrl), for example https://gis.example.com. Its host is added to HostValidation__AllowedHosts. Empty sets no Public__BaseUrl (absolute links fall back to loopback)."
+  type        = string
+  default     = ""
+  nullable    = false
+
+  validation {
+    condition     = var.public_base_url == "" || can(regex("^https?://[^/?#@[:space:]]+(/[^?#[:space:]]*)?$", var.public_base_url))
+    error_message = "public_base_url must be an absolute http(s) URL such as https://gis.example.com, without query, fragment or credentials: honua-server ignores a bare host name."
+  }
+}
+
+variable "additional_allowed_hosts" {
+  description = "Extra host names (or *.suffix patterns) the server accepts besides *.azurecontainerapps.io and the public_base_url host, for example other custom domains bound to the same Container App."
+  type        = list(string)
+  default     = []
+  nullable    = false
+}

@@ -140,6 +140,11 @@ run "no_domain_creates_nothing_and_keeps_execute_api" {
     condition     = !contains(keys(local.lambda_environment), "HostValidation__AllowedHosts__1")
     error_message = "Without a custom domain no extra host-validation entry may be emitted (4 KB Lambda environment budget)."
   }
+
+  assert {
+    condition     = !contains(keys(local.lambda_environment), "Public__BaseUrl") && output.public_base_url == null
+    error_message = "Without a custom domain or public_base_url no Public__BaseUrl may be emitted."
+  }
 }
 
 run "domain_creates_certificate_custom_domain_mapping_and_alias" {
@@ -243,7 +248,14 @@ run "domain_creates_certificate_custom_domain_mapping_and_alias" {
 
   assert {
     condition     = local.lambda_environment["SecurityHeaders__HstsHttpsOnly"] == "false" && !contains(keys(local.lambda_environment), "ASPNETCORE_FORWARDEDHEADERS_ENABLED")
-    error_message = "HSTS is already emitted behind API Gateway; the custom domain adds no other environment entry."
+    error_message = "HSTS is already emitted behind API Gateway; the custom domain adds no forwarded-headers entry."
+  }
+
+  # honua-server builds absolute links only from Public:BaseUrl (BaseUrlResolver);
+  # without it publication/self links are loopback and admin OIDC refuses to start.
+  assert {
+    condition     = local.lambda_environment["Public__BaseUrl"] == "https://honuarawsse380460-it.cert.demo.honua.io" && output.public_base_url == output.service_url
+    error_message = "The custom domain must set Public__BaseUrl=https://<domain_name>, equal to service_url."
   }
 }
 

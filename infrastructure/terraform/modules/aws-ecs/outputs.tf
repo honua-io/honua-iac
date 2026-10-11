@@ -193,3 +193,8 @@ output "studio_end_user_authorization_enabled" {
   description = "Whether the server environment carries Studio__EndUserAuthorization__Enabled=true, admitting authenticated non-admins to the Studio authoring API."
   value       = length(local.studio_end_user_authorization_environment) > 0
 }
+
+output "public_base_url" {
+  description = "Public__BaseUrl the module rendered into the container environment (public_base_url, else https://<domain_name> on an HTTPS custom domain), or null when it sets none."
+  value       = lookup(local.public_base_url_environment, "Public__BaseUrl", null)
+}

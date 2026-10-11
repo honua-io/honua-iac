@@ -353,7 +353,7 @@ locals {
       }, var.lambda_alias_name != "live" ? {
       ControlPlane__DeployTargets__0__ParameterEntries__0__Key   = "aws.lambda.alias_name"
       ControlPlane__DeployTargets__0__ParameterEntries__0__Value = var.lambda_alias_name
-  } : {}, local.gp_batch_environment, local.amazon_location_environment, var.additional_env, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.lambda_secret_reference_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment)
+  } : {}, local.gp_batch_environment, local.amazon_location_environment, local.public_base_url_environment, var.additional_env, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.lambda_secret_reference_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment)
 
   # AWS Lambda refuses a function whose environment exceeds 4 KB ("exceeded the
   # 4KB limit. Measured size: N bytes") and only says so at CreateFunction /
@@ -915,7 +915,7 @@ resource "aws_lambda_function" "this" {
 
     precondition {
       condition     = local.lambda_environment_bytes.api <= local.lambda_environment_limit_bytes
-      error_message = "The ${local.lambda_function_name} environment would be about ${local.lambda_environment_bytes.api} bytes; AWS Lambda refuses more than ${local.lambda_environment_limit_bytes}. Turn off an optional feature that adds variables (Bedrock AI, Amazon Location geocoding, CORS origins, request-secret allowlists, operations_policy_rules, studio_end_user_authorization, additional_env, additional_allowed_hosts) or shorten name_prefix/environment."
+      error_message = "The ${local.lambda_function_name} environment would be about ${local.lambda_environment_bytes.api} bytes; AWS Lambda refuses more than ${local.lambda_environment_limit_bytes}. Turn off an optional feature that adds variables (Bedrock AI, Amazon Location geocoding, CORS origins, the custom domain / public_base_url, request-secret allowlists, operations_policy_rules, studio_end_user_authorization, additional_env, additional_allowed_hosts) or shorten name_prefix/environment."
     }
 
     precondition {

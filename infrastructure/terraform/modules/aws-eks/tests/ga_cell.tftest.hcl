@@ -462,6 +462,11 @@ run "no_domain_manages_no_certificate" {
     condition     = length(aws_acm_certificate.this) == 0 && length(aws_route53_record.service_alias) == 0 && length(output.ingress_service_annotations) == 0 && output.honua_url == ""
     error_message = "Without a domain no certificate, record or TLS annotation is managed."
   }
+
+  assert {
+    condition     = !contains(keys(output.chart_config_env), "Public__BaseUrl") && output.public_base_url == null
+    error_message = "Without a domain or public_base_url chart_config_env carries no Public__BaseUrl."
+  }
 }
 
 run "domain_first_apply_issues_certificate_only" {
@@ -485,6 +490,13 @@ run "domain_first_apply_issues_certificate_only" {
   assert {
     condition     = length(output.ingress_service_annotations) == 3 && output.ingress_service_annotations["service.beta.kubernetes.io/aws-load-balancer-ssl-ports"] == "443"
     error_message = "The chart must receive the TLS Service annotations."
+  }
+
+  # honua-server builds absolute links only from Public:BaseUrl; the chart
+  # defaults config.env.Public__BaseUrl to "" (honua-io/honua-release#450).
+  assert {
+    condition     = output.chart_config_env["Public__BaseUrl"] == "https://cell.cert.demo.example.com" && output.honua_server_environment["Public__BaseUrl"] == "https://cell.cert.demo.example.com"
+    error_message = "A managed domain must render Public__BaseUrl=https://<domain_name> into chart_config_env and honua_server_environment."
   }
 }
 
@@ -555,4 +567,58 @@ run "chart_config_env_carries_settings_not_credentials" {
     condition     = output.certificate_arn == ""
     error_message = "No certificate without a managed domain."
   }
+}
+
+# --- Public base URL on a customer domain (honua-io/honua-release#450, #282) ----
+
+run "customer_domain_renders_public_base_url" {
+  command = plan
+
+  variables {
+    domain_name     = "maps.city-of-example.gov.au"
+    route53_zone_id = "Z0123456789ABCDEFGHIJ"
+  }
+
+  assert {
+    condition     = output.chart_config_env["Public__BaseUrl"] == "https://maps.city-of-example.gov.au" && output.public_base_url == "https://maps.city-of-example.gov.au"
+    error_message = "Any customer domain must render Public__BaseUrl=https://<domain_name>."
+  }
+}
+
+run "explicit_public_base_url_wins" {
+  command = plan
+
+  variables {
+    domain_name     = "lb.example.org"
+    route53_zone_id = "Z0123456789ABCDEFGHIJ"
+    public_base_url = "https://maps.example.org/gis/"
+  }
+
+  assert {
+    condition     = output.chart_config_env["Public__BaseUrl"] == "https://maps.example.org/gis"
+    error_message = "public_base_url (for example the customer's own ingress or CDN host) must win over domain_name, trailing slash trimmed."
+  }
+}
+
+run "public_base_url_without_a_managed_domain" {
+  command = plan
+
+  variables {
+    public_base_url = "https://gis.example.com"
+  }
+
+  assert {
+    condition     = output.chart_config_env["Public__BaseUrl"] == "https://gis.example.com" && length(aws_acm_certificate.this) == 0
+    error_message = "public_base_url alone renders Public__BaseUrl and manages no certificate."
+  }
+}
+
+run "bare_host_public_base_url_is_rejected" {
+  command = plan
+
+  variables {
+    public_base_url = "gis.example.com"
+  }
+
+  expect_failures = [var.public_base_url]
 }

@@ -60,6 +60,7 @@ module "eks" {
 
   domain_name                    = var.domain_name
   route53_zone_id                = var.route53_zone_id
+  public_base_url                = var.public_base_url
   subject_alternative_names      = var.subject_alternative_names
   ingress_load_balancer_hostname = var.ingress_load_balancer_hostname
 }

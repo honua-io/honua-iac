@@ -89,7 +89,8 @@ passes them to the module (see the module's
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `domain_name` | `""` | Custom API hostname, for example `<run label>.cert.demo.honua.io`. Set together with `route53_zone_id`. |
+| `domain_name` | `""` | Custom API hostname on any domain you own, for example `gis.example.com`. Set together with `route53_zone_id`; also sets `Public__BaseUrl`. |
+| `public_base_url` | `""` | Optional public origin for server-built absolute links (`Public__BaseUrl`), for example `https://maps.example.com`. Empty uses `https://<domain_name>`. |
 | `route53_zone_id` | `""` | Route53 hosted zone that owns `domain_name`; the module validates the ACM certificate and creates the alias record there. |
 
 With both set, `honua_url` and the deploy contract's `endpoint` are

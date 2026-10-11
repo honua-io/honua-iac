@@ -508,10 +508,22 @@ variable "cors_allowed_origins" {
 # --- Custom domain (ACM + Route53) ----------------------------------------------
 
 variable "domain_name" {
-  description = "Optional public hostname for the Honua endpoint. With route53_zone_id, the module issues and DNS-validates an ACM certificate for it; the chart's LoadBalancer Service terminates TLS with that certificate (see the ingress_service_annotations output)."
+  description = "Optional public hostname for the Honua endpoint, on any domain you own (for example gis.example.com). With route53_zone_id, the module issues and DNS-validates an ACM certificate for it; the chart's LoadBalancer Service terminates TLS with that certificate (see the ingress_service_annotations output)."
   type        = string
   default     = ""
   nullable    = false
+}
+
+variable "public_base_url" {
+  description = "Public origin honua-server uses for absolute links, rendered as Public__BaseUrl into chart_config_env and honua_server_environment, for example https://gis.example.com. Empty (default) uses https://<domain_name> when domain_name and route53_zone_id are set and renders nothing otherwise. Set it when clients reach the chart through your own ingress or CDN host, and do not also set config.env.Public__BaseUrl in the chart values."
+  type        = string
+  default     = ""
+  nullable    = false
+
+  validation {
+    condition     = var.public_base_url == "" || can(regex("^https?://[^/?#@[:space:]]+(/[^?#[:space:]]*)?$", var.public_base_url))
+    error_message = "public_base_url must be an absolute http(s) URL such as https://gis.example.com, without query, fragment or credentials: honua-server ignores a bare host name and falls back to loopback links."
+  }
 }
 
 variable "route53_zone_id" {

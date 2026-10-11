@@ -27,12 +27,24 @@
 #   Adapter forwards it, but this module does not set
 #   ASPNETCORE_FORWARDEDHEADERS_ENABLED (ECS does), on the custom domain or on
 #   execute-api. honua-server never derives link origins from the request
-#   Host/scheme (BaseUrlResolver uses Public:BaseUrl / PUBLIC_BASE_URL or a
-#   loopback origin) and HSTS does not depend on the scheme here, so it is not
-#   required for the domain; operators who need absolute links set
-#   Public__BaseUrl through additional_env as on ECS.
+#   Host/scheme and HSTS does not depend on the scheme here, so it is not
+#   required for the domain.
+# - Public base URL: honua-server builds absolute links (publication URLs,
+#   OGC/STAC self links, admin OIDC redirect URIs) only from Public:BaseUrl /
+#   PUBLIC_BASE_URL (BaseUrlResolver); without it they fall back to a loopback
+#   origin, and admin OIDC refuses to start outside Development. The custom
+#   domain therefore also sets Public__BaseUrl = https://<domain_name> (one more
+#   entry, about 30 bytes plus the host name, against the same 4 KB cap). An
+#   explicit public_base_url wins over the domain, and a Public__BaseUrl or
+#   PUBLIC_BASE_URL already in additional_env wins over both, so existing
+#   operator settings are kept. The server ignores a value without an http(s)
+#   scheme, so public_base_url is validated as an absolute URL.
 # - CORS: the server answers CORS (API Gateway has no cors_configuration), so
 #   it behaves identically on the custom domain and on execute-api.
+#
+# Nothing here assumes a particular DNS suffix: domain_name is any customer
+# FQDN (any TLD, including IDN/punycode xn-- labels) in a hosted zone the
+# operator owns.
 
 locals {
   use_custom_domain = var.domain_name != "" && var.route53_zone_id != ""
@@ -44,6 +56,18 @@ locals {
   )
 
   custom_domain_url = local.use_custom_domain ? "https://${var.domain_name}" : null
+
+  # Public:BaseUrl for server-built absolute links (see the header comment).
+  additional_env_sets_public_base_url = length(setintersection(
+    toset([for name in(var.additional_env == null ? [] : keys(var.additional_env)) : lower(replace(name, ":", "__"))]),
+    toset(["public__baseurl", "public_base_url"]),
+  )) > 0
+  public_base_url = trimsuffix(var.public_base_url, "/") != "" ? trimsuffix(var.public_base_url, "/") : (
+    local.use_custom_domain ? local.custom_domain_url : ""
+  )
+  public_base_url_environment = local.public_base_url != "" && !local.additional_env_sets_public_base_url ? {
+    Public__BaseUrl = local.public_base_url
+  } : {}
 }
 
 variable "domain_name" {
@@ -52,8 +76,20 @@ variable "domain_name" {
   default     = ""
 
   validation {
-    condition     = var.domain_name == "" || can(regex("^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?[.])+[a-z]{2,63}$", var.domain_name))
-    error_message = "domain_name must be a lower-case fully qualified host name (for example run-123.cert.demo.honua.io) or empty."
+    condition     = var.domain_name == "" || can(regex("^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?[.])+([a-z]{2,63}|xn--[a-z0-9-]{1,59})$", var.domain_name))
+    error_message = "domain_name must be a lower-case fully qualified host name on any domain you own (for example gis.example.com, or a punycode xn-- name) or empty."
+  }
+}
+
+variable "public_base_url" {
+  description = "Public origin honua-server uses for absolute links (Public__BaseUrl), for example https://gis.example.com or https://example.org/gis. Empty (default) uses https://<domain_name> when the custom domain is configured and sets nothing otherwise. Set it when clients reach the API through another front door (a CDN or proxy on your own domain). A Public__BaseUrl or PUBLIC_BASE_URL in additional_env takes precedence."
+  type        = string
+  default     = ""
+  nullable    = false
+
+  validation {
+    condition     = var.public_base_url == "" || can(regex("^https?://[^/?#@[:space:]]+(/[^?#[:space:]]*)?$", var.public_base_url))
+    error_message = "public_base_url must be an absolute http(s) URL such as https://gis.example.com, without query, fragment or credentials: honua-server ignores a bare host name and falls back to loopback links."
   }
 }
 
@@ -61,6 +97,13 @@ variable "route53_zone_id" {
   description = "Route53 hosted zone ID that owns domain_name, for certificate validation and the alias record (required with domain_name). Same input as modules/aws-ecs."
   type        = string
   default     = ""
+}
+
+check "public_base_url_single_source" {
+  assert {
+    condition     = var.public_base_url == "" || !local.additional_env_sets_public_base_url
+    error_message = "public_base_url is ignored because additional_env already sets Public__BaseUrl or PUBLIC_BASE_URL; set the public origin in one place."
+  }
 }
 
 # Half a configuration creates nothing (as on modules/aws-ecs); surface it.
@@ -157,4 +200,9 @@ output "custom_domain_certificate_arn" {
 output "service_url" {
   description = "Public base URL of the API: the https custom domain when configured, else the execute-api endpoint (api_endpoint)."
   value       = coalesce(local.custom_domain_url, aws_apigatewayv2_api.this.api_endpoint)
+}
+
+output "public_base_url" {
+  description = "Public__BaseUrl the module rendered into the Lambda environment (public_base_url, else https://<domain_name>), or null when it sets none."
+  value       = lookup(local.public_base_url_environment, "Public__BaseUrl", null)
 }

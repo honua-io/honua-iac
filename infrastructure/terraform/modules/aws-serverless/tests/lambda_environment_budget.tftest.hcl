@@ -225,6 +225,70 @@ run "release_cell_budget_is_known_at_plan" {
   }
 }
 
+# The same release cell on its per-run HTTPS name, and on a long customer
+# domain: the custom domain adds a HostValidation entry and Public__BaseUrl
+# (honua-io/honua-release#450). Both must keep the 256-byte margin.
+run "release_redis_on_cell_with_custom_domain_fits_with_margin" {
+  command = plan
+
+  override_resource {
+    target          = aws_acm_certificate.api[0]
+    override_during = plan
+    values = {
+      arn = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
+      domain_validation_options = [{
+        domain_name           = "honuarawsse380460-aws-serverless-redis-on.cert.demo.honua.io"
+        resource_record_name  = "_abc.honuarawsse380460-aws-serverless-redis-on.cert.demo.honua.io."
+        resource_record_type  = "CNAME"
+        resource_record_value = "_def.acm-validations.aws."
+      }]
+    }
+  }
+
+  variables {
+    domain_name     = "honuarawsse380460-aws-serverless-redis-on.cert.demo.honua.io"
+    route53_zone_id = "Z089181827C9GKIKHXUTT"
+  }
+
+  assert {
+    condition     = local.lambda_environment["Public__BaseUrl"] == "https://honuarawsse380460-aws-serverless-redis-on.cert.demo.honua.io"
+    error_message = "The custom domain must render Public__BaseUrl."
+  }
+
+  assert {
+    condition     = local.lambda_environment_bytes.api <= 4096 - 256
+    error_message = "With the custom domain the release cell's Lambda environment is about ${local.lambda_environment_bytes.api} bytes; it must stay at least 256 bytes under 4096."
+  }
+}
+
+run "release_redis_on_cell_on_a_long_customer_domain_fits" {
+  command = plan
+
+  override_resource {
+    target          = aws_acm_certificate.api[0]
+    override_during = plan
+    values = {
+      arn = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
+      domain_validation_options = [{
+        domain_name           = "geospatial-services.public-works.city-of-example.gov.au"
+        resource_record_name  = "_abc.geospatial-services.public-works.city-of-example.gov.au."
+        resource_record_type  = "CNAME"
+        resource_record_value = "_def.acm-validations.aws."
+      }]
+    }
+  }
+
+  variables {
+    domain_name     = "geospatial-services.public-works.city-of-example.gov.au"
+    route53_zone_id = "Z0123456789ABCDEFGHIJ"
+  }
+
+  assert {
+    condition     = local.lambda_environment_bytes.api <= 4096 - 256
+    error_message = "On a long customer domain the release cell's Lambda environment is about ${local.lambda_environment_bytes.api} bytes; it must stay at least 256 bytes under 4096."
+  }
+}
+
 # Every optional 2026.1 feature at once (the Pro license is 2026.2, below). The
 # iac-only reductions bring this under the cap but NOT under the 256-byte margin
 # the release cell keeps: the scheduled-tick function measures 3981 bytes.
