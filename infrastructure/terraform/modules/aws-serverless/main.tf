@@ -128,6 +128,11 @@ locals {
   # both to the same cap. The validator's other connection checks apply only
   # with AdaptiveConcurrencyEnabled (default off), and the pool factory clamps
   # MinConnectionPoolSize to the cap itself.
+  #
+  # Behind RDS Proxy every process also carries
+  # local.db_session_settings_environment (rds-proxy.tf), which moves the
+  # server's session timeouts from a per-connection SET onto the database
+  # role's defaults so the proxy can multiplex instead of pinning.
   db_pool_environment = {
     for process, size in {
       lambda        = var.lambda_db_max_pool_size
@@ -139,7 +144,7 @@ locals {
         }, process == "gp_batch" ? {
         Limits__Connections__MinConnectionPoolSize         = "0"
         Limits__Connections__ConnectionIdleLifetimeSeconds = tostring(var.db_connection_idle_lifetime_seconds)
-    } : {})
+    } : {}, local.db_session_settings_environment)
   }
   lambda_function_name = "${local.name}-honua"
   lambda_target_id     = "${local.lambda_function_name}-${var.lambda_alias_name}"

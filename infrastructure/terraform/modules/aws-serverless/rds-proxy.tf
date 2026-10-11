@@ -38,12 +38,23 @@
 #     PostGIS preflight, snapshot-refresh connections).
 #   - Max Auto Prepare=0: no automatic server-side prepared statements (the
 #     Npgsql default, pinned explicitly so a driver default cannot change it).
-# The server's main data source still runs SET lock_timeout / statement_timeout
-# / idle_in_transaction_session_timeout in a physical-connection initializer,
-# so each of its pooled client connections pins on open (accepted by the server
-# for RDS Proxy, honua-server #1638). Behind the proxy the budget is then
-# bounded by the proxy's ceiling and its idle-client reaping, not by
-# transaction multiplexing; see the README's database connection budget.
+#   - Database__SessionSettings__Mode=role-defaults on every server process
+#     (local.db_session_settings_environment, merged into
+#     local.db_pool_environment, so the API Lambda, the control-plane event
+#     Lambdas and the GP Batch jobs get it; the egress-isolation provisioning
+#     job definition adds it explicitly). Without it the server's main data
+#     source runs SET lock_timeout / statement_timeout /
+#     idle_in_transaction_session_timeout in a physical-connection initializer,
+#     which pins every pooled client connection 1:1 (honua-release
+#     e2e-cloud-aws run 38163689854: 53300 through the proxy). With it the
+#     server issues no SET (honua-server #5870 / #5874) and expects the values
+#     as defaults on the database role (it logs event 5870 with the ALTER ROLE
+#     statements when they are missing).
+# What can still pin: the server's own prepared-statement cache
+# (Database:QueryCache:EnableAutomaticCaching, default on; PREPARE pins),
+# session advisory locks (migrations, schedulers) and tenant set_config calls.
+# Those pins last only until the client disconnects; the proxy's ceiling,
+# borrow queue and idle-client reaping still bound the database.
 # ---------------------------------------------------------------------------
 
 locals {
@@ -53,6 +64,13 @@ locals {
   rds_proxy_name    = "${local.name}-pg-proxy"
 
   db_proxy_connection_options = ";No Reset On Close=true;Max Auto Prepare=0"
+
+  # Server processes behind the proxy take their session timeouts from the
+  # database role's defaults instead of a per-connection SET (see Pinning).
+  # Merged into local.db_pool_environment (main.tf).
+  db_session_settings_environment = local.rds_proxy_enabled ? {
+    Database__SessionSettings__Mode = "role-defaults"
+  } : {}
   db_proxy_connection_string = local.rds_proxy_enabled ? join("", [
     "Host=${aws_db_proxy.this[0].endpoint};Port=5432;Database=${var.db_name};Username=${var.db_username};Password=${local.db_password}",
     local.db_ssl, local.db_pool_options, local.db_proxy_connection_options, local.db_conn_options,

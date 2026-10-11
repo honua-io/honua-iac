@@ -457,7 +457,7 @@ resource "aws_batch_job_definition" "gp_provisioning" {
     # PROVISIONING phase marker + CodeArtifact pull-through config. The worker's
     # restore step reads these to point pip/nuget at the CodeArtifact repos
     # (resolved via the VPC endpoints) instead of public registries.
-    environment = [
+    environment = concat([
       {
         name  = "HONUA_JOB_PHASE"
         value = "provisioning"
@@ -486,7 +486,13 @@ resource "aws_batch_job_definition" "gp_provisioning" {
         name  = "ConnectionStrings__DefaultConnection"
         value = "aws:secretsmanager:${local.runtime_connection_secret.arn}"
       }
-    ]
+      ], [
+      # Behind RDS Proxy the server issues no session SET (rds-proxy.tf, Pinning).
+      for name, value in local.db_session_settings_environment : {
+        name  = name
+        value = value
+      }
+    ])
 
     logConfiguration = {
       logDriver = "awslogs"

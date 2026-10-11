@@ -214,6 +214,24 @@ run "off_keeps_the_direct_endpoint_everywhere" {
     condition     = output.rds_proxy_endpoint == null && output.rds_proxy_arn == null && output.runtime_db_connection_secret_arn == aws_secretsmanager_secret.connection_string.arn
     error_message = "With the proxy off the proxy outputs are null and the runtime secret is the direct one."
   }
+
+  # Direct connections keep the server's per-connection SETs (the default
+  # Database:SessionSettings:Mode=connection), so no process carries the mode.
+  assert {
+    condition = alltrue([
+      for fn in [aws_lambda_function.this, aws_lambda_function.control_plane_reconcile[0], aws_lambda_function.control_plane_backstop[0], aws_lambda_function.control_plane_tick[0]] :
+      !contains(keys(fn.environment[0].variables), "Database__SessionSettings__Mode")
+    ])
+    error_message = "With the proxy off no Lambda may set Database__SessionSettings__Mode."
+  }
+
+  assert {
+    condition = alltrue([
+      for tier, jd in aws_batch_job_definition.gp :
+      length([for e in jsondecode(jd.container_properties).environment : e if e.name == "Database__SessionSettings__Mode"]) == 0
+    ])
+    error_message = "With the proxy off no GP Batch job definition may set Database__SessionSettings__Mode."
+  }
 }
 
 run "on_creates_the_proxy_and_routes_every_process_through_it" {
@@ -320,6 +338,26 @@ run "on_creates_the_proxy_and_routes_every_process_through_it" {
     error_message = "Every GP Batch job-definition tier must read the proxy connection string."
   }
 
+  # honua-release run 38163689854: the server's per-connection SETs pinned every
+  # client connection to its own database connection, and 53300 came back
+  # through the proxy. role-defaults (honua-server #5874) drops the SETs.
+  assert {
+    condition = alltrue([
+      for fn in [aws_lambda_function.this, aws_lambda_function.control_plane_reconcile[0], aws_lambda_function.control_plane_backstop[0], aws_lambda_function.control_plane_tick[0]] :
+      lookup(fn.environment[0].variables, "Database__SessionSettings__Mode", null) == "role-defaults"
+    ])
+    error_message = "Behind the proxy the API and control-plane event Lambdas must set Database__SessionSettings__Mode=role-defaults."
+  }
+
+  assert {
+    condition = length(aws_batch_job_definition.gp) > 0 && alltrue([
+      for tier, jd in aws_batch_job_definition.gp :
+      one([for e in jsondecode(jd.container_properties).environment : e.value if e.name == "Database__SessionSettings__Mode"]) == "role-defaults"
+    ])
+    error_message = "Behind the proxy every GP Batch job-definition tier must set Database__SessionSettings__Mode=role-defaults."
+  }
+
+
   assert {
     condition     = contains(local.lambda_secret_arns, aws_secretsmanager_secret.proxy_connection_string[0].arn) && !contains(local.lambda_secret_arns, aws_secretsmanager_secret.connection_string.arn)
     error_message = "The Lambda roles must be granted the proxy connection-string secret they read, and no longer the direct one."
@@ -332,7 +370,7 @@ run "on_creates_the_proxy_and_routes_every_process_through_it" {
 }
 
 run "on_admits_the_egress_isolation_phases" {
-  command = plan
+  command = apply
 
   variables {
     enable_rds_proxy                   = true
@@ -342,6 +380,14 @@ run "on_admits_the_egress_isolation_phases" {
   assert {
     condition     = toset(keys(aws_security_group_rule.rds_proxy_from_clients)) == toset(["lambda", "gp_batch", "gp_batch_provisioning", "gp_batch_execution"])
     error_message = "With custom-code egress isolation, the provisioning and execution security groups must reach the proxy too."
+  }
+
+  assert {
+    condition = length(aws_batch_job_definition.gp_provisioning) > 0 && alltrue([
+      for tier, jd in aws_batch_job_definition.gp_provisioning :
+      one([for e in jsondecode(jd.container_properties).environment : e.value if e.name == "Database__SessionSettings__Mode"]) == "role-defaults"
+    ])
+    error_message = "The provisioning job definitions read the proxy connection string, so they must set Database__SessionSettings__Mode=role-defaults too."
   }
 }
 
@@ -370,3 +416,4 @@ run "idle_above_the_ceiling_is_rejected" {
 
   expect_failures = [terraform_data.rds_proxy_inputs]
 }
+
