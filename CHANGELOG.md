@@ -14,6 +14,24 @@ module input/output contracts may still change.
 
 ## Unreleased
 
+### Changed
+
+- `aws-serverless`: the control-plane event functions (reconcile, backstop,
+  scheduled tick) no longer carry the HTTP-only settings
+  `HostValidation__AllowedHosts__*`, `Cors__AllowedOrigins__*`,
+  `SecurityHeaders__HstsHttpsOnly`, `HONUA_SERVE_ADMIN_UI`, `HONUA_ADMIN_UI` or
+  `Import__Limits__BackgroundJobThresholdBytes`, whatever their source
+  (`additional_env` included); the API function keeps them. EventBridge invokes
+  those functions and their only HTTP request is the web adapter's loopback
+  POST, which honua-server admits without an AllowedHosts entry and which
+  serves no CORS, HSTS, admin UI or upload. This frees 374 bytes per event
+  function on the release cell (Lambda 4 KB environment budget), so the release
+  Redis-on cell with shared file storage fits: reconcile 3790, backstop 3787,
+  scheduled tick 3793 bytes (4164, 4161 and 4167 before).
+  `import_background_job_threshold_bytes_rendered.control_plane` is now always
+  `null`. The 2026.2 Pro license on top of every feature now fails the plan on
+  the API function only.
+
 ### Added
 
 - `aws-serverless` and the `examples/aws-serverless` root: shared S3 file
@@ -31,9 +49,8 @@ module input/output contracts may still change.
   nothing. A plan with `AwsS3` and no bucket fails. New outputs
   `file_storage_shared`, `file_storage_environment_rendered` and (module)
   `file_storage_s3_resources`. The settings add about 214 bytes per Lambda
-  environment: on the full release Redis-on cell the control-plane event
-  functions then measure 4161-4167 bytes and the plan fails with the size (see
-  the module README, "Lambda environment budget").
+  environment: on the full release Redis-on cell the API function measures 4077
+  bytes and the control-plane event functions 3787-3793 (see Changed).
 - `aws-ecs`, `aws-serverless` and the `examples/aws` / `examples/aws-serverless`
   roots: new input `import_background_job_threshold_bytes` (number, default
   `null`; must be a whole number greater than 0). When set it is rendered as

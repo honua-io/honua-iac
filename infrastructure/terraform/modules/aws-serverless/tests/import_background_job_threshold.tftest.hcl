@@ -209,14 +209,12 @@ run "set_renders_on_every_server_process" {
 
   assert {
     condition = alltrue([
-      for env in [
-        aws_lambda_function.this.environment[0].variables,
-        aws_lambda_function.control_plane_reconcile[0].environment[0].variables,
-        aws_lambda_function.control_plane_backstop[0].environment[0].variables,
-        aws_lambda_function.control_plane_tick[0].environment[0].variables,
-      ] : lookup(env, "Import__Limits__BackgroundJobThresholdBytes", null) == "67108864"
+      lookup(aws_lambda_function.this.environment[0].variables, "Import__Limits__BackgroundJobThresholdBytes", null) == "67108864",
+      lookup(aws_lambda_function.control_plane_reconcile[0].environment[0].variables, "Import__Limits__BackgroundJobThresholdBytes", null) == null,
+      lookup(aws_lambda_function.control_plane_backstop[0].environment[0].variables, "Import__Limits__BackgroundJobThresholdBytes", null) == null,
+      lookup(aws_lambda_function.control_plane_tick[0].environment[0].variables, "Import__Limits__BackgroundJobThresholdBytes", null) == null,
     ])
-    error_message = "The API Lambda and the three control-plane event functions must carry Import__Limits__BackgroundJobThresholdBytes=67108864."
+    error_message = "The API Lambda must carry Import__Limits__BackgroundJobThresholdBytes=67108864; the three control-plane event functions serve no uploads and must not."
   }
 
   assert {
@@ -228,7 +226,7 @@ run "set_renders_on_every_server_process" {
   }
 
   assert {
-    condition     = output.import_background_job_threshold_bytes_rendered == { api = "67108864", control_plane = "67108864", gp_batch = "67108864" }
+    condition     = output.import_background_job_threshold_bytes_rendered == { api = "67108864", control_plane = null, gp_batch = "67108864" }
     error_message = "The rendered-threshold output must report the value for every process."
   }
 }
@@ -290,7 +288,7 @@ run "release_redis_on_cell_with_threshold_fits_under_the_cap" {
   }
 
   assert {
-    condition     = output.import_background_job_threshold_bytes_rendered == { api = "67108864", control_plane = "67108864", gp_batch = "67108864" }
+    condition     = output.import_background_job_threshold_bytes_rendered == { api = "67108864", control_plane = null, gp_batch = "67108864" }
     error_message = "The release cell must carry the threshold on every server process."
   }
 

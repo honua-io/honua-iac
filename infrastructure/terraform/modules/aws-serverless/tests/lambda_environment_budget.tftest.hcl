@@ -332,6 +332,13 @@ run "every_optional_feature_fits" {
 run "every_optional_feature_with_rds_proxy_fits" {
   command = apply
 
+  # The mock provider generates a random name, which aws_db_proxy_target
+  # rejects when it starts with a digit; pin the real default name.
+  override_resource {
+    target = aws_db_proxy_default_target_group.this[0]
+    values = { name = "default" }
+  }
+
   variables {
     enable_rds_proxy                                               = true
     operation_key_ring_certificate_secret_kms_key_arn              = "arn:aws:kms:us-east-1:585192672263:key/00000000-0000-0000-0000-000000000002"
@@ -360,10 +367,10 @@ run "every_optional_feature_with_rds_proxy_fits" {
 }
 
 # The 2026.2 Pro license adds its secret reference and an inline trusted public
-# key. On top of every other feature neither the API function (about 4134
-# bytes since the database pool cap) nor the control-plane event functions
-# (API environment plus their selectors) fit Lambda's 4 KB, and the module must
-# say so at PLAN time instead of letting CreateFunction fail.
+# key. On top of every other feature the API function (about 4134 bytes since
+# the database pool cap) does not fit Lambda's 4 KB, and the module must say so
+# at PLAN time instead of letting CreateFunction fail. The control-plane event
+# functions fit: they carry no HTTP-serving settings (control-plane-events.tf).
 run "pro_license_on_top_of_every_feature_fails_at_plan" {
   command = plan
 
@@ -383,28 +390,22 @@ run "pro_license_on_top_of_every_feature_fails_at_plan" {
 
   expect_failures = [
     aws_lambda_function.this,
-    aws_lambda_function.control_plane_reconcile,
-    aws_lambda_function.control_plane_backstop,
-    aws_lambda_function.control_plane_tick,
   ]
 }
 
 # Shared S3 file storage (file_storage_provider = AwsS3) adds FileStorage__Provider,
 # __AwsS3__BucketName, __AwsS3__Region and __AwsS3__KeyPrefix: 214 bytes with the
-# release bucket and the harness prefix release-cells/<name_prefix>. On the full
-# release Redis-on cell (key ring, audit key, GP Batch, control-plane events, the
-# import threshold, one CORS origin, Studio end-user authorization, the two
-# release operation policy rules and the per-run custom domain) the API function
-# measures 4077 bytes and fits; the three control-plane event functions (the API
-# environment plus their selectors) measure 4161-4167 bytes and do not, so the
-# plan fails with the size instead of CreateFunction. See the module README,
-# "Lambda environment budget", for the headroom this cell needs.
-run "release_cell_with_shared_file_storage_overflows_the_event_functions" {
-  command = plan
+# release bucket and the harness prefix release-cells/<name_prefix>. This is the
+# full release Redis-on cell (key ring, audit key, GP Batch, control-plane events,
+# the import threshold, one CORS origin, Studio end-user authorization, the two
+# release operation policy rules and the per-run custom domain) with it on. The
+# control-plane event functions carry no HTTP-serving settings
+# (control-plane-events.tf), which keeps them under the cap with the margin.
+run "release_cell_with_shared_file_storage_fits" {
+  command = apply
 
   override_resource {
-    target          = aws_acm_certificate.api[0]
-    override_during = plan
+    target = aws_acm_certificate.api[0]
     values = {
       arn = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
       domain_validation_options = [{
@@ -432,11 +433,36 @@ run "release_cell_with_shared_file_storage_overflows_the_event_functions" {
     file_storage_aws_s3_key_prefix  = "release-cells/honuarawsse380460"
   }
 
-  expect_failures = [
-    aws_lambda_function.control_plane_reconcile,
-    aws_lambda_function.control_plane_backstop,
-    aws_lambda_function.control_plane_tick,
-  ]
+  assert {
+    condition     = nonsensitive(sum([for k, v in aws_lambda_function.this.environment[0].variables : length(k) + length(v) + 6]) + 1) <= 4096
+    error_message = "With shared file storage the release cell's API function environment is ${nonsensitive(sum([for k, v in aws_lambda_function.this.environment[0].variables : length(k) + length(v) + 6]) + 1)} bytes; Lambda refuses more than 4096."
+  }
+
+  assert {
+    condition = alltrue([
+      for env in [
+        aws_lambda_function.control_plane_reconcile[0].environment[0].variables,
+        aws_lambda_function.control_plane_backstop[0].environment[0].variables,
+        aws_lambda_function.control_plane_tick[0].environment[0].variables,
+      ] : nonsensitive(sum([for k, v in env : length(k) + length(v) + 6]) + 1) <= 4096 - 256
+    ])
+    error_message = "With shared file storage each control-plane event function must stay at least 256 bytes under 4096 (reconcile ${nonsensitive(sum([for k, v in aws_lambda_function.control_plane_reconcile[0].environment[0].variables : length(k) + length(v) + 6]) + 1)}, backstop ${nonsensitive(sum([for k, v in aws_lambda_function.control_plane_backstop[0].environment[0].variables : length(k) + length(v) + 6]) + 1)}, tick ${nonsensitive(sum([for k, v in aws_lambda_function.control_plane_tick[0].environment[0].variables : length(k) + length(v) + 6]) + 1)} bytes)."
+  }
+
+  # HTTP-serving settings stay on the API function and off the event functions.
+  assert {
+    condition = alltrue(concat(
+      [for k in ["HostValidation__AllowedHosts__0", "HostValidation__AllowedHosts__1", "Cors__AllowedOrigins__0", "SecurityHeaders__HstsHttpsOnly", "HONUA_SERVE_ADMIN_UI", "HONUA_ADMIN_UI"] : contains(keys(aws_lambda_function.this.environment[0].variables), k)],
+      flatten([
+        for env in [
+          aws_lambda_function.control_plane_reconcile[0].environment[0].variables,
+          aws_lambda_function.control_plane_backstop[0].environment[0].variables,
+          aws_lambda_function.control_plane_tick[0].environment[0].variables,
+        ] : [for k in keys(env) : !(startswith(k, "HostValidation__AllowedHosts__") || startswith(k, "Cors__AllowedOrigins__") || contains(["SecurityHeaders__HstsHttpsOnly", "HONUA_SERVE_ADMIN_UI", "HONUA_ADMIN_UI"], k))]
+      ]),
+    ))
+    error_message = "The API function must keep the HTTP-serving settings and the control-plane event functions must carry none of them."
+  }
 }
 
 # Operator secrets keep their full ARN when a name would be wrong or ambiguous.
