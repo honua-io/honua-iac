@@ -16,6 +16,17 @@ module input/output contracts may still change.
 
 ### Added
 
+- `aws-ecs`, `aws-serverless` and the `examples/aws` / `examples/aws-serverless`
+  roots: new input `import_background_job_threshold_bytes` (number, default
+  `null`; must be a whole number greater than 0). When set it is rendered as
+  `Import__Limits__BackgroundJobThresholdBytes` on every server process: the
+  ECS primary and canary task definitions, and the serverless API Lambda,
+  control-plane event functions and GP Batch job definitions. `null` renders
+  nothing and keeps the server default (100 MiB). The release harness passes
+  `67108864` on Redis-on cells so the S10 large-import fixture has a background
+  window under the 100 MiB staging cap (honua-release#548). New module output
+  `import_background_job_threshold_bytes_rendered` reports what each process
+  carries.
 - `aws-serverless` with `enable_rds_proxy`: every server process that reads the
   proxy connection string (API Lambda, control-plane event Lambdas, GP Batch
   and custom-code provisioning job definitions) gets

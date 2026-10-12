@@ -133,6 +133,11 @@ locals {
   # local.db_session_settings_environment (rds-proxy.tf), which moves the
   # server's session timeouts from a per-connection SET onto the database
   # role's defaults so the proxy can multiplex instead of pinning.
+  #
+  # The same per-process map also carries local.import_limits_environment, so
+  # every process that can run an import (the API Lambda, the control-plane
+  # event functions, the GP Batch job) agrees on when an upload is handed to a
+  # background job.
   db_pool_environment = {
     for process, size in {
       lambda        = var.lambda_db_max_pool_size
@@ -144,7 +149,14 @@ locals {
         }, process == "gp_batch" ? {
         Limits__Connections__MinConnectionPoolSize         = "0"
         Limits__Connections__ConnectionIdleLifetimeSeconds = tostring(var.db_connection_idle_lifetime_seconds)
-    } : {}, local.db_session_settings_environment)
+    } : {}, local.db_session_settings_environment, local.import_limits_environment)
+  }
+  # Upload size (bytes) above which honua-server runs an import as a background
+  # job instead of inline (Import:Limits:BackgroundJobThresholdBytes). Null
+  # (default) renders nothing and keeps the server default of 100 MiB. When set
+  # it wins over the same key in additional_env.
+  import_limits_environment = var.import_background_job_threshold_bytes == null ? {} : {
+    Import__Limits__BackgroundJobThresholdBytes = tostring(var.import_background_job_threshold_bytes)
   }
   lambda_function_name = "${local.name}-honua"
   lambda_target_id     = "${local.lambda_function_name}-${var.lambda_alias_name}"

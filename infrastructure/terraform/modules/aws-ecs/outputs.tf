@@ -194,6 +194,14 @@ output "studio_end_user_authorization_enabled" {
   value       = length(local.studio_end_user_authorization_environment) > 0
 }
 
+output "import_background_job_threshold_bytes_rendered" {
+  description = "Import__Limits__BackgroundJobThresholdBytes as rendered into the primary and canary task definitions' container environment. Null where the key is not set (import_background_job_threshold_bytes null and nothing in additional_env) or the canary is disabled."
+  value = {
+    primary = one([for entry in local.primary_container_environment : entry.value if entry.name == "Import__Limits__BackgroundJobThresholdBytes"])
+    canary  = local.canary_enabled ? one([for entry in local.canary_container_environment : entry.value if entry.name == "Import__Limits__BackgroundJobThresholdBytes"]) : null
+  }
+}
+
 output "public_base_url" {
   description = "Public__BaseUrl the module rendered into the container environment (public_base_url, else https://<domain_name> on an HTTPS custom domain), or null when it sets none."
   value       = lookup(local.public_base_url_environment, "Public__BaseUrl", null)

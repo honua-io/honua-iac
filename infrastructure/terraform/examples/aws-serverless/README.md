@@ -121,6 +121,12 @@ only when it is `true`. Off keeps the server default: only admins can author
 Studio content, and a non-admin gets HTTP 403 from routes such as
 `GET /api/v1/studio/package-families`.
 
+## Large imports (background-job threshold)
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `import_background_job_threshold_bytes` | `null` | Upload size in bytes above which honua-server runs an import as a background job instead of inline. Rendered as `Import__Limits__BackgroundJobThresholdBytes` on the API Lambda, the control-plane event functions and the GP Batch job definitions; `null` renders nothing and keeps the server default (100 MiB). Must be a whole number greater than 0. Adds about 57 bytes to each Lambda environment. The release harness sets `67108864` (64 MiB) on Redis-on cells so the S10 large-import fixture has a background window under the 100 MiB staging cap. |
+
 ## Migrations on the serverless root
 
 `skip_migrations` defaults to `true`: concurrent Lambda cold starts must not race
