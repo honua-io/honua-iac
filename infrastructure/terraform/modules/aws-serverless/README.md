@@ -100,6 +100,10 @@ module "honua" {
 | `operations_policy_rules` | `[]` | Ordered operation policy rules rendered as `Operations__Policy__Rules__<n>__<Field>`. Production denies every typed operation until a rule allows it. See [Operation policy rules](#operation-policy-rules). |
 | `studio_end_user_authorization` | `false` | Let any authenticated principal use the Studio authoring API, subject to the server's per-resource Studio authorization; rendered as `Studio__EndUserAuthorization__Enabled=true` only when `true`. Off keeps the server default: only admins can author Studio content. |
 | `import_background_job_threshold_bytes` | `null` | Upload size in bytes above which honua-server runs an import as a background job instead of inline; rendered as `Import__Limits__BackgroundJobThresholdBytes` on the API Lambda, the control-plane event functions and the GP Batch job definitions (like the [database pool caps](#database-connection-budget)) and wins over the same key in `additional_env`. `null` renders nothing and keeps the server default (100 MiB). Must be a whole number greater than 0. Adds about 57 bytes to each Lambda environment (see [Lambda environment budget](#lambda-environment-budget)). Output `import_background_job_threshold_bytes_rendered` reports what each process carries. |
+| `file_storage_provider` | `Local` | Honua file storage provider: `Local` (the server default; renders nothing) or `AwsS3`. `AwsS3` renders `FileStorage__*` on the API Lambda, the control-plane event functions and every GP Batch job-definition tier and grants their roles access to the bucket, so a background import the API Lambda accepts can run on GP Batch. See [Shared file storage](#shared-file-storage). Same input as `modules/aws-ecs`. |
+| `file_storage_aws_s3_bucket_name` | `""` | Existing S3 bucket for shared file storage (`FileStorage__AwsS3__BucketName`). Required with `AwsS3`; the module grants access but does not create the bucket. |
+| `file_storage_aws_s3_region` | module region | Region of the shared bucket (`FileStorage__AwsS3__Region`, which the server requires). Empty renders the AWS provider region. |
+| `file_storage_aws_s3_key_prefix` | `honua` | Object-key prefix within the bucket (`FileStorage__AwsS3__KeyPrefix`); the object grants are scoped to `<bucket>/<prefix>/*`. Empty renders no prefix and grants the whole bucket. |
 | `domain_name` | `""` | Optional custom API hostname on any domain you own (for example `gis.example.com`; any TLD, including punycode `xn--` names). With `route53_zone_id`, creates the certificate, API Gateway custom domain, mapping and alias described in [Custom domain](#custom-domain), and sets `Public__BaseUrl`. Same input as `modules/aws-ecs`. |
 | `public_base_url` | `""` | Public origin for server-built absolute links (`Public__BaseUrl`), for example `https://gis.example.com`. Empty uses `https://<domain_name>` when the custom domain is configured. See [Custom domain](#custom-domain). |
 | `route53_zone_id` | `""` | Route53 hosted zone that owns `domain_name`, for certificate validation and the alias record. Set together with `domain_name`; one without the other creates nothing and fails the `custom_domain_inputs` check. |
@@ -628,6 +632,50 @@ What it creates:
 
 Outputs (the runtime contract; ARNs are opaque config, not variable names): `gp_job_queue_arn`, `gp_job_queue_name`, `gp_job_definition_arns` (map `{ s, m, l, xl }`), `gp_job_definition_names` (same map, names), `gp_compute_environment_arn`, `gp_compute_environment_name`, `gp_job_role_arn`, `gp_execution_role_arn`, `gp_batch_workload_id`, `gp_batch_control_plane_backend_name` (all `null` when disabled), plus `gp_worker_gdal_repository_url` / `worker_gdal_repository_arn` (`null` unless `create_worker_gdal_repo`).
 
+### Shared file storage
+
+honua-server dispatches a background file import (an upload above
+`Import:Limits:BackgroundJobThresholdBytes`) to the durable runner, which on
+this module is the GP Batch workload (honua-server#5916). The API Lambda stages
+the upload through `FileStorage` and the Batch worker reads it back, so both
+must use the same S3 bucket. With the server's default `Local` provider each
+process only sees its own disk, and the server answers background imports with
+HTTP 503 (`import.background` reasonCode `shared-file-storage-required`).
+
+```hcl
+  enable_gp_batch                 = true
+  file_storage_provider           = "AwsS3"
+  file_storage_aws_s3_bucket_name = "honua-prod-files" # operator-owned, existing
+  file_storage_aws_s3_key_prefix  = "honua"
+```
+
+With `AwsS3` the module renders `FileStorage__Provider=AwsS3`,
+`FileStorage__AwsS3__BucketName`, `FileStorage__AwsS3__Region` (the module
+region unless `file_storage_aws_s3_region` is set) and, when the prefix is not
+empty, `FileStorage__AwsS3__KeyPrefix` on:
+
+- the API Lambda;
+- the three control-plane event functions (they start from the API
+  environment, and the scheduled tick runs the file-storage cleanup);
+- every GP Batch job-definition tier (`s`, `m`, `l`, `xl`).
+
+It attaches the same inline policy to the API Lambda role, the control-plane
+event role and the GP Batch job role: `s3:GetBucketLocation`, `s3:ListBucket`
+and `s3:ListBucketMultipartUploads` on `arn:aws:s3:::<bucket>`, and
+`s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`, `s3:AbortMultipartUpload`
+and `s3:ListMultipartUploadParts` on `arn:aws:s3:::<bucket>/<prefix>/*`. The
+custom-code provisioning job (dependency restore only) and the custom-code job
+definitions (empty environment by design) get neither. `gp_batch_data_bucket_*`
+is a separate, generic grant to the GP job role only and renders no
+`FileStorage__*` settings.
+
+The four settings add about 214 bytes to each Lambda environment with a
+39-character bucket and a 31-character prefix; see
+[Lambda environment budget](#lambda-environment-budget) for the combinations
+that no longer fit. Outputs `file_storage_shared`,
+`file_storage_environment_rendered` and `file_storage_s3_resources` report what
+was rendered and granted.
+
 ## Custom-code (UNTRUSTED user code) on AWS Batch — locked down
 
 Optional, **off by default**. When `enable_customcode_batch = true`, the module provisions a **SEPARATE, deliberately hardened** Batch substrate for running **untrusted user code** (the custom-code **python** and **dotnet** runtimes — honua-server #2196). It parallels the GP substrate (Fargate-Spot scale-to-zero) but **this family runs untrusted code, so it is locked down**. The **runtime selector** (`customcode.runtime = python | dotnet`) the server sends picks **only the image**: each runtime gets its own size-tier job-def family (`customcode-python-{s,m,l,xl}` and `customcode-dotnet-{s,m,l,xl}`, tiers differing only by ephemeral storage) sharing the **identical** task role, execution role, security group, queue, compute environment, and empty-secrets hardening — **the security posture is defined once and reused, not duplicated per runtime**:
@@ -698,6 +746,22 @@ functions, and the plan fails with the size. More headroom needs a server-side
 change, for example a single `aws:secretsmanager:` reference to a JSON settings
 bundle that the server expands into configuration at startup; the server has no
 such source today.
+
+**Shared file storage on the release cell does not fit the event functions.**
+`file_storage_provider = "AwsS3"` adds about 214 bytes (release bucket, prefix
+`release-cells/<name_prefix>`). On the full release Redis-on cell (key ring,
+audit key, GP Batch, control-plane events, the import threshold, one CORS
+origin, Studio end-user authorization, the two release operation policy rules
+and the per-run custom domain) the API function measures **4077** bytes and fits,
+but the three control-plane event functions measure **4161-4167** bytes and the
+plan fails with the size
+(`release_cell_with_shared_file_storage_overflows_the_event_functions`). The
+event functions carry about 318 bytes of HTTP-serving settings they never use
+(`HostValidation__AllowedHosts__*`, `Cors__AllowedOrigins__*`,
+`SecurityHeaders__HstsHttpsOnly`, `HONUA_SERVE_ADMIN_UI`, `HONUA_ADMIN_UI`): no
+request reaches them through the web adapter. Leaving those out of the event
+functions (a follow-up), or shortening the release operation policy reasons,
+would restore the headroom.
 
 ## Database connection budget
 

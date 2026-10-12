@@ -461,3 +461,27 @@ variable "import_background_job_threshold_bytes" {
     error_message = "import_background_job_threshold_bytes must be null or a whole number of bytes greater than 0."
   }
 }
+
+variable "file_storage_provider" {
+  description = "Honua file storage provider: Local (server default; renders nothing) or AwsS3. AwsS3 makes the API Lambda, the control-plane event functions and the GP Batch workers share file_storage_aws_s3_bucket_name, which background imports on Batch require."
+  type        = string
+  default     = "Local"
+}
+
+variable "file_storage_aws_s3_bucket_name" {
+  description = "Existing S3 bucket for shared Honua file storage. Required with file_storage_provider = AwsS3; the module grants access but does not create it."
+  type        = string
+  default     = ""
+}
+
+variable "file_storage_aws_s3_region" {
+  description = "S3 bucket region. Leave empty to use region."
+  type        = string
+  default     = ""
+}
+
+variable "file_storage_aws_s3_key_prefix" {
+  description = "Key prefix for Honua objects in the shared bucket; the IAM grants are scoped to it."
+  type        = string
+  default     = "honua"
+}

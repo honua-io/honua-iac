@@ -389,6 +389,56 @@ run "pro_license_on_top_of_every_feature_fails_at_plan" {
   ]
 }
 
+# Shared S3 file storage (file_storage_provider = AwsS3) adds FileStorage__Provider,
+# __AwsS3__BucketName, __AwsS3__Region and __AwsS3__KeyPrefix: 214 bytes with the
+# release bucket and the harness prefix release-cells/<name_prefix>. On the full
+# release Redis-on cell (key ring, audit key, GP Batch, control-plane events, the
+# import threshold, one CORS origin, Studio end-user authorization, the two
+# release operation policy rules and the per-run custom domain) the API function
+# measures 4077 bytes and fits; the three control-plane event functions (the API
+# environment plus their selectors) measure 4161-4167 bytes and do not, so the
+# plan fails with the size instead of CreateFunction. See the module README,
+# "Lambda environment budget", for the headroom this cell needs.
+run "release_cell_with_shared_file_storage_overflows_the_event_functions" {
+  command = plan
+
+  override_resource {
+    target          = aws_acm_certificate.api[0]
+    override_during = plan
+    values = {
+      arn = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
+      domain_validation_options = [{
+        domain_name           = "honuarawsse380460-aws-serverless-redis-on.cert.demo.honua.io"
+        resource_record_name  = "_abc.honuarawsse380460-aws-serverless-redis-on.cert.demo.honua.io."
+        resource_record_type  = "CNAME"
+        resource_record_value = "_def.acm-validations.aws."
+      }]
+    }
+  }
+
+  variables {
+    enable_control_plane_events           = true
+    import_background_job_threshold_bytes = 67108864
+    cors_allowed_origins                  = ["http://127.0.0.1:18099"]
+    studio_end_user_authorization         = true
+    operations_policy_rules = [
+      { operation_id = "*", role = "scoped-admin-key", decision = "Allow", reason = "Release cell: scoped admin keys run typed operations" },
+      { operation_id = "*", role = "admin", decision = "Allow", reason = "Release cell: bootstrap and full admins run typed operations" },
+    ]
+    domain_name                     = "honuarawsse380460-aws-serverless-redis-on.cert.demo.honua.io"
+    route53_zone_id                 = "Z089181827C9GKIKHXUTT"
+    file_storage_provider           = "AwsS3"
+    file_storage_aws_s3_bucket_name = "release-cells-file-storage-585192672263"
+    file_storage_aws_s3_key_prefix  = "release-cells/honuarawsse380460"
+  }
+
+  expect_failures = [
+    aws_lambda_function.control_plane_reconcile,
+    aws_lambda_function.control_plane_backstop,
+    aws_lambda_function.control_plane_tick,
+  ]
+}
+
 # Operator secrets keep their full ARN when a name would be wrong or ambiguous.
 run "foreign_or_ambiguous_operator_secrets_keep_their_arn" {
   command = plan

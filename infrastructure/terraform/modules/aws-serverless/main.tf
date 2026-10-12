@@ -158,6 +158,19 @@ locals {
   import_limits_environment = var.import_background_job_threshold_bytes == null ? {} : {
     Import__Limits__BackgroundJobThresholdBytes = tostring(var.import_background_job_threshold_bytes)
   }
+  # Shared file storage (file-storage.tf). Local, the server default, renders
+  # nothing. AwsS3 renders the provider, bucket and region (the server requires
+  # both) and the key prefix when one is set, on the API Lambda (and so on the
+  # control-plane event functions, which start from local.lambda_environment)
+  # and on every GP Batch job-definition tier.
+  file_storage_shared = var.file_storage_provider == "AwsS3" && trimspace(var.file_storage_aws_s3_bucket_name) != ""
+  file_storage_environment = local.file_storage_shared ? merge({
+    FileStorage__Provider          = "AwsS3"
+    FileStorage__AwsS3__BucketName = var.file_storage_aws_s3_bucket_name
+    FileStorage__AwsS3__Region     = trimspace(var.file_storage_aws_s3_region) != "" ? var.file_storage_aws_s3_region : data.aws_region.current.name
+    }, var.file_storage_aws_s3_key_prefix != "" ? {
+    FileStorage__AwsS3__KeyPrefix = var.file_storage_aws_s3_key_prefix
+  } : {}) : {}
   lambda_function_name = "${local.name}-honua"
   lambda_target_id     = "${local.lambda_function_name}-${var.lambda_alias_name}"
   # SNS targets for CloudWatch alarm/OK notifications: caller-supplied topic
@@ -418,7 +431,7 @@ locals {
       }, var.lambda_alias_name != "live" ? {
       ControlPlane__DeployTargets__0__ParameterEntries__0__Key   = "aws.lambda.alias_name"
       ControlPlane__DeployTargets__0__ParameterEntries__0__Value = var.lambda_alias_name
-  } : {}, local.gp_batch_environment, local.amazon_location_environment, local.public_base_url_environment, var.additional_env, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.db_pool_environment.lambda, local.lambda_secret_reference_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment)
+  } : {}, local.gp_batch_environment, local.amazon_location_environment, local.public_base_url_environment, var.additional_env, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.db_pool_environment.lambda, local.lambda_secret_reference_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment, local.file_storage_environment)
 
   # AWS Lambda refuses a function whose environment exceeds 4 KB ("exceeded the
   # 4KB limit. Measured size: N bytes") and only says so at CreateFunction /
@@ -980,7 +993,12 @@ resource "aws_lambda_function" "this" {
 
     precondition {
       condition     = local.lambda_environment_bytes.api <= local.lambda_environment_limit_bytes
-      error_message = "The ${local.lambda_function_name} environment would be about ${local.lambda_environment_bytes.api} bytes; AWS Lambda refuses more than ${local.lambda_environment_limit_bytes}. Turn off an optional feature that adds variables (Bedrock AI, Amazon Location geocoding, CORS origins, the custom domain / public_base_url, request-secret allowlists, operations_policy_rules, studio_end_user_authorization, additional_env, additional_allowed_hosts) or shorten name_prefix/environment."
+      error_message = "The ${local.lambda_function_name} environment would be about ${local.lambda_environment_bytes.api} bytes; AWS Lambda refuses more than ${local.lambda_environment_limit_bytes}. Turn off an optional feature that adds variables (Bedrock AI, Amazon Location geocoding, CORS origins, the custom domain / public_base_url, request-secret allowlists, operations_policy_rules, studio_end_user_authorization, file_storage_provider=AwsS3, additional_env, additional_allowed_hosts) or shorten name_prefix/environment."
+    }
+
+    precondition {
+      condition     = var.file_storage_provider != "AwsS3" || local.file_storage_shared
+      error_message = "file_storage_provider=AwsS3 requires file_storage_aws_s3_bucket_name."
     }
 
     precondition {

@@ -88,6 +88,13 @@ module "honua" {
   gp_batch_data_bucket_arn     = var.gp_batch_data_bucket_arn
   gp_batch_data_bucket_enabled = var.gp_batch_data_bucket_enabled
 
+  # Shared S3 file storage for the API Lambda and the GP Batch workers, so a
+  # background import accepted by the Lambda can run on Batch.
+  file_storage_provider           = var.file_storage_provider
+  file_storage_aws_s3_bucket_name = var.file_storage_aws_s3_bucket_name
+  file_storage_aws_s3_region      = var.file_storage_aws_s3_region
+  file_storage_aws_s3_key_prefix  = var.file_storage_aws_s3_key_prefix
+
   additional_env = {
     HONUA_SERVE_ADMIN_UI = "true"
     HONUA_ADMIN_UI       = "true"
@@ -254,6 +261,16 @@ output "gp_batch_image" {
 output "gp_batch_cpu_architecture" {
   description = "Fargate CPU architecture of the GP job definitions."
   value       = module.honua.gp_batch_cpu_architecture
+}
+
+output "file_storage_shared" {
+  description = "Whether the API Lambda and the GP Batch job definitions share the S3 file storage bucket (file_storage_provider = AwsS3)."
+  value       = module.honua.file_storage_shared
+}
+
+output "file_storage_environment_rendered" {
+  description = "FileStorage__* settings rendered into the API Lambda (api), the control-plane event functions (control_plane) and the GP Batch job definitions (gp_batch)."
+  value       = module.honua.file_storage_environment_rendered
 }
 
 output "gp_job_queue_name" {

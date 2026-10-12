@@ -16,6 +16,24 @@ module input/output contracts may still change.
 
 ### Added
 
+- `aws-serverless` and the `examples/aws-serverless` root: shared S3 file
+  storage, with the same inputs as `aws-ecs` (`file_storage_provider`, default
+  `Local`; `file_storage_aws_s3_bucket_name`; `file_storage_aws_s3_region`,
+  default the module region; `file_storage_aws_s3_key_prefix`, default
+  `honua`). `AwsS3` renders `FileStorage__Provider`,
+  `FileStorage__AwsS3__BucketName`, `FileStorage__AwsS3__Region` and (when the
+  prefix is not empty) `FileStorage__AwsS3__KeyPrefix` on the API Lambda, the
+  control-plane event functions and every GP Batch job-definition tier, and
+  grants the API Lambda, control-plane event and GP Batch job roles bucket-level
+  access plus object access under the prefix, so a background import accepted by
+  the Lambda can run on GP Batch (honua-server#5916; without it the server
+  answers 503 `shared-file-storage-required`). `Local` renders and grants
+  nothing. A plan with `AwsS3` and no bucket fails. New outputs
+  `file_storage_shared`, `file_storage_environment_rendered` and (module)
+  `file_storage_s3_resources`. The settings add about 214 bytes per Lambda
+  environment: on the full release Redis-on cell the control-plane event
+  functions then measure 4161-4167 bytes and the plan fails with the size (see
+  the module README, "Lambda environment budget").
 - `aws-ecs`, `aws-serverless` and the `examples/aws` / `examples/aws-serverless`
   roots: new input `import_background_job_threshold_bytes` (number, default
   `null`; must be a whole number greater than 0). When set it is rendered as
