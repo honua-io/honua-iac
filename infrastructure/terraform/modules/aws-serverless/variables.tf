@@ -409,6 +409,50 @@ variable "import_background_job_threshold_bytes" {
   }
 }
 
+# Shared file storage (honua-server#5916). A background import accepted by the
+# API Lambda runs on the GP Batch workload, so the Lambda stages the upload and
+# the Batch worker reads it: both must use the same S3 bucket. With the server's
+# default Local provider each process sees only its own disk, and the server
+# answers background imports with 503 (reasonCode shared-file-storage-required).
+# Same names, defaults and validation as modules/aws-ecs.
+variable "file_storage_provider" {
+  description = "Honua file storage provider (FileStorage__Provider): Local (server default; renders nothing) or AwsS3. AwsS3 renders FileStorage__* on the API Lambda, the control-plane event functions and every GP Batch job-definition tier, and grants those roles object access under file_storage_aws_s3_key_prefix in file_storage_aws_s3_bucket_name. Background imports on Batch require AwsS3."
+  type        = string
+  default     = "Local"
+  nullable    = false
+
+  validation {
+    condition     = contains(["Local", "AwsS3"], var.file_storage_provider)
+    error_message = "file_storage_provider must be Local or AwsS3 for the AWS serverless module."
+  }
+}
+
+variable "file_storage_aws_s3_bucket_name" {
+  description = "Existing S3 bucket used for shared Honua file storage when file_storage_provider is AwsS3 (FileStorage__AwsS3__BucketName). The module does not create it."
+  type        = string
+  default     = ""
+  nullable    = false
+
+  validation {
+    condition     = var.file_storage_aws_s3_bucket_name == "" || can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", var.file_storage_aws_s3_bucket_name))
+    error_message = "file_storage_aws_s3_bucket_name must be empty or a valid 3-63 character S3 bucket name."
+  }
+}
+
+variable "file_storage_aws_s3_region" {
+  description = "Region of the shared S3 bucket (FileStorage__AwsS3__Region, which the server requires). Leave empty to use the module AWS provider region."
+  type        = string
+  default     = ""
+  nullable    = false
+}
+
+variable "file_storage_aws_s3_key_prefix" {
+  description = "Key prefix for Honua objects in the shared S3 bucket (FileStorage__AwsS3__KeyPrefix). The IAM grants are scoped to objects under it; empty renders no prefix and grants the whole bucket."
+  type        = string
+  default     = "honua"
+  nullable    = false
+}
+
 variable "redis_connection_string" {
   description = "Redis connection string for multi-node mode. Leave empty to create Redis."
   type        = string

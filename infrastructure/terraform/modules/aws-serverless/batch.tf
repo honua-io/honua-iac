@@ -489,6 +489,13 @@ resource "aws_batch_job_definition" "gp" {
         name  = name
         value = value
       }
+      ], [
+      # Shared file storage (file-storage.tf): a background import the API
+      # Lambda staged in S3 is read back here by the worker. Empty with Local.
+      for name, value in local.file_storage_environment : {
+        name  = name
+        value = value
+      }
     ])
 
     logConfiguration = {

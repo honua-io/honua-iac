@@ -127,6 +127,25 @@ Studio content, and a non-admin gets HTTP 403 from routes such as
 |----------|---------|-------|
 | `import_background_job_threshold_bytes` | `null` | Upload size in bytes above which honua-server runs an import as a background job instead of inline. Rendered as `Import__Limits__BackgroundJobThresholdBytes` on the API Lambda, the control-plane event functions and the GP Batch job definitions; `null` renders nothing and keeps the server default (100 MiB). Must be a whole number greater than 0. Adds about 57 bytes to each Lambda environment. The release harness sets `67108864` (64 MiB) on Redis-on cells so the S10 large-import fixture has a background window under the 100 MiB staging cap. |
 
+## Shared file storage (background imports on GP Batch)
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `file_storage_provider` | `Local` | `AwsS3` makes the API Lambda, the control-plane event functions and the GP Batch job definitions share one S3 bucket for `FileStorage`, which a background import accepted by the Lambda needs to run on GP Batch (honua-server#5916); with `Local` the server answers background imports with 503 (`shared-file-storage-required`). `Local` renders nothing. |
+| `file_storage_aws_s3_bucket_name` | `""` | Existing, operator-owned bucket. Required with `AwsS3`; the module grants the API Lambda, control-plane event and GP Batch job roles access but does not create it. |
+| `file_storage_aws_s3_region` | `""` (→ `region`) | Region of the bucket, rendered as `FileStorage__AwsS3__Region`. |
+| `file_storage_aws_s3_key_prefix` | `honua` | Object-key prefix; the object grants are scoped to `<bucket>/<prefix>/*`. |
+
+The settings add about 214 bytes to each Lambda environment. On the full release
+Redis-on cell (custom domain, operation policy rules, control-plane events) the
+control-plane event functions then exceed Lambda's 4 KB cap and the plan fails
+with the size; see the module README, "Lambda environment budget". Outputs
+`file_storage_shared` and `file_storage_environment_rendered` report what each
+process carries. The release harness passes `file_storage_provider`,
+`file_storage_aws_s3_bucket_name` and `file_storage_aws_s3_key_prefix` on
+Redis-on cells (`REDIS_ON_SCALE_INPUTS`) only when the root declares every
+input in that set.
+
 ## Migrations on the serverless root
 
 `skip_migrations` defaults to `true`: concurrent Lambda cold starts must not race

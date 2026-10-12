@@ -482,6 +482,28 @@ output "import_background_job_threshold_bytes_rendered" {
   }
 }
 
+output "file_storage_shared" {
+  description = "True when file_storage_provider is AwsS3 with a bucket: the API Lambda, the control-plane event functions and the GP Batch job definitions share that S3 bucket for FileStorage, so background imports can run on GP Batch."
+  value       = local.file_storage_shared
+}
+
+output "file_storage_environment_rendered" {
+  description = "The FileStorage__* settings rendered into each server process environment: api (the API Lambda), control_plane (the control-plane event functions, when enabled) and gp_batch (the GP Batch job definitions, when enabled). Empty maps with file_storage_provider = Local; null for a process that is not deployed."
+  value = {
+    api           = nonsensitive(sensitive({ for k, v in local.lambda_environment : k => v if startswith(k, "FileStorage__") }))
+    control_plane = local.control_plane_events_enabled ? nonsensitive(sensitive({ for k, v in local.control_plane_events_base_environment : k => v if startswith(k, "FileStorage__") })) : null
+    gp_batch      = local.gp_batch_enabled ? local.file_storage_environment : null
+  }
+}
+
+output "file_storage_s3_resources" {
+  description = "The S3 resources the file-storage grant covers (bucket ARN for bucket-level actions, object ARN pattern under the key prefix); null when file storage is Local."
+  value = local.file_storage_shared ? {
+    bucket_arn = local.file_storage_bucket_arn
+    object_arn = local.file_storage_object_arn
+  } : null
+}
+
 output "rds_proxy_endpoint" {
   description = "RDS Proxy endpoint the server processes connect to when enable_rds_proxy is true; null otherwise."
   value       = one(aws_db_proxy.this[*].endpoint)
