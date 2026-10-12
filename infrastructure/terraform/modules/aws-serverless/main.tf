@@ -134,10 +134,10 @@ locals {
   # server's session timeouts from a per-connection SET onto the database
   # role's defaults so the proxy can multiplex instead of pinning.
   #
-  # The same per-process map also carries local.import_limits_environment, so
-  # every process that can run an import (the API Lambda, the control-plane
-  # event functions, the GP Batch job) agrees on when an upload is handed to a
-  # background job.
+  # The same per-process map also carries local.import_limits_environment for
+  # the API Lambda and the GP Batch job. The control-plane event functions drop
+  # it with the other HTTP-only settings (control-plane-events.tf): only the
+  # HTTP import endpoints read it, and those functions serve no uploads.
   db_pool_environment = {
     for process, size in {
       lambda        = var.lambda_db_max_pool_size

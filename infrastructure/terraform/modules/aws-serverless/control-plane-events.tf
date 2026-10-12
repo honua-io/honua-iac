@@ -75,9 +75,33 @@ locals {
   # difference between the reconcile and backstop functions.
   # Each event function gets its own, smaller database pool cap
   # (control_plane_db_max_pool_size) in place of the API's.
-  control_plane_events_base_environment = merge(local.lambda_environment, local.db_pool_environment.control_plane, {
-    ControlPlane__TriggerMode = "Event"
-  })
+  #
+  # HTTP-serving settings stay on the API function only (Lambda 4 KB
+  # environment budget, see lambda_environment_bytes in main.tf). EventBridge
+  # invokes these functions; the only HTTP request they serve is the web
+  # adapter's loopback POST to the event pass-through route, which honua-server
+  # admits without an AllowedHosts entry (HostValidationMiddleware exempts the
+  # adapter's loopback Host when HONUA_CONTROL_PLANE_LAMBDA_HANDLER is set) and
+  # answers only from loopback (ControlPlaneLambdaEventEndpoint). CORS, HSTS,
+  # the admin UI and the upload-size threshold (read only by the HTTP import
+  # endpoints, ImportEndpoints) never apply to that request, so these keys are
+  # left out, from any source (additional_env included):
+  # HostValidation__AllowedHosts__*, Cors__AllowedOrigins__*,
+  # SecurityHeaders__HstsHttpsOnly, HONUA_SERVE_ADMIN_UI, HONUA_ADMIN_UI and
+  # Import__Limits__BackgroundJobThresholdBytes.
+  control_plane_events_http_only_key_prefixes = ["HostValidation__AllowedHosts__", "Cors__AllowedOrigins__"]
+  control_plane_events_http_only_keys = [
+    "SecurityHeaders__HstsHttpsOnly",
+    "HONUA_SERVE_ADMIN_UI",
+    "HONUA_ADMIN_UI",
+    "Import__Limits__BackgroundJobThresholdBytes",
+  ]
+  control_plane_events_base_environment = {
+    for key, value in merge(local.lambda_environment, local.db_pool_environment.control_plane, {
+      ControlPlane__TriggerMode = "Event"
+    }) : key => value
+    if !contains(local.control_plane_events_http_only_keys, key) && !anytrue([for prefix in local.control_plane_events_http_only_key_prefixes : startswith(key, prefix)])
+  }
   control_plane_reconcile_environment = merge(local.control_plane_events_base_environment, {
     HONUA_CONTROL_PLANE_LAMBDA_HANDLER = "batch-event"
   })
