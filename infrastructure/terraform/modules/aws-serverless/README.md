@@ -99,7 +99,7 @@ module "honua" {
 | `cors_allowed_origins` | `[]` | Browser origins (Console/Studio) rendered as `Cors__AllowedOrigins__<n>`. honua-server is the only CORS source, as on ECS: API Gateway has no CORS configuration, so preflights reach the server. See [CORS](#cors). Empty or `null` configures no CORS; API-only cells need none. |
 | `operations_policy_rules` | `[]` | Ordered operation policy rules rendered as `Operations__Policy__Rules__<n>__<Field>`. Production denies every typed operation until a rule allows it. See [Operation policy rules](#operation-policy-rules). |
 | `studio_end_user_authorization` | `false` | Let any authenticated principal use the Studio authoring API, subject to the server's per-resource Studio authorization; rendered as `Studio__EndUserAuthorization__Enabled=true` only when `true`. Off keeps the server default: only admins can author Studio content. |
-| `import_background_job_threshold_bytes` | `null` | Upload size in bytes above which honua-server runs an import as a background job instead of inline; rendered as `Import__Limits__BackgroundJobThresholdBytes` on the API Lambda, the control-plane event functions and the GP Batch job definitions (like the [database pool caps](#database-connection-budget)) and wins over the same key in `additional_env`. `null` renders nothing and keeps the server default (100 MiB). Must be a whole number greater than 0. Adds about 57 bytes to each Lambda environment (see [Lambda environment budget](#lambda-environment-budget)). Output `import_background_job_threshold_bytes_rendered` reports what each process carries. |
+| `import_background_job_threshold_bytes` | `null` | Upload size in bytes above which honua-server runs an import as a background job instead of inline; rendered as `Import__Limits__BackgroundJobThresholdBytes` on the API Lambda and the GP Batch job definitions (like the [database pool caps](#database-connection-budget); the control-plane event functions serve no uploads and leave it out) and wins over the same key in `additional_env`. `null` renders nothing and keeps the server default (100 MiB). Must be a whole number greater than 0. Adds about 57 bytes to each Lambda environment (see [Lambda environment budget](#lambda-environment-budget)). Output `import_background_job_threshold_bytes_rendered` reports what each process carries. |
 | `file_storage_provider` | `Local` | Honua file storage provider: `Local` (the server default; renders nothing) or `AwsS3`. `AwsS3` renders `FileStorage__*` on the API Lambda, the control-plane event functions and every GP Batch job-definition tier and grants their roles access to the bucket, so a background import the API Lambda accepts can run on GP Batch. See [Shared file storage](#shared-file-storage). Same input as `modules/aws-ecs`. |
 | `file_storage_aws_s3_bucket_name` | `""` | Existing S3 bucket for shared file storage (`FileStorage__AwsS3__BucketName`). Required with `AwsS3`; the module grants access but does not create the bucket. |
 | `file_storage_aws_s3_region` | module region | Region of the shared bucket (`FileStorage__AwsS3__Region`, which the server requires). Empty renders the AWS provider region. |
@@ -707,9 +707,9 @@ Because the handlers live in the same image and are selected by `HONUA_CONTROL_P
 ## Lambda environment budget
 
 AWS Lambda refuses a function whose environment variables exceed **4 KB**
-(keys plus values, measured as a JSON object). The API function and the three
-control-plane event functions carry the same environment, so the module keeps
-it compact and checks it:
+(keys plus values, measured as a JSON object). The three control-plane event
+functions carry the API function's environment minus its HTTP-only settings
+(below), plus their selectors, so the module keeps it compact and checks it:
 
 - **Plan-time check.** Each function has a `precondition` that estimates the
   environment size (every key and value plus 6 bytes per entry plus 1, which
@@ -730,6 +730,16 @@ it compact and checks it:
   `=false`, the deploy target's `aws.lambda.function_name`/`aws.region`/
   `aws.lambda.alias_name=live` parameters, `batch.region`, and the Bedrock and
   Amazon Location defaults above).
+- **HTTP-only settings stay on the API function.** EventBridge invokes the
+  control-plane event functions; the only HTTP request they serve is the web
+  adapter's loopback POST to the event route, which the server admits without
+  an `AllowedHosts` entry (`HostValidationMiddleware` exempts the adapter's
+  loopback Host when `HONUA_CONTROL_PLANE_LAMBDA_HANDLER` is set) and answers
+  only from loopback (`ControlPlaneLambdaEventEndpoint`). So they leave out
+  `HostValidation__AllowedHosts__*`, `Cors__AllowedOrigins__*`,
+  `SecurityHeaders__HstsHttpsOnly`, `HONUA_SERVE_ADMIN_UI`, `HONUA_ADMIN_UI` and
+  `Import__Limits__BackgroundJobThresholdBytes` (read only by the HTTP import
+  endpoints), whatever their source, `additional_env` included.
 
 Measured with `tests/lambda_environment_budget.tftest.hcl` (cell name
 `honuarawsse380460-it`, 12-digit account, release secret names): the release
@@ -741,27 +751,25 @@ request-secret allowlists) is **4078** bytes on the scheduled-tick function,
 under the cap with only 18 bytes to spare; the database pool cap and its
 matching `MaxConcurrentQueries` (97 bytes together, see
 [Database connection budget](#database-connection-budget)) are the most recent
-additions, and the next environment entry will not fit that combination. Adding the 2026.2 Pro license on top no longer fits any of the
-functions, and the plan fails with the size. More headroom needs a server-side
+additions. Those figures predate leaving the HTTP-only settings off the event
+functions, which now measure well under the API function. Adding the 2026.2 Pro
+license on top no longer fits the API function, and the plan fails with the
+size. More headroom needs a server-side
 change, for example a single `aws:secretsmanager:` reference to a JSON settings
 bundle that the server expands into configuration at startup; the server has no
 such source today.
 
-**Shared file storage on the release cell does not fit the event functions.**
-`file_storage_provider = "AwsS3"` adds about 214 bytes (release bucket, prefix
-`release-cells/<name_prefix>`). On the full release Redis-on cell (key ring,
-audit key, GP Batch, control-plane events, the import threshold, one CORS
-origin, Studio end-user authorization, the two release operation policy rules
-and the per-run custom domain) the API function measures **4077** bytes and fits,
-but the three control-plane event functions measure **4161-4167** bytes and the
-plan fails with the size
-(`release_cell_with_shared_file_storage_overflows_the_event_functions`). The
-event functions carry about 318 bytes of HTTP-serving settings they never use
-(`HostValidation__AllowedHosts__*`, `Cors__AllowedOrigins__*`,
-`SecurityHeaders__HstsHttpsOnly`, `HONUA_SERVE_ADMIN_UI`, `HONUA_ADMIN_UI`): no
-request reaches them through the web adapter. Leaving those out of the event
-functions (a follow-up), or shortening the release operation policy reasons,
-would restore the headroom.
+**Shared file storage on the release cell.** `file_storage_provider = "AwsS3"`
+adds about 214 bytes (release bucket, prefix `release-cells/<name_prefix>`). On
+the full release Redis-on cell (key ring, audit key, GP Batch, control-plane
+events, the import threshold, one CORS origin, Studio end-user authorization,
+the two release operation policy rules and the per-run custom domain) the API
+function measures **4077** bytes (3863 without file storage): under the cap,
+with only 19 bytes to spare. The event functions measure **3790** (reconcile),
+**3787** (backstop) and **3793** (scheduled tick), at least 256 bytes under the
+cap (`release_cell_with_shared_file_storage_fits`); with the HTTP-only settings
+still on them they measured 4161-4167 and did not fit. The next entry added to
+the API function on this cell needs room made elsewhere.
 
 ## Database connection budget
 

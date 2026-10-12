@@ -125,7 +125,7 @@ Studio content, and a non-admin gets HTTP 403 from routes such as
 
 | Variable | Default | Notes |
 |----------|---------|-------|
-| `import_background_job_threshold_bytes` | `null` | Upload size in bytes above which honua-server runs an import as a background job instead of inline. Rendered as `Import__Limits__BackgroundJobThresholdBytes` on the API Lambda, the control-plane event functions and the GP Batch job definitions; `null` renders nothing and keeps the server default (100 MiB). Must be a whole number greater than 0. Adds about 57 bytes to each Lambda environment. The release harness sets `67108864` (64 MiB) on Redis-on cells so the S10 large-import fixture has a background window under the 100 MiB staging cap. |
+| `import_background_job_threshold_bytes` | `null` | Upload size in bytes above which honua-server runs an import as a background job instead of inline. Rendered as `Import__Limits__BackgroundJobThresholdBytes` on the API Lambda and the GP Batch job definitions (not on the control-plane event functions, which serve no uploads); `null` renders nothing and keeps the server default (100 MiB). Must be a whole number greater than 0. Adds about 57 bytes to each Lambda environment. The release harness sets `67108864` (64 MiB) on Redis-on cells so the S10 large-import fixture has a background window under the 100 MiB staging cap. |
 
 ## Shared file storage (background imports on GP Batch)
 
@@ -138,8 +138,9 @@ Studio content, and a non-admin gets HTTP 403 from routes such as
 
 The settings add about 214 bytes to each Lambda environment. On the full release
 Redis-on cell (custom domain, operation policy rules, control-plane events) the
-control-plane event functions then exceed Lambda's 4 KB cap and the plan fails
-with the size; see the module README, "Lambda environment budget". Outputs
+API function measures 4077 bytes, under Lambda's 4 KB cap with 19 bytes to
+spare, and the control-plane event functions (which carry no HTTP-only
+settings) 3787-3793; see the module README, "Lambda environment budget". Outputs
 `file_storage_shared` and `file_storage_environment_rendered` report what each
 process carries. The release harness passes `file_storage_provider`,
 `file_storage_aws_s3_bucket_name` and `file_storage_aws_s3_key_prefix` on

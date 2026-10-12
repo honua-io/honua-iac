@@ -474,7 +474,7 @@ output "studio_end_user_authorization_enabled" {
 }
 
 output "import_background_job_threshold_bytes_rendered" {
-  description = "Import__Limits__BackgroundJobThresholdBytes as rendered into each server process environment: api (the API Lambda), control_plane (the control-plane event functions, when enabled) and gp_batch (the GP Batch job definitions, when enabled). Null where the key is not set (import_background_job_threshold_bytes null and nothing in additional_env)."
+  description = "Import__Limits__BackgroundJobThresholdBytes as rendered into each server process environment: api (the API Lambda), control_plane (the control-plane event functions, when enabled; always null since they serve no uploads and carry no HTTP-only settings) and gp_batch (the GP Batch job definitions, when enabled). Null where the key is not set (import_background_job_threshold_bytes null and nothing in additional_env)."
   value = {
     api           = nonsensitive(sensitive(lookup(local.lambda_environment, "Import__Limits__BackgroundJobThresholdBytes", null)))
     control_plane = local.control_plane_events_enabled ? nonsensitive(sensitive(lookup(local.control_plane_events_base_environment, "Import__Limits__BackgroundJobThresholdBytes", null))) : null

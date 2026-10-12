@@ -147,8 +147,8 @@ run "threshold_renders_on_every_server_process" {
   }
 
   assert {
-    condition     = module.honua.import_background_job_threshold_bytes_rendered == { api = "67108864", control_plane = "67108864", gp_batch = "67108864" }
-    error_message = "import_background_job_threshold_bytes = 67108864 must render Import__Limits__BackgroundJobThresholdBytes=67108864 on the API Lambda, the control-plane event functions and the GP Batch job definitions."
+    condition     = module.honua.import_background_job_threshold_bytes_rendered == { api = "67108864", control_plane = null, gp_batch = "67108864" }
+    error_message = "import_background_job_threshold_bytes = 67108864 must render Import__Limits__BackgroundJobThresholdBytes=67108864 on the API Lambda and the GP Batch job definitions, and not on the control-plane event functions (they serve no uploads)."
   }
 }
 
