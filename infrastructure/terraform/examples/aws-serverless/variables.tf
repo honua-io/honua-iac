@@ -450,3 +450,14 @@ variable "rds_proxy_connection_borrow_timeout_seconds" {
     error_message = "rds_proxy_connection_borrow_timeout_seconds must be a whole number from 0 to 3600."
   }
 }
+
+variable "import_background_job_threshold_bytes" {
+  description = "Upload size in bytes above which honua-server runs an import as a background job instead of inline. Rendered as Import__Limits__BackgroundJobThresholdBytes on the API Lambda, the control-plane event functions and the GP Batch job definitions. Null (default) renders nothing and keeps the server default (100 MiB)."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.import_background_job_threshold_bytes == null || try(var.import_background_job_threshold_bytes > 0 && floor(var.import_background_job_threshold_bytes) == var.import_background_job_threshold_bytes, false)
+    error_message = "import_background_job_threshold_bytes must be null or a whole number of bytes greater than 0."
+  }
+}

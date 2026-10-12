@@ -156,6 +156,14 @@ locals {
     SecurityHeaders__HstsHttpsOnly      = "false"
     ASPNETCORE_FORWARDEDHEADERS_ENABLED = "true"
   } : {}
+  # Upload size (bytes) above which honua-server runs an import as a background
+  # job instead of inline (Import:Limits:BackgroundJobThresholdBytes). Null
+  # (default) renders nothing and keeps the server default of 100 MiB. Part of
+  # runtime_environment, so the primary and canary containers both carry it and
+  # it wins over the same key in additional_env / canary_additional_env.
+  import_limits_environment = var.import_background_job_threshold_bytes == null ? {} : {
+    Import__Limits__BackgroundJobThresholdBytes = tostring(var.import_background_job_threshold_bytes)
+  }
   runtime_environment = merge({
     Deployment__Mode      = var.deployment_mode
     FileStorage__Provider = var.file_storage_provider
@@ -163,7 +171,7 @@ locals {
     FileStorage__AwsS3__BucketName = var.file_storage_aws_s3_bucket_name
     FileStorage__AwsS3__Region     = local.file_storage_aws_s3_region
     FileStorage__AwsS3__KeyPrefix  = var.file_storage_aws_s3_key_prefix
-  } : {}, local.licensing_environment, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment, local.alb_tls_environment, local.public_base_url_environment)
+  } : {}, local.licensing_environment, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment, local.alb_tls_environment, local.public_base_url_environment, local.import_limits_environment)
   primary_container_environment = [
     for key, value in merge(var.additional_env, local.runtime_environment) : {
       name  = key

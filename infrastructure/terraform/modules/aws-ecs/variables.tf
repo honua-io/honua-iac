@@ -453,6 +453,17 @@ variable "studio_end_user_authorization" {
   nullable    = false
 }
 
+variable "import_background_job_threshold_bytes" {
+  description = "Upload size in bytes above which honua-server runs an import as a background job instead of inline. Rendered as Import__Limits__BackgroundJobThresholdBytes on the primary and canary task definitions. Null (default) renders nothing and keeps the server default (100 MiB)."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.import_background_job_threshold_bytes == null || try(var.import_background_job_threshold_bytes > 0 && floor(var.import_background_job_threshold_bytes) == var.import_background_job_threshold_bytes, false)
+    error_message = "import_background_job_threshold_bytes must be null or a whole number of bytes greater than 0."
+  }
+}
+
 variable "ai_provider_secret_arn" {
   description = "Optional customer-owned Secrets Manager ARN containing HONUA_AI_PROVIDER_API_KEY. The module references but never creates, reads, or deletes this secret."
   type        = string

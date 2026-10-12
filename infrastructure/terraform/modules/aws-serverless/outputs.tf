@@ -473,6 +473,15 @@ output "studio_end_user_authorization_enabled" {
   value       = length(local.studio_end_user_authorization_environment) > 0
 }
 
+output "import_background_job_threshold_bytes_rendered" {
+  description = "Import__Limits__BackgroundJobThresholdBytes as rendered into each server process environment: api (the API Lambda), control_plane (the control-plane event functions, when enabled) and gp_batch (the GP Batch job definitions, when enabled). Null where the key is not set (import_background_job_threshold_bytes null and nothing in additional_env)."
+  value = {
+    api           = nonsensitive(sensitive(lookup(local.lambda_environment, "Import__Limits__BackgroundJobThresholdBytes", null)))
+    control_plane = local.control_plane_events_enabled ? nonsensitive(sensitive(lookup(local.control_plane_events_base_environment, "Import__Limits__BackgroundJobThresholdBytes", null))) : null
+    gp_batch      = local.gp_batch_enabled ? lookup(local.db_pool_environment.gp_batch, "Import__Limits__BackgroundJobThresholdBytes", null) : null
+  }
+}
+
 output "rds_proxy_endpoint" {
   description = "RDS Proxy endpoint the server processes connect to when enable_rds_proxy is true; null otherwise."
   value       = one(aws_db_proxy.this[*].endpoint)

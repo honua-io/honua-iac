@@ -80,6 +80,9 @@ module "honua" {
   studio_end_user_authorization    = var.studio_end_user_authorization
   tags                             = var.tags
 
+  # Null (default) keeps the server's 100 MiB import background-job threshold.
+  import_background_job_threshold_bytes = var.import_background_job_threshold_bytes
+
   additional_env = {
     HONUA_SERVE_ADMIN_UI    = "true"
     HONUA_ADMIN_UI          = "true"

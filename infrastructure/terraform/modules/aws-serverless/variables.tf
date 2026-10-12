@@ -398,6 +398,17 @@ variable "studio_end_user_authorization" {
   nullable    = false
 }
 
+variable "import_background_job_threshold_bytes" {
+  description = "Upload size in bytes above which honua-server runs an import as a background job instead of inline. Rendered as Import__Limits__BackgroundJobThresholdBytes on the API Lambda, the control-plane event functions and the GP Batch job definitions. Null (default) renders nothing and keeps the server default (100 MiB)."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.import_background_job_threshold_bytes == null || try(var.import_background_job_threshold_bytes > 0 && floor(var.import_background_job_threshold_bytes) == var.import_background_job_threshold_bytes, false)
+    error_message = "import_background_job_threshold_bytes must be null or a whole number of bytes greater than 0."
+  }
+}
+
 variable "redis_connection_string" {
   description = "Redis connection string for multi-node mode. Leave empty to create Redis."
   type        = string
