@@ -173,13 +173,13 @@ locals {
     FileStorage__AwsS3__KeyPrefix  = var.file_storage_aws_s3_key_prefix
   } : {}, local.licensing_environment, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment, local.alb_tls_environment, local.public_base_url_environment, local.import_limits_environment, local.oidc_static_environment)
   primary_container_environment = [
-    for key, value in merge(var.additional_env, local.runtime_environment) : {
+    for key, value in merge({ for key, value in var.additional_env : key => value if var.platform_release == null || !startswith(lower(replace(key, ":", "__")), "controlplane__platformrelease__") }, local.runtime_environment, local.platform_release_environment.primary) : {
       name  = key
       value = value
     }
   ]
   canary_container_environment = [
-    for key, value in merge(var.additional_env, var.canary_additional_env, local.runtime_environment) : {
+    for key, value in merge({ for key, value in merge(var.additional_env, var.canary_additional_env) : key => value if local.platform_releases.canary == null || !startswith(lower(replace(key, ":", "__")), "controlplane__platformrelease__") }, local.runtime_environment, local.platform_release_environment.canary) : {
       name  = key
       value = value
     }

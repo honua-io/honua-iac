@@ -589,3 +589,18 @@ Set optional `signing_key_secret_version_id` to bind the version the runtime act
 consumes. ECS renders the [version-specific secret reference](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/secrets-envvar-secrets-manager.html);
 Lambda uses the server resolver's `?versionId=` option. IAM permissions remain scoped
 to the bare secret ARN. An omitted version retains normal current-version behavior.
+
+## Declared platform release identity
+
+`platform_release` optionally passes the signed release's `version`, digest-pinned
+`serving_artifact_reference`, and optional `workers` (each with
+`artifact_reference` and optional `runtime_profile`) to the server's
+`ControlPlane:PlatformRelease` configuration. Null is the default and preserves
+existing environment configuration. Supplying the typed object replaces raw
+settings in that configuration subtree, including stale worker entries.
+This declares identity; it does not verify a lock signature or certify a deployment.
+The release runner must verify the signed lock and the actual serving image.
+
+`canary_platform_release` defaults to `platform_release`. Set it to the candidate
+identity while the primary retains the prior identity during a staged update.
+Changing this input updates task configuration; it does not promote ALB traffic.
