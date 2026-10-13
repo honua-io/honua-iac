@@ -194,7 +194,7 @@ run "reject_wildcard_secret" {
 
 run "reject_plaintext_key_override" {
   command = plan
-  variables { additional_env = { Oidc__TokenValidation__SymmetricSigningKey = "unsafe-plaintext-value" } }
+  variables { additional_env = { Oidc__TokenValidation__SymmetricSigningKey = "test" } }
   expect_failures = [var.additional_env]
 }
 

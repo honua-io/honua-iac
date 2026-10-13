@@ -238,13 +238,14 @@ locals {
     for arn in compact([
       var.operation_key_ring_certificate_secret_arn,
       var.audit_chain_key_secret_arn,
-      var.oidc_static_jwt == null ? "" : var.oidc_static_jwt.signing_key_secret_arn,
+      (var.oidc_static_jwt == null ? "" : var.oidc_static_jwt.signing_key_secret_arn),
       local.pro_license_adopted ? trimspace(var.pro_license_secret_arn) : "",
       ]) : arn => try(
-      regex(local.secret_arn_parts, arn)[0] == data.aws_region.current.name &&
-      regex(local.secret_arn_parts, arn)[1] == data.aws_caller_identity.current.account_id &&
-      !can(regex(local.ambiguous_secret_name, regex(local.secret_arn_parts, arn)[2]))
-      ? regex(local.secret_arn_parts, arn)[2] : arn,
+      (
+        regex(local.secret_arn_parts, arn)[0] == data.aws_region.current.name &&
+        regex(local.secret_arn_parts, arn)[1] == data.aws_caller_identity.current.account_id &&
+        !can(regex(local.ambiguous_secret_name, regex(local.secret_arn_parts, arn)[2]))
+      ) ? regex(local.secret_arn_parts, arn)[2] : arn,
       arn
     )
   }
