@@ -361,9 +361,10 @@ variable "additional_env" {
       "operations__secretchannel__keyringcertificatepath",
       "operations__secretchannel__keyringcertificatepassword",
       "operations__secretchannel__keyringcertificatepkcs12",
-      "auditlog__chainverification__key"
+      "auditlog__chainverification__key",
+      "oidc__tokenvalidation__symmetricsigningkey"
     ]))) == 0
-    error_message = "Set the operation key-ring certificate and the audit-chain key through operation_key_ring_certificate_secret_arn and audit_chain_key_secret_arn, not additional_env: a Lambda environment value is plaintext, so key material must stay in Secrets Manager."
+    error_message = "Set the operation key-ring certificate, audit-chain key and static OIDC signing key through operation_key_ring_certificate_secret_arn, audit_chain_key_secret_arn and oidc_static_jwt, not additional_env: a Lambda environment value is plaintext, so key material must stay in Secrets Manager."
   }
 }
 

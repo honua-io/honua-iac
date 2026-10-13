@@ -100,7 +100,7 @@ locals {
     for key, value in merge(local.lambda_environment, local.db_pool_environment.control_plane, {
       ControlPlane__TriggerMode = "Event"
     }) : key => value
-    if !contains(local.control_plane_events_http_only_keys, key) && !anytrue([for prefix in local.control_plane_events_http_only_key_prefixes : startswith(key, prefix)])
+    if !contains(local.oidc_static_http_only_keys, key) && !contains(local.control_plane_events_http_only_keys, key) && !anytrue([for prefix in local.control_plane_events_http_only_key_prefixes : startswith(key, prefix)])
   }
   control_plane_reconcile_environment = merge(local.control_plane_events_base_environment, {
     HONUA_CONTROL_PLANE_LAMBDA_HANDLER = "batch-event"

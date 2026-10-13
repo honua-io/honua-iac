@@ -431,7 +431,10 @@ locals {
       }, var.lambda_alias_name != "live" ? {
       ControlPlane__DeployTargets__0__ParameterEntries__0__Key   = "aws.lambda.alias_name"
       ControlPlane__DeployTargets__0__ParameterEntries__0__Value = var.lambda_alias_name
-  } : {}, local.gp_batch_environment, local.amazon_location_environment, local.public_base_url_environment, var.additional_env, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.db_pool_environment.lambda, local.lambda_secret_reference_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment, local.file_storage_environment)
+    } : {}, local.gp_batch_environment, local.amazon_location_environment, local.public_base_url_environment, var.additional_env, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.db_pool_environment.lambda, local.lambda_secret_reference_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment, local.file_storage_environment, local.oidc_static_environment,
+    var.oidc_static_jwt == null ? {} : {
+      Oidc__TokenValidation__SymmetricSigningKey = "aws:secretsmanager:${var.oidc_static_jwt.signing_key_secret_arn}"
+  })
 
   # AWS Lambda refuses a function whose environment exceeds 4 KB ("exceeded the
   # 4KB limit. Measured size: N bytes") and only says so at CreateFunction /
@@ -813,12 +816,12 @@ resource "aws_iam_policy" "lambda_secrets" {
         Action = [
           "secretsmanager:GetSecretValue"
         ]
-        Resource = local.lambda_secret_arns
+        Resource = concat(local.lambda_secret_arns, local.oidc_signing_secret_arns)
       }
-      ], length(concat(local.operation_key_ring_certificate_kms_key_arns, local.audit_chain_key_kms_key_arns)) > 0 ? [{
+      ], length(concat(local.operation_key_ring_certificate_kms_key_arns, local.audit_chain_key_kms_key_arns, local.oidc_signing_kms_arns)) > 0 ? [{
         Effect   = "Allow"
         Action   = ["kms:Decrypt", "kms:DescribeKey"]
-        Resource = concat(local.operation_key_ring_certificate_kms_key_arns, local.audit_chain_key_kms_key_arns)
+        Resource = concat(local.operation_key_ring_certificate_kms_key_arns, local.audit_chain_key_kms_key_arns, local.oidc_signing_kms_arns)
     }] : [])
   })
   tags = local.tags

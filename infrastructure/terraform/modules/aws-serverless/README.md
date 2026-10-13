@@ -1198,3 +1198,23 @@ Workload images must be digest-pinned (`registry/repository@sha256:<64 hex>`).
 Bedrock uses the workload IAM role and configures `StudioAiProxy` as well as
 `WorkflowGeneration`. See [AWS certification inputs](../../../../docs/devops/aws-certification-inputs.md)
 for N-1/N pins, custom-code worker requirements, OIDC roles and live evidence limits.
+
+
+### Optional static JWT issuer
+
+`oidc_static_jwt` is an opt-in object containing `issuer` (HTTPS), `audience`,
+`signing_key_secret_arn` and optional `signing_key_kms_key_arn`. The secret must
+already exist and contain a signing key of at least 32 UTF-8 bytes. Create and
+rotate its value outside Terraform: the module neither reads that value nor
+manages a secret version. Omit the object to preserve the existing authentication
+configuration. Configure Studio end-user authorization separately when needed.
+
+ECS injects the secret through its task execution role. Lambda receives an
+`aws:secretsmanager:` reference and requires a server version containing
+[honua-server5980](https://github.com/honua-io/honua-server/issues/5980); older
+servers cannot use that reference as a static signing key. Only the API Lambda
+receives the issuer and signing-secret permission; event functions do not.
+Issuer, audience, signature and lifetime validation remain enabled. A static
+signing key is captured at process startup, so restart the deployment after
+rotation. The Lambda environment remains subject to its unchanged 4096-byte
+limit; do not remove security settings or raise that ceiling to fit a fixture.

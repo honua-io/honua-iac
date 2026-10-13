@@ -95,6 +95,8 @@ module "honua" {
   file_storage_aws_s3_region      = var.file_storage_aws_s3_region
   file_storage_aws_s3_key_prefix  = var.file_storage_aws_s3_key_prefix
 
+  oidc_static_jwt = var.oidc_static_jwt
+
   additional_env = {
     HONUA_SERVE_ADMIN_UI = "true"
     HONUA_ADMIN_UI       = "true"
