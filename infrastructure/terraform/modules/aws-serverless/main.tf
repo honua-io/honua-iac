@@ -238,6 +238,7 @@ locals {
     for arn in compact([
       var.operation_key_ring_certificate_secret_arn,
       var.audit_chain_key_secret_arn,
+      var.oidc_static_jwt == null ? "" : var.oidc_static_jwt.signing_key_secret_arn,
       local.pro_license_adopted ? trimspace(var.pro_license_secret_arn) : "",
       ]) : arn => try(
       regex(local.secret_arn_parts, arn)[0] == data.aws_region.current.name &&
@@ -433,7 +434,7 @@ locals {
       ControlPlane__DeployTargets__0__ParameterEntries__0__Value = var.lambda_alias_name
     } : {}, local.gp_batch_environment, local.amazon_location_environment, local.public_base_url_environment, var.additional_env, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.db_pool_environment.lambda, local.lambda_secret_reference_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment, local.file_storage_environment, local.oidc_static_environment,
     var.oidc_static_jwt == null ? {} : {
-      Oidc__TokenValidation__SymmetricSigningKey = "aws:secretsmanager:${var.oidc_static_jwt.signing_key_secret_arn}${var.oidc_static_jwt.signing_key_secret_version_id == "" ? "" : "?versionId=${var.oidc_static_jwt.signing_key_secret_version_id}"}"
+      Oidc__TokenValidation__SymmetricSigningKey = "aws:secretsmanager:${local.lambda_operator_secret_ids[var.oidc_static_jwt.signing_key_secret_arn]}${var.oidc_static_jwt.signing_key_secret_version_id == "" ? "" : "?versionId=${var.oidc_static_jwt.signing_key_secret_version_id}"}"
   })
 
   # AWS Lambda refuses a function whose environment exceeds 4 KB ("exceeded the

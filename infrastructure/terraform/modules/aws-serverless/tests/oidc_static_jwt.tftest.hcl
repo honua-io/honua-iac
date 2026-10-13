@@ -140,7 +140,7 @@ run "typed_issuer_uses_exact_external_secret" {
     error_message = "The complete typed issuer must render the exact canonical OIDC settings."
   }
   assert {
-    condition     = local.lambda_environment.Oidc__TokenValidation__SymmetricSigningKey == "aws:secretsmanager:${var.oidc_static_jwt.signing_key_secret_arn}" && !contains(keys(local.control_plane_reconcile_environment), "Oidc__TokenValidation__SymmetricSigningKey")
+    condition     = local.lambda_environment.Oidc__TokenValidation__SymmetricSigningKey == "aws:secretsmanager:journey-key" && !contains(keys(local.control_plane_reconcile_environment), "Oidc__TokenValidation__SymmetricSigningKey")
     error_message = "Only the HTTP Lambda needs the secret reference; event handlers must not inherit the issuer."
   }
   assert {
@@ -223,7 +223,7 @@ run "pins_the_consumed_secret_version" {
     }
   }
   assert {
-    condition     = aws_lambda_function.this.environment[0].variables["Oidc__TokenValidation__SymmetricSigningKey"] == "aws:secretsmanager:${var.oidc_static_jwt.signing_key_secret_arn}?versionId=${var.oidc_static_jwt.signing_key_secret_version_id}"
+    condition     = aws_lambda_function.this.environment[0].variables["Oidc__TokenValidation__SymmetricSigningKey"] == "aws:secretsmanager:journey-key?versionId=${var.oidc_static_jwt.signing_key_secret_version_id}"
     error_message = "Runtime must consume the immutable secret version selected by the caller."
   }
 }
@@ -239,4 +239,52 @@ run "rejects_malformed_secret_version" {
     }
   }
   expect_failures = [var.oidc_static_jwt]
+}
+
+run "preserves_full_arn_for_foreign_region" {
+  command = plan
+  variables {
+    oidc_static_jwt = {
+      issuer                        = "https://fixture.example.test"
+      audience                      = "journey"
+      signing_key_secret_arn        = "arn:aws:secretsmanager:us-west-2:123456789012:secret:journey-key-AbC123"
+      signing_key_secret_version_id = "11111111-2222-3333-4444-555555555555"
+    }
+  }
+  assert {
+    condition     = aws_lambda_function.this.environment[0].variables["Oidc__TokenValidation__SymmetricSigningKey"] == "aws:secretsmanager:${var.oidc_static_jwt.signing_key_secret_arn}?versionId=${var.oidc_static_jwt.signing_key_secret_version_id}"
+    error_message = "Only an unambiguous same-account and same-region secret name may be compacted; preserve the immutable version."
+  }
+}
+
+run "preserves_full_arn_for_foreign_account" {
+  command = plan
+  variables {
+    oidc_static_jwt = {
+      issuer                        = "https://fixture.example.test"
+      audience                      = "journey"
+      signing_key_secret_arn        = "arn:aws:secretsmanager:us-east-1:999999999999:secret:journey-key-AbC123"
+      signing_key_secret_version_id = "11111111-2222-3333-4444-555555555555"
+    }
+  }
+  assert {
+    condition     = aws_lambda_function.this.environment[0].variables["Oidc__TokenValidation__SymmetricSigningKey"] == "aws:secretsmanager:${var.oidc_static_jwt.signing_key_secret_arn}?versionId=${var.oidc_static_jwt.signing_key_secret_version_id}"
+    error_message = "Only an unambiguous same-account and same-region secret name may be compacted; preserve the immutable version."
+  }
+}
+
+run "preserves_full_arn_for_ambiguous_name" {
+  command = plan
+  variables {
+    oidc_static_jwt = {
+      issuer                        = "https://fixture.example.test"
+      audience                      = "journey"
+      signing_key_secret_arn        = "arn:aws:secretsmanager:us-east-1:123456789012:secret:journey-key-123456-AbC123"
+      signing_key_secret_version_id = "11111111-2222-3333-4444-555555555555"
+    }
+  }
+  assert {
+    condition     = aws_lambda_function.this.environment[0].variables["Oidc__TokenValidation__SymmetricSigningKey"] == "aws:secretsmanager:${var.oidc_static_jwt.signing_key_secret_arn}?versionId=${var.oidc_static_jwt.signing_key_secret_version_id}"
+    error_message = "Only an unambiguous same-account and same-region secret name may be compacted; preserve the immutable version."
+  }
 }
