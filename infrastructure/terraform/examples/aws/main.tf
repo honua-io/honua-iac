@@ -83,6 +83,8 @@ module "honua" {
   # Null (default) keeps the server's 100 MiB import background-job threshold.
   import_background_job_threshold_bytes = var.import_background_job_threshold_bytes
 
+  oidc_static_jwt = var.oidc_static_jwt
+
   additional_env = {
     HONUA_SERVE_ADMIN_UI    = "true"
     HONUA_ADMIN_UI          = "true"

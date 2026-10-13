@@ -416,9 +416,10 @@ variable "additional_env" {
       "operations__secretchannel__keyringcertificatepath",
       "operations__secretchannel__keyringcertificatepassword",
       "operations__secretchannel__keyringcertificatepkcs12",
-      "auditlog__chainverification__key"
+      "auditlog__chainverification__key",
+      "oidc__tokenvalidation__symmetricsigningkey"
     ]))) == 0
-    error_message = "Set deployment, file-storage, licensing, operation certificate and audit-chain key settings through the typed module variables, not additional_env."
+    error_message = "Set deployment, file-storage, licensing, operation certificate, audit-chain key and static OIDC signing-key settings through the typed module variables, not additional_env."
   }
 }
 
@@ -598,9 +599,10 @@ variable "canary_additional_env" {
       "operations__secretchannel__keyringcertificatepath",
       "operations__secretchannel__keyringcertificatepassword",
       "operations__secretchannel__keyringcertificatepkcs12",
-      "auditlog__chainverification__key"
+      "auditlog__chainverification__key",
+      "oidc__tokenvalidation__symmetricsigningkey"
     ]))) == 0
-    error_message = "Set deployment, file-storage, licensing, operation certificate and audit-chain key settings through the typed module variables, not canary_additional_env."
+    error_message = "Set deployment, file-storage, licensing, operation certificate, audit-chain key and static OIDC signing-key settings through the typed module variables, not canary_additional_env."
   }
 }
 
