@@ -211,3 +211,32 @@ run "reject_conflicting_issuer" {
   }
   expect_failures = [terraform_data.oidc_static_jwt]
 }
+
+run "pins_the_consumed_secret_version" {
+  command = plan
+  variables {
+    oidc_static_jwt = {
+      issuer                        = "https://fixture.example.test"
+      audience                      = "journey"
+      signing_key_secret_arn        = "arn:aws:secretsmanager:us-east-1:123456789012:secret:journey-key-AbC123"
+      signing_key_secret_version_id = "11111111-2222-3333-4444-555555555555"
+    }
+  }
+  assert {
+    condition     = aws_lambda_function.this.environment[0].variables["Oidc__TokenValidation__SymmetricSigningKey"] == "aws:secretsmanager:${var.oidc_static_jwt.signing_key_secret_arn}?versionId=${var.oidc_static_jwt.signing_key_secret_version_id}"
+    error_message = "Runtime must consume the immutable secret version selected by the caller."
+  }
+}
+
+run "rejects_malformed_secret_version" {
+  command = plan
+  variables {
+    oidc_static_jwt = {
+      issuer                        = "https://fixture.example.test"
+      audience                      = "journey"
+      signing_key_secret_arn        = "arn:aws:secretsmanager:us-east-1:123456789012:secret:journey-key-AbC123"
+      signing_key_secret_version_id = "AWSCURRENT"
+    }
+  }
+  expect_failures = [var.oidc_static_jwt]
+}

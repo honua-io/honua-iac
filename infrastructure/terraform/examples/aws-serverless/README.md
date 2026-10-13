@@ -192,3 +192,8 @@ Issuer, audience, signature and lifetime validation remain enabled. A static
 signing key is captured at process startup, so restart the deployment after
 rotation. The Lambda environment remains subject to its unchanged 4096-byte
 limit; do not remove security settings or raise that ceiling to fit a fixture.
+
+Set optional `signing_key_secret_version_id` to bind the version the runtime actually
+consumes. ECS renders the [version-specific secret reference](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/secrets-envvar-secrets-manager.html);
+Lambda uses the server resolver's `?versionId=` option. IAM permissions remain scoped
+to the bare secret ARN. An omitted version retains normal current-version behavior.

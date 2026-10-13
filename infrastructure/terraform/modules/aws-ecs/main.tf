@@ -231,7 +231,7 @@ locals {
     }
     ] : [], var.oidc_static_jwt == null ? [] : [{
       name      = "Oidc__TokenValidation__SymmetricSigningKey"
-      valueFrom = var.oidc_static_jwt.signing_key_secret_arn
+      valueFrom = var.oidc_static_jwt.signing_key_secret_version_id == "" ? var.oidc_static_jwt.signing_key_secret_arn : "${var.oidc_static_jwt.signing_key_secret_arn}:::${var.oidc_static_jwt.signing_key_secret_version_id}"
   }])
   container_log_configuration = {
     logDriver = "awslogs"
