@@ -82,3 +82,12 @@ variable "claim_table_name" {
   description = "Existing durable controller table with string key candidateKey. No TTL or deletion of launch claims."
   type        = string
 }
+
+variable "cleanup_alarm_topic_arn" {
+  description = "Existing monitored SNS topic with confirmed subscriptions; preflight must prove alert delivery."
+  type        = string
+  validation {
+    condition     = can(regex("^arn:aws:sns:[a-z0-9-]+:[0-9]{12}:[A-Za-z0-9_-]+$", var.cleanup_alarm_topic_arn))
+    error_message = "Supply a standard SNS topic ARN for independently monitored cleanup alarms."
+  }
+}
