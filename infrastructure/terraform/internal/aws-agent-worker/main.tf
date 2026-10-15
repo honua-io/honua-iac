@@ -145,6 +145,10 @@ resource "aws_ecs_task_definition" "worker" {
       condition     = startswith(var.image_uri, "${var.account_id}.dkr.ecr.${var.region}.amazonaws.com/") && startswith(var.cluster_arn, "arn:aws:ecs:${var.region}:${var.account_id}:cluster/")
       error_message = "Worker image and cluster must belong to the reviewed account and region."
     }
+    precondition {
+      condition     = startswith(var.cleanup_alarm_topic_arn, "arn:aws:sns:${var.region}:${var.account_id}:")
+      error_message = "Cleanup alarms require a monitored topic in the reviewed account and region."
+    }
   }
 }
 
@@ -181,10 +185,11 @@ resource "aws_iam_role_policy" "lifecycle" {
 }
 
 resource "aws_sfn_state_machine" "worker" {
-  name       = local.name
-  role_arn   = aws_iam_role.lifecycle.arn
-  type       = "STANDARD"
-  depends_on = [aws_iam_role_policy.lifecycle, aws_iam_role_policy.worker, aws_iam_role_policy.execution]
+  name     = local.name
+  role_arn = aws_iam_role.lifecycle.arn
+  type     = "STANDARD"
+  depends_on = [aws_iam_role_policy.lifecycle, aws_iam_role_policy.worker, aws_iam_role_policy.execution,
+  aws_scheduler_schedule.reaper, aws_cloudwatch_metric_alarm.reaper, aws_cloudwatch_metric_alarm.reaper_delivery]
   definition = jsonencode({
     StartAt        = "CheckExpiry"
     TimeoutSeconds = var.lifetime_seconds + 60

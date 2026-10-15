@@ -27,3 +27,14 @@ output "controller_policy" {
     ]
   })
 }
+
+output "independent_cleanup" {
+  value = {
+    state_machine_arn = aws_sfn_state_machine.reaper.arn
+    schedule_arn      = aws_scheduler_schedule.reaper.arn
+    expires_at        = local.expires_at
+    schedule_ends_at  = aws_scheduler_schedule.reaper.end_date
+    dead_letter_arn   = aws_sqs_queue.reaper_dead.arn
+    alarm_arns        = concat([for alarm in aws_cloudwatch_metric_alarm.reaper : alarm.arn], [aws_cloudwatch_metric_alarm.reaper_delivery.arn])
+  }
+}
