@@ -1,0 +1,14 @@
+terraform {
+  backend "s3" {
+    bucket       = "REPLACE_WITH_STATE_BUCKET_NAME"
+    key          = "honua/agent-worker/REPLACE_WITH_UNIQUE_ATTEMPT_ID/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
+    # Native S3 locking requires Terraform >= 1.10. For 1.5–1.9, replace
+    # use_lockfile with dynamodb_table = "REPLACE_WITH_STATE_LOCK_TABLE_NAME".
+    assume_role = {
+      role_arn = "REPLACE_WITH_BACKEND_ACCESS_ROLE_ARN"
+    }
+  }
+}
