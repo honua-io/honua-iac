@@ -581,7 +581,7 @@ being returned; otherwise leave them for the next session.
 | `04-backend-identity.json` | `terraform-backend-identity.sh` | `terraform-backend-identity.v1` |
 | `05-plan-metadata.json` | `terraform-exact-plan.sh` | `terraform-exact-plan.v1` |
 | `06-exec-receipt.json` | `terraform-exact-apply.sh` | `terraform-exec-receipt.v1` |
-| `07-terraform-output.json` | `terraform output -json` | `operator-contract.v1` |
+| `07-terraform-output.json` | `terraform output -json` | `operator-contract.v2` |
 | `08-ecs-*.json` | `capture-runbook-evidence.sh` | `cloud-runbook-evidence-template.json` |
 | `09-*` | `aws sts` / `aws kms` transcripts | — |
 | `10-*` | refusal transcripts | — |

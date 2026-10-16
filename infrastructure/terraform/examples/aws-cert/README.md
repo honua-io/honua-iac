@@ -163,7 +163,7 @@ jobs against them with per-job overrides — no terraform re-apply per job:
 - `gp_compute_environment_arn`, `gp_job_role_arn`, `gp_execution_role_arn`,
   `gp_worker_gdal_repository_url`.
 
-## Operator contract (`honua.operator-contract/v1`)
+## Operator contract (`honua.operator-contract/v2`)
 
 `operator-contract.tf` renders the three structured outputs the honua-devops
 agent consumes — `deployment_contract`, `validation_contract`,
