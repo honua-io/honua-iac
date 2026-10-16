@@ -144,11 +144,18 @@ run "auxiliary_roles_keep_the_boundary" {
       aws_iam_role.batch_execution[0].permissions_boundary == var.permissions_boundary_arn,
       aws_iam_role.batch_job[0].permissions_boundary == var.permissions_boundary_arn,
       aws_iam_role.customcode_execution[0].permissions_boundary == var.permissions_boundary_arn,
-      aws_iam_role.customcode_job[0].permissions_boundary == var.permissions_boundary_arn,
       aws_iam_role.control_plane_events[0].permissions_boundary == var.permissions_boundary_arn,
       aws_iam_role.control_plane_scheduler[0].permissions_boundary == var.permissions_boundary_arn
     ])
     error_message = "All auxiliary Batch, custom-code and event roles must retain the operator boundary."
+  }
+  assert {
+    condition = alltrue([for definition in aws_batch_job_definition.customcode :
+      !can(jsondecode(definition.container_properties).jobRoleArn) &&
+      jsondecode(definition.container_properties).user == "1001:1001" &&
+      length(jsondecode(definition.container_properties).secrets) == 0
+    ])
+    error_message = "Custom-code definitions must expose no task role or secrets and must use the sanctioned non-root user."
   }
 }
 

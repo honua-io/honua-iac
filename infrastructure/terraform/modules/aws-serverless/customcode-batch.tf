@@ -109,9 +109,7 @@ locals {
   worker_customcode_dotnet_repo_name = "${local.name}-worker-customcode-dotnet"
 
   # S3 artifact prefix the custom-code task role is scoped to. The server sets
-  # customcode.output_prefix per job UNDER this prefix; the role grants
-  # Get/PutObject only beneath it (never the whole bucket).
-  customcode_artifact_prefix = trim(var.customcode_artifact_prefix, "/")
+
 }
 
 # ---------------------------------------------------------------------------
@@ -135,51 +133,12 @@ resource "aws_iam_role_policy_attachment" "customcode_execution_ecs" {
 }
 
 # ---------------------------------------------------------------------------
-# IAM — custom-code TASK (job) role: the running UNTRUSTED container's own
-# permissions. THIS IS THE HARDENED ROLE. Distinct from the GP job role
-# (aws_iam_role.batch_job). It grants:
-#   - NOTHING from Secrets Manager (no GetSecretValue, no secret ARNs).
-#   - NO RDS reach (no SG ingress is granted to RDS for this role's tasks).
-#   - NO broad S3 — ONLY s3:GetObject/PutObject under the per-job artifact
-#     prefix the server sets (customcode.output_prefix), and ONLY when an
-#     artifact bucket is supplied.
-# The Honua callback uses the scoped HONUA_JOB_TOKEN (server-injected env), NOT
-# AWS IAM, so this role carries no platform-trust permissions at all.
+# Custom-code tasks have NO task role or cloud credentials. Their only data/output
+# authority is a job/attempt-bound Honua callback token. The provider execution role
+# above is used by Fargate for image pull/logs and is never exposed to user code.
+# Fargate is required: an EC2 instance metadata role would reintroduce ambient IAM.
 # ---------------------------------------------------------------------------
 
-resource "aws_iam_role" "customcode_job" {
-  permissions_boundary = var.permissions_boundary_arn
-  count                = local.customcode_batch_enabled ? 1 : 0
-  name_prefix          = "${local.customcode_batch_name}-job-"
-  assume_role_policy   = data.aws_iam_policy_document.batch_execution_assume[0].json
-  tags                 = local.tags
-}
-
-# Scoped artifact S3: Get/PutObject under the per-job artifact prefix ONLY. No
-# ListBucket, no DeleteObject, no bucket-wide grant — and deliberately NO
-# secretsmanager / rds / kms statements. Only created when an artifact bucket is
-# supplied; without it the role has ZERO inline permissions (image pull is on
-# the execution role).
-resource "aws_iam_role_policy" "customcode_job_artifacts" {
-  count = local.customcode_batch_enabled && var.customcode_artifact_bucket_arn != "" ? 1 : 0
-  name  = "${local.customcode_batch_name}-job-artifacts"
-  role  = aws_iam_role.customcode_job[0].id
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "ScopedArtifactObjectAccess"
-        Effect = "Allow"
-        Action = ["s3:GetObject", "s3:PutObject"]
-        # Scoped to the per-job artifact prefix only (customcode.output_prefix is
-        # set by the server UNDER this prefix). NOT the whole bucket.
-        Resource = ["${var.customcode_artifact_bucket_arn}/${local.customcode_artifact_prefix}/*"]
-      }
-    ]
-  })
-}
-
-# ---------------------------------------------------------------------------
 # Security group — CONSTRAINED egress allowlist (NOT open 0.0.0.0/0).
 # Untrusted user code reaches ONLY the operator-supplied destination allowlist:
 # PyPI/GitHub (pip + clone), the Honua API endpoint, and the artifact S3. There
@@ -301,13 +260,13 @@ resource "aws_batch_job_queue" "customcode" {
 # per {runtime}.{tier} (customcode-python-{s,m,l,xl}, customcode-dotnet-{s,m,l,xl}).
 #
 # Mirrors the GP pool (tiers differ ONLY by ephemeral storage), but with the
-# HARDENED container: EMPTY environment/secrets, the SHARED minimal custom-code
+# HARDENED container: EMPTY environment/secrets, NO custom-code
 # task role, and the per-RUNTIME worker image — the ONLY thing that varies
 # across runtimes. Per-job sizing (vCPU, memory, timeout, retry) and the scoped
 # runtime env (HONUA_JOB_TOKEN, HONUA_API_ENDPOINT, customcode.output_prefix,
 # ...) are applied by the server at SubmitJob time as container overrides — NONE
 # of which are templated here. The security posture is identical across runtimes
-# because it is sourced from the SAME role/SG/log group, not redefined per family.
+# because it is sourced from the SAME credential-free Fargate/SG/log configuration, not redefined per family.
 # ---------------------------------------------------------------------------
 
 resource "aws_batch_job_definition" "customcode" {
@@ -325,7 +284,7 @@ resource "aws_batch_job_definition" "customcode" {
 
   container_properties = jsonencode(merge({
     image            = each.value.image
-    jobRoleArn       = aws_iam_role.customcode_job[0].arn
+    user             = "1001:1001"
     executionRoleArn = aws_iam_role.customcode_execution[0].arn
 
     resourceRequirements = [
@@ -413,6 +372,7 @@ resource "aws_iam_role_policy" "lambda_customcode_submit" {
         Effect = "Allow"
         Action = [
           "batch:DescribeJobs",
+          "batch:DescribeJobDefinitions",
           "batch:ListJobs"
         ]
         Resource = ["*"]

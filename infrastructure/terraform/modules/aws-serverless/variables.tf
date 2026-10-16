@@ -944,13 +944,13 @@ variable "customcode_batch_max_vcpus" {
 }
 
 variable "customcode_artifact_bucket_arn" {
-  description = "S3 bucket ARN the custom-code task role may read/write — scoped to the per-job artifact prefix only. Leave empty to grant the task role ZERO inline permissions (image pull is on the execution role)."
+  description = "Deprecated compatibility input; ignored. Configure server-owned cloud storage for the authenticated artifact broker. No IAM permissions are granted to user code."
   type        = string
   default     = ""
 }
 
 variable "customcode_artifact_prefix" {
-  description = "S3 key prefix under customcode_artifact_bucket_arn the custom-code task role is scoped to (the server sets customcode.output_prefix per job UNDER this prefix). Get/PutObject is granted only beneath '<prefix>/*'."
+  description = "Deprecated compatibility input; ignored. Artifact object keys are assigned by the server's job/attempt-bound broker."
   type        = string
   default     = "customcode"
 }
