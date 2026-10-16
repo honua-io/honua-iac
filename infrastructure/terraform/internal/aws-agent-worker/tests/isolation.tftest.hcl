@@ -1,4 +1,7 @@
 mock_provider "aws" {
+  mock_resource "aws_ecs_task_definition" {
+    defaults = { arn = "arn:aws:ecs:us-east-1:123456789012:task-definition/honua-agent-fixture-attempt:1" }
+  }
   mock_resource "aws_iam_role" {
     defaults = { arn = "arn:aws:iam::123456789012:role/fixture" }
   }
@@ -8,6 +11,16 @@ mock_provider "aws" {
   mock_resource "aws_sqs_queue" {
     defaults = { arn = "arn:aws:sqs:us-east-1:123456789012:fixture" }
   }
+}
+
+override_resource {
+  target = aws_iam_role.worker
+  values = { arn = "arn:aws:iam::123456789012:role/honua-agent-fixture-attempt-worker" }
+}
+
+override_resource {
+  target = aws_iam_role.execution
+  values = { arn = "arn:aws:iam::123456789012:role/honua-agent-fixture-attempt-execution" }
 }
 
 variables {
@@ -49,7 +62,7 @@ run "isolated_fargate_attempt" {
     error_message = "Worker credentials must grant only their own command/reply queue operations."
   }
   assert {
-    condition     = jsondecode(aws_sfn_state_machine.worker.definition).States.ClaimAttempt.Parameters.ConditionExpression == "attribute_not_exists(candidateKey)" && !can(jsondecode(aws_sfn_state_machine.worker.definition).States.RunWorker.Retry)
+    condition     = jsondecode(aws_sfn_state_machine.worker.definition).States.ClaimAttempt.Parameters.TransactItems[0].Put.ConditionExpression == "attribute_not_exists(candidateKey)" && !can(jsondecode(aws_sfn_state_machine.worker.definition).States.RunWorker.Retry)
     error_message = "A task crash must not cause another worker to replay an attempt."
   }
   assert {
@@ -59,6 +72,42 @@ run "isolated_fargate_attempt" {
   assert {
     condition     = output.transport.expiresEpoch == 1792080600 && jsondecode(output.controller_policy).Statement[4].Effect == "Deny" && jsondecode(output.controller_policy).Statement[4].Action == "states:RedriveExecution"
     error_message = "Expiry must not slide and redrive must not bypass the durable claim."
+  }
+}
+
+run "candidate_wide_fencing" {
+  command = apply
+  assert {
+    condition     = jsondecode(aws_sfn_state_machine.worker.definition).States.ClaimAttempt.Resource == "arn:aws:states:::aws-sdk:dynamodb:transactWriteItems" && jsondecode(aws_sfn_state_machine.worker.definition).States.ClaimAttempt.Parameters.TransactItems[1].Put.Item.candidateKey.S == "${var.candidate_digest}/active-worker" && jsondecode(aws_sfn_state_machine.worker.definition).States.ClaimAttempt.Parameters.TransactItems[1].Put.ConditionExpression == "attribute_not_exists(candidateKey) OR #state = :stopped"
+    error_message = "Attempt and candidate claims must commit atomically, with no expiry-based takeover."
+  }
+  assert {
+    condition     = jsondecode(aws_sfn_state_machine.worker.definition).States.ClaimAttempt.Next == "RecheckExpiry" && jsondecode(aws_sfn_state_machine.worker.definition).States.RunWorker.Parameters.Count == 1 && jsondecode(aws_sfn_state_machine.worker.definition).States.RunWorker.Parameters.ClientToken == var.attempt_id && jsondecode(aws_sfn_state_machine.worker.definition).States.RunWorker.Resource == "arn:aws:states:::aws-sdk:ecs:runTask"
+    error_message = "A claimed attempt rechecks expiry and can launch only one fixed task."
+  }
+  assert {
+    condition     = jsondecode(aws_sfn_state_machine.worker.definition).States.CheckObservation.Choices[7].StringEquals == "STOPPED" && jsondecode(aws_sfn_state_machine.worker.definition).States.CheckObservation.Choices[7].Next == "RecordStopped" && jsondecode(aws_sfn_state_machine.worker.definition).States.CheckObservation.Choices[4].Not.StringEqualsPath == "$.launched.Tasks[0].TaskArn" && jsondecode(aws_sfn_state_machine.worker.definition).States.Unobserved.Type == "Fail"
+    error_message = "Missing or foreign observations must not release the candidate; exact STOPPED must be observed."
+  }
+  assert {
+    condition     = jsondecode(aws_sfn_state_machine.worker.definition).States.RecordStopped.Parameters.TransactItems[0].Put.ConditionExpression == "attribute_not_exists(candidateKey)" && jsondecode(aws_sfn_state_machine.worker.definition).States.RecordStopped.Parameters.TransactItems[0].Put.Item.candidateKey.S == "${local.claim_key}/stopped" && jsondecode(aws_sfn_state_machine.worker.definition).States.RecordStopped.Parameters.TransactItems[1].Put.ConditionExpression == "executionArn = :execution AND attemptId = :attempt AND #state = :active" && jsondecode(aws_sfn_state_machine.worker.definition).States.RecordStopped.Parameters.TransactItems[1].Put.ExpressionAttributeValues[":execution"]["S.$"] == "$$.Execution.Id"
+    error_message = "The immutable stop record and successor eligibility must commit atomically for the current owner only."
+  }
+  assert {
+    condition     = alltrue([for state in jsondecode(aws_sfn_state_machine.worker.definition).States : !can(state.Retry) && !can(state.Catch)]) && jsondecode(aws_iam_role_policy.lifecycle.policy).Statement[0].Condition.StringEquals["dynamodb:EnclosingOperation"] == "TransactWriteItems" && toset(jsondecode(aws_iam_role_policy.lifecycle.policy).Statement[0].Condition["ForAllValues:StringEquals"]["dynamodb:LeadingKeys"]) == toset([local.claim_key, local.candidate_claim_key, local.stopped_key])
+    error_message = "Failures retain the claim; lifecycle permissions cannot rewrite unrelated attempts or call nontransactional writes."
+  }
+  assert {
+    condition     = jsondecode(output.controller_policy).Statement[5].Condition.StringEquals["aws:ResourceTag/honua-agent-attempt"] == var.attempt_id && jsondecode(output.controller_policy).Statement[5].Condition.StringEquals["aws:ResourceTag/honua-agent-candidate"] == var.candidate_digest && jsondecode(aws_iam_role_policy.lifecycle.policy).Statement[1].Condition.DateLessThan["aws:CurrentTime"] == local.expires_at
+    error_message = "Normal cleanup may stop only the owned task, while launch authority expires."
+  }
+  assert {
+    condition     = jsondecode(output.controller_policy).Statement[6].Action == "dynamodb:GetItem" && toset(jsondecode(output.controller_policy).Statement[6].Condition["ForAllValues:StringEquals"]["dynamodb:LeadingKeys"]) == toset([local.claim_key, local.candidate_claim_key, local.stopped_key]) && contains(jsondecode(output.controller_policy).Statement[2].Action, "states:DescribeStateMachine")
+    error_message = "Controller preflight may inspect only its fixed definition and exact claim records, never release them."
+  }
+  assert {
+    condition     = jsondecode(aws_sfn_state_machine.worker.definition).States.CheckObservationDeadline.Choices[0].TimestampGreaterThanEquals == "2026-10-15T16:15:00Z" && jsondecode(aws_sfn_state_machine.worker.definition).States.CheckObservation.Choices[0].TimestampGreaterThanEquals == local.observation_deadline && jsondecode(aws_sfn_state_machine.worker.definition).States.CheckStopTime.Choices[0].TimestampGreaterThanEquals == local.observation_deadline && jsondecode(aws_sfn_state_machine.worker.definition).States.ObservationExpired.Type == "Fail"
+    error_message = "A late execution cannot extend polling or release past the fixed observation window."
   }
 }
 

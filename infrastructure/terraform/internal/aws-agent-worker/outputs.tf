@@ -11,10 +11,14 @@ output "mcp_configuration_binding" {
 output "lifecycle" {
   value = {
     state_machine_arn   = aws_sfn_state_machine.worker.arn
+    cluster_arn         = var.cluster_arn
+    claim_table_name    = var.claim_table_name
     task_definition_arn = aws_ecs_task_definition.worker.arn
     worker_role_arn     = aws_iam_role.worker.arn
     expires_at          = local.expires_at
     claim_key           = local.claim_key
+    candidate_claim_key = local.candidate_claim_key
+    stopped_key         = local.stopped_key
   }
 }
 
@@ -25,10 +29,17 @@ output "controller_policy" {
     Statement = [
       { Effect = "Allow", Action = "sqs:SendMessage", Resource = aws_sqs_queue.channel["commands"].arn },
       { Effect = "Allow", Action = ["sqs:ReceiveMessage", "sqs:DeleteMessage"], Resource = aws_sqs_queue.channel["replies"].arn },
-      { Effect = "Allow", Action = "states:StartExecution", Resource = aws_sfn_state_machine.worker.arn },
+      { Effect = "Allow", Action = ["states:StartExecution", "states:DescribeStateMachine"], Resource = aws_sfn_state_machine.worker.arn },
       { Effect = "Allow", Action = ["states:DescribeExecution", "states:StopExecution", "states:GetExecutionHistory"],
       Resource = "arn:aws:states:${var.region}:${var.account_id}:execution:${local.name}:*" },
-      { Effect = "Deny", Action = "states:RedriveExecution", Resource = "*" }
+      { Effect = "Deny", Action = "states:RedriveExecution", Resource = "*" },
+      { Effect = "Allow", Action = ["ecs:DescribeTasks", "ecs:StopTask"], Resource = local.task_arns,
+        Condition = { ArnEquals = { "ecs:cluster" = var.cluster_arn }, StringEquals = {
+          "aws:ResourceTag/honua-agent-attempt"   = var.attempt_id,
+          "aws:ResourceTag/honua-agent-candidate" = var.candidate_digest
+      } } },
+      { Effect = "Allow", Action = "dynamodb:GetItem", Resource = local.table_arn,
+      Condition = { "ForAllValues:StringEquals" = { "dynamodb:LeadingKeys" = [local.claim_key, local.candidate_claim_key, local.stopped_key] } } }
     ]
   })
 }
