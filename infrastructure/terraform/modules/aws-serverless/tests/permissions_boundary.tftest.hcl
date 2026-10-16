@@ -128,9 +128,16 @@ run "workload_boundary" {
 }
 
 run "auxiliary_roles_keep_the_boundary" {
-  # All providers are mocked. Apply resolves the role/log identifiers embedded in
-  # container_properties so assertions inspect the complete rendered definition.
-  command = apply
+  command = plan
+  # Resolve only the computed execution-role ARN at plan time. The rendered
+  # container definition remains production configuration, not mocked JSON.
+  override_resource {
+    target          = aws_iam_role.customcode_execution[0]
+    override_during = plan
+    values = {
+      arn = "arn:aws:iam::123456789012:role/honua-customcode-execution"
+    }
+  }
   variables {
     permissions_boundary_arn      = "arn:aws:iam::123456789012:policy/honua-release-cell-workload-boundary"
     use_batch_service_linked_role = true
