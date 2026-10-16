@@ -30,6 +30,16 @@ variable "controller_role_arn" {
   }
 }
 
+variable "claim_writer_role_arns" {
+  description = "Exact Terraform-defined worker lifecycle roles with fixed conditional PutItem state machines; never controller or worker roles. Empty disables runtime launches."
+  type        = set(string)
+  default     = []
+  validation {
+    condition     = alltrue([for arn in var.claim_writer_role_arns : can(regex("^arn:aws:iam::[0-9]{12}:role/honua-agent-[a-z0-9-]{3,40}-lifecycle$", arn))])
+    error_message = "Only exact worker lifecycle role ARNs from the aws-agent-worker root may create launch claims."
+  }
+}
+
 variable "state_admin_role_arns" {
   description = "Exact existing Terraform deployment and recovery roles. These remain outside runtime and worker custody."
   type        = set(string)

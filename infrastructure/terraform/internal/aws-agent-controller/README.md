@@ -44,6 +44,15 @@ one. State administrators remain privileged recovery actors, not runtime actors.
    `claim_table_name` to the separate `internal/aws-agent-worker` root. Its
    lifecycle policy may conditionally put only that attempt's exact launch key;
    it receives no access to the state table or evidence bucket.
+   Set `claim_writer_role_arns` to the exact reviewed lifecycle role ARNs before
+   starting those jobs. The default empty set deliberately disables runtime claim
+   writes. Remove launch authority when retiring an attempt. The named roles must
+   retain the worker root's service-only trust and fixed, conditional PutItem
+   state-machine definition; IAM cannot enforce `attribute_not_exists` itself.
+   Other runtime principals cannot put claims even with broad identity policies.
+   Transaction paths are blocked through `dynamodb:EnclosingOperation`, since
+   [transactions authorize underlying item actions](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/transaction-apis-iam.html).
+   All other runtime claim-table mutations, including disabling PITR, are denied.
 4. Independently demonstrate actual role denials, versioned writes, concurrent
    writer fencing, controller-loss recovery and retained charges before running a
    paid agent campaign. Offline Terraform tests do not establish these properties

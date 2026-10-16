@@ -5,11 +5,12 @@ mock_provider "aws" {
 }
 
 variables {
-  region                = "us-east-1"
-  account_id            = "123456789012"
-  candidate_digest      = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  controller_role_arn   = "arn:aws:iam::123456789012:role/controller/runtime"
-  state_admin_role_arns = ["arn:aws:iam::123456789012:role/state-deployer"]
+  region                 = "us-east-1"
+  account_id             = "123456789012"
+  candidate_digest       = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  controller_role_arn    = "arn:aws:iam::123456789012:role/controller/runtime"
+  state_admin_role_arns  = ["arn:aws:iam::123456789012:role/state-deployer"]
+  claim_writer_role_arns = ["arn:aws:iam::123456789012:role/honua-agent-fixture-attempt-lifecycle"]
 }
 
 run "retained_candidate_storage" {
@@ -43,8 +44,12 @@ run "retained_candidate_storage" {
     error_message = "Runtime state authority must exclude head deletion and bind the exact candidate key."
   }
   assert {
-    condition     = contains(jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement[0].Action, "dynamodb:DeleteItem") && contains(jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement[0].Action, "dynamodb:UpdateTimeToLive") && toset(jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement[0].Condition.ArnNotEquals["aws:PrincipalArn"]) == var.state_admin_role_arns
-    error_message = "Runtime roles must not erase launch claims or add TTL to permit replay."
+    condition     = jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement[0].NotAction == ["dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:DescribeTable"] && toset(jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement[0].Condition.ArnNotEquals["aws:PrincipalArn"]) == var.state_admin_role_arns
+    error_message = "Runtime roles must not erase launch claims or change PITR, TTL, policy or table settings."
+  }
+  assert {
+    condition     = toset(jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement[1].Condition.ArnNotEquals["aws:PrincipalArn"]) == setunion(var.state_admin_role_arns, var.claim_writer_role_arns) && jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement[2].Condition.StringEquals["dynamodb:EnclosingOperation"] == ["TransactWriteItems", "TransactGetItems"]
+    error_message = "Only the fixed lifecycle may put claims, and transaction APIs must not bypass this restriction."
   }
   assert {
     condition     = aws_iam_role_policy.controller_state.role == "runtime" && jsondecode(aws_iam_role_policy.controller_state.policy).Statement[3].Condition.StringEquals["s3:if-none-match"] == "*" && output.state_config.table == aws_dynamodb_table.history["state"].name
@@ -74,4 +79,31 @@ run "reject_wildcard_recovery_authority" {
     state_admin_role_arns = ["arn:aws:iam::123456789012:role/*"]
   }
   expect_failures = [var.state_admin_role_arns]
+}
+
+run "reject_foreign_claim_writer" {
+  command = plan
+  variables {
+    claim_writer_role_arns = ["arn:aws:iam::999999999999:role/honua-agent-fixture-attempt-lifecycle"]
+  }
+  expect_failures = [aws_s3_bucket.state]
+}
+
+run "reject_agent_worker_as_claim_writer" {
+  command = plan
+  variables {
+    claim_writer_role_arns = ["arn:aws:iam::123456789012:role/honua-agent-fixture-attempt-worker"]
+  }
+  expect_failures = [var.claim_writer_role_arns]
+}
+
+run "default_disables_runtime_claims" {
+  command = apply
+  variables {
+    claim_writer_role_arns = []
+  }
+  assert {
+    condition     = toset(jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement[1].Condition.ArnNotEquals["aws:PrincipalArn"]) == var.state_admin_role_arns
+    error_message = "No lifecycle writes may occur until its exact role is reviewed and configured."
+  }
 }

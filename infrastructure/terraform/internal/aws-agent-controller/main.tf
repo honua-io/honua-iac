@@ -27,7 +27,7 @@ resource "aws_s3_bucket" "state" {
   lifecycle {
     prevent_destroy = true
     precondition {
-      condition     = alltrue([for arn in local.state_principals : startswith(arn, "arn:aws:iam::${var.account_id}:role/")]) && !contains(var.state_admin_role_arns, var.controller_role_arn)
+      condition     = alltrue([for arn in setunion(toset(local.state_principals), var.claim_writer_role_arns) : startswith(arn, "arn:aws:iam::${var.account_id}:role/")]) && !contains(var.state_admin_role_arns, var.controller_role_arn) && length(setintersection(var.claim_writer_role_arns, toset(local.state_principals))) == 0
       error_message = "All state roles must belong to the reviewed account; runtime and administration roles must be separate."
     }
   }
@@ -72,6 +72,7 @@ resource "aws_s3_bucket_policy" "state" {
       Condition = { ArnNotEquals = { "aws:PrincipalArn" = local.state_principals } } },
       # Conditional writes protect the permanent initialization marker as well
       # as snapshots and evidence. Multipart/CopyObject is intentionally denied.
+      # "*" is the literal If-None-Match value, not a StringLike wildcard.
       { Sid      = "RequireCreateOnlyObjects", Effect = "Deny", Principal = "*", Action = "s3:PutObject",
         Resource = "${local.bucket_arn}/*",
       Condition = { StringNotEquals = { "s3:if-none-match" = "*" } } },
@@ -121,13 +122,23 @@ resource "aws_dynamodb_resource_policy" "claims" {
   resource_arn = aws_dynamodb_table.history["claims"].arn
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Sid = "RuntimeCannotEraseLaunchClaims", Effect = "Deny", Principal = "*",
-      Action = ["dynamodb:DeleteItem", "dynamodb:UpdateItem", "dynamodb:BatchWriteItem", "dynamodb:PartiQLDelete", "dynamodb:PartiQLUpdate",
-      "dynamodb:DeleteTable", "dynamodb:UpdateTable", "dynamodb:UpdateTimeToLive", "dynamodb:PutResourcePolicy", "dynamodb:DeleteResourcePolicy"],
-      Resource  = aws_dynamodb_table.history["claims"].arn,
-      Condition = { ArnNotEquals = { "aws:PrincipalArn" = sort(tolist(var.state_admin_role_arns)) } }
-    }]
+    Statement = [
+      { Sid       = "RuntimeCanOnlyClaimOrObserve", Effect = "Deny", Principal = "*",
+        NotAction = ["dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:DescribeTable"],
+        Resource  = aws_dynamodb_table.history["claims"].arn,
+      Condition = { ArnNotEquals = { "aws:PrincipalArn" = sort(tolist(var.state_admin_role_arns)) } } },
+      { Sid      = "OnlyFixedLifecycleRolesMayClaim", Effect = "Deny", Principal = "*", Action = "dynamodb:PutItem",
+        Resource = aws_dynamodb_table.history["claims"].arn,
+      Condition = { ArnNotEquals = { "aws:PrincipalArn" = sort(tolist(setunion(var.state_admin_role_arns, var.claim_writer_role_arns))) } } },
+      # Transactions authorize their underlying PutItem/UpdateItem actions,
+      # not an IAM action named TransactWriteItems. Block that path explicitly.
+      { Sid      = "RuntimeCannotUseTransactions", Effect = "Deny", Principal = "*", Action = "dynamodb:*",
+        Resource = aws_dynamodb_table.history["claims"].arn,
+        Condition = {
+          ArnNotEquals = { "aws:PrincipalArn" = sort(tolist(var.state_admin_role_arns)) }
+          StringEquals = { "dynamodb:EnclosingOperation" = ["TransactWriteItems", "TransactGetItems"] }
+      } }
+    ]
   })
 }
 
