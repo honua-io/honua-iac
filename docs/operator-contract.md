@@ -1,13 +1,13 @@
 ---
 type: reference
-title: "honua.operator-contract/v1"
+title: "honua.operator-contract/v2"
 description: "The versioned, machine-readable contract between this repository and the platforms that consume it: what it promises and how a consumer validates against it."
-resource: "https://github.com/honua-io/honua-iac/blob/trunk/infrastructure/terraform/contracts/operator-contract.v1.schema.json"
+resource: "https://github.com/honua-io/honua-iac/blob/trunk/infrastructure/terraform/contracts/operator-contract.v2.schema.json"
 tags: [contract, operator, machine-readable]
 ---
-# Honua Operator Contract v1
+# Honua Operator Contract v2
 
-`honua.operator-contract/v1` is the versioned, machine-validated boundary
+`honua.operator-contract/v2` is the versioned, machine-validated boundary
 between the Terraform that provisions a Honua deployment and everything
 downstream that has to reason about it: DevOps bootstrap, verification, smoke,
 teardown, day-2 operations, and the release candidate receipt.
@@ -19,11 +19,33 @@ encouraged scalar scraping, and nothing in it could prove that honua-iac,
 honua-helm, honua-devops, honua-server, and the release candidate were talking
 about the same deployment.
 
-- Schema: [`infrastructure/terraform/contracts/operator-contract.v1.schema.json`](../infrastructure/terraform/contracts/operator-contract.v1.schema.json)
+- Schema: [`infrastructure/terraform/contracts/operator-contract.v2.schema.json`](../infrastructure/terraform/contracts/operator-contract.v2.schema.json)
 - Fixtures: [`infrastructure/terraform/contracts/fixtures/`](../infrastructure/terraform/contracts/fixtures/)
 - Validator: `infrastructure/terraform/validation/scripts/shared/validate-operator-contract.mjs`
 - Reference producer: `infrastructure/terraform/examples/aws/operator-contract.tf`
 - Architecture decision: [ADR 0001](adr/0001-terraform-architecture-refactor.md)
+
+## Migration from v1
+
+V2 changes the custom-code Batch extension from task-role/direct-storage workers
+to credential-free Fargate workers using the job-scoped artifact broker. The
+`task_role_arn` field is now required to be null. Its companion fields explicitly
+state `credential_mode: none`, `artifact_transport: job-scoped-broker`, and
+`platform: FARGATE`. The v2 JSON schema enforces these facts in every contract
+projection; consumers must validate that schema, including extensions.
+
+Both owned producers (`examples/aws` and `examples/aws-cert`) emit v2. The
+exact-commit release declaration records v2, including for deployments that do
+not enable custom code, so there is no ambiguous mixed-version declaration.
+V1 schemas remain available for historical documents; the current validator
+rejects v1 and mixed-version documents. Do not relabel old output or stored apply
+state as v2. Re-apply and verify using a matching v2-aware DevOps consumer before
+creating a new handoff. Old consumers must fail closed on the new version.
+
+The fixture corpus is generated offline contract evidence. Updating these
+fixtures is not evidence that a live v2 deployment or cloud isolation test ran.
+The credential-free worker, broker, scoped authentication and v2 consumer must
+be delivered together before qualified promotion.
 
 ## The three outputs
 
@@ -253,7 +275,7 @@ is not self-referential:
 
 ```jsonc
 {
-  "schema_version": "honua.operator-contract/v1",
+  "schema_version": "honua.operator-contract/v2",
   "deployment_contract": { /* identity.contract_digest deleted */ },
   "validation_contract": { /* identity.contract_digest deleted */ },
   "operations_contract": { /* identity.contract_digest deleted */ }
@@ -269,7 +291,7 @@ producer computes it as `sha256(jsonencode(<digest input>))`.
 
 ## Compatibility policy
 
-`schema_version` is the fully qualified string `honua.operator-contract/v1`. It
+`schema_version` is the fully qualified string `honua.operator-contract/v2`. It
 is not a bare `v1`, so a consumer in another repository can tell a Honua
 operator contract from any other versioned document it handles.
 
@@ -277,17 +299,18 @@ operator contract from any other versioned document it handles.
 — including an absent one — must reject the document. It must not fall back to
 legacy scalar outputs, and it must not partially interpret a newer contract.
 
-Within v1:
+Within v2:
 
 - **Additive, non-breaking:** a new optional field; a new enum member in a
   field documented as open; a new key in `secret_refs`, `secrets.references`,
   `tags`, or `artifacts`.
-- **Breaking, requires v2:** removing a field; renaming a field; narrowing a
+- **Breaking, requires v3:** removing a field; renaming a field; narrowing a
   type; changing the meaning of an existing field; changing the digest input or
   the canonical form.
 
 Core objects are `additionalProperties: false`. Platform-specific facts go in
-the per-contract `extensions` object, which is deliberately unconstrained.
+the per-contract `extensions` object. Its reserved `customcode_batch` member is
+schema-constrained in v2; other platform extension members remain open.
 **An extension may add facts. It may never restate, override, or reinterpret a
 core field.** A consumer that ignores `extensions` entirely must still get a
 correct reading of the deployment — that is the property that keeps AWS from
@@ -326,7 +349,7 @@ are ignored) or a bare `{schema_version, deployment_contract, ...}` envelope.
 
 | Code | Meaning |
 | --- | --- |
-| `E_UNKNOWN_VERSION` | `schema_version` is absent or is not `honua.operator-contract/v1`. |
+| `E_UNKNOWN_VERSION` | `schema_version` is absent or is not `honua.operator-contract/v2`. |
 | `E_MISSING_FIELD` | A required field or contract output is absent. |
 | `E_SCHEMA` | A field violates the schema (type, pattern, enum, unknown property). |
 | `E_MUTABLE_PIN` | An immutable field holds a mutable or mismatched value. |
@@ -350,7 +373,10 @@ bytes.
 | `valid-aws-ecs-small.json` | Valid, and satisfies `--require-qualified`. |
 | `valid-aws-ecs-small-unqualified.json` | Schema-valid; rejected by `--require-qualified`. |
 | `invalid-missing-required-field.json` | `E_MISSING_FIELD` |
-| `invalid-unknown-schema-version.json` | `E_UNKNOWN_VERSION` |
+| `invalid-unknown-schema-version.json`, `invalid-legacy-v1.json`, `invalid-mixed-contract-versions.json` | `E_UNKNOWN_VERSION` |
+| `valid-aws-cert-credential-free.json` | Valid v2 credential-free GP projection |
+| `invalid-customcode-task-role.json`, `invalid-customcode-direct-storage.json` | `E_SCHEMA` |
+| `invalid-customcode-missing-credential-mode.json` | `E_MISSING_FIELD` |
 | `invalid-mutable-image-tag.json` | `E_MUTABLE_PIN` |
 | `invalid-secret-value-leak.json` | `E_SECRET_VALUE` |
 | `invalid-contract-digest-mismatch.json` | `E_DIGEST_MISMATCH` |
@@ -394,7 +420,7 @@ deprecation.
 
 ## Platform coverage
 
-`examples/aws` (AWS ECS small) is the certified v1 producer for 2026.1. Other
-deployable roots still emit legacy scalars only. Each remaining platform needs
+`examples/aws` (AWS ECS) and `examples/aws-cert` (Lambda plus Batch) are the
+owned v2 producers. Other deployable roots still emit legacy scalars only. Each remaining platform needs
 its own narrow projection issue against this schema — not a weakening of the
 AWS contract to whatever every platform happens to share.

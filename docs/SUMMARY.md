@@ -25,5 +25,5 @@
 * [AWS certification image and identity inputs](devops/aws-certification-inputs.md)
 * [Exact plan contract](devops/terraform-exact-plan-contract.md)
 * [How modules are versioned and consumed](module-versioning.md)
-* [honua.operator-contract/v1](operator-contract.md)
+* [honua.operator-contract/v2](operator-contract.md)
 * [Plan and state lineage](operator-state.md)

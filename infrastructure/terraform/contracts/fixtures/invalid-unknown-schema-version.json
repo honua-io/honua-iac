@@ -22,17 +22,17 @@
   "operator_contract_digest": {
     "sensitive": false,
     "type": "dynamic",
-    "value": "8d3f366152f28e8cb011c57e738d6605281b3633c3b7c1791dbfad41d481247d"
+    "value": "12ef70dd9a212f7527d73be5128a88a65df41fcf4681aa28ccb61355e4d54036"
   },
   "deployment_contract": {
     "sensitive": false,
     "type": "dynamic",
     "value": {
-      "schema_version": "honua.operator-contract/v2",
+      "schema_version": "honua.operator-contract/v99",
       "kind": "deployment",
       "identity": {
         "status": "qualified",
-        "contract_digest": "8d3f366152f28e8cb011c57e738d6605281b3633c3b7c1791dbfad41d481247d",
+        "contract_digest": "12ef70dd9a212f7527d73be5128a88a65df41fcf4681aa28ccb61355e4d54036",
         "candidate_digest": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
         "manifest_digest": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
         "iac_revision": "9c1e7f0b2d3a4c5e6f708192a3b4c5d6e7f80912",
@@ -142,11 +142,11 @@
     "sensitive": false,
     "type": "dynamic",
     "value": {
-      "schema_version": "honua.operator-contract/v2",
+      "schema_version": "honua.operator-contract/v99",
       "kind": "validation",
       "identity": {
         "status": "qualified",
-        "contract_digest": "8d3f366152f28e8cb011c57e738d6605281b3633c3b7c1791dbfad41d481247d",
+        "contract_digest": "12ef70dd9a212f7527d73be5128a88a65df41fcf4681aa28ccb61355e4d54036",
         "candidate_digest": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
         "manifest_digest": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
         "iac_revision": "9c1e7f0b2d3a4c5e6f708192a3b4c5d6e7f80912",
@@ -245,11 +245,11 @@
     "sensitive": false,
     "type": "dynamic",
     "value": {
-      "schema_version": "honua.operator-contract/v2",
+      "schema_version": "honua.operator-contract/v99",
       "kind": "operations",
       "identity": {
         "status": "qualified",
-        "contract_digest": "8d3f366152f28e8cb011c57e738d6605281b3633c3b7c1791dbfad41d481247d",
+        "contract_digest": "12ef70dd9a212f7527d73be5128a88a65df41fcf4681aa28ccb61355e4d54036",
         "candidate_digest": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
         "manifest_digest": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
         "iac_revision": "9c1e7f0b2d3a4c5e6f708192a3b4c5d6e7f80912",

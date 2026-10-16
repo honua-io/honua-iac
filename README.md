@@ -36,7 +36,7 @@ Preset contract: [docs/deployment-presets.md](docs/deployment-presets.md).
 ## Operator contract (automation handoff)
 
 Certified stacks emit `deployment_contract`, `validation_contract`, and
-`operations_contract` — the versioned `honua.operator-contract/v1` handoff that
+`operations_contract` — the versioned `honua.operator-contract/v2` handoff that
 honua-devops, honua-server, and honua-release consume instead of scraping
 scalar outputs. The scalar outputs remain but are non-authoritative.
 

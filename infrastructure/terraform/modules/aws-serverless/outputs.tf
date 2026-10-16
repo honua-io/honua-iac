@@ -337,7 +337,7 @@ output "customcode_codeartifact_nuget_repository_arn" {
 # family here; the server resolves {runtime}.{tier} to a single job-def ARN from
 # the keyed map below and submits against it with the scoped runtime env
 # (HONUA_JOB_TOKEN, customcode.output_prefix, ...) as overrides. Both runtime
-# families share the SAME queue, task role, and hardening. Null when
+# families share the SAME queue, credential-free posture, and hardening. Null when
 # enable_customcode_batch is false.
 
 output "customcode_batch_enabled" {
@@ -366,8 +366,8 @@ output "customcode_compute_environment_arn" {
 }
 
 output "customcode_task_role_arn" {
-  description = "ARN of the MINIMAL task (job) role the untrusted custom-code container assumes. Grants NO Secrets Manager / DB access — only scoped artifact S3 (when a bucket is supplied). The Honua callback uses the scoped HONUA_JOB_TOKEN, not IAM."
-  value       = local.customcode_batch_enabled ? aws_iam_role.customcode_job[0].arn : null
+  description = "Deprecated compatibility output; always null. Custom-code tasks have no IAM role and use the job-scoped artifact broker."
+  value       = null
 }
 
 output "customcode_execution_role_arn" {

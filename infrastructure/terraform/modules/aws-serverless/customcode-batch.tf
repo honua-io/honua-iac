@@ -7,7 +7,7 @@
 # (the custom-code runtimes). The custom-code worker pulls a user-authored
 # repo at a pinned SHA, resolves its dependencies (pip for python / `dotnet
 # build` for dotnet), runs the user's entrypoint against per-job artifact
-# inputs, and writes outputs to a per-job S3 artifact prefix. The user's code
+# inputs, and writes outputs through the job-scoped Honua artifact broker. The user's code
 # must NEVER see the platform's database, admin password, master key, or any
 # Secrets Manager material.
 #
@@ -17,7 +17,7 @@
 # selector flows through the spec parameters; the iac job-def family resolves it
 # to the matching image. Each runtime gets its OWN image + size-tier job-def
 # family (customcode-python-{s,m,l,xl}, customcode-dotnet-{s,m,l,xl}) but SHARES
-# the SAME minimal task role, the SAME execution role, the SAME constrained
+# NO task role, the SAME provider execution role, the SAME constrained
 # egress security group, the SAME queue/compute-environment, and the SAME empty
 # secrets/env hardening below. The hardening is defined ONCE and reused across
 # both runtimes — it is NOT duplicated per runtime.
@@ -29,16 +29,12 @@
 #     gets ONLY the scoped, server-injected runtime env (HONUA_JOB_TOKEN,
 #     HONUA_API_ENDPOINT, customcode.output_prefix, etc.) as SubmitJob container
 #     overrides — never a secretsmanager:* ARN reference.
-#   - A MINIMAL, SEPARATE task (job) role distinct from the GP job role
-#     (aws_iam_role.batch_job in batch.tf): NO Secrets Manager access, NO RDS SG
-#     ingress, NO broad S3. ONLY (a) pull its own ECR image via the execution
-#     role, and (b) s3:PutObject/GetObject scoped to the per-job artifact prefix.
-#     The job's callback to Honua is via the scoped HONUA_JOB_TOKEN (server-
-#     injected env), NOT via AWS IAM — so the task role is for INFRA only
-#     (artifact S3); it intentionally grants no platform-trust permissions.
+#   - NO task (job) role or cloud credential injection. Fargate uses the execution
+#     role for image pulls and platform logs only. Artifact bytes go through the
+#     job/attempt-bound HONUA_JOB_TOKEN to server-owned durable cloud storage.
 #   - Private subnets, assignPublicIp = DISABLED (same as GP).
 #   - A constrained egress security group: a destination allowlist (PyPI/GitHub
-#     for pip+clone, the Honua API endpoint, the artifact S3) rather than an open
+#     for pip+clone, the Honua API endpoint) rather than an open
 #     0.0.0.0/0 HTTPS egress. For MVP this is a CIDR allowlist the operator
 #     supplies; full two-phase egress isolation (resolve deps in a network-on
 #     phase, then run user code with egress OFF) is a Beta hardening (Phase 3).
@@ -108,10 +104,6 @@ locals {
   worker_customcode_repo_name        = "${local.name}-worker-customcode-python"
   worker_customcode_dotnet_repo_name = "${local.name}-worker-customcode-dotnet"
 
-  # S3 artifact prefix the custom-code task role is scoped to. The server sets
-  # customcode.output_prefix per job UNDER this prefix; the role grants
-  # Get/PutObject only beneath it (never the whole bucket).
-  customcode_artifact_prefix = trim(var.customcode_artifact_prefix, "/")
 }
 
 # ---------------------------------------------------------------------------
@@ -135,54 +127,15 @@ resource "aws_iam_role_policy_attachment" "customcode_execution_ecs" {
 }
 
 # ---------------------------------------------------------------------------
-# IAM — custom-code TASK (job) role: the running UNTRUSTED container's own
-# permissions. THIS IS THE HARDENED ROLE. Distinct from the GP job role
-# (aws_iam_role.batch_job). It grants:
-#   - NOTHING from Secrets Manager (no GetSecretValue, no secret ARNs).
-#   - NO RDS reach (no SG ingress is granted to RDS for this role's tasks).
-#   - NO broad S3 — ONLY s3:GetObject/PutObject under the per-job artifact
-#     prefix the server sets (customcode.output_prefix), and ONLY when an
-#     artifact bucket is supplied.
-# The Honua callback uses the scoped HONUA_JOB_TOKEN (server-injected env), NOT
-# AWS IAM, so this role carries no platform-trust permissions at all.
+# Custom-code tasks have NO task role or cloud credentials. Their only data/output
+# authority is a job/attempt-bound Honua callback token. The provider execution role
+# above is used by Fargate for image pull/logs and is never exposed to user code.
+# Fargate is required: an EC2 instance metadata role would reintroduce ambient IAM.
 # ---------------------------------------------------------------------------
 
-resource "aws_iam_role" "customcode_job" {
-  permissions_boundary = var.permissions_boundary_arn
-  count                = local.customcode_batch_enabled ? 1 : 0
-  name_prefix          = "${local.customcode_batch_name}-job-"
-  assume_role_policy   = data.aws_iam_policy_document.batch_execution_assume[0].json
-  tags                 = local.tags
-}
-
-# Scoped artifact S3: Get/PutObject under the per-job artifact prefix ONLY. No
-# ListBucket, no DeleteObject, no bucket-wide grant — and deliberately NO
-# secretsmanager / rds / kms statements. Only created when an artifact bucket is
-# supplied; without it the role has ZERO inline permissions (image pull is on
-# the execution role).
-resource "aws_iam_role_policy" "customcode_job_artifacts" {
-  count = local.customcode_batch_enabled && var.customcode_artifact_bucket_arn != "" ? 1 : 0
-  name  = "${local.customcode_batch_name}-job-artifacts"
-  role  = aws_iam_role.customcode_job[0].id
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "ScopedArtifactObjectAccess"
-        Effect = "Allow"
-        Action = ["s3:GetObject", "s3:PutObject"]
-        # Scoped to the per-job artifact prefix only (customcode.output_prefix is
-        # set by the server UNDER this prefix). NOT the whole bucket.
-        Resource = ["${var.customcode_artifact_bucket_arn}/${local.customcode_artifact_prefix}/*"]
-      }
-    ]
-  })
-}
-
-# ---------------------------------------------------------------------------
 # Security group — CONSTRAINED egress allowlist (NOT open 0.0.0.0/0).
 # Untrusted user code reaches ONLY the operator-supplied destination allowlist:
-# PyPI/GitHub (pip + clone), the Honua API endpoint, and the artifact S3. There
+# PyPI/GitHub (pip + clone), the Honua API endpoint. There
 # is deliberately NO RDS (5432) egress and NO RDS SG ingress is granted for this
 # group. Full two-phase egress isolation (deps-on / run-off) is a Beta hardening
 # (Phase 3); the SCOPED HONUA_JOB_TOKEN is the primary T1/T2 boundary, this
@@ -198,14 +151,14 @@ resource "aws_security_group" "customcode_batch" {
   vpc_id      = local.vpc_id
 
   # HTTPS egress, but ONLY to the operator-supplied destination allowlist
-  # (PyPI/GitHub for pip+clone, the Honua API endpoint, the artifact S3),
+  # (PyPI/GitHub for pip+clone, the Honua API endpoint),
   # rather than an open 0.0.0.0/0. Default is the VPC CIDR so that, absent an
   # explicit allowlist, custom-code can reach in-VPC interface/gateway endpoints
-  # (S3 gateway endpoint, an internal Honua endpoint) but NOT the open internet.
+  # (an internal Honua endpoint) but NOT the open internet.
   dynamic "egress" {
     for_each = length(var.customcode_egress_https_cidrs) > 0 ? var.customcode_egress_https_cidrs : [local.vpc_cidr_block]
     content {
-      description = "Allowlisted HTTPS egress (PyPI/GitHub/Honua API/artifact S3)"
+      description = "Allowlisted HTTPS egress (PyPI/GitHub/Honua API)"
       from_port   = 443
       to_port     = 443
       protocol    = "tcp"
@@ -301,13 +254,13 @@ resource "aws_batch_job_queue" "customcode" {
 # per {runtime}.{tier} (customcode-python-{s,m,l,xl}, customcode-dotnet-{s,m,l,xl}).
 #
 # Mirrors the GP pool (tiers differ ONLY by ephemeral storage), but with the
-# HARDENED container: EMPTY environment/secrets, the SHARED minimal custom-code
-# task role, and the per-RUNTIME worker image — the ONLY thing that varies
+# HARDENED container: EMPTY environment/secrets, NO custom-code
+# credential-free boundary, and the per-RUNTIME worker image — the ONLY thing that varies
 # across runtimes. Per-job sizing (vCPU, memory, timeout, retry) and the scoped
 # runtime env (HONUA_JOB_TOKEN, HONUA_API_ENDPOINT, customcode.output_prefix,
 # ...) are applied by the server at SubmitJob time as container overrides — NONE
 # of which are templated here. The security posture is identical across runtimes
-# because it is sourced from the SAME role/SG/log group, not redefined per family.
+# because it is sourced from the SAME credential-free Fargate/SG/log configuration, not redefined per family.
 # ---------------------------------------------------------------------------
 
 resource "aws_batch_job_definition" "customcode" {
@@ -325,7 +278,7 @@ resource "aws_batch_job_definition" "customcode" {
 
   container_properties = jsonencode(merge({
     image            = each.value.image
-    jobRoleArn       = aws_iam_role.customcode_job[0].arn
+    user             = "1001:1001"
     executionRoleArn = aws_iam_role.customcode_execution[0].arn
 
     resourceRequirements = [
@@ -413,6 +366,7 @@ resource "aws_iam_role_policy" "lambda_customcode_submit" {
         Effect = "Allow"
         Action = [
           "batch:DescribeJobs",
+          "batch:DescribeJobDefinitions",
           "batch:ListJobs"
         ]
         Resource = ["*"]

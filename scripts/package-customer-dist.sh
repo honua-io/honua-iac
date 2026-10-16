@@ -69,7 +69,7 @@ cp "${REPO_ROOT}/scripts/terraform-backend-identity.sh" \
   "${REPO_ROOT}/scripts/terraform-exact-apply.sh" \
   "${STAGING}/scripts/"
 cp "${REPO_ROOT}/scripts/lib/tf-exec-contract.sh" "${STAGING}/scripts/lib/"
-cp "${TF_ROOT}/contracts/operator-contract.v1.schema.json" \
+cp "${TF_ROOT}/contracts/operator-contract.v2.schema.json" \
   "${TF_ROOT}/contracts/terraform-exact-plan.v1.schema.json" \
   "${TF_ROOT}/contracts/terraform-exec-receipt.v1.schema.json" \
   "${TF_ROOT}/contracts/terraform-backend-identity.v1.schema.json" \

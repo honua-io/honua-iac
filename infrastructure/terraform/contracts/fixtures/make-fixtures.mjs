@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Regenerates the honua.operator-contract/v1 fixture corpus.
+// Regenerates the honua.operator-contract/v2 fixture corpus.
 //
 //   node infrastructure/terraform/contracts/fixtures/make-fixtures.mjs
 //
@@ -18,7 +18,7 @@ import { dirname, join } from 'node:path';
 import { createHash } from 'node:crypto';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SCHEMA_VERSION = 'honua.operator-contract/v1';
+const SCHEMA_VERSION = 'honua.operator-contract/v2';
 const CONTRACT_KEYS = ['deployment_contract', 'validation_contract', 'operations_contract'];
 
 const ACCOUNT = '123456789012';
@@ -167,6 +167,9 @@ function certExtensions() {
   return {
     artifact_bucket: CERT_BUCKET,
     customcode_batch: {
+      credential_mode: 'none',
+      artifact_transport: 'job-scoped-broker',
+      platform: 'FARGATE',
       enabled: false,
       job_definition_arns: {},
       job_queue_arn: null,
@@ -669,7 +672,7 @@ function sealDigest(envelope) {
     stripped[key] = clone;
   }
   const digest = sha256Hex(
-    canonicalize({ schema_version: SCHEMA_VERSION, ...stripped }),
+    canonicalize({ schema_version: envelope.deployment_contract.schema_version, ...stripped }),
   );
   for (const key of CONTRACT_KEYS) envelope[key].identity.contract_digest = digest;
   return digest;
@@ -833,7 +836,7 @@ write(
   'invalid-unknown-schema-version.json',
   mutate((envelope) => {
     for (const key of CONTRACT_KEYS) {
-      envelope[key].schema_version = 'honua.operator-contract/v2';
+      envelope[key].schema_version = 'honua.operator-contract/v99';
     }
   }),
 );
@@ -915,4 +918,33 @@ write(
     schema_version: SCHEMA_VERSION,
     contract_digest: envelope.deployment_contract.identity.contract_digest,
   });
+}
+
+// v2 is a deliberate incompatible opt-in; legacy and mixed documents fail closed.
+write('invalid-legacy-v1.json', mutate(envelope => {
+  for (const key of CONTRACT_KEYS) envelope[key].schema_version = 'honua.operator-contract/v1';
+}));
+write('invalid-mixed-contract-versions.json', mutate(envelope => {
+  envelope.operations_contract.schema_version = 'honua.operator-contract/v1';
+}));
+const credentialFree = buildEnvelope(certQualifiedIdentity(), certContracts);
+for (const key of CONTRACT_KEYS) {
+  const custom = credentialFree[key].extensions.customcode_batch;
+  custom.enabled = true;
+  custom.job_queue_arn = `arn:${PARTITION}:batch:${REGION}:${ACCOUNT}:job-queue/customcode`;
+  custom.job_definition_arns = { 'python.s': `arn:${PARTITION}:batch:${REGION}:${ACCOUNT}:job-definition/customcode-python-s:1` };
+  custom.runtimes = ['python'];
+}
+sealDigest(credentialFree);
+write('valid-aws-cert-credential-free.json', terraformOutputDocument(credentialFree));
+for (const [name, change] of [
+  ['task-role', custom => { custom.task_role_arn = `arn:${PARTITION}:iam::${ACCOUNT}:role/legacy-customcode`; }],
+  ['direct-storage', custom => { custom.artifact_transport = 's3'; }],
+  ['missing-credential-mode', custom => { delete custom.credential_mode; }],
+]) {
+  const invalid = structuredClone(credentialFree);
+  // A single differing projection must be rejected too.
+  change(invalid.operations_contract.extensions.customcode_batch);
+  sealDigest(invalid);
+  write(`invalid-customcode-${name}.json`, terraformOutputDocument(invalid));
 }

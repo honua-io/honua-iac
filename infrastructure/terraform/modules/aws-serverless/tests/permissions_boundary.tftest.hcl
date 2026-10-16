@@ -129,6 +129,15 @@ run "workload_boundary" {
 
 run "auxiliary_roles_keep_the_boundary" {
   command = plan
+  # Resolve only the computed execution-role ARN at plan time. The rendered
+  # container definition remains production configuration, not mocked JSON.
+  override_resource {
+    target          = aws_iam_role.customcode_execution[0]
+    override_during = plan
+    values = {
+      arn = "arn:aws:iam::123456789012:role/honua-customcode-execution"
+    }
+  }
   variables {
     permissions_boundary_arn      = "arn:aws:iam::123456789012:policy/honua-release-cell-workload-boundary"
     use_batch_service_linked_role = true
@@ -144,11 +153,18 @@ run "auxiliary_roles_keep_the_boundary" {
       aws_iam_role.batch_execution[0].permissions_boundary == var.permissions_boundary_arn,
       aws_iam_role.batch_job[0].permissions_boundary == var.permissions_boundary_arn,
       aws_iam_role.customcode_execution[0].permissions_boundary == var.permissions_boundary_arn,
-      aws_iam_role.customcode_job[0].permissions_boundary == var.permissions_boundary_arn,
       aws_iam_role.control_plane_events[0].permissions_boundary == var.permissions_boundary_arn,
       aws_iam_role.control_plane_scheduler[0].permissions_boundary == var.permissions_boundary_arn
     ])
     error_message = "All auxiliary Batch, custom-code and event roles must retain the operator boundary."
+  }
+  assert {
+    condition = alltrue([for definition in aws_batch_job_definition.customcode :
+      !can(jsondecode(definition.container_properties).jobRoleArn) &&
+      jsondecode(definition.container_properties).user == "1001:1001" &&
+      length(jsondecode(definition.container_properties).secrets) == 0
+    ])
+    error_message = "Custom-code definitions must expose no task role or secrets and must use the sanctioned non-root user."
   }
 }
 

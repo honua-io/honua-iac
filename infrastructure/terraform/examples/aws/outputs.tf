@@ -5,7 +5,7 @@
 # immutable identity, and no contract digest, so they cannot prove that IaC,
 # Helm, DevOps, server, and the release candidate refer to the same deployment.
 #
-# The authoritative surface is the honua.operator-contract/v1 triple in
+# The authoritative surface is the honua.operator-contract/v2 triple in
 # operator-contract.tf: deployment_contract, validation_contract, and
 # operations_contract. New certified automation must consume those and must not
 # reconstruct a handoff from the scalars below. See docs/operator-contract.md

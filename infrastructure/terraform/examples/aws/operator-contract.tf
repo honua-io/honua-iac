@@ -1,6 +1,6 @@
-# Canonical honua.operator-contract/v1 producer for the AWS ECS small root.
+# Canonical honua.operator-contract/v2 producer for the AWS ECS small root.
 #
-# Schema: infrastructure/terraform/contracts/operator-contract.v1.schema.json
+# Schema: infrastructure/terraform/contracts/operator-contract.v2.schema.json
 # Spec:   docs/operator-contract.md
 #
 # Rules this file exists to hold:
@@ -24,7 +24,7 @@ data "aws_caller_identity" "operator_contract" {}
 data "aws_partition" "operator_contract" {}
 
 variable "operator_contract_validation" {
-  description = "Optional validation-lane inputs projected into the honua.operator-contract/v1 validation contract. Defaults describe a smoke-seeded ephemeral cell with MCP disabled."
+  description = "Optional validation-lane inputs projected into the honua.operator-contract/v2 validation contract. Defaults describe a smoke-seeded ephemeral cell with MCP disabled."
   type = object({
     mcp_enabled        = optional(bool, false)
     mcp_profile        = optional(string)
@@ -74,7 +74,7 @@ variable "operator_contract_validation" {
 }
 
 locals {
-  operator_contract_schema_version = "honua.operator-contract/v1"
+  operator_contract_schema_version = "honua.operator-contract/v2"
 
   operator_contract_root   = "infrastructure/terraform/examples/aws"
   operator_contract_module = "infrastructure/terraform/modules/aws-ecs"
@@ -484,7 +484,7 @@ locals {
 }
 
 output "deployment_contract" {
-  description = "Canonical honua.operator-contract/v1 deployment contract for AWS ECS. Authoritative handoff for honua-devops install."
+  description = "Canonical honua.operator-contract/v2 deployment contract for AWS ECS. Authoritative handoff for honua-devops install."
   value       = local.deployment_contract
 
   # The deployed image and the contract's immutable claim have to be the same
@@ -502,17 +502,17 @@ output "deployment_contract" {
 }
 
 output "validation_contract" {
-  description = "Canonical honua.operator-contract/v1 validation contract for AWS ECS. Authoritative handoff for verification, smoke, and teardown lanes."
+  description = "Canonical honua.operator-contract/v2 validation contract for AWS ECS. Authoritative handoff for verification, smoke, and teardown lanes."
   value       = local.validation_contract
 }
 
 output "operations_contract" {
-  description = "Canonical honua.operator-contract/v1 operations contract for AWS ECS. Authoritative handoff for day-2 operations and runtime configuration."
+  description = "Canonical honua.operator-contract/v2 operations contract for AWS ECS. Authoritative handoff for day-2 operations and runtime configuration."
   value       = local.operations_contract
 }
 
 output "operator_contract" {
-  description = "Convenience envelope carrying all three honua.operator-contract/v1 contracts. Non-normative: the three contracts are the authoritative outputs."
+  description = "Convenience envelope carrying all three honua.operator-contract/v2 contracts. Non-normative: the three contracts are the authoritative outputs."
   value       = local.operator_contract
 }
 
