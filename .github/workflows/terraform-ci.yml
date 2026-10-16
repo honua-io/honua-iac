@@ -140,6 +140,7 @@ jobs:
           set -euo pipefail
 
           roots=(
+            "infrastructure/terraform/internal/aws-agent-controller"
             "infrastructure/terraform/internal/aws-agent-worker"
             "infrastructure/terraform/examples/aws"
             "infrastructure/terraform/examples/aws-serverless"
@@ -263,6 +264,7 @@ jobs:
             "infrastructure/terraform/components/cloud-demo-smoke-credentials"
             "infrastructure/terraform/components/aws-github-oidc"
             "infrastructure/terraform/internal/gtm-forms-router"
+            "infrastructure/terraform/internal/aws-agent-controller"
             "infrastructure/terraform/internal/aws-agent-worker"
             "docs/devops/examples"
           )
@@ -279,6 +281,9 @@ jobs:
 
       - name: Agent container isolation contracts (mock providers only)
         run: terraform -chdir=infrastructure/terraform/internal/aws-agent-worker test -no-color
+
+      - name: Agent controller state contracts (mock providers only)
+        run: terraform -chdir=infrastructure/terraform/internal/aws-agent-controller test -no-color
 
       - name: Marketplace manifest path check
         shell: bash
