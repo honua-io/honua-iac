@@ -52,6 +52,10 @@ run "retained_candidate_storage" {
     error_message = "Only the fixed lifecycle may put claims, and transaction APIs must not bypass this restriction."
   }
   assert {
+    condition     = jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement[4].Action == "dynamodb:PutItem" && jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement[4].Condition.StringNotEquals["dynamodb:EnclosingOperation"] == "TransactWriteItems" && toset(jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement[4].Condition.ArnNotEquals["aws:PrincipalArn"]) == var.state_admin_role_arns
+    error_message = "Older nontransactional launch definitions must not bypass the candidate claim, even with existing identity permissions."
+  }
+  assert {
     condition     = aws_iam_role_policy.controller_state.role == "runtime" && jsondecode(aws_iam_role_policy.controller_state.policy).Statement[3].Condition.StringEquals["s3:if-none-match"] == "*" && output.state_config.table == aws_dynamodb_table.history["state"].name
     error_message = "Role paths and controller state outputs must match the actual runtime contract."
   }

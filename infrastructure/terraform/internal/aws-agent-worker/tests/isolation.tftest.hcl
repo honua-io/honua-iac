@@ -86,7 +86,7 @@ run "candidate_wide_fencing" {
     error_message = "A claimed attempt rechecks expiry and can launch only one fixed task."
   }
   assert {
-    condition     = jsondecode(aws_sfn_state_machine.worker.definition).States.CheckObservation.Choices[6].StringEquals == "STOPPED" && jsondecode(aws_sfn_state_machine.worker.definition).States.CheckObservation.Choices[6].Next == "RecordStopped" && jsondecode(aws_sfn_state_machine.worker.definition).States.CheckObservation.Choices[3].Not.StringEqualsPath == "$.launched.Tasks[0].TaskArn" && jsondecode(aws_sfn_state_machine.worker.definition).States.Unobserved.Type == "Fail"
+    condition     = jsondecode(aws_sfn_state_machine.worker.definition).States.CheckObservation.Choices[7].StringEquals == "STOPPED" && jsondecode(aws_sfn_state_machine.worker.definition).States.CheckObservation.Choices[7].Next == "RecordStopped" && jsondecode(aws_sfn_state_machine.worker.definition).States.CheckObservation.Choices[4].Not.StringEqualsPath == "$.launched.Tasks[0].TaskArn" && jsondecode(aws_sfn_state_machine.worker.definition).States.Unobserved.Type == "Fail"
     error_message = "Missing or foreign observations must not release the candidate; exact STOPPED must be observed."
   }
   assert {
@@ -104,6 +104,10 @@ run "candidate_wide_fencing" {
   assert {
     condition     = jsondecode(output.controller_policy).Statement[6].Action == "dynamodb:GetItem" && toset(jsondecode(output.controller_policy).Statement[6].Condition["ForAllValues:StringEquals"]["dynamodb:LeadingKeys"]) == toset([local.claim_key, local.candidate_claim_key, local.stopped_key]) && contains(jsondecode(output.controller_policy).Statement[2].Action, "states:DescribeStateMachine")
     error_message = "Controller preflight may inspect only its fixed definition and exact claim records, never release them."
+  }
+  assert {
+    condition     = jsondecode(aws_sfn_state_machine.worker.definition).States.CheckObservationDeadline.Choices[0].TimestampGreaterThanEquals == "2026-10-15T16:15:00Z" && jsondecode(aws_sfn_state_machine.worker.definition).States.CheckObservation.Choices[0].TimestampGreaterThanEquals == local.observation_deadline && jsondecode(aws_sfn_state_machine.worker.definition).States.CheckStopTime.Choices[0].TimestampGreaterThanEquals == local.observation_deadline && jsondecode(aws_sfn_state_machine.worker.definition).States.ObservationExpired.Type == "Fail"
+    error_message = "A late execution cannot extend polling or release past the fixed observation window."
   }
 }
 

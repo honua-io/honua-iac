@@ -45,12 +45,19 @@ lifecycle roles may make transactional PutItem calls on their exact attempt,
 candidate and stop-record keys. No UpdateItem/DeleteItem or runtime TTL authority
 is introduced. IAM cannot enforce DynamoDB condition-expression contents, so the
 fixed state-machine definition and service-only role trust remain part of the
-boundary. A campaign must not mix older unfenced worker definitions with this
-lifecycle. Freeze and verify the actual IaC and definition revisions in preflight.
+boundary. Direct runtime PutItem is explicitly denied by the claim-table policy
+so older unfenced definitions cannot launch. Preflight must also observe all
+pre-upgrade workers stopped before enabling this lifecycle; policy changes cannot
+stop a worker that already launched. Freeze and verify the actual IaC and
+definition revisions in preflight.
 
 Reserve DynamoDB transaction requests, the five-second task polling interval,
-bounded API calls and up to 300 seconds of lifecycle observation beyond the worker
-lifetime before starting. Lifecycle success only means the worker stopped and its
+bounded API calls and an absolute observation window ending 300 seconds after
+worker expiry before starting. Deadline choices guard polling, stop requests and
+claim release; late execution start does not move that window. Reserve an extra
+30 seconds for an API request already in flight at the deadline. The relative
+state-machine timeout remains an additional cap, not the observation deadline.
+Lifecycle success only means the worker stopped and its
 claim was recorded; it does not mean the agent goal, application cleanup or
 accounting passed. Retain native execution history and stop records independently.
 

@@ -59,7 +59,9 @@ one. State administrators remain privileged recovery actors, not runtime actors.
    Transaction reads remain denied to runtime roles. The lifecycle uses atomic
    attempt/candidate acquisition and observed-stop recording; ACTIVE does not
    expire and is never released by controller lease takeover. Upgrade both roots
-   together and prohibit older worker definitions during campaign preflight.
+   together. Direct runtime PutItem is explicitly denied so older lifecycle
+   definitions cannot bypass the candidate claim. Preflight must also observe all
+   pre-upgrade workers stopped; changing policies does not stop an existing task.
    All other runtime claim-table mutations, including disabling PITR, are denied.
 4. Independently demonstrate actual role denials, versioned writes, concurrent
    writer fencing, controller-loss recovery and retained charges before running a

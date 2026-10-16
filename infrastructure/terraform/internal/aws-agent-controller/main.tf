@@ -143,6 +143,12 @@ resource "aws_dynamodb_resource_policy" "claims" {
         Condition = {
           ArnNotEquals = { "aws:PrincipalArn" = sort(tolist(var.state_admin_role_arns)) }
           StringEquals = { "dynamodb:EnclosingOperation" = "TransactGetItems" }
+      } },
+      { Sid      = "RuntimeClaimWritesMustBeTransactional", Effect = "Deny", Principal = "*", Action = "dynamodb:PutItem",
+        Resource = aws_dynamodb_table.history["claims"].arn,
+        Condition = {
+          ArnNotEquals    = { "aws:PrincipalArn" = sort(tolist(var.state_admin_role_arns)) }
+          StringNotEquals = { "dynamodb:EnclosingOperation" = "TransactWriteItems" }
       } }
     ]
   })

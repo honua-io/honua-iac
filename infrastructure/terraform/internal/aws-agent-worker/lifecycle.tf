@@ -1,6 +1,7 @@
 # A candidate-wide claim does not expire or follow the controller lease. Only
 # observing this execution's exact task STOPPED permits a successor worker.
 locals {
+  observation_deadline = timeadd(local.expires_at, "300s")
   claim_identity = {
     attemptId         = { S = var.attempt_id }, "executionArn" = { "S.$" = "$$.Execution.Id" }
     taskDefinitionArn = { S = aws_ecs_task_definition.worker.arn }
@@ -55,7 +56,12 @@ locals {
           { Not = { Variable = "$.launched.Tasks[0].TaskArn", IsPresent = true }, Next = "Unobserved" }
         ], Default = "WaitForTask"
       }
-      WaitForTask = { Type = "Wait", Seconds = 5, Next = "ObserveTask" }
+      WaitForTask = { Type = "Wait", Seconds = 5, Next = "CheckObservationDeadline" }
+      CheckObservationDeadline = {
+        Type    = "Choice"
+        Choices = [{ Variable = "$$.State.EnteredTime", TimestampGreaterThanEquals = local.observation_deadline, Next = "ObservationExpired" }]
+        Default = "ObserveTask"
+      }
       ObserveTask = {
         Type       = "Task", Resource = "arn:aws:states:::aws-sdk:ecs:describeTasks", TimeoutSeconds = 30
         Parameters = { Cluster = var.cluster_arn, "Tasks.$" = "States.Array($.launched.Tasks[0].TaskArn)" }
@@ -63,6 +69,7 @@ locals {
       }
       CheckObservation = {
         Type = "Choice", Choices = [
+          { Variable = "$$.State.EnteredTime", TimestampGreaterThanEquals = local.observation_deadline, Next = "ObservationExpired" },
           { Variable = "$.observed.Failures[0]", IsPresent = true, Next = "Unobserved" },
           { Variable = "$.observed.Tasks[1]", IsPresent = true, Next = "Unobserved" },
           { Not = { Variable = "$.observed.Tasks[0].TaskArn", IsPresent = true }, Next = "Unobserved" },
@@ -73,8 +80,11 @@ locals {
         ], Default = "CheckStopTime"
       }
       CheckStopTime = {
-        Type    = "Choice"
-        Choices = [{ Variable = "$$.State.EnteredTime", TimestampGreaterThanEquals = local.expires_at, Next = "StopWorker" }]
+        Type = "Choice"
+        Choices = [
+          { Variable = "$$.State.EnteredTime", TimestampGreaterThanEquals = local.observation_deadline, Next = "ObservationExpired" },
+          { Variable = "$$.State.EnteredTime", TimestampGreaterThanEquals = local.expires_at, Next = "StopWorker" }
+        ]
         Default = "WaitForTask"
       }
       StopWorker = {
@@ -100,7 +110,8 @@ locals {
           } }
         ] }
       }
-      Unobserved = { Type = "Fail", Error = "WorkerStateUnobserved" }
+      Unobserved         = { Type = "Fail", Error = "WorkerStateUnobserved" }
+      ObservationExpired = { Type = "Fail", Error = "WorkerObservationExpired" }
     }
   }
 }
