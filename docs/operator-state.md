@@ -62,6 +62,13 @@ root's outputs:
 - `examples/aws-data/backend.tf.example`
 - `examples/aws-cert/backend.tf.example`
 
+The internal agent campaign also ships
+`internal/aws-agent-worker/backend.tf.example` (one key per attempt) and
+`internal/aws-agent-controller/backend.tf.example` (one retained key per candidate).
+The controller root's runtime evidence bucket is separate from this Terraform
+backend. Its accounting and launch history must survive disposable-worker cleanup;
+see the [controller storage runbook](../infrastructure/terraform/internal/aws-agent-controller/README.md).
+
 That list is not prose. `scripts/check-backend-examples.sh` runs in CI and fails
 if it drifts from the files on disk, if a release-qualified AWS root stops
 shipping one, if two roots claim the same object key, or if a root goes back to
