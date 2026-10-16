@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { validateDocument } from './validate-operator-contract.mjs';
-const schema = JSON.parse(readFileSync(new URL('../../../contracts/operator-contract.v1.schema.json', import.meta.url)));
+const schema = JSON.parse(readFileSync(new URL('../../../contracts/operator-contract.v2.schema.json', import.meta.url)));
 const events = readFileSync(process.argv[2], 'utf8').trim().split('\n').map(line => JSON.parse(line));
 const summary = events.find(event => event.type === 'test_summary')?.test_summary;
 assert.equal(summary?.status, 'pass', 'Terraform root tests must pass');

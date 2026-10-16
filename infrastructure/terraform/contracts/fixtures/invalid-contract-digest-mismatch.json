@@ -28,7 +28,7 @@
     "sensitive": false,
     "type": "dynamic",
     "value": {
-      "schema_version": "honua.operator-contract/v1",
+      "schema_version": "honua.operator-contract/v2",
       "kind": "deployment",
       "identity": {
         "status": "qualified",
@@ -142,7 +142,7 @@
     "sensitive": false,
     "type": "dynamic",
     "value": {
-      "schema_version": "honua.operator-contract/v1",
+      "schema_version": "honua.operator-contract/v2",
       "kind": "validation",
       "identity": {
         "status": "qualified",
@@ -245,7 +245,7 @@
     "sensitive": false,
     "type": "dynamic",
     "value": {
-      "schema_version": "honua.operator-contract/v1",
+      "schema_version": "honua.operator-contract/v2",
       "kind": "operations",
       "identity": {
         "status": "qualified",

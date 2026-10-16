@@ -337,7 +337,7 @@ output "customcode_codeartifact_nuget_repository_arn" {
 # family here; the server resolves {runtime}.{tier} to a single job-def ARN from
 # the keyed map below and submits against it with the scoped runtime env
 # (HONUA_JOB_TOKEN, customcode.output_prefix, ...) as overrides. Both runtime
-# families share the SAME queue, task role, and hardening. Null when
+# families share the SAME queue, credential-free posture, and hardening. Null when
 # enable_customcode_batch is false.
 
 output "customcode_batch_enabled" {

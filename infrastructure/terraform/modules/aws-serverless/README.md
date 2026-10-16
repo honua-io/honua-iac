@@ -678,7 +678,7 @@ was rendered and granted.
 
 ## Custom-code (UNTRUSTED user code) on AWS Batch — locked down
 
-Optional, **off by default**. When `enable_customcode_batch = true`, the module provisions a **SEPARATE, deliberately hardened** Batch substrate for running **untrusted user code** (the custom-code **python** and **dotnet** runtimes — honua-server #2196). It parallels the GP substrate (Fargate-Spot scale-to-zero) but **this family runs untrusted code, so it is locked down**. The **runtime selector** (`customcode.runtime = python | dotnet`) the server sends picks **only the image**: each runtime gets its own size-tier job-def family (`customcode-python-{s,m,l,xl}` and `customcode-dotnet-{s,m,l,xl}`, tiers differing only by ephemeral storage) sharing the **identical** task role, execution role, security group, queue, compute environment, and empty-secrets hardening — **the security posture is defined once and reused, not duplicated per runtime**:
+Optional, **off by default**. When `enable_customcode_batch = true`, the module provisions a **SEPARATE, deliberately hardened** Batch substrate for running **untrusted user code** (the custom-code **python** and **dotnet** runtimes — honua-server #2196). It parallels the GP substrate (Fargate-Spot scale-to-zero) but **this family runs untrusted code, so it is locked down**. The **runtime selector** (`customcode.runtime = python | dotnet`) the server sends picks **only the image**: each runtime gets its own size-tier job-def family (`customcode-python-{s,m,l,xl}` and `customcode-dotnet-{s,m,l,xl}`, tiers differing only by ephemeral storage) sharing the **identical** provider execution role, security group, queue, compute environment, and credential-free hardening — **the security posture is defined once and reused, not duplicated per runtime**:
 
 - **Empty secrets/env on the job definition.** Unlike the GDAL job-def (which injects the DB connection string / admin password / master key from Secrets Manager), the custom-code job-def carries an **empty** `environment` and `secrets`. User code receives **only** the scoped runtime env the server adds at `SubmitJob` time (`HONUA_JOB_TOKEN`, `HONUA_API_ENDPOINT`, `customcode.output_prefix`, …).
 - **No task role or cloud credentials.** Untrusted code runs on Fargate with no `jobRoleArn`, no injected secrets, and user `1001:1001`. Fargate has no EC2 instance-profile metadata endpoint. The execution role is provider-only (image pull/logs). Output and diagnostics use the server's job/attempt-bound artifact broker; the runtime verifies the exact definition before dispatch. The legacy artifact-bucket/prefix inputs are ignored and `customcode_task_role_arn` is always null. Apply this change together with the credential-free worker images and broker-capable server; old S3-upload workers are incompatible. No live AWS qualification is implied by Terraform validation.
@@ -1239,3 +1239,9 @@ The identity belongs to the API Lambda's published configuration. Keeping the li
 alias on a prior published version preserves that version's prior identity while
 staging the candidate. Existing 4 KB environment preconditions still apply; this
 input adds no permissions and performs no alias promotion.
+
+The operator contract is `honua.operator-contract/v2`. The deprecated
+`customcode_task_role_arn` is always null; v1 consumers are incompatible with
+this credential-free worker contract. Deploy the v2-aware DevOps consumer and
+the server broker/scoped-authentication runtime together; do not reinterpret
+an older apply receipt as v2. See [the migration policy](../../../../docs/operator-contract.md#migration-from-v1).

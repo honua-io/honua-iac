@@ -1,7 +1,7 @@
 {
-  "schema_version": "honua.operator-contract/v1",
+  "schema_version": "honua.operator-contract/v2",
   "deployment_contract": {
-    "schema_version": "honua.operator-contract/v1",
+    "schema_version": "honua.operator-contract/v2",
     "kind": "deployment",
     "identity": {
       "status": "qualified",
@@ -110,7 +110,7 @@
     }
   },
   "validation_contract": {
-    "schema_version": "honua.operator-contract/v1",
+    "schema_version": "honua.operator-contract/v2",
     "kind": "validation",
     "identity": {
       "status": "qualified",
@@ -208,7 +208,7 @@
     }
   },
   "operations_contract": {
-    "schema_version": "honua.operator-contract/v1",
+    "schema_version": "honua.operator-contract/v2",
     "kind": "operations",
     "identity": {
       "status": "qualified",

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Contract test for honua.operator-contract/v1.
+# Contract test for honua.operator-contract/v2.
 #
 # Runs the validator over the checked-in fixture corpus and asserts that each
 # positive fixture passes and each negative fixture fails with the specific
@@ -21,7 +21,7 @@ REPO_ROOT="${1:-$(cd "$SCRIPT_DIR/../../../../.." && pwd)}"
 
 VALIDATOR="$SCRIPT_DIR/validate-operator-contract.mjs"
 FIXTURE_DIR="$REPO_ROOT/infrastructure/terraform/contracts/fixtures"
-SCHEMA="$REPO_ROOT/infrastructure/terraform/contracts/operator-contract.v1.schema.json"
+SCHEMA="$REPO_ROOT/infrastructure/terraform/contracts/operator-contract.v2.schema.json"
 EXAMPLES_DIR="$REPO_ROOT/infrastructure/terraform/examples"
 AWS_ROOT="$EXAMPLES_DIR/aws"
 
@@ -118,6 +118,20 @@ else
   fail "valid-aws-ecs-small-legacy-health-source.json should validate"
 fi
 
+# A credential-free GP extension is part of the versioned schema, not only a JS check.
+if validate --expect-valid --require-qualified --quiet "$FIXTURE_DIR/valid-aws-cert-credential-free.json"; then
+  pass "v2 credential-free GP projection validates"
+else
+  fail "v2 credential-free GP projection should validate"
+fi
+# An old schema must reject the new contract even when fields otherwise overlap.
+if node "$VALIDATOR" --schema "$REPO_ROOT/infrastructure/terraform/contracts/operator-contract.v1.schema.json" \
+    --expect-code E_SCHEMA --quiet "$FIXTURE_DIR/valid-aws-cert-credential-free.json"; then
+  pass "v1 schema refuses v2 instead of silently interpreting the changed GP fields"
+else
+  fail "v1 schema must reject v2"
+fi
+
 # ---------------------------------------------------------------------------
 log "== negative fixtures =="
 
@@ -125,6 +139,11 @@ log "== negative fixtures =="
 NEGATIVE_CASES=(
   "invalid-missing-required-field.json:E_MISSING_FIELD"
   "invalid-unknown-schema-version.json:E_UNKNOWN_VERSION"
+  "invalid-legacy-v1.json:E_UNKNOWN_VERSION"
+  "invalid-mixed-contract-versions.json:E_UNKNOWN_VERSION"
+  "invalid-customcode-task-role.json:E_SCHEMA"
+  "invalid-customcode-direct-storage.json:E_SCHEMA"
+  "invalid-customcode-missing-credential-mode.json:E_MISSING_FIELD"
   "invalid-mutable-image-tag.json:E_MUTABLE_PIN"
   "invalid-secret-value-leak.json:E_SECRET_VALUE"
   "invalid-contract-digest-mismatch.json:E_DIGEST_MISMATCH"
@@ -297,9 +316,9 @@ fi
 
 log ""
 if [[ "$FAILURES" -eq 0 ]]; then
-  log "[OK] operator-contract v1: $CHECKS checks passed"
+  log "[OK] operator-contract v2: $CHECKS checks passed"
   exit 0
 fi
 
-log "[ERROR] operator-contract v1: $FAILURES of $CHECKS checks failed" >&2
+log "[ERROR] operator-contract v2: $FAILURES of $CHECKS checks failed" >&2
 exit 1

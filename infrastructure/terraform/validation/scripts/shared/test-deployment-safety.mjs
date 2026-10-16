@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { validateDocument } from './validate-operator-contract.mjs';
 
-const schema = JSON.parse(readFileSync(new URL('../../../contracts/operator-contract.v1.schema.json', import.meta.url)));
+const schema = JSON.parse(readFileSync(new URL('../../../contracts/operator-contract.v2.schema.json', import.meta.url)));
 const fixture = JSON.parse(readFileSync(new URL('../../../contracts/fixtures/valid-aws-ecs-native-safety.json', import.meta.url)));
 const keys = ['deployment_contract', 'validation_contract', 'operations_contract'];
 const envelope = Object.fromEntries(keys.map(key => [key, fixture[key].value]));
@@ -15,7 +15,7 @@ function mutated(change) {
   const copy = structuredClone(envelope);
   change(copy.operations_contract.resilience.protection_profile.execution, copy);
   for (const key of keys) delete copy[key].identity.contract_digest;
-  const bytes = JSON.stringify(canonical({ schema_version: 'honua.operator-contract/v1', ...copy }))
+  const bytes = JSON.stringify(canonical({ schema_version: 'honua.operator-contract/v2', ...copy }))
     .replaceAll('<', '\\u003c').replaceAll('>', '\\u003e').replaceAll('&', '\\u0026');
   const digest = createHash('sha256').update(bytes).digest('hex');
   for (const key of keys) copy[key].identity.contract_digest = digest;

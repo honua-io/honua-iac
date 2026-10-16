@@ -79,7 +79,7 @@ variable "honua_image" {
 }
 
 variable "operator_contract_identity" {
-  description = "Optional immutable identity inputs for the honua.operator-contract/v1 output. Omit only for disposable, unqualified development plans; certified consumers must provide every required digest and backend/state lineage input."
+  description = "Optional immutable identity inputs for the honua.operator-contract/v2 output. Omit only for disposable, unqualified development plans; certified consumers must provide every required digest and backend/state lineage input."
   type = object({
     candidate_digest      = string
     manifest_digest       = optional(string)

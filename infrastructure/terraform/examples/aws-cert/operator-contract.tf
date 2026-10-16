@@ -1,6 +1,6 @@
-# Canonical honua.operator-contract/v1 producer for the AWS certification root.
+# Canonical honua.operator-contract/v2 producer for the AWS certification root.
 #
-# Schema: infrastructure/terraform/contracts/operator-contract.v1.schema.json
+# Schema: infrastructure/terraform/contracts/operator-contract.v2.schema.json
 # Spec:   docs/operator-contract.md
 # Peer:   examples/aws/operator-contract.tf (the ECS/Fargate producer)
 #
@@ -52,7 +52,7 @@ data "aws_caller_identity" "operator_contract" {}
 data "aws_partition" "operator_contract" {}
 
 variable "operator_contract_identity" {
-  description = "Optional immutable identity inputs for the honua.operator-contract/v1 output. Omit only for disposable, unqualified development plans; certified consumers must provide every required digest and backend/state lineage input."
+  description = "Optional immutable identity inputs for the honua.operator-contract/v2 output. Omit only for disposable, unqualified development plans; certified consumers must provide every required digest and backend/state lineage input."
   type = object({
     candidate_digest      = string
     manifest_digest       = optional(string)
@@ -122,7 +122,7 @@ variable "operator_contract_identity" {
 }
 
 variable "operator_contract_validation" {
-  description = "Optional validation-lane inputs projected into the honua.operator-contract/v1 validation contract. Defaults describe the certification cell with MCP disabled."
+  description = "Optional validation-lane inputs projected into the honua.operator-contract/v2 validation contract. Defaults describe the certification cell with MCP disabled."
   type = object({
     mcp_enabled        = optional(bool, false)
     mcp_profile        = optional(string)
@@ -168,7 +168,7 @@ variable "operator_contract_validation" {
 }
 
 locals {
-  operator_contract_schema_version = "honua.operator-contract/v1"
+  operator_contract_schema_version = "honua.operator-contract/v2"
 
   operator_contract_root   = "infrastructure/terraform/examples/aws-cert"
   operator_contract_module = "infrastructure/terraform/modules/aws-serverless"
@@ -320,6 +320,9 @@ locals {
       workload_id           = module.honua.gp_batch_workload_id
     }
     customcode_batch = {
+      credential_mode     = "none"
+      artifact_transport  = "job-scoped-broker"
+      platform            = "FARGATE"
       enabled             = module.honua.customcode_batch_enabled
       job_queue_arn       = module.honua.customcode_job_queue_arn
       job_definition_arns = module.honua.customcode_job_definition_arns
@@ -600,7 +603,7 @@ locals {
 }
 
 output "deployment_contract" {
-  description = "Canonical honua.operator-contract/v1 deployment contract for the AWS certification root. Authoritative handoff for honua-devops install."
+  description = "Canonical honua.operator-contract/v2 deployment contract for the AWS certification root. Authoritative handoff for honua-devops install."
   value       = local.deployment_contract
 
   # The deployed image and the contract's immutable claim have to be the same
@@ -618,17 +621,17 @@ output "deployment_contract" {
 }
 
 output "validation_contract" {
-  description = "Canonical honua.operator-contract/v1 validation contract for the AWS certification root. Authoritative handoff for verification, smoke, and teardown lanes."
+  description = "Canonical honua.operator-contract/v2 validation contract for the AWS certification root. Authoritative handoff for verification, smoke, and teardown lanes."
   value       = local.validation_contract
 }
 
 output "operations_contract" {
-  description = "Canonical honua.operator-contract/v1 operations contract for the AWS certification root. Authoritative handoff for day-2 operations and runtime configuration."
+  description = "Canonical honua.operator-contract/v2 operations contract for the AWS certification root. Authoritative handoff for day-2 operations and runtime configuration."
   value       = local.operations_contract
 }
 
 output "operator_contract" {
-  description = "Convenience envelope carrying all three honua.operator-contract/v1 contracts. Non-normative: the three contracts are the authoritative outputs."
+  description = "Convenience envelope carrying all three honua.operator-contract/v2 contracts. Non-normative: the three contracts are the authoritative outputs."
   value       = local.operator_contract
 }
 

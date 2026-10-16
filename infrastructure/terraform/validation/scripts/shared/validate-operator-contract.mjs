@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Validator for honua.operator-contract/v1 documents.
+// Validator for honua.operator-contract/v2 documents.
 //
 // Reads a `terraform output -json` document (or a bare contract envelope),
-// checks it against infrastructure/terraform/contracts/operator-contract.v1.schema.json,
+// checks it against infrastructure/terraform/contracts/operator-contract.v2.schema.json,
 // then applies the semantic rules the schema alone cannot express: canonical
 // byte reproducibility, contract-digest recomputation, cross-contract identity
 // agreement, immutable-pin enforcement, and secret-value leakage.
@@ -35,10 +35,10 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, '../../../../..');
 const DEFAULT_SCHEMA = resolve(
   REPO_ROOT,
-  'infrastructure/terraform/contracts/operator-contract.v1.schema.json',
+  'infrastructure/terraform/contracts/operator-contract.v2.schema.json',
 );
 
-const SCHEMA_VERSION = 'honua.operator-contract/v1';
+const SCHEMA_VERSION = 'honua.operator-contract/v2';
 const CONTRACT_KEYS = ['deployment_contract', 'validation_contract', 'operations_contract'];
 
 // --------------------------------------------------------------------------
@@ -825,7 +825,7 @@ function main(argv) {
     process.stdout.write(`${JSON.stringify({ input: options.input, findings }, null, 2)}\n`);
   } else if (!options.quiet) {
     if (findings.length === 0) {
-      process.stdout.write(`[OK] ${options.input}: honua.operator-contract/v1 is valid\n`);
+      process.stdout.write(`[OK] ${options.input}: honua.operator-contract/v2 is valid\n`);
     } else {
       process.stdout.write(`[FAIL] ${options.input}: ${findings.length} finding(s)\n`);
       for (const finding of findings) {
