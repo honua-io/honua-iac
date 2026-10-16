@@ -78,6 +78,24 @@ variable "image_uri" {
   }
 }
 
+variable "mcp_configuration" {
+  description = "Optional existing Terraform-owned agent MCP configuration secret, pinned to an immutable version. Supply metadata only, never the secret value. Null supports terminal-only transport testing, not complete agent qualification."
+  type = object({
+    secret_arn  = string
+    version_id  = string
+    kms_key_arn = optional(string)
+  })
+  default = null
+  validation {
+    condition = var.mcp_configuration == null ? true : (
+      can(regex("^arn:aws:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:honua-agent-[a-z0-9-]+-mcp-[A-Za-z0-9]{6}$", var.mcp_configuration.secret_arn)) &&
+      can(regex("^[A-Za-z0-9-]{32,64}$", var.mcp_configuration.version_id)) &&
+      (var.mcp_configuration.kms_key_arn == null ? true : can(regex("^arn:aws:kms:[a-z0-9-]+:[0-9]{12}:key/([a-f0-9-]{36}|mrk-[a-f0-9]{32})$", var.mcp_configuration.kms_key_arn)))
+    )
+    error_message = "Supply a complete agent MCP secret ARN, a 32-64 character immutable version ID and, when needed, an exact KMS key ARN (not an alias)."
+  }
+}
+
 variable "claim_table_name" {
   description = "Existing durable controller table with string key candidateKey. No TTL or deletion of launch claims."
   type        = string

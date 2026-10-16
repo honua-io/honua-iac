@@ -131,6 +131,9 @@ resource "aws_ecs_task_definition" "worker" {
       { name = "HONUA_AGENT_TRANSPORT", value = jsonencode(local.transport) },
       { name = "AWS_DEFAULT_REGION", value = var.region }
     ]
+    secrets = var.mcp_configuration == null ? [] : [
+      { name = "HONUA_AGENT_MCP_CONFIG", valueFrom = "${var.mcp_configuration.secret_arn}:::${var.mcp_configuration.version_id}" }
+    ]
     mountPoints = [
       { sourceVolume = "workspace", containerPath = "/workspace", readOnly = false },
       { sourceVolume = "journal", containerPath = "/journal", readOnly = false }
@@ -148,6 +151,13 @@ resource "aws_ecs_task_definition" "worker" {
     precondition {
       condition     = startswith(var.cleanup_alarm_topic_arn, "arn:aws:sns:${var.region}:${var.account_id}:")
       error_message = "Cleanup alarms require a monitored topic in the reviewed account and region."
+    }
+    precondition {
+      condition = var.mcp_configuration == null ? true : (
+        can(regex("^arn:aws:secretsmanager:${var.region}:${var.account_id}:secret:${local.name}-mcp-[A-Za-z0-9]{6}$", var.mcp_configuration.secret_arn)) &&
+        (var.mcp_configuration.kms_key_arn == null ? true : startswith(var.mcp_configuration.kms_key_arn, "arn:aws:kms:${var.region}:${var.account_id}:key/"))
+      )
+      error_message = "MCP configuration must belong to this exact attempt/account/region; its optional KMS key must be in the same account and region."
     }
   }
 }
@@ -188,7 +198,7 @@ resource "aws_sfn_state_machine" "worker" {
   name     = local.name
   role_arn = aws_iam_role.lifecycle.arn
   type     = "STANDARD"
-  depends_on = [aws_iam_role_policy.lifecycle, aws_iam_role_policy.worker, aws_iam_role_policy.execution,
+  depends_on = [aws_iam_role_policy.lifecycle, aws_iam_role_policy.worker, aws_iam_role_policy.execution, aws_iam_role_policy.mcp_configuration,
   aws_scheduler_schedule.reaper, aws_cloudwatch_metric_alarm.reaper, aws_cloudwatch_metric_alarm.reaper_delivery]
   definition = jsonencode({
     StartAt        = "CheckExpiry"

@@ -29,6 +29,10 @@ run "isolated_fargate_attempt" {
   command = apply
 
   assert {
+    condition     = jsondecode(aws_ecs_task_definition.worker.container_definitions)[0].secrets == [] && length(aws_iam_role_policy.mcp_configuration) == 0 && output.mcp_configuration_binding == null
+    error_message = "Terminal-only configuration must not introduce secret retrieval permissions."
+  }
+  assert {
     condition     = aws_ecs_task_definition.worker.requires_compatibilities == toset(["FARGATE"]) && aws_ecs_task_definition.worker.network_mode == "awsvpc"
     error_message = "Test workers must run in Fargate with isolated networking."
   }
@@ -56,6 +60,96 @@ run "isolated_fargate_attempt" {
     condition     = output.transport.expiresEpoch == 1792080600 && jsondecode(output.controller_policy).Statement[4].Effect == "Deny" && jsondecode(output.controller_policy).Statement[4].Action == "states:RedriveExecution"
     error_message = "Expiry must not slide and redrive must not bypass the durable claim."
   }
+}
+
+run "pinned_mcp_configuration" {
+  command = apply
+  variables {
+    mcp_configuration = {
+      secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-agent-fixture-attempt-mcp-AbCdEf"
+      version_id = "12345678-1234-1234-1234-123456789abc"
+    }
+  }
+  assert {
+    condition     = jsondecode(aws_ecs_task_definition.worker.container_definitions)[0].secrets == [{ name = "HONUA_AGENT_MCP_CONFIG", valueFrom = "${var.mcp_configuration.secret_arn}:::${var.mcp_configuration.version_id}" }] && alltrue([for entry in jsondecode(aws_ecs_task_definition.worker.container_definitions)[0].environment : entry.name != "HONUA_AGENT_MCP_CONFIG"])
+    error_message = "Only an explicit secret version reference may enter the task definition, never plaintext configuration."
+  }
+  assert {
+    condition     = aws_iam_role_policy.mcp_configuration[0].role == aws_iam_role.execution.id && length(jsondecode(aws_iam_role_policy.mcp_configuration[0].policy).Statement) == 1 && jsondecode(aws_iam_role_policy.mcp_configuration[0].policy).Statement[0].Action == ["secretsmanager:GetSecretValue"] && jsondecode(aws_iam_role_policy.mcp_configuration[0].policy).Statement[0].Resource == var.mcp_configuration.secret_arn
+    error_message = "Secret retrieval must attach only to the execution role and exact secret."
+  }
+  assert {
+    condition     = jsondecode(aws_iam_role_policy.mcp_configuration[0].policy).Statement[0].Condition.StringEquals == { "secretsmanager:VersionId" = var.mcp_configuration.version_id, "aws:ResourceTag/honua-agent-attempt" = var.attempt_id, "aws:ResourceTag/honua-agent-candidate" = var.candidate_digest } && jsondecode(aws_iam_role_policy.mcp_configuration[0].policy).Statement[0].Condition.DateLessThan["aws:CurrentTime"] == local.expires_at
+    error_message = "Retrieval requires the pinned version, owned secret tags and unexpired attempt."
+  }
+  assert {
+    condition     = alltrue([for statement in jsondecode(aws_iam_role_policy.worker.policy).Statement : startswith(statement.Action[0], "sqs:")]) && jsondecode(aws_sfn_state_machine.worker.definition).States.RunWorker.Parameters.PlatformVersion == "1.4.0" && !can(jsondecode(aws_sfn_state_machine.worker.definition).States.RunWorker.Parameters.Overrides)
+    error_message = "Application AWS permissions remain queue-only and execution input cannot replace the version-pinned task."
+  }
+}
+
+run "mcp_customer_key_scope" {
+  command = apply
+  variables {
+    mcp_configuration = {
+      secret_arn  = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-agent-fixture-attempt-mcp-AbCdEf"
+      version_id  = "12345678-1234-1234-1234-123456789abc"
+      kms_key_arn = "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789abc"
+    }
+  }
+  assert {
+    condition     = length(jsondecode(aws_iam_role_policy.mcp_configuration[0].policy).Statement) == 2 && jsondecode(aws_iam_role_policy.mcp_configuration[0].policy).Statement[1].Action == ["kms:Decrypt"] && jsondecode(aws_iam_role_policy.mcp_configuration[0].policy).Statement[1].Resource == var.mcp_configuration.kms_key_arn
+    error_message = "A customer key grants only Decrypt on that exact key."
+  }
+  assert {
+    condition     = jsondecode(aws_iam_role_policy.mcp_configuration[0].policy).Statement[1].Condition.StringEquals == { "kms:ViaService" = "secretsmanager.us-east-1.amazonaws.com", "kms:EncryptionContext:SecretARN" = var.mcp_configuration.secret_arn, "kms:EncryptionContext:SecretVersionId" = var.mcp_configuration.version_id } && jsondecode(aws_iam_role_policy.mcp_configuration[0].policy).Statement[1].Condition.DateLessThan["aws:CurrentTime"] == local.expires_at
+    error_message = "Decryption must be through Secrets Manager for the owned secret/version before expiry."
+  }
+}
+
+run "reject_other_attempt_mcp_secret" {
+  command = plan
+  variables {
+    mcp_configuration = {
+      secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-agent-other-attempt-mcp-AbCdEf"
+      version_id = "12345678-1234-1234-1234-123456789abc"
+    }
+  }
+  expect_failures = [aws_ecs_task_definition.worker]
+}
+
+run "reject_foreign_mcp_secret" {
+  command = plan
+  variables {
+    mcp_configuration = {
+      secret_arn = "arn:aws:secretsmanager:us-west-2:999999999999:secret:honua-agent-fixture-attempt-mcp-AbCdEf"
+      version_id = "12345678-1234-1234-1234-123456789abc"
+    }
+  }
+  expect_failures = [aws_ecs_task_definition.worker]
+}
+
+run "reject_moving_secret_version" {
+  command = plan
+  variables {
+    mcp_configuration = {
+      secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-agent-fixture-attempt-mcp-AbCdEf"
+      version_id = "AWSCURRENT"
+    }
+  }
+  expect_failures = [var.mcp_configuration]
+}
+
+run "reject_foreign_mcp_key" {
+  command = plan
+  variables {
+    mcp_configuration = {
+      secret_arn  = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-agent-fixture-attempt-mcp-AbCdEf"
+      version_id  = "12345678-1234-1234-1234-123456789abc"
+      kms_key_arn = "arn:aws:kms:us-east-1:999999999999:key/12345678-1234-1234-1234-123456789abc"
+    }
+  }
+  expect_failures = [aws_ecs_task_definition.worker]
 }
 
 run "reject_other_account_cluster" {

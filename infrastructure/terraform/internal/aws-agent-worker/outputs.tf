@@ -3,6 +3,11 @@ output "transport" {
   value       = local.transport
 }
 
+output "mcp_configuration_binding" {
+  description = "Reviewed secret/version metadata for backend preflight, never credential bytes. Null is not MCP-ready."
+  value       = var.mcp_configuration
+}
+
 output "lifecycle" {
   value = {
     state_machine_arn   = aws_sfn_state_machine.worker.arn
