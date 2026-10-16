@@ -128,7 +128,9 @@ run "workload_boundary" {
 }
 
 run "auxiliary_roles_keep_the_boundary" {
-  command = plan
+  # All providers are mocked. Apply resolves the role/log identifiers embedded in
+  # container_properties so assertions inspect the complete rendered definition.
+  command = apply
   variables {
     permissions_boundary_arn      = "arn:aws:iam::123456789012:policy/honua-release-cell-workload-boundary"
     use_batch_service_linked_role = true
