@@ -48,7 +48,7 @@ run "retained_candidate_storage" {
     error_message = "Runtime roles must not erase launch claims or change PITR, TTL, policy or table settings."
   }
   assert {
-    condition     = toset(jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement[1].Condition.ArnNotEquals["aws:PrincipalArn"]) == setunion(var.state_admin_role_arns, var.claim_writer_role_arns) && jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement[2].Condition.StringEquals["dynamodb:EnclosingOperation"] == ["TransactWriteItems", "TransactGetItems"]
+    condition     = toset(jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement[1].Condition.ArnNotEquals["aws:PrincipalArn"]) == setunion(var.state_admin_role_arns, var.claim_writer_role_arns) && jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement[2].Condition.StringEquals["dynamodb:EnclosingOperation"] == "TransactWriteItems" && toset(jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement[2].Condition.ArnNotEquals["aws:PrincipalArn"]) == setunion(var.state_admin_role_arns, var.claim_writer_role_arns) && jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement[3].Condition.StringEquals["dynamodb:EnclosingOperation"] == "TransactGetItems" && toset(jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement[3].Condition.ArnNotEquals["aws:PrincipalArn"]) == var.state_admin_role_arns
     error_message = "Only the fixed lifecycle may put claims, and transaction APIs must not bypass this restriction."
   }
   assert {

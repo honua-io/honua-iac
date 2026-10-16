@@ -130,13 +130,19 @@ resource "aws_dynamodb_resource_policy" "claims" {
       { Sid      = "OnlyFixedLifecycleRolesMayClaim", Effect = "Deny", Principal = "*", Action = "dynamodb:PutItem",
         Resource = aws_dynamodb_table.history["claims"].arn,
       Condition = { ArnNotEquals = { "aws:PrincipalArn" = sort(tolist(setunion(var.state_admin_role_arns, var.claim_writer_role_arns))) } } },
-      # Transactions authorize their underlying PutItem/UpdateItem actions,
-      # not an IAM action named TransactWriteItems. Block that path explicitly.
-      { Sid      = "RuntimeCannotUseTransactions", Effect = "Deny", Principal = "*", Action = "dynamodb:*",
+      # Only the fixed lifecycle may atomically claim the attempt/candidate and
+      # record observed STOPPED. Its identity policy permits PutItem on exact keys.
+      { Sid      = "OnlyFixedLifecycleMayTransactWrites", Effect = "Deny", Principal = "*", Action = "dynamodb:*",
+        Resource = aws_dynamodb_table.history["claims"].arn,
+        Condition = {
+          ArnNotEquals = { "aws:PrincipalArn" = sort(tolist(setunion(var.state_admin_role_arns, var.claim_writer_role_arns))) }
+          StringEquals = { "dynamodb:EnclosingOperation" = "TransactWriteItems" }
+      } },
+      { Sid      = "RuntimeCannotTransactReads", Effect = "Deny", Principal = "*", Action = "dynamodb:*",
         Resource = aws_dynamodb_table.history["claims"].arn,
         Condition = {
           ArnNotEquals = { "aws:PrincipalArn" = sort(tolist(var.state_admin_role_arns)) }
-          StringEquals = { "dynamodb:EnclosingOperation" = ["TransactWriteItems", "TransactGetItems"] }
+          StringEquals = { "dynamodb:EnclosingOperation" = "TransactGetItems" }
       } }
     ]
   })

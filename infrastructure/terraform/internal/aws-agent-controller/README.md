@@ -8,7 +8,9 @@ approval authority, execute a model, or qualify a workflow.
 One root/state key is retained for a candidate across development, failures,
 retries and qualification. The root creates an encrypted, private, versioned S3
 bucket and two protected DynamoDB tables: the controller's fenced accounting head
-and separate immutable worker launch claims. There are no servers or EC2 workers.
+and separate worker claim history with a candidate-wide active-worker record.
+Launch and observed-stop records are immutable; only the fixed lifecycle can
+transition the active-worker record. There are no servers or EC2 workers.
 
 The controller role and Terraform deployment/recovery roles must already exist,
 belong to the selected account, and have separate custody. Supply their exact
@@ -42,7 +44,8 @@ one. State administrators remain privileged recovery actors, not runtime actors.
 3. Export `state_config` to the trusted controller only. Its `region`, `bucket`
    and `table` fields match `agent_e2e_state.open_store`. Export
    `claim_table_name` to the separate `internal/aws-agent-worker` root. Its
-   lifecycle policy may conditionally put only that attempt's exact launch key;
+   lifecycle policy may transactionally put only its exact attempt, candidate
+   active-worker and immutable stop-record keys;
    it receives no access to the state table or evidence bucket.
    Set `claim_writer_role_arns` to the exact reviewed lifecycle role ARNs before
    starting those jobs. The default empty set deliberately disables runtime claim
@@ -50,8 +53,13 @@ one. State administrators remain privileged recovery actors, not runtime actors.
    retain the worker root's service-only trust and fixed, conditional PutItem
    state-machine definition; IAM cannot enforce `attribute_not_exists` itself.
    Other runtime principals cannot put claims even with broad identity policies.
-   Transaction paths are blocked through `dynamodb:EnclosingOperation`, since
+   Transaction writes are limited to the reviewed lifecycle roles through
+   `dynamodb:EnclosingOperation`; other runtime principals cannot use them, since
    [transactions authorize underlying item actions](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/transaction-apis-iam.html).
+   Transaction reads remain denied to runtime roles. The lifecycle uses atomic
+   attempt/candidate acquisition and observed-stop recording; ACTIVE does not
+   expire and is never released by controller lease takeover. Upgrade both roots
+   together and prohibit older worker definitions during campaign preflight.
    All other runtime claim-table mutations, including disabling PITR, are denied.
 4. Independently demonstrate actual role denials, versioned writes, concurrent
    writer fencing, controller-loss recovery and retained charges before running a

@@ -10,10 +10,49 @@ an existing isolated cluster/network and durable controller claim table. Activat
 a remote encrypted/locked backend with a unique key per attempt. Retain the exact
 plan, IaC revision and state lineage; never share state with a customer deployment.
 
-Start the emitted state machine only through the trusted controller. A conditional
-claim prevents a second execution from starting another worker for this attempt.
-Never delete that claim, reuse the queues, or grant execution redrive. A failed
-worker retains an interrupted attempt; an authorized retry needs a new identity.
+Start the emitted state machine only through the trusted controller. One DynamoDB
+transaction creates an immutable attempt claim and acquires the candidate-wide
+active-worker claim. An existing attempt cannot launch again, and another attempt
+cannot launch while the candidate claim is ACTIVE. Neither controller lease
+expiry nor worker expiry permits takeover. Never delete claims, reuse queues or
+grant execution redrive. An authorized retry needs a new identity and independently
+supported retry authorization in the controller.
+
+The fixed lifecycle rechecks absolute expiry after claiming, starts exactly one
+Fargate task with an attempt-specific client token, then polls that exact task.
+Launch failures, missing/foreign observations and API errors retain the active
+claim. Only DescribeTasks reporting the matching task, cluster and task-definition
+revision as STOPPED permits a second transaction: append an immutable per-attempt
+stop record and mark the matching candidate claim STOPPED. The condition includes
+the execution ARN and attempt, so a stale execution cannot release a successor's
+claim. The next attempt retains its predecessor's immutable launch/stop records.
+
+For normal early cleanup, the controller output permits DescribeTasks/StopTask
+only for this cluster and exact candidate/attempt resource tags. StopTask requests
+do not release the claim; the lifecycle must observe STOPPED. At absolute expiry,
+the lifecycle also requests stop, in addition to the independent reaper below.
+Do not abort the lifecycle as normal cleanup: interrupted/timed-out lifecycle
+executions deliberately leave ACTIVE claims for governed reconciliation. A
+StopExecution response, missing task listing, elapsed time or expired controller
+lease is not evidence that the worker stopped. Lost launch acknowledgements may
+leave a real task; the reaper still enumerates its fixed family. Retain the claim
+until an independently authorized recovery proves all launches terminal and all
+owned tasks stopped. Automated recovery of such retained claims remains a backend
+integration requirement; never manually clear one merely to continue testing.
+
+The worker and controller-storage roots must be upgraded together: only reviewed
+lifecycle roles may make transactional PutItem calls on their exact attempt,
+candidate and stop-record keys. No UpdateItem/DeleteItem or runtime TTL authority
+is introduced. IAM cannot enforce DynamoDB condition-expression contents, so the
+fixed state-machine definition and service-only role trust remain part of the
+boundary. A campaign must not mix older unfenced worker definitions with this
+lifecycle. Freeze and verify the actual IaC and definition revisions in preflight.
+
+Reserve DynamoDB transaction requests, the five-second task polling interval,
+bounded API calls and up to 300 seconds of lifecycle observation beyond the worker
+lifetime before starting. Lifecycle success only means the worker stopped and its
+claim was recorded; it does not mean the agent goal, application cleanup or
+accounting passed. Retain native execution history and stop records independently.
 
 The task can only read/delete its command messages and send its own replies. Its
 execution role can pull the pinned repository and write its log group. Neither
@@ -127,4 +166,6 @@ infer qualification from Terraform validation or a successful task exit.
 
 API contracts: [ECS ListTasks](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_ListTasks.html),
 [ECS authorization](https://docs.aws.amazon.com/service-authorization/latest/reference/list_ecs.html),
+[DynamoDB transactions](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactWriteItems.html),
+[SDK integrations](https://docs.aws.amazon.com/step-functions/latest/dg/supported-services-awssdk.html),
 and [Scheduler with Step Functions](https://docs.aws.amazon.com/step-functions/latest/dg/using-eventbridge-scheduler.html).

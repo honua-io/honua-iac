@@ -4,12 +4,14 @@ provider "aws" {
 }
 
 locals {
-  name          = "honua-agent-${var.attempt_id}"
-  expires_epoch = var.issued_epoch + var.lifetime_seconds
-  expires_at    = timeadd("1970-01-01T00:00:00Z", "${local.expires_epoch}s")
-  claim_key     = "${var.candidate_digest}/worker/${var.attempt_id}"
-  table_arn     = "arn:aws:dynamodb:${var.region}:${var.account_id}:table/${var.claim_table_name}"
-  image_repo    = split("@", split("amazonaws.com/", var.image_uri)[1])[0]
+  name                = "honua-agent-${var.attempt_id}"
+  expires_epoch       = var.issued_epoch + var.lifetime_seconds
+  expires_at          = timeadd("1970-01-01T00:00:00Z", "${local.expires_epoch}s")
+  claim_key           = "${var.candidate_digest}/worker/${var.attempt_id}"
+  candidate_claim_key = "${var.candidate_digest}/active-worker"
+  stopped_key         = "${local.claim_key}/stopped"
+  table_arn           = "arn:aws:dynamodb:${var.region}:${var.account_id}:table/${var.claim_table_name}"
+  image_repo          = split("@", split("amazonaws.com/", var.image_uri)[1])[0]
   tags = {
     ManagedBy               = "terraform"
     Owner                   = "honua-agent-e2e"
@@ -179,17 +181,17 @@ resource "aws_iam_role_policy" "lifecycle" {
     Version = "2012-10-17"
     Statement = [
       { Effect = "Allow", Action = "dynamodb:PutItem", Resource = local.table_arn,
-      Condition = { "ForAllValues:StringEquals" = { "dynamodb:LeadingKeys" = [local.claim_key] } } },
+        Condition = { "ForAllValues:StringEquals" = { "dynamodb:LeadingKeys" = [local.claim_key, local.candidate_claim_key, local.stopped_key] },
+      StringEquals = { "dynamodb:EnclosingOperation" = "TransactWriteItems" } } },
       { Effect = "Allow", Action = "ecs:RunTask", Resource = aws_ecs_task_definition.worker.arn,
-      Condition = { ArnEquals = { "ecs:cluster" = var.cluster_arn } } },
+      Condition = { ArnEquals = { "ecs:cluster" = var.cluster_arn }, DateLessThan = { "aws:CurrentTime" = local.expires_at } } },
       { Effect = "Allow", Action = "ecs:TagResource", Resource = "${replace(var.cluster_arn, ":cluster/", ":task/")}/*",
       Condition = { StringEquals = { "ecs:CreateAction" = "RunTask" } } },
       { Effect = "Allow", Action = ["ecs:DescribeTasks", "ecs:StopTask"],
-      Resource = "${replace(var.cluster_arn, ":cluster/", ":task/")}/*" },
+        Resource = local.task_arns, Condition = { ArnEquals = { "ecs:cluster" = var.cluster_arn }, StringEquals = {
+      "aws:ResourceTag/honua-agent-attempt" = var.attempt_id, "aws:ResourceTag/honua-agent-candidate" = var.candidate_digest } } },
       { Effect = "Allow", Action = "iam:PassRole", Resource = [aws_iam_role.worker.arn, aws_iam_role.execution.arn],
-      Condition = { StringEquals = { "iam:PassedToService" = "ecs-tasks.amazonaws.com" } } },
-      { Effect = "Allow", Action = ["events:PutTargets", "events:PutRule", "events:DescribeRule"],
-      Resource = "arn:aws:events:${var.region}:${var.account_id}:rule/StepFunctionsGetEventsForECSTaskRule" }
+      Condition = { StringEquals = { "iam:PassedToService" = "ecs-tasks.amazonaws.com" } } }
     ]
   })
 }
@@ -200,35 +202,6 @@ resource "aws_sfn_state_machine" "worker" {
   type     = "STANDARD"
   depends_on = [aws_iam_role_policy.lifecycle, aws_iam_role_policy.worker, aws_iam_role_policy.execution, aws_iam_role_policy.mcp_configuration,
   aws_scheduler_schedule.reaper, aws_cloudwatch_metric_alarm.reaper, aws_cloudwatch_metric_alarm.reaper_delivery]
-  definition = jsonencode({
-    StartAt        = "CheckExpiry"
-    TimeoutSeconds = var.lifetime_seconds + 60
-    States = {
-      CheckExpiry = {
-        Type    = "Choice"
-        Choices = [{ Variable = "$$.State.EnteredTime", TimestampGreaterThanEquals = local.expires_at, Next = "Expired" }]
-        Default = "ClaimAttempt"
-      }
-      Expired = { Type = "Fail", Error = "AttemptExpired" }
-      ClaimAttempt = {
-        Type = "Task", Resource = "arn:aws:states:::dynamodb:putItem", ResultPath = null, Next = "RunWorker"
-        Parameters = {
-          TableName           = var.claim_table_name
-          Item                = { candidateKey = { S = local.claim_key }, expiresEpoch = { N = tostring(local.expires_epoch) } }
-          ConditionExpression = "attribute_not_exists(candidateKey)"
-        }
-      }
-      RunWorker = {
-        Type = "Task", Resource = "arn:aws:states:::ecs:runTask.sync", TimeoutSeconds = var.lifetime_seconds, End = true
-        Parameters = {
-          Cluster    = var.cluster_arn, TaskDefinition = aws_ecs_task_definition.worker.arn
-          LaunchType = "FARGATE", PlatformVersion = "1.4.0", EnableExecuteCommand = false, PropagateTags = "TASK_DEFINITION"
-          NetworkConfiguration = { AwsvpcConfiguration = {
-            Subnets = sort(tolist(var.subnet_ids)), SecurityGroups = sort(tolist(var.security_group_ids)), AssignPublicIp = "DISABLED"
-          } }
-        }
-      }
-    }
-  })
-  tags = local.tags
+  definition = jsonencode(local.worker_lifecycle)
+  tags       = local.tags
 }
