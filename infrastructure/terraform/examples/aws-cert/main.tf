@@ -158,6 +158,7 @@ module "honua" {
   redis_enabled                             = true
   redis_node_type                           = "cache.t4g.micro"
   operation_key_ring_certificate_secret_arn = var.operation_key_ring_certificate_secret_arn
+  audit_chain_key_secret_arn                = var.audit_chain_key_secret_arn
   # Licensing (operator ruling 2026-09-12; honua-iac #191, honua-server #4721):
   # the 2026.1 candidate certifies with licensing DISABLED — no envelope, no
   # metering, every entitlement active — so certification exercises GeoServices

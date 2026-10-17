@@ -470,7 +470,8 @@ IAM notation below contains no account identifiers: `F` =
 standing certification function ARN (`module.honua.lambda_function_arn`); `K` =
 the certification stack's own secret ARNs (database connection, admin password,
 connection-encryption master key, Redis connection, the explicitly supplied
-operator key-ring certificate, and the optional Pro license (2026.2 only). Account, region, and partition are Terraform-derived. All
+operator key-ring certificate, configured audit-chain key (when supplied), and
+the optional Pro license (2026.2 only). Account, region, and partition are Terraform-derived. All
 statements are Allow unless marked Deny. No OIDC subject or provider changes
 are introduced.
 
@@ -526,7 +527,7 @@ receipt binds the candidate to immutable VersionIds. Runtime grants alone do
 not authorize that preparation call. `CaptureCertificationSecretVersions` grants
 the existing OIDC runner only `secretsmanager:GetSecretValue` on the same exact
 ARN set as the runtime boundary, including the explicit operator-owned key-ring
-secret. No secret value enters an output, receipt, or test fixture.
+secret and the audit-chain key when configured. No secret value enters an output, receipt, or test fixture.
 
 The cert root always enables Redis and now requires
 `operation_key_ring_certificate_secret_arn` as a complete ARN in the cert
@@ -537,12 +538,23 @@ limit; IAM still grants its complete ARN. Use an existing cert key-ring secret
 encrypted with the AWS-managed Secrets Manager key. Customer-managed key
 support is outside this bounded prerequisite: no KMS access is added here.
 
+The optional `audit_chain_key_secret_arn` now also passes through to the maintained
+module and joins the same exact read set only when supplied. Its existing
+`audit_chain_key_configured` check remains intact: an omitted key warns that
+hash-chain verification is unhealthy. Protected inputs for healthy certification
+must provide the operator-owned key ARN, using the AWS-managed encryption key in
+the cert account/region. Preserve the key for an existing audit history and follow
+the module's activation guidance; selecting a new key is a separate governed
+operation. Terraform receives no key material. The base set has five secrets;
+a configured audit key makes six, and an explicitly enabled 2026.2 license adds
+one more. The real root tests configure an audit key and exercise all checks.
+
 For **2026.1**, the protected operator flow must reconcile the standing function
 from the maintained root **before rerunning certification**:
 
 1. Check out the reviewed merged IaC revision, retain the existing governed
    backend/workspace and approved image pins, and supply the existing cert
-   key-ring secret ARN in the protected input file. Do not create empty state,
+   key-ring and existing audit-chain key ARNs in the protected input file. Do not create empty state,
    retrieve secret values, or copy the standing function's stale environment.
 2. Set `licensing_mode = "Disabled"`, `enable_pro_license = false`, and leave
    `pro_license_secret_arn`, `pro_license_content`, and the trusted license key
@@ -559,8 +571,8 @@ from the maintained root **before rerunning certification**:
 
    Review the private plan for the standing function environment reconciliation,
    the OIDC capture grant, execution secret grant and boundary. The expected
-   secret set is cert DB, admin, independent master key, Redis, and the declared
-   key-ring ARN. Stop on demo license access, wildcard reads, trust changes,
+   secret set is cert DB, admin, independent master key, Redis, the declared
+   key-ring ARN, and the configured audit-chain key ARN (six with audit configured). Stop on demo license access, wildcard reads, trust changes,
    replacements, deletions, or unrelated resource drift. Publish only the
    fingerprint summary/metadata; saved plans and their JSON may contain secrets.
    The existing-stack full plan may reveal previously unapplied changes: review
@@ -594,7 +606,7 @@ Apply is **operator-run only**, after publishing a fingerprint-only plan summary
 to the release evidence thread and reviewing the exact saved plan against the
 existing governed backend. Confirm that every preview substrate address in the
 plan appears in the 11-resource inventory above; review standing module changes
-under the preceding secret-capture handoff, limited to the declared keyring and
+under the preceding secret-capture handoff, limited to the declared keyring/audit keys and
 licensing/environment reconciliation and their corresponding runtime grants.
 There must be **no destroys**.
 Stop on any unexpected change, replacement, or trust difference. Do not create

@@ -16,6 +16,11 @@ honua_admin_password = "REPLACE_WITH_A_32_PLUS_CHAR_SECRET"
 # AWS-managed Secrets Manager key. Supply only its complete ARN, never its value.
 operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:<account-id>:secret:<cert-keyring-name>-<suffix>"
 
+# Supply the existing operator-owned audit-chain key ARN for healthy audit
+# verification. Preserve the key when audit history exists; follow the module's
+# activation guidance rather than selecting a replacement key arbitrarily.
+# audit_chain_key_secret_arn = "arn:aws:secretsmanager:us-east-1:<account-id>:secret:<cert-audit-chain-name>-<suffix>"
+
 # GP Batch substrate. Leave gp_batch_image empty to reuse honua_image via
 # HONUA_JOB_KIND, or point at the dedicated worker-gdal image once pushed. The
 # module mints a fixed pool of job-def size tiers (gp-s/m/l/xl); per-job

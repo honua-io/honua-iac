@@ -146,6 +146,7 @@ locals {
     module.honua.admin_password_secret_arn,
     module.honua.master_key_secret_arn,
     module.honua.operation_key_ring_certificate_secret_arn,
+    module.honua.audit_chain_key_secret_arn,
     module.honua.pro_license_secret_arn,
     # Redis connection (redis_enabled, 2026-09-08): the candidate boots with
     # the standing environment's aws:secretsmanager: reference and must be
@@ -429,6 +430,11 @@ resource "aws_iam_role_policy" "lambda_preview_certification" {
     precondition {
       condition     = startswith(var.operation_key_ring_certificate_secret_arn, "arn:${data.aws_partition.lambda_preview.partition}:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:")
       error_message = "The cert key-ring secret must belong to this certification account and region."
+    }
+
+    precondition {
+      condition     = var.audit_chain_key_secret_arn == "" || startswith(var.audit_chain_key_secret_arn, "arn:${data.aws_partition.lambda_preview.partition}:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:")
+      error_message = "The cert audit-chain key secret must belong to this certification account and region."
     }
   }
 }

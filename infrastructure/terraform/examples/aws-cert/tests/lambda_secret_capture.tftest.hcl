@@ -1,4 +1,8 @@
 mock_provider "aws" {
+  mock_resource "aws_sns_topic" {
+    defaults = { arn = "arn:aws:sns:us-east-1:123456789012:cert-budget" }
+  }
+
   mock_data "aws_availability_zones" {
     defaults = {
       names = ["us-east-1a", "us-east-1b", "us-east-1c"]
@@ -119,6 +123,7 @@ variables {
   honua_image                               = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   honua_admin_password                      = "Synthetic-Cert-Test-Only-Password-254!"
   operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:cert-keyring-ABC123"
+  audit_chain_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:cert-audit-chain-ABC123"
 }
 
 override_resource {
@@ -163,8 +168,9 @@ run "cert_capture_exact_secret_set" {
       "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-cert-cert/master-key-ABC123",
       "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-cert-cert/redis-connection-ABC123",
       "arn:aws:secretsmanager:us-east-1:123456789012:secret:cert-keyring-ABC123",
+      "arn:aws:secretsmanager:us-east-1:123456789012:secret:cert-audit-chain-ABC123",
     ])
-    error_message = "Cert capture must authorize exactly DB, admin, independent master key, Redis and the explicit keyring; no demo license or wildcard."
+    error_message = "Cert capture must authorize exactly DB, admin, independent master key, Redis, the explicit keyring and configured audit key; no demo license or wildcard."
   }
   assert {
     condition = alltrue([for statement in data.aws_iam_policy_document.lambda_preview_certification.statement :
@@ -188,7 +194,7 @@ run "cert_capture_exact_secret_set" {
     error_message = "Both runtime grants and the boundary must match the runner's exact secret set, including the keyring."
   }
   assert {
-    condition     = module.honua.operation_key_ring_certificate_secret_arn == var.operation_key_ring_certificate_secret_arn && module.honua.pro_license_secret_arn == null && output.licensing_mode == "Disabled"
+    condition     = module.honua.operation_key_ring_certificate_secret_arn == var.operation_key_ring_certificate_secret_arn && module.honua.audit_chain_key_secret_arn == var.audit_chain_key_secret_arn && module.honua.pro_license_secret_arn == null && output.licensing_mode == "Disabled"
     error_message = "The cert root must pass the declared keyring and retain 2026.1 disabled licensing with no license secret."
   }
 }
@@ -212,7 +218,7 @@ run "optional_2026_2_license_is_explicit" {
     pro_license_trusted_public_key = "base64url:c3ludGhldGljLXRlc3Qta2V5"
   }
   assert {
-    condition     = output.licensing_mode == "Enabled" && length(local.lambda_preview_secret_arns) == 6 && contains(local.lambda_preview_secret_arns, "arn:aws:secretsmanager:us-east-1:123456789012:secret:cert-license-ABC123")
+    condition     = output.licensing_mode == "Enabled" && length(local.lambda_preview_secret_arns) == 7 && contains(local.lambda_preview_secret_arns, "arn:aws:secretsmanager:us-east-1:123456789012:secret:cert-license-ABC123")
     error_message = "The opt-in 2026.2 path may add only the operator's explicit license ARN; it must remain optional for 2026.1."
   }
 }
@@ -225,5 +231,16 @@ run "reject_keyring_outside_cert_account" {
 run "reject_keyring_outside_cert_region" {
   command = plan
   variables { operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-west-2:123456789012:secret:cert-keyring-ABC123" }
+  expect_failures = [aws_iam_role_policy.lambda_preview_certification]
+}
+
+run "reject_audit_key_wildcard" {
+  command = plan
+  variables { audit_chain_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:cert-audit-*" }
+  expect_failures = [var.audit_chain_key_secret_arn]
+}
+run "reject_audit_key_outside_cert_account" {
+  command = plan
+  variables { audit_chain_key_secret_arn = "arn:aws:secretsmanager:us-east-1:999999999999:secret:cert-audit-chain-ABC123" }
   expect_failures = [aws_iam_role_policy.lambda_preview_certification]
 }

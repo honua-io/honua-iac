@@ -50,6 +50,17 @@ variable "operation_key_ring_certificate_secret_arn" {
   }
 }
 
+variable "audit_chain_key_secret_arn" {
+  description = "Optional complete ARN of the operator-owned audit hash-chain key secret in this cert account/region, encrypted with the AWS-managed Secrets Manager key. Supply it for a healthy audit verification check; preserve the existing key for a deployment with audit history. Only the ARN enters Terraform."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.audit_chain_key_secret_arn == "" || can(regex("^arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+-[A-Za-z0-9]{6}$", var.audit_chain_key_secret_arn))
+    error_message = "audit_chain_key_secret_arn must be an exact Secrets Manager secret ARN including its suffix, or empty; never a shorthand, wildcard, selector, or key material."
+  }
+}
+
 variable "db_password" {
   description = "PostgreSQL admin password. Leave null to auto-generate."
   type        = string
