@@ -546,6 +546,8 @@ assert_mutation_detected 'lambda-cert-readme-inventory' "$CERT_README" \
 assert_mutation_detected 'lambda-cert-readme-inventory' "$CERT_README" \
   '/CertificationVpcDescribe/d' "$NOT_FOUND"
 assert_mutation_detected 'lambda-cert-readme-inventory' "$CERT_README" \
+  '/TranscriptSignerDecrypt/d' "$NOT_FOUND"
+assert_mutation_detected 'lambda-cert-readme-inventory' "$CERT_README" \
   '/REALAWS_CERT_LAMBDA_ALIAS/d' "$NOT_FOUND"
 
 echo "[INFO] terraform-policy-gate Lambda certification guard tests passed"

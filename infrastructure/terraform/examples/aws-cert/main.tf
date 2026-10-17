@@ -131,7 +131,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "cert_artifacts" {
 # ---------------------------------------------------------------------------
 
 module "honua" {
-  source = "../../modules/aws-serverless"
+  transcript_signing = var.transcript_signing
+  source             = "../../modules/aws-serverless"
 
   name_prefix = var.name_prefix
   environment = var.environment

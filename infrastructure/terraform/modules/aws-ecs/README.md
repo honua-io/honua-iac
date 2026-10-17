@@ -604,3 +604,11 @@ The release runner must verify the signed lock and the actual serving image.
 `canary_platform_release` defaults to `platform_release`. Set it to the candidate
 identity while the primary retains the prior identity during a staged update.
 Changing this input updates task configuration; it does not promote ALB traffic.
+
+## Model transcript signing
+
+`transcript_signing` defaults to `null`. To enable it, supply an approved public
+key ID and existing signing-secret ARN, with optional immutable version ID and
+exact KMS key ARN. No private value is read by Terraform. See the
+[operator signing guide](../../../../docs/devops/aws-transcript-signing.md) for
+runtime IAM, public-manifest binding, rotation and the Lambda server dependency.

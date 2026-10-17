@@ -213,3 +213,10 @@ The identity belongs to the API Lambda's published configuration. Keeping the li
 alias on a prior published version preserves that version's prior identity while
 staging the candidate. Existing 4 KB environment preconditions still apply; this
 input adds no permissions and performs no alias promotion.
+
+## Model transcript signing
+
+The optional `transcript_signing` input passes the approved signer identity and
+existing secret reference to the runtime module. It is disabled by default. See
+[the signing guide](../../../../docs/devops/aws-transcript-signing.md) before
+configuring protected inputs or approving a deployment.

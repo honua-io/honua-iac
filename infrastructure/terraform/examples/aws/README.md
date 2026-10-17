@@ -64,3 +64,10 @@ The release runner must verify the signed lock and the actual serving image.
 `canary_platform_release` defaults to `platform_release`. Set it to the candidate
 identity while the primary retains the prior identity during a staged update.
 Changing this input updates task configuration; it does not promote ALB traffic.
+
+## Model transcript signing
+
+The optional `transcript_signing` input passes the approved signer identity and
+existing secret reference to the runtime module. It is disabled by default. See
+[the signing guide](../../../../docs/devops/aws-transcript-signing.md) before
+configuring protected inputs or approving a deployment.
