@@ -436,6 +436,11 @@ resource "aws_iam_role_policy" "lambda_preview_certification" {
       condition     = var.audit_chain_key_secret_arn == "" || startswith(var.audit_chain_key_secret_arn, "arn:${data.aws_partition.lambda_preview.partition}:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:")
       error_message = "The cert audit-chain key secret must belong to this certification account and region."
     }
+
+    precondition {
+      condition     = var.pro_license_secret_arn == "" || startswith(var.pro_license_secret_arn, "arn:${data.aws_partition.lambda_preview.partition}:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:")
+      error_message = "The optional cert license secret must belong to this certification account and region."
+    }
   }
 }
 

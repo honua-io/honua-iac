@@ -194,6 +194,14 @@ run "cert_capture_exact_secret_set" {
     error_message = "Both runtime grants and the boundary must match the runner's exact secret set, including the keyring."
   }
   assert {
+    condition     = toset(values(output.deployment_contract.secret_refs)) == toset(local.lambda_preview_secret_arns) && toset([for ref in values(output.operations_contract.secrets.references) : ref.id]) == toset(local.lambda_preview_secret_arns)
+    error_message = "Both emitted contracts must inventory exactly the runtime/capture secret set, including the independent master key and operator-owned keys."
+  }
+  assert {
+    condition     = output.operations_contract.secrets.references.operation_key_ring_certificate.managed_by == "operator" && output.operations_contract.secrets.references.operation_key_ring_certificate.kind == "operation_key_ring_certificate" && output.operations_contract.secrets.references.audit_chain_key.managed_by == "operator" && output.operations_contract.secrets.references.audit_chain_key.kind == "audit_chain_key"
+    error_message = "The key-ring and audit-key contract entries must retain their operator ownership and typed secret kinds."
+  }
+  assert {
     condition     = module.honua.operation_key_ring_certificate_secret_arn == var.operation_key_ring_certificate_secret_arn && module.honua.audit_chain_key_secret_arn == var.audit_chain_key_secret_arn && module.honua.pro_license_secret_arn == null && output.licensing_mode == "Disabled"
     error_message = "The cert root must pass the declared keyring and retain 2026.1 disabled licensing with no license secret."
   }
@@ -243,4 +251,43 @@ run "reject_audit_key_outside_cert_account" {
   command = plan
   variables { audit_chain_key_secret_arn = "arn:aws:secretsmanager:us-east-1:999999999999:secret:cert-audit-chain-ABC123" }
   expect_failures = [aws_iam_role_policy.lambda_preview_certification]
+}
+
+run "reject_license_wildcard" {
+  command = plan
+  variables {
+    enable_pro_license             = true
+    pro_license_secret_arn         = "arn:aws:secretsmanager:us-east-1:123456789012:secret:*"
+    pro_license_trusted_public_key = "base64url:c3ludGhldGljLXRlc3Qta2V5"
+  }
+  expect_failures = [var.pro_license_secret_arn]
+}
+run "reject_license_outside_cert_account" {
+  command = plan
+  variables {
+    enable_pro_license             = true
+    pro_license_secret_arn         = "arn:aws:secretsmanager:us-east-1:999999999999:secret:cert-license-ABC123"
+    pro_license_trusted_public_key = "base64url:c3ludGhldGljLXRlc3Qta2V5"
+  }
+  expect_failures = [aws_iam_role_policy.lambda_preview_certification]
+}
+run "reject_license_outside_cert_region" {
+  command = plan
+  variables {
+    enable_pro_license             = true
+    pro_license_secret_arn         = "arn:aws:secretsmanager:us-west-2:123456789012:secret:cert-license-ABC123"
+    pro_license_trusted_public_key = "base64url:c3ludGhldGljLXRlc3Qta2V5"
+  }
+  expect_failures = [aws_iam_role_policy.lambda_preview_certification]
+}
+run "operator_contract_tracks_changed_keys" {
+  command = apply
+  variables {
+    operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:other-cert-keyring-DEF456"
+    audit_chain_key_secret_arn                = "arn:aws:secretsmanager:us-east-1:123456789012:secret:other-cert-audit-DEF456"
+  }
+  assert {
+    condition     = output.deployment_contract.secret_refs.operation_key_ring_certificate == var.operation_key_ring_certificate_secret_arn && output.deployment_contract.secret_refs.audit_chain_key == var.audit_chain_key_secret_arn && output.operator_contract_digest != run.cert_capture_exact_secret_set.operator_contract_digest
+    error_message = "Changing declared operator-owned key references must change the emitted references and contract digest."
+  }
 }

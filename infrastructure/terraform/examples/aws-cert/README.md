@@ -566,7 +566,13 @@ from the maintained root **before rerunning certification**:
    ```bash
    scripts/terraform-exact-plan.sh \
      --root infrastructure/terraform/examples/aws-cert \
-     --var-file="$HOME/.config/honua/aws-cert.secret.tfvars"
+     --action apply \
+     --var-file "$HOME/.config/honua/aws-cert.secret.tfvars" \
+     --plan-out "$HOME/.local/state/honua/aws-cert/honua.tfplan" \
+     --actor '<authorized-operation-actor>' \
+     --target-id 'aws-cert:honua/cert' \
+     --candidate-digest '<prepared-candidate-digest>' \
+     --workload-identity-digest '<approved-workload-identity-digest>'
    ```
 
    Review the private plan for the standing function environment reconciliation,
@@ -577,11 +583,25 @@ from the maintained root **before rerunning certification**:
    fingerprint summary/metadata; saved plans and their JSON may contain secrets.
    The existing-stack full plan may reveal previously unapplied changes: review
    them separately rather than broadening this approval or bypassing the wrapper.
-4. After protected approval binds that exact plan digest, the operator applies:
+4. Have the authorized honua-devops operation issue approval bound to the exact
+   `plan_metadata_digest`. The exact-plan contract, approval and governed actuator
+   are the approval boundary; a workflow environment name alone is not approval.
+   The generic manual-validation workflow creates validation stacks and must not
+   replace this existing-state plan. Verify every binding without mutation first:
 
    ```bash
-   scripts/terraform-exact-apply.sh \
-     --plan infrastructure/terraform/examples/aws-cert/honua.tfplan \
+   HONUA_IAC_REQUIRE_APPROVAL=1 scripts/terraform-exact-apply.sh \
+     --plan "$HOME/.local/state/honua/aws-cert/honua.tfplan" \
+     --approved-digest '<approved-plan-metadata-digest>' \
+     --dry-run
+   ```
+
+   After that verification and the authorized operation approval, the governed
+   actuator applies the same saved plan:
+
+   ```bash
+   HONUA_IAC_REQUIRE_APPROVAL=1 scripts/terraform-exact-apply.sh \
+     --plan "$HOME/.local/state/honua/aws-cert/honua.tfplan" \
      --approved-digest '<approved-plan-metadata-digest>'
    ```
 

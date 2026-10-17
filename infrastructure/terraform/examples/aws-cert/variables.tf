@@ -341,6 +341,11 @@ variable "pro_license_secret_arn" {
   description = "ARN of an EXISTING Secrets Manager secret (same region as the stack) holding the signed Pro license envelope. When set, Terraform creates no secret and no version; it only injects Licensing__LicenseContentSecretRef and grants the Lambda role GetSecretValue on it."
   type        = string
   default     = ""
+
+  validation {
+    condition     = var.pro_license_secret_arn == "" || can(regex("^arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+-[A-Za-z0-9]{6}$", var.pro_license_secret_arn))
+    error_message = "pro_license_secret_arn must be an exact Secrets Manager secret ARN including its suffix, or empty; never a shorthand, wildcard, or selector."
+  }
 }
 
 variable "pro_license_content" {
