@@ -123,7 +123,7 @@ variables {
   honua_image                               = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   honua_admin_password                      = "Synthetic-Cert-Test-Only-Password-254!"
   operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:cert-keyring-ABC123"
-  audit_chain_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:cert-audit-chain-ABC123"
+  audit_chain_key_secret_arn                = "arn:aws:secretsmanager:us-east-1:123456789012:secret:cert-audit-chain-ABC123"
 }
 
 override_resource {
