@@ -7,6 +7,7 @@ provider "aws" {
 }
 
 module "honua" {
+  transcript_signing                                = var.transcript_signing
   operation_key_ring_certificate_secret_arn         = var.operation_key_ring_certificate_secret_arn
   operation_key_ring_certificate_secret_kms_key_arn = var.operation_key_ring_certificate_secret_kms_key_arn
   audit_chain_key_secret_arn                        = var.audit_chain_key_secret_arn

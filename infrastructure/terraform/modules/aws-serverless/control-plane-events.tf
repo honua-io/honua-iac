@@ -84,12 +84,14 @@ locals {
   # adapter's loopback Host when HONUA_CONTROL_PLANE_LAMBDA_HANDLER is set) and
   # answers only from loopback (ControlPlaneLambdaEventEndpoint). CORS, HSTS,
   # the admin UI and the upload-size threshold (read only by the HTTP import
-  # endpoints, ImportEndpoints) never apply to that request, so these keys are
-  # left out, from any source (additional_env included):
+  # endpoints, ImportEndpoints) never apply to that request.
+  # Transcript signing belongs to HTTP model responses only; event roles never
+  # receive the signing reference or a grant to read the private seed.
+  # These settings are left out, from any source (additional_env included):
   # HostValidation__AllowedHosts__*, Cors__AllowedOrigins__*,
   # SecurityHeaders__HstsHttpsOnly, HONUA_SERVE_ADMIN_UI, HONUA_ADMIN_UI and
   # Import__Limits__BackgroundJobThresholdBytes.
-  control_plane_events_http_only_key_prefixes = ["HostValidation__AllowedHosts__", "Cors__AllowedOrigins__"]
+  control_plane_events_http_only_key_prefixes = concat(["HostValidation__AllowedHosts__", "Cors__AllowedOrigins__"], var.transcript_signing == null ? [] : ["StudioAiProxy__TranscriptSigning__"])
   control_plane_events_http_only_keys = [
     "SecurityHeaders__HstsHttpsOnly",
     "HONUA_SERVE_ADMIN_UI",

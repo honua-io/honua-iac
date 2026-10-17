@@ -132,15 +132,28 @@ data "aws_iam_policy_document" "lambda_preview_execution_boundary" {
   # are resolved at
   # startup; without this the server exits before serving (run 34078979087:
   # "Failed to resolve the security setting 'HONUA_ADMIN_PASSWORD'"). Only the
-  # cert stack's own secrets, by ARN; no KMS grant (secrets use the AWS-managed key).
+  # cert stack's own secrets, by ARN. The optional transcript signer adds only
+  # its exact runtime ARN and customer-managed key; the runner cannot capture it.
   statement {
     sid       = "CertificationStackSecretsRead"
     actions   = ["secretsmanager:GetSecretValue"]
-    resources = local.lambda_preview_secret_arns
+    resources = local.lambda_preview_runtime_secret_arns
+  }
+  dynamic "statement" {
+    for_each = local.lambda_preview_signer_kms_arns
+    content {
+      sid       = "TranscriptSignerDecrypt"
+      actions   = ["kms:Decrypt"]
+      resources = [statement.value]
+    }
   }
 }
 
 locals {
+  # Capture/readback authorization stays separate from candidate runtime reads.
+  # The private signer is resolved only by the function's own role.
+  lambda_preview_runtime_secret_arns = concat(local.lambda_preview_secret_arns, var.transcript_signing == null ? [] : [var.transcript_signing.secret_arn])
+  lambda_preview_signer_kms_arns     = var.transcript_signing == null ? [] : compact([var.transcript_signing.kms_key_arn])
   lambda_preview_secret_arns = compact([
     module.honua.db_connection_secret_arn,
     module.honua.admin_password_secret_arn,
@@ -159,7 +172,15 @@ data "aws_iam_policy_document" "lambda_preview_execution_secrets" {
   statement {
     sid       = "CertificationStackSecretsRead"
     actions   = ["secretsmanager:GetSecretValue"]
-    resources = local.lambda_preview_secret_arns
+    resources = local.lambda_preview_runtime_secret_arns
+  }
+  dynamic "statement" {
+    for_each = local.lambda_preview_signer_kms_arns
+    content {
+      sid       = "TranscriptSignerDecrypt"
+      actions   = ["kms:Decrypt"]
+      resources = [statement.value]
+    }
   }
 }
 
@@ -167,6 +188,13 @@ resource "aws_iam_role_policy" "lambda_preview_execution_secrets" {
   name   = "${local.lambda_preview_name}-execution-secrets"
   role   = aws_iam_role.lambda_preview_execution.id
   policy = data.aws_iam_policy_document.lambda_preview_execution_secrets.json
+
+  lifecycle {
+    precondition {
+      condition     = var.transcript_signing == null ? true : !contains(local.lambda_preview_secret_arns, var.transcript_signing.secret_arn)
+      error_message = "The transcript signing secret must be separate from every runner-captured certification secret."
+    }
+  }
 }
 
 resource "aws_iam_policy" "lambda_preview_execution_boundary" {

@@ -291,3 +291,70 @@ run "operator_contract_tracks_changed_keys" {
     error_message = "Changing declared operator-owned key references must change the emitted references and contract digest."
   }
 }
+
+run "signer_is_runtime_only_and_never_runner_capture" {
+  command = apply
+  variables {
+    transcript_signing = {
+      key_id      = "approved-model-key"
+      secret_arn  = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-transcript-ABC123"
+      version_id  = "00000000-0000-0000-0000-000000000008"
+      kms_key_arn = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000007"
+    }
+  }
+  assert {
+    condition = (
+      module.honua.transcript_signing_environment_rendered == tomap({
+        StudioAiProxy__TranscriptSigning__KeyId               = "approved-model-key"
+        StudioAiProxy__TranscriptSigning__PrivateKeyReference = "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-transcript-ABC123?versionId=00000000-0000-0000-0000-000000000008"
+      })
+    )
+    error_message = "The cert root must pass the exact approved signer identity and immutable runtime reference."
+  }
+  assert {
+    condition = (
+      length(local.lambda_preview_secret_arns) == 6 && !contains(local.lambda_preview_secret_arns, var.transcript_signing.secret_arn) &&
+      toset(local.lambda_preview_runtime_secret_arns) == setunion(toset(local.lambda_preview_secret_arns), toset([var.transcript_signing.secret_arn]))
+    )
+    error_message = "Only the preview runtime secret set may include the signer; the runner capture set stays exactly six."
+  }
+  assert {
+    condition = (
+      alltrue([for document in [data.aws_iam_policy_document.lambda_preview_execution_boundary, data.aws_iam_policy_document.lambda_preview_execution_secrets] :
+        length([for statement in document.statement : statement if statement.sid == "CertificationStackSecretsRead" && toset(statement.resources) == toset(local.lambda_preview_runtime_secret_arns) && toset(statement.actions) == toset(["secretsmanager:GetSecretValue"])]) == 1 &&
+      length([for statement in document.statement : statement if statement.sid == "TranscriptSignerDecrypt" && toset(statement.resources) == toset([var.transcript_signing.kms_key_arn]) && toset(statement.actions) == toset(["kms:Decrypt"])]) == 1])
+    )
+    error_message = "The preview execution boundary and policy must permit exactly the signer secret and its configured KMS key."
+  }
+  assert {
+    condition = (
+      alltrue([for statement in data.aws_iam_policy_document.lambda_preview_certification.statement :
+      !contains(statement.resources, var.transcript_signing.secret_arn) && !contains(statement.resources, var.transcript_signing.kms_key_arn)]) &&
+      !contains(values(output.deployment_contract.secret_refs), var.transcript_signing.secret_arn) &&
+      !contains([for reference in values(output.operations_contract.secrets.references) : reference.id], var.transcript_signing.secret_arn)
+    )
+    error_message = "Runner IAM and operator capture contracts must never authorize or capture the private signing seed."
+  }
+}
+
+run "reject_signer_reused_as_captured_audit_secret" {
+  command = plan
+  variables {
+    transcript_signing = {
+      key_id     = "approved-model-key"
+      secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:cert-audit-chain-ABC123"
+    }
+  }
+  expect_failures = [aws_iam_role_policy.lambda_preview_execution_secrets]
+}
+
+run "cert_root_rejects_partial_signer_pair" {
+  command = plan
+  variables {
+    transcript_signing = {
+      key_id     = "approved-model-key"
+      secret_arn = ""
+    }
+  }
+  expect_failures = [var.transcript_signing]
+}

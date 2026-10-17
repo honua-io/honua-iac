@@ -3,6 +3,7 @@ provider "aws" {
 }
 
 module "honua" {
+  transcript_signing            = var.transcript_signing
   permissions_boundary_arn      = var.permissions_boundary_arn
   use_batch_service_linked_role = var.use_batch_service_linked_role
   source                        = "../../modules/aws-serverless"

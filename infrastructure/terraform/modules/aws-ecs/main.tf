@@ -171,7 +171,7 @@ locals {
     FileStorage__AwsS3__BucketName = var.file_storage_aws_s3_bucket_name
     FileStorage__AwsS3__Region     = local.file_storage_aws_s3_region
     FileStorage__AwsS3__KeyPrefix  = var.file_storage_aws_s3_key_prefix
-  } : {}, local.licensing_environment, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.cors_environment, local.alb_tls_environment, local.public_base_url_environment, local.import_limits_environment, local.oidc_static_environment)
+  } : {}, local.licensing_environment, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.transcript_signing_environment, local.cors_environment, local.alb_tls_environment, local.public_base_url_environment, local.import_limits_environment, local.oidc_static_environment)
   primary_container_environment = [
     for key, value in merge({ for key, value in var.additional_env : key => value if var.platform_release == null || !startswith(lower(replace(key, ":", "__")), "controlplane__platformrelease__") }, local.runtime_environment, local.platform_release_environment.primary) : {
       name  = key
@@ -184,7 +184,10 @@ locals {
       value = value
     }
   ]
-  container_secrets = concat([
+  container_secrets = concat(var.transcript_signing == null ? [] : [{
+    name      = "HONUA_TRANSCRIPT_SIGNING_KEY"
+    valueFrom = "${var.transcript_signing.secret_arn}${var.transcript_signing.version_id == "" ? "" : ":::${var.transcript_signing.version_id}"}"
+    }], [
     {
       name      = "ConnectionStrings__DefaultConnection"
       valueFrom = aws_secretsmanager_secret.db_connection.arn
@@ -1255,7 +1258,9 @@ resource "aws_ecs_task_definition" "this" {
     aws_secretsmanager_secret_version.db_connection,
     aws_secretsmanager_secret_version.admin_password,
     aws_secretsmanager_secret_version.master_key,
-    aws_secretsmanager_secret_version.redis_connection
+    aws_secretsmanager_secret_version.redis_connection,
+    aws_iam_role_policy.transcript_signing,
+    terraform_data.transcript_signing_validation
   ]
 
   tags = local.tags
@@ -1300,7 +1305,9 @@ resource "aws_ecs_task_definition" "canary" {
     aws_secretsmanager_secret_version.db_connection,
     aws_secretsmanager_secret_version.admin_password,
     aws_secretsmanager_secret_version.master_key,
-    aws_secretsmanager_secret_version.redis_connection
+    aws_secretsmanager_secret_version.redis_connection,
+    aws_iam_role_policy.transcript_signing,
+    terraform_data.transcript_signing_validation
   ]
 
   tags = merge(local.tags, {

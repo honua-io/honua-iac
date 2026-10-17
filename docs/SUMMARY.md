@@ -6,6 +6,7 @@
 
 ## Guides
 
+* [Configure AWS model transcript signing](devops/aws-transcript-signing.md)
 * [Produce AWS certification evidence](devops/aws-cert-live-evidence-runbook.md)
 * [Configure AWS deployment safety](devops/aws-deployment-safety.md)
 * [Prove backups actually restore](devops/backup-restore-runbook.md)

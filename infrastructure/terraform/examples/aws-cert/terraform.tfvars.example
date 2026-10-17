@@ -111,3 +111,11 @@ tags = {
 
 # Required only when enable_ecs_alb_cert=true; use an HTTP port-80 fixture.
 # ecs_alb_image = "public.ecr.aws/nginx/nginx@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+# Optional signed model transcripts. Keep actual approved values in protected inputs.
+# transcript_signing = {
+#   key_id      = "<approved-public-manifest-key-id>"
+#   secret_arn  = "<complete-existing-Secrets-Manager-ARN>"
+#   version_id  = "<immutable-secret-version-id>"
+#   kms_key_arn = "<optional-exact-customer-managed-KMS-key-ARN>"
+# }

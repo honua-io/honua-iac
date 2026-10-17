@@ -803,3 +803,10 @@ cell role and reaper must deny those resources. See
 [the separate bootstrap and activation checklist](../../bootstrap/aws-release-cells/README.md).
 Actual-spend SNS notifications fire at absolute $100 and $200; confirm the email
 subscription after applying. A pending subscription does not deliver alerts.
+
+## Model transcript signing
+
+The optional `transcript_signing` input passes the approved signer identity and
+existing secret reference to the runtime module. It is disabled by default. See
+[the signing guide](../../../../docs/devops/aws-transcript-signing.md) before
+configuring protected inputs or approving a deployment.

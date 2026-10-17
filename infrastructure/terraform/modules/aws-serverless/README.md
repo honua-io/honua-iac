@@ -1245,3 +1245,11 @@ The operator contract is `honua.operator-contract/v2`. The deprecated
 this credential-free worker contract. Deploy the v2-aware DevOps consumer and
 the server broker/scoped-authentication runtime together; do not reinterpret
 an older apply receipt as v2. See [the migration policy](../../../../docs/operator-contract.md#migration-from-v1).
+
+## Model transcript signing
+
+`transcript_signing` defaults to `null`. To enable it, supply an approved public
+key ID and existing signing-secret ARN, with optional immutable version ID and
+exact KMS key ARN. No private value is read by Terraform. See the
+[operator signing guide](../../../../docs/devops/aws-transcript-signing.md) for
+runtime IAM, public-manifest binding, rotation and the Lambda server dependency.
