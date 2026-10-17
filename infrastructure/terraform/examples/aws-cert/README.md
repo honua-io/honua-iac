@@ -443,9 +443,10 @@ This inventory is derived from source. It is **not an executed AWS plan**. No
 AWS credentials, state, plan, or apply are used for local validation. It lists
 every Terraform resource in `lambda-preview-cert.tf`, **11 in total**. On a
 fresh certification account they are part of the full stack create. On an
-existing stack, a governed plan may only create or change addresses from this
-list. Stop on any other Lambda substrate address, any replacement, any destroy,
-or any trust difference. The policy gate fails if a resource, policy statement
+existing stack, changes to this incremental preview substrate must stay within
+this list. The standing `module.honua` environment and secret-policy
+reconciliation is reviewed separately as described below. Stop on an unlisted
+preview substrate address, any replacement, any destroy, or any trust difference. The policy gate fails if a resource, policy statement
 or bootstrap output in the file is missing from this section.
 
 | Terraform resource | Purpose |
@@ -591,8 +592,11 @@ remaining live criterion in honua-iac#191 stay open until the run passes.
 
 Apply is **operator-run only**, after publishing a fingerprint-only plan summary
 to the release evidence thread and reviewing the exact saved plan against the
-existing governed backend. Confirm that every Lambda substrate address in the plan
-appears in the 11-resource inventory above, and that there are **no destroys**.
+existing governed backend. Confirm that every preview substrate address in the
+plan appears in the 11-resource inventory above; review standing module changes
+under the preceding secret-capture handoff, limited to the declared keyring and
+licensing/environment reconciliation and their corresponding runtime grants.
+There must be **no destroys**.
 Stop on any unexpected change, replacement, or trust difference. Do not create
 a new empty state for this existing stack. No local validation command applies
 infrastructure. Do not treat this packet as a passing GA receipt; it is the
