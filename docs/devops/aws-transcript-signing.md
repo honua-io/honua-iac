@@ -1,3 +1,8 @@
+---
+type: guide
+title: "Configure AWS model transcript signing"
+description: "Configure runtime-only AWS signing references, role scope and the approved public verification manifest."
+---
 # AWS model transcript signing
 
 The maintained ECS and Lambda modules, and the `aws`, `aws-serverless` and
