@@ -9,8 +9,17 @@ environment = "cert"
 # Honua Lambda image — pin to the SHA-256 digest of the Lambda AOT build.
 honua_image = "<account-id>.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
-# Admin password (>= 32 chars; also the connection-encryption master key).
+# Admin password (>= 32 chars); the connection-encryption master key is independent.
 honua_admin_password = "REPLACE_WITH_A_32_PLUS_CHAR_SECRET"
+
+# Required for Redis: operator-owned cert key-ring secret, encrypted with the
+# AWS-managed Secrets Manager key. Supply only its complete ARN, never its value.
+operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:<account-id>:secret:<cert-keyring-name>-<suffix>"
+
+# Supply the existing operator-owned audit-chain key ARN for healthy audit
+# verification. Preserve the key when audit history exists; follow the module's
+# activation guidance rather than selecting a replacement key arbitrarily.
+# audit_chain_key_secret_arn = "arn:aws:secretsmanager:us-east-1:<account-id>:secret:<cert-audit-chain-name>-<suffix>"
 
 # GP Batch substrate. Leave gp_batch_image empty to reuse honua_image via
 # HONUA_JOB_KIND, or point at the dedicated worker-gdal image once pushed. The

@@ -152,11 +152,13 @@ module "honua" {
   # the Redis-backed key store (honua-server#4568, certification run 24), and
   # a customer Lambda deployment needs Redis for the same reason. Smallest
   # node type; the module wires the connection through Secrets Manager.
-  db_instance_class    = "db.t4g.micro"
-  db_multi_az          = false
-  db_apply_immediately = true
-  redis_enabled        = true
-  redis_node_type      = "cache.t4g.micro"
+  db_instance_class                         = "db.t4g.micro"
+  db_multi_az                               = false
+  db_apply_immediately                      = true
+  redis_enabled                             = true
+  redis_node_type                           = "cache.t4g.micro"
+  operation_key_ring_certificate_secret_arn = var.operation_key_ring_certificate_secret_arn
+  audit_chain_key_secret_arn                = var.audit_chain_key_secret_arn
   # Licensing (operator ruling 2026-09-12; honua-iac #191, honua-server #4721):
   # the 2026.1 candidate certifies with licensing DISABLED — no envelope, no
   # metering, every entitlement active — so certification exercises GeoServices

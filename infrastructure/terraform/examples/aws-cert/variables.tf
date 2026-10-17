@@ -32,9 +32,33 @@ variable "honua_image" {
 }
 
 variable "honua_admin_password" {
-  description = "Admin API password for Honua (minimum 32 characters; also used as Security__ConnectionEncryption__MasterKey)."
+  description = "Admin API password for Honua (minimum 32 characters). The module generates an independent connection-encryption master key."
   type        = string
   sensitive   = true
+}
+
+# Redis is always enabled in this certification root. Require the operator to
+# name the certificate secret explicitly; never adopt a standing environment's
+# stale shorthand or read private-key material into Terraform.
+variable "operation_key_ring_certificate_secret_arn" {
+  description = "Complete ARN of the operator-owned Secrets Manager PKCS#12 key-ring secret for this cert stack. Required for Redis; use the AWS-managed Secrets Manager encryption key. Only the ARN enters Terraform."
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+-[A-Za-z0-9]{6}$", var.operation_key_ring_certificate_secret_arn))
+    error_message = "Supply the exact key-ring secret ARN including its six-character suffix, not a shorthand, wildcard, selector, or private-key material."
+  }
+}
+
+variable "audit_chain_key_secret_arn" {
+  description = "Optional complete ARN of the operator-owned audit hash-chain key secret in this cert account/region, encrypted with the AWS-managed Secrets Manager key. Supply it for a healthy audit verification check; preserve the existing key for a deployment with audit history. Only the ARN enters Terraform."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.audit_chain_key_secret_arn == "" || can(regex("^arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+-[A-Za-z0-9]{6}$", var.audit_chain_key_secret_arn))
+    error_message = "audit_chain_key_secret_arn must be an exact Secrets Manager secret ARN including its suffix, or empty; never a shorthand, wildcard, selector, or key material."
+  }
 }
 
 variable "db_password" {
@@ -317,6 +341,11 @@ variable "pro_license_secret_arn" {
   description = "ARN of an EXISTING Secrets Manager secret (same region as the stack) holding the signed Pro license envelope. When set, Terraform creates no secret and no version; it only injects Licensing__LicenseContentSecretRef and grants the Lambda role GetSecretValue on it."
   type        = string
   default     = ""
+
+  validation {
+    condition     = var.pro_license_secret_arn == "" || can(regex("^arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+-[A-Za-z0-9]{6}$", var.pro_license_secret_arn))
+    error_message = "pro_license_secret_arn must be an exact Secrets Manager secret ARN including its suffix, or empty; never a shorthand, wildcard, or selector."
+  }
 }
 
 variable "pro_license_content" {

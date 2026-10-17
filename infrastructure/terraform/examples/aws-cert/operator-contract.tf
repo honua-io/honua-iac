@@ -259,16 +259,14 @@ locals {
 
   # Secret references only. Nulls are dropped so a consumer never has to decide
   # what an absent-but-present key means.
-  #
-  # There is deliberately no connection_encryption_master_key entry: this root
-  # reuses honua_admin_password as Security__ConnectionEncryption__MasterKey
-  # (see variables.tf), so no separate secret exists to reference. Inventing a
-  # key here would name a secret that is not provisioned.
   operator_contract_deployment_secret_refs = { for name, arn in {
-    admin_password   = module.honua.admin_password_secret_arn
-    db_connection    = module.honua.db_connection_secret_arn
-    redis_connection = local.operator_contract_redis_secret_arn
-    pro_license      = local.operator_contract_pro_license_secret_arn
+    admin_password                   = module.honua.admin_password_secret_arn
+    connection_encryption_master_key = module.honua.master_key_secret_arn
+    db_connection                    = module.honua.db_connection_secret_arn
+    redis_connection                 = local.operator_contract_redis_secret_arn
+    operation_key_ring_certificate   = module.honua.operation_key_ring_certificate_secret_arn
+    audit_chain_key                  = module.honua.audit_chain_key_secret_arn
+    pro_license                      = local.operator_contract_pro_license_secret_arn
   } : name => arn if arn != null }
 
   operator_contract_secret_registry = { for name, ref in {
@@ -278,6 +276,27 @@ locals {
       id          = module.honua.admin_password_secret_arn
       kms_key_ref = null
       managed_by  = "honua-iac"
+    }
+    connection_encryption_master_key = {
+      kind        = "connection_encryption_master_key"
+      provider    = "aws-secretsmanager"
+      id          = module.honua.master_key_secret_arn
+      kms_key_ref = null
+      managed_by  = "honua-iac"
+    }
+    operation_key_ring_certificate = module.honua.operation_key_ring_certificate_secret_arn == null ? null : {
+      kind        = "operation_key_ring_certificate"
+      provider    = "aws-secretsmanager"
+      id          = module.honua.operation_key_ring_certificate_secret_arn
+      kms_key_ref = null
+      managed_by  = "operator"
+    }
+    audit_chain_key = module.honua.audit_chain_key_secret_arn == null ? null : {
+      kind        = "audit_chain_key"
+      provider    = "aws-secretsmanager"
+      id          = module.honua.audit_chain_key_secret_arn
+      kms_key_ref = null
+      managed_by  = "operator"
     }
     db_connection = {
       kind        = "db_connection"

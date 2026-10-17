@@ -330,6 +330,7 @@ jobs:
           terraform -chdir=infrastructure/terraform/examples/aws test -no-color -filter=tests/operations_policy_passthrough.tftest.hcl -filter=tests/http_redirect_passthrough.tftest.hcl -filter=tests/studio_end_user_authorization_passthrough.tftest.hcl -filter=tests/platform_release.tftest.hcl
           terraform -chdir=infrastructure/terraform/modules/aws-serverless test -no-color
           terraform -chdir=infrastructure/terraform/examples/aws-serverless test -no-color
+          terraform -chdir=infrastructure/terraform/examples/aws-cert test -no-color
           terraform -chdir=infrastructure/terraform/modules/aws-eks test -no-color
           terraform -chdir=infrastructure/terraform/examples/aws-eks test -no-color
           terraform -chdir=infrastructure/terraform/modules/azure-aca test -no-color

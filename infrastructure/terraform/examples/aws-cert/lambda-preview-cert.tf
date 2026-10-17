@@ -128,7 +128,8 @@ data "aws_iam_policy_document" "lambda_preview_execution_boundary" {
 
   # The candidate image boots with the standing function's environment, whose
   # aws:secretsmanager: references (connection string, admin password,
-  # connection-encryption master key, optional Pro license) are resolved at
+  # connection-encryption master key, key-ring certificate, optional Pro license)
+  # are resolved at
   # startup; without this the server exits before serving (run 34078979087:
   # "Failed to resolve the security setting 'HONUA_ADMIN_PASSWORD'"). Only the
   # cert stack's own secrets, by ARN; no KMS grant (secrets use the AWS-managed key).
@@ -144,6 +145,8 @@ locals {
     module.honua.db_connection_secret_arn,
     module.honua.admin_password_secret_arn,
     module.honua.master_key_secret_arn,
+    module.honua.operation_key_ring_certificate_secret_arn,
+    module.honua.audit_chain_key_secret_arn,
     module.honua.pro_license_secret_arn,
     # Redis connection (redis_enabled, 2026-09-08): the candidate boots with
     # the standing environment's aws:secretsmanager: reference and must be
@@ -192,6 +195,16 @@ resource "aws_iam_role_policy_attachment" "lambda_preview_vpc_access" {
 # A separate inline policy attaches to the EXISTING OIDC role. No inputs to the
 # federation component or its trust policy change.
 data "aws_iam_policy_document" "lambda_preview_certification" {
+  # Manifest-bound preparation pins VersionIds before CreateFunction. The
+  # OIDC caller performs these reads, independently of the execution role.
+  # Share the exact maintained environment secret set, never a name wildcard
+  # or an ARN inferred from a stale standing function (honua-iac#254).
+  statement {
+    sid       = "CaptureCertificationSecretVersions"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = local.lambda_preview_secret_arns
+  }
+
   # TagResource is required by CreateFunction with tags. Prevent that grant
   # from relabeling an already-owned function to bypass lifecycle conditions.
   dynamic "statement" {
@@ -412,6 +425,23 @@ resource "aws_iam_role_policy" "lambda_preview_certification" {
   name   = "${local.lambda_preview_name}-certification"
   role   = module.github_oidc.role_name
   policy = data.aws_iam_policy_document.lambda_preview_certification.json
+
+  lifecycle {
+    precondition {
+      condition     = startswith(var.operation_key_ring_certificate_secret_arn, "arn:${data.aws_partition.lambda_preview.partition}:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:")
+      error_message = "The cert key-ring secret must belong to this certification account and region."
+    }
+
+    precondition {
+      condition     = var.audit_chain_key_secret_arn == "" || startswith(var.audit_chain_key_secret_arn, "arn:${data.aws_partition.lambda_preview.partition}:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:")
+      error_message = "The cert audit-chain key secret must belong to this certification account and region."
+    }
+
+    precondition {
+      condition     = var.pro_license_secret_arn == "" || startswith(var.pro_license_secret_arn, "arn:${data.aws_partition.lambda_preview.partition}:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:")
+      error_message = "The optional cert license secret must belong to this certification account and region."
+    }
+  }
 }
 
 # Function URL on the standing certification alias (release#282 bill, item 2):
