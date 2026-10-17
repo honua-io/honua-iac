@@ -471,7 +471,10 @@ standing certification function ARN (`module.honua.lambda_function_arn`); `K` =
 the certification stack's own secret ARNs (database connection, admin password,
 connection-encryption master key, Redis connection, the explicitly supplied
 operator key-ring certificate, configured audit-chain key (when supplied), and
-the optional Pro license (2026.2 only). Account, region, and partition are Terraform-derived. All
+the optional Pro license (2026.2 only). `T` is the optional existing transcript
+signing secret ARN, and `M` is its optional exact customer-managed KMS key ARN.
+T and M belong to the preview runtime only; neither joins K or the runner's
+capture permissions. Account, region, and partition are Terraform-derived. All
 statements are Allow unless marked Deny. No OIDC subject or provider changes
 are introduced.
 
@@ -481,9 +484,11 @@ are introduced.
 | AWSLambdaBasicExecutionRole (AWS-managed) | `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents` | `*` in AWS-managed policy | None; effective permissions intersect with the boundary below |
 | Execution boundary / CertificationLogStreamsOnly | `logs:CreateLogStream`, `logs:PutLogEvents` | `L:log-stream:*` | None; runtime cannot create log groups |
 | Execution boundary / CertificationVpcEni | `ec2:CreateNetworkInterface`, `ec2:DescribeNetworkInterfaces`, `ec2:DescribeSubnets`, `ec2:DeleteNetworkInterface`, `ec2:AssignPrivateIpAddresses`, `ec2:UnassignPrivateIpAddresses` | `*` (no resource-level form; the AWSLambdaVPCAccessExecutionRole shape) | None; the policy gate allowlists exactly these six actions |
-| Execution boundary / CertificationStackSecretsRead | `secretsmanager:GetSecretValue` | K | None; no KMS grant (secrets use the AWS-managed key) |
+| Execution boundary / CertificationStackSecretsRead | `secretsmanager:GetSecretValue` | K, T when configured | Exact existing ARNs; K secrets use the AWS-managed key |
+| Execution boundary / TranscriptSignerDecrypt | `kms:Decrypt` | M | Present only when the signer has an explicit customer-managed key; runtime only |
 | AWSLambdaVPCAccessExecutionRole (AWS-managed) | ENI lifecycle actions | `*` in AWS-managed policy | None; effective permissions intersect with the boundary above |
-| Execution inline / CertificationStackSecretsRead | `secretsmanager:GetSecretValue` | K | None; the boundary above caps it to the same ARNs |
+| Execution inline / CertificationStackSecretsRead | `secretsmanager:GetSecretValue` | K, T when configured | The boundary above caps it to the same exact ARNs |
+| Execution inline / TranscriptSignerDecrypt | `kms:Decrypt` | M | Same exact signer key as the boundary; no runner decrypt grant |
 | ECR policy / LambdaCertificationImagePull | `ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer` | E | Service `lambda.amazonaws.com`; StringEquals `aws:SourceAccount=<current account>`; ArnLike `aws:SourceArn=F` |
 | OIDC / PreserveCertificationRun (Deny) | `lambda:TagResource` | F | Null `aws:ResourceTag/honua-cert-run=false` AND StringNotEquals request run tag to existing resource run tag |
 | OIDC / PreserveCertificationPurpose (Deny) | `lambda:TagResource` | F | Null `aws:ResourceTag/honua-purpose=false` AND StringNotEquals request purpose tag to existing resource purpose tag |
@@ -504,7 +509,8 @@ are introduced.
 The [managed basic policy](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AWSLambdaBasicExecutionRole.html)
 is explicitly requested by ruling A. The execution boundary caps both managed
 policies to writes on the precreated lane log streams, the six Lambda ENI
-actions, and reads of the stack's own secrets. The [repository service policy](https://docs.aws.amazon.com/lambda/latest/dg/images-create.html#images-permissions)
+actions, reads of K and the optional runtime signer T, and decrypt on M only when
+explicitly configured. The [repository service policy](https://docs.aws.amazon.com/lambda/latest/dg/images-create.html#images-permissions)
 is installed by Terraform, so the runner does not need `ecr:SetRepositoryPolicy`.
 `logs:DescribeLogGroups` is already allowed by the existing component's
 `CloudWatchReadGlobal`; no global read grant is added. The pre-existing policy
@@ -522,12 +528,16 @@ functions in this dedicated lane namespace.
 ### Manifest-bound runner secret capture (2026.1 prerequisite)
 
 The runner and the Lambda execution role are different principals. The trusted
-producer resolves every `aws:secretsmanager:` reference before deployment so its
-receipt binds the candidate to immutable VersionIds. Runtime grants alone do
+producer resolves the bootstrap references declared in its capture contracts
+before deployment so its receipt binds them to immutable VersionIds. The
+transcript signing seed is runtime-only and is excluded from those contracts;
+the operator pins its version and public-manifest identity separately. Runtime grants alone do
 not authorize that preparation call. `CaptureCertificationSecretVersions` grants
 the existing OIDC runner only `secretsmanager:GetSecretValue` on the same exact
-ARN set as the runtime boundary, including the explicit operator-owned key-ring
-secret and the audit-chain key when configured. No secret value enters an output, receipt, or test fixture.
+ARN set K, including the explicit operator-owned key-ring secret and the
+audit-chain key when configured. The runtime boundary also admits T when signing
+is enabled; the runner gets neither T nor M, and reuse of a captured secret as T
+fails planning. No secret value enters an output, receipt, or test fixture.
 
 The cert root always enables Redis and now requires
 `operation_key_ring_certificate_secret_arn` as a complete ARN in the cert
@@ -536,7 +546,9 @@ The module may
 shorten its environment reference to a same-account name to meet Lambda's 4 KB
 limit; IAM still grants its complete ARN. Use an existing cert key-ring secret
 encrypted with the AWS-managed Secrets Manager key. Customer-managed key
-support is outside this bounded prerequisite: no KMS access is added here.
+support for those captured bootstrap secrets is outside this bounded prerequisite.
+The separate optional signer grant permits only runtime decrypt on M; it does
+not add runner KMS access.
 
 The optional `audit_chain_key_secret_arn` now also passes through to the maintained
 module and joins the same exact read set only when supplied. Its existing
