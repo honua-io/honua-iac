@@ -378,6 +378,13 @@ variable "enable_gp_batch" {
   default     = false
 }
 
+variable "gp_batch_retain_prior_definitions" {
+  description = "Retain prior ACTIVE Batch job-definition revisions during a governed update/rollback window. Published Lambda versions pin these revisions. When true, the operator must deregister retained revisions after all jobs finish and the rollback window closes; destroying the current revision does not clean prior retained revisions."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "gp_batch_image" {
   description = "Digest-pinned image (registry/repository@sha256:<64 hex>) for the GP Batch job. Use the generic (ECS) server image: the job definitions set no command or entryPoint, so the container runs the image's own entrypoint, and the Lambda AOT image's entrypoint is built for the Lambda runtime. Empty falls back to honua_image_uri, which is only correct for an image that serves both roles."
   type        = string

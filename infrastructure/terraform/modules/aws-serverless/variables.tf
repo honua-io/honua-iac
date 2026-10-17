@@ -726,6 +726,13 @@ variable "enable_gp_batch" {
   default     = false
 }
 
+variable "gp_batch_retain_prior_definitions" {
+  description = "Retain prior ACTIVE Batch job-definition revisions during a governed update/rollback window. Published Lambda versions pin these revisions. When true, the operator must deregister retained revisions after all jobs finish and the rollback window closes; destroying the current revision does not clean prior retained revisions."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "gp_batch_image" {
   description = "Container image URI (ECR) for the geoprocessing Batch job. Defaults to the same image as the Lambda when empty."
   type        = string

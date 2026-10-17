@@ -1253,3 +1253,19 @@ key ID and existing signing-secret ARN, with optional immutable version ID and
 exact KMS key ARN. No private value is read by Terraform. See the
 [operator signing guide](../../../../docs/devops/aws-transcript-signing.md) for
 runtime IAM, public-manifest binding, rotation and the Lambda server dependency.
+
+### Retaining Batch revisions for rollback
+
+`gp_batch_retain_prior_definitions = true` is an explicit, temporary rollback-window setting.
+Set it before changing the Batch image when a retained published Lambda version still pins the
+previous `name:revision`. AWS normally deregisters that revision when Terraform creates its
+replacement, so moving the alias back alone would not restore job submission. The default stays
+`false` for ordinary lifecycle management.
+
+This option keeps every prior tier revision ACTIVE. Record their exact ARNs from
+`gp_job_definition_arns` before the update. After every affected job has reached a terminal state
+and the rollback window is closed, deregister only those recorded revisions through the normal
+approved operator flow. Destroying the current Terraform resource does **not** deregister older
+retained revisions. Reverting the flag later also does not discover or remove older revisions.
+The release harness owns this cleanup for its ephemeral, run-bound stacks; this input does not
+claim a successful update, rollback, exactly-once execution or cloud qualification.
