@@ -52,7 +52,8 @@ ARNs, the surface the OIDC role is scoped to.
 ```bash
 cp infrastructure/terraform/examples/aws-cert/terraform.tfvars.example \
    infrastructure/terraform/examples/aws-cert/terraform.tfvars
-# fill in honua_image, honua_admin_password, budget_alert_emails, OIDC scoping
+# fill in honua_image, honua_admin_password, operation_key_ring_certificate_secret_arn,
+# budget_alert_emails, OIDC scoping
 terraform -chdir=infrastructure/terraform/examples/aws-cert init
 terraform -chdir=infrastructure/terraform/examples/aws-cert plan
 # apply creates billable infra — run only intentionally for a cert session.
@@ -140,7 +141,8 @@ One-time, per certification account:
    cannot certify anything: the governed wrappers refuse it with
    `REFUSED[local-state-refused]`. See [`docs/operator-state.md`](../../../../docs/operator-state.md).
 3. **Fill `terraform.tfvars`** from the example — `honua_image`,
-   `honua_admin_password`, `db_password`, `budget_alert_emails`, and OIDC
+   `honua_admin_password`, `operation_key_ring_certificate_secret_arn`,
+   `db_password`, `budget_alert_emails`, and OIDC
    scoping (`github_oidc_subjects` defaults to the `cert` Environment sub).
 4. **`terraform apply`** (creates billable infra — run intentionally).
 5. **Create the GitHub Environment `cert`** in honua-io/honua-server (the OIDC
@@ -429,9 +431,9 @@ scripts/terraform-exact-apply.sh \
   --plan infrastructure/terraform/examples/aws-cert/honua.tfplan
 ```
 
-or export `TF_VAR_pro_license_content` instead of using a file. Apply targeted
-(`module.honua` and its IAM policies, the run-27 lesson: a new secret needs the
-module policies applied) and verify with the alias
+or export `TF_VAR_pro_license_content` instead of using a file. For this 2026.2
+path, review the governed full plan so the module and its IAM policies agree,
+then apply the approved saved plan and verify with the alias
 `GET /api/v1/admin/license/status` (`edition=Pro`, `validationState=Valid`)
 before dispatching the next certification run.
 
@@ -466,8 +468,8 @@ IAM notation below contains no account identifiers: `F` =
 `E` = the certification repository ARN; `X` = the execution-role ARN; `S` = the
 standing certification function ARN (`module.honua.lambda_function_arn`); `K` =
 the certification stack's own secret ARNs (database connection, admin password,
-connection-encryption master key, and the optional Pro license and Redis
-connection). Account, region, and partition are Terraform-derived. All
+connection-encryption master key, Redis connection, the explicitly supplied
+operator key-ring certificate, and the optional Pro license (2026.2 only). Account, region, and partition are Terraform-derived. All
 statements are Allow unless marked Deny. No OIDC subject or provider changes
 are introduced.
 
@@ -484,6 +486,7 @@ are introduced.
 | OIDC / PreserveCertificationRun (Deny) | `lambda:TagResource` | F | Null `aws:ResourceTag/honua-cert-run=false` AND StringNotEquals request run tag to existing resource run tag |
 | OIDC / PreserveCertificationPurpose (Deny) | `lambda:TagResource` | F | Null `aws:ResourceTag/honua-purpose=false` AND StringNotEquals request purpose tag to existing resource purpose tag |
 | OIDC / CreateTaggedCertificationFunction | `lambda:CreateFunction`, `lambda:TagResource` | F | StringEquals request `honua-purpose=lambda-preview-certification`; StringLike request `honua-cert-run=?*-?*`; ForAllValues:StringEquals `aws:TagKeys=[honua-cert-run,honua-purpose]` |
+| OIDC / CaptureCertificationSecretVersions | `secretsmanager:GetSecretValue` | K | Exact maintained secret ARNs; runner pins VersionIds before deployment; no wildcard or inferred demo grant |
 | OIDC / ObserveCertificationFunction | `lambda:GetFunction`, `lambda:ListTags` | F | None (collision detection, waiters, ownership inspection, absence verification) |
 | OIDC / CertifyStandingAliasUpgradeRollback | `lambda:GetFunction`, `lambda:GetFunctionConfiguration`, `lambda:GetFunctionUrlConfig`, `lambda:GetAlias`, `lambda:ListAliases`, `lambda:ListVersionsByFunction`, `lambda:UpdateFunctionCode`, `lambda:UpdateFunctionConfiguration`, `lambda:PublishVersion`, `lambda:UpdateAlias`, `lambda:InvokeFunction`, `lambda:InvokeFunctionUrl` | S, `S:*` | None; no delete (the policy gate fails if `lambda:DeleteFunction` appears here) |
 | OIDC / DeleteOnlyStandingFunctionVersions | `lambda:DeleteFunction` | `S:*` only (qualified version ARNs, never the function) | None; the lane deletes only the version it published |
@@ -513,6 +516,76 @@ cannot be changed through the new tagging grant. The run-tag pattern requires
 nonempty components around a hyphen; numeric validation belongs to GitHub's run
 identifiers. A caller with this role can still operate on other correctly tagged
 functions in this dedicated lane namespace.
+
+### Manifest-bound runner secret capture (2026.1 prerequisite)
+
+The runner and the Lambda execution role are different principals. The trusted
+producer resolves every `aws:secretsmanager:` reference before deployment so its
+receipt binds the candidate to immutable VersionIds. Runtime grants alone do
+not authorize that preparation call. `CaptureCertificationSecretVersions` grants
+the existing OIDC runner only `secretsmanager:GetSecretValue` on the same exact
+ARN set as the runtime boundary, including the explicit operator-owned key-ring
+secret. No secret value enters an output, receipt, or test fixture.
+
+The cert root always enables Redis and now requires
+`operation_key_ring_certificate_secret_arn` as a complete ARN in the cert
+account and region; a policy precondition rejects other accounts or regions.
+The module may
+shorten its environment reference to a same-account name to meet Lambda's 4 KB
+limit; IAM still grants its complete ARN. Use an existing cert key-ring secret
+encrypted with the AWS-managed Secrets Manager key. Customer-managed key
+support is outside this bounded prerequisite: no KMS access is added here.
+
+For **2026.1**, the protected operator flow must reconcile the standing function
+from the maintained root **before rerunning certification**:
+
+1. Check out the reviewed merged IaC revision, retain the existing governed
+   backend/workspace and approved image pins, and supply the existing cert
+   key-ring secret ARN in the protected input file. Do not create empty state,
+   retrieve secret values, or copy the standing function's stale environment.
+2. Set `licensing_mode = "Disabled"`, `enable_pro_license = false`, and leave
+   `pro_license_secret_arn`, `pro_license_content`, and the trusted license key
+   empty. The reviewed function configuration must declare
+   `Licensing__Mode=Disabled` and remove inherited license-reference/trust keys.
+   A demo license is not part of the 2026.1 secret capture set.
+3. Produce a governed saved plan with the existing protected inputs:
+
+   ```bash
+   scripts/terraform-exact-plan.sh \
+     --root infrastructure/terraform/examples/aws-cert \
+     --var-file="$HOME/.config/honua/aws-cert.secret.tfvars"
+   ```
+
+   Review the private plan for the standing function environment reconciliation,
+   the OIDC capture grant, execution secret grant and boundary. The expected
+   secret set is cert DB, admin, independent master key, Redis, and the declared
+   key-ring ARN. Stop on demo license access, wildcard reads, trust changes,
+   replacements, deletions, or unrelated resource drift. Publish only the
+   fingerprint summary/metadata; saved plans and their JSON may contain secrets.
+   The existing-stack full plan may reveal previously unapplied changes: review
+   them separately rather than broadening this approval or bypassing the wrapper.
+4. After protected approval binds that exact plan digest, the operator applies:
+
+   ```bash
+   scripts/terraform-exact-apply.sh \
+     --plan infrastructure/terraform/examples/aws-cert/honua.tfplan \
+     --approved-digest '<approved-plan-metadata-digest>'
+   ```
+
+   Record the IaC revision and execution receipt. Confirm the resulting standing
+   secret references match the reviewed set and licensing is disabled without
+   dumping its environment or reading secret values into terminal output.
+5. Re-dispatch honua-server `lambda-preview-certification.yml` at `trunk` with
+   the approved manifest's `source_image`, `source_digest`, `architecture`,
+   `server_revision` and **nonempty `prepared_manifest`** inputs. Preserve the
+   prepared operating-envelope binding. Capture the Actions run/head, measured
+   ECR digest and deployment-input artifact, VersionId fingerprints, serving,
+   upgrade/rollback and cleanup receipts in honua-release#282/#376. A run without
+   prepared manifest binding cannot replace the required bound proof.
+
+These are instructions for a reviewed deployment, not a record of execution.
+Offline tests and this prerequisite PR do not satisfy live proof; #282 and the
+remaining live criterion in honua-iac#191 stay open until the run passes.
 
 ### Operator handoff
 

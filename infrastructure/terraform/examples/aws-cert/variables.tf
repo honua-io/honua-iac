@@ -32,9 +32,22 @@ variable "honua_image" {
 }
 
 variable "honua_admin_password" {
-  description = "Admin API password for Honua (minimum 32 characters; also used as Security__ConnectionEncryption__MasterKey)."
+  description = "Admin API password for Honua (minimum 32 characters). The module generates an independent connection-encryption master key."
   type        = string
   sensitive   = true
+}
+
+# Redis is always enabled in this certification root. Require the operator to
+# name the certificate secret explicitly; never adopt a standing environment's
+# stale shorthand or read private-key material into Terraform.
+variable "operation_key_ring_certificate_secret_arn" {
+  description = "Complete ARN of the operator-owned Secrets Manager PKCS#12 key-ring secret for this cert stack. Required for Redis; use the AWS-managed Secrets Manager encryption key. Only the ARN enters Terraform."
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+-[A-Za-z0-9]{6}$", var.operation_key_ring_certificate_secret_arn))
+    error_message = "Supply the exact key-ring secret ARN including its six-character suffix, not a shorthand, wildcard, selector, or private-key material."
+  }
 }
 
 variable "db_password" {
