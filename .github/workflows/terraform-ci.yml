@@ -129,6 +129,14 @@ jobs:
           HONUA_CERT_TEST_TOOLS: ${{ runner.temp }}/cert-plan-tools
         run: python3 infrastructure/terraform/validation/scripts/aws/test_cert_plan_envelope.py -v
 
+  standing-cert-plan-controls:
+    name: Standing certification private plan controls (offline)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - run: python3 infrastructure/terraform/validation/scripts/aws/test_standing_cert_plan.py -v
+
   terraform-1-5-validate:
     name: Terraform 1.5 Floor Validate
     runs-on: ubuntu-latest
@@ -433,9 +441,6 @@ jobs:
       - name: Governed execution substrate regression test (fail-closed matrix)
         shell: bash
         run: ./infrastructure/terraform/validation/scripts/shared/test-terraform-exact-plan.sh
-
-      - name: Standing certification private plan controls (offline)
-        run: python3 infrastructure/terraform/validation/scripts/aws/test_standing_cert_plan.py -v
 
       - name: Run Terraform policy gate script
         shell: bash

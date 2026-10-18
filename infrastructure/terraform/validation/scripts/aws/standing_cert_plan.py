@@ -303,6 +303,75 @@ def validate_expiry(metadata, request, claims, started):
     require(expiry < timestamp(request["privateRetention"]["retainUntilUtc"]), "private-retention-required")
 
 
+def planning_seconds(request, claims):
+    deadline = min(timestamp(request["sessionExpiresAtUtc"]).timestamp(), claims["exp"])
+    available = int(deadline - datetime.now(timezone.utc).timestamp() - request["expiresInSeconds"] - 5)
+    require(available > 0, "session-expiring")
+    return min(request["planTimeoutSeconds"], available)
+
+
+def backend_only_source(config, optional=()):
+    """Finite backend-only HCL; comments/whitespace may vary, executable HCL may not."""
+    lines = ['terraform { backend "s3" {']
+    for key in ("bucket", "key", "region", "encrypt", "use_lockfile", "kms_key_id", "workspace_key_prefix"):
+        if config.get(key) is not None and (key not in ("kms_key_id", "workspace_key_prefix") or key in optional):
+            lines.append(f"{key} = {json.dumps(config[key])}")
+    lines.append("assume_role_with_web_identity = {")
+    web = config["assume_role_with_web_identity"]
+    require({k for k, v in web.items() if v is not None} <= {"role_arn", "web_identity_token_file"},
+            "backend-source-unsupported")
+    for key in ("role_arn", "web_identity_token_file"):
+        lines.append(f"{key} = {json.dumps(web[key])}")
+    return "\n".join([*lines, "} } }"])
+
+
+def hcl_tokens(value):
+    tokens = re.findall(r'"(?:[^"\\]|\\.)*"|/\*.*?\*/|//[^\n]*|\#[^\n]*|\s+|[A-Za-z_][A-Za-z0-9_-]*|.', value, re.DOTALL)
+    return [token for token in tokens if not token.isspace() and not token.startswith(("#", "//", "/*"))]
+
+
+def validate_runtime_source(commands, root, repository, config):
+    backend = root / "backend.tf"
+    tokens = hcl_tokens(backend.read_text()) if backend.is_file() and not backend.is_symlink() else []
+    require(backend.is_file() and not backend.is_symlink()
+            and tokens == hcl_tokens(backend_only_source(config, tokens)), "backend-source-invalid")
+    entries = commands.run(["git", "ls-tree", "-r", "-z", "HEAD"])
+    tracked = {}
+    for entry in entries.split(b"\0"):
+        if entry:
+            descriptor, name = entry.split(b"\t", 1)
+            tracked[name.decode()] = descriptor.split()[2].decode()
+    # Cover the fixed root and all maintained local module/component sources;
+    # other operator example backends are outside this runtime's source set.
+    directories = (root, repository / "infrastructure/terraform/modules",
+                   repository / "infrastructure/terraform/components")
+    seen = set()
+    for directory in directories:
+        if not directory.exists():
+            continue
+        for parent, children, files in os.walk(directory):
+            children[:] = [name for name in children if name not in (".terraform", ".git")]
+            require(not any((Path(parent) / name).is_symlink() for name in children), "source-symlink-refused")
+            for name in files:
+                if not name.endswith((".tf", ".tf.json")):
+                    continue
+                path = Path(parent) / name
+                if path == backend:
+                    continue
+                require(not path.is_symlink(), "source-symlink-refused")
+                relative = str(path.relative_to(repository))
+                seen.add(relative)
+                require(relative in tracked, "ignored-terraform-source-refused")
+                data = path.read_bytes()
+                # Git object identity, not a new cryptographic signing scheme.
+                object_id = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data,
+                                         usedforsecurity=False).hexdigest()
+                require(object_id == tracked[relative], "terraform-source-modified")
+    prefixes = tuple(str(directory.relative_to(repository)) + "/" for directory in directories)
+    expected = {name for name in tracked if name.startswith(prefixes) and name.endswith((".tf", ".tf.json"))}
+    require(expected <= seen, "terraform-source-missing")
+
+
 def produce(request_path, repository):
     os.umask(0o077)
     request = load(protected(request_path))
@@ -313,6 +382,8 @@ def produce(request_path, repository):
     now = datetime.now(timezone.utc)
     lifetime = request["expiresInSeconds"]
     require(type(lifetime) is int and 60 <= lifetime <= 1800, "expiry-invalid")
+    require(type(request["planTimeoutSeconds"]) is int and 60 <= request["planTimeoutSeconds"] <= 1800,
+            "plan-timeout-invalid")
     require(timestamp(request["sessionExpiresAtUtc"]) > now + timedelta(seconds=lifetime + 120), "session-expiring")
     retention = request["privateRetention"]
     require(text(retention["owner"]) and text(retention["accessReference"])
@@ -368,6 +439,7 @@ def produce(request_path, repository):
         write(packet / "request.json", request)
         require(commands.run(["git", "rev-parse", "HEAD"]).decode().strip() == request["iacRevision"], "source-mismatch")
         require(not commands.run(["git", "status", "--porcelain", "--untracked-files=normal"]).strip(), "source-dirty")
+        validate_runtime_source(commands, root, repository, config)
         require(commands.json(["terraform", "version", "-json"])["terraform_version"] == request["terraformVersion"], "toolchain-mismatch")
         require(digest((root / ".terraform.lock.hcl").read_bytes()) == request["providerLockSha256"], "provider-lock-mismatch")
         trust(commands, deploy_role, request["accountId"])
@@ -380,7 +452,7 @@ def produce(request_path, repository):
                       "--metadata-out", str(packet / "metadata.json"), "--expires-in", str(lifetime),
                       "--actor", request["actorId"], "--target-id", "aws-cert",
                       "--candidate-digest", request["candidateDigest"], "--workload-identity-digest",
-                      request["workloadIdentityContractDigest"]], seconds=lifetime)
+                      request["workloadIdentityContractDigest"]], seconds=planning_seconds(request, claims))
         after = commands.facts(root)
         validate_facts(after, request, deploy_role)
         require(after == before and digest(var_file.read_bytes()) == request["varFileSha256"], "context-drift")
@@ -406,6 +478,7 @@ def produce(request_path, repository):
             commands.run(["terraform", "-chdir=" + str(root), "show", "-no-color", str(packet / "plan.bin")], output=output)
         require(not commands.run(["git", "status", "--porcelain", "--untracked-files=normal"]).strip()
                 and commands.run(["git", "rev-parse", "HEAD"]).decode().strip() == request["iacRevision"], "source-drift")
+        validate_runtime_source(commands, root, repository, config)
         files = {}
         require({p.name for p in packet.iterdir()} == PACKET_FILES, "packet-files-invalid")
         for path in packet.iterdir():

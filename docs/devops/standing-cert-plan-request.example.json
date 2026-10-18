@@ -24,6 +24,7 @@
   "executionIdentityContractDigest": "REPLACE_WITH_EXISTING_BOOTSTRAP_OUTPUT_DIGEST",
   "sessionExpiresAtUtc": "REPLACE_WITH_ACTUAL_STS_EXPIRY",
   "expiresInSeconds": 900,
+  "planTimeoutSeconds": 900,
   "backendTokenFile": "/REPLACE_WITH_PRIVATE_EPHEMERAL_TOKEN_FILE",
   "varFile": "/REPLACE_WITH_PROTECTED_JSON_TFVARS_FILE",
   "varFileSha256": "REPLACE_WITH_TFVARS_BYTES_SHA256",

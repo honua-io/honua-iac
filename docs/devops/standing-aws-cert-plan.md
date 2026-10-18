@@ -67,6 +67,7 @@ request. Its `backendTokenFile` names an ephemeral protected file, not a token.
 | `workloadIdentityContract`, `workloadIdentityContractDigest` | Complete existing bootstrap/aws-terraform-oidc output value and its canonical digest; not a caller-invented role receipt |
 | `executionIdentityContract`, `executionIdentityContractDigest` | Complete existing bootstrap/aws-exec-identity output value and its canonical digest |
 | `sessionExpiresAtUtc`, `expiresInSeconds` | Real deployment-session expiry and plan lifetime (60–1800 seconds). Session and backend token must remain valid for lifetime plus 120 seconds |
+| `planTimeoutSeconds` | Separate planning timeout (60–1800 seconds), further bounded by remaining session/token time after reserving the review lifetime |
 | `backendTokenFile` | Absolute nonsymlink `0600` token file matching the initialized backend's token-file path |
 | `varFile`, `varFileSha256` | Absolute nonsymlink `0600` JSON tfvars file and exact byte SHA256. Hidden auto tfvars are refused |
 | `imagePins` | Exact nonempty image variables from the protected tfvars, each `repository@sha256:…`; Lambda and GP images required, enabled custom-code/ECS fixture images also required |
@@ -111,6 +112,17 @@ Protected files must also have trustworthy containing directories: each
 ancestor is owned by the executing user or root and is not writable by others
 (root-owned sticky temporary directories are permitted). This prevents another
 local user from replacing a protected file before Terraform reopens it.
+
+The ignored `backend.tf` is accepted only as a backend-only configuration matching
+the initialized descriptor. Its permitted order is `bucket`, `key`, `region`,
+`encrypt`, `use_lockfile`, optional `kms_key_id`, optional `workspace_key_prefix`,
+then `assume_role_with_web_identity = { role_arn = … web_identity_token_file = … }`,
+inside `terraform { backend "s3" { … } }`. Comments and whitespace may vary;
+resources/providers/locals/expressions and other attributes are refused. Prepare
+this local configuration explicitly; the command does not rewrite it. All other
+Terraform files in the cert root and maintained local modules/components must
+match their tracked Git objects, including files hidden by ignore/skip-worktree
+settings. Ignored executable Terraform files are refused.
 
 The producer validates context, invokes the maintained exact-plan script once
 with `--skip-init` and no `--workspace`, then rechecks context and byte bindings.

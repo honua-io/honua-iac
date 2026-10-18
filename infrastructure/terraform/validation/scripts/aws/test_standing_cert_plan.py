@@ -51,7 +51,7 @@ class StandingCertPlan(unittest.TestCase):
         (self.root / ".terraform").mkdir(parents=True)
         (self.root / "main.tf").write_text("locals { fixture = true }\n")
         (self.root / ".terraform.lock.hcl").write_text("# authored provider lock fixture\n")
-        (self.repository / ".gitignore").write_text(".terraform/\n__pycache__/\n")
+        (self.repository / ".gitignore").write_text(".terraform/\nbackend.tf\nignored*.tf\n__pycache__/\n")
         for relative in ("scripts/lib/tf-exec-contract.sh", "scripts/terraform-exact-plan.sh",
                          "scripts/terraform-backend-identity.sh"):
             destination = self.repository / relative
@@ -115,7 +115,7 @@ class StandingCertPlan(unittest.TestCase):
                         "stateBefore": {"lineage": "authored-existing-lineage", "serial": 42},
                         "workloadIdentityContract": work, "workloadIdentityContractDigest": sha(canonical(work)),
                         "executionIdentityContract": execute, "executionIdentityContractDigest": sha(canonical(execute)),
-                        "sessionExpiresAtUtc": future.isoformat(), "expiresInSeconds": 300,
+                        "sessionExpiresAtUtc": future.isoformat(), "expiresInSeconds": 300, "planTimeoutSeconds": 300,
                         "backendTokenFile": str(self.tokens), "varFile": str(self.var_file),
                         "varFileSha256": sha(self.var_file.read_bytes()),
                         "imagePins": {"honua_image": image, "gp_batch_image": image},
@@ -176,6 +176,24 @@ else:
 
     def write_backend(self):
         save(self.root / ".terraform/terraform.tfstate", {"backend": {"type": "s3", "config": self.backend_config}})
+        # Independently authored backend-only fixture (not the production renderer).
+        config = self.backend_config
+        web = config.get("assume_role_with_web_identity", {})
+        (self.root / "backend.tf").write_text('''# existing operator configuration
+terraform {
+  backend "s3" {
+    bucket = ''' + json.dumps(config["bucket"]) + '''
+    key = ''' + json.dumps(config["key"]) + '''
+    region = ''' + json.dumps(config["region"]) + '''
+    encrypt = true
+    use_lockfile = true
+    assume_role_with_web_identity = {
+      role_arn = ''' + json.dumps(web.get("role_arn", "")) + '''
+      web_identity_token_file = ''' + json.dumps(str(self.tokens)) + '''
+    }
+  }
+}
+''')
 
     def invoke(self):
         save(self.request_file, self.request)
@@ -298,6 +316,27 @@ else:
         claims["exp"] = (now + timedelta(seconds=120)).timestamp()
         with self.assertRaisesRegex(producer.Refused, "session-expiring"):
             producer.validate_expiry(metadata, self.request, claims, now - timedelta(minutes=5))
+
+    def test_plan_timeout_is_separate_from_review_lifetime(self):
+        self.request["expiresInSeconds"] = 60
+        self.request["planTimeoutSeconds"] = 120
+        claims = {"exp": (datetime.now(timezone.utc) + timedelta(minutes=10)).timestamp()}
+        self.assertEqual(producer.planning_seconds(self.request, claims), 120)
+
+    def test_ignored_backend_cannot_hide_resources(self):
+        with (self.root / "backend.tf").open("a") as output:
+            output.write('\nresource "aws_s3_bucket" "unreviewed" { bucket = "outside-reviewed-source" }\n')
+        self.refused("backend-source-invalid")
+
+    def test_ignored_terraform_file_is_refused(self):
+        (self.root / "ignored-resources.tf").write_text('resource "null_resource" "unreviewed" {}')
+        self.refused("ignored-terraform-source-refused")
+
+    def test_skip_worktree_flag_cannot_hide_source_changes(self):
+        subprocess.run(["git", "update-index", "--skip-worktree", str(self.root / "main.tf")],
+                       cwd=self.repository, capture_output=True, check=True)
+        (self.root / "main.tf").write_text("# hidden source modification\n")
+        self.refused("terraform-source-modified")
 
     def test_expiring_session_is_refused(self):
         self.request["sessionExpiresAtUtc"] = datetime.now(timezone.utc).isoformat()
