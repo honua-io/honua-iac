@@ -1,0 +1,44 @@
+{
+  "schema": "honua.aws-cert-plan-request/v1",
+  "targetId": "aws-cert",
+  "actorId": "REPLACE_WITH_NAMED_OPERATOR",
+  "iacRevision": "REPLACE_WITH_CLEAN_REVIEWED_CHECKOUT_SHA",
+  "candidateDigest": "REPLACE_WITH_APPROVED_PREPARED_CANDIDATE_SHA256",
+  "accountId": "REPLACE_WITH_EXISTING_CERT_ACCOUNT",
+  "region": "REPLACE_WITH_EXISTING_CERT_REGION",
+  "terraformVersion": "REPLACE_WITH_PINNED_VERSION",
+  "providerLockSha256": "REPLACE_WITH_ROOT_LOCK_FILE_SHA256",
+  "backend": {
+    "bucket_id": "REPLACE_WITH_EXISTING_BUCKET",
+    "object_key": "REPLACE_WITH_EXISTING_STATE_KEY",
+    "workspace": "REPLACE_WITH_EXISTING_SELECTED_WORKSPACE",
+    "configDigest": "REPLACE_WITH_CANONICAL_BACKEND_IDENTITY_DIGEST"
+  },
+  "stateBefore": {
+    "lineage": "REPLACE_WITH_EXISTING_LINEAGE",
+    "serial": 0
+  },
+  "workloadIdentityContract": {},
+  "workloadIdentityContractDigest": "REPLACE_WITH_EXISTING_BOOTSTRAP_OUTPUT_DIGEST",
+  "executionIdentityContract": {},
+  "executionIdentityContractDigest": "REPLACE_WITH_EXISTING_BOOTSTRAP_OUTPUT_DIGEST",
+  "sessionExpiresAtUtc": "REPLACE_WITH_ACTUAL_STS_EXPIRY",
+  "expiresInSeconds": 900,
+  "backendTokenFile": "/REPLACE_WITH_PRIVATE_EPHEMERAL_TOKEN_FILE",
+  "varFile": "/REPLACE_WITH_PROTECTED_JSON_TFVARS_FILE",
+  "varFileSha256": "REPLACE_WITH_TFVARS_BYTES_SHA256",
+  "imagePins": {
+    "honua_image": "REPLACE_WITH_APPROVED_LAMBDA_DIGEST_URI",
+    "gp_batch_image": "REPLACE_WITH_APPROVED_GP_WORKER_DIGEST_URI"
+  },
+  "secretReferences": {
+    "audit_chain_key_secret_arn": "REPLACE_WITH_APPROVED_EXISTING_AUDIT_REFERENCE",
+    "operation_key_ring_certificate_secret_arn": "REPLACE_WITH_APPROVED_EXISTING_KEY_RING_REFERENCE"
+  },
+  "privateRetention": {
+    "directory": "/REPLACE_WITH_EXISTING_PRIVATE_PERSISTENT_DIRECTORY",
+    "owner": "REPLACE_WITH_RETENTION_CUSTODIAN",
+    "accessReference": "REPLACE_WITH_INDEPENDENT_REVIEWER_ACCESS_CONTRACT",
+    "retainUntilUtc": "REPLACE_WITH_OPERATOR_RETENTION_DEADLINE"
+  }
+}

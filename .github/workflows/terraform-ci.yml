@@ -434,6 +434,9 @@ jobs:
         shell: bash
         run: ./infrastructure/terraform/validation/scripts/shared/test-terraform-exact-plan.sh
 
+      - name: Standing certification private plan controls (offline)
+        run: python3 infrastructure/terraform/validation/scripts/aws/test_standing_cert_plan.py -v
+
       - name: Run Terraform policy gate script
         shell: bash
         env:

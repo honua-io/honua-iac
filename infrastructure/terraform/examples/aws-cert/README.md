@@ -573,53 +573,41 @@ from the maintained root **before rerunning certification**:
    empty. The reviewed function configuration must declare
    `Licensing__Mode=Disabled` and remove inherited license-reference/trust keys.
    A demo license is not part of the 2026.1 secret capture set.
-3. Produce a governed saved plan with the existing protected inputs:
+3. Produce the private saved-plan packet through the bounded standing-cert
+   [plan-only entrypoint](../../../../docs/devops/standing-aws-cert-plan.md).
+   Supply its protected request with the existing backend/workspace/lineage,
+   separate OIDC role contracts, approved JSON tfvars and private retention owner:
 
    ```bash
-   scripts/terraform-exact-plan.sh \
-     --root infrastructure/terraform/examples/aws-cert \
-     --action apply \
-     --var-file "$HOME/.config/honua/aws-cert.secret.tfvars" \
-     --plan-out "$HOME/.local/state/honua/aws-cert/honua.tfplan" \
-     --actor '<authorized-operation-actor>' \
-     --target-id 'aws-cert:honua/cert' \
-     --candidate-digest '<prepared-candidate-digest>' \
-     --workload-identity-digest '<approved-workload-identity-digest>'
+   python3 infrastructure/terraform/validation/scripts/aws/standing_cert_plan.py \
+     --request "$HOME/.config/honua/aws-cert/plan-request.json"
    ```
 
-   Review the private plan for the standing function environment reconciliation,
-   the OIDC capture grant, execution secret grant and boundary. The expected
-   secret set is cert DB, admin, independent master key, Redis, the declared
-   key-ring ARN, and the configured audit-chain key ARN (six with audit configured). Stop on demo license access, wildcard reads, trust changes,
-   replacements, deletions, or unrelated resource drift. Publish only the
-   fingerprint summary/metadata; saved plans and their JSON may contain secrets.
-   The existing-stack full plan may reveal previously unapplied changes: review
-   them separately rather than broadening this approval or bypassing the wrapper.
-4. Have the authorized honua-devops operation issue approval bound to the exact
-   `plan_metadata_digest`. The exact-plan contract, approval and governed actuator
-   are the approval boundary; a workflow environment name alone is not approval.
-   The generic manual-validation workflow creates validation stacks and must not
-   replace this existing-state plan. Verify every binding without mutation first:
+   This command never initializes/reconfigures the backend or selects/creates a
+   workspace. It preserves all child output privately and reports
+   `planned-unapproved`. Saved plans, JSON plans and complete metadata can contain
+   secrets or private locators; publish only the generated public allowlist.
+   A missing approved OIDC runtime, private retention/access contract or backend
+   role setup is an explicit prerequisite, not permission to bypass the checks.
+4. Independently review the exact private packet for the standing function
+   environment reconciliation and exact OIDC/runtime secret grants. Stop on
+   demo license access, wildcard reads, trust changes, replacements, deletions
+   or unrelated resource drift. The expected captured set is cert DB, admin,
+   independent master key, Redis, declared key-ring and configured audit key.
 
-   ```bash
-   HONUA_IAC_REQUIRE_APPROVAL=1 scripts/terraform-exact-apply.sh \
-     --plan "$HOME/.local/state/honua/aws-cert/honua.tfplan" \
-     --approved-digest '<approved-plan-metadata-digest>' \
-     --dry-run
-   ```
+   The later governed standing-cert actuator must verify trusted signed approval
+   bound to these exact saved bytes and `plan_metadata_digest`, context/state,
+   expiry and one-time operation identity. A workflow environment name or an
+   echoed `--approved-digest` is not approval. The current generic DevOps catalog
+   supports ECS-small; a standing-cert approval/apply consumer remains an
+   integration prerequisite. This plan-only producer does not supply it. Do not
+   invoke the low-level apply wrapper manually as a substitute, and do not use
+   the generic manual-validation workflow to replace existing cert state.
 
-   After that verification and the authorized operation approval, the governed
-   actuator applies the same saved plan:
+   After a separately authorized governed apply exists and runs, retain its
+   exact execution receipt and verify the resulting standing references and
+   disabled licensing without dumping the environment or secret values.
 
-   ```bash
-   HONUA_IAC_REQUIRE_APPROVAL=1 scripts/terraform-exact-apply.sh \
-     --plan "$HOME/.local/state/honua/aws-cert/honua.tfplan" \
-     --approved-digest '<approved-plan-metadata-digest>'
-   ```
-
-   Record the IaC revision and execution receipt. Confirm the resulting standing
-   secret references match the reviewed set and licensing is disabled without
-   dumping its environment or reading secret values into terminal output.
 5. Re-dispatch honua-server `lambda-preview-certification.yml` at `trunk` with
    the approved manifest's `source_image`, `source_digest`, `architecture`,
    `server_revision` and **nonempty `prepared_manifest`** inputs. Preserve the
