@@ -65,5 +65,25 @@
         }
       }
     }
+  },
+  "servers": [
+    {
+      "url": "https://honua.example.invalid"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Validated delegated JWT passed through the optional AgentCore gateway."
+      }
+    }
   }
 }
