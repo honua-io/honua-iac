@@ -127,18 +127,12 @@ resource "aws_bedrockagentcore_resource_policy" "honua" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid       = "ExactAuthenticatedSubjects"
+        Sid       = "AuthenticatedOAuthInvocation"
         Effect    = "Allow"
-        Principal = "*" # Required by AWS for OAuth, constrained to exact validated claims.
+        Principal = "*" # Required by AWS for OAuth; authorizer + mandatory Cedar constrain identity.
         Action    = "bedrock-agentcore:InvokeGateway"
         Resource  = aws_bedrockagentcore_gateway.honua[0].gateway_arn
-        Condition = {
-          StringEquals = {
-            "bedrock-agentcore:InboundJwtClaim/iss" = local.identity.issuer
-            "bedrock-agentcore:InboundJwtClaim/sub" = sort(tolist(local.identity.subjects))
-          }
-          "ForAnyValue:StringEquals" = { "bedrock-agentcore:InboundJwtClaim/scope" = local.identity.required_scope }
-        }
+
       },
       {
         Sid       = "DenyInsecureTransport"

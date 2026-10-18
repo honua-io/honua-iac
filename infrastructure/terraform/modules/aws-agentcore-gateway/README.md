@@ -40,8 +40,10 @@ the policy engine always uses `ENFORCE`; no permit exists by default.
 IAM separates the exact engine-read permission needed at gateway creation from
 runtime evaluation on the exact created gateway and engine. It grants no secret
 reads or target cloud mutation. AWS requires a wildcard principal for OAuth
-resource policies; this policy binds the exact gateway ARN and validated issuer,
-subjects and required scope, with an explicit insecure-transport deny.
+resource policies; this policy binds the exact gateway ARN/action, with an explicit
+insecure-transport deny. Issuer/audience/scope/tenant are checked by CUSTOM_JWT;
+subjects and tenant are also constrained by the mandatory Cedar forbid. JWT claim
+condition keys are not assumed to work on InvokeGateway resource policies.
 
 ## Qualification status
 

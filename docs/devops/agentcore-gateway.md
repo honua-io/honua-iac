@@ -1,3 +1,9 @@
+---
+type: guide
+title: "Optional Honua AgentCore gateway"
+description: "IaC-owned optional Pro gateway, preserved caller authority, and explicit execution qualification gates."
+tags: [aws, agentcore, mcp, security]
+---
 # Optional AgentCore gateway
 
 AgentCore Gateway, Policy engine, IAM, resource policy and the Honua MCP target

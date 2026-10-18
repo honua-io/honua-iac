@@ -59,6 +59,10 @@ run "private_jwt_target_preserves_caller_and_exact_policy_authority" {
     error_message = "The target must preserve caller JWT rather than introduce an API key or shared OAuth client."
   }
   assert {
+    condition     = !strcontains(aws_bedrockagentcore_resource_policy.honua[0].policy, "InboundJwtClaim") && strcontains(one(one(aws_bedrockagentcore_policy.identity_boundary[0].definition).cedar).statement, "tenant-a") && strcontains(one(one(aws_bedrockagentcore_policy.identity_boundary[0].definition).cedar).statement, "agent-a")
+    error_message = "Identity must be constrained by supported JWT/Cedar authority, never unsupported InvokeGateway IAM claim conditions."
+  }
+  assert {
     condition     = output.gateway_binding.mcpUrl == "https://honua-agentcore-test123.gateway.bedrock-agentcore.us-west-2.amazonaws.com/honua/mcp" && output.gateway_binding.honuaOrigin == "https://honua.internal.example.test/honua"
     error_message = "Exactly one customer MCP URL must preserve the origin PathBase without duplicating Gateway's /mcp suffix."
   }
