@@ -147,6 +147,8 @@ jobs:
             "infrastructure/terraform/examples/azure"
             "infrastructure/terraform/examples/azure-functions"
             "infrastructure/terraform/modules/aws-serverless"
+            "infrastructure/terraform/modules/aws-agentcore-gateway"
+            "infrastructure/terraform/examples/aws-agentcore-gateway"
           )
 
           for root in "${roots[@]}"; do

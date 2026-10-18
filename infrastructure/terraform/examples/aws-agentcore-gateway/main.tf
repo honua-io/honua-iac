@@ -10,6 +10,7 @@ module "honua_gateway" {
   enabled                                   = var.enabled
   name                                      = var.name
   honua_base_url                            = var.honua_base_url
+  mcp_path                                  = var.mcp_path
   identity                                  = var.identity
   private_origin_resource_configuration_arn = var.private_origin_resource_configuration_arn
   request_schema_json                       = var.request_schema_json

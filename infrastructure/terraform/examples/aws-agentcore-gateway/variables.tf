@@ -24,6 +24,16 @@ variable "honua_base_url" {
   }
 }
 
+variable "mcp_path" {
+  description = "Canonical MCP path below the origin PathBase."
+  type        = string
+  default     = "/mcp"
+  validation {
+    condition     = contains(["/mcp", "/api/mcp"], var.mcp_path)
+    error_message = "mcp_path must be an actual canonical Honua MCP route."
+  }
+}
+
 variable "identity" {
   description = "Existing issuer and exact protected audience/scope/tenant/subjects. No issuer credentials are accepted or stored. Honua must independently validate the same delegated caller."
   type = object({
