@@ -77,3 +77,13 @@ Primary contracts:
 - [OAuth resource policies](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/resource-based-policies.html)
 - [Header restrictions](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-headers.html)
 - [Released Terraform target schema](https://github.com/hashicorp/terraform-provider-aws/blob/v6.69.1/website/docs/r/bedrockagentcore_gateway_target.html.markdown)
+
+The mandatory identity forbid leaves the action unconstrained and uses
+`resource is AgentCore::Gateway`, as required by AWS's
+[action/resource specificity contract](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/example-policies-action-resource.html).
+It protects all actions on the module-owned dedicated engine; each reviewed permit
+still binds the exact gateway ARN. OAuth subjects map to the principal entity ID
+and other JWT claims are tags, as documented in
+[principal-scoped policies](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/example-policies-principal.html).
+Mock-provider tests do not invoke AWS Cedar schema validation or prove tool calls,
+session propagation or direct-origin denial on a deployed gateway.

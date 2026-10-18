@@ -180,6 +180,9 @@ resource "aws_bedrockagentcore_gateway_target" "honua" {
 
 # This mandatory forbid is independent of reviewed permits: no permit can widen
 # the configured tenant/subject boundary. It creates no Honua administrative role.
+# AWS requires a type-scoped resource when action is unconstrained. The module
+# creates a dedicated engine, so this mandatory deny applies to every action on
+# every gateway attached to that engine; reviewed permits still bind the exact ARN.
 resource "aws_bedrockagentcore_policy" "identity_boundary" {
   count            = var.enabled ? 1 : 0
   name             = "HonuaIdentityBoundary"
@@ -188,7 +191,7 @@ resource "aws_bedrockagentcore_policy" "identity_boundary" {
   definition {
     cedar {
       statement = <<-CEDAR
-        forbid (principal, action, resource == AgentCore::Gateway::"${aws_bedrockagentcore_gateway.honua[0].gateway_arn}")
+        forbid (principal, action, resource is AgentCore::Gateway)
         unless {
           principal is AgentCore::OAuthUser &&
           ${jsonencode(sort(tolist(local.identity.subjects)))}.contains(principal.id) &&
