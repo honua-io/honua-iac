@@ -16,8 +16,8 @@ mock_provider "aws" {
   }
   mock_resource "aws_bedrockagentcore_policy_engine" {
     defaults = {
-      policy_engine_id  = "honua_policy-test123"
-      policy_engine_arn = "arn:aws:bedrock-agentcore:us-west-2:123456789012:policy-engine/honua_policy-test123"
+      policy_engine_id  = "honua_policy-test123456"
+      policy_engine_arn = "arn:aws:bedrock-agentcore:us-west-2:123456789012:policy-engine/honua_policy-test123456"
     }
   }
 }
