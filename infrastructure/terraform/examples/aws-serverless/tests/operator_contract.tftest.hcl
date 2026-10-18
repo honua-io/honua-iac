@@ -215,13 +215,15 @@ run "qualified_lambda_contract" {
 }
 
 run "older_alias_cannot_claim_current_dependency_settings" {
-  command = apply
+  # The precondition is already decidable during planning after the positive run.
+  command = plan
   variables { lambda_alias_version = "42" }
   expect_failures = [output.deployment_contract]
 }
 
 run "serving_alias_image_mismatch_refused" {
-  command = apply
+  # The precondition is already decidable during planning after the positive run.
+  command = plan
   override_data {
     target = data.aws_lambda_function.operator_contract_alias[0]
     values = {
@@ -233,7 +235,8 @@ run "serving_alias_image_mismatch_refused" {
 }
 
 run "serving_alias_role_mismatch_refused" {
-  command = apply
+  # The precondition is already decidable during planning after the positive run.
+  command = plan
   override_data {
     target = data.aws_lambda_function.operator_contract_alias[0]
     values = {
@@ -245,7 +248,8 @@ run "serving_alias_role_mismatch_refused" {
 }
 
 run "marketplace_image_override_cannot_bypass_identity" {
-  command = apply
+  # The precondition is already decidable during planning after the positive run.
+  command = plan
   variables {
     install = { artifact = { image = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" } }
   }
