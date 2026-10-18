@@ -386,6 +386,9 @@ resource "aws_batch_job_definition" "gp" {
   name                  = "${local.gp_batch_name}-${each.key}"
   type                  = "container"
   platform_capabilities = ["FARGATE"]
+  # Published baseline Lambda versions pin name:revision. Keep them submit-capable until
+  # the governed rollback window and any running jobs finish, then explicitly deregister.
+  deregister_on_new_revision = !var.gp_batch_retain_prior_definitions
 
   container_properties = jsonencode(merge({
     image            = local.gp_batch_image

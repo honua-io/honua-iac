@@ -2,8 +2,9 @@ terraform {
   required_version = ">= 1.5, < 2.0"
   required_providers {
     aws = {
+      # Batch rollback retention uses deregister_on_new_revision (AWS 5.44.0+).
       source  = "hashicorp/aws"
-      version = ">= 5.0, < 7.0"
+      version = ">= 5.44.0, < 7.0"
     }
     random = {
       source  = "hashicorp/random"

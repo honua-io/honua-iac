@@ -537,3 +537,8 @@ output "rds_proxy_role_session_defaults_applied" {
   description = "True when the module runs rds_proxy_role_session_defaults_sql against the instance during apply (enable_rds_proxy with enable_postgis or rds_proxy_set_role_session_defaults); false otherwise."
   value       = length(null_resource.db_role_session_defaults) > 0
 }
+
+output "gp_batch_prior_definitions_retained" {
+  description = "Whether prior Batch revisions remain ACTIVE for a governed rollback window. Prior retained revisions require explicit cleanup after all jobs and the rollback window finish."
+  value       = local.gp_batch_enabled && var.gp_batch_retain_prior_definitions
+}
