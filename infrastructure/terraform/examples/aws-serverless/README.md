@@ -11,6 +11,23 @@ terraform init
 terraform plan -var-file=presets/small.tfvars.example
 ```
 
+## Agent handoff
+
+This root emits `deployment_contract`, `validation_contract`, and
+`operations_contract` using [operator contract v2](../../../../docs/operator-contract.md).
+Pass the release and Terraform state identity through `operator_contract_identity`;
+omitting it produces an explicitly unqualified development contract. The contract
+contains secret locators, never credential values. Its database reference follows
+the runtime connection, including RDS Proxy; migration retains its separate
+direct connection reference.
+
+Immutable identity is refused when the configured image differs from the claim,
+the serving alias still selects an older configured version, or the alias's
+image/execution role differs from the claim. Complete the deployment or restore
+the matching configuration before creating the handoff. Matching contract output
+alone does not prove an installation: the agent must still bind the successful
+apply receipt and independently verify the actual runtime, readiness, and access.
+
 ## Redis and the operation key-ring certificate
 
 `redis_enabled` defaults to `true`, and a Redis-connected server refuses to start

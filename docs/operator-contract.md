@@ -34,7 +34,8 @@ state `credential_mode: none`, `artifact_transport: job-scoped-broker`, and
 `platform: FARGATE`. The v2 JSON schema enforces these facts in every contract
 projection; consumers must validate that schema, including extensions.
 
-Both owned producers (`examples/aws` and `examples/aws-cert`) emit v2. The
+The owned producers (`examples/aws`, `examples/aws-serverless`, and
+`examples/aws-cert`) emit v2. The
 exact-commit release declaration records v2, including for deployments that do
 not enable custom code, so there is no ambiguous mixed-version declaration.
 V1 schemas remain available for historical documents; the current validator
@@ -48,6 +49,30 @@ The credential-free worker, broker, scoped authentication and v2 consumer must
 be delivered together before qualified promotion.
 
 ## The three outputs
+
+The ordinary Lambda root (`examples/aws-serverless`) emits the same three
+contracts as the ECS root. Its stack ID is `aws-lambda`, runtime is `lambda`,
+and actuator is `honua-gitops-aws-lambda`. It projects the actual alias and API
+Gateway/custom domain, runtime database secret (including RDS Proxy when
+enabled), external database ownership, Redis, and configured shared S3 storage.
+Certification-only ECS and scratch-bucket resources are not part of this root.
+
+When immutable identity is supplied, Terraform verifies that the configured
+image is digest-pinned and matches the claimed reference, that the serving alias
+selects the configured published version, and that the image and execution role
+read from that version match the claim. An older alias cannot qualify the newer
+version's dependency settings merely because both versions use the same image.
+The version read uses the AWS provider's
+[`aws_lambda_function` qualifier](https://registry.terraform.io/providers/hashicorp/aws/6.20.0/docs/data-sources/lambda_function).
+
+For compatibility with v2's required instance fields, Lambda's `cluster_name`
+contains the resource grouping name, `cluster_id` is null, and instance counts
+are zero (no standing capacity declared). These fields do not describe an ECS
+cluster or a Lambda concurrency ceiling. A `qualified` identity means the
+required immutable inputs are present and the producer's guards passed; the
+consumer still needs its bound apply receipt, provider observation, readiness,
+credentials/RBAC checks, and recovery qualification before issuing a verified
+installation handoff. The contract itself is not that receipt.
 
 Every certified deployable root emits three Terraform outputs. They are split
 by consumer responsibility, not by convenience, so a consumer reads the one
