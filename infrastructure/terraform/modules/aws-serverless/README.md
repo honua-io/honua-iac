@@ -1269,3 +1269,18 @@ approved operator flow. Destroying the current Terraform resource does **not** d
 retained revisions. Reverting the flag later also does not discover or remove older revisions.
 The release harness owns this cleanup for its ephemeral, run-bound stacks; this input does not
 claim a successful update, rollback, exactly-once execution or cloud qualification.
+
+### Agent deployment identity
+
+The server's registered deploy target uses the full Lambda function ARN and an
+explicit AWS region. This lets the agent compare its provider observations with
+the server's configured account, region and function before accepting an
+installation handoff. The ARN is derived from the module's provider identity and
+function name; it does not require reading secrets or create a self-reference
+through the function environment. Non-default aliases remain explicit.
+
+`runtime_binding_contract` contains configured resource identities, not proof
+that the installed endpoint works. The agent must still verify the actual alias,
+published version, API Gateway integration/route and current server authority.
+The existing 4 KB environment limit and release configuration budget checks
+remain mandatory.

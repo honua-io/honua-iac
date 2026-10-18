@@ -172,7 +172,10 @@ locals {
     FileStorage__AwsS3__KeyPrefix = var.file_storage_aws_s3_key_prefix
   } : {}) : {}
   lambda_function_name = "${local.name}-honua"
-  lambda_target_id     = "${local.lambda_function_name}-${var.lambda_alias_name}"
+  # Compute from the same provider identity/name as the function, without a
+  # self-reference cycle through aws_lambda_function.this.environment.
+  lambda_function_arn = "arn:${split(":", data.aws_caller_identity.current.arn)[1]}:lambda:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:function:${local.lambda_function_name}"
+  lambda_target_id    = "${local.lambda_function_name}-${var.lambda_alias_name}"
   # SNS targets for CloudWatch alarm/OK notifications: caller-supplied topic
   # ARNs plus an optional module-created topic (when alarm_email is set).
   alarm_action_arns = concat(var.alarm_sns_topic_arns, aws_sns_topic.alarms[*].arn)
@@ -410,9 +413,10 @@ locals {
   # - The deploy target's ParameterEntries are omitted where the
   #   honua-gitops-aws-lambda backend derives the same value
   #   (AwsLambdaGitOpsDeployBackend): aws.lambda.function_name falls back to
-  #   TargetName (the same function name), aws.lambda.alias_name to "live", and
-  #   aws.region to the SDK default, i.e. the AWS_REGION Lambda sets. A
-  #   non-default alias is still passed.
+  #   TargetName (the full function ARN) and aws.lambda.alias_name to "live".
+  #   Explicit aws.region binds the server actuator to the same provider region
+  #   that the agent verifies; a short function name/ambient SDK region cannot
+  #   establish account and region continuity. A non-default alias is still passed.
   lambda_environment = merge({ for i, h in local.lambda_additional_allowed_hosts : "HostValidation__AllowedHosts__${i + 1}" => h },
     var.skip_migrations ? { HONUA_SKIP_MIGRATIONS = "true" } : {},
     var.serve_admin_ui ? { HONUA_SERVE_ADMIN_UI = "true", HONUA_ADMIN_UI = "true" } : {},
@@ -427,12 +431,14 @@ locals {
       ControlPlane__DeployTargets__0__TargetKind                  = "AwsLambda"
       ControlPlane__DeployTargets__0__Backend                     = "honua-gitops-aws-lambda"
       ControlPlane__DeployTargets__0__Environment                 = var.environment
-      ControlPlane__DeployTargets__0__TargetName                  = local.lambda_function_name
+      ControlPlane__DeployTargets__0__TargetName                  = local.lambda_function_arn
       ControlPlane__DeployTargets__0__ArtifactReference           = var.image
       ControlPlane__DeployTargets__0__RequiresOutOfBandMigrations = "true"
+      ControlPlane__DeployTargets__0__ParameterEntries__0__Key    = "aws.region"
+      ControlPlane__DeployTargets__0__ParameterEntries__0__Value  = data.aws_region.current.name
       }, var.lambda_alias_name != "live" ? {
-      ControlPlane__DeployTargets__0__ParameterEntries__0__Key   = "aws.lambda.alias_name"
-      ControlPlane__DeployTargets__0__ParameterEntries__0__Value = var.lambda_alias_name
+      ControlPlane__DeployTargets__0__ParameterEntries__1__Key   = "aws.lambda.alias_name"
+      ControlPlane__DeployTargets__0__ParameterEntries__1__Value = var.lambda_alias_name
     } : {}, local.gp_batch_environment, local.amazon_location_environment, local.public_base_url_environment, { for key, value in var.additional_env : key => value if var.platform_release == null || !startswith(lower(replace(key, ":", "__")), "controlplane__platformrelease__") }, local.platform_release_environment.api, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.db_pool_environment.lambda, local.lambda_secret_reference_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.transcript_signing_environment, local.cors_environment, local.file_storage_environment, local.oidc_static_environment,
     var.oidc_static_jwt == null ? {} : {
       Oidc__TokenValidation__SymmetricSigningKey = "aws:secretsmanager:${local.lambda_operator_secret_ids[var.oidc_static_jwt.signing_key_secret_arn]}${var.oidc_static_jwt.signing_key_secret_version_id == "" ? "" : "?versionId=${var.oidc_static_jwt.signing_key_secret_version_id}"}"

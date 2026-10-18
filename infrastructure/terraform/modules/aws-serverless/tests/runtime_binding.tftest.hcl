@@ -146,7 +146,26 @@ run "handoff_reports_serving_alias_not_latest_function_version" {
     error_message = "Runtime facts must preserve the provider account/region and canonical Lambda actuator."
   }
   assert {
+    condition     = aws_lambda_function.this.environment[0].variables["ControlPlane__DeployTargets__0__TargetName"] == output.runtime_binding_contract.resourceIdentity.functionArn && aws_lambda_function.this.environment[0].variables["ControlPlane__DeployTargets__0__ParameterEntries__0__Key"] == "aws.region" && aws_lambda_function.this.environment[0].variables["ControlPlane__DeployTargets__0__ParameterEntries__0__Value"] == output.runtime_binding_contract.platform.region
+    error_message = "The server registry must bind the actual function ARN and explicit provider region; the agent's cloud identity alone is insufficient."
+  }
+  assert {
+    condition     = local.lambda_environment_bytes.api <= 4096 && local.lambda_environment_bytes.control_plane_tick <= 4096
+    error_message = "Resource identity pins must fit within the unchanged Lambda environment limit."
+  }
+  assert {
     condition     = !contains(keys(output.runtime_binding_contract), "observation") && !strcontains(jsonencode(output.runtime_binding_contract), var.admin_password)
     error_message = "Configured facts must not contain credentials or claim live provider observation."
+  }
+}
+
+run "nondefault_alias_preserves_region_and_alias_registration" {
+  command = plan
+  variables {
+    lambda_alias_name = "candidate"
+  }
+  assert {
+    condition     = aws_lambda_function.this.environment[0].variables["ControlPlane__DeployTargets__0__ParameterEntries__0__Key"] == "aws.region" && aws_lambda_function.this.environment[0].variables["ControlPlane__DeployTargets__0__ParameterEntries__0__Value"] == "us-east-1" && aws_lambda_function.this.environment[0].variables["ControlPlane__DeployTargets__0__ParameterEntries__1__Key"] == "aws.lambda.alias_name" && aws_lambda_function.this.environment[0].variables["ControlPlane__DeployTargets__0__ParameterEntries__1__Value"] == "candidate"
+    error_message = "An explicit alias must not replace or hide the server's registered region."
   }
 }
