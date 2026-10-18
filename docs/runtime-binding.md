@@ -19,7 +19,11 @@ rollback qualification. An absent or malformed projection cannot produce a
 verified handoff.
 
 The existing EKS root provisions infrastructure, database and workload identity
-configuration. Its generic GitOps backend is not an Argo Rollouts installation.
-An EKS application handoff still requires the actual controller, Rollout, Service,
-public route and Kubernetes connection identity to be installed and verified.
-The schema's EKS branch does not assert that those resources currently exist.
+configuration. The EKS workflow requires the native
+`honua-kubernetes-deployment` backend, with no Argo installation, controller,
+CRD or API dependency. Its current generic GitOps output is not sufficient.
+The actual Honua Deployment, Service, public route and bound Kubernetes cluster
+identity must be installed and independently verified before handoff. Honua
+approvals and durable operations govern upgrades, health checks and rollback
+to the recorded prior immutable image digest. The schema's EKS branch does not
+assert that those resources or the complete workflow currently exist.
