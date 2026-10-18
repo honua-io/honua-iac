@@ -146,7 +146,7 @@ run "handoff_reports_serving_alias_not_latest_function_version" {
     error_message = "Runtime facts must preserve the provider account/region and canonical Lambda actuator."
   }
   assert {
-    condition     = aws_lambda_function.this.environment[0].variables["ControlPlane__DeployTargets__0__TargetName"] == output.runtime_binding_contract.resourceIdentity.functionArn && aws_lambda_function.this.environment[0].variables["ControlPlane__DeployTargets__0__ParameterEntries__0__Key"] == "aws.region" && aws_lambda_function.this.environment[0].variables["ControlPlane__DeployTargets__0__ParameterEntries__0__Value"] == output.runtime_binding_contract.platform.region
+    condition     = jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].TargetName == output.runtime_binding_contract.resourceIdentity.functionArn && jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].Parameters["aws.region"] == output.runtime_binding_contract.platform.region
     error_message = "The server registry must bind the actual function ARN and explicit provider region; the agent's cloud identity alone is insufficient."
   }
   assert {
@@ -165,7 +165,43 @@ run "nondefault_alias_preserves_region_and_alias_registration" {
     lambda_alias_name = "candidate"
   }
   assert {
-    condition     = aws_lambda_function.this.environment[0].variables["ControlPlane__DeployTargets__0__ParameterEntries__0__Key"] == "aws.region" && aws_lambda_function.this.environment[0].variables["ControlPlane__DeployTargets__0__ParameterEntries__0__Value"] == "us-east-1" && aws_lambda_function.this.environment[0].variables["ControlPlane__DeployTargets__0__ParameterEntries__1__Key"] == "aws.lambda.alias_name" && aws_lambda_function.this.environment[0].variables["ControlPlane__DeployTargets__0__ParameterEntries__1__Value"] == "candidate"
+    condition     = jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].Parameters["aws.region"] == "us-east-1" && jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].Parameters["aws.lambda.alias_name"] == "candidate"
     error_message = "An explicit alias must not replace or hide the server's registered region."
   }
+}
+
+run "runtime_document_pins_versions_and_scopes_read_grants" {
+  command = apply
+
+  assert {
+    condition = alltrue([
+      for environment in [local.lambda_environment, local.control_plane_reconcile_environment, local.control_plane_backstop_environment, local.control_plane_tick_environment] :
+      environment.HONUA_SETTINGS_DOCUMENT == "aws:secretsmanager:${aws_secretsmanager_secret.runtime_settings.name}?versionId=${aws_secretsmanager_secret_version.runtime_settings.version_id}"
+    ])
+    error_message = "Every function must pin the same settings version; alias rollback must not read AWSCURRENT."
+  }
+  assert {
+    condition = contains(jsondecode(aws_iam_policy.lambda_secrets.policy).Statement[0].Resource, aws_secretsmanager_secret.runtime_settings.arn) && contains(local.lambda_secret_arns, aws_secretsmanager_secret.runtime_settings.arn)
+    error_message = "API and scheduled functions must have read permission on the exact runtime document secret."
+  }
+  assert {
+    condition = jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].RequiresOutOfBandMigrations && !strcontains(aws_secretsmanager_secret_version.runtime_settings.secret_string, var.admin_password)
+    error_message = "Moving the target to JSON must retain the migration gate and exclude credentials."
+  }
+}
+
+run "operator_cannot_replace_module_runtime_document" {
+  command = plan
+  variables {
+    additional_env = { HONUA_SETTINGS_DOCUMENT = "aws:secretsmanager:foreign-config" }
+  }
+  expect_failures = [aws_secretsmanager_secret_version.runtime_settings]
+}
+
+run "operator_cannot_replace_module_runtime_document_alias" {
+  command = plan
+  variables {
+    additional_env = { Settings__Document = "aws:secretsmanager:foreign-config" }
+  }
+  expect_failures = [aws_secretsmanager_secret_version.runtime_settings]
 }

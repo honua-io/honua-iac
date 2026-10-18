@@ -1,3 +1,10 @@
+---
+type: reference
+title: "Runtime identity for agent handoff"
+description: "Credential-free Terraform resource identity and the independent verification required before agent handoff."
+resource: "https://github.com/honua-io/honua-iac/blob/trunk/infrastructure/terraform/contracts/runtime-binding.v1.schema.json"
+tags: [contract, operator, identity]
+---
 # Runtime identity for agent handoff
 
 `runtime_binding_contract` is a credential-free projection of resources in an
@@ -27,3 +34,16 @@ identity must be installed and independently verified before handoff. Honua
 approvals and durable operations govern upgrades, health checks and rollback
 to the recorded prior immutable image digest. The schema's EKS branch does not
 assert that those resources or the complete workflow currently exist.
+
+The Lambda module writes its deployment registry to a managed Secrets Manager
+settings document. Each function environment references a specific document
+version through `HONUA_SETTINGS_DOCUMENT`, keeping the full function ARN,
+explicit region and alias outside Lambda's 4 KB environment budget. The API and
+scheduled functions receive read permission on that exact secret. Use a Honua
+image that supports the settings-document startup loader; earlier images cannot
+consume this module's registry. Retain the referenced secret versions for the
+function versions kept as rollback targets. Rolling back a function version
+therefore selects its pinned configuration, subject to that version remaining
+available. Environment overrides retain the server's normal higher precedence;
+the agent must still verify the effective registry against provider observations.
+The module reserves `HONUA_SETTINGS_DOCUMENT` and `Settings__Document` itself.

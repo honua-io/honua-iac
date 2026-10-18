@@ -727,9 +727,16 @@ functions carry the API function's environment minus its HTTP-only settings
   cross-region operator secrets. The GP Batch job definitions keep full ARNs.
 - **No defaults restated.** Settings equal to the server's defaults are not
   emitted (`HONUA_SKIP_MIGRATIONS=false`, `HONUA_SERVE_ADMIN_UI`/`HONUA_ADMIN_UI`
-  `=false`, the deploy target's `aws.lambda.function_name`/`aws.region`/
-  `aws.lambda.alias_name=live` parameters, `batch.region`, and the Bedrock and
-  Amazon Location defaults above).
+  `=false`, `batch.region`, and the Bedrock and Amazon Location defaults above).
+- **Version-pinned registry document.** `HONUA_SETTINGS_DOCUMENT` references a
+  module-managed Secrets Manager JSON document containing the deployment target's
+  full function ARN, explicit region, alias and migration requirement. The
+  reference pins the secret version, so each Lambda function version retains
+  its own registry configuration when selected for rollback. Both execution
+  roles can read the exact secret. Retain the secret versions referenced by
+  supported rollback targets. The module reserves `HONUA_SETTINGS_DOCUMENT` and
+  `Settings__Document`; these cannot be replaced through `additional_env`.
+  Use a server image supporting the settings-document startup loader.
 - **HTTP-only settings stay on the API function.** EventBridge invokes the
   control-plane event functions; the only HTTP request they serve is the web
   adapter's loopback POST to the event route, which the server admits without
@@ -741,35 +748,13 @@ functions carry the API function's environment minus its HTTP-only settings
   `Import__Limits__BackgroundJobThresholdBytes` (read only by the HTTP import
   endpoints), whatever their source, `additional_env` included.
 
-Measured with `tests/lambda_environment_budget.tftest.hcl` (cell name
-`honuarawsse380460-it`, 12-digit account, release secret names): the release
-Redis-on cell with the key ring, audit key, GP Batch and the control-plane event
-functions is **3031** bytes on the API function and **3121** on the
-scheduled-tick function (4118 before the budget work). Every optional 2026.1
-feature at once (also Bedrock, Amazon Location, X-Ray, two CORS origins and the
-request-secret allowlists) is **4078** bytes on the scheduled-tick function,
-under the cap with only 18 bytes to spare; the database pool cap and its
-matching `MaxConcurrentQueries` (97 bytes together, see
-[Database connection budget](#database-connection-budget)) are the most recent
-additions. Those figures predate leaving the HTTP-only settings off the event
-functions, which now measure well under the API function. Adding the 2026.2 Pro
-license on top no longer fits the API function, and the plan fails with the
-size. More headroom needs a server-side
-change, for example a single `aws:secretsmanager:` reference to a JSON settings
-bundle that the server expands into configuration at startup; the server has no
-such source today.
-
-**Shared file storage on the release cell.** `file_storage_provider = "AwsS3"`
-adds about 214 bytes (release bucket, prefix `release-cells/<name_prefix>`). On
-the full release Redis-on cell (key ring, audit key, GP Batch, control-plane
-events, the import threshold, one CORS origin, Studio end-user authorization,
-the two release operation policy rules and the per-run custom domain) the API
-function measures **4077** bytes (3863 without file storage): under the cap,
-with only 19 bytes to spare. The event functions measure **3790** (reconcile),
-**3787** (backstop) and **3793** (scheduled tick), at least 256 bytes under the
-cap (`release_cell_with_shared_file_storage_fits`); with the HTTP-only settings
-still on them they measured 4161-4167 and did not fit. The next entry added to
-the API function on this cell needs room made elsewhere.
+`tests/lambda_environment_budget.tftest.hcl` exercises realistic release cell
+names, account identifiers, Redis, GP Batch, shared file storage, RDS Proxy,
+optional AI services and Pro licensing. It checks the rendered environments
+against the existing hard limit and required headroom, and verifies that an
+oversized operator environment fails at plan time. The version-pinned registry
+document removes repeated environment-key prefixes without shortening resource
+identity or relying on an ambient deployment region.
 
 ## Database connection budget
 
@@ -991,8 +976,8 @@ Those pins end when the client disconnects, so the ceiling, the borrow queue
 and idle-client reaping still protect the database. The module leaves the
 query-cache default alone; if `DatabaseConnectionsCurrentlySessionPinned`
 stays high, set `Database__QueryCache__EnableAutomaticCaching=false` through
-`additional_env` (55 bytes of the Lambda environment budget, which the
-every-feature combination no longer has). Watch
+`additional_env` (55 bytes of the Lambda environment budget; the module checks
+the resulting total at plan time). Watch
 `DatabaseConnectionsCurrentlySessionPinned` and
 `DatabaseConnectionsBorrowLatency` in CloudWatch.
 

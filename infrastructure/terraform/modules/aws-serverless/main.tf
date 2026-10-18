@@ -216,6 +216,7 @@ locals {
     local.runtime_connection_secret.arn,
     aws_secretsmanager_secret.admin_password.arn,
     aws_secretsmanager_secret.master_key.arn,
+    aws_secretsmanager_secret.runtime_settings.arn,
     local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null,
     local.pro_license_effective_secret_arn
   ]), local.operation_key_ring_certificate_secret_arns, local.audit_chain_key_secret_arns)
@@ -258,6 +259,7 @@ locals {
         connection_string = local.runtime_connection_secret
         admin_password    = aws_secretsmanager_secret.admin_password
         master_key        = aws_secretsmanager_secret.master_key
+        runtime_settings  = aws_secretsmanager_secret.runtime_settings
       },
       local.redis_connection != "" ? { redis_connection = aws_secretsmanager_secret.redis_connection[0] } : {},
       local.pro_license_manage_secret ? { pro_license = aws_secretsmanager_secret.pro_license[0] } : {},
@@ -410,36 +412,21 @@ locals {
   #   so it is emitted only when true.
   # - HONUA_SERVE_ADMIN_UI / HONUA_ADMIN_UI are emitted only when true (absent
   #   and "false" are the same to every reader).
-  # - The deploy target's ParameterEntries are omitted where the
-  #   honua-gitops-aws-lambda backend derives the same value
-  #   (AwsLambdaGitOpsDeployBackend): aws.lambda.function_name falls back to
-  #   TargetName (the full function ARN) and aws.lambda.alias_name to "live".
-  #   Explicit aws.region binds the server actuator to the same provider region
-  #   that the agent verifies; a short function name/ambient SDK region cannot
-  #   establish account and region continuity. A non-default alias is still passed.
+  # - Deploy-target settings live in a version-pinned settings document, keeping
+  #   account/region/function/alias authority explicit without consuming the
+  #   environment budget with repeated ControlPlane__DeployTargets prefixes.
   lambda_environment = merge({ for i, h in local.lambda_additional_allowed_hosts : "HostValidation__AllowedHosts__${i + 1}" => h },
     var.skip_migrations ? { HONUA_SKIP_MIGRATIONS = "true" } : {},
     var.serve_admin_ui ? { HONUA_SERVE_ADMIN_UI = "true", HONUA_ADMIN_UI = "true" } : {},
     {
-      HostValidation__AllowedHosts__0                             = "*.execute-api.${data.aws_region.current.name}.amazonaws.com"
-      SecurityHeaders__HstsHttpsOnly                              = "false"
-      ConnectionStrings__DefaultConnection                        = "aws:secretsmanager:${local.lambda_module_secret_ids.connection_string}"
-      HONUA_ADMIN_PASSWORD                                        = "aws:secretsmanager:${local.lambda_module_secret_ids.admin_password}"
-      Security__ConnectionEncryption__MasterKey                   = "aws:secretsmanager:${local.lambda_module_secret_ids.master_key}"
-      HONUA_OBSERVABILITY                                         = "true"
-      ControlPlane__DeployTargets__0__TargetId                    = local.lambda_target_id
-      ControlPlane__DeployTargets__0__TargetKind                  = "AwsLambda"
-      ControlPlane__DeployTargets__0__Backend                     = "honua-gitops-aws-lambda"
-      ControlPlane__DeployTargets__0__Environment                 = var.environment
-      ControlPlane__DeployTargets__0__TargetName                  = local.lambda_function_arn
-      ControlPlane__DeployTargets__0__ArtifactReference           = var.image
-      ControlPlane__DeployTargets__0__RequiresOutOfBandMigrations = "true"
-      ControlPlane__DeployTargets__0__ParameterEntries__0__Key    = "aws.region"
-      ControlPlane__DeployTargets__0__ParameterEntries__0__Value  = data.aws_region.current.name
-      }, var.lambda_alias_name != "live" ? {
-      ControlPlane__DeployTargets__0__ParameterEntries__1__Key   = "aws.lambda.alias_name"
-      ControlPlane__DeployTargets__0__ParameterEntries__1__Value = var.lambda_alias_name
-    } : {}, local.gp_batch_environment, local.amazon_location_environment, local.public_base_url_environment, { for key, value in var.additional_env : key => value if var.platform_release == null || !startswith(lower(replace(key, ":", "__")), "controlplane__platformrelease__") }, local.platform_release_environment.api, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.db_pool_environment.lambda, local.lambda_secret_reference_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.transcript_signing_environment, local.cors_environment, local.file_storage_environment, local.oidc_static_environment,
+      HostValidation__AllowedHosts__0           = "*.execute-api.${data.aws_region.current.name}.amazonaws.com"
+      SecurityHeaders__HstsHttpsOnly            = "false"
+      ConnectionStrings__DefaultConnection      = "aws:secretsmanager:${local.lambda_module_secret_ids.connection_string}"
+      HONUA_ADMIN_PASSWORD                      = "aws:secretsmanager:${local.lambda_module_secret_ids.admin_password}"
+      Security__ConnectionEncryption__MasterKey = "aws:secretsmanager:${local.lambda_module_secret_ids.master_key}"
+      HONUA_OBSERVABILITY                       = "true"
+      HONUA_SETTINGS_DOCUMENT                   = "aws:secretsmanager:${local.lambda_module_secret_ids.runtime_settings}?versionId=${aws_secretsmanager_secret_version.runtime_settings.version_id}"
+    }, local.gp_batch_environment, local.amazon_location_environment, local.public_base_url_environment, { for key, value in var.additional_env : key => value if var.platform_release == null || !startswith(lower(replace(key, ":", "__")), "controlplane__platformrelease__") }, local.platform_release_environment.api, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.db_pool_environment.lambda, local.lambda_secret_reference_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.transcript_signing_environment, local.cors_environment, local.file_storage_environment, local.oidc_static_environment,
     var.oidc_static_jwt == null ? {} : {
       Oidc__TokenValidation__SymmetricSigningKey = "aws:secretsmanager:${local.lambda_operator_secret_ids[var.oidc_static_jwt.signing_key_secret_arn]}${var.oidc_static_jwt.signing_key_secret_version_id == "" ? "" : "?versionId=${var.oidc_static_jwt.signing_key_secret_version_id}"}"
   })
@@ -463,6 +450,7 @@ locals {
   lambda_environment_limit_bytes = 4096
   lambda_environment_size_stand_ins = merge(
     {
+      HONUA_SETTINGS_DOCUMENT              = "aws:secretsmanager:${aws_secretsmanager_secret.runtime_settings.name}?versionId=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
       ConnectionStrings__DefaultConnection = "aws:secretsmanager:${can(regex(local.ambiguous_secret_name, local.runtime_connection_secret.name)) ? "arn:${split(":", data.aws_caller_identity.current.arn)[1]}:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:${local.runtime_connection_secret.name}-XXXXXX" : local.runtime_connection_secret.name}"
     },
     local.gp_batch_enabled ? {
@@ -1030,6 +1018,7 @@ resource "aws_lambda_function" "this" {
     null_resource.db_role_session_defaults,
     aws_secretsmanager_secret_version.admin_password,
     aws_secretsmanager_secret_version.master_key,
+    aws_secretsmanager_secret_version.runtime_settings,
     aws_secretsmanager_secret_version.redis_connection,
     aws_secretsmanager_secret_version.pro_license,
     aws_iam_role_policy.transcript_signing,
