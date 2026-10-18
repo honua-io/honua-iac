@@ -181,11 +181,11 @@ run "runtime_document_pins_versions_and_scopes_read_grants" {
     error_message = "Every function must pin the same settings version; alias rollback must not read AWSCURRENT."
   }
   assert {
-    condition = contains(jsondecode(aws_iam_policy.lambda_secrets.policy).Statement[0].Resource, aws_secretsmanager_secret.runtime_settings.arn) && contains(local.lambda_secret_arns, aws_secretsmanager_secret.runtime_settings.arn)
+    condition     = contains(jsondecode(aws_iam_policy.lambda_secrets.policy).Statement[0].Resource, aws_secretsmanager_secret.runtime_settings.arn) && contains(local.lambda_secret_arns, aws_secretsmanager_secret.runtime_settings.arn)
     error_message = "API and scheduled functions must have read permission on the exact runtime document secret."
   }
   assert {
-    condition = jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].RequiresOutOfBandMigrations && !strcontains(aws_secretsmanager_secret_version.runtime_settings.secret_string, var.admin_password)
+    condition     = jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].RequiresOutOfBandMigrations && !strcontains(aws_secretsmanager_secret_version.runtime_settings.secret_string, var.admin_password)
     error_message = "Moving the target to JSON must retain the migration gate and exclude credentials."
   }
 }
