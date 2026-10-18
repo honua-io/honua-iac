@@ -1,0 +1,6 @@
+{
+  "schema": "honua.aws-cert-plan-recipient/v1",
+  "status": "unconfigured",
+  "recipient": null,
+  "recipientSha256": null
+}
