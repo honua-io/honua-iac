@@ -98,13 +98,19 @@ python3 infrastructure/terraform/validation/scripts/aws/standing_cert_plan.py \
 ```
 
 The process must already have short-lived deployment STS credentials. No
-`TF_CLI_ARGS*`, `TF_VAR_*`, offline/dirty/local escape hatches, alternative
+`TF_CLI_ARGS*`, `TF_VAR_*`, `TF_LOG*`, Git environment overrides,
+offline/dirty/local escape hatches, alternative
 Terraform binary, provider environment profile/endpoint, loader override,
 workspace or data-directory overrides are accepted. Terraform and AWS CLI
 installations/PATH and the runtime itself remain trusted operator inputs. The
 backend token is sent to AWS by the backend for signature/trust validation;
 local claim checks alone are not token authentication. No cloud command is
 needed to run the offline tests below.
+
+Protected files must also have trustworthy containing directories: each
+ancestor is owned by the executing user or root and is not writable by others
+(root-owned sticky temporary directories are permitted). This prevents another
+local user from replacing a protected file before Terraform reopens it.
 
 The producer validates context, invokes the maintained exact-plan script once
 with `--skip-init` and no `--workspace`, then rechecks context and byte bindings.

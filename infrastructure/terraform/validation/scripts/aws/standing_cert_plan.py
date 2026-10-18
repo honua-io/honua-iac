@@ -58,6 +58,13 @@ def protected(path, directory=False):
     require(path.is_absolute() and ".." not in path.parts, "private-path-invalid")
     for node in (path, *path.parents):
         require(not node.is_symlink(), "private-path-symlink")
+    for parent in path.parents:
+        info = parent.stat()
+        require(info.st_uid in (0, os.getuid()), "private-path-parent-owner")
+        # Root-owned sticky /tmp is safe for an owned private child; other
+        # writable ancestors can replace paths regardless of a file's 0600 mode.
+        require(not info.st_mode & 0o022 or (info.st_uid == 0 and info.st_mode & stat.S_ISVTX),
+                "private-path-parent-permissions")
     info = path.stat()
     require(info.st_uid == os.getuid(), "private-path-owner")
     require(stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode),
@@ -147,7 +154,7 @@ printf '%s\n' "$backend" "$identity" "$source_doc" "$state" "$inputs"
 
 def environment(request, root):
     env = dict(os.environ)
-    forbidden = ("TF_CLI_ARGS", "TF_VAR_", "HONUA_IAC_", "BASH_ENV", "ENV",
+    forbidden = ("TF_CLI_ARGS", "TF_VAR_", "TF_LOG", "GIT_", "HONUA_IAC_", "BASH_ENV", "ENV",
                  "LD_PRELOAD", "LD_LIBRARY_PATH", "PYTHONPATH", "PYTHONHOME", "AWS_ENDPOINT_URL")
     require(not any(k.startswith(forbidden) for k in env), "environment-override-refused")
     require(not any(k in env for k in ("TF_DATA_DIR", "TF_WORKSPACE", "TF_CLI_CONFIG_FILE",
@@ -163,7 +170,8 @@ def environment(request, root):
                AWS_EC2_METADATA_DISABLED="true", TF_IN_AUTOMATION="true", CHECKPOINT_DISABLE="1",
                HONUA_IAC_SESSION_EXPIRY=request["sessionExpiresAtUtc"],
                HONUA_IAC_IDENTITY_ISSUER=ISSUER,
-               HONUA_CERT_VAR_FILE=str(request["varFile"]))
+               HONUA_CERT_VAR_FILE=str(request["varFile"]),
+               GIT_WORK_TREE=str(root.parents[3]))
     # The backend obtains its own web-identity session using the protected file
     # referenced by its existing initialized descriptor, not the deployment keys.
     return env
@@ -283,6 +291,18 @@ def verify_packet(path, expected_sha):
             "expiresAtUtc": expiry.isoformat(), "packetSha256": expected_sha}
 
 
+def validate_expiry(metadata, request, claims, started):
+    created = timestamp(metadata["created_at_utc"])
+    expiry = timestamp(metadata["expires_at_utc"])
+    current = datetime.now(timezone.utc)
+    require(started - timedelta(seconds=1) <= created <= current + timedelta(seconds=5)
+            and expiry - created == timedelta(seconds=request["expiresInSeconds"])
+            and expiry > current, "plan-expiry-invalid")
+    require(expiry < timestamp(request["sessionExpiresAtUtc"])
+            and expiry.timestamp() < claims["exp"], "session-expiring")
+    require(expiry < timestamp(request["privateRetention"]["retainUntilUtc"]), "private-retention-required")
+
+
 def produce(request_path, repository):
     os.umask(0o077)
     request = load(protected(request_path))
@@ -381,8 +401,7 @@ def produce(request_path, repository):
                                              "provider_lock_digest": request["providerLockSha256"]}
                 and metadata["backend"]["backend_config_digest"] == request["backend"]["configDigest"]
                 and metadata["identity"]["assumed_role_arn"] == before["identity"]["arn"], "plan-binding-invalid")
-        expiry = timestamp(metadata["expires_at_utc"])
-        require(now < expiry <= now + timedelta(seconds=lifetime + 120), "plan-expiry-invalid")
+        validate_expiry(metadata, request, claims, now)
         with (packet / "review.txt").open("xb") as output:
             commands.run(["terraform", "-chdir=" + str(root), "show", "-no-color", str(packet / "plan.bin")], output=output)
         require(not commands.run(["git", "status", "--porcelain", "--untracked-files=normal"]).strip()

@@ -165,7 +165,7 @@ else:
             path = tools / name
             path.write_text(fake)
             path.chmod(0o700)
-        self.env = {k: v for k, v in os.environ.items() if not k.startswith(("TF_", "HONUA_IAC_", "AWS_", "LD_", "PYTHON"))}
+        self.env = {k: v for k, v in os.environ.items() if not k.startswith(("TF_", "GIT_", "HONUA_IAC_", "AWS_", "LD_", "PYTHON"))}
         self.env.update(PATH=str(tools) + ":" + os.environ["PATH"], TEST_CERT_CASE=str(self.case_file),
                         TEST_CERT_JOURNAL=str(self.journal), AWS_ACCESS_KEY_ID="synthetic",
                         AWS_SECRET_ACCESS_KEY="synthetic", AWS_SESSION_TOKEN="synthetic", RUNNER_ENVIRONMENT="self-hosted")
@@ -235,7 +235,7 @@ else:
                 (packet / name).write_bytes(original)
 
     def test_environment_injections_start_no_plan(self):
-        for name in ("TF_CLI_ARGS_plan", "TF_VAR_honua_image", "TF_WORKSPACE", "HONUA_IAC_OFFLINE", "HONUA_IAC_TERRAFORM_BIN", "AWS_PROFILE", "AWS_ENDPOINT_URL_IAM", "AWS_CONFIG_FILE", "BASH_ENV", "LD_PRELOAD"):
+        for name in ("TF_CLI_ARGS_plan", "TF_VAR_honua_image", "TF_WORKSPACE", "TF_LOG", "TF_LOG_PATH", "GIT_WORK_TREE", "GIT_DIR", "GIT_INDEX_FILE", "HONUA_IAC_OFFLINE", "HONUA_IAC_TERRAFORM_BIN", "AWS_PROFILE", "AWS_ENDPOINT_URL_IAM", "AWS_CONFIG_FILE", "BASH_ENV", "LD_PRELOAD"):
             with self.subTest(name=name):
                 self.env[name] = "refuse"
                 # LD_PRELOAD itself generates loader stderr before Python starts;
@@ -287,6 +287,18 @@ else:
         self.request["workloadIdentityContractDigest"] = "0" * 64
         self.refused("identity-contract-digest-mismatch")
 
+    def test_long_plan_uses_post_plan_creation_and_real_session_deadlines(self):
+        now = datetime.now(timezone.utc)
+        created = now - timedelta(seconds=1)
+        metadata = {"created_at_utc": created.isoformat(),
+                    "expires_at_utc": (created + timedelta(seconds=300)).isoformat()}
+        claims = {"exp": (now + timedelta(hours=1)).timestamp()}
+        # A five-minute refresh must not invalidate a full five-minute review TTL.
+        producer.validate_expiry(metadata, self.request, claims, now - timedelta(minutes=5))
+        claims["exp"] = (now + timedelta(seconds=120)).timestamp()
+        with self.assertRaisesRegex(producer.Refused, "session-expiring"):
+            producer.validate_expiry(metadata, self.request, claims, now - timedelta(minutes=5))
+
     def test_expiring_session_is_refused(self):
         self.request["sessionExpiresAtUtc"] = datetime.now(timezone.utc).isoformat()
         self.refused("session-expiring")
@@ -300,6 +312,14 @@ else:
                 self.request[key] = value
                 self.refused(reason)
                 self.request[key] = original
+
+    def test_git_config_cannot_redirect_source_to_clean_mirror(self):
+        mirror = self.base / "clean-mirror"
+        shutil.copytree(self.repository, mirror, ignore=shutil.ignore_patterns(".git"))
+        subprocess.run(["git", "config", "core.worktree", str(mirror)], cwd=self.repository,
+                       capture_output=True, check=True)
+        (self.root / "main.tf").write_text("# unapproved changed Terraform\n")
+        self.refused("source-dirty")
 
     def test_input_replacement_and_mutable_image_are_refused(self):
         self.var_file.write_text('{}')
@@ -348,6 +368,16 @@ else:
     def test_private_directory_permissions_are_required(self):
         self.private.chmod(0o755)
         self.refused("private-path-permissions")
+
+    def test_private_file_in_replaceable_directory_is_refused(self):
+        shared = self.base / "replaceable"
+        shared.mkdir(mode=0o777)
+        shared.chmod(0o777)
+        var_file = shared / "approved.tfvars.json"
+        shutil.copyfile(self.var_file, var_file)
+        var_file.chmod(0o600)
+        self.request["varFile"] = str(var_file)
+        self.refused("private-path-parent-permissions")
 
     def test_symlinked_backend_token_is_refused(self):
         link = self.private / "token-link"
