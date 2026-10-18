@@ -1,0 +1,69 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Honua MCP Policy fixture",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/mcp": {
+      "post": {
+        "operationId": "HonuaMcpPost",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "jsonrpc",
+                  "method"
+                ],
+                "properties": {
+                  "jsonrpc": {
+                    "type": "string",
+                    "enum": [
+                      "2.0"
+                    ]
+                  },
+                  "method": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "params": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "arguments": {
+                        "type": "object",
+                        "properties": {
+                          "serviceId": {
+                            "type": "string"
+                          },
+                          "layerId": {
+                            "type": "integer"
+                          },
+                          "limit": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Canonical Honua MCP response"
+          }
+        }
+      }
+    }
+  }
+}

@@ -241,6 +241,7 @@ jobs:
             "infrastructure/terraform/examples/azure-functions"
             "infrastructure/terraform/examples/aws"
             "infrastructure/terraform/examples/aws-serverless"
+            "infrastructure/terraform/examples/aws-agentcore-gateway"
             "infrastructure/terraform/examples/aws-cert"
             "infrastructure/terraform/examples/azure-cert"
             "infrastructure/terraform/examples/aws-data"
@@ -257,6 +258,7 @@ jobs:
             "infrastructure/terraform/modules/azure-functions"
             "infrastructure/terraform/modules/aws-ecs"
             "infrastructure/terraform/modules/aws-serverless"
+            "infrastructure/terraform/modules/aws-agentcore-gateway"
             "infrastructure/terraform/modules/aws-data"
             "infrastructure/terraform/modules/azure-aks"
             "infrastructure/terraform/modules/aws-eks"
@@ -338,6 +340,7 @@ jobs:
           terraform -chdir=infrastructure/terraform/examples/aws-serverless test -json -verbose -filter=tests/operator_contract.tftest.hcl > "$RUNNER_TEMP/lambda-operator-tests.jsonl"
           node infrastructure/terraform/validation/scripts/shared/test-lambda-operator-contract-output.mjs "$RUNNER_TEMP/lambda-operator-tests.jsonl"
           terraform -chdir=infrastructure/terraform/examples/aws-cert test -no-color
+          terraform -chdir=infrastructure/terraform/modules/aws-agentcore-gateway test -no-color
           terraform -chdir=infrastructure/terraform/modules/aws-eks test -no-color
           terraform -chdir=infrastructure/terraform/examples/aws-eks test -no-color
           terraform -chdir=infrastructure/terraform/modules/azure-aca test -no-color
