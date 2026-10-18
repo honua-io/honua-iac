@@ -2,6 +2,11 @@ mock_provider "aws" {
   mock_data "aws_caller_identity" { defaults = { account_id = "123456789012" } }
   mock_data "aws_region" { defaults = { region = "us-west-2", name = "us-west-2" } }
   mock_data "aws_partition" { defaults = { partition = "aws" } }
+  mock_resource "aws_iam_role" {
+    defaults = {
+      arn = "arn:aws:iam::123456789012:role/honua-agentcore-gateway-test"
+    }
+  }
   mock_resource "aws_bedrockagentcore_gateway" {
     defaults = {
       gateway_id  = "honua-agentcore-test123"
