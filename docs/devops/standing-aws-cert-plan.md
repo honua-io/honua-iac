@@ -1,3 +1,10 @@
+---
+type: guide
+title: "Produce a private standing AWS certification plan"
+description: "Preserve the existing aws-cert context in an unapproved private exact-plan packet."
+tags: [aws, certification, terraform, operators]
+---
+
 # Produce a private plan for the standing AWS certification stack
 
 This operator entrypoint produces a saved Terraform plan and an explicitly
