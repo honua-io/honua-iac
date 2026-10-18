@@ -2,7 +2,8 @@
   "format": "honua.component-versions/v1",
   "component": "honua-iac",
   "contractVersions": {
-    "operator-contract": "honua.operator-contract/v2"
+    "operator-contract": "honua.operator-contract/v2",
+    "runtime-binding": "honua.runtime-binding/v1"
   },
   "schemaVersions": {
     "terraform-exact-plan": "v1",
