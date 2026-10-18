@@ -16,6 +16,7 @@ import signal
 import stat
 import subprocess
 import sys
+import tempfile
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -158,6 +159,8 @@ def environment(request, root):
                  "LD_PRELOAD", "LD_LIBRARY_PATH", "PYTHONPATH", "PYTHONHOME", "AWS_ENDPOINT_URL")
     require(not any(k.startswith(forbidden) for k in env), "environment-override-refused")
     require(not any(k in env for k in ("TF_DATA_DIR", "TF_WORKSPACE", "TF_CLI_CONFIG_FILE",
+                                       "TERRAFORM_CONFIG", "TF_REATTACH_PROVIDERS",
+                                       "TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE",
                                        "AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE", "AWS_PROFILE", "AWS_DEFAULT_PROFILE",
                                        "AWS_WEB_IDENTITY_TOKEN_FILE", "AWS_ROLE_ARN")),
             "environment-override-refused")
@@ -331,6 +334,12 @@ def hcl_tokens(value):
 
 
 def validate_runtime_source(commands, root, repository, config):
+    flags = commands.run(["git", "ls-files", "-v", "-z"])
+    # Reject hidden-index state for the whole checkout before sourcing any
+    # executable helper. This also covers tracked templates/build assets used by
+    # local modules, not just .tf files. Lowercase tags mean assume-unchanged;
+    # S means skip-worktree. A normal cached entry is H.
+    require(all(entry[:2] == b"H " for entry in flags.split(b"\0") if entry), "hidden-index-flags-refused")
     backend = root / "backend.tf"
     tokens = hcl_tokens(backend.read_text()) if backend.is_file() and not backend.is_symlink() else []
     require(backend.is_file() and not backend.is_symlink()
@@ -434,6 +443,12 @@ def produce(request_path, repository):
             and not config.get("assume_role") and not config.get("role_arn"), "backend-web-identity-required")
     packet = parent / ("aws-cert-plan-" + uuid.uuid4().hex)
     packet.mkdir(mode=0o700)
+    cli_directory = tempfile.TemporaryDirectory(prefix=".cert-cli-", dir=parent)
+    cli_config = Path(cli_directory.name) / "terraform.tfrc"
+    write(cli_config, b"")
+    # An owned empty config supersedes ~/.terraformrc without changing HOME or
+    # loading provider dev_overrides/credential helpers from ambient config.
+    env["TF_CLI_CONFIG_FILE"] = str(cli_config)
     commands = Commands(repository, packet, env)
     try:
         write(packet / "request.json", request)
@@ -504,6 +519,8 @@ def produce(request_path, repository):
         # Retain private diagnostics/partial plan for the custodian, but no completed packet.
         (packet / "packet.json").unlink(missing_ok=True)
         raise
+    finally:
+        cli_directory.cleanup()
 
 
 def main():

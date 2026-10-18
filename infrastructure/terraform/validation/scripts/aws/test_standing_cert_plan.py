@@ -8,6 +8,7 @@ import base64
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import stat
 import subprocess
@@ -145,6 +146,9 @@ if name=='aws':
   print(json.dumps({'Role':{'Arn':'arn:aws:iam::'+c['account']+':role/'+role,'MaxSessionDuration':3600,'AssumeRolePolicyDocument':{'Statement':[statement]}}}))
  else: sys.exit(89)
 else:
+ assert Path(os.environ['TF_CLI_CONFIG_FILE']).read_bytes()==b''
+ assert 'TF_REATTACH_PROVIDERS' not in os.environ
+ if 'home' in c: assert os.environ['HOME']==c['home']
  a=[x for x in a if not x.startswith('-chdir=')]
  cmd=a[0]
  if cmd=='version': print(json.dumps({'terraform_version':c['version']}))
@@ -253,7 +257,7 @@ terraform {
                 (packet / name).write_bytes(original)
 
     def test_environment_injections_start_no_plan(self):
-        for name in ("TF_CLI_ARGS_plan", "TF_VAR_honua_image", "TF_WORKSPACE", "TF_LOG", "TF_LOG_PATH", "GIT_WORK_TREE", "GIT_DIR", "GIT_INDEX_FILE", "HONUA_IAC_OFFLINE", "HONUA_IAC_TERRAFORM_BIN", "AWS_PROFILE", "AWS_ENDPOINT_URL_IAM", "AWS_CONFIG_FILE", "BASH_ENV", "LD_PRELOAD"):
+        for name in ("TF_CLI_ARGS_plan", "TF_VAR_honua_image", "TF_WORKSPACE", "TF_LOG", "TF_LOG_PATH", "TF_CLI_CONFIG_FILE", "TERRAFORM_CONFIG", "TF_REATTACH_PROVIDERS", "TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE", "GIT_WORK_TREE", "GIT_DIR", "GIT_INDEX_FILE", "HONUA_IAC_OFFLINE", "HONUA_IAC_TERRAFORM_BIN", "AWS_PROFILE", "AWS_ENDPOINT_URL_IAM", "AWS_CONFIG_FILE", "BASH_ENV", "LD_PRELOAD"):
             with self.subTest(name=name):
                 self.env[name] = "refuse"
                 # LD_PRELOAD itself generates loader stderr before Python starts;
@@ -264,6 +268,19 @@ terraform {
                 else:
                     self.refused("environment-override-refused")
                 del self.env[name]
+
+    def test_default_cli_dev_overrides_are_not_loaded_and_home_is_preserved(self):
+        home = self.private / "home"
+        home.mkdir(mode=0o700)
+        ambient = home / ".terraformrc"
+        ambient.write_text('provider_installation { dev_overrides { "hashicorp/aws" = "/unapproved" } }')
+        self.env["HOME"] = str(home)
+        self.case["home"] = str(home)
+        result, receipt, _ = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(receipt["status"], "planned-unapproved")
+        self.assertIn("dev_overrides", ambient.read_text())
+        self.assertFalse(list(self.private.glob(".cert-cli-*")))
 
     def test_current_iam_user_is_refused(self):
         self.case["callerArn"] = f"arn:aws:iam::{ACCOUNT}:user/operator"
@@ -336,7 +353,24 @@ terraform {
         subprocess.run(["git", "update-index", "--skip-worktree", str(self.root / "main.tf")],
                        cwd=self.repository, capture_output=True, check=True)
         (self.root / "main.tf").write_text("# hidden source modification\n")
-        self.refused("terraform-source-modified")
+        self.refused("hidden-index-flags-refused")
+
+    def test_each_maintained_helper_hidden_change_is_refused_before_execution(self):
+        for relative in ("scripts/lib/tf-exec-contract.sh", "scripts/terraform-exact-plan.sh"):
+            for flag in ("skip-worktree", "assume-unchanged"):
+                with self.subTest(helper=relative, flag=flag):
+                    path = self.repository / relative
+                    original = path.read_bytes()
+                    marker = self.private / "unexpected-helper-execution"
+                    subprocess.run(["git", "update-index", "--" + flag, relative], cwd=self.repository,
+                                   capture_output=True, check=True)
+                    path.write_bytes(original + ("\nprintf injected > " + shlex.quote(str(marker)) + "\n").encode())
+                    self.refused("hidden-index-flags-refused")
+                    self.assertFalse(marker.exists())
+                    self.assertFalse(self.journal.exists())
+                    path.write_bytes(original)
+                    subprocess.run(["git", "update-index", "--no-" + flag, relative], cwd=self.repository,
+                                   capture_output=True, check=True)
 
     def test_expiring_session_is_refused(self):
         self.request["sessionExpiresAtUtc"] = datetime.now(timezone.utc).isoformat()

@@ -108,6 +108,11 @@ backend token is sent to AWS by the backend for signature/trust validation;
 local claim checks alone are not token authentication. No cloud command is
 needed to run the offline tests below.
 
+An internally owned empty CLI configuration supersedes the default
+`~/.terraformrc`; `HOME` is preserved. Caller CLI-config aliases, provider
+reattachment and dependency-lock relaxation are refused. The private temporary
+configuration is removed on completion/failure and changes no operator file.
+
 Protected files must also have trustworthy containing directories: each
 ancestor is owned by the executing user or root and is not writable by others
 (root-owned sticky temporary directories are permitted). This prevents another
