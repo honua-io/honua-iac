@@ -494,7 +494,9 @@ run "oversized_environment_fails_at_plan" {
     additional_env = {
       HONUA_SERVE_ADMIN_UI = "true"
       HONUA_ADMIN_UI       = "true"
-      HONUA_PADDING        = format("%1200s", "x")
+      # This value alone fills the AWS budget; the required keys must push it
+      # over regardless of how much ordinary configuration moves to a document.
+      HONUA_PADDING = format("%4096s", "x")
     }
   }
 
