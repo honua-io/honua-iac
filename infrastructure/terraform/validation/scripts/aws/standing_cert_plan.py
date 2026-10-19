@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import io
 import json
 import os
 import re
@@ -18,8 +19,9 @@ import subprocess
 import sys
 import tempfile
 import uuid
+import zipfile
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 ROOT_REL = "infrastructure/terraform/examples/aws-cert"
 SUBJECT = "repo:honua-io/honua-server:environment:cert"
@@ -29,7 +31,12 @@ SHA = r"[0-9a-f]{64}"
 IMAGE_KEYS = ("honua_image", "gp_batch_image", "customcode_batch_image",
               "customcode_dotnet_batch_image", "ecs_alb_image")
 PACKET_FILES = {"request.json", "context-before.json", "context-after.json", "diagnostic.log",
-                "plan.bin", "metadata.json", "metadata.json.digest", "review.txt"}
+                "plan.bin", "metadata.json", "metadata.json.digest", "review.txt",
+                "bootstrap.zip", "bootstrap-inputs.json"}
+MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
+BOOTSTRAP_BUILD = "terraform_data.postgis_bootstrap_build"
+BOOTSTRAP_ARCHIVE = "data.archive_file.postgis_bootstrap"
+BOOTSTRAP_FUNCTION = "aws_lambda_function.postgis_bootstrap"
 
 
 class Refused(Exception):
@@ -282,6 +289,13 @@ def verify_packet(path, expected_sha):
     require(binding == packet["planMetadataDigest"] == digest(canonical(document))
             and (path / "metadata.json.digest").read_text().strip() == binding
             and metadata["plan"]["sha256"] == digest((path / "plan.bin").read_bytes()), "plan-binding-invalid")
+    artifact = load(path / "bootstrap-inputs.json")
+    content = (path / "bootstrap.zip").read_bytes()
+    require(artifact["schema"] == "honua.aws-cert-bootstrap-artifact/v1"
+            and artifact["archiveSha256"] == digest(content)
+            and artifact["buildActions"] == ["no-op"]
+            and artifact["sourceCodeHash"] == base64.b64encode(hashlib.sha256(content).digest()).decode()
+            and artifact["files"] == bootstrap_zip_inventory(content), "bootstrap-packet-invalid")
     expiry = timestamp(metadata["expires_at_utc"])
     require(expiry > datetime.now(timezone.utc), "plan-expired")
     request = load(path / "request.json")
@@ -359,13 +373,12 @@ def validate_runtime_source(commands, root, repository, config):
         if not directory.exists():
             continue
         for parent, children, files in os.walk(directory):
-            children[:] = [name for name in children if name not in (".terraform", ".git")]
+            children[:] = [name for name in children if name not in (".terraform", ".git")
+                           and Path(parent) / name != root / "postgis-bootstrap/build"]
             require(not any((Path(parent) / name).is_symlink() for name in children), "source-symlink-refused")
             for name in files:
-                if not name.endswith((".tf", ".tf.json")):
-                    continue
                 path = Path(parent) / name
-                if path == backend:
+                if path == backend or path == root / "postgis-bootstrap/bootstrap.zip":
                     continue
                 require(not path.is_symlink(), "source-symlink-refused")
                 relative = str(path.relative_to(repository))
@@ -377,8 +390,100 @@ def validate_runtime_source(commands, root, repository, config):
                                          usedforsecurity=False).hexdigest()
                 require(object_id == tracked[relative], "terraform-source-modified")
     prefixes = tuple(str(directory.relative_to(repository)) + "/" for directory in directories)
-    expected = {name for name in tracked if name.startswith(prefixes) and name.endswith((".tf", ".tf.json"))}
+    expected = {name for name in tracked if name.startswith(prefixes)}
     require(expected <= seen, "terraform-source-missing")
+
+
+def artifact_name(name):
+    require(isinstance(name, str) and name and not name.startswith("/") and "\\" not in name
+            and ".." not in PurePosixPath(name).parts and str(PurePosixPath(name)) == name,
+            "bootstrap-entry-invalid")
+    return name
+
+
+def bootstrap_inventory(root):
+    """Existing generated dependencies are explicit private inputs, not Git source."""
+    build = root / "postgis-bootstrap/build"
+    require(build.is_dir() and not build.is_symlink(), "bootstrap-build-required")
+    info = build.stat()
+    require(info.st_uid in (0, os.getuid()) and not info.st_mode & 0o022, "bootstrap-input-type-or-permissions")
+    inventory, total = {}, 0
+    for parent, children, files in os.walk(build):
+        for name in (*children, *files):
+            path = Path(parent) / name
+            info = path.lstat()
+            require(not path.is_symlink() and info.st_uid in (0, os.getuid()) and not info.st_mode & 0o022
+                    and (stat.S_ISDIR(info.st_mode) if name in children else stat.S_ISREG(info.st_mode)),
+                    "bootstrap-input-type-or-permissions")
+            artifact_name(path.relative_to(build).as_posix())
+        for name in files:
+            path = Path(parent) / name
+            total += path.stat().st_size
+            require(total <= MAX_ARTIFACT_BYTES and len(inventory) < 4096, "bootstrap-size-limit")
+            inventory[path.relative_to(build).as_posix()] = {"sha256": digest(path.read_bytes()), "size": path.stat().st_size}
+    require("handler.py" in inventory and inventory["handler.py"]["sha256"] ==
+            digest((root / "postgis-bootstrap/handler.py").read_bytes()), "bootstrap-handler-source-mismatch")
+    return inventory
+
+
+def bootstrap_zip_inventory(data):
+    require(len(data) <= MAX_ARTIFACT_BYTES, "bootstrap-size-limit")
+    inventory, total = {}, 0
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        require(len(archive.infolist()) <= 4096, "bootstrap-size-limit")
+        names = set()
+        for member in archive.infolist():
+            name = artifact_name(member.filename.rstrip("/") if member.is_dir() else member.filename)
+            require(name not in names and not member.flag_bits & 1, "bootstrap-entry-invalid")
+            names.add(name)
+            mode = stat.S_IFMT(member.external_attr >> 16)
+            require(mode in ((0, stat.S_IFDIR) if member.is_dir() else (0, stat.S_IFREG)), "bootstrap-entry-invalid")
+            if member.is_dir():
+                continue
+            total += member.file_size
+            require(0 <= member.file_size <= MAX_ARTIFACT_BYTES and total <= MAX_ARTIFACT_BYTES,
+                    "bootstrap-size-limit")
+            content = archive.read(member)
+            inventory[name] = {"sha256": digest(content), "size": len(content)}
+    return inventory
+
+
+def bootstrap_plan_binding(plan, archive_sha, archive_path):
+    changes = {item["address"]: item["change"] for item in plan["resource_changes"]}
+    require(changes[BOOTSTRAP_BUILD]["actions"] == ["no-op"], "bootstrap-deferred-build-refused")
+    # An archive read deferred to apply can repackage different bytes later.
+    require(BOOTSTRAP_ARCHIVE not in changes or changes[BOOTSTRAP_ARCHIVE]["actions"] == ["no-op"],
+            "bootstrap-deferred-archive-refused")
+    expected = base64.b64encode(bytes.fromhex(archive_sha)).decode()
+    # path.module in the root module is normally "."; admit only these exact
+    # equivalent spellings of the fixed protected path, never caller paths.
+    paths = {archive_path, "postgis-bootstrap/bootstrap.zip", "./postgis-bootstrap/bootstrap.zip"}
+    function = changes[BOOTSTRAP_FUNCTION]
+    require(function["after"]["filename"] in paths and function["after"]["source_code_hash"] == expected
+            and not function.get("after_unknown", {}).get("source_code_hash", False), "bootstrap-plan-hash-mismatch")
+    resources = {item["address"]: item["values"] for item in plan["planned_values"]["root_module"]["resources"]}
+    require(resources[BOOTSTRAP_ARCHIVE]["output_base64sha256"] == expected
+            and resources[BOOTSTRAP_ARCHIVE]["output_path"] in paths
+            and resources[BOOTSTRAP_FUNCTION]["filename"] in paths
+            and resources[BOOTSTRAP_FUNCTION]["source_code_hash"] == expected, "bootstrap-plan-hash-mismatch")
+
+
+def retain_bootstrap(commands, root, packet, before):
+    require(bootstrap_inventory(root) == before, "bootstrap-build-drift")
+    path = root / "postgis-bootstrap/bootstrap.zip"
+    info = path.lstat()
+    require(not path.is_symlink() and stat.S_ISREG(info.st_mode) and info.st_uid in (0, os.getuid())
+            and not info.st_mode & 0o022 and info.st_size <= MAX_ARTIFACT_BYTES, "bootstrap-archive-invalid")
+    content = path.read_bytes()
+    require(bootstrap_zip_inventory(content) == before, "bootstrap-archive-input-mismatch")
+    archive_sha = digest(content)
+    plan = commands.json(["terraform", "-chdir=" + str(root), "show", "-json", str(packet / "plan.bin")])
+    bootstrap_plan_binding(plan, archive_sha, str(path))
+    write(packet / "bootstrap.zip", content)
+    write(packet / "bootstrap-inputs.json", {"schema": "honua.aws-cert-bootstrap-artifact/v1",
+          "files": before, "archiveSha256": archive_sha, "buildActions": ["no-op"],
+          "sourceCodeHash": base64.b64encode(bytes.fromhex(archive_sha)).decode()})
+    require(path.read_bytes() == content and bootstrap_inventory(root) == before, "bootstrap-build-drift")
 
 
 def produce(request_path, repository):
@@ -459,6 +564,10 @@ def produce(request_path, repository):
         require(digest((root / ".terraform.lock.hcl").read_bytes()) == request["providerLockSha256"], "provider-lock-mismatch")
         trust(commands, deploy_role, request["accountId"])
         trust(commands, backend_role, request["accountId"])
+        bootstrap_before = bootstrap_inventory(root)
+        archive_path = root / "postgis-bootstrap/bootstrap.zip"
+        if archive_path.exists() or archive_path.is_symlink():
+            require(not archive_path.is_symlink() and archive_path.is_file(), "bootstrap-archive-invalid")
         before = commands.facts(root)
         validate_facts(before, request, deploy_role)
         write(packet / "context-before.json", before)
@@ -468,6 +577,7 @@ def produce(request_path, repository):
                       "--actor", request["actorId"], "--target-id", "aws-cert",
                       "--candidate-digest", request["candidateDigest"], "--workload-identity-digest",
                       request["workloadIdentityContractDigest"]], seconds=planning_seconds(request, claims))
+        retain_bootstrap(commands, root, packet, bootstrap_before)
         after = commands.facts(root)
         validate_facts(after, request, deploy_role)
         require(after == before and digest(var_file.read_bytes()) == request["varFileSha256"], "context-drift")
@@ -535,7 +645,7 @@ def main():
         result = (produce(args.request, repository) if args.request else
                   verify_packet(args.verify_packet, args.expected_packet_sha256))
         code = 0
-    except (Refused, OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as error:
+    except (Refused, OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired, zipfile.BadZipFile) as error:
         result = {"schema": "honua.aws-cert-plan-public/v1", "status": "refused",
                   "reason": str(error) if isinstance(error, Refused) else "invalid-or-unavailable-context",
                   "approvalStatus": "not-approved", "qualificationStatus": "not-evaluated"}

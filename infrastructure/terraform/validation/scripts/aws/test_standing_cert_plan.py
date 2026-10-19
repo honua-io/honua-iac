@@ -14,6 +14,7 @@ import stat
 import subprocess
 import tempfile
 import unittest
+import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
@@ -52,7 +53,14 @@ class StandingCertPlan(unittest.TestCase):
         (self.root / ".terraform").mkdir(parents=True)
         (self.root / "main.tf").write_text("locals { fixture = true }\n")
         (self.root / ".terraform.lock.hcl").write_text("# authored provider lock fixture\n")
-        (self.repository / ".gitignore").write_text(".terraform/\nbackend.tf\nignored*.tf\n__pycache__/\n")
+        self.bootstrap = self.root / "postgis-bootstrap"
+        (self.bootstrap / "build").mkdir(parents=True)
+        (self.bootstrap / "handler.py").write_text("def handler(event, context): return {'ok': True}\n")
+        shutil.copyfile(self.bootstrap / "handler.py", self.bootstrap / "build/handler.py")
+        (self.bootstrap / "build/dependency.py").write_text("AUTHORED_DEPENDENCY_VERSION = 1\n")
+        self.write_bootstrap_zip()
+
+        (self.repository / ".gitignore").write_text(".terraform/\nbackend.tf\nignored*.tf\n__pycache__/\npostgis-bootstrap/build/\npostgis-bootstrap/bootstrap.zip\n")
         for relative in ("scripts/lib/tf-exec-contract.sh", "scripts/terraform-exact-plan.sh",
                          "scripts/terraform-backend-identity.sh"):
             destination = self.repository / relative
@@ -125,13 +133,13 @@ class StandingCertPlan(unittest.TestCase):
                                              "accessReference": "fixture independent reviewer ACL",
                                              "retainUntilUtc": future.isoformat()}}
         self.case = {"account": ACCOUNT, "role": DEPLOY, "workspace": "existing-cert", "serial": 42,
-                     "lineage": "authored-existing-lineage", "version": "1.10.5", "sentinel": SENTINEL}
+                     "lineage": "authored-existing-lineage", "version": "1.10.5", "sentinel": SENTINEL, "root": str(self.root)}
         self.case_file = self.base / "case.json"
         self.journal = self.base / "journal.jsonl"
         tools = self.base / "tools"
         tools.mkdir()
         fake = '''#!/usr/bin/python3
-import json,os,sys
+import base64,hashlib,json,os,sys
 from pathlib import Path
 c=json.loads(Path(os.environ['TEST_CERT_CASE']).read_text())
 a=sys.argv[1:]; name=Path(sys.argv[0]).name
@@ -161,8 +169,21 @@ else:
  elif cmd=='plan':
   out=next(x[5:] for x in a if x.startswith('-out='))
   Path(out).write_text('authored binary plan '+c['sentinel'])
+  if c.get('mutateBuild'): (Path(c['root'])/'postgis-bootstrap/build/dependency.py').write_text('CHANGED_DURING_PLAN = True')
   print(c['sentinel']);sys.exit(c.get('planExit',0))
- elif cmd=='show': print('private resource review '+c['sentinel'])
+ elif cmd=='show':
+  if '-json' in a:
+   archive=str(Path(c['root'])/'postgis-bootstrap/bootstrap.zip')
+   digest=base64.b64encode(hashlib.sha256(Path(archive).read_bytes()).digest()).decode()
+   function={'filename':c.get('bootstrapFilename',archive),'source_code_hash':c.get('bootstrapHash',digest)}
+   print(json.dumps({'resource_changes':[
+    {'address':'terraform_data.postgis_bootstrap_build','change':{'actions':c.get('buildActions',['no-op'])}},
+    {'address':'data.archive_file.postgis_bootstrap','change':{'actions':c.get('archiveActions',['no-op'])}},
+    {'address':'aws_lambda_function.postgis_bootstrap','change':{'actions':['no-op'],'after':function,'after_unknown':{'source_code_hash':c.get('unknownHash',False)}}}],
+    'planned_values':{'root_module':{'resources':[
+    {'address':'data.archive_file.postgis_bootstrap','values':{'output_base64sha256':digest,'output_path':archive}},
+    {'address':'aws_lambda_function.postgis_bootstrap','values':function}]}}}))
+  else: print('private resource review '+c['sentinel'])
  else: sys.exit(88)
 '''
         for name in ("aws", "terraform"):
@@ -177,6 +198,12 @@ else:
             subprocess.run(["git", *args], cwd=self.repository, check=True, capture_output=True)
         self.request["iacRevision"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=self.repository, text=True).strip()
         self.request_file = self.private / "request.json"
+
+    def write_bootstrap_zip(self):
+        with zipfile.ZipFile(self.bootstrap / "bootstrap.zip", "w") as archive:
+            for path in sorted((self.bootstrap / "build").rglob("*")):
+                if path.is_file():
+                    archive.write(path, path.relative_to(self.bootstrap / "build").as_posix())
 
     def write_backend(self):
         save(self.root / ".terraform/terraform.tfstate", {"backend": {"type": "s3", "config": self.backend_config}})
@@ -233,13 +260,16 @@ terraform {
         packet = packets[0]
         descriptor = json.loads((packet / "packet.json").read_text())
         self.assertEqual(receipt["packetSha256"], sha((packet / "packet.json").read_bytes()))
-        self.assertEqual(len(descriptor["files"]), 8)
+        self.assertEqual(len(descriptor["files"]), 10)
         for name, expected in descriptor["files"].items():
             self.assertEqual(sha((packet / name).read_bytes()), expected)
             self.assertEqual(stat.S_IMODE((packet / name).stat().st_mode), 0o600)
         self.assertIn(SENTINEL, (packet / "diagnostic.log").read_text())
         self.assertIn(SENTINEL, (packet / "review.txt").read_text())
-        self.assertFalse(any("MUST_NOT_BE_RETAINED" in p.read_text() for p in packet.iterdir()))
+        self.assertFalse(any(b"MUST_NOT_BE_RETAINED" in p.read_bytes() for p in packet.iterdir()))
+        self.assertEqual((packet / "bootstrap.zip").read_bytes(), (self.bootstrap / "bootstrap.zip").read_bytes())
+        self.assertEqual(set(json.loads((packet / "bootstrap-inputs.json").read_text())["files"]),
+                         {"handler.py", "dependency.py"})
         plan = [c for c in calls if "plan" in c]
         self.assertEqual(len(plan), 1)
         self.assertIn("-input=false", plan[0])
@@ -371,6 +401,55 @@ terraform {
                     path.write_bytes(original)
                     subprocess.run(["git", "update-index", "--no-" + flag, relative], cwd=self.repository,
                                    capture_output=True, check=True)
+
+    def test_bootstrap_handler_must_match_committed_source(self):
+        (self.bootstrap / "build/handler.py").write_text("def handler(event, context): return 'substitution'")
+        self.write_bootstrap_zip()
+        self.refused("bootstrap-handler-source-mismatch")
+
+    def test_bootstrap_dependency_drift_during_plan_is_refused(self):
+        self.case["mutateBuild"] = True
+        self.refused("bootstrap-build-drift", plan_started=True)
+
+    def test_bootstrap_zip_must_contain_exact_build_bytes(self):
+        with zipfile.ZipFile(self.bootstrap / "bootstrap.zip", "w") as archive:
+            archive.writestr("handler.py", "substituted ZIP payload")
+        self.refused("bootstrap-archive-input-mismatch", plan_started=True)
+
+    def test_bootstrap_deferred_rebuild_or_archive_is_refused(self):
+        for key, value, reason in (("buildActions", ["delete", "create"], "bootstrap-deferred-build-refused"),
+                                   ("archiveActions", ["read"], "bootstrap-deferred-archive-refused")):
+            with self.subTest(key=key):
+                self.case[key] = value
+                self.refused(reason, plan_started=True)
+                del self.case[key]
+
+    def test_bootstrap_plan_accepts_root_module_relative_path(self):
+        self.case["bootstrapFilename"] = "./postgis-bootstrap/bootstrap.zip"
+        result, _, _ = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_bootstrap_saved_plan_hash_path_or_unknown_value_is_refused(self):
+        for key, value in (("bootstrapHash", "different-payload"), ("bootstrapFilename", "/other/payload.zip"),
+                           ("unknownHash", True)):
+            with self.subTest(key=key):
+                self.case[key] = value
+                self.refused("bootstrap-plan-hash-mismatch", plan_started=True)
+                del self.case[key]
+
+    def test_bootstrap_zip_links_and_traversal_are_refused(self):
+        for name, mode in (("../handler.py", stat.S_IFREG), ("handler.py", stat.S_IFLNK)):
+            with self.subTest(name=name):
+                with zipfile.ZipFile(self.bootstrap / "bootstrap.zip", "w") as archive:
+                    info = zipfile.ZipInfo(name)
+                    info.external_attr = (mode | 0o644) << 16
+                    archive.writestr(info, "untrusted")
+                self.refused("bootstrap-entry-invalid", plan_started=True)
+
+    def test_bootstrap_build_symlink_is_refused_before_plan(self):
+        (self.bootstrap / "build/dependency.py").unlink()
+        (self.bootstrap / "build/dependency.py").symlink_to(self.bootstrap / "handler.py")
+        self.refused("bootstrap-input-type-or-permissions")
 
     def test_expiring_session_is_refused(self):
         self.request["sessionExpiresAtUtc"] = datetime.now(timezone.utc).isoformat()

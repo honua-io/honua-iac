@@ -153,6 +153,16 @@ private retention directory. Each file is `0600`; the directory is `0700`:
 - `context-before.json` and `context-after.json`: matching canonical source,
   backend, identity, input and prior-state metadata; no raw state document.
 - `request.json`: the private operator request, including secret references.
+- `bootstrap.zip` and `bootstrap-inputs.json`: exact PostGIS bootstrap payload
+  and finite dependency-file SHA256/size inventory. The generated build must
+  already exist, contain the committed handler, and remain unchanged across
+  planning. ZIP entries must match that inventory without links or traversal
+  (4096 entries and 64 MiB bounded). These generated dependencies are explicit
+  retained private inputs, not claimed to be tracked source or independently
+  approved package provenance. Saved-plan JSON must bind the archive and
+  Lambda filename/hash to those exact bytes. Bootstrap build replacement or
+  deferred archive reads refuse, because they would generate new bytes only
+  at apply. No package installation/build is invoked by this producer.
 - `review.txt` and `diagnostic.log`: private Terraform review and all child
   output; may contain secrets.
 - `packet.json`: atomically published completed file manifest, SHA256 for every
@@ -194,7 +204,10 @@ approval, byte hashes, expiry, context/state and one-time claim. The low-level
 `terraform-exact-apply.sh --approved-digest` compares a digest; merely echoing
 that digest is not trusted approval. The existing two-principal guide documents
 the ephemeral cell roles, not an approved standing-cert verifier grant. Keep
-that integration prerequisite open; do not manually apply a packet from this
+that integration prerequisite open. A future trusted consumer must restore
+and verify the retained bootstrap ZIP at the exact planned path, recheck its
+hash immediately before exact-plan apply, and refuse any deferred rebuild;
+the source helper does not implement that consumer. Do not manually apply a packet from this
 helper as a workaround.
 
 ## Offline controls
