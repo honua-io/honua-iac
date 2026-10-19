@@ -60,7 +60,11 @@ class StandingCertPlan(unittest.TestCase):
         (self.bootstrap / "build/dependency.py").write_text("AUTHORED_DEPENDENCY_VERSION = 1\n")
         self.write_bootstrap_zip()
 
-        (self.repository / ".gitignore").write_text(".terraform/\nbackend.tf\nignored*.tf\n__pycache__/\npostgis-bootstrap/build/\npostgis-bootstrap/bootstrap.zip\n")
+        bootstrap_relative = producer.ROOT_REL + "/postgis-bootstrap"
+        (self.repository / ".gitignore").write_text(
+            ".terraform/\nbackend.tf\nignored*.tf\n__pycache__/\n"
+            + bootstrap_relative + "/build/\n"
+            + bootstrap_relative + "/bootstrap.zip\n")
         for relative in ("scripts/lib/tf-exec-contract.sh", "scripts/terraform-exact-plan.sh",
                          "scripts/terraform-backend-identity.sh"):
             destination = self.repository / relative
@@ -196,6 +200,11 @@ else:
                         AWS_SECRET_ACCESS_KEY="synthetic", AWS_SESSION_TOKEN="synthetic", RUNNER_ENVIRONMENT="self-hosted")
         for args in (["init", "-q"], ["add", "."], ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "authored fixture"]):
             subprocess.run(["git", *args], cwd=self.repository, check=True, capture_output=True)
+        for relative in (bootstrap_relative + "/build/handler.py", bootstrap_relative + "/bootstrap.zip"):
+            self.assertEqual(subprocess.run(["git", "check-ignore", "-q", relative], cwd=self.repository,
+                                            capture_output=True, check=False).returncode, 0)
+            self.assertEqual(subprocess.run(["git", "ls-files", "--error-unmatch", relative], cwd=self.repository,
+                                            capture_output=True, check=False).returncode, 1)
         self.request["iacRevision"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=self.repository, text=True).strip()
         self.request_file = self.private / "request.json"
 
