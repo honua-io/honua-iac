@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://honua.io/schemas/honua-agentcore-gateway.v1.json",
+  "title": "Optional AgentCore declared gateway binding",
+  "description": "Secret-free IaC configuration. Not live provider observation, an entitlement or a verified install handoff. Disabled module emits null instead.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "gatewayArn",
+    "gatewayId",
+    "mcpUrl",
+    "honuaOrigin",
+    "originPrivateResourceConfigurationArn",
+    "policyEngineArn",
+    "policyMode",
+    "inboundAuth",
+    "outboundAuth",
+    "identity",
+    "requestSchemaSha256",
+    "policyTemplateSha256",
+    "entitlementRequired",
+    "qualification"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "honua.agentcore-gateway/v1"
+    },
+    "gatewayArn": {
+      "type": "string",
+      "pattern": "^arn:[a-z-]+:bedrock-agentcore:[a-z0-9-]+:[0-9]{12}:gateway/[A-Za-z0-9-]+$"
+    },
+    "gatewayId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mcpUrl": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://[a-z0-9-]+\\.gateway\\.bedrock-agentcore\\.[a-z0-9-]+\\.amazonaws\\.com(?:\\.cn)?/honua/(?:api/)?mcp$"
+    },
+    "honuaOrigin": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://"
+    },
+    "originPrivateResourceConfigurationArn": {
+      "type": "string",
+      "pattern": "^arn:[a-z-]+:vpc-lattice:[a-z0-9-]+:[0-9]{12}:resourceconfiguration/[A-Za-z0-9-]+$"
+    },
+    "policyEngineArn": {
+      "type": "string",
+      "pattern": "^arn:[a-z-]+:bedrock-agentcore:[a-z0-9-]+:[0-9]{12}:policy-engine/[A-Za-z0-9_-]+$"
+    },
+    "policyMode": {
+      "const": "ENFORCE"
+    },
+    "inboundAuth": {
+      "const": "CUSTOM_JWT"
+    },
+    "outboundAuth": {
+      "const": "JWT_PASSTHROUGH"
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "discovery_url",
+        "issuer",
+        "audience",
+        "required_scope",
+        "tenant_id",
+        "subjects"
+      ],
+      "properties": {
+        "discovery_url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "issuer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "audience": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required_scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tenant_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "subjects": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        }
+      }
+    },
+    "requestSchemaSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "policyTemplateSha256": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 100,
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    },
+    "entitlementRequired": {
+      "const": "pro"
+    },
+    "qualification": {
+      "const": "declared-configuration-only"
+    }
+  }
+}

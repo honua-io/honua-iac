@@ -6,6 +6,7 @@
 
 ## Guides
 
+* [Optional Honua AgentCore gateway](devops/agentcore-gateway.md)
 * [Produce AWS certification evidence](devops/aws-cert-live-evidence-runbook.md)
 * [Configure AWS deployment safety](devops/aws-deployment-safety.md)
 * [Configure AWS model transcript signing](devops/aws-transcript-signing.md)
