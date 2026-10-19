@@ -10,6 +10,7 @@ import json
 import os
 import shlex
 import shutil
+import signal
 import stat
 import subprocess
 import tempfile
@@ -525,6 +526,31 @@ terraform {
                 finally:
                     path.chmod(original_mode)
 
+    def test_timed_out_child_gets_interrupt_before_forced_kill(self):
+        graceful = self.base / "graceful.py"
+        marker = self.base / "lock-released"
+        graceful.write_text("import signal, sys, time\nfrom pathlib import Path\n"
+                            + "def release(signum, frame):\n    Path(" + repr(str(marker))
+                            + ").write_text('released')\n    sys.exit(0)\n"
+                            + "signal.signal(signal.SIGINT, release)\n"
+                            + "while True: time.sleep(0.05)\n")
+        commands = producer.Commands(self.repository, self.private, self.env)
+        with mock.patch.object(producer.os, "killpg", wraps=os.killpg) as kill, \
+             self.assertRaises(subprocess.TimeoutExpired):
+            commands.run(["python3", "-I", str(graceful)], seconds=1)
+        self.assertEqual(marker.read_text(), "released")
+        self.assertEqual([call.args[1] for call in kill.call_args_list], [signal.SIGINT])
+
+        stubborn = self.base / "stubborn.py"
+        stubborn.write_text("import signal, time\nsignal.signal(signal.SIGINT, signal.SIG_IGN)\n"
+                            "while True: time.sleep(0.05)\n")
+        with mock.patch.object(producer, "INTERRUPT_GRACE_SECONDS", 0.2), \
+             mock.patch.object(producer.os, "killpg", wraps=os.killpg) as kill, \
+             self.assertRaises(subprocess.TimeoutExpired):
+            commands.run(["python3", "-I", str(stubborn)], seconds=1)
+        self.assertEqual([call.args[1] for call in kill.call_args_list],
+                         [signal.SIGINT, signal.SIGKILL])
+
     def test_fsmonitor_cannot_hide_modified_helper(self):
         monitor = self.private / "untrusted-fsmonitor"
         monitor.write_text("#!/bin/sh\nprintf '\\0'\n")
@@ -767,6 +793,7 @@ class HostedSessionBounds(unittest.TestCase):
     def test_planning_timeout_and_packet_expiry_share_backend_bound(self):
         deadline = self.now + timedelta(minutes=55)
         self.assertLessEqual(producer.planning_seconds(self.request, {"exp": 0}, deadline)
+                             + producer.INTERRUPT_GRACE_SECONDS
                              + self.request["expiresInSeconds"], 55 * 60)
         self.request["expiresInSeconds"] = 1800
         self.request["sessionExpiresAtUtc"] = (self.now + timedelta(minutes=30)).isoformat()

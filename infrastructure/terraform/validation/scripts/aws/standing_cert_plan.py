@@ -36,6 +36,7 @@ PACKET_FILES = {"request.json", "context-before.json", "context-after.json", "di
 MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
 MAX_MODULE_BYTES = 256 * 1024 * 1024
 MAX_PROVIDER_BYTES = 1536 * 1024 * 1024
+INTERRUPT_GRACE_SECONDS = 60
 BOOTSTRAP_BUILD = "terraform_data.postgis_bootstrap_build"
 BOOTSTRAP_ARCHIVE = "data.archive_file.postgis_bootstrap"
 BOOTSTRAP_FUNCTION = "aws_lambda_function.postgis_bootstrap"
@@ -128,8 +129,19 @@ class Commands:
             try:
                 data, _ = process.communicate(timeout=seconds)
             except BaseException:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
+                # Terraform needs its first interrupt to release the remote state
+                # lock. Bound cleanup, then stop a child that ignores SIGINT.
+                try:
+                    os.killpg(process.pid, signal.SIGINT)
+                    process.communicate(timeout=INTERRUPT_GRACE_SECONDS)
+                except ProcessLookupError:
+                    process.wait()
+                except (subprocess.TimeoutExpired, KeyboardInterrupt, OSError):
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    process.communicate()
                 raise
             if data:
                 log.write(data)
@@ -355,7 +367,8 @@ def planning_seconds(request, claims, backend_session_expiry=None):
     deadline = min(timestamp(request["sessionExpiresAtUtc"]).timestamp(),
                    (claims["exp"] if request["schema"] == "honua.aws-cert-plan-request/v1"
                     else backend_session_expiry.timestamp()))
-    available = int(deadline - datetime.now(timezone.utc).timestamp() - request["expiresInSeconds"] - 5)
+    available = int(deadline - datetime.now(timezone.utc).timestamp()
+                    - request["expiresInSeconds"] - INTERRUPT_GRACE_SECONDS - 5)
     require(available > 0, "session-expiring")
     return min(request["planTimeoutSeconds"], available)
 
