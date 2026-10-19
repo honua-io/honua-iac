@@ -461,7 +461,8 @@ def module_inventory(root, repository):
         require(directory.is_dir() and (directory == cache or cache in directory.parents
                 or any(directory == local or local in directory.parents for local in local_roots)),
                 "module-location-invalid")
-        if source.startswith("registry.terraform.io/"):
+        registry_host, separator, _ = source.partition("/")
+        if registry_host == "registry.terraform.io" and separator:
             require(version is not None and cache in directory.parents, "module-location-invalid")
         if key and cache in directory.parents:
             remote += 1
