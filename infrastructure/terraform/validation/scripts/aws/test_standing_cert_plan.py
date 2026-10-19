@@ -346,6 +346,13 @@ terraform {
                     self.refused("environment-override-refused")
                 del self.env[name]
 
+    def test_empty_loader_variables_match_hosted_launcher(self):
+        self.env.update(LD_PRELOAD="", LD_AUDIT="", LD_LIBRARY_PATH="")
+        with mock.patch.dict(os.environ, self.env, clear=True):
+            admitted = producer.environment(self.request, self.root)
+        self.assertEqual([admitted[name] for name in ("LD_PRELOAD", "LD_AUDIT", "LD_LIBRARY_PATH")],
+                         ["", "", ""])
+
     def test_isolated_interpreter_blocks_import_override_before_refusal(self):
         hostile = self.base / "hostile-python"
         hostile.mkdir()
