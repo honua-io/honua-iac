@@ -69,6 +69,12 @@ class EnvelopeControls(unittest.TestCase):
         self.packet.mkdir(mode=0o700)
         for name in envelope.PACKET_FILES - {"packet.json"}:
             save(self.packet / name, (name + "\n" + PAYLOAD).encode())
+        # Preserve an actual authored binary ZIP through age and tar, while
+        # semantic Terraform/payload verification remains producer-owned.
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("handler.py", "def handler(event, context): return True\n")
+        save(self.packet / "bootstrap.zip", buffer.getvalue())
         binding = "b" * 64
         manifest = {"schema": "honua.aws-cert-plan-packet/v1", "files": {
             name: sha((self.packet / name).read_bytes()) for name in sorted(envelope.PACKET_FILES - {"packet.json"})},
@@ -287,6 +293,19 @@ else:sys.exit(91)
         result, receipt = self.invoke("seal")
         self.assertEqual(result.returncode, 3)
         self.assertEqual(receipt["reason"], "plan-expired")
+
+    def test_old_packet_without_retained_bootstrap_payload_is_refused(self):
+        manifest = json.loads((self.packet / "packet.json").read_bytes())
+        for name in ("bootstrap.zip", "bootstrap-inputs.json"):
+            (self.packet / name).unlink()
+            del manifest["files"][name]
+        save(self.packet / "packet.json", manifest)
+        self.producer["packetSha256"] = sha((self.packet / "packet.json").read_bytes())
+        save(self.producer_file, self.producer)
+        result, receipt = self.invoke("seal")
+        self.assertEqual(result.returncode, 3, result.stdout)
+        self.assertEqual(receipt["reason"], "packet-files-invalid")
+        self.assertFalse(list(self.exports.iterdir()))
 
     def test_modified_private_packet_is_refused(self):
         save(self.packet / "plan.bin", b"replaced after original receipt")

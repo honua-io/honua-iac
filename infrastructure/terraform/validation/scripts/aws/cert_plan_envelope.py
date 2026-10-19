@@ -31,7 +31,8 @@ SCHEMA = "honua.aws-cert-plan-envelope/v1"
 SHA = r"[0-9a-f]{64}"
 MAX_BYTES = 256 * 1024 * 1024
 PACKET_FILES = {"request.json", "context-before.json", "context-after.json", "diagnostic.log",
-                "plan.bin", "metadata.json", "metadata.json.digest", "review.txt", "packet.json"}
+                "plan.bin", "metadata.json", "metadata.json.digest", "review.txt",
+                "bootstrap.zip", "bootstrap-inputs.json", "packet.json"}
 PUBLIC_FIELDS = {"schema", "status", "approvalStatus", "qualificationStatus", "iacRevision",
                  "candidateDigest", "planSha256", "planMetadataDigest", "expiresAtUtc", "packetSha256"}
 AGE_URL = "https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz"
