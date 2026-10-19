@@ -501,6 +501,12 @@ def module_inventory(root, repository):
                 files[relative] = {"sha256": digest(content), "size": info.st_size}
     require("modules.json" in files and files["modules.json"]["sha256"] == digest(index_bytes),
             "module-index-invalid")
+    for module in modules:
+        directory = (root / module["dir"]).resolve()
+        if cache in directory.parents:
+            prefix = directory.relative_to(cache).as_posix() + "/"
+            require(any(name.startswith(prefix) and name.endswith((".tf", ".tf.json"))
+                    for name in files), "module-cache-incomplete")
     return {"schema": "honua.aws-cert-module-inputs/v1", "modulesJsonSha256": digest(index_bytes),
             "modules": sorted(modules, key=lambda item: item["key"]), "files": files, "links": links}
 

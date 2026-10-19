@@ -457,6 +457,10 @@ terraform {
         (self.root / ".terraform/modules/modules.json").unlink()
         self.refused("module-cache-required")
 
+    def test_empty_resolved_module_is_refused(self):
+        (self.root / ".terraform/modules/vpc/main.tf").unlink()
+        self.refused("module-cache-incomplete")
+
     def test_module_cache_drift_during_plan_is_refused(self):
         self.case["mutateModule"] = True
         self.refused("module-cache-drift", plan_started=True)
