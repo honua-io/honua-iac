@@ -219,9 +219,11 @@ else:
             path.write_text(fake)
             path.chmod(0o700)
         refused_ambient = {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "REQUESTS_CA_BUNDLE",
-                           "SSL_CERT_FILE", "CURL_CA_BUNDLE"}
+                           "SSL_CERT_FILE", "CURL_CA_BUNDLE", "BASHOPTS", "SHELLOPTS",
+                           "BASH_COMPAT", "BASH_LOADABLES_PATH", "CDPATH", "GLOBIGNORE",
+                           "POSIXLY_CORRECT", "PS4", "IFS"}
         self.env = {k: v for k, v in os.environ.items()
-                    if not k.startswith(("TF_", "GIT_", "HONUA_IAC_", "AWS_", "LD_", "PYTHON"))
+                    if not k.startswith(("TF_", "GIT_", "HONUA_IAC_", "AWS_", "LD_", "PYTHON", "BASH_FUNC_"))
                     and k.upper() not in refused_ambient}
         self.env.update(PATH=str(tools) + ":" + os.environ["PATH"], TEST_CERT_CASE=str(self.case_file),
                         TEST_CERT_JOURNAL=str(self.journal), AWS_ACCESS_KEY_ID="synthetic",
@@ -330,7 +332,7 @@ terraform {
                 (packet / name).write_bytes(original)
 
     def test_environment_injections_start_no_plan(self):
-        for name in ("TF_CLI_ARGS_plan", "TF_VAR_honua_image", "TF_WORKSPACE", "TF_LOG", "TF_LOG_PATH", "TF_CLI_CONFIG_FILE", "TERRAFORM_CONFIG", "TF_REATTACH_PROVIDERS", "TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE", "GIT_WORK_TREE", "GIT_DIR", "GIT_INDEX_FILE", "HONUA_IAC_OFFLINE", "HONUA_IAC_TERRAFORM_BIN", "AWS_PROFILE", "AWS_ENDPOINT_URL_IAM", "AWS_CA_BUNDLE", "https_proxy", "REQUESTS_CA_BUNDLE", "AWS_CONFIG_FILE", "BASH_ENV", "LD_PRELOAD"):
+        for name in ("TF_CLI_ARGS_plan", "TF_VAR_honua_image", "TF_WORKSPACE", "TF_LOG", "TF_LOG_PATH", "TF_CLI_CONFIG_FILE", "TERRAFORM_CONFIG", "TF_REATTACH_PROVIDERS", "TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE", "GIT_WORK_TREE", "GIT_DIR", "GIT_INDEX_FILE", "HONUA_IAC_OFFLINE", "HONUA_IAC_TERRAFORM_BIN", "AWS_PROFILE", "AWS_ENDPOINT_URL_IAM", "AWS_CA_BUNDLE", "https_proxy", "REQUESTS_CA_BUNDLE", "AWS_CONFIG_FILE", "BASH_ENV", "BASH_FUNC_terraform%%", "BASHOPTS", "SHELLOPTS", "CDPATH", "GLOBIGNORE", "POSIXLY_CORRECT", "PS4", "LD_PRELOAD"):
             with self.subTest(name=name):
                 self.env[name] = "refuse"
                 # LD_PRELOAD itself generates loader stderr before Python starts;

@@ -165,6 +165,8 @@ printf '%s\n' "$backend" "$identity" "$source_doc" "$state" "$inputs"
 def environment(request, root):
     env = dict(os.environ)
     forbidden = ("TF_CLI_ARGS", "TF_VAR_", "TF_LOG", "GIT_", "HONUA_IAC_", "BASH_ENV", "ENV",
+                 "BASH_FUNC_", "BASHOPTS", "SHELLOPTS", "BASH_COMPAT", "BASH_LOADABLES_PATH",
+                 "CDPATH", "GLOBIGNORE", "POSIXLY_CORRECT", "PS4", "IFS",
                  "LD_PRELOAD", "LD_LIBRARY_PATH", "PYTHONPATH", "PYTHONHOME", "AWS_ENDPOINT_URL",
                  "AWS_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE", "CURL_CA_BUNDLE")
     require(not any(k.startswith(forbidden) for k in env), "environment-override-refused")
