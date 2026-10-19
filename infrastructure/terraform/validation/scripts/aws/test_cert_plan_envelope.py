@@ -247,6 +247,40 @@ else:sys.exit(91)
         self.assertEqual(receipt["reason"], "source-dirty")
         self.assertFalse(list(self.exports.iterdir()))
 
+    def test_hidden_recipient_substitution_cannot_encrypt(self):
+        # The alternate recipient is a real disposable age identity, not an
+        # invalid string rejected by policy syntax instead of source binding.
+        changed = dict(self.policy)
+        changed["recipient"] = subprocess.check_output(
+            [str(self.tools / "age-keygen"), "-y", str(self.other_identity)], text=True, env=TOOL_ENV).strip()
+        changed["recipientSha256"] = sha(changed["recipient"].encode())
+        for flag in ("skip-worktree", "assume-unchanged"):
+            with self.subTest(flag=flag):
+                subprocess.run(["git", "update-index", "--" + flag, str(self.policy_file)],
+                               cwd=self.repository, capture_output=True, check=True)
+                try:
+                    save(self.policy_file, changed)
+                    self.assertFalse(subprocess.check_output(
+                        ["git", "status", "--porcelain"], cwd=self.repository).strip())
+                    result, receipt = self.invoke("seal")
+                    self.assertEqual(result.returncode, 3, result.stdout)
+                    self.assertEqual(receipt["reason"], "hidden-index-flags-refused")
+                    self.assertFalse(list(self.exports.iterdir()))
+                finally:
+                    save(self.policy_file, self.policy)
+                    subprocess.run(["git", "update-index", "--no-" + flag, str(self.policy_file)],
+                                   cwd=self.repository, capture_output=True, check=True)
+
+    def test_hidden_recipient_mode_change_cannot_encrypt(self):
+        subprocess.run(["git", "config", "core.filemode", "false"],
+                       cwd=self.repository, capture_output=True, check=True)
+        self.policy_file.chmod(0o700)
+        self.assertFalse(subprocess.check_output(["git", "status", "--porcelain"], cwd=self.repository).strip())
+        result, receipt = self.invoke("seal")
+        self.assertEqual(result.returncode, 3, result.stdout)
+        self.assertEqual(receipt["reason"], "recipient-mode-or-tracking-invalid")
+        self.assertFalse(list(self.exports.iterdir()))
+
     def test_expired_producer_packet_is_refused(self):
         self.producer["expiresAtUtc"] = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
         save(self.producer_file, self.producer)

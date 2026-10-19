@@ -137,10 +137,20 @@ def source_policy(repository, workspace):
     args = ["git", "-C", str(repository), "--work-tree=" + str(repository)]
     require(not command([*args, "status", "--porcelain", "--untracked-files=normal"], directory=workspace).strip(),
             "source-dirty")
+    # Hidden index flags can make status report clean while tracked executable
+    # or recipient bytes differ. Refuse them before reading any policy.
+    entries = command([*args, "ls-files", "-v", "-z"], directory=workspace).split(b"\0")
+    require(all(entry.startswith(b"H ") for entry in entries if entry), "hidden-index-flags-refused")
     revision = command([*args, "rev-parse", "HEAD"], directory=workspace).decode().strip()
-    path = repository / "release/aws-cert-plan-recipient.json"
-    require(command([*args, "ls-files", "--error-unmatch", str(path)], directory=workspace), "recipient-not-tracked")
-    policy = read_json(path, private=False)
+    relative = "release/aws-cert-plan-recipient.json"
+    path = regular(repository / relative, private=False)
+    entry = command([*args, "ls-tree", "-z", revision, "--", relative], directory=workspace)
+    require(re.fullmatch(rb"100644 blob [0-9a-f]{40}\t" + relative.encode() + rb"\x00", entry)
+            and not path.stat().st_mode & 0o111, "recipient-mode-or-tracking-invalid")
+    content = path.read_bytes()
+    require(content == command([*args, "show", revision + ":" + relative], directory=workspace),
+            "recipient-source-mismatch")
+    policy = json.loads(content)
     require(policy["schema"] == "honua.aws-cert-plan-recipient/v1" and policy["status"] == "configured"
             and re.fullmatch(r"age1[0-9a-z]{58}", policy["recipient"])
             and sha(policy["recipient"].encode()) == policy["recipientSha256"], "recipient-unconfigured-or-invalid")
