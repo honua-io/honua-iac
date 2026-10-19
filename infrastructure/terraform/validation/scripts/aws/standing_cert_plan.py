@@ -749,13 +749,17 @@ def produce(request_path, repository):
         parent = protected(retention["directory"], directory=True)
     else:
         require("privateRetention" not in request and request["sealedStaging"]["mode"] == "age-v1.3.2-exact-run"
-                and re.fullmatch(SHA, request["sealedStaging"]["recipientSha256"]),
+                and re.fullmatch(SHA, request["sealedStaging"]["recipientSha256"])
+                and re.fullmatch(SHA, request["backendSourceSha256"]),
                 "sealed-staging-invalid")
         parent = protected(request["privateStaging"]["directory"], directory=True)
     require(repository not in parent.parents and parent != repository, "private-packet-in-source")
     root = repository / ROOT_REL
     require(root.is_dir() and not root.is_symlink(), "root-invalid")
     require(not any(p.is_symlink() for p in (root, *root.parents)), "root-invalid")
+    if request["schema"] == "honua.aws-cert-plan-request/v2":
+        require(digest(protected(root / "backend.tf").read_bytes()) == request["backendSourceSha256"],
+                "backend-source-digest-mismatch")
     backend_role, deploy_role = contracts(request)
     var_file = protected(request["varFile"])
     require(digest(var_file.read_bytes()) == request["varFileSha256"], "input-file-mismatch")
@@ -911,6 +915,9 @@ def produce(request_path, repository):
             commands.run(["terraform", "-chdir=" + str(root), "show", "-no-color", str(packet / "plan.bin")], output=output)
         require(not commands.run(["git", "status", "--porcelain", "--untracked-files=normal"]).strip()
                 and commands.run(["git", "rev-parse", "HEAD"]).decode().strip() == request["iacRevision"], "source-drift")
+        if request["schema"] == "honua.aws-cert-plan-request/v2":
+            require(digest(protected(root / "backend.tf").read_bytes()) == request["backendSourceSha256"],
+                    "backend-source-drift")
         validate_runtime_source(commands, root, repository, config)
         if request["schema"] == "honua.aws-cert-plan-request/v2":
             for relative in ("release/aws-cert-plan-recipient.json",
@@ -964,6 +971,7 @@ def main():
     args = parser.parse_args()
     repository = Path(__file__).resolve().parents[5]
     try:
+        require(sys.flags.isolated, "isolated-python-required")
         result = (produce(args.request, repository) if args.request else
                   verify_packet(args.verify_packet, args.expected_packet_sha256))
         code = 0

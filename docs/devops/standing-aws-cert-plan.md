@@ -84,7 +84,11 @@ and add
 The request also supplies `bootstrapFunctionArn` for a read-only GetFunction
 fetch. Its `varFile` and `backendTokenFile` must be the fixed protected paths
 under `/home/runner/.local/state/honua/cert-plan-stage/`. The server workflow
-checks those exact values before credentials, and the producer checks the
+checks those exact values before credentials. `backendSourceSha256` is the
+SHA256 of the exact protected `backend.tf` bytes. The server workflow admits
+only the finite existing S3 backend shape and matches its roles and region to
+the SHA-bound request before acquiring credentials; the producer rechecks the
+same bytes before and after planning and checks the
 committed recipient policy against the request. V2 plaintext has no durable
 retention claim: only the later exact-run encrypted receiver can establish
 private local retention. The publicly tracked
@@ -114,7 +118,7 @@ proof, which remains separate qualification work.
 Run from the pinned clean IaC checkout in the approved private runtime:
 
 ```bash
-python3 infrastructure/terraform/validation/scripts/aws/standing_cert_plan.py \
+python3 -I infrastructure/terraform/validation/scripts/aws/standing_cert_plan.py \
   --request "$HOME/.config/honua/aws-cert/plan-request.json"
 ```
 
@@ -217,7 +221,7 @@ Verify the retained packet against `packetSha256` from the original producer
 receipt before private review:
 
 ```bash
-python3 infrastructure/terraform/validation/scripts/aws/standing_cert_plan.py \
+python3 -I infrastructure/terraform/validation/scripts/aws/standing_cert_plan.py \
   --verify-packet "$HOME/.local/state/honua/aws-cert/aws-cert-plan-<packet-id>" \
   --expected-packet-sha256 '<original-producer-packet-sha256>'
 ```

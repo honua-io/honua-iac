@@ -268,7 +268,7 @@ terraform {
     def invoke(self):
         save(self.request_file, self.request)
         save(self.case_file, self.case)
-        result = subprocess.run(["python3", str(self.entrypoint), "--request", str(self.request_file)],
+        result = subprocess.run(["python3", "-I", str(self.entrypoint), "--request", str(self.request_file)],
                                 env=self.env, cwd=self.repository, capture_output=True, text=True, timeout=60, check=False)
         self.assertNotIn(SENTINEL, result.stdout + result.stderr)
         self.assertNotIn("arn:aws", result.stdout + result.stderr)
@@ -343,6 +343,22 @@ terraform {
                 else:
                     self.refused("environment-override-refused")
                 del self.env[name]
+
+    def test_isolated_interpreter_blocks_import_override_before_refusal(self):
+        hostile = self.base / "hostile-python"
+        hostile.mkdir()
+        marker = self.base / "sitecustomize-ran"
+        (hostile / "sitecustomize.py").write_text(
+            "from pathlib import Path\nPath(" + repr(str(marker)) + ").write_text('ran')\n")
+        self.env["PYTHONPATH"] = str(hostile)
+        self.refused("environment-override-refused")
+        self.assertFalse(marker.exists())
+        del self.env["PYTHONPATH"]
+        save(self.request_file, self.request)
+        result = subprocess.run(["python3", str(self.entrypoint), "--request", str(self.request_file)],
+                                env=self.env, cwd=self.repository, capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 3)
+        self.assertEqual(json.loads(result.stdout)["reason"], "isolated-python-required")
 
     def test_default_cli_dev_overrides_are_not_loaded_and_home_is_preserved(self):
         home = self.private / "home"
