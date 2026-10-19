@@ -134,7 +134,7 @@ def install_tools(directory):
 
 
 def source_policy(repository, workspace):
-    require(not any(k.startswith("GIT_") for k in os.environ), "git-override-refused")
+    # command() supplies a fresh environment with no GIT_* inheritance.
     args = ["git", "-C", str(repository), "--work-tree=" + str(repository)]
     require(not command([*args, "status", "--porcelain", "--untracked-files=normal"], directory=workspace).strip(),
             "source-dirty")

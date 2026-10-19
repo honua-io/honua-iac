@@ -243,6 +243,16 @@ else:sys.exit(91)
         self.assertEqual(receipt["reason"], "trusted-workflow-required")
         self.assertFalse(list(self.exports.iterdir()))
 
+    def test_ambient_git_settings_do_not_reach_source_commands(self):
+        self.env.update(GIT_PAGER="cat", GIT_TERMINAL_PROMPT="0",
+                        GIT_DIR=str(self.base / "missing-repository"),
+                        GIT_WORK_TREE=str(self.private), GIT_INDEX_FILE=str(self.base / "missing-index"),
+                        GIT_CONFIG_COUNT="invalid-if-inherited")
+        result, receipt = self.invoke("seal")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(receipt["producer"]["iacRevision"], self.producer["iacRevision"])
+        self.assertEqual(len(list(self.exports.iterdir())), 1)
+
     def test_uncommitted_recipient_substitution_cannot_encrypt(self):
         changed = dict(self.policy)
         changed["recipient"] = subprocess.check_output([str(self.tools / "age-keygen"), "-y", str(self.other_identity)], text=True, env=TOOL_ENV).strip()
