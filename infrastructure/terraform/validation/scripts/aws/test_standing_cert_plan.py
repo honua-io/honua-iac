@@ -4,6 +4,7 @@
 The fake tools journal every call; no network, cloud credentials or Terraform
 installation is used. Synthetic STS/token output is never live AWS evidence.
 """
+import base64
 import hashlib
 import json
 import os
