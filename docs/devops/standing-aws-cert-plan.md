@@ -116,7 +116,15 @@ proof, which remains separate qualification work.
 
 ## Execute plan only
 
-Run from the pinned clean IaC checkout in the approved private runtime:
+The supported credentialed entrypoint is the protected server
+`standing-aws-cert-plan.yml` workflow. It clears loader injection variables
+before the runner starts any OIDC-capable step, then invokes this producer from
+the pinned clean IaC checkout. A separate private runtime may use the inner
+command below only with an independently reviewed trusted launcher that
+constructs a loader-sanitized environment **before** any process receives
+deployment credentials. This repository does not provide or qualify such a
+manual launcher; invoking the command directly in an already credentialed
+shell is not a release proof.
 
 ```bash
 python3 -I infrastructure/terraform/validation/scripts/aws/standing_cert_plan.py \
@@ -129,6 +137,8 @@ offline/dirty/local escape hatches, alternative
 Terraform binary, provider environment profile/endpoint, loader override,
 workspace or data-directory overrides are accepted. Terraform and AWS CLI
 installations/PATH and the runtime itself remain trusted operator inputs. The
+in-process loader override refusal is a backstop after interpreter startup,
+not the pre-start sanitization required of the launcher. The
 backend token is sent to AWS by the backend for signature/trust validation;
 local claim checks alone are not token authentication. No cloud command is
 needed to run the offline tests below.
