@@ -614,8 +614,8 @@ def provider_inventory(root):
         require(any(file.startswith("terraform-provider-" + name) and data["mode"] & 0o111
                     for file, data in files.items()), "provider-cache-incomplete")
         # Terraform uses Go dirhash.Hash1 for unpacked packages: sorted file
-        # names, hex SHA256, one space, name, newline, then base64 SHA256.
-        summary = "".join(f'{files[file]["sha256"]} {file}\n'
+        # names, hex SHA256, two spaces, name, newline, then base64 SHA256.
+        summary = "".join(f'{files[file]["sha256"]}  {file}\n'
                           for file in sorted(files, key=lambda value: value.encode())).encode()
         package_hash = "h1:" + base64.b64encode(hashlib.sha256(summary).digest()).decode()
         require(package_hash in hashes, "provider-checksum-mismatch")

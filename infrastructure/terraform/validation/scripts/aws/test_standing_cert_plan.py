@@ -4,7 +4,6 @@
 The fake tools journal every call; no network, cloud credentials or Terraform
 installation is used. Synthetic STS/token output is never live AWS evidence.
 """
-import base64
 import hashlib
 import json
 import os
@@ -57,9 +56,9 @@ class StandingCertPlan(unittest.TestCase):
         self.provider = provider_dir / "terraform-provider-aws_v6.0.0"
         self.provider.write_bytes(b"authored synthetic provider executable\n")
         self.provider.chmod(0o755)
-        # Go dirhash.Hash1 separates the hex checksum and filename with one space.
-        package_summary = f"{sha(self.provider.read_bytes())} terraform-provider-aws_v6.0.0\n"
-        package_hash = "h1:" + base64.b64encode(hashlib.sha256(package_summary.encode()).digest()).decode()
+        # Independent GNU sha256sum/OpenSSL vector for this exact file, following
+        # Go dirhash.Hash1's two-space records (golang.org/x/mod/sumdb/dirhash).
+        package_hash = "h1:W+wOXIl+pNU0L7dzJujxeJ52xJWJUZxLjx8DYGvbd8I="
         (self.root / ".terraform.lock.hcl").write_text(
             'provider "registry.terraform.io/hashicorp/aws" {\n'
             '  version = "6.0.0"\n  hashes = ["' + package_hash + '"]\n}\n')
@@ -525,6 +524,16 @@ terraform {
 
     def test_substituted_provider_is_refused_before_terraform_or_aws(self):
         self.provider.write_bytes(b"substituted executable\n")
+        self.refused("provider-checksum-mismatch")
+        self.assertFalse(self.journal.exists())
+
+    def test_one_space_provider_checksum_is_refused(self):
+        # This was the previous, incorrect fixture checksum. Go Hash1 uses two spaces.
+        lock = self.root / ".terraform.lock.hcl"
+        lock.write_text(lock.read_text().replace(
+            "h1:W+wOXIl+pNU0L7dzJujxeJ52xJWJUZxLjx8DYGvbd8I=",
+            "h1:jBoEoxML/rBC44Aq+jgFI+BnQMpmiRQsKkz/cxzdIEw="))
+        self.request["providerLockSha256"] = sha(lock.read_bytes())
         self.refused("provider-checksum-mismatch")
         self.assertFalse(self.journal.exists())
 
