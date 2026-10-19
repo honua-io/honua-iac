@@ -316,6 +316,15 @@ def verify_packet(path, expected_sha):
     request = load(path / "request.json")
     require(re.fullmatch(r"[0-9a-f]{40}", request["iacRevision"])
             and re.fullmatch(SHA, request["candidateDigest"]), "source-pin-invalid")
+    if request["schema"] == "honua.aws-cert-plan-request/v2":
+        before = load(path / "context-before.json")
+        after = load(path / "context-after.json")
+        bound = before.get("backendSessionBound", {})
+        require(before == after and re.fullmatch(SHA, modules.get("reviewedManifestSha256", ""))
+                and bound.get("configuredDuration") == "1h"
+                and bound.get("basis") == "initialized-s3-backend-duration-minus-five-minute-reserve"
+                and timestamp(bound["conservativeDeadlineUtc"]) > expiry,
+                "sealed-packet-context-invalid")
     return {"schema": "honua.aws-cert-plan-public/v1", "status": "verified-unapproved",
             "approvalStatus": "not-approved", "qualificationStatus": "not-evaluated",
             "iacRevision": request["iacRevision"], "candidateDigest": request["candidateDigest"],
