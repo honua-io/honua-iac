@@ -227,7 +227,7 @@ PLAN_SHA256="$(sha256_file "$PLAN_OUT")"
 
 # --- 9. canonical metadata + binding digest
 CREATED_AT="$(utc_now)"
-EXPIRES_AT="$(date -u -d "+${EXPIRES_IN} seconds" +%Y-%m-%dT%H:%M:%SZ)"
+EXPIRES_AT="$(date -u -d "@$(($(date -u -d "$CREATED_AT" +%s) + 10#$EXPIRES_IN))" +%Y-%m-%dT%H:%M:%SZ)"
 
 METADATA="$(
   HONUA_IAC_BACKEND_DOC="$BACKEND_DOC" \

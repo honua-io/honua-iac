@@ -363,6 +363,17 @@ def validate_backend_transport(config):
                     for key, value in config.items()), "backend-transport-override-refused")
 
 
+def validate_backend_descriptor_path(path):
+    """Other local users must not be able to replace or rewrite backend routing."""
+    for node in (path, *path.parents):
+        info = node.lstat()
+        require(info.st_uid in (0, os.getuid()) and not stat.S_ISLNK(info.st_mode)
+                and (not info.st_mode & 0o022 or (info.st_uid == 0 and info.st_mode & stat.S_ISVTX)),
+                "backend-path-permissions")
+        require(stat.S_ISREG(info.st_mode) if node == path else stat.S_ISDIR(info.st_mode),
+                "backend-path-permissions")
+
+
 def hcl_tokens(value):
     tokens = re.findall(r'"(?:[^"\\]|\\.)*"|/\*.*?\*/|//[^\n]*|\#[^\n]*|\s+|[A-Za-z_][A-Za-z0-9_-]*|.', value, re.DOTALL)
     return [token for token in tokens if not token.isspace() and not token.startswith(("#", "//", "/*"))]
@@ -653,7 +664,7 @@ def produce(request_path, repository):
     # Inspect the existing descriptor, never init/reconfigure it. A raw token in
     # descriptor config is refused by the maintained substrate as well.
     backend_file = root / ".terraform/terraform.tfstate"
-    require(not backend_file.is_symlink() and not backend_file.parent.is_symlink(), "backend-path-invalid")
+    validate_backend_descriptor_path(backend_file)
     config = load(backend_file)["backend"]["config"]
     validate_backend_transport(config)
     web = config.get("assume_role_with_web_identity") or {}

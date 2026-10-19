@@ -207,7 +207,11 @@ else:
             path = tools / name
             path.write_text(fake)
             path.chmod(0o700)
-        self.env = {k: v for k, v in os.environ.items() if not k.startswith(("TF_", "GIT_", "HONUA_IAC_", "AWS_", "LD_", "PYTHON"))}
+        refused_ambient = {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "REQUESTS_CA_BUNDLE",
+                           "SSL_CERT_FILE", "CURL_CA_BUNDLE"}
+        self.env = {k: v for k, v in os.environ.items()
+                    if not k.startswith(("TF_", "GIT_", "HONUA_IAC_", "AWS_", "LD_", "PYTHON"))
+                    and k.upper() not in refused_ambient}
         self.env.update(PATH=str(tools) + ":" + os.environ["PATH"], TEST_CERT_CASE=str(self.case_file),
                         TEST_CERT_JOURNAL=str(self.journal), AWS_ACCESS_KEY_ID="synthetic",
                         AWS_SECRET_ACCESS_KEY="synthetic", AWS_SESSION_TOKEN="synthetic", RUNNER_ENVIRONMENT="self-hosted")
@@ -373,6 +377,12 @@ terraform {
                      {"backend": {"type": "s3", "config": config}})
                 self.refused("backend-transport-override-refused")
                 self.assertFalse(self.journal.exists())
+
+    def test_writable_backend_descriptor_is_refused_before_commands(self):
+        descriptor = self.root / ".terraform/terraform.tfstate"
+        descriptor.chmod(0o660)
+        self.refused("backend-path-permissions")
+        self.assertFalse(self.journal.exists())
 
     def test_backend_substitution_is_refused(self):
         self.backend_config["key"] = "other/state"
