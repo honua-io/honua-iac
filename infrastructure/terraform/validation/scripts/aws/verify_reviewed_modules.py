@@ -32,20 +32,29 @@ def require(value, reason):
         raise Refused(reason)
 
 
+def trusted_directory(directory):
+    for node in (directory, *directory.parents):
+        info = node.lstat()
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid in (0, os.getuid())
+                and (not info.st_mode & 0o022 or (node != directory and info.st_uid == 0
+                     and info.st_mode & stat.S_ISVTX)), "module-directory-invalid")
+
+
 def regular_tree(directory, expected):
-    require(directory.is_dir() and not directory.is_symlink(), "module-directory-invalid")
+    trusted_directory(directory)
     actual = set()
     total = 0
     for parent, children, names in os.walk(directory, followlinks=False):
+        trusted_directory(Path(parent))
         for name in children:
             path = Path(parent) / name
-            info = path.lstat()
-            require(stat.S_ISDIR(info.st_mode) and info.st_uid == os.getuid(), "module-entry-invalid")
+            trusted_directory(path)
         for name in names:
             path = Path(parent) / name
             info = path.lstat()
             require(stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid()
-                    and info.st_size <= MAX_BYTES, "module-entry-invalid")
+                    and not info.st_mode & 0o022 and info.st_size <= MAX_BYTES,
+                    "module-entry-invalid")
             relative = path.relative_to(directory).as_posix()
             require(relative in expected and relative not in actual, "module-unreviewed-file")
             descriptor = expected[relative]
@@ -55,8 +64,9 @@ def regular_tree(directory, expected):
                     and len(content) == info.st_size == descriptor["size"]
                     and hashlib.sha256(content).hexdigest() == descriptor["sha256"]
                     and descriptor["mode"] == 0o644, "module-content-mismatch")
-            # GitHub's immutable commit archive currently carries 0664 modes.
-            # Normalize only after authenticating content, before admitting it.
+            # Only already non-writable files may be normalized after the hash.
+            # A reviewed archive's 0664 modes must be narrowed during private
+            # setup before this verifier reads the extracted module cache.
             path.chmod(0o644)
             actual.add(relative)
     require(actual == set(expected), "module-files-incomplete")
@@ -69,9 +79,11 @@ def regular_tree(directory, expected):
 def verify(root, manifest):
     root = Path(root)
     cache = root / ".terraform/modules"
-    require(cache.is_dir() and not cache.is_symlink(), "module-cache-invalid")
+    trusted_directory(cache)
     index_path = cache / "modules.json"
-    require(index_path.is_file() and not index_path.is_symlink(), "module-index-invalid")
+    index_info = index_path.lstat()
+    require(stat.S_ISREG(index_info.st_mode) and index_info.st_uid == os.getuid()
+            and not index_info.st_mode & 0o022, "module-index-invalid")
     index = json.loads(index_path.read_bytes())
     require(isinstance(index.get("Modules"), list), "module-index-invalid")
     reviewed = json.loads(Path(manifest).read_bytes())

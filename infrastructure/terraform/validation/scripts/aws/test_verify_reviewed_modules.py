@@ -27,7 +27,7 @@ class ReviewedModules(unittest.TestCase):
             data = ("reviewed " + name + "\n").encode()
             file = directory / "main.tf"
             file.write_bytes(data)
-            file.chmod(0o664)
+            file.chmod(0o600)
             modules.append({"source": source, "version": version,
                             "files": {"main.tf": {"mode": 0o644, "size": len(data),
                                                   "sha256": hashlib.sha256(data).hexdigest()}}})
@@ -57,6 +57,22 @@ class ReviewedModules(unittest.TestCase):
         self.assertEqual(self.verify()["status"], "verified")
         for name in ("vpc", "rds"):
             self.assertEqual((self.cache / name / "main.tf").stat().st_mode & 0o777, 0o644)
+
+    def test_writable_module_file_or_directory_refused_before_hash(self):
+        for path in (self.cache / "vpc/main.tf", self.cache / "vpc",
+                     self.cache / "rds/modules/db_instance", self.cache):
+            with self.subTest(path=path):
+                original_mode = path.stat().st_mode & 0o777
+                path.chmod(original_mode | 0o020)
+                try:
+                    with self.assertRaisesRegex(subject.Refused, "module-entry-invalid|module-directory-invalid"):
+                        self.verify()
+                    if path == self.cache / "vpc/main.tf":
+                        self.assertEqual(path.stat().st_mode & 0o777, original_mode | 0o020)
+                    if path == self.cache / "vpc":
+                        self.assertEqual((path / "main.tf").stat().st_mode & 0o777, 0o600)
+                finally:
+                    path.chmod(original_mode)
 
     def test_unreviewed_and_changed_files_refused(self):
         (self.cache / "vpc/extra.tf").write_text("unreviewed")

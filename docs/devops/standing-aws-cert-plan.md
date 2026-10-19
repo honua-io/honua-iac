@@ -94,8 +94,9 @@ retention claim: only the later exact-run encrypted receiver can establish
 private local retention. The publicly tracked
 `release/aws-cert-reviewed-modules.json` binds VPC 5.21.0 and RDS 6.13.1 to
 235 file hashes, source commits and upstream archive hashes. The hosted setup
-normalizes authenticated source file modes to `0644` before admission; it
-rejects extra, missing, linked or changed files. The tracked bootstrap manifest
+uses a restrictive umask; the verifier rejects writable module-cache files and
+directories before hashing, then normalizes authenticated safe files to `0644`.
+It rejects extra, missing, linked or changed files. The tracked bootstrap manifest
 pins the observed existing Lambda ZIP SHA256 and tracked handler SHA256.
 
 2026.1 tfvars must explicitly set `licensing_mode = "Disabled"` and
