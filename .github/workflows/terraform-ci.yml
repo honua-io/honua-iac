@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'infrastructure/terraform/**'
+      - 'release/aws-cert-plan-recipient.json'
+      - 'release/component-versions.json'
       - 'scripts/run-aws-terraform-integration.sh'
       - 'scripts/run-azure-terraform-integration.sh'
       - 'scripts/run-aks-terraform-integration.sh'
@@ -53,6 +55,8 @@ on:
       - trunk
     paths:
       - 'infrastructure/terraform/**'
+      - 'release/aws-cert-plan-recipient.json'
+      - 'release/component-versions.json'
       - 'scripts/run-aws-terraform-integration.sh'
       - 'scripts/run-azure-terraform-integration.sh'
       - 'scripts/run-aks-terraform-integration.sh'
@@ -110,6 +114,21 @@ env:
   TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
 
 jobs:
+  standing-cert-encryption-controls:
+    name: Standing certification encrypted packet controls (synthetic keys)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install pinned maintained encryption tools
+        run: |
+          install -d -m 700 "$RUNNER_TEMP/cert-plan-tools"
+          python3 infrastructure/terraform/validation/scripts/aws/cert_plan_envelope.py install-tools --directory "$RUNNER_TEMP/cert-plan-tools"
+      - name: Run real encryption and exact-run receiver controls
+        env:
+          HONUA_CERT_TEST_TOOLS: ${{ runner.temp }}/cert-plan-tools
+        run: python3 infrastructure/terraform/validation/scripts/aws/test_cert_plan_envelope.py -v
+
   terraform-1-5-validate:
     name: Terraform 1.5 Floor Validate
     runs-on: ubuntu-latest

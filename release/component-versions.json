@@ -8,6 +8,9 @@
     "terraform-exact-plan": "v1",
     "terraform-exec-receipt": "v1",
     "terraform-plan-lineage": "v1",
-    "terraform-backend-identity": "v1"
+    "terraform-backend-identity": "v1",
+    "standing-cert-plan-envelope": "v1",
+    "standing-cert-plan-recipient": "v1",
+    "standing-cert-plan-receive": "v1"
   }
 }
