@@ -33,6 +33,8 @@ class ReviewedModules(unittest.TestCase):
                                                   "sha256": hashlib.sha256(data).hexdigest()}}})
             index.append({"Key": "honua." + name, "Source": source, "Version": version,
                           "Dir": ".terraform/modules/" + name})
+        for key, source in subject.LOCAL_SOURCES.items():
+            index.append({"Key": key, "Source": source, "Dir": source})
         self.manifest.write_text(json.dumps({"schema": "honua.aws-cert-reviewed-modules/v1", "modules": modules}))
         (self.cache / "modules.json").write_text(json.dumps({"Modules": index}))
 
@@ -72,6 +74,27 @@ class ReviewedModules(unittest.TestCase):
         index = json.loads(index_path.read_text())
         index["Modules"].append({"Key": "honua.extra", "Source": "registry.terraform.io/example/extra/aws",
                                  "Version": "1.0.0", "Dir": ".terraform/modules/extra"})
+        index_path.write_text(json.dumps(index))
+        with self.assertRaisesRegex(subject.Refused, "module-unreviewed-source"):
+            self.verify()
+
+    def test_relative_source_cannot_redirect_to_cached_copy(self):
+        index_path = self.cache / "modules.json"
+        index = json.loads(index_path.read_text())
+        local = next(item for item in index["Modules"] if item["Key"] == "honua")
+        (self.cache / "honua").mkdir()
+        (self.cache / "honua/main.tf").write_text("unreviewed local module")
+        local["Dir"] = ".terraform/modules/honua"
+        index_path.write_text(json.dumps(index))
+        with self.assertRaisesRegex(subject.Refused, "local-module-location-invalid"):
+            self.verify()
+
+    def test_relative_source_requires_exact_tracked_local_module(self):
+        index_path = self.cache / "modules.json"
+        index = json.loads(index_path.read_text())
+        local = next(item for item in index["Modules"] if item["Key"] == "honua")
+        local["Source"] = "../../modules/alternate"
+        local["Dir"] = local["Source"]
         index_path.write_text(json.dumps(index))
         with self.assertRaisesRegex(subject.Refused, "module-unreviewed-source"):
             self.verify()

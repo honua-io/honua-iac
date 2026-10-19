@@ -14,6 +14,8 @@ from pathlib import Path
 
 SOURCES = {"registry.terraform.io/terraform-aws-modules/vpc/aws",
            "registry.terraform.io/terraform-aws-modules/rds/aws"}
+LOCAL_SOURCES = {"honua": "../../modules/aws-serverless",
+                 "github_oidc": "../../components/aws-github-oidc"}
 MAX_FILES = 512
 MAX_BYTES = 32 * 1024 * 1024
 
@@ -75,11 +77,17 @@ def verify(root, manifest):
     by_source = {item["source"]: item for item in reviewed["modules"]}
     require(set(by_source) == SOURCES, "reviewed-manifest-invalid")
     found = set()
+    local_found = set()
     for item in index["Modules"]:
         source = item.get("Source")
-        if item.get("Dir", "").startswith(".terraform/modules/") and source:
-            require(source in SOURCES or source.startswith(("./", "../")),
-                    "module-unreviewed-source")
+        if source in LOCAL_SOURCES.values():
+            key = item.get("Key")
+            require(key in LOCAL_SOURCES and source == LOCAL_SOURCES[key]
+                    and item.get("Dir") == source and key not in local_found
+                    and item.get("Version") in (None, ""), "local-module-location-invalid")
+            local_found.add(key)
+        elif source and source not in SOURCES:
+            require(False, "module-unreviewed-source")
         if source not in SOURCES:
             continue
         require(source not in found and item.get("Version") == by_source[source]["version"],
@@ -92,6 +100,7 @@ def verify(root, manifest):
         regular_tree(directory, by_source[source]["files"])
         found.add(source)
     require(found == SOURCES, "module-missing")
+    require(local_found == set(LOCAL_SOURCES), "local-module-missing")
     return {"schema": reviewed["schema"], "status": "verified",
             "manifestSha256": hashlib.sha256(Path(manifest).read_bytes()).hexdigest(),
             "versions": {source: by_source[source]["version"] for source in sorted(SOURCES)}}
