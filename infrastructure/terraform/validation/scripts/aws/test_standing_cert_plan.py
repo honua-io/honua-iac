@@ -216,6 +216,8 @@ else:
   else: print('private resource review '+c['sentinel'])
  else: sys.exit(88)
 '''
+        fake = fake.replace("os.environ['TEST_CERT_CASE']", repr(str(self.case_file)))
+        fake = fake.replace("os.environ['TEST_CERT_JOURNAL']", repr(str(self.journal)))
         for name in ("aws", "terraform"):
             path = tools / name
             path.write_text(fake)
@@ -227,8 +229,7 @@ else:
         self.env = {k: v for k, v in os.environ.items()
                     if not k.startswith(("TF_", "GIT_", "HONUA_IAC_", "AWS_", "LD_", "PYTHON", "BASH_FUNC_"))
                     and k.upper() not in refused_ambient}
-        self.env.update(PATH=str(tools) + ":" + os.environ["PATH"], TEST_CERT_CASE=str(self.case_file),
-                        TEST_CERT_JOURNAL=str(self.journal), AWS_ACCESS_KEY_ID="synthetic",
+        self.env.update(PATH=str(tools) + ":" + os.environ["PATH"], AWS_ACCESS_KEY_ID="synthetic",
                         AWS_SECRET_ACCESS_KEY="synthetic", AWS_SESSION_TOKEN="synthetic", RUNNER_ENVIRONMENT="self-hosted")
         for args in (["init", "-q"], ["add", "."], ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "authored fixture"]):
             subprocess.run(["git", *args], cwd=self.repository, check=True, capture_output=True)
@@ -349,10 +350,14 @@ terraform {
 
     def test_empty_loader_variables_match_hosted_launcher(self):
         self.env.update(LD_PRELOAD="", LD_AUDIT="", LD_LIBRARY_PATH="")
+        self.env["UNREVIEWED_CHILD_ENV"] = "do-not-forward"
         with mock.patch.dict(os.environ, self.env, clear=True):
             admitted = producer.environment(self.request, self.root)
-        self.assertEqual([admitted[name] for name in ("LD_PRELOAD", "LD_AUDIT", "LD_LIBRARY_PATH")],
-                         ["", "", ""])
+        self.assertFalse(any(name in admitted for name in ("LD_PRELOAD", "LD_AUDIT", "LD_LIBRARY_PATH",
+                                                       "UNREVIEWED_CHILD_ENV")))
+        self.assertEqual(admitted["HOME"], self.env["HOME"])
+        self.assertEqual(admitted["PATH"], self.env["PATH"])
+        self.assertEqual(admitted["TMPDIR"], str(self.private))
 
     def test_isolated_interpreter_blocks_import_override_before_refusal(self):
         hostile = self.base / "hostile-python"

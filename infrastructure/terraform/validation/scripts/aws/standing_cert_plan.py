@@ -175,36 +175,45 @@ printf '%s\n' "$backend" "$identity" "$source_doc" "$state" "$inputs"
 
 
 def environment(request, root):
-    env = dict(os.environ)
+    ambient = dict(os.environ)
     forbidden = ("TF_CLI_ARGS", "TF_VAR_", "TF_LOG", "GIT_", "HONUA_IAC_", "BASH_ENV", "ENV",
                  "BASH_FUNC_", "BASHOPTS", "SHELLOPTS", "BASH_COMPAT", "BASH_LOADABLES_PATH",
                  "CDPATH", "GLOBIGNORE", "POSIXLY_CORRECT", "PS4", "IFS",
                  "PYTHON", "AWS_ENDPOINT_URL",
                  "AWS_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE", "SSL_CERT_DIR",
                  "CURL_CA_BUNDLE")
-    require(not any(k.startswith(forbidden) for k in env), "environment-override-refused")
+    require(not any(k.startswith(forbidden) for k in ambient), "environment-override-refused")
     # Terraform's S3 backend also honors deprecated AWS_STS_ENDPOINT and
     # AWS_S3_ENDPOINT names. Reject the whole AWS endpoint family.
-    require(not any(k.startswith("AWS_") and "ENDPOINT" in k for k in env),
+    require(not any(k.startswith("AWS_") and "ENDPOINT" in k for k in ambient),
             "environment-override-refused")
     # The hosted launcher clears loader variables before obtaining credentials.
     # Empty exported values are inert; nonempty values remain forbidden.
-    require(not any(k.startswith("LD_") and value for k, value in env.items()),
+    require(not any(k.startswith("LD_") and value for k, value in ambient.items()),
             "environment-override-refused")
-    require(not any(k.upper() in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY") for k in env),
+    require(not any(k.upper() in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY") for k in ambient),
             "environment-override-refused")
-    require(not any(k in env for k in ("TF_DATA_DIR", "TF_WORKSPACE", "TF_CLI_CONFIG_FILE",
+    require(not any(k in ambient for k in ("TF_DATA_DIR", "TF_WORKSPACE", "TF_CLI_CONFIG_FILE",
                                        "TERRAFORM_CONFIG", "TF_REATTACH_PROVIDERS",
                                        "TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE",
                                        "AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE", "AWS_PROFILE", "AWS_DEFAULT_PROFILE",
                                        "AWS_WEB_IDENTITY_TOKEN_FILE", "AWS_ROLE_ARN")),
             "environment-override-refused")
-    if env.get("RUNNER_ENVIRONMENT") == "github-hosted":
+    if ambient.get("RUNNER_ENVIRONMENT") == "github-hosted":
         require(request["schema"] == "honua.aws-cert-plan-request/v2"
                 and request["sealedStaging"]["mode"] == "age-v1.3.2-exact-run",
                 "durable-private-runtime-required")
-    require(all(env.get(k) for k in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY",
+    require(all(ambient.get(k) for k in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY",
                                     "AWS_SESSION_TOKEN")), "deployment-sts-session-required")
+    # Start credentialed children from a finite environment. The original
+    # ambient map is still checked above so an override cannot hide by being
+    # dropped here. Temp files stay beneath the already-validated private root.
+    inherited = ("PATH", "HOME", "LANG", "LANGUAGE", "LC_ALL", "LC_CTYPE", "TERM", "TZ",
+                 "RUNNER_ENVIRONMENT", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN")
+    env = {key: ambient[key] for key in inherited if key in ambient}
+    staging = (request["privateRetention"]["directory"] if request["schema"] == "honua.aws-cert-plan-request/v1"
+               else request["privateStaging"]["directory"])
+    env["TMPDIR"] = staging
     # Pin region and session evidence; credential material never enters request/packet.
     env.update(AWS_REGION=request["region"], AWS_DEFAULT_REGION=request["region"],
                AWS_PAGER="", AWS_CONFIG_FILE=os.devnull, AWS_SHARED_CREDENTIALS_FILE=os.devnull,
