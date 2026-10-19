@@ -182,7 +182,9 @@ def environment(request, root):
                HONUA_IAC_SESSION_EXPIRY=request["sessionExpiresAtUtc"],
                HONUA_IAC_IDENTITY_ISSUER=ISSUER,
                HONUA_CERT_VAR_FILE=str(request["varFile"]),
-               GIT_WORK_TREE=str(root.parents[3]), GIT_NO_REPLACE_OBJECTS="1")
+               GIT_WORK_TREE=str(root.parents[3]), GIT_NO_REPLACE_OBJECTS="1",
+               GIT_CONFIG_COUNT="2", GIT_CONFIG_KEY_0="core.fsmonitor", GIT_CONFIG_VALUE_0="false",
+               GIT_CONFIG_KEY_1="core.untrackedCache", GIT_CONFIG_VALUE_1="false")
     # The backend obtains its own web-identity session using the protected file
     # referenced by its existing initialized descriptor, not the deployment keys.
     return env
@@ -348,6 +350,16 @@ def backend_only_source(config, optional=()):
     return "\n".join([*lines, "} } }"])
 
 
+def validate_backend_transport(config):
+    """An initialized backend must not route its web identity to alternate services."""
+    require(isinstance(config, dict), "backend-config-invalid")
+    unsafe = ("endpoint", "proxy", "ca_bundle", "cert_file", "shared_config_files",
+              "shared_credentials_files", "insecure", "skip_credentials_validation",
+              "s3_use_path_style")
+    require(not any(any(part in key for part in unsafe) and value not in (None, "", False, [], {})
+                    for key, value in config.items()), "backend-transport-override-refused")
+
+
 def hcl_tokens(value):
     tokens = re.findall(r'"(?:[^"\\]|\\.)*"|/\*.*?\*/|//[^\n]*|\#[^\n]*|\s+|[A-Za-z_][A-Za-z0-9_-]*|.', value, re.DOTALL)
     return [token for token in tokens if not token.isspace() and not token.startswith(("#", "//", "/*"))]
@@ -370,6 +382,18 @@ def validate_runtime_source(commands, root, repository, config):
         if entry:
             descriptor, name = entry.split(b"\t", 1)
             tracked[name.decode()] = descriptor.split()[2].decode()
+    # Git status can trust a configured fsmonitor and report a modified helper
+    # clean. Compare each maintained executable helper directly to HEAD before
+    # any of them is sourced or executed.
+    for relative in ("scripts/lib/tf-exec-contract.sh", "scripts/terraform-exact-plan.sh",
+                     "scripts/terraform-backend-identity.sh"):
+        helper = repository / relative
+        require(helper.is_file() and not helper.is_symlink() and relative in tracked,
+                "helper-source-invalid")
+        data = helper.read_bytes()
+        object_id = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data,
+                                 usedforsecurity=False).hexdigest()
+        require(object_id == tracked[relative], "helper-source-modified")
     # Cover the fixed root and all maintained local module/component sources;
     # other operator example backends are outside this runtime's source set.
     directories = (root, repository / "infrastructure/terraform/modules",
@@ -628,6 +652,7 @@ def produce(request_path, repository):
     backend_file = root / ".terraform/terraform.tfstate"
     require(not backend_file.is_symlink() and not backend_file.parent.is_symlink(), "backend-path-invalid")
     config = load(backend_file)["backend"]["config"]
+    validate_backend_transport(config)
     web = config.get("assume_role_with_web_identity") or {}
     require(web.get("role_arn") == backend_role and web.get("web_identity_token_file") == str(token_file)
             and not config.get("assume_role") and not config.get("role_arn"), "backend-web-identity-required")

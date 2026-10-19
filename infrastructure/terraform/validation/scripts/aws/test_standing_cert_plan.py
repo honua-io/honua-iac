@@ -359,6 +359,21 @@ terraform {
         self.write_backend()
         self.refused("backend-web-identity-required")
 
+    def test_initialized_backend_transport_overrides_are_refused_before_commands(self):
+        overrides = (("sts_endpoint", "https://sts.attacker.invalid"),
+                     ("endpoints", {"sts": "https://sts.attacker.invalid"}),
+                     ("endpoints", {"s3": "https://s3.attacker.invalid"}),
+                     ("custom_ca_bundle", "/unapproved/ca.pem"),
+                     ("shared_config_files", ["/unapproved/config"]),
+                     ("insecure", True))
+        for key, value in overrides:
+            with self.subTest(key=key, value=value):
+                config = {**self.backend_config, key: value}
+                save(self.root / ".terraform/terraform.tfstate",
+                     {"backend": {"type": "s3", "config": config}})
+                self.refused("backend-transport-override-refused")
+                self.assertFalse(self.journal.exists())
+
     def test_backend_substitution_is_refused(self):
         self.backend_config["key"] = "other/state"
         self.write_backend()
@@ -443,6 +458,22 @@ terraform {
                     path.write_bytes(original)
                     subprocess.run(["git", "update-index", "--no-" + flag, relative], cwd=self.repository,
                                    capture_output=True, check=True)
+
+    def test_fsmonitor_cannot_hide_modified_helper(self):
+        monitor = self.private / "untrusted-fsmonitor"
+        monitor.write_text("#!/bin/sh\nprintf '\\0'\n")
+        monitor.chmod(0o700)
+        subprocess.run(["git", "config", "core.fsmonitor", str(monitor)], cwd=self.repository,
+                       capture_output=True, check=True)
+        helper = self.repository / "scripts/lib/tf-exec-contract.sh"
+        helper.write_bytes(helper.read_bytes() + b"\n# substituted helper\n")
+        with mock.patch.dict(os.environ, self.env, clear=True):
+            env = producer.environment(self.request, self.root)
+        commands = producer.Commands(self.repository, self.private, env)
+        self.assertEqual(commands.run(["git", "config", "--get", "core.fsmonitor"]).strip(), b"false")
+        self.assertEqual(commands.run(["git", "config", "--get", "core.untrackedCache"]).strip(), b"false")
+        with self.assertRaisesRegex(producer.Refused, "helper-source-modified"):
+            producer.validate_runtime_source(commands, self.root, self.repository, self.backend_config)
 
     def test_bootstrap_handler_must_match_committed_source(self):
         (self.bootstrap / "build/handler.py").write_text("def handler(event, context): return 'substitution'")
