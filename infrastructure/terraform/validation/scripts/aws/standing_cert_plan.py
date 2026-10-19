@@ -214,10 +214,13 @@ def environment(request, root):
     staging = (request["privateRetention"]["directory"] if request["schema"] == "honua.aws-cert-plan-request/v1"
                else request["privateStaging"]["directory"])
     env["TMPDIR"] = staging
-    # Pin region and session evidence; credential material never enters request/packet.
+    # TF_WORKSPACE overrides the mutable .terraform/environment selector in
+    # every Terraform child, including the saved-plan command. Pin region and
+    # session evidence without putting credential material in the packet.
     env.update(AWS_REGION=request["region"], AWS_DEFAULT_REGION=request["region"],
                AWS_PAGER="", AWS_CONFIG_FILE=os.devnull, AWS_SHARED_CREDENTIALS_FILE=os.devnull,
                AWS_EC2_METADATA_DISABLED="true", TF_IN_AUTOMATION="true", CHECKPOINT_DISABLE="1",
+               TF_WORKSPACE=request["backend"]["workspace"],
                PYTHONNOUSERSITE="1", PYTHONSAFEPATH="1",
                HONUA_IAC_SESSION_EXPIRY=request["sessionExpiresAtUtc"],
                HONUA_IAC_IDENTITY_ISSUER=ISSUER,

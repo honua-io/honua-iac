@@ -184,6 +184,7 @@ if name=='aws':
 else:
  assert Path(os.environ['TF_CLI_CONFIG_FILE']).read_bytes()==b''
  assert 'TF_REATTACH_PROVIDERS' not in os.environ
+ assert os.environ.get('TF_WORKSPACE')==c['workspace']
  if 'home' in c: assert os.environ['HOME']==c['home']
  a=[x for x in a if not x.startswith('-chdir=')]
  cmd=a[0]
@@ -197,6 +198,7 @@ else:
  elif cmd=='plan':
   out=next(x[5:] for x in a if x.startswith('-out='))
   Path(out).write_text('authored binary plan '+c['sentinel'])
+  if c.get('mutateWorkspaceFile'): (Path(c['root'])/'.terraform/environment').write_text('other-workspace')
   if c.get('mutateBuild'): (Path(c['root'])/'postgis-bootstrap/build/dependency.py').write_text('CHANGED_DURING_PLAN = True')
   if c.get('mutateModule'): (Path(c['root'])/'.terraform/modules/vpc/main.tf').write_text('CHANGED_DURING_PLAN = True')
   if c.get('mutateProvider'): (Path(c['root'])/'.terraform/providers/registry.terraform.io/hashicorp/aws/6.0.0/linux_amd64/terraform-provider-aws_v6.0.0').write_text('CHANGED DURING PLAN')
@@ -785,6 +787,17 @@ terraform {
     def test_workspace_drift_after_plan_never_completes_packet(self):
         self.case["workspaceAfter"] = "substituted"
         self.refused("backend-mismatch", plan_started=True)
+
+    def test_workspace_file_switch_cannot_redirect_trusted_workspace(self):
+        selected = self.root / ".terraform/environment"
+        selected.write_text("existing-cert")
+        selected.chmod(0o666)
+        self.case["mutateWorkspaceFile"] = True
+        result, receipt, calls = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(receipt["status"], "planned-unapproved")
+        self.assertEqual(selected.read_text(), "other-workspace")
+        self.assertTrue(any("plan" in call for call in calls))
 
     def test_hosted_temp_runtime_is_not_durable_retention(self):
         self.env["RUNNER_ENVIRONMENT"] = "github-hosted"
