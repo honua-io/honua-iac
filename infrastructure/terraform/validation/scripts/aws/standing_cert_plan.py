@@ -383,13 +383,28 @@ def backend_session_deadline(request, config, started):
     return started + timedelta(minutes=55)
 
 
-def token_at_plan_start(token_file, claims):
+def bound_backend_token(token_file, claims, minimum_seconds, refusal):
     encoded = token_file.read_text().strip().split(".")
     require(len(encoded) == 3, "backend-token-invalid")
-    current = json.loads(base64.urlsafe_b64decode(encoded[1] + "=" * (-len(encoded[1]) % 4)))
-    require(current == claims and claims["exp"] >
-            (datetime.now(timezone.utc) + timedelta(seconds=60)).timestamp(),
-            "backend-token-expiring-before-plan")
+    try:
+        current = json.loads(base64.urlsafe_b64decode(encoded[1] + "=" * (-len(encoded[1]) % 4)))
+        remaining = current["exp"] - datetime.now(timezone.utc).timestamp()
+    except (ValueError, KeyError, TypeError) as error:
+        raise Refused("backend-token-invalid") from error
+    require(all(current.get(key) == claims[key] for key in ("iss", "sub", "aud"))
+            and isinstance(current["exp"], (int, float)) and remaining > minimum_seconds,
+            refusal)
+
+
+def token_at_plan_start(token_file, claims):
+    # The hosted runner may already have atomically renewed the token while
+    # preflight ran; only the trusted identity and remaining lifetime must match.
+    bound_backend_token(token_file, claims, 60, "backend-token-expiring-before-plan")
+
+
+def token_for_post_plan_facts(token_file, claims):
+    """The backend opens a new STS session in each post-plan Terraform process."""
+    bound_backend_token(token_file, claims, 180, "backend-token-expiring-before-post-plan-facts")
 
 
 def backend_only_source(config, optional=()):
@@ -918,6 +933,8 @@ def produce(request_path, repository):
             modules_after["reviewedManifestSha256"] = modules_before["reviewedManifestSha256"]
         require(modules_after == modules_before, "module-cache-drift")
         write(packet / "module-inputs.json", modules_before)
+        if backend_expiry is not None:
+            token_for_post_plan_facts(token_file, claims)
         after = commands.facts(root)
         validate_facts(after, request, deploy_role)
         if backend_expiry is not None:

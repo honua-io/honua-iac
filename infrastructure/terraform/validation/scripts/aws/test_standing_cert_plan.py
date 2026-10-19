@@ -781,7 +781,9 @@ class HostedSessionBounds(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "token"
             for offset, refused in ((50, True), (120, False)):
-                claims = {"exp": int((datetime.now(timezone.utc) + timedelta(seconds=offset)).timestamp())}
+                claims = {"iss": producer.ISSUER, "sub": producer.SUBJECT,
+                          "aud": producer.AUDIENCE,
+                          "exp": int((datetime.now(timezone.utc) + timedelta(seconds=offset)).timestamp())}
                 payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=")
                 path.write_text("header." + payload + ".signature")
                 if refused:
@@ -789,6 +791,36 @@ class HostedSessionBounds(unittest.TestCase):
                         producer.token_at_plan_start(path, claims)
                 else:
                     producer.token_at_plan_start(path, claims)
+            renewed = dict(claims, exp=int((datetime.now(timezone.utc)
+                                            + timedelta(minutes=5)).timestamp()))
+            payload = base64.urlsafe_b64encode(json.dumps(renewed).encode()).decode().rstrip("=")
+            path.write_text("header." + payload + ".signature")
+            producer.token_at_plan_start(path, claims)
+
+    def test_post_plan_facts_require_fresh_bound_backend_token(self):
+        claims = {"iss": producer.ISSUER, "sub": producer.SUBJECT,
+                  "aud": producer.AUDIENCE, "exp": 0}
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "token"
+
+            def token(**changes):
+                current = dict(claims, exp=int((datetime.now(timezone.utc)
+                                                + timedelta(minutes=5)).timestamp()))
+                current.update(changes)
+                payload = base64.urlsafe_b64encode(json.dumps(current).encode()).decode().rstrip("=")
+                path.write_text("header." + payload + ".signature")
+
+            token()
+            producer.token_for_post_plan_facts(path, claims)
+            token(exp=int((datetime.now(timezone.utc) + timedelta(seconds=170)).timestamp()))
+            with self.assertRaisesRegex(producer.Refused, "backend-token-expiring-before-post-plan-facts"):
+                producer.token_for_post_plan_facts(path, claims)
+            token(sub="repo:untrusted/other")
+            with self.assertRaisesRegex(producer.Refused, "backend-token-expiring-before-post-plan-facts"):
+                producer.token_for_post_plan_facts(path, claims)
+            path.write_text("not-a-jwt")
+            with self.assertRaisesRegex(producer.Refused, "backend-token-invalid"):
+                producer.token_for_post_plan_facts(path, claims)
 
     def test_planning_timeout_and_packet_expiry_share_backend_bound(self):
         deadline = self.now + timedelta(minutes=55)
