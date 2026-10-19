@@ -5,6 +5,8 @@ on:
     paths:
       - 'infrastructure/terraform/**'
       - 'release/aws-cert-plan-recipient.json'
+      - 'release/aws-cert-reviewed-modules.json'
+      - 'release/aws-cert-reviewed-bootstrap.json'
       - 'release/component-versions.json'
       - 'scripts/run-aws-terraform-integration.sh'
       - 'scripts/run-azure-terraform-integration.sh'
@@ -56,6 +58,8 @@ on:
     paths:
       - 'infrastructure/terraform/**'
       - 'release/aws-cert-plan-recipient.json'
+      - 'release/aws-cert-reviewed-modules.json'
+      - 'release/aws-cert-reviewed-bootstrap.json'
       - 'release/component-versions.json'
       - 'scripts/run-aws-terraform-integration.sh'
       - 'scripts/run-azure-terraform-integration.sh'
@@ -128,6 +132,16 @@ jobs:
         env:
           HONUA_CERT_TEST_TOOLS: ${{ runner.temp }}/cert-plan-tools
         run: python3 infrastructure/terraform/validation/scripts/aws/test_cert_plan_envelope.py -v
+
+  standing-cert-plan-controls:
+    name: Standing certification private plan controls (offline)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - run: python3 infrastructure/terraform/validation/scripts/aws/test_standing_cert_plan.py -v
+      - run: python3 infrastructure/terraform/validation/scripts/aws/test_verify_reviewed_modules.py -v
+      - run: python3 infrastructure/terraform/validation/scripts/aws/test_restore_reviewed_bootstrap.py -v
 
   terraform-1-5-validate:
     name: Terraform 1.5 Floor Validate

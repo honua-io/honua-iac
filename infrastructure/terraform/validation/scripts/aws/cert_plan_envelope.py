@@ -359,6 +359,7 @@ def main():
     sub = parser.add_subparsers(dest="operation", required=True)
     install = sub.add_parser("install-tools")
     install.add_argument("--directory", required=True, type=Path)
+    sub.add_parser("preflight-recipient")
     sender = sub.add_parser("seal")
     sender.add_argument("--packet", required=True, type=Path)
     sender.add_argument("--producer-receipt", required=True, type=Path)
@@ -373,6 +374,11 @@ def main():
         repository = Path(__file__).resolve().parents[5]
         if args.operation == "install-tools":
             result = install_tools(args.directory)
+        elif args.operation == "preflight-recipient":
+            with tempfile.TemporaryDirectory(prefix=".recipient-preflight-") as temporary:
+                policy, revision = source_policy(repository, Path(temporary))
+            result = {"schema": SCHEMA, "status": "recipient-verified", "iacRevision": revision,
+                      "recipientSha256": policy["recipientSha256"]}
         elif args.operation == "seal":
             result = seal(args.packet, args.producer_receipt, args.output_directory, args.tools_directory, repository)
         else:

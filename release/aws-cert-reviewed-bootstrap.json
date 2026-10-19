@@ -1,0 +1,8 @@
+{
+  "schema": "honua.aws-cert-reviewed-bootstrap/v1",
+  "origin": "existing cert Lambda GetFunction code location, read-only observation",
+  "zipSha256": "51ee6477d8c18802a2998e5d3cac491c51c01dec35a146ac89156b3750a6ea38",
+  "size": 951584,
+  "entryCount": 139,
+  "handlerSha256": "0b4af9430514b4a94a9c646d82759682d3bf04f67fac83f6fe8878cf1288a0b9"
+}
