@@ -176,7 +176,10 @@ def environment(request, root):
                                        "AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE", "AWS_PROFILE", "AWS_DEFAULT_PROFILE",
                                        "AWS_WEB_IDENTITY_TOKEN_FILE", "AWS_ROLE_ARN")),
             "environment-override-refused")
-    require(env.get("RUNNER_ENVIRONMENT") != "github-hosted", "durable-private-runtime-required")
+    if env.get("RUNNER_ENVIRONMENT") == "github-hosted":
+        require(request["schema"] == "honua.aws-cert-plan-request/v2"
+                and request["sealedStaging"]["mode"] == "age-v1.3.2-exact-run",
+                "durable-private-runtime-required")
     require(all(env.get(k) for k in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY",
                                     "AWS_SESSION_TOKEN")), "deployment-sts-session-required")
     # Pin region and session evidence; credential material never enters request/packet.
@@ -320,23 +323,49 @@ def verify_packet(path, expected_sha):
             "expiresAtUtc": expiry.isoformat(), "packetSha256": expected_sha}
 
 
-def validate_expiry(metadata, request, claims, started):
+def validate_expiry(metadata, request, claims, started, backend_session_expiry=None):
     created = timestamp(metadata["created_at_utc"])
     expiry = timestamp(metadata["expires_at_utc"])
     current = datetime.now(timezone.utc)
     require(started - timedelta(seconds=1) <= created <= current + timedelta(seconds=5)
             and expiry - created == timedelta(seconds=request["expiresInSeconds"])
             and expiry > current, "plan-expiry-invalid")
-    require(expiry < timestamp(request["sessionExpiresAtUtc"])
-            and expiry.timestamp() < claims["exp"], "session-expiring")
-    require(expiry < timestamp(request["privateRetention"]["retainUntilUtc"]), "private-retention-required")
+    require(expiry < timestamp(request["sessionExpiresAtUtc"]), "session-expiring")
+    if request["schema"] == "honua.aws-cert-plan-request/v1":
+        require(expiry.timestamp() < claims["exp"], "session-expiring")
+    else:
+        require(backend_session_expiry is not None and expiry < backend_session_expiry,
+                "backend-session-expiring")
+    if request["schema"] == "honua.aws-cert-plan-request/v1":
+        require(expiry < timestamp(request["privateRetention"]["retainUntilUtc"]), "private-retention-required")
 
 
-def planning_seconds(request, claims):
-    deadline = min(timestamp(request["sessionExpiresAtUtc"]).timestamp(), claims["exp"])
+def planning_seconds(request, claims, backend_session_expiry=None):
+    deadline = min(timestamp(request["sessionExpiresAtUtc"]).timestamp(),
+                   (claims["exp"] if request["schema"] == "honua.aws-cert-plan-request/v1"
+                    else backend_session_expiry.timestamp()))
     available = int(deadline - datetime.now(timezone.utc).timestamp() - request["expiresInSeconds"] - 5)
     require(available > 0, "session-expiring")
     return min(request["planTimeoutSeconds"], available)
+
+
+def backend_session_deadline(request, config, started):
+    if request["schema"] == "honua.aws-cert-plan-request/v1":
+        return None
+    web = config.get("assume_role_with_web_identity") or {}
+    require(web.get("duration") == "1h", "backend-session-duration-required")
+    # Terraform creates its own S3 backend STS credentials at plan startup.
+    # Use a lower bound from the configured duration, with five minutes reserved.
+    return started + timedelta(minutes=55)
+
+
+def token_at_plan_start(token_file, claims):
+    encoded = token_file.read_text().strip().split(".")
+    require(len(encoded) == 3, "backend-token-invalid")
+    current = json.loads(base64.urlsafe_b64decode(encoded[1] + "=" * (-len(encoded[1]) % 4)))
+    require(current == claims and claims["exp"] >
+            (datetime.now(timezone.utc) + timedelta(seconds=60)).timestamp(),
+            "backend-token-expiring-before-plan")
 
 
 def backend_only_source(config, optional=()):
@@ -347,10 +376,12 @@ def backend_only_source(config, optional=()):
             lines.append(f"{key} = {json.dumps(config[key])}")
     lines.append("assume_role_with_web_identity = {")
     web = config["assume_role_with_web_identity"]
-    require({k for k, v in web.items() if v is not None} <= {"role_arn", "web_identity_token_file"},
+    require({k for k, v in web.items() if v is not None} <= {"role_arn", "web_identity_token_file", "duration"},
             "backend-source-unsupported")
     for key in ("role_arn", "web_identity_token_file"):
         lines.append(f"{key} = {json.dumps(web[key])}")
+    if web.get("duration") is not None:
+        lines.append(f"duration = {json.dumps(web['duration'])}")
     return "\n".join([*lines, "} } }"])
 
 
@@ -688,7 +719,8 @@ def retain_bootstrap(commands, root, packet, before):
 def produce(request_path, repository):
     os.umask(0o077)
     request = load(protected(request_path))
-    require(request["schema"] == "honua.aws-cert-plan-request/v1", "request-schema-invalid")
+    require(request["schema"] in ("honua.aws-cert-plan-request/v1", "honua.aws-cert-plan-request/v2"),
+            "request-schema-invalid")
     require(request["targetId"] == "aws-cert" and text(request["actorId"]), "target-invalid")
     require(re.fullmatch(r"[0-9a-f]{40}", request["iacRevision"])
             and re.fullmatch(SHA, request["candidateDigest"]), "source-pin-invalid")
@@ -698,10 +730,17 @@ def produce(request_path, repository):
     require(type(request["planTimeoutSeconds"]) is int and 60 <= request["planTimeoutSeconds"] <= 1800,
             "plan-timeout-invalid")
     require(timestamp(request["sessionExpiresAtUtc"]) > now + timedelta(seconds=lifetime + 120), "session-expiring")
-    retention = request["privateRetention"]
-    require(text(retention["owner"]) and text(retention["accessReference"])
-            and timestamp(retention["retainUntilUtc"]) > now + timedelta(seconds=lifetime), "private-retention-required")
-    parent = protected(retention["directory"], directory=True)
+    if request["schema"] == "honua.aws-cert-plan-request/v1":
+        retention = request["privateRetention"]
+        require(text(retention["owner"]) and text(retention["accessReference"])
+                and timestamp(retention["retainUntilUtc"]) > now + timedelta(seconds=lifetime),
+                "private-retention-required")
+        parent = protected(retention["directory"], directory=True)
+    else:
+        require("privateRetention" not in request and request["sealedStaging"]["mode"] == "age-v1.3.2-exact-run"
+                and re.fullmatch(SHA, request["sealedStaging"]["recipientSha256"]),
+                "sealed-staging-invalid")
+        parent = protected(request["privateStaging"]["directory"], directory=True)
     require(repository not in parent.parents and parent != repository, "private-packet-in-source")
     root = repository / ROOT_REL
     require(root.is_dir() and not root.is_symlink(), "root-invalid")
@@ -735,7 +774,9 @@ def produce(request_path, repository):
     require(len(token) == 3, "backend-token-invalid")
     claims = json.loads(base64.urlsafe_b64decode(token[1] + "=" * (-len(token[1]) % 4)))
     require(claims["iss"] == ISSUER and claims["sub"] == SUBJECT and claims["aud"] == AUDIENCE
-            and claims["exp"] > (now + timedelta(seconds=lifetime + 120)).timestamp(), "backend-token-invalid")
+            and claims["exp"] > (now + timedelta(seconds=(lifetime + 120 if request["schema"]
+                                                  == "honua.aws-cert-plan-request/v1" else 90))).timestamp(),
+            "backend-token-invalid")
     env = environment(request, root)
     # Inspect the existing descriptor, never init/reconfigure it. A raw token in
     # descriptor config is refused by the maintained substrate as well.
@@ -746,6 +787,11 @@ def produce(request_path, repository):
     web = config.get("assume_role_with_web_identity") or {}
     require(web.get("role_arn") == backend_role and web.get("web_identity_token_file") == str(token_file)
             and not config.get("assume_role") and not config.get("role_arn"), "backend-web-identity-required")
+    # Terraform's S3 backend exchanges the renewed GitHub JWT for its own STS
+    # credentials at plan startup. Pin that actual backend exchange to one hour;
+    # reserve five minutes for initialization/skew rather than treating the JWT
+    # expiration as the backend session expiration.
+    backend_expiry = backend_session_deadline(request, config, datetime.now(timezone.utc))
     packet = parent / ("aws-cert-plan-" + uuid.uuid4().hex)
     packet.mkdir(mode=0o700)
     cli_directory = tempfile.TemporaryDirectory(prefix=".cert-cli-", dir=parent)
@@ -759,6 +805,22 @@ def produce(request_path, repository):
         write(packet / "request.json", request)
         require(commands.run(["git", "rev-parse", "HEAD"]).decode().strip() == request["iacRevision"], "source-mismatch")
         require(not commands.run(["git", "status", "--porcelain", "--untracked-files=normal"]).strip(), "source-dirty")
+        if request["schema"] == "honua.aws-cert-plan-request/v2":
+            policy_relative = "release/aws-cert-plan-recipient.json"
+            policy_bytes = (repository / policy_relative).read_bytes()
+            require(policy_bytes == commands.run(["git", "show", "HEAD:" + policy_relative]),
+                    "recipient-source-mismatch")
+            policy = json.loads(policy_bytes)
+            require(policy["schema"] == "honua.aws-cert-plan-recipient/v1"
+                    and policy["status"] == "configured"
+                    and digest(policy["recipient"].encode()) == policy["recipientSha256"]
+                    == request["sealedStaging"]["recipientSha256"], "recipient-mismatch")
+            for relative in ("release/aws-cert-reviewed-modules.json",
+                             "release/aws-cert-reviewed-bootstrap.json",
+                             "infrastructure/terraform/validation/scripts/aws/verify_reviewed_modules.py"):
+                require((repository / relative).read_bytes() ==
+                        commands.run(["git", "show", "HEAD:" + relative]),
+                        "reviewed-input-source-mismatch")
         validate_runtime_source(commands, root, repository, config)
         require(digest((root / ".terraform.lock.hcl").read_bytes()) == request["providerLockSha256"], "provider-lock-mismatch")
         provider_before = provider_inventory(root)
@@ -768,26 +830,53 @@ def produce(request_path, repository):
         bootstrap_before = bootstrap_inventory(root)
         modules_before = module_inventory(root, repository)
         modules_before["providers"] = provider_before
+        if request["schema"] == "honua.aws-cert-plan-request/v2":
+            manifest = repository / "release/aws-cert-reviewed-modules.json"
+            reviewed = commands.json(["python3", "-I", str(repository /
+                "infrastructure/terraform/validation/scripts/aws/verify_reviewed_modules.py"),
+                "--root", str(root), "--manifest", str(manifest)])
+            require(reviewed["status"] == "verified"
+                    and reviewed["manifestSha256"] == digest(manifest.read_bytes()),
+                    "reviewed-module-inputs-invalid")
+            modules_before["reviewedManifestSha256"] = reviewed["manifestSha256"]
+            bootstrap_policy = load(repository / "release/aws-cert-reviewed-bootstrap.json")
+            require(bootstrap_policy["schema"] == "honua.aws-cert-reviewed-bootstrap/v1"
+                    and bootstrap_policy["handlerSha256"] ==
+                    digest((root / "postgis-bootstrap/handler.py").read_bytes()),
+                    "reviewed-bootstrap-invalid")
         archive_path = root / "postgis-bootstrap/bootstrap.zip"
         if archive_path.exists() or archive_path.is_symlink():
             require(not archive_path.is_symlink() and archive_path.is_file(), "bootstrap-archive-invalid")
         before = commands.facts(root)
         validate_facts(before, request, deploy_role)
+        if backend_expiry is not None:
+            before["backendSessionBound"] = {"configuredDuration": "1h",
+                "conservativeDeadlineUtc": backend_expiry.isoformat(),
+                "basis": "initialized-s3-backend-duration-minus-five-minute-reserve"}
         write(packet / "context-before.json", before)
+        if backend_expiry is not None:
+            token_at_plan_start(token_file, claims)
         commands.run(["bash", "scripts/terraform-exact-plan.sh", "--root", str(root), "--action", "apply",
                       "--skip-init", "--var-file", str(var_file), "--plan-out", str(packet / "plan.bin"),
                       "--metadata-out", str(packet / "metadata.json"), "--expires-in", str(lifetime),
                       "--actor", request["actorId"], "--target-id", "aws-cert",
                       "--candidate-digest", request["candidateDigest"], "--workload-identity-digest",
-                      request["workloadIdentityContractDigest"]], seconds=planning_seconds(request, claims))
+                      request["workloadIdentityContractDigest"]], seconds=planning_seconds(request, claims, backend_expiry))
         retain_bootstrap(commands, root, packet, bootstrap_before)
+        if request["schema"] == "honua.aws-cert-plan-request/v2":
+            require(digest((packet / "bootstrap.zip").read_bytes()) == bootstrap_policy["zipSha256"],
+                    "reviewed-bootstrap-archive-mismatch")
         require(provider_inventory(root) == provider_before, "provider-cache-drift")
         modules_after = module_inventory(root, repository)
         modules_after["providers"] = provider_before
+        if request["schema"] == "honua.aws-cert-plan-request/v2":
+            modules_after["reviewedManifestSha256"] = modules_before["reviewedManifestSha256"]
         require(modules_after == modules_before, "module-cache-drift")
         write(packet / "module-inputs.json", modules_before)
         after = commands.facts(root)
         validate_facts(after, request, deploy_role)
+        if backend_expiry is not None:
+            after["backendSessionBound"] = before["backendSessionBound"]
         require(after == before and digest(var_file.read_bytes()) == request["varFileSha256"], "context-drift")
         write(packet / "context-after.json", after)
         metadata = load(packet / "metadata.json")
@@ -806,15 +895,25 @@ def produce(request_path, repository):
                                              "provider_lock_digest": request["providerLockSha256"]}
                 and metadata["backend"]["backend_config_digest"] == request["backend"]["configDigest"]
                 and metadata["identity"]["assumed_role_arn"] == before["identity"]["arn"], "plan-binding-invalid")
-        validate_expiry(metadata, request, claims, now)
+        validate_expiry(metadata, request, claims, now, backend_expiry)
         with (packet / "review.txt").open("xb") as output:
             commands.run(["terraform", "-chdir=" + str(root), "show", "-no-color", str(packet / "plan.bin")], output=output)
         require(not commands.run(["git", "status", "--porcelain", "--untracked-files=normal"]).strip()
                 and commands.run(["git", "rev-parse", "HEAD"]).decode().strip() == request["iacRevision"], "source-drift")
         validate_runtime_source(commands, root, repository, config)
+        if request["schema"] == "honua.aws-cert-plan-request/v2":
+            for relative in ("release/aws-cert-plan-recipient.json",
+                             "release/aws-cert-reviewed-modules.json",
+                             "release/aws-cert-reviewed-bootstrap.json",
+                             "infrastructure/terraform/validation/scripts/aws/verify_reviewed_modules.py"):
+                require((repository / relative).read_bytes() ==
+                        commands.run(["git", "show", "HEAD:" + relative]),
+                        "reviewed-input-source-drift")
         require(provider_inventory(root) == provider_before, "provider-cache-drift")
         modules_after = module_inventory(root, repository)
         modules_after["providers"] = provider_before
+        if request["schema"] == "honua.aws-cert-plan-request/v2":
+            modules_after["reviewedManifestSha256"] = modules_before["reviewedManifestSha256"]
         require(modules_after == modules_before, "module-cache-drift")
         files = {}
         require({p.name for p in packet.iterdir()} == PACKET_FILES, "packet-files-invalid")

@@ -30,11 +30,12 @@ Before execution, the standing certification custodian supplies:
   and `web_identity_token_file`. Preparing that configuration is a separate
   operator action. Do not migrate state, initialize an empty workspace or change
   the state object to make this command pass.
-- A persistent private directory owned by the executing user, mode `0700`,
-  independent reviewer access, retention deadline and named custodian. Files
-  must remain available for exact private review; GitHub-hosted ephemeral
-  runners are refused. The declarations record operator responsibilities;
-  this tool cannot prove a storage mount is durable or grant reviewer access.
+- For the v1 private-retention request, a persistent private directory owned by
+  the executing user, mode `0700`, independent reviewer access, retention
+  deadline and named custodian. GitHub-hosted ephemeral runners are refused for
+  v1. The declarations record operator responsibilities; the tool cannot prove
+  a storage mount is durable or grant reviewer access. The v2 hosted request
+  instead stages plaintext transiently for immediate encryption and export.
 - Approved protected JSON tfvars, including the existing cert key-ring and
   audit-chain key references and all enabled digest-pinned images. The key
   selection/adoption decision is separate from discovery. Preserve existing
@@ -56,7 +57,7 @@ request. Its `backendTokenFile` names an ephemeral protected file, not a token.
 
 | Field | Required value and source |
 |---|---|
-| `schema`, `targetId` | `honua.aws-cert-plan-request/v1`, `aws-cert` |
+| `schema`, `targetId` | `honua.aws-cert-plan-request/v1` for persistent private retention, or `v2` for reviewed sealed staging; `aws-cert` |
 | `actorId` | Named operator/workload actor; not approval authority |
 | `iacRevision` | Exact clean current checkout SHA, 40 lowercase hexadecimal characters |
 | `candidateDigest` | Approved prepared candidate SHA256, 64 lowercase hexadecimal characters; the helper does not edit selection |
@@ -66,13 +67,32 @@ request. Its `backendTokenFile` names an ephemeral protected file, not a token.
 | `stateBefore` | Exact existing `lineage` and integer `serial`, obtained through the maintained metadata-only state path |
 | `workloadIdentityContract`, `workloadIdentityContractDigest` | Complete existing bootstrap/aws-terraform-oidc output value and its canonical digest; not a caller-invented role receipt |
 | `executionIdentityContract`, `executionIdentityContractDigest` | Complete existing bootstrap/aws-exec-identity output value and its canonical digest |
-| `sessionExpiresAtUtc`, `expiresInSeconds` | Real deployment-session expiry and plan lifetime (60–1800 seconds). Session and backend token must remain valid for lifetime plus 120 seconds |
+| `sessionExpiresAtUtc`, `expiresInSeconds` | Real deployment-session expiry and plan lifetime (60–1800 seconds). For v1, the backend token must also remain valid for lifetime plus 120 seconds. For v2, the actual backend descriptor must configure one-hour web-identity sessions and the fresh token must remain valid at plan start |
 | `planTimeoutSeconds` | Separate planning timeout (60–1800 seconds), further bounded by remaining session/token time after reserving the review lifetime |
 | `backendTokenFile` | Absolute nonsymlink `0600` token file matching the initialized backend's token-file path |
 | `varFile`, `varFileSha256` | Absolute nonsymlink `0600` JSON tfvars file and exact byte SHA256. Hidden auto tfvars are refused |
 | `imagePins` | Exact nonempty image variables from the protected tfvars, each `repository@sha256:…`; Lambda and GP images required, enabled custom-code/ECS fixture images also required |
 | `secretReferences` | Exact `audit_chain_key_secret_arn` and `operation_key_ring_certificate_secret_arn` references from approved tfvars, in cert account/region. No key material |
 | `privateRetention` | Existing absolute nonsymlink `0700` `directory` outside the source tree, named `owner`, independent reviewer `accessReference`, future `retainUntilUtc` beyond plan expiry |
+
+For the hosted v2 path, use the separate
+[request skeleton](standing-cert-plan-hosted-request.example.json). Replace
+`privateRetention` with
+`"privateStaging":{"directory":"/home/runner/.local/state/honua/cert-plan-stage/private"}`
+and add
+`"sealedStaging":{"mode":"age-v1.3.2-exact-run","recipientSha256":"<reviewed public recipient fingerprint>"}`.
+The request also supplies `bootstrapFunctionArn` for a read-only GetFunction
+fetch. Its `varFile` and `backendTokenFile` must be the fixed protected paths
+under `/home/runner/.local/state/honua/cert-plan-stage/`. The server workflow
+checks those exact values before credentials, and the producer checks the
+committed recipient policy against the request. V2 plaintext has no durable
+retention claim: only the later exact-run encrypted receiver can establish
+private local retention. The publicly tracked
+`release/aws-cert-reviewed-modules.json` binds VPC 5.21.0 and RDS 6.13.1 to
+235 file hashes, source commits and upstream archive hashes. The hosted setup
+normalizes authenticated source file modes to `0644` before admission; it
+rejects extra, missing, linked or changed files. The tracked bootstrap manifest
+pins the observed existing Lambda ZIP SHA256 and tracked handler SHA256.
 
 2026.1 tfvars must explicitly set `licensing_mode = "Disabled"` and
 `enable_pro_license = false`, with no nonempty `pro_license_*` inputs. Preserve

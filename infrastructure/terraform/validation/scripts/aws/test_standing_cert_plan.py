@@ -693,5 +693,43 @@ terraform {
         self.refused("implicit-input-refused")
 
 
+class HostedSessionBounds(unittest.TestCase):
+    def setUp(self):
+        self.now = datetime.now(timezone.utc)
+        self.request = {"schema": "honua.aws-cert-plan-request/v2", "expiresInSeconds": 900,
+                        "planTimeoutSeconds": 1800,
+                        "sessionExpiresAtUtc": (self.now + timedelta(hours=1)).isoformat()}
+
+    def test_actual_backend_descriptor_requires_one_hour(self):
+        for web in ({}, {"duration": "45m"}, {"duration": "2h"}):
+            with self.subTest(web=web), self.assertRaisesRegex(producer.Refused, "backend-session-duration-required"):
+                producer.backend_session_deadline(self.request, {"assume_role_with_web_identity": web}, self.now)
+        deadline = producer.backend_session_deadline(
+            self.request, {"assume_role_with_web_identity": {"duration": "1h"}}, self.now)
+        self.assertEqual(deadline, self.now + timedelta(minutes=55))
+
+    def test_token_must_still_be_valid_at_exact_plan_start(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "token"
+            for offset, refused in ((50, True), (120, False)):
+                claims = {"exp": int((datetime.now(timezone.utc) + timedelta(seconds=offset)).timestamp())}
+                payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=")
+                path.write_text("header." + payload + ".signature")
+                if refused:
+                    with self.assertRaisesRegex(producer.Refused, "backend-token-expiring-before-plan"):
+                        producer.token_at_plan_start(path, claims)
+                else:
+                    producer.token_at_plan_start(path, claims)
+
+    def test_planning_timeout_and_packet_expiry_share_backend_bound(self):
+        deadline = self.now + timedelta(minutes=55)
+        self.assertLessEqual(producer.planning_seconds(self.request, {"exp": 0}, deadline)
+                             + self.request["expiresInSeconds"], 55 * 60)
+        self.request["expiresInSeconds"] = 1800
+        self.request["sessionExpiresAtUtc"] = (self.now + timedelta(minutes=30)).isoformat()
+        with self.assertRaisesRegex(producer.Refused, "session-expiring"):
+            producer.planning_seconds(self.request, {"exp": 0}, self.now + timedelta(minutes=20))
+
+
 if __name__ == "__main__":
     unittest.main()

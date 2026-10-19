@@ -12,10 +12,12 @@
     "standing-cert-plan-envelope": "v1",
     "standing-cert-plan-recipient": "v1",
     "standing-cert-plan-receive": "v1",
-    "standing-cert-plan-request": "v1",
+    "standing-cert-plan-request": "v2",
     "standing-cert-plan-packet": "v1",
     "standing-cert-plan-public": "v1",
     "standing-cert-bootstrap-artifact": "v1",
-    "standing-cert-module-inputs": "v2"
+    "standing-cert-module-inputs": "v2",
+    "standing-cert-reviewed-modules": "v1",
+    "standing-cert-reviewed-bootstrap": "v1"
   }
 }

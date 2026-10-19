@@ -1,0 +1,1198 @@
+{
+  "modules": [
+    {
+      "commit": "7c1f791efd61f326ed6102d564d1a65d1eceedf0",
+      "archiveSha256": "dbf137fb42c7d9b5a609d2d3df23d5ebab7dfe01b1559080bdf6ad89145203ac",
+      "files": {
+        ".editorconfig": {
+          "mode": 420,
+          "sha256": "527c345d8bf8a4711d3c1a4be0d74cc095cc18a3aa53011dea2e2a1994a42d59",
+          "size": 559
+        },
+        ".github/contributing.md": {
+          "mode": 420,
+          "sha256": "047fcbc988ee4a67159b26a7019e712eb522fa58f032f2494f0b9ecbcd2826fa",
+          "size": 1613
+        },
+        ".github/workflows/lock.yml": {
+          "mode": 420,
+          "sha256": "222b1bee9b3546c905c52f4c02e8b8b224362cd619d54b9c2e2942d815204717",
+          "size": 1040
+        },
+        ".github/workflows/pr-title.yml": {
+          "mode": 420,
+          "sha256": "074136a514fd47458a1926b08a6466f7f2d39f0eb08bae37e26a591b4d770d22",
+          "size": 2306
+        },
+        ".github/workflows/pre-commit.yml": {
+          "mode": 420,
+          "sha256": "bf83a9b973d015ffa9a6bdccf86f091bdc77a839aa925e0d64730740d79588a1",
+          "size": 3426
+        },
+        ".github/workflows/release.yml": {
+          "mode": 420,
+          "sha256": "f27ef1a7e7feb8b06e2ca07f8dfc24deb9eb2e25ed0f0d9488f8a8d8dc651a43",
+          "size": 879
+        },
+        ".github/workflows/stale-actions.yaml": {
+          "mode": 420,
+          "sha256": "48a5a0a11e68dca705b6a70d67c0ca7ba9bb9dcb82c442222c5edc8b9068bd51",
+          "size": 1382
+        },
+        ".gitignore": {
+          "mode": 420,
+          "sha256": "18ff32a397096d708fb9ddfd9790be57f5f3958fe57d809415f49945addc5b42",
+          "size": 680
+        },
+        ".pre-commit-config.yaml": {
+          "mode": 420,
+          "sha256": "9a431a81b2c9a725962d8d451ce9a6b74e67f8182865f691d1a120ded5d4945f",
+          "size": 1201
+        },
+        ".releaserc.json": {
+          "mode": 420,
+          "sha256": "5bec8ee36a23752af554e9449918bb7eccb29d91cdeb646b3b9ce9128495bcf7",
+          "size": 1016
+        },
+        "CHANGELOG.md": {
+          "mode": 420,
+          "sha256": "54f1e2cbc1d760a629101a4562e0ed1ec9a855dc6b9fb072956d25f2393d1ce4",
+          "size": 95321
+        },
+        "LICENSE": {
+          "mode": 420,
+          "sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+          "size": 10173
+        },
+        "README.md": {
+          "mode": 420,
+          "sha256": "30c6ca254d6d0e8fda7500db829b691c9ab8d05989caa4e9a12e765e42f252b7",
+          "size": 107523
+        },
+        "UPGRADE-3.0.md": {
+          "mode": 420,
+          "sha256": "96a7a997864fb076473c3bbf315d8a690ad297e3e7f2d9f534c5db170d8e1ac6",
+          "size": 2862
+        },
+        "UPGRADE-4.0.md": {
+          "mode": 420,
+          "sha256": "ea8bc2d7b7cb0e3cc53cefdd3bd9c9dcb90e4b26976f31cd7e83d342b5eff389",
+          "size": 2653
+        },
+        "examples/block-public-access/README.md": {
+          "mode": 420,
+          "sha256": "91940cb0b54a86e046ca955483670c4dee3cbbaf6b7341117a2537b69a37dbe3",
+          "size": 20694
+        },
+        "examples/block-public-access/main.tf": {
+          "mode": 420,
+          "sha256": "9a27a06a12dfb3faac17113decc5ed4719f5ad4e9d1d6e88b8e13e7fa4cf1fac",
+          "size": 1050
+        },
+        "examples/block-public-access/outputs.tf": {
+          "mode": 420,
+          "sha256": "4948fcabc342f789a47e631b470a03ad9709901b72052354837bc6978acc3c3e",
+          "size": 16004
+        },
+        "examples/block-public-access/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/block-public-access/versions.tf": {
+          "mode": 420,
+          "sha256": "38f86e3c2a6063c97a0e58a2702c257ce962c1677251569e9e19e6de1b6cc8a5",
+          "size": 148
+        },
+        "examples/complete/README.md": {
+          "mode": 420,
+          "sha256": "5b1186a0d0f72a599e500d290575a7b4d7280cf9a350d48bb5df2b3e078c1657",
+          "size": 19708
+        },
+        "examples/complete/main.tf": {
+          "mode": 420,
+          "sha256": "05d06680957a79248515ecacf9a7c73a983940295631b1dbc37f60928da40f0f",
+          "size": 6502
+        },
+        "examples/complete/outputs.tf": {
+          "mode": 420,
+          "sha256": "bcc4ef1f067be5919309949b0bfe5598186712488b71158fb098cc2a89fadd1b",
+          "size": 16337
+        },
+        "examples/complete/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/complete/versions.tf": {
+          "mode": 420,
+          "sha256": "acd6714a863d3b542f29b7632f42b7904d2d75d054553a242d606e4e708ac90c",
+          "size": 148
+        },
+        "examples/ipam/README.md": {
+          "mode": 420,
+          "sha256": "875bff47e1db82115e47f513f597ebe9286766dbe5acb9cf2c3898519070273c",
+          "size": 19503
+        },
+        "examples/ipam/main.tf": {
+          "mode": 420,
+          "sha256": "60311bf596261d3a9b1e94752a530b6b19a04b5766dc30ebeb734cd798b44eac",
+          "size": 4208
+        },
+        "examples/ipam/outputs.tf": {
+          "mode": 420,
+          "sha256": "a8a435ee7fe4942ff47a37c08e56d5dd29378054ce8af9d7d6f6cf507f4525c1",
+          "size": 17650
+        },
+        "examples/ipam/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/ipam/versions.tf": {
+          "mode": 420,
+          "sha256": "acd6714a863d3b542f29b7632f42b7904d2d75d054553a242d606e4e708ac90c",
+          "size": 148
+        },
+        "examples/ipv6-dualstack/README.md": {
+          "mode": 420,
+          "sha256": "935595a05003e15b8ae20b9ac931347540eb60fd34b94653646eb510241187b9",
+          "size": 18219
+        },
+        "examples/ipv6-dualstack/main.tf": {
+          "mode": 420,
+          "sha256": "7da655a234eb58eb0e036e11bcdcd128987f2d47193fc6de6eb47a2d68889df3",
+          "size": 1311
+        },
+        "examples/ipv6-dualstack/outputs.tf": {
+          "mode": 420,
+          "sha256": "48679e80839a10f06d6d21e50399b83f9becca32a62c0cf915e33a174b6f7465",
+          "size": 15831
+        },
+        "examples/ipv6-dualstack/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/ipv6-dualstack/versions.tf": {
+          "mode": 420,
+          "sha256": "acd6714a863d3b542f29b7632f42b7904d2d75d054553a242d606e4e708ac90c",
+          "size": 148
+        },
+        "examples/ipv6-only/README.md": {
+          "mode": 420,
+          "sha256": "378a01fdbdd14fd1464ba1bd55f8723b826bb6e444495406636fee0af30fa0af",
+          "size": 18216
+        },
+        "examples/ipv6-only/main.tf": {
+          "mode": 420,
+          "sha256": "0afb8f58257af1681a227e8e295e61ea0ac922f3cc514bef93245b0c6205710d",
+          "size": 1045
+        },
+        "examples/ipv6-only/outputs.tf": {
+          "mode": 420,
+          "sha256": "48679e80839a10f06d6d21e50399b83f9becca32a62c0cf915e33a174b6f7465",
+          "size": 15831
+        },
+        "examples/ipv6-only/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/ipv6-only/versions.tf": {
+          "mode": 420,
+          "sha256": "acd6714a863d3b542f29b7632f42b7904d2d75d054553a242d606e4e708ac90c",
+          "size": 148
+        },
+        "examples/issues/README.md": {
+          "mode": 420,
+          "sha256": "ac2e86c4666e18858c0db171b38b7b2e320662811f755168dc0d8cf2e5d1f3fb",
+          "size": 4435
+        },
+        "examples/issues/main.tf": {
+          "mode": 420,
+          "sha256": "d36cee417e4c9dddc6f02f8778ef6ee477c277e2bd365230938f980af5465f9c",
+          "size": 2502
+        },
+        "examples/issues/outputs.tf": {
+          "mode": 420,
+          "sha256": "d2e5bd2f41d14e818414f9b6dc02b1f484933ffd9d70bf7b148126efbc66a036",
+          "size": 3156
+        },
+        "examples/issues/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/issues/versions.tf": {
+          "mode": 420,
+          "sha256": "acd6714a863d3b542f29b7632f42b7904d2d75d054553a242d606e4e708ac90c",
+          "size": 148
+        },
+        "examples/manage-default-vpc/README.md": {
+          "mode": 420,
+          "sha256": "97e13ffedd8866653d0181ec0ce56388b88e65bd0a7d6d9b99513175b0557be8",
+          "size": 18148
+        },
+        "examples/manage-default-vpc/main.tf": {
+          "mode": 420,
+          "sha256": "d98c4f176016e44d6665d110ed1d14f52e3cab2a91666c794afc3cbf4d1bb8df",
+          "size": 627
+        },
+        "examples/manage-default-vpc/outputs.tf": {
+          "mode": 420,
+          "sha256": "48679e80839a10f06d6d21e50399b83f9becca32a62c0cf915e33a174b6f7465",
+          "size": 15831
+        },
+        "examples/manage-default-vpc/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/manage-default-vpc/versions.tf": {
+          "mode": 420,
+          "sha256": "acd6714a863d3b542f29b7632f42b7904d2d75d054553a242d606e4e708ac90c",
+          "size": 148
+        },
+        "examples/network-acls/README.md": {
+          "mode": 420,
+          "sha256": "3aca30bf7e39878e006a8177b541e20a37af9cd66b581a5d82094931eece35c2",
+          "size": 18507
+        },
+        "examples/network-acls/main.tf": {
+          "mode": 420,
+          "sha256": "4c9418a2cf267be65e6f86266e96f261d1c4069d1415553fcfc15ce29d4670a7",
+          "size": 5093
+        },
+        "examples/network-acls/outputs.tf": {
+          "mode": 420,
+          "sha256": "48679e80839a10f06d6d21e50399b83f9becca32a62c0cf915e33a174b6f7465",
+          "size": 15831
+        },
+        "examples/network-acls/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/network-acls/versions.tf": {
+          "mode": 420,
+          "sha256": "acd6714a863d3b542f29b7632f42b7904d2d75d054553a242d606e4e708ac90c",
+          "size": 148
+        },
+        "examples/outpost/README.md": {
+          "mode": 420,
+          "sha256": "99d4a3e6fa9096a9c3f70c42846a8c729a5654633a4138e2abb84c32724669eb",
+          "size": 18699
+        },
+        "examples/outpost/main.tf": {
+          "mode": 420,
+          "sha256": "b16530ef539fb438ad21cf72dbefc1dbdccce0264e8a7a9ca9ec774ef3618e0e",
+          "size": 4070
+        },
+        "examples/outpost/outputs.tf": {
+          "mode": 420,
+          "sha256": "48679e80839a10f06d6d21e50399b83f9becca32a62c0cf915e33a174b6f7465",
+          "size": 15831
+        },
+        "examples/outpost/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/outpost/versions.tf": {
+          "mode": 420,
+          "sha256": "acd6714a863d3b542f29b7632f42b7904d2d75d054553a242d606e4e708ac90c",
+          "size": 148
+        },
+        "examples/secondary-cidr-blocks/README.md": {
+          "mode": 420,
+          "sha256": "16a186d796d8a70544bed3083ceb86347a5644f5cb87408ed1cbbca872fd6794",
+          "size": 18370
+        },
+        "examples/secondary-cidr-blocks/main.tf": {
+          "mode": 420,
+          "sha256": "574f12a6457a17ccb1f0bea895ef62d47850939c33c618569129a5fea9732a43",
+          "size": 1242
+        },
+        "examples/secondary-cidr-blocks/outputs.tf": {
+          "mode": 420,
+          "sha256": "48679e80839a10f06d6d21e50399b83f9becca32a62c0cf915e33a174b6f7465",
+          "size": 15831
+        },
+        "examples/secondary-cidr-blocks/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/secondary-cidr-blocks/versions.tf": {
+          "mode": 420,
+          "sha256": "acd6714a863d3b542f29b7632f42b7904d2d75d054553a242d606e4e708ac90c",
+          "size": 148
+        },
+        "examples/separate-route-tables/README.md": {
+          "mode": 420,
+          "sha256": "a02d49a209131a48572867507a2b8e04c871505f4349a30bc93c3c845a5b13db",
+          "size": 18542
+        },
+        "examples/separate-route-tables/main.tf": {
+          "mode": 420,
+          "sha256": "a79070a9af626d06378f96acd32bddea151c0029d73c346479adefc883765ce4",
+          "size": 1417
+        },
+        "examples/separate-route-tables/outputs.tf": {
+          "mode": 420,
+          "sha256": "48679e80839a10f06d6d21e50399b83f9becca32a62c0cf915e33a174b6f7465",
+          "size": 15831
+        },
+        "examples/separate-route-tables/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/separate-route-tables/versions.tf": {
+          "mode": 420,
+          "sha256": "acd6714a863d3b542f29b7632f42b7904d2d75d054553a242d606e4e708ac90c",
+          "size": 148
+        },
+        "examples/simple/README.md": {
+          "mode": 420,
+          "sha256": "adb134f7511ba96a8f896909bf842ac2b08fad2d56b083ba6982139e45c4e8dd",
+          "size": 18714
+        },
+        "examples/simple/main.tf": {
+          "mode": 420,
+          "sha256": "03a1104dac56d099b186cb8e5fb51526f7655950f7554d2fce707079ffc22e6e",
+          "size": 772
+        },
+        "examples/simple/outputs.tf": {
+          "mode": 420,
+          "sha256": "48679e80839a10f06d6d21e50399b83f9becca32a62c0cf915e33a174b6f7465",
+          "size": 15831
+        },
+        "examples/simple/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/simple/versions.tf": {
+          "mode": 420,
+          "sha256": "acd6714a863d3b542f29b7632f42b7904d2d75d054553a242d606e4e708ac90c",
+          "size": 148
+        },
+        "examples/vpc-flow-logs/README.md": {
+          "mode": 420,
+          "sha256": "c2efd5c4ed93d430edffdd6e2ef6a6d424e7ca087037e26a3b84f872c4c86e03",
+          "size": 7063
+        },
+        "examples/vpc-flow-logs/main.tf": {
+          "mode": 420,
+          "sha256": "9e063c1a4054038cec33c8e47e5f62755c927770079dc880cd902e60201a8250",
+          "size": 6536
+        },
+        "examples/vpc-flow-logs/outputs.tf": {
+          "mode": 420,
+          "sha256": "7d27dac2832ec2bc3f12e0fea4f63c93353b2a55b8407b6a9ec6a63db24a5461",
+          "size": 2620
+        },
+        "examples/vpc-flow-logs/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/vpc-flow-logs/versions.tf": {
+          "mode": 420,
+          "sha256": "3994e45ed7c1343adf1d5846a9ef13f3d88f8686943177043978963db0a0b992",
+          "size": 230
+        },
+        "main.tf": {
+          "mode": 420,
+          "sha256": "dd4559b2b0c6a0fea805d1faff31ded035b5638ff40bbdc3c5ea0d78a9538b8e",
+          "size": 59685
+        },
+        "modules/vpc-endpoints/README.md": {
+          "mode": 420,
+          "sha256": "8b5ec504b2ad60c0d30ae78b07b3037a1c11b614e7ed0df826a124a7838d649a",
+          "size": 5542
+        },
+        "modules/vpc-endpoints/main.tf": {
+          "mode": 420,
+          "sha256": "d2105a98bcbcd98ae3a5e42e477c79ed4f451b97b68aca0ed130e3fe1c28281a",
+          "size": 4451
+        },
+        "modules/vpc-endpoints/outputs.tf": {
+          "mode": 420,
+          "sha256": "7c6ba34b9f77b1ebf95c5db5d6780d620e63e82a5e00b1560f3d8df0016e52a4",
+          "size": 632
+        },
+        "modules/vpc-endpoints/variables.tf": {
+          "mode": 420,
+          "sha256": "0ba9343904112017b2ec591d36213b897e9670ee55cb7c3e4c830738af5aba26",
+          "size": 2201
+        },
+        "modules/vpc-endpoints/versions.tf": {
+          "mode": 420,
+          "sha256": "d96ab48f87ce21bdadfb58590821e30c68994eefa6c9e18fe845e6d67ead5c33",
+          "size": 148
+        },
+        "outputs.tf": {
+          "mode": 420,
+          "sha256": "ef5f4fbff46ef32f2e10043dc389f5502a973e8286ba04d9705c8b9660c92713",
+          "size": 21991
+        },
+        "variables.tf": {
+          "mode": 420,
+          "sha256": "d5c2789c7e8fad6aed86b9d6cca3d906ec3c0615e9c9b0a82e6af677f645c016",
+          "size": 53840
+        },
+        "versions.tf": {
+          "mode": 420,
+          "sha256": "38f86e3c2a6063c97a0e58a2702c257ce962c1677251569e9e19e6de1b6cc8a5",
+          "size": 148
+        },
+        "vpc-flow-logs.tf": {
+          "mode": 420,
+          "sha256": "7c1db8b2bf033549801d4976801a183a36e1e45f5f3b5ef6db62a857002be7c5",
+          "size": 5805
+        }
+      },
+      "origin": "https://github.com/terraform-aws-modules/terraform-aws-vpc",
+      "source": "registry.terraform.io/terraform-aws-modules/vpc/aws",
+      "version": "5.21.0"
+    },
+    {
+      "commit": "578c95b19abf30b9b1068dd54025ac8e6df3212f",
+      "archiveSha256": "fba110ad567dd92782e36189ea9117889b3a67de3da66c406b55a80559cd88e1",
+      "files": {
+        ".editorconfig": {
+          "mode": 420,
+          "sha256": "527c345d8bf8a4711d3c1a4be0d74cc095cc18a3aa53011dea2e2a1994a42d59",
+          "size": 559
+        },
+        ".github/workflows/lock.yml": {
+          "mode": 420,
+          "sha256": "222b1bee9b3546c905c52f4c02e8b8b224362cd619d54b9c2e2942d815204717",
+          "size": 1040
+        },
+        ".github/workflows/pr-title.yml": {
+          "mode": 420,
+          "sha256": "715082c07b8a7cbc16c6dd32a246d272148ce98e09d7179d23c6f7fcb4327c71",
+          "size": 2306
+        },
+        ".github/workflows/pre-commit.yml": {
+          "mode": 420,
+          "sha256": "eb091968761fa34b555c8973ab91c0bb8e4a69e53a809fa9f5dd9ebe66a0e298",
+          "size": 6199
+        },
+        ".github/workflows/release.yml": {
+          "mode": 420,
+          "sha256": "c6219e7a79d1decf15987e7dbc7e4125ab9e32e0b222c3654eb1df1f38468de5",
+          "size": 1051
+        },
+        ".github/workflows/stale-actions.yaml": {
+          "mode": 420,
+          "sha256": "a6a70ecb6396bdf17c773c52b7c77983727bcde8a5bc713982b321bbdca70c57",
+          "size": 1383
+        },
+        ".gitignore": {
+          "mode": 420,
+          "sha256": "3f76d913b5e3b4aeaea4d3f5e2b47419b074253f7407c88657da71840cf21d62",
+          "size": 783
+        },
+        ".pre-commit-config.yaml": {
+          "mode": 420,
+          "sha256": "5f49bd8e5d3bf7d020088dfbcfabd1a236e20c97c799c4917d40db0b6e8eed71",
+          "size": 1248
+        },
+        ".releaserc.json": {
+          "mode": 420,
+          "sha256": "5bec8ee36a23752af554e9449918bb7eccb29d91cdeb646b3b9ce9128495bcf7",
+          "size": 1016
+        },
+        "CHANGELOG.md": {
+          "mode": 420,
+          "sha256": "488cb3bee5ae43769b12f489276cbe63bab2a2808955a27e79a4721f9773365c",
+          "size": 64707
+        },
+        "LICENSE": {
+          "mode": 420,
+          "sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+          "size": 10173
+        },
+        "README.md": {
+          "mode": 420,
+          "sha256": "a79a66c7d976136b4eed19045570a5ab260d4002022b8e05f905c08604aa8725",
+          "size": 40194
+        },
+        "docs/UPGRADE-4.0.md": {
+          "mode": 420,
+          "sha256": "86d2f70b646da6964c479cba5517187affed19a3a266e06096b6533037772a99",
+          "size": 4327
+        },
+        "docs/UPGRADE-6.0.md": {
+          "mode": 420,
+          "sha256": "eab792c456f7cd5e5f2cafe3e8b082e25d7b315221235f0ed6735d713db69bcf",
+          "size": 2897
+        },
+        "examples/README.md": {
+          "mode": 420,
+          "sha256": "9ab0f9a5363438db7baeb00a831d1d7dd97714069cd235d03de81819ee9316fc",
+          "size": 407
+        },
+        "examples/blue-green-deployment/README.md": {
+          "mode": 420,
+          "sha256": "083847385e4f15a4c36ddde7af8b139395ac85c7f102b0486702b40314b0554c",
+          "size": 8075
+        },
+        "examples/blue-green-deployment/main.tf": {
+          "mode": 420,
+          "sha256": "8c89bc64f24885210b86a9760afa4a1706e6353bf85277da5c02c37ba3933fe2",
+          "size": 5381
+        },
+        "examples/blue-green-deployment/outputs.tf": {
+          "mode": 420,
+          "sha256": "d200b6a79e776ca12ad138aaffdc40d140b51f4fd04dba7202708241689846e1",
+          "size": 5412
+        },
+        "examples/blue-green-deployment/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/blue-green-deployment/versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        },
+        "examples/complete-mssql/README.md": {
+          "mode": 420,
+          "sha256": "1056565cb29b2d90579b7a7b41f52f37654b94f13be3e5cc3f55ca6c5ac3f9c0",
+          "size": 5875
+        },
+        "examples/complete-mssql/main.tf": {
+          "mode": 420,
+          "sha256": "22c4b01c26d9f8eb7a47e1c77546096bb86ffa3ce05c482633cd33f99b50ba8b",
+          "size": 5852
+        },
+        "examples/complete-mssql/outputs.tf": {
+          "mode": 420,
+          "sha256": "fd40af97a2edbde20dd4da2c757bc3ed7c4dbe83b4900cff0f5d7bb1a9d0fb9e",
+          "size": 3285
+        },
+        "examples/complete-mssql/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/complete-mssql/versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        },
+        "examples/complete-mysql/README.md": {
+          "mode": 420,
+          "sha256": "78212d3fbd5e511a956880f1921b6291e8ec243eda58457ad68a1e1c86c78325",
+          "size": 8050
+        },
+        "examples/complete-mysql/main.tf": {
+          "mode": 420,
+          "sha256": "4577d8f9efd3b2ada16016099e93515fc33265b27ba75dcd2af0542647e1b90d",
+          "size": 4392
+        },
+        "examples/complete-mysql/outputs.tf": {
+          "mode": 420,
+          "sha256": "38a2ac6a6f9c936050ff14a3a1cf2f26dc846a51cd94828c436dceb420a428c4",
+          "size": 5906
+        },
+        "examples/complete-mysql/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/complete-mysql/versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        },
+        "examples/complete-oracle/README.md": {
+          "mode": 420,
+          "sha256": "76b1b99e82ddfcc271af6f527c41ac68c91bc4a15760e791d3a510b237db6120",
+          "size": 4846
+        },
+        "examples/complete-oracle/main.tf": {
+          "mode": 420,
+          "sha256": "713feb345394645b2ee28b065a48d45f5682910f6126767137f1e0a59e3af958",
+          "size": 4358
+        },
+        "examples/complete-oracle/outputs.tf": {
+          "mode": 420,
+          "sha256": "78726c97169e6bb0d6b9dc0e7af42ea735d4966717ab5dbdd07d59bbe7dd82ad",
+          "size": 2709
+        },
+        "examples/complete-oracle/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/complete-oracle/versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        },
+        "examples/complete-postgres/README.md": {
+          "mode": 420,
+          "sha256": "ff8f39f1d4640bda8891bacb5b7a82f4b2d99af14632b5629872dda63f1323b0",
+          "size": 9026
+        },
+        "examples/complete-postgres/main.tf": {
+          "mode": 420,
+          "sha256": "4d82f754b6ee144f90b696595fd8ab1ae73d851bf7e3a7e0cbbb950037db880c",
+          "size": 6756
+        },
+        "examples/complete-postgres/outputs.tf": {
+          "mode": 420,
+          "sha256": "425662e270cdf9836a726551e1b931d5b7d7b100f30153a5d7f30f9c276ef283",
+          "size": 6359
+        },
+        "examples/complete-postgres/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/complete-postgres/versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        },
+        "examples/cross-region-replica-postgres/README.md": {
+          "mode": 420,
+          "sha256": "34a7d373ae50df3f373bac7934e73aa84233f4d3bcc342020fdccdc2cb718cd0",
+          "size": 7093
+        },
+        "examples/cross-region-replica-postgres/main.tf": {
+          "mode": 420,
+          "sha256": "c13d954e4cbd2bb7d56f1ee00553517839e0d08c81cf538ca3ddc4916ef23800",
+          "size": 6132
+        },
+        "examples/cross-region-replica-postgres/outputs.tf": {
+          "mode": 420,
+          "sha256": "27480594395ee2b725c666508d48e82b611d8638240443ef14f784ee76f3a1b4",
+          "size": 4561
+        },
+        "examples/cross-region-replica-postgres/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/cross-region-replica-postgres/versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        },
+        "examples/enhanced-monitoring/README.md": {
+          "mode": 420,
+          "sha256": "73a4c6c96890a56f6cab18740d773712d22b2529b5c55bec7c1c1239aa1be8c8",
+          "size": 4865
+        },
+        "examples/enhanced-monitoring/main.tf": {
+          "mode": 420,
+          "sha256": "a00a5355bc8f9b0e014041de79acf877b558038c70a2a2e4112970f4a1c200cd",
+          "size": 3840
+        },
+        "examples/enhanced-monitoring/outputs.tf": {
+          "mode": 420,
+          "sha256": "78726c97169e6bb0d6b9dc0e7af42ea735d4966717ab5dbdd07d59bbe7dd82ad",
+          "size": 2709
+        },
+        "examples/enhanced-monitoring/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/enhanced-monitoring/versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        },
+        "examples/groups/README.md": {
+          "mode": 420,
+          "sha256": "37fa6d1cfebf5a8ed0bc0b0cbf09a1fc3eec34cea20ffc49efe7a4df6f9a9344",
+          "size": 5356
+        },
+        "examples/groups/main.tf": {
+          "mode": 420,
+          "sha256": "38a0ad75eecc054dfc8695567f44e2c6207851a9c4c7392a3ebeccabf9a98865",
+          "size": 4749
+        },
+        "examples/groups/outputs.tf": {
+          "mode": 420,
+          "sha256": "2fb41a076c60701e92715040913fba151b580d24274d4f6ce6964dac8905f147",
+          "size": 3487
+        },
+        "examples/groups/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/groups/versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        },
+        "examples/replica-mysql/README.md": {
+          "mode": 420,
+          "sha256": "c1eab072c56ca55a24d7a89290ebeb73839cedc4c8f0f08cc7d6028b932c0646",
+          "size": 6673
+        },
+        "examples/replica-mysql/main.tf": {
+          "mode": 420,
+          "sha256": "0063d7e9d375cf2aa4136107292e33b2f774b381e02434abc3e191806c0952f1",
+          "size": 4210
+        },
+        "examples/replica-mysql/outputs.tf": {
+          "mode": 420,
+          "sha256": "27480594395ee2b725c666508d48e82b611d8638240443ef14f784ee76f3a1b4",
+          "size": 4561
+        },
+        "examples/replica-mysql/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/replica-mysql/versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        },
+        "examples/replica-postgres/README.md": {
+          "mode": 420,
+          "sha256": "ec617c70360295f29efdb32afcb5fedc486a730179caa8dc1840fa57503a60c8",
+          "size": 6678
+        },
+        "examples/replica-postgres/main.tf": {
+          "mode": 420,
+          "sha256": "d1501377aa355ca539ac1bb572c9647af52c00f9d7d16cf33df0d7d090a82535",
+          "size": 4337
+        },
+        "examples/replica-postgres/outputs.tf": {
+          "mode": 420,
+          "sha256": "27480594395ee2b725c666508d48e82b611d8638240443ef14f784ee76f3a1b4",
+          "size": 4561
+        },
+        "examples/replica-postgres/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/replica-postgres/versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        },
+        "examples/role-association-postgres/README.md": {
+          "mode": 420,
+          "sha256": "f397c5de8aac607c3a518f8eb5924d85ab136d7f8b7e75046b656ea24dd5aec4",
+          "size": 5577
+        },
+        "examples/role-association-postgres/fixtures/lambda_function.py": {
+          "mode": 420,
+          "sha256": "0dbf004b7df8149b96600c9fe74580c67989865f8b8415366f6c343e932bc1e5",
+          "size": 75
+        },
+        "examples/role-association-postgres/main.tf": {
+          "mode": 420,
+          "sha256": "9cb4ee481fb6c1a53b1ed543aa3d2ae6f7d4193dae78e793c13419266b37130d",
+          "size": 5025
+        },
+        "examples/role-association-postgres/outputs.tf": {
+          "mode": 420,
+          "sha256": "bcd0c933e3b8b60cbe36e234ec418fe4336bbbe8d6eaab4d28c314fade327373",
+          "size": 3054
+        },
+        "examples/role-association-postgres/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/role-association-postgres/versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        },
+        "examples/s3-import-mysql/README.md": {
+          "mode": 420,
+          "sha256": "bd2fd532d7ea65008087418094b4a05342c9c35804ac6f7bcd9b53efc7e87ae6",
+          "size": 6408
+        },
+        "examples/s3-import-mysql/backup.zip": {
+          "mode": 420,
+          "sha256": "c8d8023c32cf12704cc10a4d3a9fab7cb7da1f7a675f0c986c025c068189b671",
+          "size": 4416330
+        },
+        "examples/s3-import-mysql/main.tf": {
+          "mode": 420,
+          "sha256": "45f699ab7982338e9f9c26ecc4a0fdad483146a8a02ca1a973ffefd423d3af14",
+          "size": 4961
+        },
+        "examples/s3-import-mysql/outputs.tf": {
+          "mode": 420,
+          "sha256": "78726c97169e6bb0d6b9dc0e7af42ea735d4966717ab5dbdd07d59bbe7dd82ad",
+          "size": 2709
+        },
+        "examples/s3-import-mysql/variables.tf": {
+          "mode": 420,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "size": 0
+        },
+        "examples/s3-import-mysql/versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        },
+        "main.tf": {
+          "mode": 420,
+          "sha256": "a361db9f4271233540092d0d3ab0f522a67b2aa95e5c8d473ebb2d1a9a4357ba",
+          "size": 7951
+        },
+        "modules/db_instance/README.md": {
+          "mode": 420,
+          "sha256": "dba9b62e6c49a2817a09d528526a81fba396f790df1363a1ec472d173c77d9b4",
+          "size": 27591
+        },
+        "modules/db_instance/main.tf": {
+          "mode": 420,
+          "sha256": "a6642c826b6573f42611a5c748eae060e91c663087290641de2c3629c11359fb",
+          "size": 10424
+        },
+        "modules/db_instance/outputs.tf": {
+          "mode": 420,
+          "sha256": "dc5b6ff29b3e4bb1aeaba493fa8e9e11eb240bafd8b32487c2544c4f648ffb69",
+          "size": 5035
+        },
+        "modules/db_instance/variables.tf": {
+          "mode": 420,
+          "sha256": "a8025ad7cd4354924e051d5037b74681d88110b585ca47e5ef263932254f3f90",
+          "size": 18494
+        },
+        "modules/db_instance/versions.tf": {
+          "mode": 420,
+          "sha256": "47c050607285b3963cb4bb1c4f3d205be526c297ad1f8d2c8cfbc3f8e4fb1be2",
+          "size": 230
+        },
+        "modules/db_instance_automated_backups_replication/main.tf": {
+          "mode": 420,
+          "sha256": "3874740e60cbd1aac283b1708795bb5ce7cd9e573d248050e0dc381d4b677994",
+          "size": 290
+        },
+        "modules/db_instance_automated_backups_replication/outputs.tf": {
+          "mode": 420,
+          "sha256": "f5cf585e57eef31265e7bc3f39fc3fc1960c659eca9ea19c056bf358704d851e",
+          "size": 197
+        },
+        "modules/db_instance_automated_backups_replication/variables.tf": {
+          "mode": 420,
+          "sha256": "6ad1f61fbd4d171db6c2683f8caa0761a13ecae242919495311781e6269c04ab",
+          "size": 856
+        },
+        "modules/db_instance_automated_backups_replication/versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        },
+        "modules/db_instance_role_association/README.md": {
+          "mode": 420,
+          "sha256": "24107144a177fdb618a921b3e29ae0546a1e73c84345239dd91c2dd972ccadf7",
+          "size": 1662
+        },
+        "modules/db_instance_role_association/main.tf": {
+          "mode": 420,
+          "sha256": "0ff19c55da60127ad7b3a380c4ec12dc5d0d5aada5fd05a948a0c1b0f1aba8e7",
+          "size": 223
+        },
+        "modules/db_instance_role_association/outputs.tf": {
+          "mode": 420,
+          "sha256": "823b203330e3f37668b70dc32c3124a895633c9bae8a4f4957617e1c624ef217",
+          "size": 193
+        },
+        "modules/db_instance_role_association/variables.tf": {
+          "mode": 420,
+          "sha256": "17287f574ab5377f2d86e31abe4074b9143ec674f2ceb198ce339b892784cff0",
+          "size": 589
+        },
+        "modules/db_instance_role_association/versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        },
+        "modules/db_option_group/README.md": {
+          "mode": 420,
+          "sha256": "31359fe97f962b1968709d43b26d52545aacdf94d8f8b391ffcacf97bd95d736",
+          "size": 2714
+        },
+        "modules/db_option_group/main.tf": {
+          "mode": 420,
+          "sha256": "c844aefead2717d02eda6cc8778604cd1bff1bef44f48b610f9d60106569875d",
+          "size": 1497
+        },
+        "modules/db_option_group/outputs.tf": {
+          "mode": 420,
+          "sha256": "de589781a3e646d6bc0699083eb2d19f09988257f7a6cee83e639cb2cd53ef7e",
+          "size": 273
+        },
+        "modules/db_option_group/variables.tf": {
+          "mode": 420,
+          "sha256": "16c32fd9f1d41e0bd38e6efadc6204572e738063d5958167d1de50ccee22d6b2",
+          "size": 1566
+        },
+        "modules/db_option_group/versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        },
+        "modules/db_parameter_group/README.md": {
+          "mode": 420,
+          "sha256": "f13de0a3ad24e1a2fae042573a6843a17c8cfb80d6bf1cd6f8040e57857528ad",
+          "size": 2309
+        },
+        "modules/db_parameter_group/main.tf": {
+          "mode": 420,
+          "sha256": "45efed256d772ba2e34cbe2ecf0090ac51e60e9983eafcfe1b9528172af8b4a2",
+          "size": 796
+        },
+        "modules/db_parameter_group/outputs.tf": {
+          "mode": 420,
+          "sha256": "8d7806763e646b08d29a8c2cc5aab97b0c557c990427d5ccbb238650fdb60e8a",
+          "size": 291
+        },
+        "modules/db_parameter_group/variables.tf": {
+          "mode": 420,
+          "sha256": "ba883c24fff5891ba4a99301a19fe249325f841769bc3640221d8669cff4e6b4",
+          "size": 1198
+        },
+        "modules/db_parameter_group/versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        },
+        "modules/db_subnet_group/README.md": {
+          "mode": 420,
+          "sha256": "dc84cb418fbc75ee067b6d30fdf6b5d281f2f4229888863fa65776ff242cd52c",
+          "size": 1883
+        },
+        "modules/db_subnet_group/main.tf": {
+          "mode": 420,
+          "sha256": "0c730e11c16fc95dc7405dbe8e029ae47b76a0a07c68214471f802dcce0f5f27",
+          "size": 476
+        },
+        "modules/db_subnet_group/outputs.tf": {
+          "mode": 420,
+          "sha256": "8f0b2298ed3a7c89902e4726b184601203d162d05168a2554d88d598a3248ade",
+          "size": 275
+        },
+        "modules/db_subnet_group/variables.tf": {
+          "mode": 420,
+          "sha256": "3f19cd37ecfba7281a37cb8eeb8e317e8ee178b24cf572cb038224b38bfded7d",
+          "size": 813
+        },
+        "modules/db_subnet_group/versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        },
+        "outputs.tf": {
+          "mode": 420,
+          "sha256": "b3649a4789f264637d3c58d6a7999d4241f95ad702043ffde7079828e5a7104b",
+          "size": 6195
+        },
+        "variables.tf": {
+          "mode": 420,
+          "sha256": "f1124cdaf7bc87c64a3ad36268e71562b63a0573e0611c751df8361951f9d8f1",
+          "size": 22628
+        },
+        "versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        },
+        "wrappers/README.md": {
+          "mode": 420,
+          "sha256": "d7427bd73d1f5f7465690fc081c96bf2067ff4e3ad10d34ae81fcfb514fb35c0",
+          "size": 2332
+        },
+        "wrappers/db_instance/README.md": {
+          "mode": 420,
+          "sha256": "68a20d10eb7110dd9231d8f1d0f8f0800d3802d55b88b19cf3858f6ede29cb66",
+          "size": 2382
+        },
+        "wrappers/db_instance/main.tf": {
+          "mode": 420,
+          "sha256": "5c873b98da1deec6775ca0e3466c31ae6695d9db39a85342a5a6db22bd816f85",
+          "size": 11960
+        },
+        "wrappers/db_instance/outputs.tf": {
+          "mode": 420,
+          "sha256": "34ebf3b763e57e71ea9fe312d694614d12c1c058044f17f6cbfc1e3ed65207f4",
+          "size": 215
+        },
+        "wrappers/db_instance/variables.tf": {
+          "mode": 420,
+          "sha256": "bdf97193a724ed243c4826302dd79e7a0d3dc539bc9072cd51d8aa1d74257613",
+          "size": 297
+        },
+        "wrappers/db_instance/versions.tf": {
+          "mode": 420,
+          "sha256": "47c050607285b3963cb4bb1c4f3d205be526c297ad1f8d2c8cfbc3f8e4fb1be2",
+          "size": 230
+        },
+        "wrappers/db_instance_automated_backups_replication/README.md": {
+          "mode": 420,
+          "sha256": "0f80ded4837e7e732e5deacbbfd5a38f5144cc9492c35de3badd20452fd8c8f4",
+          "size": 2502
+        },
+        "wrappers/db_instance_automated_backups_replication/main.tf": {
+          "mode": 420,
+          "sha256": "b80db206573f2035561b4ba38727f74479ec077ba16aaab0a536a2e8053c8990",
+          "size": 575
+        },
+        "wrappers/db_instance_automated_backups_replication/outputs.tf": {
+          "mode": 420,
+          "sha256": "602ebe5b9cff0659cbd3ccc56de2f6b2963e5c4226c3ed3beaff0f1facad5f91",
+          "size": 156
+        },
+        "wrappers/db_instance_automated_backups_replication/variables.tf": {
+          "mode": 420,
+          "sha256": "bdf97193a724ed243c4826302dd79e7a0d3dc539bc9072cd51d8aa1d74257613",
+          "size": 297
+        },
+        "wrappers/db_instance_automated_backups_replication/versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        },
+        "wrappers/db_instance_role_association/README.md": {
+          "mode": 420,
+          "sha256": "33a0ffed418ebbbde5bee8181dd3f03e9f578588e3e181e1a3f1ba0684ca5427",
+          "size": 2450
+        },
+        "wrappers/db_instance_role_association/main.tf": {
+          "mode": 420,
+          "sha256": "b8f706364bbcd227d0633e5bb3b63cac7f1b79d33ca5f987e1434d81b34b222a",
+          "size": 458
+        },
+        "wrappers/db_instance_role_association/outputs.tf": {
+          "mode": 420,
+          "sha256": "602ebe5b9cff0659cbd3ccc56de2f6b2963e5c4226c3ed3beaff0f1facad5f91",
+          "size": 156
+        },
+        "wrappers/db_instance_role_association/variables.tf": {
+          "mode": 420,
+          "sha256": "bdf97193a724ed243c4826302dd79e7a0d3dc539bc9072cd51d8aa1d74257613",
+          "size": 297
+        },
+        "wrappers/db_instance_role_association/versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        },
+        "wrappers/db_option_group/README.md": {
+          "mode": 420,
+          "sha256": "55b44ac2352969cf3454fd08de344e936a58de10b6933377ecf1e32f27162f6a",
+          "size": 2398
+        },
+        "wrappers/db_option_group/main.tf": {
+          "mode": 420,
+          "sha256": "3a5a53f2efc764bfa548b5563ca6a41d1e7b91257f33cb1b6b8e7b1f169363ea",
+          "size": 973
+        },
+        "wrappers/db_option_group/outputs.tf": {
+          "mode": 420,
+          "sha256": "602ebe5b9cff0659cbd3ccc56de2f6b2963e5c4226c3ed3beaff0f1facad5f91",
+          "size": 156
+        },
+        "wrappers/db_option_group/variables.tf": {
+          "mode": 420,
+          "sha256": "bdf97193a724ed243c4826302dd79e7a0d3dc539bc9072cd51d8aa1d74257613",
+          "size": 297
+        },
+        "wrappers/db_option_group/versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        },
+        "wrappers/db_parameter_group/README.md": {
+          "mode": 420,
+          "sha256": "e8714de68f785ebcc28f36f2ea4b59a730bea578b267121c6db1abb0f0d81253",
+          "size": 2410
+        },
+        "wrappers/db_parameter_group/main.tf": {
+          "mode": 420,
+          "sha256": "15ad7abac332dc25890f0b72a7bce6ed1b68f5959df6abb14f10733fc0b95c47",
+          "size": 686
+        },
+        "wrappers/db_parameter_group/outputs.tf": {
+          "mode": 420,
+          "sha256": "602ebe5b9cff0659cbd3ccc56de2f6b2963e5c4226c3ed3beaff0f1facad5f91",
+          "size": 156
+        },
+        "wrappers/db_parameter_group/variables.tf": {
+          "mode": 420,
+          "sha256": "bdf97193a724ed243c4826302dd79e7a0d3dc539bc9072cd51d8aa1d74257613",
+          "size": 297
+        },
+        "wrappers/db_parameter_group/versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        },
+        "wrappers/db_subnet_group/README.md": {
+          "mode": 420,
+          "sha256": "7c870f90110cd8a110732312dca09f3faa51b4caa916ba35500a8ca048f8fe10",
+          "size": 2398
+        },
+        "wrappers/db_subnet_group/main.tf": {
+          "mode": 420,
+          "sha256": "e7b2cf0e88b8a458a660d1e9d9ce9a90430423dff7b747abb89141d93b7f6fc1",
+          "size": 531
+        },
+        "wrappers/db_subnet_group/outputs.tf": {
+          "mode": 420,
+          "sha256": "602ebe5b9cff0659cbd3ccc56de2f6b2963e5c4226c3ed3beaff0f1facad5f91",
+          "size": 156
+        },
+        "wrappers/db_subnet_group/variables.tf": {
+          "mode": 420,
+          "sha256": "bdf97193a724ed243c4826302dd79e7a0d3dc539bc9072cd51d8aa1d74257613",
+          "size": 297
+        },
+        "wrappers/db_subnet_group/versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        },
+        "wrappers/main.tf": {
+          "mode": 420,
+          "sha256": "a02893a620a9a4843b45e89977cbc7c91d382b9ecdbbf511fae3c20108b2603f",
+          "size": 15035
+        },
+        "wrappers/outputs.tf": {
+          "mode": 420,
+          "sha256": "34ebf3b763e57e71ea9fe312d694614d12c1c058044f17f6cbfc1e3ed65207f4",
+          "size": 215
+        },
+        "wrappers/variables.tf": {
+          "mode": 420,
+          "sha256": "bdf97193a724ed243c4826302dd79e7a0d3dc539bc9072cd51d8aa1d74257613",
+          "size": 297
+        },
+        "wrappers/versions.tf": {
+          "mode": 420,
+          "sha256": "6212b8f03764bceebb82f62e7c543a49b6b1b7cc547a0a52611244904296f2f6",
+          "size": 148
+        }
+      },
+      "origin": "https://github.com/terraform-aws-modules/terraform-aws-rds",
+      "source": "registry.terraform.io/terraform-aws-modules/rds/aws",
+      "version": "6.13.1"
+    }
+  ],
+  "schema": "honua.aws-cert-reviewed-modules/v1"
+}

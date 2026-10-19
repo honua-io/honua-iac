@@ -1,6 +1,6 @@
 {
   "schema": "honua.aws-cert-plan-recipient/v1",
-  "status": "unconfigured",
-  "recipient": null,
-  "recipientSha256": null
+  "status": "configured",
+  "recipient": "age1g4g59vumm7crn87q63m4vsgrd4gs8hkapctr87nhgushlaqyw4nqdvce4f",
+  "recipientSha256": "87978b1db28c3ec9238f477bef15322ea2b42866863e3fe4348360b27486aa17"
 }

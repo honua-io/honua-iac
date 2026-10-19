@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+"""Offline admission controls for immutable registry module inputs."""
+import hashlib
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+import verify_reviewed_modules as subject
+
+
+class ReviewedModules(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.base = Path(self.temp.name)
+        self.root = self.base / "root"
+        self.cache = self.root / ".terraform/modules"
+        self.cache.mkdir(parents=True)
+        self.manifest = self.base / "manifest.json"
+        modules = []
+        index = []
+        for name, source, version in (("vpc", "registry.terraform.io/terraform-aws-modules/vpc/aws", "5.21.0"),
+                                      ("rds", "registry.terraform.io/terraform-aws-modules/rds/aws", "6.13.1")):
+            directory = self.cache / name
+            directory.mkdir()
+            data = ("reviewed " + name + "\n").encode()
+            file = directory / "main.tf"
+            file.write_bytes(data)
+            file.chmod(0o664)
+            modules.append({"source": source, "version": version,
+                            "files": {"main.tf": {"mode": 0o644, "size": len(data),
+                                                  "sha256": hashlib.sha256(data).hexdigest()}}})
+            index.append({"Key": "honua." + name, "Source": source, "Version": version,
+                          "Dir": ".terraform/modules/" + name})
+        self.manifest.write_text(json.dumps({"schema": "honua.aws-cert-reviewed-modules/v1", "modules": modules}))
+        (self.cache / "modules.json").write_text(json.dumps({"Modules": index}))
+
+    def verify(self):
+        return subject.verify(self.root, self.manifest)
+
+    def test_exact_bytes_then_normalize_mode(self):
+        self.assertEqual(self.verify()["status"], "verified")
+        for name in ("vpc", "rds"):
+            self.assertEqual((self.cache / name / "main.tf").stat().st_mode & 0o777, 0o644)
+
+    def test_unreviewed_and_changed_files_refused(self):
+        (self.cache / "vpc/extra.tf").write_text("unreviewed")
+        with self.assertRaises(subject.Refused):
+            self.verify()
+        (self.cache / "vpc/extra.tf").unlink()
+        (self.cache / "vpc/main.tf").write_text("changed")
+        with self.assertRaises(subject.Refused):
+            self.verify()
+
+    def test_version_and_link_refused(self):
+        index_path = self.cache / "modules.json"
+        index = json.loads(index_path.read_text())
+        index["Modules"][0]["Version"] = "5.22.0"
+        index_path.write_text(json.dumps(index))
+        with self.assertRaises(subject.Refused):
+            self.verify()
+        index["Modules"][0]["Version"] = "5.21.0"
+        index_path.write_text(json.dumps(index))
+        (self.cache / "vpc/main.tf").unlink()
+        (self.cache / "vpc/main.tf").symlink_to(self.cache / "rds/main.tf")
+        with self.assertRaises(subject.Refused):
+            self.verify()
+
+    def test_unreviewed_registry_source_refused(self):
+        index_path = self.cache / "modules.json"
+        index = json.loads(index_path.read_text())
+        index["Modules"].append({"Key": "honua.extra", "Source": "registry.terraform.io/example/extra/aws",
+                                 "Version": "1.0.0", "Dir": ".terraform/modules/extra"})
+        index_path.write_text(json.dumps(index))
+        with self.assertRaisesRegex(subject.Refused, "module-unreviewed-source"):
+            self.verify()
+
+
+if __name__ == "__main__":
+    unittest.main()
