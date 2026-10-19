@@ -53,6 +53,18 @@ class StandingCertPlan(unittest.TestCase):
         (self.root / ".terraform").mkdir(parents=True)
         (self.root / "main.tf").write_text("locals { fixture = true }\n")
         (self.root / ".terraform.lock.hcl").write_text("# authored provider lock fixture\n")
+        modules = self.root / ".terraform/modules"
+        (modules / "vpc").mkdir(parents=True)
+        (modules / "vpc/main.tf").write_text("locals { downloaded_module = true }\n")
+        local_module = self.repository / "infrastructure/terraform/modules/fixture"
+        local_module.mkdir(parents=True)
+        (local_module / "main.tf").write_text("locals { local_module = true }\n")
+        (modules / "honua").symlink_to(local_module, target_is_directory=True)
+        (modules / "modules.json").write_text(json.dumps({"Modules": [
+            {"Key": "", "Source": "", "Dir": "."},
+            {"Key": "honua", "Source": "../../modules/fixture", "Dir": ".terraform/modules/honua"},
+            {"Key": "honua.vpc", "Source": "registry.terraform.io/terraform-aws-modules/vpc/aws",
+             "Version": "5.21.0", "Dir": ".terraform/modules/vpc"}]}))
         self.bootstrap = self.root / "postgis-bootstrap"
         (self.bootstrap / "build").mkdir(parents=True)
         (self.bootstrap / "handler.py").write_text("def handler(event, context): return {'ok': True}\n")
@@ -174,6 +186,7 @@ else:
   out=next(x[5:] for x in a if x.startswith('-out='))
   Path(out).write_text('authored binary plan '+c['sentinel'])
   if c.get('mutateBuild'): (Path(c['root'])/'postgis-bootstrap/build/dependency.py').write_text('CHANGED_DURING_PLAN = True')
+  if c.get('mutateModule'): (Path(c['root'])/'.terraform/modules/vpc/main.tf').write_text('CHANGED_DURING_PLAN = True')
   print(c['sentinel']);sys.exit(c.get('planExit',0))
  elif cmd=='show':
   if '-json' in a:
@@ -269,7 +282,7 @@ terraform {
         packet = packets[0]
         descriptor = json.loads((packet / "packet.json").read_text())
         self.assertEqual(receipt["packetSha256"], sha((packet / "packet.json").read_bytes()))
-        self.assertEqual(len(descriptor["files"]), 10)
+        self.assertEqual(len(descriptor["files"]), 11)
         for name, expected in descriptor["files"].items():
             self.assertEqual(sha((packet / name).read_bytes()), expected)
             self.assertEqual(stat.S_IMODE((packet / name).stat().st_mode), 0o600)
@@ -279,6 +292,10 @@ terraform {
         self.assertEqual((packet / "bootstrap.zip").read_bytes(), (self.bootstrap / "bootstrap.zip").read_bytes())
         self.assertEqual(set(json.loads((packet / "bootstrap-inputs.json").read_text())["files"]),
                          {"handler.py", "dependency.py"})
+        modules = json.loads((packet / "module-inputs.json").read_text())
+        self.assertEqual(modules["modules"][-1]["version"], "5.21.0")
+        self.assertIn("vpc/main.tf", modules["files"])
+        self.assertEqual(modules["links"]["honua"], "infrastructure/terraform/modules/fixture")
         plan = [c for c in calls if "plan" in c]
         self.assertEqual(len(plan), 1)
         self.assertIn("-input=false", plan[0])
@@ -435,6 +452,18 @@ terraform {
     def test_bootstrap_dependency_drift_during_plan_is_refused(self):
         self.case["mutateBuild"] = True
         self.refused("bootstrap-build-drift", plan_started=True)
+
+    def test_missing_initialized_module_index_is_refused(self):
+        (self.root / ".terraform/modules/modules.json").unlink()
+        self.refused("module-cache-required")
+
+    def test_module_cache_drift_during_plan_is_refused(self):
+        self.case["mutateModule"] = True
+        self.refused("module-cache-drift", plan_started=True)
+
+    def test_module_cache_external_symlink_is_refused(self):
+        (self.root / ".terraform/modules/external").symlink_to(self.private, target_is_directory=True)
+        self.refused("module-cache-symlink-refused")
 
     def test_bootstrap_zip_must_contain_exact_build_bytes(self):
         with zipfile.ZipFile(self.bootstrap / "bootstrap.zip", "w") as archive:

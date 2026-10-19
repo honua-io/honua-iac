@@ -15,6 +15,7 @@
     "standing-cert-plan-request": "v1",
     "standing-cert-plan-packet": "v1",
     "standing-cert-plan-public": "v1",
-    "standing-cert-bootstrap-artifact": "v1"
+    "standing-cert-bootstrap-artifact": "v1",
+    "standing-cert-module-inputs": "v1"
   }
 }

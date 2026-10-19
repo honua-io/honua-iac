@@ -127,7 +127,12 @@ resources/providers/locals/expressions and other attributes are refused. Prepare
 this local configuration explicitly; the command does not rewrite it. All other
 Terraform files in the cert root and maintained local modules/components must
 match their tracked Git objects, including files hidden by ignore/skip-worktree
-settings. Ignored executable Terraform files are refused.
+settings. Git replacement objects are disabled. Ignored executable Terraform
+files are refused. The initialized `.terraform/modules/modules.json` and every
+regular downloaded module-cache file are inventoried by path, size and SHA256
+before planning and checked again afterward. Local module symlinks must resolve
+to the checked source tree; other cache links are refused. Missing or changed
+module cache bytes refuse the plan.
 
 The producer validates context, invokes the maintained exact-plan script once
 with `--skip-init` and no `--workspace`, then rechecks context and byte bindings.
@@ -163,6 +168,13 @@ private retention directory. Each file is `0600`; the directory is `0700`:
   Lambda filename/hash to those exact bytes. Bootstrap build replacement or
   deferred archive reads refuse, because they would generate new bytes only
   at apply. No package installation/build is invoked by this producer.
+- `module-inputs.json`: exact `modules.json` digest, resolved module source and
+  version declarations, and a bounded inventory of the initialized downloaded
+  module files and local source links. It records up to 16,384 regular files and
+  256 MiB of cache input; no module bytes are placed in the public receipt.
+  Terraform's provider lock does not lock remote module versions. The reviewed
+  IaC Git revision alone does not attest these downloaded bytes; the independent
+  reviewer must accept their resolved source/version and exact hashes.
 - `review.txt` and `diagnostic.log`: private Terraform review and all child
   output; may contain secrets.
 - `packet.json`: atomically published completed file manifest, SHA256 for every
@@ -206,9 +218,14 @@ that digest is not trusted approval. The existing two-principal guide documents
 the ephemeral cell roles, not an approved standing-cert verifier grant. Keep
 that integration prerequisite open. A future trusted consumer must restore
 and verify the retained bootstrap ZIP at the exact planned path, recheck its
-hash immediately before exact-plan apply, and refuse any deferred rebuild;
-the source helper does not implement that consumer. Do not manually apply a packet from this
-helper as a workaround.
+hash immediately before exact-plan apply, and refuse any deferred rebuild. It
+must also reconstruct the initialized module cache at the same absolute layout,
+verify every file and local link against `module-inputs.json` immediately before
+apply, and refuse absent or extra bytes. The saved Terraform plan embeds
+configuration but can retain absolute child-module/data paths, so the inventory
+is a verification obligation rather than a substitute for the cache. The source
+helper does not implement that consumer. Do not manually apply a packet from
+this helper as a workaround.
 
 ## Offline controls
 

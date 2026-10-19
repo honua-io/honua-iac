@@ -32,8 +32,9 @@ IMAGE_KEYS = ("honua_image", "gp_batch_image", "customcode_batch_image",
               "customcode_dotnet_batch_image", "ecs_alb_image")
 PACKET_FILES = {"request.json", "context-before.json", "context-after.json", "diagnostic.log",
                 "plan.bin", "metadata.json", "metadata.json.digest", "review.txt",
-                "bootstrap.zip", "bootstrap-inputs.json"}
+                "bootstrap.zip", "bootstrap-inputs.json", "module-inputs.json"}
 MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
+MAX_MODULE_BYTES = 256 * 1024 * 1024
 BOOTSTRAP_BUILD = "terraform_data.postgis_bootstrap_build"
 BOOTSTRAP_ARCHIVE = "data.archive_file.postgis_bootstrap"
 BOOTSTRAP_FUNCTION = "aws_lambda_function.postgis_bootstrap"
@@ -296,6 +297,11 @@ def verify_packet(path, expected_sha):
             and artifact["buildActions"] == ["no-op"]
             and artifact["sourceCodeHash"] == base64.b64encode(hashlib.sha256(content).digest()).decode()
             and artifact["files"] == bootstrap_zip_inventory(content), "bootstrap-packet-invalid")
+    modules = load(path / "module-inputs.json")
+    require(modules["schema"] == "honua.aws-cert-module-inputs/v1"
+            and re.fullmatch(SHA, modules["modulesJsonSha256"])
+            and modules["files"]["modules.json"]["sha256"] == modules["modulesJsonSha256"]
+            and bool(modules["modules"]), "module-packet-invalid")
     expiry = timestamp(metadata["expires_at_utc"])
     require(expiry > datetime.now(timezone.utc), "plan-expired")
     request = load(path / "request.json")
@@ -424,6 +430,78 @@ def bootstrap_inventory(root):
     require("handler.py" in inventory and inventory["handler.py"]["sha256"] ==
             digest((root / "postgis-bootstrap/handler.py").read_bytes()), "bootstrap-handler-source-mismatch")
     return inventory
+
+
+def module_inventory(root, repository):
+    """Bind the initialized third-party module tree without publishing its bytes."""
+    cache = root / ".terraform/modules"
+    index_path = cache / "modules.json"
+    require(cache.is_dir() and not cache.is_symlink() and index_path.is_file()
+            and not index_path.is_symlink(), "module-cache-required")
+    for directory in (cache.parent, cache):
+        info = directory.lstat()
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid in (0, os.getuid())
+                and not info.st_mode & 0o022, "module-cache-type-or-permissions")
+    index_bytes = index_path.read_bytes()
+    require(len(index_bytes) <= MAX_ARTIFACT_BYTES, "module-cache-size-limit")
+    index = json.loads(index_bytes)
+    require(isinstance(index.get("Modules"), list) and index["Modules"], "module-index-invalid")
+    modules, keys, remote = [], set(), 0
+    local_roots = (root, repository / "infrastructure/terraform/modules",
+                   repository / "infrastructure/terraform/components")
+    for item in index["Modules"]:
+        require(isinstance(item, dict) and all(isinstance(item.get(key), str)
+                for key in ("Key", "Source", "Dir")), "module-index-invalid")
+        key, source, location = (item[name] for name in ("Key", "Source", "Dir"))
+        require(key not in keys and location and not Path(location).is_absolute(), "module-index-invalid")
+        keys.add(key)
+        version = item.get("Version")
+        require(version is None or isinstance(version, str) and version, "module-index-invalid")
+        directory = (root / location).resolve()
+        require(directory.is_dir() and (directory == cache or cache in directory.parents
+                or any(directory == local or local in directory.parents for local in local_roots)),
+                "module-location-invalid")
+        if source.startswith("registry.terraform.io/"):
+            require(version is not None and cache in directory.parents, "module-location-invalid")
+        if key and cache in directory.parents:
+            remote += 1
+        modules.append({"key": key, "source": source, "version": version, "dir": location})
+    require(remote > 0, "module-cache-required")
+
+    files, links, total, entries = {}, {}, 0, 0
+    for parent, children, names in os.walk(
+            cache, followlinks=False, onerror=lambda _: require(False, "module-cache-unreadable")):
+        for name in (*children, *names):
+            entries += 1
+            require(entries <= 32768, "module-cache-size-limit")
+            path = Path(parent) / name
+            relative = path.relative_to(cache).as_posix()
+            artifact_name(relative)
+            info = path.lstat()
+            require(info.st_uid in (0, os.getuid()), "module-cache-type-or-permissions")
+            if path.is_symlink():
+                target = path.resolve(strict=True)
+                require(target.is_dir() and any(target == local or local in target.parents
+                        for local in local_roots) and repository in target.parents,
+                        "module-cache-symlink-refused")
+                links[relative] = target.relative_to(repository).as_posix()
+                if name in children:
+                    children.remove(name)
+            elif name in children:
+                require(stat.S_ISDIR(info.st_mode) and not info.st_mode & 0o022,
+                        "module-cache-type-or-permissions")
+            else:
+                require(stat.S_ISREG(info.st_mode) and not info.st_mode & 0o022,
+                        "module-cache-type-or-permissions")
+                total += info.st_size
+                require(total <= MAX_MODULE_BYTES and len(files) < 16384, "module-cache-size-limit")
+                content = path.read_bytes()
+                require(len(content) == info.st_size, "module-cache-drift")
+                files[relative] = {"sha256": digest(content), "size": info.st_size}
+    require("modules.json" in files and files["modules.json"]["sha256"] == digest(index_bytes),
+            "module-index-invalid")
+    return {"schema": "honua.aws-cert-module-inputs/v1", "modulesJsonSha256": digest(index_bytes),
+            "modules": sorted(modules, key=lambda item: item["key"]), "files": files, "links": links}
 
 
 def bootstrap_zip_inventory(data):
@@ -565,6 +643,7 @@ def produce(request_path, repository):
         trust(commands, deploy_role, request["accountId"])
         trust(commands, backend_role, request["accountId"])
         bootstrap_before = bootstrap_inventory(root)
+        modules_before = module_inventory(root, repository)
         archive_path = root / "postgis-bootstrap/bootstrap.zip"
         if archive_path.exists() or archive_path.is_symlink():
             require(not archive_path.is_symlink() and archive_path.is_file(), "bootstrap-archive-invalid")
@@ -578,6 +657,8 @@ def produce(request_path, repository):
                       "--candidate-digest", request["candidateDigest"], "--workload-identity-digest",
                       request["workloadIdentityContractDigest"]], seconds=planning_seconds(request, claims))
         retain_bootstrap(commands, root, packet, bootstrap_before)
+        require(module_inventory(root, repository) == modules_before, "module-cache-drift")
+        write(packet / "module-inputs.json", modules_before)
         after = commands.facts(root)
         validate_facts(after, request, deploy_role)
         require(after == before and digest(var_file.read_bytes()) == request["varFileSha256"], "context-drift")
@@ -604,6 +685,7 @@ def produce(request_path, repository):
         require(not commands.run(["git", "status", "--porcelain", "--untracked-files=normal"]).strip()
                 and commands.run(["git", "rev-parse", "HEAD"]).decode().strip() == request["iacRevision"], "source-drift")
         validate_runtime_source(commands, root, repository, config)
+        require(module_inventory(root, repository) == modules_before, "module-cache-drift")
         files = {}
         require({p.name for p in packet.iterdir()} == PACKET_FILES, "packet-files-invalid")
         for path in packet.iterdir():
