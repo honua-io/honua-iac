@@ -13,6 +13,7 @@ import shutil
 import signal
 import stat
 import subprocess
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -220,7 +221,7 @@ else:
             path.write_text(fake)
             path.chmod(0o700)
         refused_ambient = {"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "REQUESTS_CA_BUNDLE",
-                           "SSL_CERT_FILE", "CURL_CA_BUNDLE", "BASHOPTS", "SHELLOPTS",
+                           "SSL_CERT_FILE", "SSL_CERT_DIR", "CURL_CA_BUNDLE", "BASHOPTS", "SHELLOPTS",
                            "BASH_COMPAT", "BASH_LOADABLES_PATH", "CDPATH", "GLOBIGNORE",
                            "POSIXLY_CORRECT", "PS4", "IFS"}
         self.env = {k: v for k, v in os.environ.items()
@@ -333,7 +334,7 @@ terraform {
                 (packet / name).write_bytes(original)
 
     def test_environment_injections_start_no_plan(self):
-        for name in ("TF_CLI_ARGS_plan", "TF_VAR_honua_image", "TF_WORKSPACE", "TF_LOG", "TF_LOG_PATH", "TF_CLI_CONFIG_FILE", "TERRAFORM_CONFIG", "TF_REATTACH_PROVIDERS", "TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE", "GIT_WORK_TREE", "GIT_DIR", "GIT_INDEX_FILE", "HONUA_IAC_OFFLINE", "HONUA_IAC_TERRAFORM_BIN", "AWS_PROFILE", "AWS_ENDPOINT_URL_IAM", "AWS_STS_ENDPOINT", "AWS_S3_ENDPOINT", "AWS_IAM_ENDPOINT", "AWS_DYNAMODB_ENDPOINT", "AWS_CA_BUNDLE", "https_proxy", "REQUESTS_CA_BUNDLE", "AWS_CONFIG_FILE", "BASH_ENV", "BASH_FUNC_terraform%%", "BASHOPTS", "SHELLOPTS", "CDPATH", "GLOBIGNORE", "POSIXLY_CORRECT", "PS4", "LD_PRELOAD", "LD_AUDIT", "LD_LIBRARY_PATH", "PYTHONUSERBASE", "PYTHONWARNINGS", "PYTHONINSPECT"):
+        for name in ("TF_CLI_ARGS_plan", "TF_VAR_honua_image", "TF_WORKSPACE", "TF_LOG", "TF_LOG_PATH", "TF_CLI_CONFIG_FILE", "TERRAFORM_CONFIG", "TF_REATTACH_PROVIDERS", "TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE", "GIT_WORK_TREE", "GIT_DIR", "GIT_INDEX_FILE", "HONUA_IAC_OFFLINE", "HONUA_IAC_TERRAFORM_BIN", "AWS_PROFILE", "AWS_ENDPOINT_URL_IAM", "AWS_STS_ENDPOINT", "AWS_S3_ENDPOINT", "AWS_IAM_ENDPOINT", "AWS_DYNAMODB_ENDPOINT", "AWS_CA_BUNDLE", "SSL_CERT_DIR", "https_proxy", "REQUESTS_CA_BUNDLE", "AWS_CONFIG_FILE", "BASH_ENV", "BASH_FUNC_terraform%%", "BASHOPTS", "SHELLOPTS", "CDPATH", "GLOBIGNORE", "POSIXLY_CORRECT", "PS4", "LD_PRELOAD", "LD_AUDIT", "LD_LIBRARY_PATH", "PYTHONUSERBASE", "PYTHONWARNINGS", "PYTHONINSPECT"):
             with self.subTest(name=name):
                 self.env[name] = "refuse"
                 # Loader variables act before Python starts; exercise the
@@ -381,6 +382,30 @@ terraform {
         self.assertEqual(receipt["status"], "planned-unapproved")
         self.assertIn("dev_overrides", ambient.read_text())
         self.assertFalse(list(self.private.glob(".cert-cli-*")))
+
+    def test_python_children_ignore_user_site_hooks_with_home_preserved(self):
+        home = self.private / "home"
+        site = home / f".local/lib/python{sys.version_info.major}.{sys.version_info.minor}/site-packages"
+        site.mkdir(parents=True)
+        customize_marker = self.base / "usercustomize-ran"
+        pth_marker = self.base / "user-pth-ran"
+        (site / "usercustomize.py").write_text(
+            "from pathlib import Path\nPath(" + repr(str(customize_marker)) + ").write_text('ran')\n")
+        (site / "hostile.pth").write_text(
+            "import pathlib; pathlib.Path(" + repr(str(pth_marker)) + ").write_text('ran')\n")
+        self.env["HOME"] = str(home)
+        self.case["home"] = str(home)
+        subprocess.run(["python3", "-c", "pass"], env=self.env, cwd=self.repository,
+                       check=True, capture_output=True)
+        self.assertTrue(customize_marker.exists())
+        self.assertTrue(pth_marker.exists())
+        customize_marker.unlink()
+        pth_marker.unlink()
+        result, receipt, _ = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(receipt["status"], "planned-unapproved")
+        self.assertFalse(customize_marker.exists())
+        self.assertFalse(pth_marker.exists())
 
     def test_current_iam_user_is_refused(self):
         self.case["callerArn"] = f"arn:aws:iam::{ACCOUNT}:user/operator"

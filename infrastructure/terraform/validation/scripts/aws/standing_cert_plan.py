@@ -180,7 +180,8 @@ def environment(request, root):
                  "BASH_FUNC_", "BASHOPTS", "SHELLOPTS", "BASH_COMPAT", "BASH_LOADABLES_PATH",
                  "CDPATH", "GLOBIGNORE", "POSIXLY_CORRECT", "PS4", "IFS",
                  "PYTHON", "AWS_ENDPOINT_URL",
-                 "AWS_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE", "CURL_CA_BUNDLE")
+                 "AWS_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE", "SSL_CERT_DIR",
+                 "CURL_CA_BUNDLE")
     require(not any(k.startswith(forbidden) for k in env), "environment-override-refused")
     # Terraform's S3 backend also honors deprecated AWS_STS_ENDPOINT and
     # AWS_S3_ENDPOINT names. Reject the whole AWS endpoint family.
@@ -208,6 +209,7 @@ def environment(request, root):
     env.update(AWS_REGION=request["region"], AWS_DEFAULT_REGION=request["region"],
                AWS_PAGER="", AWS_CONFIG_FILE=os.devnull, AWS_SHARED_CREDENTIALS_FILE=os.devnull,
                AWS_EC2_METADATA_DISABLED="true", TF_IN_AUTOMATION="true", CHECKPOINT_DISABLE="1",
+               PYTHONNOUSERSITE="1", PYTHONSAFEPATH="1",
                HONUA_IAC_SESSION_EXPIRY=request["sessionExpiresAtUtc"],
                HONUA_IAC_IDENTITY_ISSUER=ISSUER,
                HONUA_CERT_VAR_FILE=str(request["varFile"]),
