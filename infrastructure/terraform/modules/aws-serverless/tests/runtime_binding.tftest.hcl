@@ -205,3 +205,38 @@ run "operator_cannot_replace_module_runtime_document_alias" {
   }
   expect_failures = [aws_secretsmanager_secret_version.runtime_settings]
 }
+
+run "environment_cannot_retarget_registered_function" {
+  command = plan
+  variables {
+    additional_env = { ControlPlane__DeployTargets__0__TargetName = "arn:aws:lambda:us-east-1:123456789012:function:unrelated" }
+  }
+  expect_failures = [aws_secretsmanager_secret_version.runtime_settings]
+}
+
+run "environment_cannot_override_case_insensitive_target_backend" {
+  command = plan
+  variables {
+    additional_env = { controlplane__DEPLOYTARGETS__0__Backend = "honua-gitops-aws-ecs" }
+  }
+  expect_failures = [aws_secretsmanager_secret_version.runtime_settings]
+}
+
+run "environment_cannot_append_an_unregistered_deployment_target" {
+  command = plan
+  variables {
+    additional_env = { ControlPlane__DeployTargets__1__TargetName = "arn:aws:lambda:us-east-1:123456789012:function:unrelated" }
+  }
+  expect_failures = [aws_secretsmanager_secret_version.runtime_settings]
+}
+
+run "unrelated_environment_settings_remain_available" {
+  command = plan
+  variables {
+    additional_env = { Logging__LogLevel__Default = "Warning" }
+  }
+  assert {
+    condition     = local.lambda_environment.Logging__LogLevel__Default == "Warning" && jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].TargetName == local.lambda_function_arn
+    error_message = "Unrelated custom settings must remain available without changing the registered deployment target."
+  }
+}

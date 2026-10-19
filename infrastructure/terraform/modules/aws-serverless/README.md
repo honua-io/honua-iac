@@ -734,8 +734,11 @@ functions carry the API function's environment minus its HTTP-only settings
   reference pins the secret version, so each Lambda function version retains
   its own registry configuration when selected for rollback. Both execution
   roles can read the exact secret. Retain the secret versions referenced by
-  supported rollback targets. The module reserves `HONUA_SETTINGS_DOCUMENT` and
-  `Settings__Document`; these cannot be replaced through `additional_env`.
+  supported rollback targets. The module reserves `HONUA_SETTINGS_DOCUMENT`,
+  `Settings__Document` and the complete `ControlPlane:DeployTargets` tree;
+  `additional_env` cannot replace the document, override its registered target
+  or append another target. Case and configuration-separator variants are also
+  rejected. Unrelated custom environment settings remain available.
   Use a server image supporting the settings-document startup loader.
 - **HTTP-only settings stay on the API function.** EventBridge invokes the
   control-plane event functions; the only HTTP request they serve is the web

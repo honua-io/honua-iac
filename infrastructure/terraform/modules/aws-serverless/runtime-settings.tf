@@ -38,9 +38,10 @@ resource "aws_secretsmanager_secret_version" "runtime_settings" {
     precondition {
       condition = alltrue([
         for key in keys(var.additional_env) :
-        !contains(["honua_settings_document", "settings__document"], lower(replace(key, ":", "__")))
+        !contains(["honua_settings_document", "settings__document", "controlplane__deploytargets"], lower(replace(key, ":", "__"))) &&
+        !startswith(lower(replace(key, ":", "__")), "controlplane__deploytargets__")
       ])
-      error_message = "The module owns HONUA_SETTINGS_DOCUMENT; additional_env cannot replace the version-pinned deployment target document."
+      error_message = "The module owns HONUA_SETTINGS_DOCUMENT and ControlPlane:DeployTargets; additional_env cannot replace, override or extend the version-pinned deployment registry."
     }
   }
 }

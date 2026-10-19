@@ -44,6 +44,9 @@ image that supports the settings-document startup loader; earlier images cannot
 consume this module's registry. Retain the referenced secret versions for the
 function versions kept as rollback targets. Rolling back a function version
 therefore selects its pinned configuration, subject to that version remaining
-available. Environment overrides retain the server's normal higher precedence;
-the agent must still verify the effective registry against provider observations.
-The module reserves `HONUA_SETTINGS_DOCUMENT` and `Settings__Document` itself.
+available. The module reserves `HONUA_SETTINGS_DOCUMENT`, `Settings__Document`
+and the complete `ControlPlane:DeployTargets` configuration tree. Because
+environment settings take precedence over the document, `additional_env` cannot
+retarget or append deployments, including through case or separator variants.
+Unrelated environment overrides remain available. The agent must still verify
+the effective registry against independent provider observations.
