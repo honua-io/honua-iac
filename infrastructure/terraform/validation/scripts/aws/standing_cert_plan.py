@@ -417,6 +417,19 @@ def validate_backend_descriptor_path(path):
                 "backend-path-permissions")
 
 
+def validate_source_path(path, reason, *, directory=False):
+    """Exclude replacement by another local principal while Terraform reads source."""
+    for node in (path, *path.parents):
+        info = node.lstat()
+        is_path = node == path
+        require(info.st_uid in (0, os.getuid()) and not stat.S_ISLNK(info.st_mode)
+                and (not info.st_mode & 0o022 or (not is_path and info.st_uid == 0
+                     and stat.S_ISDIR(info.st_mode) and info.st_mode & stat.S_ISVTX))
+                and (stat.S_ISDIR(info.st_mode) if directory or not is_path
+                     else stat.S_ISREG(info.st_mode)),
+                reason)
+
+
 def hcl_tokens(value):
     tokens = re.findall(r'"(?:[^"\\]|\\.)*"|/\*.*?\*/|//[^\n]*|\#[^\n]*|\s+|[A-Za-z_][A-Za-z0-9_-]*|.', value, re.DOTALL)
     return [token for token in tokens if not token.isspace() and not token.startswith(("#", "//", "/*"))]
@@ -446,13 +459,7 @@ def validate_runtime_source(commands, root, repository, config):
                      "scripts/terraform-backend-identity.sh"):
         helper = repository / relative
         require(relative in tracked, "helper-source-invalid")
-        for node in (helper, *helper.parents):
-            info = node.lstat()
-            require(info.st_uid in (0, os.getuid()) and not stat.S_ISLNK(info.st_mode)
-                    and (not info.st_mode & 0o022 or (node != helper and info.st_uid == 0
-                         and stat.S_ISDIR(info.st_mode) and info.st_mode & stat.S_ISVTX))
-                    and (stat.S_ISREG(info.st_mode) if node == helper else stat.S_ISDIR(info.st_mode)),
-                    "helper-path-permissions")
+        validate_source_path(helper, "helper-path-permissions")
         data = helper.read_bytes()
         object_id = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data,
                                  usedforsecurity=False).hexdigest()
@@ -466,14 +473,16 @@ def validate_runtime_source(commands, root, repository, config):
         if not directory.exists():
             continue
         for parent, children, files in os.walk(directory):
+            validate_source_path(Path(parent), "terraform-source-path-permissions", directory=True)
             children[:] = [name for name in children if name not in (".terraform", ".git")
                            and Path(parent) / name != root / "postgis-bootstrap/build"]
-            require(not any((Path(parent) / name).is_symlink() for name in children), "source-symlink-refused")
+            for name in children:
+                validate_source_path(Path(parent) / name, "terraform-source-path-permissions", directory=True)
             for name in files:
                 path = Path(parent) / name
                 if path == backend or path == root / "postgis-bootstrap/bootstrap.zip":
                     continue
-                require(not path.is_symlink(), "source-symlink-refused")
+                validate_source_path(path, "terraform-source-path-permissions")
                 relative = str(path.relative_to(repository))
                 seen.add(relative)
                 require(relative in tracked, "ignored-terraform-source-refused")
@@ -828,6 +837,7 @@ def produce(request_path, repository):
         require(not commands.run(["git", "status", "--porcelain", "--untracked-files=normal"]).strip(), "source-dirty")
         if request["schema"] == "honua.aws-cert-plan-request/v2":
             policy_relative = "release/aws-cert-plan-recipient.json"
+            validate_source_path(repository / policy_relative, "reviewed-input-path-permissions")
             policy_bytes = (repository / policy_relative).read_bytes()
             require(policy_bytes == commands.run(["git", "show", "HEAD:" + policy_relative]),
                     "recipient-source-mismatch")
@@ -839,6 +849,7 @@ def produce(request_path, repository):
             for relative in ("release/aws-cert-reviewed-modules.json",
                              "release/aws-cert-reviewed-bootstrap.json",
                              "infrastructure/terraform/validation/scripts/aws/verify_reviewed_modules.py"):
+                validate_source_path(repository / relative, "reviewed-input-path-permissions")
                 require((repository / relative).read_bytes() ==
                         commands.run(["git", "show", "HEAD:" + relative]),
                         "reviewed-input-source-mismatch")
@@ -867,7 +878,7 @@ def produce(request_path, repository):
                     "reviewed-bootstrap-invalid")
         archive_path = root / "postgis-bootstrap/bootstrap.zip"
         if archive_path.exists() or archive_path.is_symlink():
-            require(not archive_path.is_symlink() and archive_path.is_file(), "bootstrap-archive-invalid")
+            validate_source_path(archive_path, "bootstrap-archive-path-permissions")
         before = commands.facts(root)
         validate_facts(before, request, deploy_role)
         if backend_expiry is not None:

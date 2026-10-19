@@ -512,6 +512,19 @@ terraform {
                 finally:
                     path.chmod(original_mode)
 
+    def test_writable_terraform_source_or_parent_is_refused_before_plan(self):
+        paths = (self.root / "main.tf", self.bootstrap,
+                 self.repository / "infrastructure/terraform/modules/fixture")
+        for path in paths:
+            with self.subTest(path=path):
+                original_mode = path.stat().st_mode & 0o777
+                path.chmod(original_mode | 0o020)
+                try:
+                    self.refused("terraform-source-path-permissions")
+                    self.assertFalse(self.journal.exists())
+                finally:
+                    path.chmod(original_mode)
+
     def test_fsmonitor_cannot_hide_modified_helper(self):
         monitor = self.private / "untrusted-fsmonitor"
         monitor.write_text("#!/bin/sh\nprintf '\\0'\n")
