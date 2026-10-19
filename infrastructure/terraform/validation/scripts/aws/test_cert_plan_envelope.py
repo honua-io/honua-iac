@@ -263,6 +263,30 @@ else:sys.exit(91)
         self.assertEqual(receipt["reason"], "source-dirty")
         self.assertFalse(list(self.exports.iterdir()))
 
+    def test_replacement_commit_cannot_substitute_recipient(self):
+        changed = dict(self.policy)
+        changed["recipient"] = subprocess.check_output(
+            [str(self.tools / "age-keygen"), "-y", str(self.other_identity)],
+            text=True, env=TOOL_ENV).strip()
+        changed["recipientSha256"] = sha(changed["recipient"].encode())
+        save(self.policy_file, changed)
+        subprocess.run(["git", "add", str(self.policy_file)], cwd=self.repository,
+                       capture_output=True, check=True)
+        tree = subprocess.check_output(["git", "write-tree"], cwd=self.repository, text=True).strip()
+        original = self.producer["iacRevision"]
+        alternate = subprocess.check_output(
+            ["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+             "commit-tree", tree, "-p", original, "-m", "synthetic replacement"],
+            cwd=self.repository, text=True).strip()
+        subprocess.run(["git", "replace", original, alternate], cwd=self.repository,
+                       capture_output=True, check=True)
+        self.assertFalse(subprocess.check_output(["git", "status", "--porcelain"],
+                                                 cwd=self.repository).strip())
+        result, receipt = self.invoke("seal")
+        self.assertEqual(result.returncode, 3, result.stdout)
+        self.assertEqual(receipt["reason"], "source-dirty")
+        self.assertFalse(list(self.exports.iterdir()))
+
     def test_hidden_recipient_substitution_cannot_encrypt(self):
         # The alternate recipient is a real disposable age identity, not an
         # invalid string rejected by policy syntax instead of source binding.

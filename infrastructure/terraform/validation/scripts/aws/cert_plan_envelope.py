@@ -96,6 +96,8 @@ def command(args, *, directory, output=None, github=False):
     # Encryption tools receive neither cloud/GitHub credentials nor loader/plugin
     # overrides. gh alone may use the operator's existing GitHub authentication.
     env = {"PATH": "/usr/bin:/bin", "HOME": os.environ["HOME"], "LANG": "C.UTF-8"}
+    if args[0] == "git":
+        env["GIT_NO_REPLACE_OBJECTS"] = "1"
     if github:
         for key in ("GH_TOKEN", "GITHUB_TOKEN"):
             if os.environ.get(key):
