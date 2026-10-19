@@ -181,7 +181,7 @@ def environment(request, root):
                HONUA_IAC_SESSION_EXPIRY=request["sessionExpiresAtUtc"],
                HONUA_IAC_IDENTITY_ISSUER=ISSUER,
                HONUA_CERT_VAR_FILE=str(request["varFile"]),
-               GIT_WORK_TREE=str(root.parents[3]))
+               GIT_WORK_TREE=str(root.parents[3]), GIT_NO_REPLACE_OBJECTS="1")
     # The backend obtains its own web-identity session using the protected file
     # referenced by its existing initialized descriptor, not the deployment keys.
     return env

@@ -394,6 +394,22 @@ terraform {
         (self.root / "main.tf").write_text("# hidden source modification\n")
         self.refused("hidden-index-flags-refused")
 
+    def test_replacement_commit_cannot_hide_source_changes(self):
+        (self.root / "main.tf").write_text("# substituted Terraform source\n")
+        subprocess.run(["git", "add", str(self.root / "main.tf")], cwd=self.repository,
+                       capture_output=True, check=True)
+        tree = subprocess.check_output(["git", "write-tree"], cwd=self.repository, text=True).strip()
+        original = self.request["iacRevision"]
+        alternate = subprocess.check_output(
+            ["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+             "commit-tree", tree, "-p", original, "-m", "synthetic replacement"],
+            cwd=self.repository, text=True).strip()
+        subprocess.run(["git", "replace", original, alternate], cwd=self.repository,
+                       capture_output=True, check=True)
+        self.assertFalse(subprocess.check_output(["git", "status", "--porcelain"],
+                                                 cwd=self.repository).strip())
+        self.refused("source-dirty")
+
     def test_each_maintained_helper_hidden_change_is_refused_before_execution(self):
         for relative in ("scripts/lib/tf-exec-contract.sh", "scripts/terraform-exact-plan.sh"):
             for flag in ("skip-worktree", "assume-unchanged"):
