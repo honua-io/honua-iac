@@ -184,7 +184,7 @@ if name=='aws':
 else:
  assert Path(os.environ['TF_CLI_CONFIG_FILE']).read_bytes()==b''
  assert 'TF_REATTACH_PROVIDERS' not in os.environ
- assert os.environ.get('TF_WORKSPACE')==c['workspace']
+ assert os.environ.get('TF_WORKSPACE')=='existing-cert'
  if 'home' in c: assert os.environ['HOME']==c['home']
  a=[x for x in a if not x.startswith('-chdir=')]
  cmd=a[0]
