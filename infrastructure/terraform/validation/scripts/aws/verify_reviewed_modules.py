@@ -82,11 +82,17 @@ def verify(root, manifest):
     found = set()
     local_found = set()
     nested_found = set()
+    root_found = False
     by_key = {item.get("Key"): item for item in index["Modules"]}
     require(len(by_key) == len(index["Modules"]), "module-index-duplicate-key")
     for item in index["Modules"]:
         source = item.get("Source")
-        if source in LOCAL_SOURCES.values():
+        if not source:
+            require(source == "" and item.get("Key") == "" and item.get("Dir") == "."
+                    and item.get("Version") in (None, "") and not root_found,
+                    "module-root-entry-invalid")
+            root_found = True
+        elif source in LOCAL_SOURCES.values():
             key = item.get("Key")
             require(key in LOCAL_SOURCES and source == LOCAL_SOURCES[key]
                     and item.get("Dir") == source and key not in local_found
@@ -104,7 +110,7 @@ def verify(root, manifest):
                     and item.get("Version") in (None, "") and name not in nested_found,
                     "nested-module-location-invalid")
             nested_found.add(name)
-        elif source and source not in SOURCES:
+        elif source not in SOURCES:
             require(False, "module-unreviewed-source")
         if source not in SOURCES:
             continue
@@ -118,6 +124,7 @@ def verify(root, manifest):
         regular_tree(directory, by_source[source]["files"])
         found.add(source)
     require(found == SOURCES, "module-missing")
+    require(root_found, "module-root-missing")
     require(local_found == set(LOCAL_SOURCES), "local-module-missing")
     require(nested_found == RDS_CHILDREN, "nested-module-missing")
     return {"schema": reviewed["schema"], "status": "verified",

@@ -19,7 +19,7 @@ class ReviewedModules(unittest.TestCase):
         self.cache.mkdir(parents=True)
         self.manifest = self.base / "manifest.json"
         modules = []
-        index = []
+        index = [{"Key": "", "Source": "", "Dir": "."}]
         for name, source, version in (("vpc", "registry.terraform.io/terraform-aws-modules/vpc/aws", "5.21.0"),
                                       ("rds", "registry.terraform.io/terraform-aws-modules/rds/aws", "6.13.1")):
             directory = self.cache / name
@@ -120,6 +120,15 @@ class ReviewedModules(unittest.TestCase):
         nested["Dir"] = ".terraform/modules/copied-module"
         index_path.write_text(json.dumps(index))
         with self.assertRaisesRegex(subject.Refused, "nested-module-location-invalid"):
+            self.verify()
+
+    def test_empty_source_cannot_add_cached_module(self):
+        index_path = self.cache / "modules.json"
+        index = json.loads(index_path.read_text())
+        index["Modules"].append({"Key": "honua.unreviewed", "Source": "",
+                                 "Dir": ".terraform/modules/copied-module"})
+        index_path.write_text(json.dumps(index))
+        with self.assertRaises(subject.Refused):
             self.verify()
 
 
