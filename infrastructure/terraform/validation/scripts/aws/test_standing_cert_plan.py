@@ -52,7 +52,17 @@ class StandingCertPlan(unittest.TestCase):
         self.root = self.repository / producer.ROOT_REL
         (self.root / ".terraform").mkdir(parents=True)
         (self.root / "main.tf").write_text("locals { fixture = true }\n")
-        (self.root / ".terraform.lock.hcl").write_text("# authored provider lock fixture\n")
+        provider_dir = self.root / ".terraform/providers/registry.terraform.io/hashicorp/aws/6.0.0/linux_amd64"
+        provider_dir.mkdir(parents=True)
+        self.provider = provider_dir / "terraform-provider-aws_v6.0.0"
+        self.provider.write_bytes(b"authored synthetic provider executable\n")
+        self.provider.chmod(0o755)
+        # Go dirhash.Hash1 separates the hex checksum and filename with one space.
+        package_summary = f"{sha(self.provider.read_bytes())} terraform-provider-aws_v6.0.0\n"
+        package_hash = "h1:" + base64.b64encode(hashlib.sha256(package_summary.encode()).digest()).decode()
+        (self.root / ".terraform.lock.hcl").write_text(
+            'provider "registry.terraform.io/hashicorp/aws" {\n'
+            '  version = "6.0.0"\n  hashes = ["' + package_hash + '"]\n}\n')
         modules = self.root / ".terraform/modules"
         (modules / "vpc").mkdir(parents=True)
         (modules / "vpc/main.tf").write_text("locals { downloaded_module = true }\n")
@@ -187,6 +197,7 @@ else:
   Path(out).write_text('authored binary plan '+c['sentinel'])
   if c.get('mutateBuild'): (Path(c['root'])/'postgis-bootstrap/build/dependency.py').write_text('CHANGED_DURING_PLAN = True')
   if c.get('mutateModule'): (Path(c['root'])/'.terraform/modules/vpc/main.tf').write_text('CHANGED_DURING_PLAN = True')
+  if c.get('mutateProvider'): (Path(c['root'])/'.terraform/providers/registry.terraform.io/hashicorp/aws/6.0.0/linux_amd64/terraform-provider-aws_v6.0.0').write_text('CHANGED DURING PLAN')
   print(c['sentinel']);sys.exit(c.get('planExit',0))
  elif cmd=='show':
   if '-json' in a:
@@ -297,9 +308,11 @@ terraform {
         self.assertEqual(set(json.loads((packet / "bootstrap-inputs.json").read_text())["files"]),
                          {"handler.py", "dependency.py"})
         modules = json.loads((packet / "module-inputs.json").read_text())
+        self.assertEqual(modules["schema"], "honua.aws-cert-module-inputs/v2")
         self.assertEqual(modules["modules"][-1]["version"], "5.21.0")
         self.assertIn("vpc/main.tf", modules["files"])
         self.assertEqual(modules["links"]["honua"], "infrastructure/terraform/modules/fixture")
+        self.assertEqual(modules["providers"][0]["address"], "registry.terraform.io/hashicorp/aws")
         plan = [c for c in calls if "plan" in c]
         self.assertEqual(len(plan), 1)
         self.assertIn("-input=false", plan[0])
@@ -509,6 +522,28 @@ terraform {
     def test_module_cache_external_symlink_is_refused(self):
         (self.root / ".terraform/modules/external").symlink_to(self.private, target_is_directory=True)
         self.refused("module-cache-symlink-refused")
+
+    def test_substituted_provider_is_refused_before_terraform_or_aws(self):
+        self.provider.write_bytes(b"substituted executable\n")
+        self.refused("provider-checksum-mismatch")
+        self.assertFalse(self.journal.exists())
+
+    def test_provider_cache_drift_during_plan_is_refused(self):
+        self.case["mutateProvider"] = True
+        self.refused("provider-checksum-mismatch", plan_started=True)
+
+    def test_locked_provider_in_private_plugin_cache_is_accepted(self):
+        package = self.provider.parent
+        cached = self.base / "provider-cache"
+        package.rename(cached)
+        package.symlink_to(cached, target_is_directory=True)
+        result, receipt, _ = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(receipt["status"], "planned-unapproved")
+
+    def test_missing_provider_cache_is_refused(self):
+        self.provider.unlink()
+        self.refused("provider-cache-incomplete")
 
     def test_bootstrap_zip_must_contain_exact_build_bytes(self):
         with zipfile.ZipFile(self.bootstrap / "bootstrap.zip", "w") as archive:

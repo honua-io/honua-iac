@@ -35,6 +35,7 @@ PACKET_FILES = {"request.json", "context-before.json", "context-after.json", "di
                 "bootstrap.zip", "bootstrap-inputs.json", "module-inputs.json"}
 MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
 MAX_MODULE_BYTES = 256 * 1024 * 1024
+MAX_PROVIDER_BYTES = 1536 * 1024 * 1024
 BOOTSTRAP_BUILD = "terraform_data.postgis_bootstrap_build"
 BOOTSTRAP_ARCHIVE = "data.archive_file.postgis_bootstrap"
 BOOTSTRAP_FUNCTION = "aws_lambda_function.postgis_bootstrap"
@@ -303,10 +304,10 @@ def verify_packet(path, expected_sha):
             and artifact["sourceCodeHash"] == base64.b64encode(hashlib.sha256(content).digest()).decode()
             and artifact["files"] == bootstrap_zip_inventory(content), "bootstrap-packet-invalid")
     modules = load(path / "module-inputs.json")
-    require(modules["schema"] == "honua.aws-cert-module-inputs/v1"
+    require(modules["schema"] == "honua.aws-cert-module-inputs/v2"
             and re.fullmatch(SHA, modules["modulesJsonSha256"])
             and modules["files"]["modules.json"]["sha256"] == modules["modulesJsonSha256"]
-            and bool(modules["modules"]), "module-packet-invalid")
+            and bool(modules["modules"]) and bool(modules["providers"]), "module-packet-invalid")
     expiry = timestamp(metadata["expires_at_utc"])
     require(expiry > datetime.now(timezone.utc), "plan-expired")
     request = load(path / "request.json")
@@ -545,8 +546,83 @@ def module_inventory(root, repository):
             prefix = directory.relative_to(cache).as_posix() + "/"
             require(any(name.startswith(prefix) and name.endswith((".tf", ".tf.json"))
                     for name in files), "module-cache-incomplete")
-    return {"schema": "honua.aws-cert-module-inputs/v1", "modulesJsonSha256": digest(index_bytes),
+    return {"schema": "honua.aws-cert-module-inputs/v2", "modulesJsonSha256": digest(index_bytes),
             "modules": sorted(modules, key=lambda item: item["key"]), "files": files, "links": links}
+
+
+def provider_inventory(root):
+    """Verify unpacked provider packages against committed h1 lock checksums."""
+    cache = root / ".terraform/providers"
+    require(cache.is_dir() and not cache.is_symlink(), "provider-cache-required")
+    lock = (root / ".terraform.lock.hcl").read_text()
+    blocks = re.findall(r'^provider "([^"]+)" \{(.*?)^\}', lock, re.MULTILINE | re.DOTALL)
+    require(blocks and len(blocks) == len(re.findall(r'^provider "', lock, re.MULTILINE)),
+            "provider-lock-invalid")
+    platform = "linux_amd64"
+    require(sys.platform == "linux" and os.uname().machine == "x86_64", "provider-platform-unsupported")
+    result, total, count = [], 0, 0
+    for address, body in blocks:
+        require(re.fullmatch(r"registry\.terraform\.io/[a-z0-9-]+/[a-z0-9-]+", address),
+                "provider-lock-invalid")
+        versions = re.findall(r'^\s*version\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"', body, re.MULTILINE)
+        hashes = set(re.findall(r'"(h1:[A-Za-z0-9+/]{43}=)"', body))
+        require(len(versions) == 1 and hashes, "provider-lock-invalid")
+        location = cache / address / versions[0] / platform
+        require(location.is_dir(), "provider-cache-required")
+        target = location.resolve(strict=True)
+        require(target.is_dir(), "provider-cache-type-or-permissions")
+        for path in (location, target):
+            for node in (path, *path.parents):
+                info = node.lstat()
+                linked_package = node == location and stat.S_ISLNK(info.st_mode)
+                require(info.st_uid in (0, os.getuid())
+                        and (linked_package or stat.S_ISDIR(info.st_mode))
+                        and (linked_package or not info.st_mode & 0o022
+                             or (info.st_uid == 0 and info.st_mode & stat.S_ISVTX)),
+                        "provider-cache-type-or-permissions")
+        files = {}
+        for parent, children, names in os.walk(target, followlinks=False,
+                                                onerror=lambda _: require(False, "provider-cache-unreadable")):
+            parent_path = Path(parent)
+            for name in (*children, *names):
+                path = parent_path / name
+                relative = path.relative_to(target).as_posix()
+                artifact_name(relative)
+                count += 1
+                require(count <= 4096, "provider-cache-size-limit")
+                info = path.lstat()
+                require(info.st_uid in (0, os.getuid()) and not info.st_mode & 0o022
+                        and not stat.S_ISLNK(info.st_mode), "provider-cache-type-or-permissions")
+                if name in children:
+                    require(stat.S_ISDIR(info.st_mode), "provider-cache-type-or-permissions")
+                    continue
+                require(stat.S_ISREG(info.st_mode), "provider-cache-type-or-permissions")
+                total += info.st_size
+                require(total <= MAX_PROVIDER_BYTES, "provider-cache-size-limit")
+                content_hash = hashlib.sha256()
+                with path.open("rb") as stream:
+                    before = os.fstat(stream.fileno())
+                    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                        content_hash.update(chunk)
+                    after = os.fstat(stream.fileno())
+                require((before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+                        == (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns),
+                        "provider-cache-drift")
+                files[relative] = {"sha256": content_hash.hexdigest(), "size": info.st_size,
+                                   "mode": stat.S_IMODE(info.st_mode)}
+        name = address.rsplit("/", 1)[-1]
+        require(any(file.startswith("terraform-provider-" + name) and data["mode"] & 0o111
+                    for file, data in files.items()), "provider-cache-incomplete")
+        # Terraform uses Go dirhash.Hash1 for unpacked packages: sorted file
+        # names, hex SHA256, one space, name, newline, then base64 SHA256.
+        summary = "".join(f'{files[file]["sha256"]} {file}\n'
+                          for file in sorted(files, key=lambda value: value.encode())).encode()
+        package_hash = "h1:" + base64.b64encode(hashlib.sha256(summary).digest()).decode()
+        require(package_hash in hashes, "provider-checksum-mismatch")
+        result.append({"address": address, "version": versions[0], "platform": platform,
+                       "packageHash": package_hash, "cachePath": str(location),
+                       "resolvedPath": str(target), "files": files})
+    return sorted(result, key=lambda value: value["address"])
 
 
 def bootstrap_zip_inventory(data):
@@ -684,12 +760,14 @@ def produce(request_path, repository):
         require(commands.run(["git", "rev-parse", "HEAD"]).decode().strip() == request["iacRevision"], "source-mismatch")
         require(not commands.run(["git", "status", "--porcelain", "--untracked-files=normal"]).strip(), "source-dirty")
         validate_runtime_source(commands, root, repository, config)
-        require(commands.json(["terraform", "version", "-json"])["terraform_version"] == request["terraformVersion"], "toolchain-mismatch")
         require(digest((root / ".terraform.lock.hcl").read_bytes()) == request["providerLockSha256"], "provider-lock-mismatch")
+        provider_before = provider_inventory(root)
+        require(commands.json(["terraform", "version", "-json"])["terraform_version"] == request["terraformVersion"], "toolchain-mismatch")
         trust(commands, deploy_role, request["accountId"])
         trust(commands, backend_role, request["accountId"])
         bootstrap_before = bootstrap_inventory(root)
         modules_before = module_inventory(root, repository)
+        modules_before["providers"] = provider_before
         archive_path = root / "postgis-bootstrap/bootstrap.zip"
         if archive_path.exists() or archive_path.is_symlink():
             require(not archive_path.is_symlink() and archive_path.is_file(), "bootstrap-archive-invalid")
@@ -703,7 +781,10 @@ def produce(request_path, repository):
                       "--candidate-digest", request["candidateDigest"], "--workload-identity-digest",
                       request["workloadIdentityContractDigest"]], seconds=planning_seconds(request, claims))
         retain_bootstrap(commands, root, packet, bootstrap_before)
-        require(module_inventory(root, repository) == modules_before, "module-cache-drift")
+        require(provider_inventory(root) == provider_before, "provider-cache-drift")
+        modules_after = module_inventory(root, repository)
+        modules_after["providers"] = provider_before
+        require(modules_after == modules_before, "module-cache-drift")
         write(packet / "module-inputs.json", modules_before)
         after = commands.facts(root)
         validate_facts(after, request, deploy_role)
@@ -731,7 +812,10 @@ def produce(request_path, repository):
         require(not commands.run(["git", "status", "--porcelain", "--untracked-files=normal"]).strip()
                 and commands.run(["git", "rev-parse", "HEAD"]).decode().strip() == request["iacRevision"], "source-drift")
         validate_runtime_source(commands, root, repository, config)
-        require(module_inventory(root, repository) == modules_before, "module-cache-drift")
+        require(provider_inventory(root) == provider_before, "provider-cache-drift")
+        modules_after = module_inventory(root, repository)
+        modules_after["providers"] = provider_before
+        require(modules_after == modules_before, "module-cache-drift")
         files = {}
         require({p.name for p in packet.iterdir()} == PACKET_FILES, "packet-files-invalid")
         for path in packet.iterdir():

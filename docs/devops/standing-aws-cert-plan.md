@@ -134,6 +134,15 @@ before planning and checked again afterward. Local module symlinks must resolve
 to the checked source tree; other cache links are refused. Missing or changed
 module cache bytes refuse the plan.
 
+The initialized `.terraform/providers` packages are also checked before any
+Terraform or AWS child runs: their unpacked file contents must match an `h1:`
+checksum in the committed provider lock for Linux amd64. The private dependency
+inventory records each resolved package path, lock-matching package hash and
+individual file hash/mode, and checks the same bytes again after planning.
+The consumer must restore and verify these exact provider packages as well as
+the module cache before an eventual approved apply; the lock file alone does
+not reauthenticate a preinstalled package when `init` is skipped.
+
 The producer validates context, invokes the maintained exact-plan script once
 with `--skip-init` and no `--workspace`, then rechecks context and byte bindings.
 No `workspace select/new` or `init` fallback is possible. Planning refreshes
@@ -168,13 +177,15 @@ private retention directory. Each file is `0600`; the directory is `0700`:
   Lambda filename/hash to those exact bytes. Bootstrap build replacement or
   deferred archive reads refuse, because they would generate new bytes only
   at apply. No package installation/build is invoked by this producer.
-- `module-inputs.json`: exact `modules.json` digest, resolved module source and
+- `module-inputs.json` (v2): exact `modules.json` digest, resolved module source and
   version declarations, and a bounded inventory of the initialized downloaded
   module files and local source links. It records up to 16,384 regular files and
   256 MiB of cache input; no module bytes are placed in the public receipt.
   Terraform's provider lock does not lock remote module versions. The reviewed
   IaC Git revision alone does not attest these downloaded bytes; the independent
-  reviewer must accept their resolved source/version and exact hashes.
+  reviewer must accept their resolved source/version and exact hashes. The same
+  private document records each preinstalled provider package's resolved path,
+  executable mode, file hashes and matching lock-file `h1:` content hash.
 - `review.txt` and `diagnostic.log`: private Terraform review and all child
   output; may contain secrets.
 - `packet.json`: atomically published completed file manifest, SHA256 for every
@@ -220,8 +231,9 @@ that integration prerequisite open. A future trusted consumer must restore
 and verify the retained bootstrap ZIP at the exact planned path, recheck its
 hash immediately before exact-plan apply, and refuse any deferred rebuild. It
 must also reconstruct the initialized module cache at the same absolute layout,
-verify every file and local link against `module-inputs.json` immediately before
-apply, and refuse absent or extra bytes. The saved Terraform plan embeds
+verify every module file and local link and every lock-matching provider package
+against `module-inputs.json` immediately before apply, and refuse absent or
+extra bytes. The saved Terraform plan embeds
 configuration but can retain absolute child-module/data paths, so the inventory
 is a verification obligation rather than a substitute for the cache. The source
 helper does not implement that consumer. Do not manually apply a packet from

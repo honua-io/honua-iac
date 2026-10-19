@@ -121,7 +121,7 @@ candidate/IaC identity and expiry must match.
 Authenticated decryption must finish in private temporary storage before
 extraction. Only twelve exact packet filenames are accepted, including the retained
 `bootstrap.zip`, `bootstrap-inputs.json` and `module-inputs.json` deployment
-input bindings. Traversal/absolute,
+input bindings (including locked provider-package hashes). Traversal/absolute,
 duplicate, link, sparse/device, unexpected and oversized entries are refused.
 Private packet file content is bounded to 255 MiB, leaving a 1 MiB margin for
 the tar, age and GitHub artifact containers; each complete transferred
