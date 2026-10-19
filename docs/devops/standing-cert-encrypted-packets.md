@@ -35,7 +35,7 @@ Install the verified tools into an existing private cache:
 
 ```bash
 install -d -m 700 "$HOME/.local/state/honua/cert-plan-tools"
-python3 infrastructure/terraform/validation/scripts/aws/cert_plan_envelope.py \
+python3 -I infrastructure/terraform/validation/scripts/aws/cert_plan_envelope.py \
   install-tools --directory "$HOME/.local/state/honua/cert-plan-tools"
 ```
 
@@ -79,7 +79,7 @@ are not execution authentication. The clean IaC checkout must match the
 producer receipt's `iacRevision` and contain the reviewed recipient at that SHA.
 
 ```bash
-python3 infrastructure/terraform/validation/scripts/aws/cert_plan_envelope.py \
+python3 -I infrastructure/terraform/validation/scripts/aws/cert_plan_envelope.py \
   seal --packet "$PRIVATE_PACKET" --producer-receipt "$PRIVATE_PRODUCER_RECEIPT" \
   --output-directory "$PRIVATE_EXPORTS" --tools-directory "$VERIFIED_AGE_TOOLS"
 ```
@@ -115,7 +115,7 @@ and selected real run, rather than an untrusted downloaded receipt:
 ```
 
 ```bash
-python3 infrastructure/terraform/validation/scripts/aws/cert_plan_envelope.py \
+python3 -I infrastructure/terraform/validation/scripts/aws/cert_plan_envelope.py \
   receive --expected "$PRIVATE_EXPECTED_CONTEXT" --identity "$PRIVATE_AGE_IDENTITY" \
   --output-directory "$PRIVATE_RETAINED_PACKETS" --tools-directory "$VERIFIED_AGE_TOOLS"
 ```

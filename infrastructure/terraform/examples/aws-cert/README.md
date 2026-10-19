@@ -579,7 +579,7 @@ from the maintained root **before rerunning certification**:
    separate OIDC role contracts, approved JSON tfvars and private retention owner:
 
    ```bash
-   python3 infrastructure/terraform/validation/scripts/aws/standing_cert_plan.py \
+   python3 -I infrastructure/terraform/validation/scripts/aws/standing_cert_plan.py \
      --request "$HOME/.config/honua/aws-cert/plan-request.json"
    ```
 
