@@ -333,7 +333,7 @@ terraform {
                 (packet / name).write_bytes(original)
 
     def test_environment_injections_start_no_plan(self):
-        for name in ("TF_CLI_ARGS_plan", "TF_VAR_honua_image", "TF_WORKSPACE", "TF_LOG", "TF_LOG_PATH", "TF_CLI_CONFIG_FILE", "TERRAFORM_CONFIG", "TF_REATTACH_PROVIDERS", "TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE", "GIT_WORK_TREE", "GIT_DIR", "GIT_INDEX_FILE", "HONUA_IAC_OFFLINE", "HONUA_IAC_TERRAFORM_BIN", "AWS_PROFILE", "AWS_ENDPOINT_URL_IAM", "AWS_CA_BUNDLE", "https_proxy", "REQUESTS_CA_BUNDLE", "AWS_CONFIG_FILE", "BASH_ENV", "BASH_FUNC_terraform%%", "BASHOPTS", "SHELLOPTS", "CDPATH", "GLOBIGNORE", "POSIXLY_CORRECT", "PS4", "LD_PRELOAD", "LD_AUDIT", "LD_LIBRARY_PATH", "PYTHONUSERBASE", "PYTHONWARNINGS", "PYTHONINSPECT"):
+        for name in ("TF_CLI_ARGS_plan", "TF_VAR_honua_image", "TF_WORKSPACE", "TF_LOG", "TF_LOG_PATH", "TF_CLI_CONFIG_FILE", "TERRAFORM_CONFIG", "TF_REATTACH_PROVIDERS", "TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE", "GIT_WORK_TREE", "GIT_DIR", "GIT_INDEX_FILE", "HONUA_IAC_OFFLINE", "HONUA_IAC_TERRAFORM_BIN", "AWS_PROFILE", "AWS_ENDPOINT_URL_IAM", "AWS_STS_ENDPOINT", "AWS_S3_ENDPOINT", "AWS_IAM_ENDPOINT", "AWS_DYNAMODB_ENDPOINT", "AWS_CA_BUNDLE", "https_proxy", "REQUESTS_CA_BUNDLE", "AWS_CONFIG_FILE", "BASH_ENV", "BASH_FUNC_terraform%%", "BASHOPTS", "SHELLOPTS", "CDPATH", "GLOBIGNORE", "POSIXLY_CORRECT", "PS4", "LD_PRELOAD", "LD_AUDIT", "LD_LIBRARY_PATH", "PYTHONUSERBASE", "PYTHONWARNINGS", "PYTHONINSPECT"):
             with self.subTest(name=name):
                 self.env[name] = "refuse"
                 # Loader variables act before Python starts; exercise the
@@ -404,12 +404,22 @@ terraform {
         self.refused("backend-web-identity-required")
 
     def test_initialized_backend_transport_overrides_are_refused_before_commands(self):
+        # Terraform serializes unused S3 backend fields as null; those remain
+        # compatible, while any active unreviewed field is refused.
+        producer.validate_backend_transport({**self.backend_config,
+                                             "access_key": None, "secret_key": None,
+                                             "sts_endpoint": None, "profile": None})
         overrides = (("sts_endpoint", "https://sts.attacker.invalid"),
                      ("endpoints", {"sts": "https://sts.attacker.invalid"}),
                      ("endpoints", {"s3": "https://s3.attacker.invalid"}),
                      ("custom_ca_bundle", "/unapproved/ca.pem"),
                      ("shared_config_files", ["/unapproved/config"]),
-                     ("insecure", True))
+                     ("insecure", True),
+                     ("access_key", "unapproved-key"),
+                     ("secret_key", "unapproved-secret"),
+                     ("token", "unapproved-token"),
+                     ("sse_customer_key", "unapproved-key"),
+                     ("profile", "unapproved-profile"))
         for key, value in overrides:
             with self.subTest(key=key, value=value):
                 config = {**self.backend_config, key: value}
@@ -417,6 +427,11 @@ terraform {
                      {"backend": {"type": "s3", "config": config}})
                 self.refused("backend-transport-override-refused")
                 self.assertFalse(self.journal.exists())
+        config = {**self.backend_config, "assume_role_with_web_identity": {
+            **self.backend_config["assume_role_with_web_identity"], "web_identity_token": "unapproved-token"}}
+        save(self.root / ".terraform/terraform.tfstate", {"backend": {"type": "s3", "config": config}})
+        self.refused("backend-transport-override-refused")
+        self.assertFalse(self.journal.exists())
 
     def test_writable_backend_descriptor_is_refused_before_commands(self):
         descriptor = self.root / ".terraform/terraform.tfstate"

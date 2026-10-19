@@ -182,6 +182,10 @@ def environment(request, root):
                  "PYTHON", "AWS_ENDPOINT_URL",
                  "AWS_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE", "CURL_CA_BUNDLE")
     require(not any(k.startswith(forbidden) for k in env), "environment-override-refused")
+    # Terraform's S3 backend also honors deprecated AWS_STS_ENDPOINT and
+    # AWS_S3_ENDPOINT names. Reject the whole AWS endpoint family.
+    require(not any(k.startswith("AWS_") and "ENDPOINT" in k for k in env),
+            "environment-override-refused")
     # The hosted launcher clears loader variables before obtaining credentials.
     # Empty exported values are inert; nonempty values remain forbidden.
     require(not any(k.startswith("LD_") and value for k, value in env.items()),
@@ -429,13 +433,16 @@ def backend_only_source(config, optional=()):
 
 
 def validate_backend_transport(config):
-    """An initialized backend must not route its web identity to alternate services."""
+    """Admit only reviewed active backend fields before a saved plan can capture them."""
     require(isinstance(config, dict), "backend-config-invalid")
-    unsafe = ("endpoint", "proxy", "ca_bundle", "cert_file", "shared_config_files",
-              "shared_credentials_files", "insecure", "skip_credentials_validation",
-              "s3_use_path_style")
-    require(not any(any(part in key for part in unsafe) and value not in (None, "", False, [], {})
-                    for key, value in config.items()), "backend-transport-override-refused")
+    admitted = {"bucket", "key", "region", "encrypt", "use_lockfile", "kms_key_id",
+                "workspace_key_prefix", "assume_role_with_web_identity"}
+    require(all(key in admitted or value is None for key, value in config.items()),
+            "backend-transport-override-refused")
+    web = config.get("assume_role_with_web_identity")
+    require(web is None or (isinstance(web, dict) and
+            all(key in {"role_arn", "web_identity_token_file", "duration"} or value is None
+                for key, value in web.items())), "backend-transport-override-refused")
 
 
 def validate_backend_descriptor_path(path):
