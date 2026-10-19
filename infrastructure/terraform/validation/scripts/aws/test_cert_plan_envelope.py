@@ -75,6 +75,11 @@ class EnvelopeControls(unittest.TestCase):
         with zipfile.ZipFile(buffer, "w") as archive:
             archive.writestr("handler.py", "def handler(event, context): return True\n")
         save(self.packet / "bootstrap.zip", buffer.getvalue())
+        save(self.packet / "module-inputs.json", {
+            "schema": "honua.aws-cert-module-inputs/v1", "modulesJsonSha256": "d" * 64,
+            "modules": [{"key": "honua.vpc", "source": "registry.terraform.io/terraform-aws-modules/vpc/aws",
+                         "version": "5.21.0", "dir": ".terraform/modules/vpc"}],
+            "files": {"modules.json": {"sha256": "d" * 64, "size": 128}}, "links": {}})
         binding = "b" * 64
         manifest = {"schema": "honua.aws-cert-plan-packet/v1", "files": {
             name: sha((self.packet / name).read_bytes()) for name in sorted(envelope.PACKET_FILES - {"packet.json"})},

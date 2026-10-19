@@ -119,8 +119,9 @@ and source/run metadata, exact ZIP entries, recipient, cipher/producer hashes,
 candidate/IaC identity and expiry must match.
 
 Authenticated decryption must finish in private temporary storage before
-extraction. Only eleven exact packet filenames are accepted, including the retained
-`bootstrap.zip` and `bootstrap-inputs.json` deployment payload bindings. Traversal/absolute,
+extraction. Only twelve exact packet filenames are accepted, including the retained
+`bootstrap.zip`, `bootstrap-inputs.json` and `module-inputs.json` deployment
+input bindings. Traversal/absolute,
 duplicate, link, sparse/device, unexpected and oversized entries are refused.
 Transfers/archives are bounded to 256 MiB including container overhead; this is
 a transport limit, not a server workload limit. No archive-controlled path or
