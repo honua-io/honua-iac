@@ -30,6 +30,7 @@ WORKFLOW = ".github/workflows/standing-aws-cert-plan.yml"
 SCHEMA = "honua.aws-cert-plan-envelope/v1"
 SHA = r"[0-9a-f]{64}"
 MAX_BYTES = 256 * 1024 * 1024
+MAX_PACKET_BYTES = MAX_BYTES - 1024 * 1024
 PACKET_FILES = {"request.json", "context-before.json", "context-after.json", "diagnostic.log",
                 "plan.bin", "metadata.json", "metadata.json.digest", "review.txt",
                 "bootstrap.zip", "bootstrap-inputs.json", "module-inputs.json", "packet.json"}
@@ -112,6 +113,7 @@ def command(args, *, directory, output=None, github=False):
 def tool(directory, name):
     path = regular(Path(directory) / name, private=False)
     require(sha(path.read_bytes()) == AGE_FILES[name], "encryption-tool-mismatch")
+    require(os.access(path, os.X_OK), "encryption-tool-not-executable")
     return str(path)
 
 
@@ -131,6 +133,7 @@ def install_tools(directory):
             else:
                 save(target, content)
                 target.chmod(0o700)
+            tool(directory, name)
     return {"schema": SCHEMA, "status": "tools-verified", "version": "v1.3.2",
             "archiveSha256": AGE_ARCHIVE_SHA}
 
@@ -187,7 +190,8 @@ def check_packet(directory, receipt):
         path = regular(directory / name)
         total += path.stat().st_size
         require(re.fullmatch(SHA, expected) and sha(path.read_bytes()) == expected, "packet-file-mismatch")
-    require(total <= MAX_BYTES and sha((directory / "plan.bin").read_bytes()) == receipt["planSha256"], "packet-mismatch")
+    require(total <= MAX_PACKET_BYTES, "packet-too-large")
+    require(sha((directory / "plan.bin").read_bytes()) == receipt["planSha256"], "packet-mismatch")
 
 
 def workflow_context():
@@ -217,6 +221,7 @@ def seal(packet, producer_receipt, output_parent, tools, repository):
         with tarfile.open(archive_path, "x", format=tarfile.USTAR_FORMAT) as archive:
             for name in sorted(PACKET_FILES):
                 archive.add(Path(packet) / name, arcname=name, recursive=False)
+        require(archive_path.stat().st_size <= MAX_BYTES, "plaintext-too-large")
         export = output_parent / ("encrypted-plan-" + uuid.uuid4().hex)
         export.mkdir(mode=0o700)
         try:
@@ -224,7 +229,7 @@ def seal(packet, producer_receipt, output_parent, tools, repository):
             command([tool(tools, "age"), "--encrypt", "-r", policy["recipient"], "-o", str(ciphertext), str(archive_path)], directory=workspace)
             # Catch changed source files during archive creation too.
             check_packet(packet, receipt)
-            require(regular(ciphertext).stat().st_size <= MAX_BYTES + 1024 * 1024, "ciphertext-too-large")
+            require(regular(ciphertext).stat().st_size <= MAX_BYTES, "ciphertext-too-large")
             public = {"schema": SCHEMA, "status": "encrypted-awaiting-local-retention", "context": context,
                       "producer": receipt, "recipientSha256": policy["recipientSha256"],
                       "ciphertextSha256": sha(ciphertext.read_bytes()), "encryptionVersion": "age/v1.3.2",

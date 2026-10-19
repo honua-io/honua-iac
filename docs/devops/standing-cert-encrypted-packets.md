@@ -123,9 +123,10 @@ extraction. Only twelve exact packet filenames are accepted, including the retai
 `bootstrap.zip`, `bootstrap-inputs.json` and `module-inputs.json` deployment
 input bindings. Traversal/absolute,
 duplicate, link, sparse/device, unexpected and oversized entries are refused.
-Transfers/archives are bounded to 256 MiB including container overhead; this is
-a transport limit, not a server workload limit. No archive-controlled path or
-permission is applied.
+Private packet file content is bounded to 255 MiB, leaving a 1 MiB margin for
+the tar, age and GitHub artifact containers; each complete transferred
+container is bounded to 256 MiB. This is a transport limit, not a server
+workload limit. No archive-controlled path or permission is applied.
 
 Success atomically publishes `aws-cert-retained-…/` containing `packet/` and a
 private `receipt.json`, files `0600`, directories `0700`, without overwriting

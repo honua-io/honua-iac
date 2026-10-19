@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'infrastructure/terraform/**'
+      - 'release/aws-cert-plan-recipient.json'
+      - 'release/component-versions.json'
       - 'scripts/run-aws-terraform-integration.sh'
       - 'scripts/run-azure-terraform-integration.sh'
       - 'scripts/run-aks-terraform-integration.sh'
@@ -53,6 +55,8 @@ on:
       - trunk
     paths:
       - 'infrastructure/terraform/**'
+      - 'release/aws-cert-plan-recipient.json'
+      - 'release/component-versions.json'
       - 'scripts/run-aws-terraform-integration.sh'
       - 'scripts/run-azure-terraform-integration.sh'
       - 'scripts/run-aks-terraform-integration.sh'

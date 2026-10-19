@@ -17,6 +17,7 @@ import unittest
 import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 
 import cert_plan_envelope as envelope
 
@@ -198,6 +199,30 @@ else:sys.exit(91)
         self.publish_fixture()
         self.refused_receive("recipient-key-mismatch", self.other_identity)
         self.assertFalse(self.journal.exists())
+
+    def test_install_tools_rejects_hash_correct_nonexecutable_cache(self):
+        cache = self.private / "tool-cache"
+        cache.mkdir(mode=0o700)
+        shutil.copyfile(self.tools / "age", cache / "age")
+        (cache / "age").chmod(0o600)
+        archive_data = io.BytesIO()
+        with tarfile.open(fileobj=archive_data, mode="w:gz") as archive:
+            for name in envelope.AGE_FILES:
+                content = (self.tools / name).read_bytes()
+                member = tarfile.TarInfo("age/" + name)
+                member.size = len(content)
+                archive.addfile(member, io.BytesIO(content))
+        with (mock.patch.object(envelope, "AGE_ARCHIVE_SHA", sha(archive_data.getvalue())),
+              mock.patch.object(envelope.urllib.request, "urlopen", return_value=io.BytesIO(archive_data.getvalue())),
+              self.assertRaisesRegex(envelope.Refused, "encryption-tool-not-executable")):
+            envelope.install_tools(cache)
+
+    def test_packet_budget_reserves_transport_overhead(self):
+        total = sum(path.stat().st_size for path in self.packet.iterdir() if path.name != "packet.json")
+        with (mock.patch.object(envelope, "MAX_PACKET_BYTES", total - 1),
+              self.assertRaisesRegex(envelope.Refused, "packet-too-large")):
+            envelope.check_packet(self.packet, self.producer)
+        self.assertFalse(list(self.exports.iterdir()))
 
     def test_wrong_actual_workflow_source_or_attempt_is_refused(self):
         self.publish_fixture()
