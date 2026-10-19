@@ -167,7 +167,7 @@ def environment(request, root):
     forbidden = ("TF_CLI_ARGS", "TF_VAR_", "TF_LOG", "GIT_", "HONUA_IAC_", "BASH_ENV", "ENV",
                  "BASH_FUNC_", "BASHOPTS", "SHELLOPTS", "BASH_COMPAT", "BASH_LOADABLES_PATH",
                  "CDPATH", "GLOBIGNORE", "POSIXLY_CORRECT", "PS4", "IFS",
-                 "LD_PRELOAD", "LD_LIBRARY_PATH", "PYTHONPATH", "PYTHONHOME", "AWS_ENDPOINT_URL",
+                 "LD_PRELOAD", "LD_LIBRARY_PATH", "PYTHON", "AWS_ENDPOINT_URL",
                  "AWS_CA_BUNDLE", "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE", "CURL_CA_BUNDLE")
     require(not any(k.startswith(forbidden) for k in env), "environment-override-refused")
     require(not any(k.upper() in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY") for k in env),
