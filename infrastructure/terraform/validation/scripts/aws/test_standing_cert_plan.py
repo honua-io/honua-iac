@@ -500,6 +500,18 @@ terraform {
                     subprocess.run(["git", "update-index", "--no-" + flag, relative], cwd=self.repository,
                                    capture_output=True, check=True)
 
+    def test_writable_helper_or_parent_is_refused_before_execution(self):
+        helper = self.repository / "scripts/terraform-exact-plan.sh"
+        for path in (helper, helper.parent):
+            with self.subTest(path=path):
+                original_mode = path.stat().st_mode & 0o777
+                path.chmod(original_mode | 0o020)
+                try:
+                    self.refused("helper-path-permissions")
+                    self.assertFalse(self.journal.exists())
+                finally:
+                    path.chmod(original_mode)
+
     def test_fsmonitor_cannot_hide_modified_helper(self):
         monitor = self.private / "untrusted-fsmonitor"
         monitor.write_text("#!/bin/sh\nprintf '\\0'\n")

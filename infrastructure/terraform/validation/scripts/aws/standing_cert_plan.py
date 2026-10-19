@@ -445,8 +445,14 @@ def validate_runtime_source(commands, root, repository, config):
     for relative in ("scripts/lib/tf-exec-contract.sh", "scripts/terraform-exact-plan.sh",
                      "scripts/terraform-backend-identity.sh"):
         helper = repository / relative
-        require(helper.is_file() and not helper.is_symlink() and relative in tracked,
-                "helper-source-invalid")
+        require(relative in tracked, "helper-source-invalid")
+        for node in (helper, *helper.parents):
+            info = node.lstat()
+            require(info.st_uid in (0, os.getuid()) and not stat.S_ISLNK(info.st_mode)
+                    and (not info.st_mode & 0o022 or (node != helper and info.st_uid == 0
+                         and stat.S_ISDIR(info.st_mode) and info.st_mode & stat.S_ISVTX))
+                    and (stat.S_ISREG(info.st_mode) if node == helper else stat.S_ISDIR(info.st_mode)),
+                    "helper-path-permissions")
         data = helper.read_bytes()
         object_id = hashlib.sha1(b"blob " + str(len(data)).encode() + b"\0" + data,
                                  usedforsecurity=False).hexdigest()
