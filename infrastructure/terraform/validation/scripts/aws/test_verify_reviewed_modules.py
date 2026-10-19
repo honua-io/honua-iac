@@ -33,6 +33,18 @@ class ReviewedModules(unittest.TestCase):
                                                   "sha256": hashlib.sha256(data).hexdigest()}}})
             index.append({"Key": "honua." + name, "Source": source, "Version": version,
                           "Dir": ".terraform/modules/" + name})
+            if name == "rds":
+                for child in sorted(subject.RDS_CHILDREN):
+                    nested = directory / "modules" / child
+                    nested.mkdir(parents=True)
+                    content = ("reviewed " + child + "\n").encode()
+                    (nested / "main.tf").write_bytes(content)
+                    modules[-1]["files"]["modules/" + child + "/main.tf"] = {
+                        "mode": 0o644, "size": len(content),
+                        "sha256": hashlib.sha256(content).hexdigest()}
+                    index.append({"Key": "honua.rds." + child,
+                                  "Source": "./modules/" + child,
+                                  "Dir": ".terraform/modules/rds/modules/" + child})
         for key, source in subject.LOCAL_SOURCES.items():
             index.append({"Key": key, "Source": source, "Dir": source})
         self.manifest.write_text(json.dumps({"schema": "honua.aws-cert-reviewed-modules/v1", "modules": modules}))
@@ -97,6 +109,17 @@ class ReviewedModules(unittest.TestCase):
         local["Dir"] = local["Source"]
         index_path.write_text(json.dumps(index))
         with self.assertRaisesRegex(subject.Refused, "module-unreviewed-source"):
+            self.verify()
+
+    def test_rds_nested_module_cannot_redirect_to_unreviewed_cache(self):
+        index_path = self.cache / "modules.json"
+        index = json.loads(index_path.read_text())
+        nested = next(item for item in index["Modules"] if item["Key"] == "honua.rds.db_instance")
+        (self.cache / "copied-module").mkdir()
+        (self.cache / "copied-module/main.tf").write_text("unreviewed")
+        nested["Dir"] = ".terraform/modules/copied-module"
+        index_path.write_text(json.dumps(index))
+        with self.assertRaisesRegex(subject.Refused, "nested-module-location-invalid"):
             self.verify()
 
 

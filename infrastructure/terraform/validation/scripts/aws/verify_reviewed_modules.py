@@ -14,6 +14,9 @@ from pathlib import Path
 
 SOURCES = {"registry.terraform.io/terraform-aws-modules/vpc/aws",
            "registry.terraform.io/terraform-aws-modules/rds/aws"}
+RDS_SOURCE = "registry.terraform.io/terraform-aws-modules/rds/aws"
+RDS_CHILDREN = {"db_subnet_group", "db_parameter_group", "db_option_group",
+                "db_instance", "db_instance_role_association"}
 LOCAL_SOURCES = {"honua": "../../modules/aws-serverless",
                  "github_oidc": "../../components/aws-github-oidc"}
 MAX_FILES = 512
@@ -78,6 +81,9 @@ def verify(root, manifest):
     require(set(by_source) == SOURCES, "reviewed-manifest-invalid")
     found = set()
     local_found = set()
+    nested_found = set()
+    by_key = {item.get("Key"): item for item in index["Modules"]}
+    require(len(by_key) == len(index["Modules"]), "module-index-duplicate-key")
     for item in index["Modules"]:
         source = item.get("Source")
         if source in LOCAL_SOURCES.values():
@@ -86,6 +92,18 @@ def verify(root, manifest):
                     and item.get("Dir") == source and key not in local_found
                     and item.get("Version") in (None, ""), "local-module-location-invalid")
             local_found.add(key)
+        elif source in {"./modules/" + name for name in RDS_CHILDREN}:
+            key = item.get("Key")
+            name = source.removeprefix("./modules/")
+            require(isinstance(key, str) and "." in key, "nested-module-location-invalid")
+            parent_key = key.rsplit(".", 1)[0]
+            parent = by_key.get(parent_key, {})
+            require(parent.get("Source") == RDS_SOURCE
+                    and key == parent_key + "." + name
+                    and item.get("Dir") == parent.get("Dir", "") + "/modules/" + name
+                    and item.get("Version") in (None, "") and name not in nested_found,
+                    "nested-module-location-invalid")
+            nested_found.add(name)
         elif source and source not in SOURCES:
             require(False, "module-unreviewed-source")
         if source not in SOURCES:
@@ -101,6 +119,7 @@ def verify(root, manifest):
         found.add(source)
     require(found == SOURCES, "module-missing")
     require(local_found == set(LOCAL_SOURCES), "local-module-missing")
+    require(nested_found == RDS_CHILDREN, "nested-module-missing")
     return {"schema": reviewed["schema"], "status": "verified",
             "manifestSha256": hashlib.sha256(Path(manifest).read_bytes()).hexdigest(),
             "versions": {source: by_source[source]["version"] for source in sorted(SOURCES)}}
