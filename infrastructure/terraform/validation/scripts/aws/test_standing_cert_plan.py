@@ -533,6 +533,13 @@ terraform {
         lock.write_text(lock.read_text().replace(
             "h1:W+wOXIl+pNU0L7dzJujxeJ52xJWJUZxLjx8DYGvbd8I=",
             "h1:jBoEoxML/rBC44Aq+jgFI+BnQMpmiRQsKkz/cxzdIEw="))
+        subprocess.run(["git", "add", str(lock.relative_to(self.repository))],
+                       cwd=self.repository, check=True, capture_output=True)
+        subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                        "commit", "-qm", "one-space lock checksum"],
+                       cwd=self.repository, check=True, capture_output=True)
+        self.request["iacRevision"] = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=self.repository, text=True).strip()
         self.request["providerLockSha256"] = sha(lock.read_bytes())
         self.refused("provider-checksum-mismatch")
         self.assertFalse(self.journal.exists())
