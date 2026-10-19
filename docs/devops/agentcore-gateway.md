@@ -22,10 +22,11 @@ to a verified install receipt merely because its JSON passes validation.
 HTTP passthrough was selected because aggregated MCP targets do not offer JWT
 passthrough. The proxy must preserve verifiable caller identity rather than inject
 a shared API key. Proving a real audience-scoped on-behalf-of exchange is a future
-alternative; client credentials are not equivalent to delegation. Honua's current
-workspace authorizers/replay proofs require stored API-key authority. Canonical
-JWT delegation, not a fabricated key claim, is necessary before the complete
-workspace journey can qualify through this optional route.
+alternative; client credentials are not equivalent to delegation. The deployed
+Honua image must support canonical delegated-agent JWT authority for workspace
+authorization and approved-operation replay. Validating the issuer alone or
+fabricating a stored API-key claim does not satisfy that requirement. Qualify the
+complete workspace journey against the exact image through this optional route.
 
 The HTTP target uses reviewed OpenAPI and Cedar. Documentation of aggregated MCP
 resources/prompts is not evidence that this proxy preserves every interaction.

@@ -12,8 +12,9 @@ required `tenant_id` claim. It forwards that caller JWT unchanged with
 fallback, client-credentials grant or model-selected credential. The existing
 Honua deployment must validate the issuer, audience, subject, tenant and delegated
 agent grants. A valid human JWT must not become a workspace-agent credential.
-Current API-key-only workspace/replay authorization requires a separate canonical
-JWT delegation implementation before this route can qualify unified workflows.
+An API-key-only workspace/replay path cannot qualify this route. Use a Honua image
+that supports canonical delegated-agent JWT authority, then verify workspace and
+approved-operation recovery through the gateway against that exact image.
 
 The private origin is an existing same-account/Region VPC Lattice resource
 configuration. Verify the underlying MCP listener is actually private and cannot
