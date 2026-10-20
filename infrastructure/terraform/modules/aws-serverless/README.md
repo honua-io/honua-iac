@@ -40,7 +40,7 @@ module "honua" {
 
 - **ECR image**: Lambda container images must be stored in ECR. Push the Honua Lambda image (`*-lambda-aot` preferred; `*-lambda` debug fallback) to your ECR repository before applying.
 - **PostGIS + PostGIS Raster**: Set `enable_postgis = true` (requires `psql` on the apply machine with network access to RDS). For controlled temporary access from CI/local runners, use `db_additional_ingress_cidrs`.
-- **Migrations**: `skip_migrations` defaults to `true` for serverless, so the Lambda never migrates the database. Run migrations out-of-band before first use: run the generic (ECS) server image once against the `db_connection_secret_arn` connection string until `/healthz/ready` answers, then stop it. The deployable root `examples/aws-serverless` publishes the inputs for that step as `migrate_*` outputs; see its README, "Migrations on the serverless root". A server `HONUA_MIGRATE_ONLY` exit mode that makes this a single run-to-completion command is planned for 2026.1.x.
+- **Migrations**: `skip_migrations` defaults to `true` for serving functions. Schema initialization must complete before traffic. The optional `migration_image` preview uses an isolated, version-pinned function and gates serving deployment on its verified receipt; it requires a qualified matching image and `migration_packaged_manifest_sha256`. No matching public migration artifact or real AWS run is qualified yet. See [the migration handoff](../../examples/aws-serverless/README.md#migrations-on-the-serverless-root). HTTP readiness alone is not a migration receipt.
 
 ## Production example
 

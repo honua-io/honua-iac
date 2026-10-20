@@ -43,6 +43,10 @@ module "honua" {
   redis_connection_string                     = var.redis_connection_string
   redis_connection_cidrs                      = var.redis_connection_cidrs
   skip_migrations                             = var.skip_migrations
+  migration_image                             = var.migration_image
+  migration_packaged_manifest_sha256          = var.migration_packaged_manifest_sha256
+  migration_target_locator_sha256             = var.migration_target_locator_sha256
+  migration_create_secretsmanager_endpoint    = var.migration_create_secretsmanager_endpoint
   tags                                        = var.tags
 
   # Required with Redis: the Lambda receives only an aws:secretsmanager: reference.
@@ -320,15 +324,19 @@ output "rds_proxy_arn" {
 }
 
 # --- Out-of-band migration inputs ---------------------------------------------
-# With skip_migrations = true (the default) the Lambda never migrates the
-# database. Until honua-server ships a HONUA_MIGRATE_ONLY exit mode (2026.1.x),
-# a release harness or operator runs the generic (ECS) server image once with
-# these inputs, waits for /healthz/ready, then stops it, before serving
-# traffic. Every value is an ARN or ID; no secret value is output here.
+# Serving functions skip migrations by default. A qualified isolated migration
+# profile can gate their deployment; otherwise schema initialization must be
+# completed separately before traffic. These outputs contain identifiers only.
 
 output "migrate_required" {
-  description = "True when the Lambda skips migrations, so the database must be migrated out-of-band before serving."
-  value       = var.skip_migrations
+  description = "True when schema initialization must be arranged separately before serving; false when the optional isolated migration profile gates deployment."
+  value       = var.skip_migrations && var.migration_image == null
+}
+
+output "migration_contract" {
+  description = "Pinned isolated migration invocation and verified receipt when the optional preview is enabled; null otherwise."
+  value       = module.honua.migration_contract
+  sensitive   = true
 }
 
 output "migrate_db_connection_secret_arn" {
@@ -363,7 +371,7 @@ output "migrate_security_group_id" {
 
 output "migrate_guidance" {
   description = "How to migrate this cell out-of-band."
-  value       = var.skip_migrations ? "Run the digest-pinned generic (ECS) honua-server image once with ConnectionStrings__DefaultConnection, HONUA_ADMIN_PASSWORD and Security__ConnectionEncryption__MasterKey resolved from the migrate_*_secret_arn outputs, either as an in-VPC task (migrate_private_subnet_ids + migrate_security_group_id) or from a runner admitted by db_publicly_accessible + db_additional_ingress_cidrs. Wait for GET /healthz/ready = 200, then stop it before serving. Replace with HONUA_MIGRATE_ONLY once honua-server ships it (2026.1.x)." : "skip_migrations is false: the Lambda migrates on startup; no out-of-band step is required."
+  value       = var.migration_image != null ? "The isolated migration profile gates serving deployment on its exact verified invocation receipt. Inspect migration_contract and independently verify runtime readiness after apply." : var.skip_migrations ? "Initialize the schema separately before traffic using a qualified isolated migration artifact and the direct migrate_db_connection_secret_arn plus migrate_* network identifiers. No matching public Lambda migration artifact is currently qualified. HTTP readiness alone is not a migration receipt." : "skip_migrations is false: serving cold starts attempt migrations; this is incompatible with the isolated migration profile."
 }
 
 output "gp_batch_prior_definitions_retained" {

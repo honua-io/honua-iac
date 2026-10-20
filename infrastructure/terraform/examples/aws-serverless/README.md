@@ -166,29 +166,40 @@ input in that set.
 
 ## Migrations on the serverless root
 
-`skip_migrations` defaults to `true`: concurrent Lambda cold starts must not race
-to migrate the schema, so the Lambda never migrates the database. **Until
-honua-server ships a `HONUA_MIGRATE_ONLY` exit mode (planned for 2026.1.x), the
-release harness (or the operator) runs migrations out-of-band after `apply` and
-before the cell serves traffic**:
+`skip_migrations` defaults to `true`; serving cold starts must not race to initialize
+the schema. A fresh installation needs a separately verified initialization step
+before traffic. The historical start-a-web-server-and-wait-for-readiness procedure
+is not the isolated migration contract.
 
-1. Start the digest-pinned generic (ECS) honua-server image once, with
-   `ConnectionStrings__DefaultConnection`, `HONUA_ADMIN_PASSWORD` and
-   `Security__ConnectionEncryption__MasterKey` set from the secrets named by
-   `migrate_db_connection_secret_arn`, `migrate_admin_password_secret_arn` and
-   `migrate_master_key_secret_arn` (as `aws:secretsmanager:<arn>` references or
-   resolved values).
-2. Run it where the database is reachable: as an in-VPC task in
-   `migrate_private_subnet_ids` with `migrate_security_group_id`, or from a
-   runner admitted with `db_publicly_accessible = true` and
-   `db_additional_ingress_cidrs`.
-3. Wait for `GET /healthz/ready` to return 200 (the server migrates on startup),
-   then stop it. The Lambda can now serve.
+The optional `migration_image` preview wires a dedicated, published-version Lambda
+function derived from the exact serving image. Supply its digest and the matching
+`migration_packaged_manifest_sha256` from a qualified release. Terraform invokes
+only that numeric version, with a durable run ID and no connection data in the
+event. Serving API and control-plane functions depend on a successful receipt that
+matches the function ARN/version, run, database locator, metadata schema and
+packaged migration manifest. A failed or malformed receipt blocks that deployment.
 
-`migrate_required` is `true` while `skip_migrations` is on, and
-`migrate_guidance` repeats these steps. When `HONUA_MIGRATE_ONLY` exists, step 3
-becomes a run-to-completion exit and this section will be updated. Outputs carry
-ARNs and IDs only, never secret values.
+The migration role can read only the direct database secret's pinned version; it
+has no admin/Redis/license secret or alias-update authority. No-NAT deployments
+reuse the custom-code Secrets Manager endpoint or create a dedicated endpoint.
+Set `migration_create_secretsmanager_endpoint = false` only when the existing VPC
+already provides that network path. PostGIS extension provisioning stays separate.
+
+Automatic locator hashing covers the module's ASCII endpoint, port 5432, database
+name and configured `Database:Schema`. Existing databases with other names, ports
+or locator-changing connection options need a canonical
+`migration_target_locator_sha256`; the runtime checks it before database preflight
+or mutation. Function rollback does not undo database migrations.
+
+No matching public migration image or real AWS execution is qualified yet. Leave
+the preview disabled for existing installs. `migrate_required` reports whether
+initialization must be arranged separately; `migration_contract` preserves the
+exact invocation receipt when the preview is enabled. This output preserves the
+provider's sensitive-result marking and is hidden from ordinary Terraform output;
+do not declassify or publish a function response. The receipt contract contains
+identifiers and verification results, not credentials. A cached Terraform receipt is not a new check of
+current database state; runtime readiness and deployment recovery still require
+independent verification.
 
 
 ### Optional static JWT issuer

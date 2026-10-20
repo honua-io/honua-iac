@@ -183,6 +183,42 @@ variable "redis_connection_cidrs" {
   default     = []
 }
 
+variable "migration_image" {
+  description = "Optional preview image derived from the exact serving Lambda image with docker/Dockerfile.migration-lambda. Must be digest-pinned in the same ECR repository. Enables isolated schema initialization and receipt verification before serving deployment. No matching public migration artifact is currently qualified; leave null for existing installs."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.migration_image == null ? true : can(regex("^[^@]+@sha256:[a-f0-9]{64}$", var.migration_image))
+    error_message = "migration_image must be null or a digest-pinned ECR image."
+  }
+}
+
+variable "migration_packaged_manifest_sha256" {
+  description = "Canonical packaged migration manifest hash from the matching qualified server release; required with migration_image. Not an image digest or a source-tree hash."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.migration_packaged_manifest_sha256 == null ? true : can(regex("^[a-f0-9]{64}$", var.migration_packaged_manifest_sha256))
+    error_message = "migration_packaged_manifest_sha256 must be a lowercase SHA-256 digest."
+  }
+}
+
+variable "migration_target_locator_sha256" {
+  description = "Optional canonical honua.database-locator/v1 hash override for an existing database, non-ASCII name, custom port or locator-changing connection options. Default hashes the module's direct endpoint, port 5432, db_name and Database:Schema. The runtime verifies the resolved secret before database preflight or mutation."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.migration_target_locator_sha256 == null ? true : can(regex("^[a-f0-9]{64}$", var.migration_target_locator_sha256))
+    error_message = "migration_target_locator_sha256 must be a lowercase SHA-256 digest."
+  }
+}
+
+variable "migration_create_secretsmanager_endpoint" {
+  description = "Create a Secrets Manager interface endpoint for isolated migrations on the no-NAT path, unless custom-code isolation already owns one. Set false only when the existing VPC provides Secrets Manager reachability."
+  type        = bool
+  default     = true
+}
+
 variable "skip_migrations" {
   description = "Skip migrations on Lambda startup (default true). The database must then be migrated out-of-band before serving; the migrate_* outputs carry the inputs for that step (see README, \"Migrations on the serverless root\")."
   type        = bool

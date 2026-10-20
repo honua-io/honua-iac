@@ -1007,6 +1007,7 @@ resource "aws_lambda_function" "this" {
   }
 
   depends_on = [
+    aws_lambda_invocation.migration,
     aws_ecr_repository_policy.lambda_image_access,
     aws_cloudwatch_log_group.lambda,
     aws_security_group_rule.rds_from_lambda,
