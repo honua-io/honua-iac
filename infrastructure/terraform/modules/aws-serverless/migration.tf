@@ -1,6 +1,6 @@
 # Opt-in until matching migration images and cloud execution are qualified.
 # A migration function has no HTTP trigger, Redis credentials, license, admin
-# password, encryption master key, or authority to promote a serving alias.
+# API password, encryption master key, or authority to promote a serving alias.
 locals {
   migration_enabled = var.migration_image != null
   migration_database_groups = local.migration_enabled ? {
@@ -62,8 +62,8 @@ resource "aws_iam_role_policy" "migration" {
         Resource = ["${aws_cloudwatch_log_group.migration[0].arn}:*"]
       },
       {
-        # Lambda's VPC attachment APIs require wildcard resources. The function
-        # is not granted database/admin secrets or any deployment actuator.
+        # Lambda's VPC attachment APIs require wildcard resources. This adds
+        # no access to other secrets or deployment actuators.
         Sid      = "AttachVpcNetwork"
         Effect   = "Allow"
         Action   = ["ec2:CreateNetworkInterface", "ec2:DescribeNetworkInterfaces", "ec2:DescribeSubnets", "ec2:DeleteNetworkInterface", "ec2:AssignPrivateIpAddresses", "ec2:UnassignPrivateIpAddresses"]
@@ -207,8 +207,8 @@ resource "aws_vpc_endpoint" "migration_secretsmanager" {
 
 output "migration_contract" {
   description = "Pinned migration invocation and verified provider response; null when the preview migration profile is disabled or the response is malformed. This is not a cloud qualification claim."
-  # The provider marks invocation results sensitive. Preserve that boundary
-  # rather than declassifying a function response for console output.
+  # Explicitly protect the function response in this output. The installed
+  # provider's result field is not itself marked Sensitive in its schema.
   sensitive = true
   # Invocation postconditions still block serving deployment on invalid receipts.
   # A malformed retained result must not also prevent planning its destruction.
