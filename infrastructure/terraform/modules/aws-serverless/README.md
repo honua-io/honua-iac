@@ -2,6 +2,23 @@
 
 Deploys Honua Server to AWS Lambda (container image) behind an API Gateway HTTP API, with RDS PostgreSQL and optional ElastiCache Redis.
 
+The opt-in migration function has its own role. Its database read is pinned to
+one secret version; ENI creation is limited to this deployment's subnets and
+security group, with maintenance restricted to its VPC. An explicit
+`lambda:SourceFunctionArn` deny prevents migration code from using Lambda's ENI
+permissions. These are Terraform contract checks; cloud execution remains
+unqualified. Migration tracing follows `enable_xray_tracing` and grants only
+regional trace writer APIs when enabled.
+
+Migration logs and environment configuration use AWS's default encryption at
+rest. This preview profile does not provision customer-managed keys for either.
+The function has no asynchronous trigger: Terraform invokes its numeric version
+synchronously and blocks serving deployment unless the receipt verifies. Lambda
+code signing does not support container images; deployment requires an immutable
+image digest and the matching packaged migration manifest. See AWS's
+[VPC execution-role guidance](https://docs.aws.amazon.com/lambda/latest/dg/configuration-vpc.html)
+and [container-image signing limitation](https://docs.aws.amazon.com/lambda/latest/dg/configuration-codesigning-create.html).
+
 ## Pin to a release
 
 For a versioned, external pin, consume this module by Git source at a SemVer tag

@@ -1,8 +1,13 @@
 # Opt-in until matching migration images and cloud execution are qualified.
 # A migration function has no HTTP trigger, Redis credentials, license, admin
 # API password, encryption master key, or authority to promote a serving alias.
+data "aws_partition" "current" {}
+
 locals {
-  migration_enabled = var.migration_image != null
+  migration_enabled         = var.migration_image != null
+  migration_function_arn    = "arn:${data.aws_partition.current.partition}:lambda:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:function:${local.name}-migration"
+  migration_ec2_arn_prefix  = "arn:${data.aws_partition.current.partition}:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}"
+  migration_network_actions = ["ec2:CreateNetworkInterface", "ec2:DescribeNetworkInterfaces", "ec2:DescribeSubnets", "ec2:DeleteNetworkInterface", "ec2:AssignPrivateIpAddresses", "ec2:UnassignPrivateIpAddresses"]
   migration_database_groups = local.migration_enabled ? {
     for key, value in var.additional_env : lower(replace(key, ":", "__")) => value...
     if contains(["database__schema", "database__defaultoperationalschema"], lower(replace(key, ":", "__"))) || can(regex("^database__operationalschemas__[0-9]+$", lower(replace(key, ":", "__"))))
@@ -62,18 +67,77 @@ resource "aws_iam_role_policy" "migration" {
         Resource = ["${aws_cloudwatch_log_group.migration[0].arn}:*"]
       },
       {
-        # Lambda's VPC attachment APIs require wildcard resources. This adds
-        # no access to other secrets or deployment actuators.
-        Sid      = "AttachVpcNetwork"
+        # EC2 Describe APIs do not support resource-level permissions.
+        Sid      = "DescribeVpcNetwork"
         Effect   = "Allow"
-        Action   = ["ec2:CreateNetworkInterface", "ec2:DescribeNetworkInterfaces", "ec2:DescribeSubnets", "ec2:DeleteNetworkInterface", "ec2:AssignPrivateIpAddresses", "ec2:UnassignPrivateIpAddresses"]
+        Action   = ["ec2:DescribeNetworkInterfaces", "ec2:DescribeSubnets"]
         Resource = "*"
+        Condition = {
+          StringEquals = { "aws:RequestedRegion" = data.aws_region.current.name }
+        }
+      },
+      {
+        Sid    = "CreateVpcNetworkInterface"
+        Effect = "Allow"
+        Action = ["ec2:CreateNetworkInterface"]
+        Resource = concat(
+          ["${local.migration_ec2_arn_prefix}:network-interface/*", "${local.migration_ec2_arn_prefix}:security-group/${aws_security_group.lambda.id}"],
+          [for subnet in local.private_subnets : "${local.migration_ec2_arn_prefix}:subnet/${subnet}"]
+        )
+        Condition = {
+          StringEquals = { "aws:RequestedRegion" = data.aws_region.current.name }
+        }
+      },
+      {
+        Sid      = "MaintainVpcNetworkInterface"
+        Effect   = "Allow"
+        Action   = ["ec2:DeleteNetworkInterface", "ec2:AssignPrivateIpAddresses", "ec2:UnassignPrivateIpAddresses"]
+        Resource = ["${local.migration_ec2_arn_prefix}:network-interface/*"]
+        Condition = {
+          StringEquals = { "aws:RequestedRegion" = data.aws_region.current.name }
+          ArnEquals    = { "ec2:Vpc" = "${local.migration_ec2_arn_prefix}:vpc/${local.vpc_id}" }
+        }
+      },
+      {
+        # Lambda needs ENI permissions outside the execution environment, but
+        # migration code must never use them. The unqualified source ARN is
+        # required by Lambda; deriving it avoids a role/function dependency cycle.
+        # https://docs.aws.amazon.com/lambda/latest/dg/configuration-vpc.html
+        Sid      = "DenyFunctionCodeNetworkAdministration"
+        Effect   = "Deny"
+        Action   = local.migration_network_actions
+        Resource = "*"
+        Condition = {
+          ArnEquals = { "lambda:SourceFunctionArn" = local.migration_function_arn }
+        }
       }
     ]
   })
 }
 
+# Keep the optional writer policy separate so the main role's network/secret
+# statements remain directly inspectable by static IAM policy checks.
+resource "aws_iam_role_policy" "migration_tracing" {
+  count = local.migration_enabled && var.enable_xray_tracing ? 1 : 0
+  name  = "${local.name}-migration-tracing"
+  role  = aws_iam_role.migration[0].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "WriteMigrationTraces"
+      Effect   = "Allow"
+      Action   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
+      Resource = "*"
+      Condition = {
+        StringEquals = { "aws:RequestedRegion" = data.aws_region.current.name }
+      }
+    }]
+  })
+}
+
 resource "aws_cloudwatch_log_group" "migration" {
+  #checkov:skip=CKV_AWS_158: This preview profile uses CloudWatch's default encryption at rest; it does not provision a customer-managed log key.
+  #checkov:skip=CKV_AWS_338: Retention follows the existing log_retention_days input; certification/demo callers may explicitly select shorter retention.
   count             = local.migration_enabled ? 1 : 0
   name              = "/aws/lambda/${local.name}-migration"
   retention_in_days = var.log_retention_days
@@ -81,6 +145,10 @@ resource "aws_cloudwatch_log_group" "migration" {
 }
 
 resource "aws_lambda_function" "migration" {
+  #checkov:skip=CKV_AWS_50: X-Ray follows the module's enable_xray_tracing option, default off.
+  #checkov:skip=CKV_AWS_116: This function is invoked synchronously by Terraform; asynchronous DLQs do not capture its failures. The invocation postcondition blocks serving deployment.
+  #checkov:skip=CKV_AWS_173: Environment values are secret references and configuration, encrypted with Lambda's default service key; this profile does not provision a customer-managed environment key.
+  #checkov:skip=CKV_AWS_272: AWS Lambda code signing is unsupported for container images. This function requires a digest-pinned image and a matching packaged migration manifest.
   count         = local.migration_enabled ? 1 : 0
   function_name = "${local.name}-migration"
   role          = aws_iam_role.migration[0].arn
@@ -96,6 +164,12 @@ resource "aws_lambda_function" "migration" {
   vpc_config {
     subnet_ids         = local.private_subnets
     security_group_ids = [aws_security_group.lambda.id]
+  }
+  dynamic "tracing_config" {
+    for_each = var.enable_xray_tracing ? [1] : []
+    content {
+      mode = "Active"
+    }
   }
   environment {
     variables = local.migration_environment
@@ -128,6 +202,7 @@ resource "aws_lambda_function" "migration" {
   }
   depends_on = [
     aws_iam_role_policy.migration,
+    aws_iam_role_policy.migration_tracing,
     aws_ecr_repository_policy.lambda_image_access,
     aws_security_group_rule.rds_from_lambda,
     aws_secretsmanager_secret_version.connection_string,
@@ -180,6 +255,7 @@ resource "aws_lambda_invocation" "migration" {
 # Private DNS must have one owner per service/VPC. Reuse the custom-code
 # endpoint when enabled; operators may declare an existing VPC's endpoint.
 resource "aws_security_group" "migration_secretsmanager" {
+  #checkov:skip=CKV2_AWS_5: Attached by aws_vpc_endpoint.migration_secretsmanager[0].security_group_ids; both resources use the same conditional count.
   count       = local.migration_enabled && !var.enable_nat_gateway && !local.egress_isolation_enabled && var.migration_create_secretsmanager_endpoint ? 1 : 0
   name_prefix = "${local.name}-migration-vpce-"
   description = "Secrets Manager HTTPS from the migration function"

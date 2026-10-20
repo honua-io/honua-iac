@@ -171,7 +171,7 @@ run "default_profile_has_no_migration_resources" {
   command = plan
   variables { migration_image = null }
   assert {
-    condition     = length(aws_lambda_function.migration) == 0 && length(aws_lambda_invocation.migration) == 0 && length(aws_iam_role.migration) == 0 && output.migration_contract == null
+    condition     = length(aws_lambda_function.migration) == 0 && length(aws_lambda_invocation.migration) == 0 && length(aws_iam_role.migration) == 0 && length(aws_iam_role_policy.migration_tracing) == 0 && output.migration_contract == null
     error_message = "Existing configurations must not acquire a migration function, role or invocation."
   }
 }
@@ -200,12 +200,68 @@ run "completed_receipt_binds_pinned_invocation_and_minimal_secret_access" {
   }
 }
 
+run "migration_network_permissions_exclude_function_code_and_other_vpcs" {
+  command = apply
+  assert {
+    condition = alltrue([
+      for statement in jsondecode(aws_iam_role_policy.migration[0].policy).Statement :
+      statement.Sid == "CreateVpcNetworkInterface" ? (
+        toset(statement.Action) == toset(["ec2:CreateNetworkInterface"]) &&
+        toset(statement.Resource) == toset(concat(
+          ["arn:aws:ec2:us-east-1:123456789012:network-interface/*", "arn:aws:ec2:us-east-1:123456789012:security-group/${aws_security_group.lambda.id}"],
+          [for subnet in aws_lambda_function.migration[0].vpc_config[0].subnet_ids : "arn:aws:ec2:us-east-1:123456789012:subnet/${subnet}"]
+        )) && statement.Condition.StringEquals["aws:RequestedRegion"] == "us-east-1"
+        ) : statement.Sid == "MaintainVpcNetworkInterface" ? (
+        toset(statement.Action) == toset(["ec2:DeleteNetworkInterface", "ec2:AssignPrivateIpAddresses", "ec2:UnassignPrivateIpAddresses"]) &&
+        toset(statement.Resource) == toset(["arn:aws:ec2:us-east-1:123456789012:network-interface/*"]) &&
+        statement.Condition.ArnEquals["ec2:Vpc"] == "arn:aws:ec2:us-east-1:123456789012:vpc/${aws_security_group.lambda.vpc_id}"
+        ) : statement.Sid == "DenyFunctionCodeNetworkAdministration" ? (
+        statement.Effect == "Deny" && statement.Resource == "*" &&
+        statement.Condition.ArnEquals["lambda:SourceFunctionArn"] == aws_lambda_function.migration[0].arn &&
+        toset(statement.Action) == toset(["ec2:CreateNetworkInterface", "ec2:DescribeNetworkInterfaces", "ec2:DescribeSubnets", "ec2:DeleteNetworkInterface", "ec2:AssignPrivateIpAddresses", "ec2:UnassignPrivateIpAddresses"])
+      ) : true
+    ]) && length([for statement in jsondecode(aws_iam_role_policy.migration[0].policy).Statement : statement if contains(["CreateVpcNetworkInterface", "MaintainVpcNetworkInterface", "DenyFunctionCodeNetworkAdministration"], statement.Sid)]) == 3
+    error_message = "The migration role must scope ENIs to the deployment account/region/network and deny network administration to function code."
+  }
+  assert {
+    condition = alltrue([
+      for statement in jsondecode(aws_iam_role_policy.migration[0].policy).Statement :
+      statement.Effect == "Allow" && try(statement.Resource == "*", false) ? (
+        toset(statement.Action) == toset(["ec2:DescribeNetworkInterfaces", "ec2:DescribeSubnets"]) &&
+        statement.Condition.StringEquals["aws:RequestedRegion"] == "us-east-1"
+      ) : true
+    ]) && length(aws_iam_role_policy.migration_tracing) == 0 && alltrue([for statement in jsondecode(aws_iam_role_policy.migration[0].policy).Statement : statement.Sid != "WriteMigrationTraces"])
+    error_message = "Default migrations allow only the regional Describe APIs on wildcard resources and do not grant unused tracing permissions."
+  }
+}
+
+run "migration_tracing_uses_the_module_option_and_minimal_writer_permissions" {
+  command = apply
+  variables { enable_xray_tracing = true }
+  assert {
+    condition = aws_lambda_function.migration[0].tracing_config[0].mode == "Active" && length([
+      for statement in jsondecode(aws_iam_role_policy.migration_tracing[0].policy).Statement : statement
+      if statement.Sid == "WriteMigrationTraces" && toset(statement.Action) == toset(["xray:PutTraceSegments", "xray:PutTelemetryRecords"]) && statement.Condition.StringEquals["aws:RequestedRegion"] == "us-east-1"
+    ]) == 1
+    error_message = "Opt-in tracing must activate the migration function and grant only its regional trace writer APIs."
+  }
+}
+
 run "no_nat_provisions_secret_reachability" {
   command = plan
   variables { enable_nat_gateway = false }
   assert {
     condition     = length(aws_vpc_endpoint.migration_secretsmanager) == 1 && aws_vpc_endpoint.migration_secretsmanager[0].private_dns_enabled && aws_vpc_endpoint.migration_secretsmanager[0].service_name == "com.amazonaws.us-east-1.secretsmanager"
     error_message = "No-NAT migrations require a private Secrets Manager network path."
+  }
+}
+
+run "migration_endpoint_attaches_its_security_group" {
+  command = apply
+  variables { enable_nat_gateway = false }
+  assert {
+    condition     = length(aws_security_group.migration_secretsmanager) == 1 && toset(aws_vpc_endpoint.migration_secretsmanager[0].security_group_ids) == toset([aws_security_group.migration_secretsmanager[0].id]) && aws_security_group.migration_secretsmanager[0].vpc_id == aws_vpc_endpoint.migration_secretsmanager[0].vpc_id
+    error_message = "The migration-only Secrets Manager endpoint must actually attach the migration endpoint security group in the same VPC."
   }
 }
 
