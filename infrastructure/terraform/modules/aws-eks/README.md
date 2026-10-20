@@ -13,6 +13,11 @@ The module creates **no Kubernetes objects**. The honua-helm chart installs the
 server, its service accounts, the GP Job RBAC and the LoadBalancer Service; the
 module's outputs are the values the chart and the release harness need.
 
+For the governed native install against an existing cluster, use
+[`examples/aws-eks-native`](../../examples/aws-eks-native/README.md). That
+separate Terraform root owns the Kubernetes Deployment, Service, service
+accounts, Job RBAC and configured public route without a chart write step.
+
 ## What it provisions
 
 - VPC with public/private subnets and a NAT gateway

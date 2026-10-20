@@ -54,6 +54,7 @@ run_tflint() {
     "$ROOT/examples/aws"
     "$ROOT/examples/aws-serverless"
     "$ROOT/examples/aws-eks"
+    "$ROOT/examples/aws-eks-native"
     "$ROOT/examples/azure"
     "$ROOT/examples/azure-data"
     "$ROOT/examples/azure-functions"
@@ -771,7 +772,7 @@ run_governed_execution_policy_checks() {
 
   # --- backend examples the operator docs promise --------------------------
   local backend_example_stack
-  for backend_example_stack in aws aws-serverless aws-eks aws-data; do
+  for backend_example_stack in aws aws-serverless aws-eks aws-eks-native aws-data; do
     assert_regex_present 'backend[[:space:]]+"s3"' \
       "$ROOT/examples/$backend_example_stack/backend.tf.example" "backend-example-present"
   done

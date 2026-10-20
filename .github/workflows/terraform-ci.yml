@@ -279,6 +279,7 @@ jobs:
             "infrastructure/terraform/examples/aws-data"
             "infrastructure/terraform/examples/azure-aks"
             "infrastructure/terraform/examples/aws-eks"
+            "infrastructure/terraform/examples/aws-eks-native"
             "infrastructure/terraform/examples/observability"
             # Git-source external-consumer example. Unlike the other roots its
             # module is fetched from the repo over the network at the pinned
@@ -366,6 +367,7 @@ jobs:
           terraform -chdir=infrastructure/terraform/examples/aws-cert test -no-color
           terraform -chdir=infrastructure/terraform/modules/aws-eks test -no-color
           terraform -chdir=infrastructure/terraform/examples/aws-eks test -no-color
+          terraform -chdir=infrastructure/terraform/examples/aws-eks-native test -no-color
           terraform -chdir=infrastructure/terraform/modules/azure-aca test -no-color
 
       - name: Post-apply caller and named-evidence contract

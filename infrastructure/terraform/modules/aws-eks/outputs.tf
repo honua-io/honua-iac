@@ -105,6 +105,16 @@ output "server_role_arn" {
   value       = aws_iam_role.workload["server"].arn
 }
 
+output "server_pod_identity_association_id" {
+  description = "Existing server EKS Pod Identity association ID for a separate native workload install. Null in IRSA mode."
+  value       = local.pod_identity_enabled ? aws_eks_pod_identity_association.workload["server"].association_id : null
+}
+
+output "gp_job_pod_identity_association_id" {
+  description = "Existing GP Job EKS Pod Identity association ID for a separate native workload install. Null in IRSA mode."
+  value       = local.pod_identity_enabled ? aws_eks_pod_identity_association.workload["gp-job"].association_id : null
+}
+
 output "server_service_account_annotations" {
   description = "Annotations for the chart's server service account (serviceAccount.annotations). Empty under pod_identity."
   value       = local.workload_service_account_annotations["server"]
