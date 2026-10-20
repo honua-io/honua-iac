@@ -54,8 +54,8 @@ output "control_plane_target_kind" {
 }
 
 output "control_plane_backend_name" {
-  description = "Honua control-plane deploy backend name for Kubernetes GitOps."
-  value       = "honua-gitops-kubernetes"
+  description = "Native Honua Deployment backend hint. Cluster outputs alone do not establish an installed workload or verified handoff."
+  value       = "honua-kubernetes-deployment"
 }
 
 output "control_plane_telemetry_policy" {
