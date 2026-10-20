@@ -30,6 +30,7 @@ locals {
     HONUA_MIGRATION_LAMBDA               = "true"
     HONUA_SKIP_MIGRATIONS                = "false"
     HONUA_MIGRATION_TARGET_SHA256        = local.migration_target_sha256
+    HONUA_MIGRATION_MANIFEST_SHA256      = var.migration_packaged_manifest_sha256 != null ? var.migration_packaged_manifest_sha256 : ""
     ConnectionStrings__DefaultConnection = "aws:secretsmanager:${aws_secretsmanager_secret.connection_string.arn}?versionId=${aws_secretsmanager_secret_version.connection_string.version_id}"
   })
   migration_environment_encoded = base64encode(jsonencode(local.migration_environment))

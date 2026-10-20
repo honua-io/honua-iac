@@ -187,8 +187,12 @@ run "completed_receipt_binds_pinned_invocation_and_minimal_secret_access" {
     error_message = "Migration must use the direct connection's exact secret version and canonical database locator hash."
   }
   assert {
-    condition     = toset(keys(aws_lambda_function.migration[0].environment[0].variables)) == toset(["ASPNETCORE_ENVIRONMENT", "HONUA_MIGRATE_ONLY", "HONUA_MIGRATION_LAMBDA", "HONUA_SKIP_MIGRATIONS", "HONUA_MIGRATION_TARGET_SHA256", "ConnectionStrings__DefaultConnection"]) && aws_lambda_function.migration[0].role != aws_lambda_function.this.role
+    condition     = toset(keys(aws_lambda_function.migration[0].environment[0].variables)) == toset(["ASPNETCORE_ENVIRONMENT", "HONUA_MIGRATE_ONLY", "HONUA_MIGRATION_LAMBDA", "HONUA_SKIP_MIGRATIONS", "HONUA_MIGRATION_TARGET_SHA256", "HONUA_MIGRATION_MANIFEST_SHA256", "ConnectionStrings__DefaultConnection"]) && aws_lambda_function.migration[0].role != aws_lambda_function.this.role
     error_message = "Isolated migrations need their own role and no admin, Redis, licensing, encryption-key or serving settings."
+  }
+  assert {
+    condition     = aws_lambda_function.migration[0].environment[0].variables.HONUA_MIGRATION_MANIFEST_SHA256 == var.migration_packaged_manifest_sha256 && aws_lambda_function.migration[0].environment[0].variables.HONUA_MIGRATION_MANIFEST_SHA256 == "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    error_message = "The immutable function configuration must supply the exact artifact manifest for the Server's check before secret resolution or SQL. The after-invocation postcondition alone is insufficient."
   }
   assert {
     condition     = tolist(jsondecode(aws_iam_role_policy.migration[0].policy).Statement[0].Resource) == tolist([aws_secretsmanager_secret.connection_string.arn]) && jsondecode(aws_iam_role_policy.migration[0].policy).Statement[0].Condition.StringEquals["secretsmanager:VersionId"] == "0123456789abcdef0123456789abcdef" && !strcontains(aws_iam_role_policy.migration[0].policy, "lambda:UpdateAlias")

@@ -10,6 +10,14 @@ permissions. These are Terraform contract checks; cloud execution remains
 unqualified. Migration tracing follows `enable_xray_tracing` and grants only
 regional trace writer APIs when enabled.
 
+The immutable migration function configuration also pins
+`HONUA_MIGRATION_MANIFEST_SHA256` to the supplied packaged artifact manifest.
+The matching Server profile must verify its actual SQL and contract-template
+fingerprint before resolving the database secret or executing migrations.
+Terraform independently checks the returned manifest again before serving
+updates. Use matching qualified Server/IaC artifacts; this remains an opt-in
+preview and is not a live-cloud qualification claim.
+
 Migration logs and environment configuration use AWS's default encryption at
 rest. This preview profile does not provision customer-managed keys for either.
 The function has no asynchronous trigger: Terraform invokes its numeric version
