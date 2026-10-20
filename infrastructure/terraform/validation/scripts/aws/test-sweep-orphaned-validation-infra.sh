@@ -57,6 +57,11 @@ has_flag() {
   return 1
 }
 
+if [[ -n "${FAKE_RESOURCE_READ_ERROR:-}" && "$operation" == describe-* && "$service" =~ ^(ecs|secretsmanager)$ ]]; then
+  echo "$FAKE_RESOURCE_READ_ERROR" >&2
+  exit 1
+fi
+
 case "$service $operation" in
   "resourcegroupstaggingapi get-resources")
     # The Owner tag filter is the reaper's containment boundary. Anything not
@@ -65,6 +70,10 @@ case "$service $operation" in
     if [[ "$filter" != "Key=Owner,Values=terraform-validation" ]]; then
       echo '{"ResourceTagMappingList":[]}'
       exit 0
+    fi
+    if [[ "$(grep -c '^resourcegroupstaggingapi get-resources' "$AWS_CALL_LOG")" -gt 1 ]]; then
+      if [[ -n "${FAKE_FINAL_TAG_ERROR:-}" ]]; then exit 1; fi
+      if [[ -n "${FAKE_FINAL_TAG_MALFORMED:-}" ]]; then echo '{}'; exit 0; fi
     fi
     payload="$(cat "$FIXTURE_RESOURCES")"
     if has_flag --query; then
@@ -75,20 +84,20 @@ case "$service $operation" in
     fi
     ;;
   "ecs describe-clusters")
-    echo "${FAKE_ECS_CLUSTER_STATUS:-ACTIVE}"
+    jq -cn --arg arn "$(value_of --clusters)" --arg status "${FAKE_ECS_CLUSTER_STATUS:-ACTIVE}" '{clusters:[{clusterArn:$arn,status:$status}],failures:[]}'
     ;;
   "ecs describe-services")
-    echo "${FAKE_ECS_SERVICE_STATUS:-ACTIVE}"
+    jq -cn --arg arn "$(value_of --services)" --arg status "${FAKE_ECS_SERVICE_STATUS:-ACTIVE}" '{services:[{serviceArn:$arn,status:$status}],failures:[]}'
     ;;
   "ecs describe-task-definition")
-    echo "${FAKE_ECS_TASKDEF_STATUS:-ACTIVE}"
+    jq -cn --arg arn "$(value_of --task-definition)" --arg status "${FAKE_ECS_TASKDEF_STATUS:-ACTIVE}" '{taskDefinition:{taskDefinitionArn:$arn,status:$status}}'
     ;;
   "kms describe-key")
     if [[ -n "${FAKE_KMS_DESCRIBE_ERROR:-}" ]]; then
-      echo "$FAKE_KMS_DESCRIBE_ERROR" >&2
+      echo "An error occurred ($FAKE_KMS_DESCRIBE_ERROR) when calling the DescribeKey operation: fixture failure" >&2
       exit 1
     fi
-    echo "${FAKE_KMS_KEY_STATE:-Enabled}"
+    jq -cn --arg arn "$(value_of --key-id)" --arg state "${FAKE_KMS_KEY_STATE:-Enabled}" '{KeyMetadata:{Arn:$arn,KeyState:$state}}'
     ;;
   "rds describe-db-proxies")
     # By ARN (name lookup) the proxy exists; by name (wait_gone) it is gone.
@@ -96,7 +105,7 @@ case "$service $operation" in
     echo "${FAKE_DB_PROXY_NAME:-honua-it-pg-proxy}"
     ;;
   "secretsmanager describe-secret")
-    echo "${FAKE_SECRET_DELETED_DATE:-None}"
+    jq -cn --arg arn "$(value_of --secret-id)" --arg date "${FAKE_SECRET_DELETED_DATE:-None}" '{ARN:$arn} + (if $date=="None" then {} else {DeletedDate:$date} end)'
     ;;
   "ec2 describe-security-groups")
     echo "${FAKE_SG_IDS:-}"
@@ -486,6 +495,27 @@ SUMMARY="$TMP_DIR/summary.md"
 run_sweeper "$(resources "$REAPABLE")" --summary-file "$SUMMARY"
 if grep -q "Validation cell reaper" "$SUMMARY"; then check "a job summary is emitted" ok; else check "a job summary is emitted" no; fi
 
+# Read failure must retain a survivor/refusal, never settled/delete credit.
+for arn in 'arn:aws:ecs:us-west-2:1:cluster/test' 'arn:aws:ecs:us-west-2:1:service/test/name' 'arn:aws:ecs:us-west-2:1:task-definition/test:1' 'arn:aws:secretsmanager:us-west-2:1:secret:test'; do
+  FAKE_RESOURCE_READ_ERROR=AccessDenied run_sweeper "$(resources "$(tagged "$arn" 'gha-111-aws-ecs' 'ecs' "$PAST")")"
+  if [[ "$RC" -ne 0 ]] && ! grep -Eq "$MUTATING" "$AWS_CALL_LOG"; then
+    check "unverified resource read refuses without mutation: $arn" ok
+  else check "unverified resource read refuses without mutation: $arn" no; fi
+done
+for tags in 'null' '{}' '"bad"' '[null]' '[{"Key":false,"Value":"v"}]' '[{"Key":"k","Value":false}]' '[{"Key":"k","Value":"v"},{"Key":"k","Value":"v2"}]'; do
+  malformed="$(resources "$REAPABLE" | jq --argjson tags "$tags" '.ResourceTagMappingList[0].Tags=$tags')"
+  run_sweeper "$malformed"
+  if [[ "$RC" -ne 0 ]] && ! grep -Eq "$MUTATING" "$AWS_CALL_LOG"; then
+    check "malformed/ambiguous Tags refuse before deletion: $tags" ok
+  else check "malformed/ambiguous Tags refuse before deletion: $tags" no; fi
+done
+FAKE_FINAL_TAG_ERROR=denied run_sweeper "$(resources "$REAPABLE")"
+if [[ "$RC" -ne 0 ]]; then check "final tag error refuses clean verdict" ok; else check "final tag error refuses clean verdict" no; fi
+FAKE_FINAL_TAG_MALFORMED=true run_sweeper "$(resources "$REAPABLE")"
+if [[ "$RC" -ne 0 ]]; then check "final malformed tags refuse clean verdict" ok; else check "final malformed tags refuse clean verdict" no; fi
+
 echo
 echo "passed: $PASS  failed: $FAIL"
 [[ "$FAIL" -eq 0 ]]
+# The shared read-only verdict controls also exercise the integration consumer.
+bash "$SCRIPT_DIR/test-cleanup-read-verdict.sh"
