@@ -4,11 +4,16 @@ Deploys Honua Server to AWS Lambda (container image) behind an API Gateway HTTP 
 
 The opt-in migration function has its own role. Its database read is pinned to
 one secret version; ENI creation is limited to this deployment's subnets and
-security group, with maintenance restricted to its VPC. An explicit
-`lambda:SourceFunctionArn` deny prevents migration code from using Lambda's ENI
-permissions. These are Terraform contract checks; cloud execution remains
-unqualified. Migration tracing follows `enable_xray_tracing` and grants only
-regional trace writer APIs when enabled.
+security group. ENI maintenance permissions cover interfaces in the deployment's
+VPC and region; they are not restricted by per-function ENI tags. The role
+configures an explicit `lambda:SourceFunctionArn` deny for calls from migration
+code, while retaining Lambda service permissions for VPC lifecycle management.
+The deny uses the unqualified function ARN, as required by AWS's
+[source-function condition-key contract](https://docs.aws.amazon.com/lambda/latest/dg/permissions-source-function-arn.html).
+These tests check the policy document; actual denied EC2 calls from a running
+migration function have not been exercised. Cloud execution remains unqualified.
+Migration tracing follows `enable_xray_tracing` and grants only regional trace
+writer APIs when enabled.
 
 The immutable migration function configuration also pins
 `HONUA_MIGRATION_MANIFEST_SHA256` to the supplied packaged artifact manifest.
