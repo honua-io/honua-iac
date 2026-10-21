@@ -601,6 +601,91 @@ apply_case() {
   printf '%s' "$dir"
 }
 
+# Exercise the real wrapper's final authority transition, not only the helper.
+# The fake Terraform binary is the only possible apply target in these cases.
+host_prewrite_case() {
+  local dir="$1" outcome="$2" job_id="job-1" root challenge_file
+  root="$TMP_DIR/$(basename "$dir")/private-plan-host"
+  mkdir -p "$root/challenges"
+  challenge_file="$root/challenges/$(printf '%s' "$job_id" | sha256sum | cut -d' ' -f1).txt"
+  printf '%064d\n' 0 >"$challenge_file"
+  chmod 600 "$challenge_file"
+  local socket_path="$root/exact-apply-prewrite.sock"
+  local plan_sha
+  plan_sha="$(json_get "$(cat "$dir/artifacts/honua.tfplan.metadata.json")" plan.sha256)"
+  if [[ "$outcome" == "allow" ]]; then
+    python3 - "$socket_path" "$job_id" "$plan_sha" "$HAPPY_DIGEST" "$root/socket-ready" <<'PY' &
+import json, socket, sys
+path, job, plan, digest, ready = sys.argv[1:]
+with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+    listener.bind(path)
+    listener.listen(1)
+    open(ready, "w", encoding="ascii").close()
+    connection, _ = listener.accept()
+    with connection:
+        request = bytearray()
+        while b"\n" not in request:
+            chunk = connection.recv(1024)
+            if not chunk:
+                raise RuntimeError("wrapper closed callback before request")
+            request.extend(chunk)
+        observed = json.loads(request)
+        if observed != {
+            "schemaVersion": "honua.exact-apply-prewrite/v1", "jobId": job,
+            "planSha256": plan, "planMetadataDigest": digest,
+            "challenge": "0" * 64,
+        }:
+            raise RuntimeError("wrapper sent a different prewrite identity")
+        response = {
+            "schemaVersion": "honua.exact-apply-prewrite-response/v1",
+            "jobId": job, "authorization": "one-forward-mutation-authorized",
+            "planSha256": plan, "planMetadataDigest": digest,
+        }
+        connection.sendall((json.dumps(response) + "\n").encode("utf-8"))
+PY
+    local worker_pid=$!
+    local attempts=0
+    until [[ -e "$root/socket-ready" ]]; do
+      sleep 0.05
+      attempts=$((attempts + 1))
+      if [[ "$attempts" -ge 100 ]]; then
+        kill "$worker_pid" 2>/dev/null || true
+        echo "[FAIL] private prewrite fixture socket did not become ready" >&2
+        exit 1
+      fi
+    done
+  fi
+  HONUA_IAC_EXACT_APPLY_HOST_V2=1 \
+    HONUA_IAC_EXACT_APPLY_JOB_ID="$job_id" \
+    HONUA_EXACT_APPLY_HOST_ROOT="$root" \
+    HONUA_IAC_EXACT_APPLY_SOCKET="$socket_path" \
+    HONUA_IAC_EXACT_APPLY_CHALLENGE_FILE="$challenge_file" \
+    FAKE_TF_MUTATION_LOG="$dir/processes" \
+    run_apply "$dir" --approved-digest "$HAPPY_DIGEST" --allow-unqualified
+  if [[ "$outcome" == "allow" ]]; then wait "$worker_pid"; fi
+}
+
+CASE="$(apply_case host-prewrite-refused)"
+host_prewrite_case "$CASE" refuse
+expect_refusal "apply: private host prewrite refusal prevents mutation" "host-prewrite-refused"
+if [[ -e "$CASE/processes" ]] || [[ -e "$CASE/artifacts/honua.tfplan.claim/phase" ]]; then
+  echo "[FAIL] private host refusal reached Terraform apply or mutation-started" >&2
+  exit 1
+fi
+echo "[PASS] private host refusal leaves zero apply calls and no mutation-started claim"
+PASS_COUNT=$((PASS_COUNT + 1))
+
+CASE="$(apply_case host-prewrite-authorized)"
+host_prewrite_case "$CASE" allow
+expect_success "apply: exact private host prewrite permits one saved-plan apply"
+if [[ "$(cat "$CASE/processes")" != "apply" ]] ||
+   [[ "$(cat "$CASE/artifacts/honua.tfplan.claim/phase")" != "receipt-committed" ]]; then
+  echo "[FAIL] private host authorization did not produce exactly one committed apply" >&2
+  exit 1
+fi
+echo "[PASS] private host authorization reaches exactly one committed apply"
+PASS_COUNT=$((PASS_COUNT + 1))
+
 CASE="$(apply_case backend-role-missing-apply)"
 python3 - "$CASE/$STACK_REL/.terraform/terraform.tfstate" <<'PY'
 import json, sys
