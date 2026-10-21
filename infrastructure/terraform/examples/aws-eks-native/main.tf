@@ -206,6 +206,8 @@ resource "kubernetes_role_binding_v1" "server_jobs" {
 }
 
 resource "kubernetes_deployment_v1" "honua" {
+  #checkov:skip=CKV_K8S_14: image_reference requires an immutable OCI SHA-256 digest; there is no mutable tag.
+  #checkov:skip=CKV_K8S_43: image_reference is validated as an OCI SHA-256 digest and checked against artifact_capabilities.
   metadata {
     name      = var.deployment_name
     namespace = kubernetes_namespace_v1.honua.metadata[0].name
@@ -222,10 +224,23 @@ resource "kubernetes_deployment_v1" "honua" {
       }
       spec {
         service_account_name = kubernetes_service_account_v1.server.metadata[0].name
+        security_context {
+          run_as_non_root = true
+          seccomp_profile {
+            type = "RuntimeDefault"
+          }
+        }
         container {
           name              = var.container_name
           image             = var.image_reference
-          image_pull_policy = "IfNotPresent"
+          image_pull_policy = "Always"
+          security_context {
+            allow_privilege_escalation = false
+            run_as_non_root            = true
+            capabilities {
+              drop = ["ALL"]
+            }
+          }
           port {
             name           = "http"
             container_port = 8080

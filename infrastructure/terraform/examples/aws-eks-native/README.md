@@ -17,6 +17,10 @@ digests and declare the selected workload identity mode. The image capability
 assertion must come from a reviewed artifact manifest; Terraform cannot inspect
 the image's compiled credential providers.
 
+The server image must declare a numeric non-root user. The Deployment enforces
+non-root execution, the default seccomp profile, no privilege escalation and
+no added Linux capabilities, and always pulls the digest-pinned image.
+
 The required inputs are the existing cluster name, environment, target and
 tenant IDs, immutable images, artifact capabilities, separate server/GP role
 ARNs and existing Pod Identity association IDs, database/admin/master-key and Redis secret ARNs, a public hostname and its validated ACM
