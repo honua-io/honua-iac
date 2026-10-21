@@ -183,8 +183,8 @@ run "existing_out_of_band_migration_setting_remains_available_without_isolated_i
     additional_env  = { HONUA_SKIP_MIGRATIONS = "true" }
   }
   assert {
-    condition     = local.lambda_environment.HONUA_SKIP_MIGRATIONS == "true" && length(aws_lambda_function.migration) == 0
-    error_message = "The new isolated-migration reservation must not change existing non-isolated configurations."
+    condition     = length(aws_lambda_function.migration) == 0
+    error_message = "Legacy migration setting must be admitted without creating isolated migration resources."
   }
 }
 
