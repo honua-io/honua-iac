@@ -98,6 +98,16 @@ locals {
   service_name  = "${var.deployment_name}-public"
   public_url    = "https://${var.public_hostname}"
   lb_hostname   = kubernetes_service_v1.public.status[0].load_balancer[0].ingress[0].hostname
+  # The server image runs as UID 1001 and uses these paths for logs, cache,
+  # diagnostics and local temporary storage. Keep its root filesystem read-only.
+  writable_paths = {
+    logs               = "/tmp/honua-logs"
+    cache              = "/tmp/honua-cache"
+    diagnostics        = "/tmp/dotnet-diagnostics"
+    temp               = "/tmp/honua-temp"
+    storage            = "/tmp/honua-storage"
+    persistent_storage = "/var/lib/honua/storage"
+  }
   required_secret_arns = [
     var.db_connection_secret_arn,
     var.admin_password_secret_arn,
@@ -226,8 +236,16 @@ resource "kubernetes_deployment_v1" "honua" {
         service_account_name = kubernetes_service_account_v1.server.metadata[0].name
         security_context {
           run_as_non_root = true
+          fs_group        = 1001
           seccomp_profile {
             type = "RuntimeDefault"
+          }
+        }
+        dynamic "volume" {
+          for_each = local.writable_paths
+          content {
+            name = "writable-${volume.key}"
+            empty_dir {}
           }
         }
         container {
@@ -237,8 +255,16 @@ resource "kubernetes_deployment_v1" "honua" {
           security_context {
             allow_privilege_escalation = false
             run_as_non_root            = true
+            read_only_root_filesystem  = true
             capabilities {
               drop = ["ALL"]
+            }
+          }
+          dynamic "volume_mount" {
+            for_each = local.writable_paths
+            content {
+              name       = "writable-${volume_mount.key}"
+              mount_path = volume_mount.value
             }
           }
           port {
@@ -248,6 +274,7 @@ resource "kubernetes_deployment_v1" "honua" {
           dynamic "env" {
             for_each = merge(local.secret_environment, {
               ASPNETCORE_URLS                                    = "http://0.0.0.0:8080"
+              TMPDIR                                             = "/tmp/honua-temp"
               Public__BaseUrl                                    = local.public_url
               ControlPlane__Kubernetes__DefaultNamespace         = var.namespace
               ControlPlane__Kubernetes__DefaultServiceAccount    = var.gp_job_service_account_name

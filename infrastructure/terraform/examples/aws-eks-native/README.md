@@ -19,7 +19,9 @@ the image's compiled credential providers.
 
 The server image must declare a numeric non-root user. The Deployment enforces
 non-root execution, the default seccomp profile, no privilege escalation and
-no added Linux capabilities, and always pulls the digest-pinned image.
+no added Linux capabilities, and always pulls the digest-pinned image. Its
+root filesystem is read-only; ephemeral volumes provide the image's log,
+cache, diagnostics and temporary storage paths.
 
 The required inputs are the existing cluster name, environment, target and
 tenant IDs, immutable images, artifact capabilities, separate server/GP role
