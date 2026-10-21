@@ -178,12 +178,18 @@ only that numeric version, with a durable run ID and no connection data in the
 event. Serving API and control-plane functions depend on a successful receipt that
 matches the function ARN/version, run, database locator, metadata schema and
 packaged migration manifest. A failed or malformed receipt blocks that deployment.
+After fixing the cause of a failed receipt, set `migration_retry_nonce` to a new,
+stable value and apply again. Terraform then replaces the run ID and the
+`CREATE_ONLY` invocation. The default is unset; once chosen, keep the value
+stable for ordinary applies rather than clearing it and triggering another run.
 
 The migration role can read only the direct database secret's pinned version; it
-has no admin/Redis/license secret or alias-update authority. No-NAT deployments
-reuse the custom-code Secrets Manager endpoint or create a dedicated endpoint.
-Set `migration_create_secretsmanager_endpoint = false` only when the existing VPC
-already provides that network path. PostGIS extension provisioning stays separate.
+has no admin/Redis/license secret or alias-update authority. Reused VPCs and
+module-created no-NAT VPCs reuse the custom-code Secrets Manager endpoint or
+create a dedicated endpoint. A reused VPC's NAT routing is unknown to this
+module, even when `enable_nat_gateway` retains its default. Set
+`migration_create_secretsmanager_endpoint = false` only when that VPC already
+provides Secrets Manager reachability. PostGIS extension provisioning stays separate.
 
 Automatic locator hashing covers the module's ASCII endpoint, port 5432, database
 name and configured `Database:Schema`. Existing databases with other names, ports

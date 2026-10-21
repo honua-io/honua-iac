@@ -120,6 +120,7 @@ variables {
   existing_db_connection_string      = "Host=database.example;Database=honua;Username=migrator;Password=synthetic-test-only"
   migration_image                    = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   migration_packaged_manifest_sha256 = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  migration_retry_nonce              = "operator-sequence-1"
   # Recommended in Production; unset only plans with a check warning.
   audit_chain_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
 
@@ -176,10 +177,19 @@ run "default_profile_has_no_migration_resources" {
   }
 }
 
+run "unset_retry_nonce_preserves_the_existing_run_identity_inputs" {
+  command = plan
+  variables { migration_retry_nonce = null }
+  assert {
+    condition     = !contains(keys(random_uuid.migration[0].keepers), "retry_nonce")
+    error_message = "Upgrading without an explicit retry marker must not rotate an existing migration run."
+  }
+}
+
 run "completed_receipt_binds_pinned_invocation_and_minimal_secret_access" {
   command = apply
   assert {
-    condition     = aws_lambda_invocation.migration[0].qualifier == "43" && aws_lambda_invocation.migration[0].lifecycle_scope == "CREATE_ONLY" && jsondecode(aws_lambda_invocation.migration[0].input).runId == "62970000-0000-4000-8000-000000000001" && length(keys(jsondecode(aws_lambda_invocation.migration[0].input))) == 2
+    condition     = aws_lambda_invocation.migration[0].qualifier == "43" && aws_lambda_invocation.migration[0].lifecycle_scope == "CREATE_ONLY" && jsondecode(aws_lambda_invocation.migration[0].input).runId == random_uuid.migration[0].result && jsondecode(aws_lambda_invocation.migration[0].input).runId == "62970000-0000-4000-8000-000000000001" && length(keys(jsondecode(aws_lambda_invocation.migration[0].input))) == 2 && random_uuid.migration[0].keepers.retry_nonce == var.migration_retry_nonce
     error_message = "Only the version-pinned migration event and stable run identity may be invoked; destroy must not invoke SQL."
   }
   assert {
@@ -257,6 +267,35 @@ run "no_nat_provisions_secret_reachability" {
   assert {
     condition     = length(aws_vpc_endpoint.migration_secretsmanager) == 1 && aws_vpc_endpoint.migration_secretsmanager[0].private_dns_enabled && aws_vpc_endpoint.migration_secretsmanager[0].service_name == "com.amazonaws.us-east-1.secretsmanager"
     error_message = "No-NAT migrations require a private Secrets Manager network path."
+  }
+}
+
+run "reused_vpc_provisions_secret_reachability_despite_default_nat_flag" {
+  command = plan
+  variables {
+    existing_vpc_id             = "vpc-0123456789abcdef0"
+    existing_vpc_cidr           = "10.30.0.0/16"
+    existing_public_subnet_ids  = ["subnet-0123456789abcdef0"]
+    existing_private_subnet_ids = ["subnet-0123456789abcdef1"]
+  }
+  assert {
+    condition     = var.enable_nat_gateway && length(aws_vpc_endpoint.migration_secretsmanager) == 1 && aws_vpc_endpoint.migration_secretsmanager[0].vpc_id == var.existing_vpc_id
+    error_message = "A reused VPC must get its requested Secrets Manager endpoint even when the module NAT flag remains at its default."
+  }
+}
+
+run "reused_vpc_may_explicitly_use_its_existing_secret_reachability" {
+  command = plan
+  variables {
+    existing_vpc_id                          = "vpc-0123456789abcdef0"
+    existing_vpc_cidr                        = "10.30.0.0/16"
+    existing_public_subnet_ids               = ["subnet-0123456789abcdef0"]
+    existing_private_subnet_ids              = ["subnet-0123456789abcdef1"]
+    migration_create_secretsmanager_endpoint = false
+  }
+  assert {
+    condition     = length(aws_vpc_endpoint.migration_secretsmanager) == 0
+    error_message = "The explicit existing-VPC reachability opt-out must suppress the dedicated endpoint."
   }
 }
 
@@ -393,4 +432,36 @@ run "malformed_receipt_blocks_serving_deployment" {
     values = { result = "{invalid-json" }
   }
   expect_failures = [aws_lambda_invocation.migration]
+}
+
+run "explicit_retry_recovers_after_failed_receipt_without_forced_replacement" {
+  command = apply
+  variables { migration_retry_nonce = "operator-sequence-2" }
+  override_resource {
+    target = random_uuid.migration[0]
+    values = { result = "62970000-0000-4000-8000-000000000002" }
+  }
+  override_resource {
+    target = aws_lambda_invocation.migration[0]
+    values = { result = jsonencode({
+      schemaVersion      = "honua.lambda-migration-run/v1"
+      requestId          = "provider-request-2"
+      invokedFunctionArn = "arn:aws:lambda:us-east-1:123456789012:function:honua-contract-dev-migration:43"
+      functionVersion    = "43"
+      migration = {
+        schemaVersion                   = "honua.migration-run/v1"
+        runId                           = "62970000-0000-4000-8000-000000000002"
+        outcome                         = "completed"
+        provider                        = "postgres"
+        schemaVerified                  = true
+        targetLocatorSha256             = "33635ee2d208b8113be454ce8cb8293cdbc0014e16c14c54ca75f361163747d4"
+        metadataSchema                  = "honua"
+        packagedMigrationManifestSha256 = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    }) }
+  }
+  assert {
+    condition     = random_uuid.migration[0].keepers.retry_nonce == "operator-sequence-2" && jsondecode(aws_lambda_invocation.migration[0].input).runId == "62970000-0000-4000-8000-000000000002" && output.migration_contract.receipt.migration.runId == "62970000-0000-4000-8000-000000000002"
+    error_message = "Changing the explicit retry marker must create a fresh run ID and recover from a previously failed receipt without a manual -replace."
+  }
 }

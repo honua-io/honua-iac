@@ -214,12 +214,12 @@ resource "aws_lambda_function" "migration" {
 
 resource "random_uuid" "migration" {
   count = local.migration_enabled ? 1 : 0
-  keepers = {
+  keepers = merge({
     function_version   = aws_lambda_function.migration[0].version
     connection_version = aws_secretsmanager_secret_version.connection_string.version_id
     target_sha256      = local.migration_target_sha256
     manifest_sha256    = var.migration_packaged_manifest_sha256
-  }
+  }, { for key, value in { retry_nonce = var.migration_retry_nonce } : key => value if value != null })
 }
 
 resource "aws_lambda_invocation" "migration" {
@@ -257,7 +257,7 @@ resource "aws_lambda_invocation" "migration" {
 # endpoint when enabled; operators may declare an existing VPC's endpoint.
 resource "aws_security_group" "migration_secretsmanager" {
   #checkov:skip=CKV2_AWS_5: Attached by aws_vpc_endpoint.migration_secretsmanager[0].security_group_ids; both resources use the same conditional count.
-  count       = local.migration_enabled && !var.enable_nat_gateway && !local.egress_isolation_enabled && var.migration_create_secretsmanager_endpoint ? 1 : 0
+  count       = local.migration_enabled && (local.use_existing_vpc || !var.enable_nat_gateway) && !local.egress_isolation_enabled && var.migration_create_secretsmanager_endpoint ? 1 : 0
   name_prefix = "${local.name}-migration-vpce-"
   description = "Secrets Manager HTTPS from the migration function"
   vpc_id      = local.vpc_id

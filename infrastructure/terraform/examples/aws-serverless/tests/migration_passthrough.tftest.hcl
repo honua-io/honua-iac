@@ -120,6 +120,7 @@ variables {
   existing_db_connection_string      = "Host=database.example;Database=honua;Username=migrator;Password=synthetic-test-only"
   migration_image                    = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   migration_packaged_manifest_sha256 = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  migration_retry_nonce              = "operator-sequence-1"
   # Recommended in Production; unset only plans with a check warning.
   audit_chain_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
 
