@@ -8,12 +8,22 @@ variable "environment" {
   description = "Environment name used in resource naming."
   type        = string
   default     = "it"
+
+  validation {
+    condition     = try(trimspace(var.environment) != "", false)
+    error_message = "environment must contain a non-whitespace character for resource and operator-contract identity."
+  }
 }
 
 variable "name_prefix" {
   description = "Prefix used for resource names."
   type        = string
   default     = "honuasl"
+
+  validation {
+    condition     = try(trimspace(var.name_prefix) != "", false)
+    error_message = "name_prefix must contain a non-whitespace character for resource and operator-contract identity."
+  }
 }
 
 variable "existing_vpc_id" {
@@ -245,6 +255,11 @@ variable "tags" {
   description = "Additional tags for resources."
   type        = map(string)
   default     = {}
+
+  validation {
+    condition     = try(alltrue([for key in keys(var.tags) : can(regex("^[ -~]+$", key))]), false)
+    error_message = "Tag names must contain only printable ASCII characters and cannot be empty, as required by the canonical operator contract."
+  }
 }
 
 variable "enable_dashboard" {

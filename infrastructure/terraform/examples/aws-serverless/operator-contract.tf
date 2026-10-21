@@ -127,10 +127,10 @@ variable "operator_contract_validation" {
     condition = try(var.operator_contract_validation.mcp_enabled, false) == false ? true : (
       try(trimspace(var.operator_contract_validation.mcp_profile) != "", false) &&
       try(var.operator_contract_validation.mcp_transport, null) != null &&
-      can(regex("^/", var.operator_contract_validation.mcp_path)) &&
+      can(regex("^/[^[:space:]]*$", var.operator_contract_validation.mcp_path)) &&
       length(try(var.operator_contract_validation.mcp_required_tools, [])) > 0
     )
-    error_message = "When operator_contract_validation.mcp_enabled is true, mcp_profile, mcp_transport, an absolute mcp_path, and a non-empty mcp_required_tools roster are all required."
+    error_message = "When operator_contract_validation.mcp_enabled is true, mcp_profile, mcp_transport, an absolute whitespace-free mcp_path, and a non-empty mcp_required_tools roster are all required."
   }
 
   validation {
