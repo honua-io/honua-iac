@@ -31,6 +31,7 @@ AWS_ROOT="$EXAMPLES_DIR/aws"
 CONTRACT_ROOTS=(
   "aws"
   "aws-cert"
+  "aws-eks-native"
 )
 
 FAILURES=0

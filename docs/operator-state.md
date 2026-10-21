@@ -59,6 +59,7 @@ root's outputs:
 - `examples/aws/backend.tf.example`
 - `examples/aws-serverless/backend.tf.example`
 - `examples/aws-eks/backend.tf.example`
+- `examples/aws-eks-native/backend.tf.example`
 - `examples/aws-data/backend.tf.example`
 - `examples/aws-cert/backend.tf.example`
 

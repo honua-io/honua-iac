@@ -33,13 +33,14 @@ fail() {
   failed=$((failed + 1))
 }
 
-# The five roots the gate requires. Listed here deliberately rather than read
+# The six roots the gate requires. Listed here deliberately rather than read
 # from the gate, so a silent narrowing of its root list fails this test.
-roots=(aws aws-serverless aws-eks aws-data aws-cert)
+roots=(aws aws-serverless aws-eks aws-eks-native aws-data aws-cert)
 declare -A environments=(
   [aws]=prod
   [aws-serverless]=prod
   [aws-eks]=prod
+  [aws-eks-native]=prod
   [aws-data]=prod
   [aws-cert]=cert
 )

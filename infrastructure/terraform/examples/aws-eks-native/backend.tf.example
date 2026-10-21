@@ -1,0 +1,20 @@
+# Copy to backend.tf after bootstrap/aws-tfstate is applied. Use an exclusive
+# encrypted state key for this native workload root, separate from aws-eks.
+terraform {
+  backend "s3" {
+    bucket       = "REPLACE_WITH_STATE_BUCKET_NAME"
+    key          = "honua/aws-eks-native/prod/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
+
+    # kms_key_id = "REPLACE_WITH_STATE_KMS_KEY_ARN"
+    # Terraform 1.5-1.9 fallback: remove use_lockfile and use the bootstrap's
+    # DynamoDB locking table instead.
+    # dynamodb_table = "REPLACE_WITH_STATE_LOCK_TABLE_NAME"
+
+    assume_role = {
+      role_arn = "REPLACE_WITH_BACKEND_ACCESS_ROLE_ARN"
+    }
+  }
+}

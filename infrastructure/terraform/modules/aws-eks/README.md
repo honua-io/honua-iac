@@ -13,6 +13,11 @@ The module creates **no Kubernetes objects**. The honua-helm chart installs the
 server, its service accounts, the GP Job RBAC and the LoadBalancer Service; the
 module's outputs are the values the chart and the release harness need.
 
+For the governed native install against an existing cluster, use
+[`examples/aws-eks-native`](../../examples/aws-eks-native/README.md). That
+separate Terraform root owns the Kubernetes Deployment, Service, service
+accounts, Job RBAC and configured public route without a chart write step.
+
 ## What it provisions
 
 - VPC with public/private subnets and a NAT gateway
@@ -45,9 +50,11 @@ an EKS cell. The other half was the node-group role: the upstream default name
 `default-eks-node-group-*` falls outside the cell's IAM name prefix, so the role
 is now named under `<name_prefix>-<environment>`. Both workload roles are too.
 
-Both roles read every runtime secret in play (database, admin password, master
-key, Redis, the key-ring certificate when Redis is on, the audit-chain key when
-supplied) and decrypt any customer-managed KMS key given for them. With
+The server role reads the database, admin password, master key, optional Redis,
+key-ring and audit-chain secrets. The GP Job role reads only the database,
+master key, optional Redis and key-ring secrets; it cannot read the admin
+password or audit-chain key. Customer-managed KMS decrypt grants are scoped to
+the role's matching secret ARNs through the Secrets Manager encryption context. With
 `gp_job_data_bucket_enabled`, both read and write `gp_job_data_bucket_arn`.
 
 ## GP on Kubernetes handoff
@@ -190,14 +197,24 @@ module "eks" {
 
 ## Outputs
 
-Cluster (unchanged): `environment`, `cluster_name`, `cluster_arn`,
+Cluster configuration: `environment`, `cluster_name`, `cluster_arn`,
 `cluster_endpoint`, `cluster_certificate_authority_data`, `vpc_id`,
 `oidc_provider_arn` (null under `pod_identity`), `oidc_provider`,
 `cluster_security_group_id`, `node_security_group_id`,
 `control_plane_target_kind = "Kubernetes"`,
-`control_plane_backend_name = "honua-gitops-kubernetes"`,
+`control_plane_backend_name = "honua-kubernetes-deployment"`,
 `control_plane_telemetry_policy = "kubernetes-honua-http"`,
 `honua_metrics_target = "honua"`.
+
+The backend hint selects Honua's native Kubernetes Deployment adapter. It does
+not register a deploy target or verify a workload. The module installs no Argo
+resources. It requires a compatible Server artifact implementing the native
+backend; older artifacts that only support the legacy backend cannot consume
+this hint. Do not substitute an Argo adapter. An installed handoff additionally needs the actual Deployment,
+Service and public route, current resource identities, and verified serving
+health. The native workload producer and v2 handoff are tracked in
+[IaC267](https://github.com/honua-io/honua-iac/issues/267); these cluster outputs
+alone do not complete that installation.
 
 GA cell handoff:
 
