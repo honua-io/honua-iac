@@ -35,6 +35,7 @@ module "honua" {
   registry_server                           = local.install_reg_server
   registry_username                         = var.registry_username
   registry_password                         = var.registry_password
+  licensing_mode                            = var.licensing_mode
   tags                                      = var.tags
 
   additional_env = merge({
@@ -45,6 +46,11 @@ module "honua" {
 
 output "honua_url" {
   value = module.honua.container_app_fqdn
+}
+
+output "licensing_mode" {
+  description = "Licensing mode declared to the Container App (Licensing__Mode). Disabled is the 2026.1 contract."
+  value       = module.honua.licensing_mode
 }
 
 output "environment" {

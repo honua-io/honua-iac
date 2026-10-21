@@ -42,6 +42,7 @@ module "honua" {
   openai_model           = var.openai_model
   openai_api_version     = var.openai_api_version
 
+  licensing_mode                 = var.licensing_mode
   enable_pro_license             = var.enable_pro_license
   pro_license_content            = var.pro_license_content
   pro_license_key_id             = var.pro_license_key_id
@@ -55,6 +56,11 @@ module "honua" {
 
 output "honua_url" {
   value = module.honua.function_app_url
+}
+
+output "licensing_mode" {
+  description = "Licensing mode declared to the Function App (Licensing__Mode). Disabled is the 2026.1 contract; enable_pro_license forces Enabled."
+  value       = module.honua.licensing_mode
 }
 
 output "environment" {

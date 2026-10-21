@@ -18,10 +18,17 @@ This guide is for platform operators deploying Honua into their own cloud subscr
 
 ## Choose a deployment target
 
+Qualified 2026.1 targets:
+
 - AWS containers: `infrastructure/terraform/examples/aws`
-- Azure containers: `infrastructure/terraform/examples/azure`
 - AWS serverless: `infrastructure/terraform/examples/aws-serverless`
+
+Preview, not a qualified 2026.1 target (same licensing default, no qualification claim):
+
+- Azure containers: `infrastructure/terraform/examples/azure`
 - Azure serverless: `infrastructure/terraform/examples/azure-functions`
+
+Studio, mixed ECS+Batch, EKS, multi-tenancy, and Helm are outside the qualified scope.
 
 ## Standard workflow
 
@@ -127,7 +134,7 @@ and [`docs/operator-state.md`](operator-state.md).
 
 ## Recommended operator defaults
 
-- Pin versioned images (avoid `latest` in production)
+- Pin the published server image by digest (`name@sha256:<64 hex>`). No `v*` honua-server tag exists; `v1.2.x-aot` and other version tags 404. Do not use `latest`.
 - The `examples/aws` root defaults to `enable_postgis = false` because the
   database is private by default. Set it to `true` only when the Terraform
   runner can reach PostgreSQL. The ECS module bootstraps PostGIS with local
@@ -140,15 +147,17 @@ and [`docs/operator-state.md`](operator-state.md).
 - Use managed secrets and a remote state backend (mandatory for anything shared
   or long-lived; see [`operator-state.md`](operator-state.md))
 - Add mandatory tags (owner, env, cost center)
-- Leave the licensing inputs alone. The 2026.1 AWS roots default to
-  `licensing_mode = "Disabled"`, which declares `Licensing__Mode=Disabled` on
-  the deployed server: no license envelope, no capacity metering, every
-  capability active. Confirm it on the live service with
-  `GET /api/v1/admin/license` — it must report `mode=disabled` and
-  `edition=Unlicensed-2026.1`. An `edition=Community` there means the mode did
-  not reach the server and paid capabilities are gated. Licensing returns in
-  2026.2; see the `aws-ecs` and `aws-serverless` module READMEs for the licensed
-  path.
+- Leave the licensing inputs alone. The 2026.1 AWS roots, and the Azure
+  preview roots, default to `licensing_mode = "Disabled"`, which declares
+  `Licensing__Mode=Disabled` on the deployed server: no license envelope, no
+  capacity metering, every capability active. The server's own default is
+  Enabled and would boot the Community edition if the variable were omitted.
+  Confirm it on the live service with `GET /api/v1/admin/license` — it must
+  report `mode=disabled` and `edition=Unlicensed-2026.1`. An `edition=Community`
+  there means the mode did not reach the server and paid capabilities are
+  gated. Licensing returns in 2026.2; see the `aws-ecs` and `aws-serverless`
+  module READMEs for the licensed path. Azure preview stacks declare the same
+  mode and are still not a qualified target.
 
 ## Horizontal scaling contract
 

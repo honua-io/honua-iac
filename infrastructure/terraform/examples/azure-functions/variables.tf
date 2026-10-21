@@ -50,7 +50,7 @@ variable "existing_db_connection_string" {
 }
 
 variable "honua_image" {
-  description = "Container image (Functions-compatible). Pin to an immutable release tag or digest. Prefer AOT builds; use JIT images only for debug fallback."
+  description = "Container image (Functions-compatible). Pin the published digest (registry/name@sha256:<64 hex>). No v* honua-server tag exists."
   type        = string
 }
 
@@ -212,8 +212,19 @@ variable "openai_api_version" {
   default     = "2024-10-21"
 }
 
+variable "licensing_mode" {
+  description = "Licensing deployment mode declared to the server as Licensing__Mode. Defaults to Disabled (the 2026.1 contract). enable_pro_license forces Enabled. Azure Functions are preview and are not a qualified 2026.1 target."
+  type        = string
+  default     = "Disabled"
+
+  validation {
+    condition     = contains(["Disabled", "Enabled"], var.licensing_mode)
+    error_message = "licensing_mode must be \"Disabled\" or \"Enabled\"."
+  }
+}
+
 variable "enable_pro_license" {
-  description = "Deliver a signed Pro license to the function app via Key Vault. Requires pro_license_content and pro_license_trusted_public_key when enabled."
+  description = "Deliver a signed Pro license to the function app via Key Vault and force Licensing__Mode=Enabled. Requires pro_license_content and pro_license_trusted_public_key when enabled."
   type        = bool
   default     = false
 }

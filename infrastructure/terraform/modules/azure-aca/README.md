@@ -1,5 +1,7 @@
 # Azure Container Apps Module
 
+Preview. Not a qualified 2026.1 target. The module still declares `Licensing__Mode=Disabled` so a stack does not boot the server's Community default.
+
 Deploys Honua Server to Azure Container Apps with PostgreSQL Flexible Server, Key Vault-backed secrets, optional Azure Cache for Redis, and Log Analytics. The module fails planning when Container Apps could scale past one Honua replica without the required MultiNode, Redis, and shared Azure Blob configuration.
 
 ## Pin to a release
@@ -26,7 +28,7 @@ module "honua" {
 
   environment    = "dev"
   location       = "eastus"
-  image          = "ghcr.io/honua-io/honua-server:v1.2.3-aot"
+  image          = "ghcr.io/honua-io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   admin_password = var.honua_admin_password
   connection_encryption_master_key = null # Deliberate auto-generation for this new deployment
   enable_postgis = true  # Required — Honua needs PostGIS + PostGIS Raster
@@ -51,7 +53,7 @@ module "honua" {
   name_prefix = "honua"
 
   # Container
-  image            = "ghcr.io/honua-io/honua-server:v1.2.3-aot"  # Pin to a release AOT tag
+  image            = "ghcr.io/honua-io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" # Published digest. No v* honua-server tag exists.
   container_cpu    = 1.0     # 1 vCPU
   container_memory = "2Gi"
   min_replicas     = 2       # Minimum 2 for HA
@@ -106,7 +108,8 @@ module "honua" {
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `image` | Required | Container image. Pin to an immutable release tag or digest. AOT builds are recommended. |
+| `image` | Required | Container image. Pin the published digest (`name@sha256:<64 hex>`). No `v*` honua-server tag exists. |
+| `licensing_mode` | `Disabled` | Declared as `Licensing__Mode`. Disabled is the 2026.1 contract. The server default is Enabled and boots Community. |
 | `connection_encryption_master_key` | Required (nullable) | Fail-closed connection-key decision. Set `null` explicitly only for a new deployment; existing deployments must supply their current key as described below. |
 | `container_cpu` | 0.5 | CPU cores (0.25, 0.5, 1.0, 2.0, 4.0). |
 | `container_memory` | `"1Gi"` | Memory with `Gi` suffix (for example `1Gi`, `1.5Gi`). |

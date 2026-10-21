@@ -114,6 +114,11 @@ output "openai_endpoint" {
   value       = local.openai_endpoint
 }
 
+output "licensing_mode" {
+  description = "Licensing deployment mode declared to the server as Licensing__Mode. Disabled is the 2026.1 contract; enable_pro_license forces Enabled."
+  value       = local.licensing_mode
+}
+
 output "pro_license_enabled" {
   description = "Whether the server is configured to load a signed Pro license from Key Vault."
   value       = local.pro_license_enabled

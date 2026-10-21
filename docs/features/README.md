@@ -11,7 +11,7 @@ This repository owns reusable cloud modules, deployable examples, bootstrap temp
 
 ## Current Capabilities
 
-- Deployable operator paths for AWS ECS/Fargate, Azure Container Apps, AWS Lambda, and Azure Functions.
+- Deployable operator paths for AWS ECS/Fargate and AWS Lambda, the qualified 2026.1 targets. Azure Container Apps and Azure Functions are preview and are not qualified 2026.1 targets.
 - Reusable modules for AWS ECS, AWS EKS, AWS serverless, Azure Container Apps, Azure AKS, Azure Functions, and observability stack.
 - Bootstrap templates for least-privilege identities across the supported runtime targets.
 - Validation and platform QA scripts for live applies, policy gates, drift checks, and Kubernetes/serverless/container runtime validation.

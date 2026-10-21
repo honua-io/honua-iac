@@ -16,9 +16,16 @@ location    = "eastus"
 environment = "prod"
 name_prefix = "honua"
 
-# Functions-compatible container image. Pin to an immutable release tag or digest.
-# Prefer AOT builds; use JIT images only for debug fallback.
-honua_image = "ghcr.io/honua-io/honua-server:v1.5.0"
+# Functions-compatible container image. Pin the published digest. No v*
+# honua-server tag exists (v1.2.x-aot and v1.5.0 are not releases). Replace
+# the placeholder before apply. The module splits name@sha256:hex for the
+# Functions docker site config.
+honua_image = "ghcr.io/honua-io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+# 2026.1 contract. Disabled declares Licensing__Mode=Disabled. The server
+# default is Enabled and would boot the Community edition. enable_pro_license
+# forces Enabled. This stack is preview and is not a qualified 2026.1 target.
+licensing_mode = "Disabled"
 
 # Admin API password (minimum 32 characters).
 # Generate: openssl rand -hex 32

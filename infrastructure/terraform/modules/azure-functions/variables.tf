@@ -23,7 +23,7 @@ variable "tags" {
 }
 
 variable "image" {
-  description = "Container image. Pin to an immutable release tag or digest. Prefer AOT builds; use JIT images only for debug fallback."
+  description = "Container image. Pin the published image by digest (registry/name@sha256:<64 hex>). No v* honua-server tag exists. The Functions docker block splits that reference into image name and tag."
   type        = string
 }
 
@@ -170,6 +170,34 @@ variable "additional_env" {
   description = "Additional environment variables for the Function App."
   type        = map(string)
   default     = {}
+
+  validation {
+    condition = length(setintersection(toset([
+      for key in keys(var.additional_env) : lower(replace(key, ":", "__"))
+      ]), toset([
+      "licensing__mode",
+      "licensing__edition",
+      "licensing__licensecontent",
+      "licensing__licensecontentsecretref"
+    ]))) == 0
+    error_message = "Set licensing through licensing_mode and enable_pro_license, not additional_env."
+  }
+}
+
+# The 2026.1 contract declares licensing DISABLED. The server's own default is
+# Licensing__Mode=Enabled, which with no license source boots the Community
+# edition. Azure Functions is preview and is not a qualified 2026.1 target;
+# the mode is still declared so a preview stack does not boot that gated default.
+# enable_pro_license forces Enabled.
+variable "licensing_mode" {
+  description = "Licensing deployment mode declared to the server as Licensing__Mode. Defaults to Disabled (no license, no metering, all entitlements active). enable_pro_license forces Enabled."
+  type        = string
+  default     = "Disabled"
+
+  validation {
+    condition     = contains(["Disabled", "Enabled"], var.licensing_mode)
+    error_message = "licensing_mode must be \"Disabled\" or \"Enabled\" (the server rejects any other value at startup)."
+  }
 }
 
 variable "redis_connection_string" {
@@ -407,7 +435,7 @@ variable "openai_timeout_seconds" {
 # Licensing__TrustedKeys__<keyId>. When off the server runs Community.
 
 variable "enable_pro_license" {
-  description = "Deliver a signed Pro license to the function app via Key Vault. Off by default; when off the server runs Community. Requires pro_license_content and pro_license_trusted_public_key when enabled."
+  description = "Deliver a signed Pro license to the function app via Key Vault and set Licensing__Mode=Enabled. Off by default; when off the deployment declares Licensing__Mode=Disabled (all entitlements active, no metering), not Community. Requires pro_license_content and pro_license_trusted_public_key when enabled."
   type        = bool
   default     = false
 }
