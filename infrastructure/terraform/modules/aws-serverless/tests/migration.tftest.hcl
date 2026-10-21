@@ -180,11 +180,14 @@ run "existing_out_of_band_migration_setting_remains_available_without_isolated_i
   command = plan
   variables {
     migration_image = null
-    additional_env  = { HONUA_SKIP_MIGRATIONS = "true" }
+    additional_env = {
+      HONUA_SKIP_MIGRATIONS                = "true"
+      ConnectionStrings__DefaultConnection = "aws:secretsmanager:legacy-test"
+    }
   }
   assert {
     condition     = length(aws_lambda_function.migration) == 0
-    error_message = "Legacy migration setting must be admitted without creating isolated migration resources."
+    error_message = "Legacy connection and migration overrides remain admissible without isolated migration resources."
   }
 }
 
@@ -367,6 +370,117 @@ run "serving_migration_alias_cannot_be_overridden" {
   expect_failures = [aws_lambda_function.migration]
 }
 
+run "serving_default_connection_cannot_be_overridden" {
+  command = plan
+  variables {
+    additional_env = { ConnectionStrings__DefaultConnection = "aws:secretsmanager:other-database" }
+  }
+  expect_failures = [aws_lambda_function.migration]
+}
+
+run "serving_default_connection_mixed_case_cannot_be_overridden" {
+  command = plan
+  variables {
+    additional_env = { cOnNeCtIoNsTrInGs__DeFaUlTcOnNeCtIoN = "aws:secretsmanager:other-database" }
+  }
+  expect_failures = [aws_lambda_function.migration]
+}
+
+run "serving_default_connection_colon_alias_cannot_be_overridden" {
+  command = plan
+  variables {
+    additional_env = { "ConnectionStrings:DefaultConnection" = "aws:secretsmanager:other-database" }
+  }
+  expect_failures = [aws_lambda_function.migration]
+}
+
+run "mysqlconnstr_default_connection_cannot_be_overridden" {
+  command = plan
+  variables {
+    additional_env = { MYSQLCONNSTR_DefaultConnection = "Host=other-database" }
+  }
+  expect_failures = [aws_lambda_function.migration]
+}
+
+run "sqlazureconnstr_default_connection_cannot_be_overridden" {
+  command = plan
+  variables {
+    additional_env = { SQLAZURECONNSTR_DefaultConnection = "Host=other-database" }
+  }
+  expect_failures = [aws_lambda_function.migration]
+}
+
+run "sqlconnstr_default_connection_cannot_be_overridden" {
+  command = plan
+  variables {
+    additional_env = { SQLCONNSTR_DefaultConnection = "Host=other-database" }
+  }
+  expect_failures = [aws_lambda_function.migration]
+}
+
+run "postgresqlconnstr_default_connection_cannot_be_overridden" {
+  command = plan
+  variables {
+    additional_env = { POSTGRESQLCONNSTR_DefaultConnection = "Host=other-database" }
+  }
+  expect_failures = [aws_lambda_function.migration]
+}
+
+run "apihubconnstr_default_connection_cannot_be_overridden" {
+  command = plan
+  variables {
+    additional_env = { APIHUBCONNSTR_DefaultConnection = "Host=other-database" }
+  }
+  expect_failures = [aws_lambda_function.migration]
+}
+
+run "docdbconnstr_default_connection_cannot_be_overridden" {
+  command = plan
+  variables {
+    additional_env = { DOCDBCONNSTR_DefaultConnection = "Host=other-database" }
+  }
+  expect_failures = [aws_lambda_function.migration]
+}
+
+run "eventhubconnstr_default_connection_cannot_be_overridden" {
+  command = plan
+  variables {
+    additional_env = { EVENTHUBCONNSTR_DefaultConnection = "Host=other-database" }
+  }
+  expect_failures = [aws_lambda_function.migration]
+}
+
+run "notificationhubconnstr_default_connection_cannot_be_overridden" {
+  command = plan
+  variables {
+    additional_env = { NOTIFICATIONHUBCONNSTR_DefaultConnection = "Host=other-database" }
+  }
+  expect_failures = [aws_lambda_function.migration]
+}
+
+run "rediscacheconnstr_default_connection_cannot_be_overridden" {
+  command = plan
+  variables {
+    additional_env = { REDISCACHECONNSTR_DefaultConnection = "Host=other-database" }
+  }
+  expect_failures = [aws_lambda_function.migration]
+}
+
+run "servicebusconnstr_default_connection_cannot_be_overridden" {
+  command = plan
+  variables {
+    additional_env = { SERVICEBUSCONNSTR_DefaultConnection = "Host=other-database" }
+  }
+  expect_failures = [aws_lambda_function.migration]
+}
+
+run "customconnstr_default_connection_cannot_be_overridden" {
+  command = plan
+  variables {
+    additional_env = { CUSTOMCONNSTR_DefaultConnection = "Host=other-database" }
+  }
+  expect_failures = [aws_lambda_function.migration]
+}
 run "connection_string_options_require_canonical_locator_override" {
   command = plan
   variables {

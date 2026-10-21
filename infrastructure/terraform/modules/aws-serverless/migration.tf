@@ -187,6 +187,25 @@ resource "aws_lambda_function" "migration" {
       error_message = "Isolated migration mode and receipt controls are module-owned; additional_env cannot override them."
     }
     precondition {
+      condition = alltrue([
+        for name in keys(var.additional_env) : !contains([
+          "connectionstrings__defaultconnection",
+          "mysqlconnstr_defaultconnection",
+          "sqlazureconnstr_defaultconnection",
+          "sqlconnstr_defaultconnection",
+          "postgresqlconnstr_defaultconnection",
+          "apihubconnstr_defaultconnection",
+          "docdbconnstr_defaultconnection",
+          "eventhubconnstr_defaultconnection",
+          "notificationhubconnstr_defaultconnection",
+          "rediscacheconnstr_defaultconnection",
+          "servicebusconnstr_defaultconnection",
+          "customconnstr_defaultconnection"
+        ], lower(replace(name, ":", "__")))
+      ])
+      error_message = "Isolated migration requires the serving DefaultConnection to use the same module-owned database secret as the migration function; additional_env cannot override it."
+    }
+    precondition {
       condition     = var.skip_migrations
       error_message = "The isolated migration function requires skip_migrations=true on serving functions."
     }
