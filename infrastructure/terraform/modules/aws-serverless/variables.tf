@@ -270,7 +270,7 @@ variable "migration_packaged_manifest_sha256" {
 }
 
 variable "migration_target_locator_sha256" {
-  description = "Optional canonical honua.database-locator/v1 hash override for an existing database, non-ASCII name, custom port or locator-changing connection options. Default hashes the module's direct endpoint, port 5432, db_name and Database:Schema. The runtime verifies the resolved secret before database preflight or mutation."
+  description = "Optional canonical honua.database-locator/v1 hash override for an existing database with different locator names or connection-option overrides. Default hashes the direct endpoint, effective existing_db_port or managed port 5432, db_name and Database:Schema. The runtime verifies the resolved secret before database preflight or mutation."
   type        = string
   default     = null
   validation {
@@ -350,6 +350,16 @@ variable "existing_db_endpoint" {
   description = "Existing PostgreSQL endpoint to reuse. Set with existing_db_connection_string."
   type        = string
   default     = ""
+}
+
+variable "existing_db_port" {
+  description = "Port of the existing PostgreSQL endpoint and pinned connection string. Set with an existing database when it uses a nondefault port; the module-managed database remains on 5432."
+  type        = number
+  default     = 5432
+  validation {
+    condition     = var.existing_db_port >= 1 && var.existing_db_port <= 65535 && floor(var.existing_db_port) == var.existing_db_port
+    error_message = "existing_db_port must be a whole TCP port from 1 to 65535."
+  }
 }
 
 variable "existing_db_connection_string" {

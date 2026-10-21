@@ -27,6 +27,7 @@ module "honua" {
   admin_password                  = var.honua_admin_password
   db_password                     = var.db_password
   existing_db_endpoint            = local.install_db_host
+  existing_db_port                = var.existing_db_port
   existing_db_connection_string   = var.existing_db_connection_string
   db_publicly_accessible          = local.install_db_public
   db_additional_ingress_cidrs     = var.db_additional_ingress_cidrs

@@ -154,6 +154,10 @@ run "handoff_reports_serving_alias_not_latest_function_version" {
     error_message = "Resource identity pins must fit within the unchanged Lambda environment limit."
   }
   assert {
+    condition     = local.db_port == 5432 && length([for rule in aws_security_group.lambda.egress : rule if rule.description == "PostgreSQL access"]) == 1 && alltrue([for rule in aws_security_group.lambda.egress : rule.from_port == 5432 && rule.to_port == 5432 if rule.description == "PostgreSQL access"])
+    error_message = "Module-managed PostgreSQL and its Lambda egress must keep the established port 5432."
+  }
+  assert {
     condition     = !contains(keys(output.runtime_binding_contract), "observation") && !strcontains(jsonencode(output.runtime_binding_contract), var.admin_password)
     error_message = "Configured facts must not contain credentials or claim live provider observation."
   }

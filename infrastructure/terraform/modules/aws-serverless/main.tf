@@ -19,6 +19,7 @@ locals {
   public_subnets     = local.use_existing_vpc ? var.existing_public_subnet_ids : module.vpc[0].public_subnets
   private_subnets    = local.use_existing_vpc ? var.existing_private_subnet_ids : module.vpc[0].private_subnets
   db_use_existing    = var.existing_db_endpoint != "" && var.existing_db_connection_string != ""
+  db_port            = local.db_use_existing ? var.existing_db_port : 5432
   redis_enabled      = var.redis_enabled || var.redis_connection_string != ""
   redis_create       = var.redis_enabled && var.redis_connection_string == ""
   image_ref          = split("@", var.image)[0]
@@ -105,7 +106,7 @@ locals {
   # bounds from Limits:Connections (local.db_pool_environment, per process).
   # db_connection_string_options comes last, so an operator keyword wins.
   db_pool_options      = ";Maximum Pool Size=${var.lambda_db_max_pool_size};Connection Idle Lifetime=${var.db_connection_idle_lifetime_seconds};Connection Pruning Interval=10;Timeout=15"
-  db_connection_string = local.db_use_existing ? var.existing_db_connection_string : "Host=${local.db_endpoint};Port=5432;Database=${var.db_name};Username=${var.db_username};Password=${local.db_password}${local.db_ssl}${local.db_pool_options}${local.db_conn_options}"
+  db_connection_string = local.db_use_existing ? var.existing_db_connection_string : "Host=${local.db_endpoint};Port=${local.db_port};Database=${var.db_name};Username=${var.db_username};Password=${local.db_password}${local.db_ssl}${local.db_pool_options}${local.db_conn_options}"
   # The server's NpgsqlDataSource (PostgresDataSourceFactory) overwrites the
   # connection string's pool keywords with Limits:Connections, whose defaults
   # are MaxConnectionPoolSize 200, MinConnectionPoolSize 20 (never pruned below)
@@ -510,8 +511,8 @@ resource "aws_security_group" "lambda" {
 
   egress {
     description = "PostgreSQL access"
-    from_port   = 5432
-    to_port     = 5432
+    from_port   = local.db_port
+    to_port     = local.db_port
     protocol    = "tcp"
     cidr_blocks = [local.vpc_cidr_block]
   }
@@ -520,8 +521,8 @@ resource "aws_security_group" "lambda" {
     for_each = local.db_use_existing ? [1] : []
     content {
       description = "Existing PostgreSQL access"
-      from_port   = 5432
-      to_port     = 5432
+      from_port   = local.db_port
+      to_port     = local.db_port
       protocol    = "tcp"
       cidr_blocks = ["0.0.0.0/0"]
     }

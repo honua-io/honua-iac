@@ -22,7 +22,7 @@ locals {
   migration_locator_ascii = can(regex("^[A-Za-z0-9_.:-]+$", local.db_endpoint)) && can(regex("^[A-Za-z0-9_]+$", var.db_name)) && can(regex("^[A-Za-z_][A-Za-z0-9_]*$", local.migration_metadata_schema))
   migration_target_sha256 = var.migration_target_locator_sha256 != null ? var.migration_target_locator_sha256 : sha256(jsonencode([
     "honua.database-locator/v1", lower(replace(trimspace(local.db_endpoint), "/\\.+$/", "")),
-    "5432", var.db_name, local.migration_metadata_schema
+    tostring(local.db_port), var.db_name, local.migration_metadata_schema
   ]))
   migration_environment = merge(local.migration_database_environment, {
     ASPNETCORE_ENVIRONMENT               = "Production"

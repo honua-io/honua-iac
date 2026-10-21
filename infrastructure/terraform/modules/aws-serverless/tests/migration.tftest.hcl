@@ -176,6 +176,23 @@ run "default_profile_has_no_migration_resources" {
   }
 }
 
+run "existing_custom_port_matches_database_egress_and_migration_locator" {
+  command = plan
+  variables {
+    existing_db_port              = 5544
+    existing_db_connection_string = "Host=database.example;Port=5544;Database=honua;Username=migrator;Password=synthetic-test-only"
+  }
+  assert {
+    condition = (
+      local.db_port == 5544 &&
+      aws_lambda_function.migration[0].environment[0].variables.HONUA_MIGRATION_TARGET_SHA256 == "577f46c898aead9358dfad2fbc56b2fd74ecde4e9866420c8732d53041be78f4" &&
+      length([for rule in aws_security_group.lambda.egress : rule if contains(["PostgreSQL access", "Existing PostgreSQL access"], rule.description)]) == 2 &&
+      alltrue([for rule in aws_security_group.lambda.egress : rule.from_port == 5544 && rule.to_port == 5544 if contains(["PostgreSQL access", "Existing PostgreSQL access"], rule.description)])
+    )
+    error_message = "An existing database's configured port must bind both narrow Lambda egress rules and the canonical migration locator."
+  }
+}
+
 run "completed_receipt_binds_pinned_invocation_and_minimal_secret_access" {
   command = apply
   assert {

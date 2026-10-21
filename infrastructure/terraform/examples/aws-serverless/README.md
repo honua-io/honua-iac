@@ -209,11 +209,15 @@ module, even when `enable_nat_gateway` retains its default. Set
 `migration_create_secretsmanager_endpoint = false` only when that VPC already
 provides Secrets Manager reachability. PostGIS extension provisioning stays separate.
 
-Automatic locator hashing covers the module's ASCII endpoint, port 5432, database
-name and configured `Database:Schema`. Existing databases with other names, ports
-or locator-changing connection options need a canonical
-`migration_target_locator_sha256`; the runtime checks it before database preflight
-or mutation. Function rollback does not undo database migrations.
+Automatic locator hashing covers the module's ASCII endpoint, effective
+`existing_db_port` (5432 for a module-managed database), database name and
+configured `Database:Schema`. For a reused database, set `existing_db_port` to
+the port in the pinned `existing_db_connection_string`; the module uses it for
+narrow Lambda database egress as well. Existing databases with different locator
+names or connection-option overrides still need a canonical
+`migration_target_locator_sha256`; the runtime checks the actual resolved secret
+against it before database preflight or mutation. Function rollback does not undo
+database migrations.
 
 No matching public migration image or real AWS execution is qualified yet. Leave
 the preview disabled for existing installs. `migrate_required` reports whether
