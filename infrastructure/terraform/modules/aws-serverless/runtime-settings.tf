@@ -42,6 +42,7 @@ resource "aws_secretsmanager_secret" "runtime_settings" {
   name        = "${local.name}/runtime-settings-${each.key}"
   description = "Immutable Honua deployment target configuration ${each.key}."
   tags        = local.tags
+  depends_on  = [terraform_data.lambda_secrets_policy_budget]
 
   lifecycle {
     prevent_destroy = true

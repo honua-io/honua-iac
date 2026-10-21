@@ -315,6 +315,9 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: Lambda secret-policy publication order contract
+        run: python3 infrastructure/terraform/validation/scripts/shared/test-lambda-secret-policy-order.py
+
       - name: Agent container isolation contracts (mock providers only)
         run: terraform -chdir=infrastructure/terraform/internal/aws-agent-worker test -no-color
 

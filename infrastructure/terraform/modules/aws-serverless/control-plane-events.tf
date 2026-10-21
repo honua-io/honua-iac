@@ -312,6 +312,8 @@ resource "aws_lambda_function" "control_plane_reconcile" {
 
   depends_on = [
     aws_lambda_invocation.migration,
+    aws_iam_role_policy.control_plane_events,
+    aws_iam_role_policy.control_plane_events_request_secret_references,
     aws_ecr_repository_policy.lambda_image_access,
     aws_cloudwatch_log_group.control_plane_reconcile,
     aws_secretsmanager_secret_version.connection_string,
@@ -386,6 +388,8 @@ resource "aws_lambda_function" "control_plane_backstop" {
 
   depends_on = [
     aws_lambda_invocation.migration,
+    aws_iam_role_policy.control_plane_events,
+    aws_iam_role_policy.control_plane_events_request_secret_references,
     aws_ecr_repository_policy.lambda_image_access,
     aws_cloudwatch_log_group.control_plane_backstop,
     aws_secretsmanager_secret_version.connection_string,
@@ -474,6 +478,8 @@ resource "aws_lambda_function" "control_plane_tick" {
 
   depends_on = [
     aws_lambda_invocation.migration,
+    aws_iam_role_policy.control_plane_events,
+    aws_iam_role_policy.control_plane_events_request_secret_references,
     aws_ecr_repository_policy.lambda_image_access,
     aws_cloudwatch_log_group.control_plane_tick,
     aws_secretsmanager_secret_version.connection_string,

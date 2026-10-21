@@ -177,6 +177,16 @@ resource "aws_lambda_function" "migration" {
   }
   lifecycle {
     precondition {
+      condition = length(setintersection(toset([for name in keys(var.additional_env) : lower(replace(name, ":", "__"))]), toset([
+        "honua_skip_migrations",
+        "honua_migrate_only",
+        "honua_migration_lambda",
+        "honua_migration_target_sha256",
+        "honua_migration_manifest_sha256"
+      ]))) == 0
+      error_message = "Isolated migration mode and receipt controls are module-owned; additional_env cannot override them."
+    }
+    precondition {
       condition     = var.skip_migrations
       error_message = "The isolated migration function requires skip_migrations=true on serving functions."
     }
@@ -189,8 +199,8 @@ resource "aws_lambda_function" "migration" {
       error_message = "The migration image must come from the serving image's ECR repository, whose Lambda retrieval policy the module manages. Matching release provenance must also be verified before apply."
     }
     precondition {
-      condition     = var.migration_target_locator_sha256 != null || local.migration_locator_ascii
-      error_message = "Automatic locator hashing supports ASCII host/database/schema names only. Supply the canonical migration_target_locator_sha256 for other names or connection-option overrides."
+      condition     = var.migration_target_locator_sha256 != null || (local.migration_locator_ascii && var.db_connection_string_options == "")
+      error_message = "Automatic locator hashing supports ASCII host/database/schema names with no appended connection-string options. Supply the canonical migration_target_locator_sha256 when options or other locator names are used."
     }
     precondition {
       condition     = alltrue([for entries in values(local.migration_database_groups) : length(entries) == 1])

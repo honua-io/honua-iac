@@ -808,6 +808,29 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc" {
 locals {
   # Count the complete minified policy actually sent to IAM, including every
   # retained document and the optional OIDC/KMS grants. Keep exact ARN scope.
+  # A Secrets Manager ARN ends in a six-character generated suffix. Resource
+  # ARNs are unknown on the first plan, so use equal-length, plan-known names
+  # for the early budget guard. The actual policy below remains authoritative.
+  lambda_secret_arn_standin_prefix = "arn:${data.aws_partition.current.partition}:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:"
+  lambda_secret_arns_plan_known = concat(compact([
+    "${local.lambda_secret_arn_standin_prefix}${local.name}/${local.rds_proxy_enabled ? "db-proxy-connection" : "connection-string"}-XXXXXX",
+    "${local.lambda_secret_arn_standin_prefix}${local.name}/admin-password-XXXXXX",
+    "${local.lambda_secret_arn_standin_prefix}${local.name}/connection-encryption-master-key-XXXXXX",
+    local.redis_enabled ? "${local.lambda_secret_arn_standin_prefix}${local.name}/redis-connection-XXXXXX" : null,
+    local.pro_license_adopted ? trimspace(var.pro_license_secret_arn) : local.pro_license_manage_secret ? "${local.lambda_secret_arn_standin_prefix}${local.name}/license-pro-XXXXXX" : null
+  ]), [for hash in keys(local.runtime_settings_documents) : "${local.lambda_secret_arn_standin_prefix}${local.name}/runtime-settings-${hash}-XXXXXX"], local.operation_key_ring_certificate_secret_arns, local.audit_chain_key_secret_arns)
+  lambda_secrets_policy_plan_known_json = jsonencode({
+    Version = "2012-10-17"
+    Statement = concat([{
+      Effect   = "Allow"
+      Action   = ["secretsmanager:GetSecretValue"]
+      Resource = concat(local.lambda_secret_arns_plan_known, local.oidc_signing_secret_arns)
+      }], length(concat(local.operation_key_ring_certificate_kms_key_arns, local.audit_chain_key_kms_key_arns, local.oidc_signing_kms_arns)) > 0 ? [{
+      Effect   = "Allow"
+      Action   = ["kms:Decrypt", "kms:DescribeKey"]
+      Resource = concat(local.operation_key_ring_certificate_kms_key_arns, local.audit_chain_key_kms_key_arns, local.oidc_signing_kms_arns)
+    }] : [])
+  })
   lambda_secrets_policy_json = jsonencode({
     Version = "2012-10-17"
     Statement = concat([
@@ -824,6 +847,17 @@ locals {
         Resource = concat(local.operation_key_ring_certificate_kms_key_arns, local.audit_chain_key_kms_key_arns, local.oidc_signing_kms_arns)
     }] : [])
   })
+}
+
+resource "terraform_data" "lambda_secrets_policy_budget" {
+  input = length(local.lambda_secrets_policy_plan_known_json)
+
+  lifecycle {
+    precondition {
+      condition     = length(local.lambda_secrets_policy_plan_known_json) <= 6144
+      error_message = "The plan-known complete Lambda secret grants exceed the 6,144-character managed IAM policy limit before immutable settings secrets can be created. Review retained versions; do not drop them or widen grants."
+    }
+  }
 }
 
 resource "aws_iam_policy" "lambda_secrets" {
@@ -1024,6 +1058,8 @@ resource "aws_lambda_function" "this" {
 
   depends_on = [
     aws_lambda_invocation.migration,
+    aws_iam_role_policy_attachment.lambda_secrets,
+    aws_iam_role_policy.lambda_request_secret_references,
     aws_ecr_repository_policy.lambda_image_access,
     aws_cloudwatch_log_group.lambda,
     aws_security_group_rule.rds_from_lambda,

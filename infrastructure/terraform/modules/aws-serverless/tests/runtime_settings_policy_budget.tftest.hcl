@@ -133,12 +133,12 @@ variables {
 }
 
 run "retained_history_cannot_exceed_exact_iam_policy_budget" {
-  command = apply
+  command = plan
   variables {
     retained_runtime_settings_documents = {
       for revision in range(128) :
       sha256(jsonencode({ historyRevision = revision })) => jsonencode({ historyRevision = revision })
     }
   }
-  expect_failures = [aws_iam_policy.lambda_secrets]
+  expect_failures = [terraform_data.lambda_secrets_policy_budget]
 }
