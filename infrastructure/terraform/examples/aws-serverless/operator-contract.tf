@@ -50,9 +50,9 @@ variable "operator_contract_identity" {
       (try(var.operator_contract_identity.manifest_digest, null) == null || can(regex("^[0-9a-f]{64}$", var.operator_contract_identity.manifest_digest))) &&
       (try(var.operator_contract_identity.backend_config_digest, null) == null || can(regex("^[0-9a-f]{64}$", var.operator_contract_identity.backend_config_digest))) &&
       (try(var.operator_contract_identity.state_lineage, null) == null || can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", var.operator_contract_identity.state_lineage))) &&
-      (try(var.operator_contract_identity.state_serial, null) == null || try(var.operator_contract_identity.state_serial >= 0, false))
+      (try(var.operator_contract_identity.state_serial, null) == null || try(var.operator_contract_identity.state_serial >= 0 && floor(var.operator_contract_identity.state_serial) == var.operator_contract_identity.state_serial, false))
     )
-    error_message = "operator_contract_identity must use SHA-256 digests, a 40/64-character IaC revision, a sha256 image digest, a UUID state lineage, and a non-negative state serial when supplied."
+    error_message = "operator_contract_identity must use SHA-256 digests, a 40/64-character IaC revision, a sha256 image digest, a UUID state lineage, and a non-negative integer state serial when supplied."
   }
 
   validation {
@@ -121,8 +121,8 @@ variable "operator_contract_validation" {
   }
 
   validation {
-    condition     = try(var.operator_contract_validation.ttl_hours, null) == null || try(var.operator_contract_validation.ttl_hours >= 0, false)
-    error_message = "operator_contract_validation.ttl_hours must be non-negative when set."
+    condition     = try(var.operator_contract_validation.ttl_hours, null) == null || try(var.operator_contract_validation.ttl_hours >= 0 && floor(var.operator_contract_validation.ttl_hours) == var.operator_contract_validation.ttl_hours, false)
+    error_message = "operator_contract_validation.ttl_hours must be a non-negative integer when set."
   }
 }
 

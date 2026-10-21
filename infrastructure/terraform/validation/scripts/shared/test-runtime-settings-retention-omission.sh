@@ -63,11 +63,24 @@ expected_diagnostic = any(
 )
 if not (
     completed_run("initial_published_settings", "pass")
-    and completed_run(failure, "fail")
+    # Terraform marks a plan diagnostic as an errored run; "fail" is reserved
+    # for an assertion failure after a successful plan.
+    and completed_run(failure, "error")
     and expected_diagnostic
 ):
-    summaries = [event.get("diagnostic", {}).get("summary", "") for event in events if event.get("type") == "diagnostic"]
-    raise SystemExit(f"Unexpected mocked retention result; diagnostic summaries: {summaries[:6]}")
+    runs = [
+        {"run": str(item.get("run"))[:96], "progress": str(item.get("progress"))[:32], "status": str(item.get("status"))[:32]}
+        for event in events if event.get("type") == "test_run"
+        for item in [event.get("test_run", {})]
+    ]
+    summaries = [
+        {"run": str(event.get("@testrun"))[:96], "severity": str(item.get("severity"))[:32],
+         "summary": str(item.get("summary"))[:160]}
+        for event in events if event.get("type") == "diagnostic"
+        for item in [event.get("diagnostic", {})]
+    ]
+    summaries.sort(key=lambda item: item["severity"] != "error")
+    raise SystemExit(f"Unexpected mocked retention result; runs: {runs[:8]}; diagnostic summaries: {summaries[:12]}")
 PY
 
 printf '%s\n' 'Terraform shared-state plan refused to remove an immutable runtime settings secret (prevent_destroy).'
