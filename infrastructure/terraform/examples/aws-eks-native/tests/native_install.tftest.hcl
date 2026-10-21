@@ -23,6 +23,16 @@ mock_provider "external" {
   }
 }
 
+# A mocked Kubernetes Service has an empty computed status unless its observed
+# LoadBalancer hostname is supplied. The root intentionally joins this value to
+# the exact AWS load balancer lookup and configured runtime binding.
+override_resource {
+  target = kubernetes_service_v1.public
+  values = { status = [{ load_balancer = [{ ingress = [{
+    hostname = "honua-it.elb.us-east-1.amazonaws.com"
+  }] }] }] }
+}
+
 override_data {
   target = data.external.public_certificate
   values = { result = {
