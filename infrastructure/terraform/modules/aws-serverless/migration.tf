@@ -214,12 +214,12 @@ resource "aws_lambda_function" "migration" {
 
 resource "random_uuid" "migration" {
   count = local.migration_enabled ? 1 : 0
-  keepers = merge({
+  keepers = {
     function_version   = aws_lambda_function.migration[0].version
     connection_version = aws_secretsmanager_secret_version.connection_string.version_id
     target_sha256      = local.migration_target_sha256
     manifest_sha256    = var.migration_packaged_manifest_sha256
-  }, { for key, value in { retry_nonce = var.migration_retry_nonce } : key => value if value != null })
+  }
 }
 
 resource "aws_lambda_invocation" "migration" {

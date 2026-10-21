@@ -178,10 +178,28 @@ only that numeric version, with a durable run ID and no connection data in the
 event. Serving API and control-plane functions depend on a successful receipt that
 matches the function ARN/version, run, database locator, metadata schema and
 packaged migration manifest. A failed or malformed receipt blocks that deployment.
-After fixing the cause of a failed receipt, set `migration_retry_nonce` to a new,
-stable value and apply again. Terraform then replaces the run ID and the
-`CREATE_ONLY` invocation. The default is unset; once chosen, keep the value
-stable for ordinary applies rather than clearing it and triggering another run.
+After a failed or malformed receipt, ordinary `terraform plan` can re-evaluate
+the retained failed invocation before it can propose a replacement. Inspect
+and fix the cause first. From this example root, review a plan that replaces
+**only** the retained run ID and `CREATE_ONLY` invocation:
+
+```bash
+umask 077
+terraform plan -out=migration-recovery.tfplan \
+  -replace='module.honua.random_uuid.migration[0]' \
+  -replace='module.honua.aws_lambda_invocation.migration[0]'
+terraform show migration-recovery.tfplan
+terraform apply migration-recovery.tfplan
+rm migration-recovery.tfplan
+```
+
+Verify that these are the only explicitly forced replacements; review other
+proposed creations or changes against the intended deployment before applying.
+Keep the saved plan private because it can contain state and secret material.
+The replacement creates a fresh
+run ID; the invocation must return a new exact successful receipt before
+serving deployment proceeds. This is an explicit operator action, not an
+automatic retry or a live AWS qualification claim.
 
 The migration role can read only the direct database secret's pinned version; it
 has no admin/Redis/license secret or alias-update authority. Reused VPCs and

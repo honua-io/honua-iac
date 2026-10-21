@@ -162,10 +162,24 @@ variables {
 
 run "unqualified_development_contract" {
   command = apply
-  variables { operator_contract_identity = null }
+  variables {
+    operator_contract_identity = null
+    lambda_alias_name          = "${join("", [for _ in range(127) : "a"])}b"
+  }
+  override_resource {
+    target = module.honua.aws_lambda_alias.live
+    values = {
+      arn        = "arn:aws:lambda:us-east-1:123456789012:function:honua-contract-dev-honua:${join("", [for _ in range(127) : "a"])}b"
+      invoke_arn = "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:honua-contract-dev-honua:${join("", [for _ in range(127) : "a"])}b/invocations"
+    }
+  }
   assert {
     condition     = output.operator_contract_status == "unqualified" && length(data.aws_lambda_function.operator_contract_alias) == 0
     error_message = "Development output must stay unqualified and must not resolve a caller's missing image identity."
+  }
+  assert {
+    condition     = length(output.runtime_binding_contract.targetId) == 128 && output.runtime_binding_contract.resourceIdentity.aliasArn == "arn:aws:lambda:us-east-1:123456789012:function:honua-contract-dev-honua:${join("", [for _ in range(127) : "a"])}b"
+    error_message = "The actual customer-root output for a valid long alias must satisfy the strict v1 targetId bound without replacing the alias ARN."
   }
 }
 

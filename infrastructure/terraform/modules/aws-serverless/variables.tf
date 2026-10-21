@@ -279,16 +279,6 @@ variable "migration_target_locator_sha256" {
   }
 }
 
-variable "migration_retry_nonce" {
-  description = "Stable operator-chosen retry marker. After correcting a failed migration receipt, change this value to create a fresh run ID and replace the CREATE_ONLY invocation. Do not change it on ordinary applies."
-  type        = string
-  default     = null
-  validation {
-    condition     = var.migration_retry_nonce == null ? true : can(regex("^[A-Za-z0-9_-]{1,128}$", var.migration_retry_nonce))
-    error_message = "migration_retry_nonce must be null or contain 1-128 ASCII letters, digits, underscores or hyphens."
-  }
-}
-
 variable "migration_create_secretsmanager_endpoint" {
   description = "Create a Secrets Manager interface endpoint for isolated migrations in a reused VPC or a module-created no-NAT VPC, unless custom-code isolation already owns one. Set false only when the VPC provides Secrets Manager reachability."
   type        = bool

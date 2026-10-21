@@ -142,7 +142,7 @@ run "handoff_reports_serving_alias_not_latest_function_version" {
     error_message = "Both API routes and the actual integration URI must bind the same named Lambda alias."
   }
   assert {
-    condition     = output.runtime_binding_contract.schemaVersion == "honua.runtime-binding/v1" && output.runtime_binding_contract.runtimeKind == "aws-lambda" && output.runtime_binding_contract.backend == "honua-gitops-aws-lambda" && output.runtime_binding_contract.platform.accountId == "123456789012" && output.runtime_binding_contract.platform.region == "us-east-1" && output.runtime_binding_contract.platform.partition == "aws"
+    condition     = output.runtime_binding_contract.schemaVersion == "honua.runtime-binding/v1" && output.runtime_binding_contract.runtimeKind == "aws-lambda" && output.runtime_binding_contract.backend == "honua-gitops-aws-lambda" && output.runtime_binding_contract.platform.accountId == "123456789012" && output.runtime_binding_contract.platform.region == "us-east-1" && output.runtime_binding_contract.platform.partition == "aws" && output.runtime_binding_contract.targetId == "${aws_lambda_function.this.function_name}-${aws_lambda_alias.live.name}"
     error_message = "Runtime facts must preserve the provider account/region and canonical Lambda actuator."
   }
   assert {
@@ -238,5 +238,31 @@ run "unrelated_environment_settings_remain_available" {
   assert {
     condition     = local.lambda_environment.Logging__LogLevel__Default == "Warning" && jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].TargetName == local.lambda_function_arn
     error_message = "Unrelated custom settings must remain available without changing the registered deployment target."
+  }
+}
+
+run "long_alias_a_has_bounded_stable_target_id" {
+  command = plan
+  variables { lambda_alias_name = "${join("", [for _ in range(127) : "a"])}b" }
+  override_resource {
+    target = aws_lambda_alias.live
+    values = { arn = "arn:aws:lambda:us-east-1:123456789012:function:honua-contract-dev-honua:${join("", [for _ in range(127) : "a"])}b" }
+  }
+  assert {
+    condition     = length(output.runtime_binding_contract.targetId) == 128 && output.runtime_binding_contract.targetId == "${substr(local.runtime_binding_lambda_target_name, 0, 95)}-${substr(sha256(local.runtime_binding_lambda_target_name), 0, 32)}" && output.runtime_binding_contract.resourceIdentity.aliasArn == aws_lambda_alias.live.arn
+    error_message = "A valid maximum-length alias must retain its full authoritative ARN and emit a stable v1-bounded target ID."
+  }
+}
+
+run "long_alias_b_with_same_prefix_has_distinct_target_id" {
+  command = plan
+  variables { lambda_alias_name = "${join("", [for _ in range(127) : "a"])}c" }
+  override_resource {
+    target = aws_lambda_alias.live
+    values = { arn = "arn:aws:lambda:us-east-1:123456789012:function:honua-contract-dev-honua:${join("", [for _ in range(127) : "a"])}c" }
+  }
+  assert {
+    condition     = length(output.runtime_binding_contract.targetId) == 128 && substr(output.runtime_binding_contract.targetId, 0, 95) == substr(run.long_alias_a_has_bounded_stable_target_id.runtime_binding_contract.targetId, 0, 95) && output.runtime_binding_contract.targetId != run.long_alias_a_has_bounded_stable_target_id.runtime_binding_contract.targetId && output.runtime_binding_contract.resourceIdentity.aliasArn == aws_lambda_alias.live.arn
+    error_message = "Distinct long aliases sharing the readable prefix must retain distinct bounded handoff IDs and full resource ARNs."
   }
 }

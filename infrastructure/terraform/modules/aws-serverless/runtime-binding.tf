@@ -1,6 +1,13 @@
 # Configured resource identities for the agent handoff. Terraform does not
 # manufacture an observation receipt: the consumer must independently read the
 # live function, alias, API integration and route before accepting this binding.
+locals {
+  runtime_binding_lambda_target_name = "${aws_lambda_function.this.function_name}-${aws_lambda_alias.live.name}"
+  # Keep existing short identities unchanged. Long, valid AWS aliases need a
+  # bounded handoff ID; the full alias ARN remains authoritative below.
+  runtime_binding_lambda_target_id = length(local.runtime_binding_lambda_target_name) <= 128 ? local.runtime_binding_lambda_target_name : "${substr(local.runtime_binding_lambda_target_name, 0, 95)}-${substr(sha256(local.runtime_binding_lambda_target_name), 0, 32)}"
+}
+
 output "runtime_binding_contract" {
   description = "Credential-free Lambda runtime facts; not a deployment or recovery qualification receipt."
   value = {
@@ -8,7 +15,7 @@ output "runtime_binding_contract" {
     runtimeKind   = "aws-lambda"
     targetKind    = "AwsLambda"
     backend       = "honua-gitops-aws-lambda"
-    targetId      = "${aws_lambda_function.this.function_name}-${aws_lambda_alias.live.name}"
+    targetId      = local.runtime_binding_lambda_target_id
     environment   = var.environment
     platform = {
       accountId = data.aws_caller_identity.current.account_id

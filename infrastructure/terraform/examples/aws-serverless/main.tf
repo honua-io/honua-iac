@@ -46,7 +46,6 @@ module "honua" {
   migration_image                             = var.migration_image
   migration_packaged_manifest_sha256          = var.migration_packaged_manifest_sha256
   migration_target_locator_sha256             = var.migration_target_locator_sha256
-  migration_retry_nonce                       = var.migration_retry_nonce
   migration_create_secretsmanager_endpoint    = var.migration_create_secretsmanager_endpoint
   tags                                        = var.tags
 

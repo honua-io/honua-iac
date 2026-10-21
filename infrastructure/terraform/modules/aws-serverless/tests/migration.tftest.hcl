@@ -120,7 +120,6 @@ variables {
   existing_db_connection_string      = "Host=database.example;Database=honua;Username=migrator;Password=synthetic-test-only"
   migration_image                    = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   migration_packaged_manifest_sha256 = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-  migration_retry_nonce              = "operator-sequence-1"
   # Recommended in Production; unset only plans with a check warning.
   audit_chain_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
 
@@ -177,19 +176,10 @@ run "default_profile_has_no_migration_resources" {
   }
 }
 
-run "unset_retry_nonce_preserves_the_existing_run_identity_inputs" {
-  command = plan
-  variables { migration_retry_nonce = null }
-  assert {
-    condition     = !contains(keys(random_uuid.migration[0].keepers), "retry_nonce")
-    error_message = "Upgrading without an explicit retry marker must not rotate an existing migration run."
-  }
-}
-
 run "completed_receipt_binds_pinned_invocation_and_minimal_secret_access" {
   command = apply
   assert {
-    condition     = aws_lambda_invocation.migration[0].qualifier == "43" && aws_lambda_invocation.migration[0].lifecycle_scope == "CREATE_ONLY" && jsondecode(aws_lambda_invocation.migration[0].input).runId == random_uuid.migration[0].result && jsondecode(aws_lambda_invocation.migration[0].input).runId == "62970000-0000-4000-8000-000000000001" && length(keys(jsondecode(aws_lambda_invocation.migration[0].input))) == 2 && random_uuid.migration[0].keepers.retry_nonce == var.migration_retry_nonce
+    condition     = aws_lambda_invocation.migration[0].qualifier == "43" && aws_lambda_invocation.migration[0].lifecycle_scope == "CREATE_ONLY" && jsondecode(aws_lambda_invocation.migration[0].input).runId == random_uuid.migration[0].result && jsondecode(aws_lambda_invocation.migration[0].input).runId == "62970000-0000-4000-8000-000000000001" && length(keys(jsondecode(aws_lambda_invocation.migration[0].input))) == 2
     error_message = "Only the version-pinned migration event and stable run identity may be invoked; destroy must not invoke SQL."
   }
   assert {
@@ -434,9 +424,11 @@ run "malformed_receipt_blocks_serving_deployment" {
   expect_failures = [aws_lambda_invocation.migration]
 }
 
-run "explicit_retry_recovers_after_failed_receipt_without_forced_replacement" {
+run "scoped_replacement_recovers_after_failed_receipt" {
   command = apply
-  variables { migration_retry_nonce = "operator-sequence-2" }
+  plan_options {
+    replace = [random_uuid.migration[0], aws_lambda_invocation.migration[0]]
+  }
   override_resource {
     target = random_uuid.migration[0]
     values = { result = "62970000-0000-4000-8000-000000000002" }
@@ -461,7 +453,7 @@ run "explicit_retry_recovers_after_failed_receipt_without_forced_replacement" {
     }) }
   }
   assert {
-    condition     = random_uuid.migration[0].keepers.retry_nonce == "operator-sequence-2" && jsondecode(aws_lambda_invocation.migration[0].input).runId == "62970000-0000-4000-8000-000000000002" && output.migration_contract.receipt.migration.runId == "62970000-0000-4000-8000-000000000002"
-    error_message = "Changing the explicit retry marker must create a fresh run ID and recover from a previously failed receipt without a manual -replace."
+    condition     = random_uuid.migration[0].result == "62970000-0000-4000-8000-000000000002" && jsondecode(aws_lambda_invocation.migration[0].input).runId == random_uuid.migration[0].result && output.migration_contract.receipt.migration.runId == random_uuid.migration[0].result && output.migration_contract.receipt.migration.outcome == "completed"
+    error_message = "Explicitly replacing only the run ID and CREATE_ONLY invocation must recover from a failed receipt with a fresh exact run."
   }
 }
