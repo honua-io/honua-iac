@@ -3,9 +3,11 @@
 // schema/digest rules. A synthetic JSON fixture cannot prove this projection.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { validateDocument } from './validate-operator-contract.mjs';
+import { SchemaValidator, validateDocument } from './validate-operator-contract.mjs';
 
 const schema = JSON.parse(readFileSync(new URL('../../../contracts/operator-contract.v2.schema.json', import.meta.url)));
+const runtimeSchema = JSON.parse(readFileSync(new URL('../../../contracts/runtime-binding.v1.schema.json', import.meta.url)));
+const runtimeValidator = new SchemaValidator(runtimeSchema);
 const events = readFileSync(process.argv[2], 'utf8').trim().split('\n').map(line => JSON.parse(line));
 const summary = events.find(event => event.type === 'test_summary')?.test_summary;
 assert.equal(summary?.status, 'pass', 'Terraform root tests must pass');
@@ -22,6 +24,9 @@ for (const [runName, requireQualified] of positiveRuns) {
   const outputs = states[0].test_state.outputs;
   const findings = validateDocument(outputs, { schema, requireQualified });
   assert.deepEqual(findings, [], `${runName}: ${JSON.stringify(findings)}`);
+  assert.equal(outputs.runtime_binding_contract?.sensitive, false, `${runName}: runtime identity must be credential-free`);
+  assert.deepEqual(runtimeValidator.validate(outputs.runtime_binding_contract.value), [],
+    `${runName}: actual Lambda runtime identity must satisfy the strict v1 schema`);
   for (const name of ['deployment_contract', 'validation_contract', 'operations_contract', 'operator_contract']) {
     assert.equal(outputs[name].sensitive, false, `${runName}: ${name} must remain non-secret`);
   }

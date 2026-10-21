@@ -80,6 +80,11 @@
     "sha256": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "secretsManagerArn": {
+      "type": "string",
+      "maxLength": 1024,
+      "pattern": "^arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+$"
     }
   },
   "allOf": [
@@ -267,7 +272,17 @@
               "routeName",
               "servicePort",
               "targetPort",
-              "publicUrl"
+              "publicUrl",
+              "certificateArn",
+              "serverServiceAccountName",
+              "serverRoleArn",
+              "serverPodIdentityAssociationId",
+              "gpServiceAccountName",
+              "gpRoleArn",
+              "gpPodIdentityAssociationId",
+              "dbConnectionSecretArn",
+              "adminPasswordSecretArn",
+              "masterKeySecretArn"
             ],
             "properties": {
               "clusterArn": {
@@ -349,6 +364,46 @@
                 "format": "uri",
                 "pattern": "^https://",
                 "maxLength": 2048
+              },
+              "certificateArn": {
+                "type": "string",
+                "maxLength": 1024,
+                "pattern": "^arn:aws[a-z-]*:acm:[a-z0-9-]+:[0-9]{12}:certificate/[a-f0-9-]+$"
+              },
+              "serverServiceAccountName": {
+                "type": "string",
+                "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"
+              },
+              "serverRoleArn": {
+                "type": "string",
+                "maxLength": 1024,
+                "pattern": "^arn:aws[a-z-]*:iam::[0-9]{12}:role/.+$"
+              },
+              "serverPodIdentityAssociationId": {
+                "type": "string",
+                "pattern": "^a-[a-z0-9]+$"
+              },
+              "gpServiceAccountName": {
+                "type": "string",
+                "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$"
+              },
+              "gpRoleArn": {
+                "type": "string",
+                "maxLength": 1024,
+                "pattern": "^arn:aws[a-z-]*:iam::[0-9]{12}:role/.+$"
+              },
+              "gpPodIdentityAssociationId": {
+                "type": "string",
+                "pattern": "^a-[a-z0-9]+$"
+              },
+              "dbConnectionSecretArn": {
+                "$ref": "#/$defs/secretsManagerArn"
+              },
+              "adminPasswordSecretArn": {
+                "$ref": "#/$defs/secretsManagerArn"
+              },
+              "masterKeySecretArn": {
+                "$ref": "#/$defs/secretsManagerArn"
               },
               "loadBalancerArn": {
                 "type": "string",

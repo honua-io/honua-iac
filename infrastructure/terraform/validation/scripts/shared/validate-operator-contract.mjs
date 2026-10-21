@@ -147,7 +147,7 @@ function deepEqual(a, b) {
   return false;
 }
 
-class SchemaValidator {
+export class SchemaValidator {
   constructor(root) {
     this.root = root;
   }
@@ -200,6 +200,16 @@ class SchemaValidator {
       }
       if (schema.minLength !== undefined && value.length < schema.minLength) {
         errors.push({ path, message: `shorter than minLength ${schema.minLength}` });
+      }
+      if (schema.maxLength !== undefined && value.length > schema.maxLength) {
+        errors.push({ path, message: `longer than maxLength ${schema.maxLength}` });
+      }
+      if (schema.format === 'uri') {
+        try {
+          new URL(value);
+        } catch {
+          errors.push({ path, message: 'not an absolute URI' });
+        }
       }
     }
 
