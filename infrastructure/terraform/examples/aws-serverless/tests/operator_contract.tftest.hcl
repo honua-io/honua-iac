@@ -234,12 +234,13 @@ run "qualified_lambda_contract" {
 }
 
 run "configured_public_origin_projects_without_retargeting_ingress" {
-  command = plan
+  command = apply
   variables {
     public_base_url            = "https://maps.example.com/honua"
     operator_contract_identity = null
     retained_runtime_settings_documents = {
       (run.unqualified_development_contract.runtime_settings_retention_entry.hash) = run.unqualified_development_contract.runtime_settings_retention_entry.document
+      (run.qualified_lambda_contract.runtime_settings_retention_entry.hash)        = run.qualified_lambda_contract.runtime_settings_retention_entry.document
     }
   }
   assert {
@@ -262,6 +263,7 @@ run "older_alias_cannot_claim_current_dependency_settings" {
     lambda_alias_version = "42"
     retained_runtime_settings_documents = {
       (run.unqualified_development_contract.runtime_settings_retention_entry.hash) = run.unqualified_development_contract.runtime_settings_retention_entry.document
+      (run.qualified_lambda_contract.runtime_settings_retention_entry.hash)        = run.qualified_lambda_contract.runtime_settings_retention_entry.document
     }
   }
   expect_failures = [output.deployment_contract]
@@ -273,6 +275,7 @@ run "serving_alias_image_mismatch_refused" {
   variables {
     retained_runtime_settings_documents = {
       (run.unqualified_development_contract.runtime_settings_retention_entry.hash) = run.unqualified_development_contract.runtime_settings_retention_entry.document
+      (run.qualified_lambda_contract.runtime_settings_retention_entry.hash)        = run.qualified_lambda_contract.runtime_settings_retention_entry.document
     }
   }
   override_data {
@@ -291,6 +294,7 @@ run "serving_alias_role_mismatch_refused" {
   variables {
     retained_runtime_settings_documents = {
       (run.unqualified_development_contract.runtime_settings_retention_entry.hash) = run.unqualified_development_contract.runtime_settings_retention_entry.document
+      (run.qualified_lambda_contract.runtime_settings_retention_entry.hash)        = run.qualified_lambda_contract.runtime_settings_retention_entry.document
     }
   }
   override_data {
@@ -325,6 +329,7 @@ run "proxy_and_shared_storage_are_real_runtime_dependencies" {
     file_storage_aws_s3_key_prefix  = "imports/"
     retained_runtime_settings_documents = {
       (run.unqualified_development_contract.runtime_settings_retention_entry.hash) = run.unqualified_development_contract.runtime_settings_retention_entry.document
+      (run.qualified_lambda_contract.runtime_settings_retention_entry.hash)        = run.qualified_lambda_contract.runtime_settings_retention_entry.document
     }
   }
   override_resource {
@@ -356,6 +361,7 @@ run "external_database_is_not_claimed_as_managed" {
     existing_db_connection_string = "Host=external-db.example.test;Database=honua;Username=test;Password=synthetic-only"
     retained_runtime_settings_documents = {
       (run.unqualified_development_contract.runtime_settings_retention_entry.hash) = run.unqualified_development_contract.runtime_settings_retention_entry.document
+      (run.qualified_lambda_contract.runtime_settings_retention_entry.hash)        = run.qualified_lambda_contract.runtime_settings_retention_entry.document
     }
   }
   assert {

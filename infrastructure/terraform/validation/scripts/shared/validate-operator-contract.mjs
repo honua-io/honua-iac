@@ -518,12 +518,17 @@ function checkEndpointAgreement(envelope, findings) {
   const base = envelope.deployment_contract?.endpoints?.public_base_url;
   if (!base) return;
 
-  const ingress = envelope.deployment_contract?.dependencies?.ingress?.endpoint;
-  if (ingress && ingress !== base) {
+  const deployment = envelope.deployment_contract;
+  const ingress = deployment?.dependencies?.ingress;
+  const lambdaPublicOrigin = deployment?.stack?.platform === 'aws' &&
+    deployment?.stack?.runtime === 'lambda' &&
+    deployment?.workload?.kind === 'AwsLambda' &&
+    ingress?.kind === 'aws-apigatewayv2-http';
+  if (ingress?.endpoint && ingress.endpoint !== base && !lambdaPublicOrigin) {
     findings.push({
       code: 'E_ENDPOINT_MISMATCH',
       path: '$.deployment_contract.dependencies.ingress.endpoint',
-      message: `is ${ingress} but the public base URL is ${base}`,
+      message: `is ${ingress.endpoint} but the public base URL is ${base}`,
     });
   }
 

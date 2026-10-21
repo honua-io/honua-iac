@@ -31,6 +31,7 @@ for (const runName of requiredRuns) {
 const positiveRuns = new Map([
   ['unqualified_development_contract', false],
   ['qualified_lambda_contract', true],
+  ['configured_public_origin_projects_without_retargeting_ingress', false],
   ['proxy_and_shared_storage_are_real_runtime_dependencies', true],
   ['external_database_is_not_claimed_as_managed', true],
 ]);
@@ -47,4 +48,4 @@ for (const [runName, requireQualified] of positiveRuns) {
     assert.equal(outputs[name].sensitive, false, `${runName}: ${name} must remain non-secret`);
   }
 }
-console.log('PASS: 4 applied Lambda contracts satisfy schema, identity, digest and secret-reference joins; all required Lambda scenarios passed');
+console.log('PASS: 5 applied Lambda contracts satisfy schema, identity, digest and secret-reference joins; all required Lambda scenarios passed');

@@ -178,6 +178,14 @@ for case in "${NEGATIVE_CASES[@]}"; do
   fi
 done
 
+# Exercise the public-origin/ingress split directly. The existing negative
+# fixture also has a wrong validation URL, so it cannot prove this guard alone.
+if node "$SCRIPT_DIR/test-operator-endpoint-agreement.mjs"; then
+  pass "public origin, ingress and validation URL agreement are independently guarded"
+else
+  fail "endpoint agreement regression"
+fi
+
 # Every invalid-* fixture must be covered by a case above; an uncovered fixture
 # is a rule nobody is asserting.
 for path in "$FIXTURE_DIR"/invalid-*.json; do

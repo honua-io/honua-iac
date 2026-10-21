@@ -4,26 +4,39 @@ set -euo pipefail
 # A shared mocked Terraform state must reject a changed document when the
 # previous hash/document was omitted from the Git-owned retention map.
 log_file="$(mktemp)"
-trap 'rm -f "$log_file"' EXIT
+error_file="$(mktemp)"
+trap 'rm -f "$log_file" "$error_file"' EXIT
 
 if terraform -chdir=infrastructure/terraform/modules/aws-serverless test -json \
   -test-directory=tests-retention-negative \
-  -filter=tests-retention-negative/omitted_history.tftest.hcl >"$log_file" 2>&1; then
+  -filter=tests-retention-negative/omitted_history.tftest.hcl >"$log_file" 2>"$error_file"; then
   printf '%s\n' 'Expected runtime settings history omission to fail, but Terraform succeeded.' >&2
   exit 1
 fi
 
-python3 - "$log_file" <<'PY'
+python3 - "$log_file" "$error_file" <<'PY'
 import json
+import re
 import sys
 
 events = []
+non_json = []
 with open(sys.argv[1], encoding="utf-8") as stream:
     for line in stream:
         try:
             events.append(json.loads(line))
         except json.JSONDecodeError:
-            raise SystemExit("Terraform emitted non-JSON output during the mocked retention test")
+            if line.strip():
+                non_json.append(line)
+with open(sys.argv[2], encoding="utf-8") as stream:
+    non_json.extend(line for line in stream if line.strip())
+if non_json:
+    titles = []
+    for line in non_json:
+        match = re.match(r"^\s*(?:Error|Warning):\s*([A-Za-z0-9 ,.'()/:-]{1,160})\s*$", line)
+        if match:
+            titles.append(match.group(1))
+    raise SystemExit(f"Terraform emitted {len(non_json)} non-JSON diagnostic lines; safe titles: {titles[:4]}")
 
 def completed_run(name, status):
     return any(
