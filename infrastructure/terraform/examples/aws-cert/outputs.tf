@@ -107,6 +107,11 @@ output "cert_canary_target_group_arn" {
   value       = one(aws_lb_target_group.cert_cutover_canary[*].arn)
 }
 
+output "REALAWS_CERT_ALB_BASE_URL" {
+  description = "Public base URL of the cutover ALB when it serves Honua (ecs_alb_serve_honua and ecs_alb_internet_facing); set as the honua-server repository variable of the same name. Null otherwise."
+  value       = local.ecs_alb_enabled && local.ecs_alb_honua && local.ecs_alb_public ? "http://${aws_lb.cert_cutover[0].dns_name}" : null
+}
+
 output "github_oidc_role_arn" {
   description = "Role ARN the GitHub Actions cert workflow assumes via OIDC (role-to-assume in configure-aws-credentials)."
   value       = module.github_oidc.role_arn

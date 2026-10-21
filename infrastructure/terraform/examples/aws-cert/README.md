@@ -294,6 +294,25 @@ module's private subnets (`assign_public_ip = false`).
 `vpc_id` / `private_subnet_ids` / `vpc_cidr_block` outputs). No new VPC, NAT
 gateway, or subnets are minted for the cell.
 
+**Serving mode (`ecs_alb_serve_honua`, `ecs_alb_internet_facing`, both default
+off).** The placeholder above certifies the control plane only; no HTTP request
+reaches Honua (honua-server#4414 defect 3). With `ecs_alb_serve_honua = true`,
+`ecs_alb_image` must be a digest-pinned Honua server image. The task then runs
+at 1 vCPU / 2 GB, listens on 8080, health-checks `/healthz/live`, and receives
+the cert PostGIS, Redis, admin-password, master-key and key-ring secrets the
+standing Lambda uses. The ECS agent injects them through an execution-role
+grant scoped to exactly those ARNs. The service also carries the module's
+Lambda security group, which the cert PostGIS and Redis already admit, so no
+module security group changes. `real-aws-certification.yml` runs on
+GitHub-hosted runners, which cannot reach an internal ALB. Set
+`ecs_alb_internet_facing = true` (with `ecs_alb_ingress_cidrs`) to move the ALB
+to the public subnets. That **replaces the ALB, listener and listener rule**.
+After the apply, update `REALAWS_CERT_ALB_LISTENER_ARN` from
+`cert_alb_listener_arn`, and set `REALAWS_CERT_ALB_BASE_URL` from the output of
+the same name. The serving step also needs `REALAWS_CERT_ALB_QUERY_PATH`,
+`REALAWS_CERT_ALB_EXPECTED_COUNT` and, optionally, the
+`REALAWS_CERT_ALB_ADMIN_API_KEY` secret.
+
 **Cost when on (default OFF).** Itemized standing cost while `enable_ecs_alb_cert
 = true` (us-east-1, on top of the base cert stack):
 

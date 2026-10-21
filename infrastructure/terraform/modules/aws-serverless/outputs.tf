@@ -100,6 +100,11 @@ output "private_subnet_ids" {
   value       = local.private_subnets
 }
 
+output "public_subnet_ids" {
+  description = "Public subnet IDs of the module-managed VPC. Empty when reusing an existing VPC."
+  value       = local.use_existing_vpc ? [] : module.vpc[0].public_subnets
+}
+
 output "private_route_table_ids" {
   description = "Private route table IDs of the module-managed VPC. Empty when reusing an existing VPC (attach gateway endpoints to your own route tables in that case)."
   value       = local.use_existing_vpc ? [] : module.vpc[0].private_route_table_ids

@@ -376,3 +376,32 @@ variable "ecs_alb_image" {
     error_message = "ecs_alb_image must be digest-pinned."
   }
 }
+
+# Serving mode for the ECS/ALB cutover cell (honua-server#4414 defect 3). Off, the
+# cell runs the HTTP fixture in ecs_alb_image on port 80 and certifies only the
+# weighted-cutover control plane. On, ecs_alb_image must be a digest-pinned Honua
+# server image: the task listens on 8080, health-checks /healthz/live, and boots
+# with the same cert PostGIS, Redis, admin, master-key and key-ring secrets the
+# standing certification Lambda resolves, so real-aws-certification.yml can
+# certify Honua serving through the ALB data path.
+variable "ecs_alb_serve_honua" {
+  description = "Run a Honua server image (ecs_alb_image) behind the cutover ALB instead of the port-80 HTTP fixture."
+  type        = bool
+  default     = false
+}
+
+# The serving certification runs on GitHub-hosted runners, which cannot reach an
+# internal ALB. Flipping this REPLACES the ALB, its listener and listener rule
+# (new ARNs): update REALAWS_CERT_ALB_LISTENER_ARN from cert_alb_listener_arn
+# after the apply.
+variable "ecs_alb_internet_facing" {
+  description = "Place the cutover ALB in the public subnets with an internet-facing scheme. Replaces the ALB and listener when changed."
+  type        = bool
+  default     = false
+}
+
+variable "ecs_alb_ingress_cidrs" {
+  description = "CIDRs allowed to reach the cutover ALB on HTTP 80 when ecs_alb_internet_facing is true. Empty means the VPC CIDR only."
+  type        = list(string)
+  default     = []
+}

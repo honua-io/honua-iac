@@ -37,6 +37,32 @@ locals {
   ecs_alb_name    = "${local.name}-cutover"
   # nginx:stable-alpine serves HTTP 200 on "/" — the health-check + evidence path.
   ecs_alb_image = var.ecs_alb_image
+
+  # Serving mode (var.ecs_alb_serve_honua): Honua listens on 8080 and exposes
+  # /healthz/live; the fixture listens on 80 and answers "/".
+  ecs_alb_honua             = var.ecs_alb_serve_honua
+  ecs_alb_container_port    = local.ecs_alb_honua ? 8080 : 80
+  ecs_alb_health_check_path = local.ecs_alb_honua ? "/healthz/live" : "/"
+  ecs_alb_public            = var.ecs_alb_internet_facing
+  ecs_alb_ingress_cidrs     = local.ecs_alb_public && length(var.ecs_alb_ingress_cidrs) > 0 ? var.ecs_alb_ingress_cidrs : [module.honua.vpc_cidr_block]
+
+  # The same secrets the standing certification Lambda resolves at startup,
+  # injected by the ECS agent (execution role) rather than resolved in-process.
+  ecs_alb_honua_secrets = {
+    ConnectionStrings__DefaultConnection                = module.honua.db_connection_secret_arn
+    ConnectionStrings__redis                            = module.honua.redis_connection_secret_arn
+    HONUA_ADMIN_PASSWORD                                = module.honua.admin_password_secret_arn
+    Security__ConnectionEncryption__MasterKey           = module.honua.master_key_secret_arn
+    Operations__SecretChannel__KeyRingCertificatePkcs12 = module.honua.operation_key_ring_certificate_secret_arn
+  }
+  ecs_alb_honua_environment = {
+    HONUA_ADMIN_UI                  = "false"
+    HONUA_SERVE_ADMIN_UI            = "false"
+    HONUA_OBSERVABILITY             = "true"
+    Licensing__Mode                 = "Disabled"
+    SecurityHeaders__HstsHttpsOnly  = "false"
+    HostValidation__AllowedHosts__0 = "*.elb.amazonaws.com"
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -98,6 +124,25 @@ resource "aws_iam_role_policy_attachment" "cert_cutover_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+# Serving mode only: the ECS agent resolves the container's secrets with the
+# execution role. Exactly the cert stack's own secret ARNs, no wildcard.
+data "aws_iam_policy_document" "cert_cutover_execution_secrets" {
+  count = local.ecs_alb_enabled && local.ecs_alb_honua ? 1 : 0
+
+  statement {
+    sid       = "CutoverHonuaSecretsRead"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = compact(values(local.ecs_alb_honua_secrets))
+  }
+}
+
+resource "aws_iam_role_policy" "cert_cutover_execution_secrets" {
+  count  = local.ecs_alb_enabled && local.ecs_alb_honua ? 1 : 0
+  name   = "${local.ecs_alb_name}-exec-secrets"
+  role   = aws_iam_role.cert_cutover_execution[0].id
+  policy = data.aws_iam_policy_document.cert_cutover_execution_secrets[0].json
+}
+
 # ---------------------------------------------------------------------------
 # Security groups — internal ALB fronting the Fargate tasks.
 # ---------------------------------------------------------------------------
@@ -110,17 +155,18 @@ resource "aws_security_group" "cert_cutover_alb" {
   vpc_id      = module.honua.vpc_id
 
   ingress {
-    description = "HTTP from within the VPC (internal ALB; cert drives control-plane APIs, not this data path)"
+    #checkov:skip=CKV_AWS_260: Internet ingress only when ecs_alb_internet_facing is set, for the GitHub-hosted serving certification; the cert server authenticates admin requests itself.
+    description = local.ecs_alb_public ? "HTTP from the serving-certification CIDRs" : "HTTP from within the VPC (internal ALB; cert drives control-plane APIs, not this data path)"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = [module.honua.vpc_cidr_block]
+    cidr_blocks = local.ecs_alb_ingress_cidrs
   }
 
   egress {
     description     = "ALB to ECS targets on the container port"
-    from_port       = 80
-    to_port         = 80
+    from_port       = local.ecs_alb_container_port
+    to_port         = local.ecs_alb_container_port
     protocol        = "tcp"
     security_groups = [aws_security_group.cert_cutover_ecs[0].id]
   }
@@ -160,6 +206,20 @@ resource "aws_security_group" "cert_cutover_ecs" {
     cidr_blocks = [module.honua.vpc_cidr_block]
   }
 
+  # Serving mode: the Honua task reaches the cert PostGIS and Redis. Their
+  # security groups admit the module's Lambda security group, which the service
+  # also carries in this mode (see aws_ecs_service.cert_cutover).
+  dynamic "egress" {
+    for_each = local.ecs_alb_honua ? { "PostgreSQL" = 5432, "Redis" = 6379 } : {}
+    content {
+      description = "${egress.key} to the cert stack within the VPC"
+      from_port   = egress.value
+      to_port     = egress.value
+      protocol    = "tcp"
+      cidr_blocks = [module.honua.vpc_cidr_block]
+    }
+  }
+
   tags = local.tags
 }
 
@@ -167,9 +227,9 @@ resource "aws_security_group" "cert_cutover_ecs" {
 resource "aws_security_group_rule" "cert_cutover_ecs_from_alb" {
   count                    = local.ecs_alb_enabled ? 1 : 0
   type                     = "ingress"
-  description              = "ALB to task on container port 80"
-  from_port                = 80
-  to_port                  = 80
+  description              = "ALB to task on container port ${local.ecs_alb_container_port}"
+  from_port                = local.ecs_alb_container_port
+  to_port                  = local.ecs_alb_container_port
   protocol                 = "tcp"
   security_group_id        = aws_security_group.cert_cutover_ecs[0].id
   source_security_group_id = aws_security_group.cert_cutover_alb[0].id
@@ -184,12 +244,19 @@ resource "aws_lb" "cert_cutover" {
   #checkov:skip=CKV2_AWS_20: HTTP-only by design — the internal cell certifies ELBv2/ECS control-plane APIs, not the encrypted HTTP data path, so there is no HTTPS listener to redirect to.
   #checkov:skip=CKV_AWS_150: Deletion protection is intentionally off so the ephemeral cert cell tears down cleanly.
   #checkov:skip=CKV_AWS_91: Access logging omitted for the ephemeral internal cert ALB; the cell certifies control-plane APIs, not HTTP traffic, and carries no evidence value.
-  count                      = local.ecs_alb_enabled ? 1 : 0
-  name                       = "${local.ecs_alb_name}-alb"
-  load_balancer_type         = "application"
-  internal                   = true
-  security_groups            = [aws_security_group.cert_cutover_alb[0].id]
-  subnets                    = module.honua.private_subnet_ids
+  count              = local.ecs_alb_enabled ? 1 : 0
+  name               = "${local.ecs_alb_name}-alb"
+  load_balancer_type = "application"
+  internal           = !local.ecs_alb_public
+  security_groups    = [aws_security_group.cert_cutover_alb[0].id]
+  subnets            = local.ecs_alb_public ? module.honua.public_subnet_ids : module.honua.private_subnet_ids
+
+  lifecycle {
+    precondition {
+      condition     = !local.ecs_alb_public || length(module.honua.public_subnet_ids) >= 2
+      error_message = "ecs_alb_internet_facing requires the module-managed VPC's public subnets."
+    }
+  }
   enable_deletion_protection = false
   drop_invalid_header_fields = true
 
@@ -206,7 +273,7 @@ resource "aws_lb_target_group" "cert_cutover_stable" {
   target_type = "ip"
 
   health_check {
-    path                = "/"
+    path                = local.ecs_alb_health_check_path
     interval            = 30
     timeout             = 5
     healthy_threshold   = 2
@@ -227,7 +294,7 @@ resource "aws_lb_target_group" "cert_cutover_canary" {
   target_type = "ip"
 
   health_check {
-    path                = "/"
+    path                = local.ecs_alb_health_check_path
     interval            = 30
     timeout             = 5
     healthy_threshold   = 2
@@ -288,8 +355,8 @@ resource "aws_ecs_task_definition" "cert_cutover" {
   family                   = "${local.ecs_alb_name}-task"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  cpu                      = "256"
-  memory                   = "512"
+  cpu                      = local.ecs_alb_honua ? "1024" : "256"
+  memory                   = local.ecs_alb_honua ? "2048" : "512"
   execution_role_arn       = aws_iam_role.cert_cutover_execution[0].arn
 
   runtime_platform {
@@ -298,15 +365,15 @@ resource "aws_ecs_task_definition" "cert_cutover" {
   }
 
   container_definitions = jsonencode([
-    {
+    merge({
       name      = "web"
       image     = local.ecs_alb_image
       essential = true
       #checkov:skip=CKV_AWS_336: The public nginx image writes its pid/cache under / and cannot run with a read-only root filesystem; acceptable for the throwaway cert health target.
       portMappings = [
         {
-          containerPort = 80
-          hostPort      = 80
+          containerPort = local.ecs_alb_container_port
+          hostPort      = local.ecs_alb_container_port
           protocol      = "tcp"
         }
       ]
@@ -318,7 +385,10 @@ resource "aws_ecs_task_definition" "cert_cutover" {
           "awslogs-stream-prefix" = "web"
         }
       }
-    }
+      }, local.ecs_alb_honua ? {
+      environment = [for name, value in local.ecs_alb_honua_environment : { name = name, value = value }]
+      secrets     = [for name, arn in local.ecs_alb_honua_secrets : { name = name, valueFrom = arn } if arn != ""]
+    } : {})
   ])
 
   tags = local.tags
@@ -343,21 +413,23 @@ resource "aws_ecs_service" "cert_cutover" {
   }
 
   network_configuration {
-    subnets          = module.honua.private_subnet_ids
-    security_groups  = [aws_security_group.cert_cutover_ecs[0].id]
+    subnets = module.honua.private_subnet_ids
+    # Serving mode adds the module's Lambda security group, which the cert
+    # PostGIS and Redis security groups already admit.
+    security_groups  = local.ecs_alb_honua ? [aws_security_group.cert_cutover_ecs[0].id, module.honua.lambda_security_group_id] : [aws_security_group.cert_cutover_ecs[0].id]
     assign_public_ip = false
   }
 
   load_balancer {
     target_group_arn = aws_lb_target_group.cert_cutover_stable[0].arn
     container_name   = "web"
-    container_port   = 80
+    container_port   = local.ecs_alb_container_port
   }
 
   load_balancer {
     target_group_arn = aws_lb_target_group.cert_cutover_canary[0].arn
     container_name   = "web"
-    container_port   = 80
+    container_port   = local.ecs_alb_container_port
   }
 
   depends_on = [aws_lb_listener.cert_cutover]
