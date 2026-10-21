@@ -188,6 +188,18 @@ run "existing_out_of_band_migration_setting_remains_available_without_isolated_i
   }
 }
 
+run "connection_string_options_accept_explicit_canonical_locator" {
+  command = plan
+  variables {
+    db_connection_string_options    = "Database=other_database"
+    migration_target_locator_sha256 = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  }
+  assert {
+    condition     = aws_lambda_function.migration[0].environment[0].variables.HONUA_MIGRATION_TARGET_SHA256 == var.migration_target_locator_sha256
+    error_message = "An explicit canonical locator must be passed to the isolated migration function without recomputing an unsafe option string."
+  }
+}
+
 run "existing_custom_port_matches_database_egress_and_migration_locator" {
   command = plan
   variables {
@@ -361,18 +373,6 @@ run "connection_string_options_require_canonical_locator_override" {
     db_connection_string_options = "Database=other_database"
   }
   expect_failures = [aws_lambda_function.migration]
-}
-
-run "connection_string_options_accept_explicit_canonical_locator" {
-  command = plan
-  variables {
-    db_connection_string_options    = "Database=other_database"
-    migration_target_locator_sha256 = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
-  }
-  assert {
-    condition     = aws_lambda_function.migration[0].environment[0].variables.HONUA_MIGRATION_TARGET_SHA256 == var.migration_target_locator_sha256
-    error_message = "An explicit canonical locator must be passed to the isolated migration function without recomputing an unsafe option string."
-  }
 }
 
 run "moving_migration_tag_is_rejected" {
