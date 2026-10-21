@@ -9,6 +9,27 @@ const schema = JSON.parse(readFileSync(new URL('../../../contracts/operator-cont
 const runtimeSchema = JSON.parse(readFileSync(new URL('../../../contracts/runtime-binding.v1.schema.json', import.meta.url)));
 const runtimeValidator = new SchemaValidator(runtimeSchema);
 const events = readFileSync(process.argv[2], 'utf8').trim().split('\n').map(line => JSON.parse(line));
+// Verbose Terraform JSON contains full planned/applied state. On failure expose
+// only bounded diagnostic titles, locations and run status, never raw state.
+if (process.argv[3] === '--diagnostics-only') {
+  const safe = value => String(value ?? '').replace(/[\x00-\x1f\x7f]+/g, ' ').slice(0, 240);
+  const runs = events.filter(event => event.type === 'test_run');
+  runs.sort((a, b) => Number(['fail', 'error'].includes(b.test_run?.status)) - Number(['fail', 'error'].includes(a.test_run?.status)));
+  for (const event of runs.slice(0, 16)) {
+    console.error(`Terraform test ${safe(event['@testrun'])}: ${safe(event.test_run?.status)}`);
+  }
+  const diagnostics = events.filter(event => event.type === 'diagnostic');
+  diagnostics.sort((a, b) => Number(b.diagnostic?.severity === 'error') - Number(a.diagnostic?.severity === 'error'));
+  for (const event of diagnostics.slice(0, 12)) {
+    const range = event.diagnostic?.range;
+    const location = range?.filename && Number.isSafeInteger(range.start?.line)
+      ? ` (${safe(range.filename)}:${range.start.line})` : '';
+    console.error(`Terraform ${safe(event.diagnostic?.severity)}: ${safe(event.diagnostic?.summary)}${location}`);
+  }
+  const summary = events.findLast(event => event.type === 'test_summary')?.test_summary;
+  if (summary) console.error(`Terraform summary: ${summary.passed} passed, ${summary.failed} failed, ${summary.errored} errored`);
+  process.exit(0);
+}
 const summary = events.find(event => event.type === 'test_summary')?.test_summary;
 assert.equal(summary?.status, 'pass', 'Terraform root tests must pass');
 const completedPasses = new Set(events

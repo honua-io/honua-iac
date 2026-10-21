@@ -388,8 +388,13 @@ jobs:
             lambda_test_filters+=("-filter=tests/${test_file##*/}")
           done
           terraform -chdir=infrastructure/terraform/examples/aws-serverless test -no-color "${lambda_test_filters[@]}"
-          terraform -chdir=infrastructure/terraform/examples/aws-serverless test -json -verbose -filter=tests/operator_contract.tftest.hcl > "$RUNNER_TEMP/lambda-operator-tests.jsonl"
-          node infrastructure/terraform/validation/scripts/shared/test-lambda-operator-contract-output.mjs "$RUNNER_TEMP/lambda-operator-tests.jsonl"
+          lambda_tests="$RUNNER_TEMP/lambda-operator-tests.jsonl"
+          if terraform -chdir=infrastructure/terraform/examples/aws-serverless test -json -verbose -filter=tests/operator_contract.tftest.hcl > "$lambda_tests"; then
+            node infrastructure/terraform/validation/scripts/shared/test-lambda-operator-contract-output.mjs "$lambda_tests"
+          else
+            node infrastructure/terraform/validation/scripts/shared/test-lambda-operator-contract-output.mjs "$lambda_tests" --diagnostics-only || true
+            exit 1
+          fi
           terraform -chdir=infrastructure/terraform/examples/aws-cert test -no-color
           terraform -chdir=infrastructure/terraform/modules/aws-eks test -no-color
           terraform -chdir=infrastructure/terraform/examples/aws-eks test -no-color
