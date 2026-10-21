@@ -140,6 +140,8 @@ variables {
 
   image          = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   admin_password = "Synthetic-Terraform-Test-Admin-4721!aA1"
+  # checkov:skip=CKV_SECRET_6: Synthetic test-only database password.
+  db_password = "Synthetic-Terraform-Test-Db-4721aA1"
 
   # ElastiCache validates the auth token in-provider and the random provider is
   # mocked here, so supply one explicitly instead of auto-generating it.
