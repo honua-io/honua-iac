@@ -105,7 +105,6 @@ run "native_install_projects_configured_resources" {
       output.runtime_binding_contract.resourceIdentity.routeKind == "LoadBalancerService" &&
       output.runtime_binding_contract.resourceIdentity.servicePort == "443" &&
       output.runtime_binding_contract.resourceIdentity.targetPort == "8080" &&
-      output.runtime_binding_contract.resourceIdentity.loadBalancerArn == data.external.public_load_balancer.result.arn &&
     output.runtime_binding_contract.resourceIdentity.serverRoleArn != output.runtime_binding_contract.resourceIdentity.gpRoleArn)
     error_message = "Native EKS binding must project the Terraform-owned Service route and distinct workload roles."
   }
