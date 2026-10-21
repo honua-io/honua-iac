@@ -6,7 +6,12 @@ import { SchemaValidator } from './validate-operator-contract.mjs';
 
 const schema = JSON.parse(readFileSync(new URL('../../../contracts/runtime-binding.v1.schema.json', import.meta.url)));
 const validator = new SchemaValidator(schema);
-const events = readFileSync(process.argv[2], 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+// setup-terraform appends a non-JSON ::error:: status line when Terraform exits
+// nonzero. Keep the structured events and never echo the wrapper's raw output.
+const events = readFileSync(process.argv[2], 'utf8').split('\n')
+  .map((line) => line.trim()).filter((line) => line.startsWith('{'))
+  .map((line) => JSON.parse(line));
+assert.notEqual(events.length, 0, 'Terraform must emit structured test events');
 if (process.argv[3] === '--diagnostics-only') {
   // Terraform's verbose JSON includes planned state. Emit only bounded test
   // status and diagnostic titles when a mocked test fails.
