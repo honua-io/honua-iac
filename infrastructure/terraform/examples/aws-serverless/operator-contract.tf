@@ -137,6 +137,7 @@ locals {
 
   operator_contract_function_name = module.honua.lambda_function_name
   operator_contract_service_url   = module.honua.service_url
+  operator_contract_public_url    = coalesce(module.honua.public_base_url, local.operator_contract_service_url)
 
   operator_contract_log_group = module.honua.operator_contract_facts.log_group
 
@@ -274,7 +275,7 @@ locals {
       name_prefix = var.name_prefix
     }
     endpoints = {
-      public_base_url  = local.operator_contract_service_url
+      public_base_url  = local.operator_contract_public_url
       readiness_path   = "/healthz/ready"
       admin_base_path  = "/api/v1/admin"
       protocol_path    = "/v1"
@@ -350,10 +351,10 @@ locals {
       }
     }
     tests = {
-      readiness_url = "${local.operator_contract_service_url}/healthz/ready"
-      admin_url     = "${local.operator_contract_service_url}/api/v1/admin"
-      protocol_url  = "${local.operator_contract_service_url}/v1"
-      mcp_url       = local.operator_contract_mcp_enabled ? "${local.operator_contract_service_url}${local.operator_contract_mcp_path}" : null
+      readiness_url = "${local.operator_contract_public_url}/healthz/ready"
+      admin_url     = "${local.operator_contract_public_url}/api/v1/admin"
+      protocol_url  = "${local.operator_contract_public_url}/v1"
+      mcp_url       = local.operator_contract_mcp_enabled ? "${local.operator_contract_public_url}${local.operator_contract_mcp_path}" : null
     }
     mcp = {
       enabled        = local.operator_contract_mcp_enabled

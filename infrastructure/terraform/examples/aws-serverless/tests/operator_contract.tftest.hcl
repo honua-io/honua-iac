@@ -185,6 +185,11 @@ run "unqualified_development_contract" {
 
 run "qualified_lambda_contract" {
   command = apply
+  variables {
+    retained_runtime_settings_documents = {
+      (run.unqualified_development_contract.runtime_settings_retention_entry.hash) = run.unqualified_development_contract.runtime_settings_retention_entry.document
+    }
+  }
   assert {
     condition = (
       output.operator_contract_status == "qualified" &&
@@ -228,16 +233,48 @@ run "qualified_lambda_contract" {
   }
 }
 
+run "configured_public_origin_projects_without_retargeting_ingress" {
+  command = plan
+  variables {
+    public_base_url            = "https://maps.example.com/honua"
+    operator_contract_identity = null
+    retained_runtime_settings_documents = {
+      (run.unqualified_development_contract.runtime_settings_retention_entry.hash) = run.unqualified_development_contract.runtime_settings_retention_entry.document
+    }
+  }
+  assert {
+    condition = (
+      output.deployment_contract.endpoints.public_base_url == "https://maps.example.com/honua" &&
+      output.validation_contract.tests.readiness_url == "https://maps.example.com/honua/healthz/ready" &&
+      output.validation_contract.tests.admin_url == "https://maps.example.com/honua/api/v1/admin" &&
+      output.validation_contract.tests.protocol_url == "https://maps.example.com/honua/v1" &&
+      output.deployment_contract.dependencies.ingress.endpoint == module.honua.service_url &&
+      output.deployment_contract.endpoints.ingress_dns_name == replace(module.honua.service_url, "https://", "")
+    )
+    error_message = "The public handoff and validation URLs must use Public__BaseUrl while the ingress remains the API Gateway URL."
+  }
+}
+
 run "older_alias_cannot_claim_current_dependency_settings" {
   # The precondition is already decidable during planning after the positive run.
   command = plan
-  variables { lambda_alias_version = "42" }
+  variables {
+    lambda_alias_version = "42"
+    retained_runtime_settings_documents = {
+      (run.unqualified_development_contract.runtime_settings_retention_entry.hash) = run.unqualified_development_contract.runtime_settings_retention_entry.document
+    }
+  }
   expect_failures = [output.deployment_contract]
 }
 
 run "serving_alias_image_mismatch_refused" {
   # The precondition is already decidable during planning after the positive run.
   command = plan
+  variables {
+    retained_runtime_settings_documents = {
+      (run.unqualified_development_contract.runtime_settings_retention_entry.hash) = run.unqualified_development_contract.runtime_settings_retention_entry.document
+    }
+  }
   override_data {
     target = data.aws_lambda_function.operator_contract_alias[0]
     values = {
@@ -251,6 +288,11 @@ run "serving_alias_image_mismatch_refused" {
 run "serving_alias_role_mismatch_refused" {
   # The precondition is already decidable during planning after the positive run.
   command = plan
+  variables {
+    retained_runtime_settings_documents = {
+      (run.unqualified_development_contract.runtime_settings_retention_entry.hash) = run.unqualified_development_contract.runtime_settings_retention_entry.document
+    }
+  }
   override_data {
     target = data.aws_lambda_function.operator_contract_alias[0]
     values = {
@@ -266,6 +308,10 @@ run "marketplace_image_override_cannot_bypass_identity" {
   command = plan
   variables {
     install = { artifact = { image = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" } }
+    retained_runtime_settings_documents = {
+      (run.unqualified_development_contract.runtime_settings_retention_entry.hash) = run.unqualified_development_contract.runtime_settings_retention_entry.document
+      (run.qualified_lambda_contract.runtime_settings_retention_entry.hash)        = run.qualified_lambda_contract.runtime_settings_retention_entry.document
+    }
   }
   expect_failures = [output.deployment_contract]
 }
@@ -277,6 +323,9 @@ run "proxy_and_shared_storage_are_real_runtime_dependencies" {
     file_storage_provider           = "AwsS3"
     file_storage_aws_s3_bucket_name = "honua-contract-files"
     file_storage_aws_s3_key_prefix  = "imports/"
+    retained_runtime_settings_documents = {
+      (run.unqualified_development_contract.runtime_settings_retention_entry.hash) = run.unqualified_development_contract.runtime_settings_retention_entry.document
+    }
   }
   override_resource {
     target = module.honua.aws_secretsmanager_secret.proxy_connection_string[0]
@@ -305,6 +354,9 @@ run "external_database_is_not_claimed_as_managed" {
   variables {
     existing_db_endpoint          = "external-db.example.test"
     existing_db_connection_string = "Host=external-db.example.test;Database=honua;Username=test;Password=synthetic-only"
+    retained_runtime_settings_documents = {
+      (run.unqualified_development_contract.runtime_settings_retention_entry.hash) = run.unqualified_development_contract.runtime_settings_retention_entry.document
+    }
   }
   assert {
     condition = (

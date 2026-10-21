@@ -759,13 +759,24 @@ functions carry the API function's environment minus its HTTP-only settings
 - **No defaults restated.** Settings equal to the server's defaults are not
   emitted (`HONUA_SKIP_MIGRATIONS=false`, `HONUA_SERVE_ADMIN_UI`/`HONUA_ADMIN_UI`
   `=false`, `batch.region`, and the Bedrock and Amazon Location defaults above).
-- **Version-pinned registry document.** `HONUA_SETTINGS_DOCUMENT` references a
+- **Immutable registry document.** `HONUA_SETTINGS_DOCUMENT` references a
   module-managed Secrets Manager JSON document containing the deployment target's
-  full function ARN, explicit region, alias and migration requirement. The
-  reference pins the secret version, so each Lambda function version retains
-  its own registry configuration when selected for rollback. Both execution
-  roles can read the exact secret. Retain the secret versions referenced by
-  supported rollback targets. The module reserves `HONUA_SETTINGS_DOCUMENT`,
+  full function ARN, explicit region, alias and migration requirement. Its
+  canonical JSON hash selects a dedicated secret containing one version. Each
+  published Lambda version pins that secret and version; later deployments
+  cannot move its `AWSCURRENT` label or make it an unlabelled version subject to
+  Secrets Manager cleanup. Both execution roles can read the exact current and
+  retained secret ARNs. Before changing the document, copy the credential-free
+  `runtime_settings_retention_entry` output's `hash` and `document` into the
+  Git-owned `retained_runtime_settings_documents` map. Both secret resources
+  use `prevent_destroy`, so omitting a prior entry blocks an ordinary update.
+  Keep each entry while any published Lambda version refers to it. This module
+  has no automatic retirement path; deletion requires a separate reviewed
+  published-version inventory and retirement workflow. Exact retained-secret
+  grants also consume the AWS managed-policy document limit (6,144 characters),
+  so retention capacity is finite and an over-limit plan must stop for a
+  reviewed retirement design; do not drop retained entries or widen permissions
+  to make it fit. The module reserves `HONUA_SETTINGS_DOCUMENT`,
   `Settings__Document` and the complete `ControlPlane:DeployTargets` tree;
   `additional_env` cannot replace the document, override its registered target
   or append another target. Case and configuration-separator variants are also

@@ -112,6 +112,25 @@ mock_provider "aws" {
 mock_provider "random" {}
 mock_provider "null" {}
 
+# The two shared-state document revisions have different real secret ARNs.
+# Override them independently so a missing old IAM grant cannot pass because
+# the generic mock's default ARN is identical for every instance.
+override_resource {
+  target = aws_secretsmanager_secret.runtime_settings["c416671c63ab6546f665c18acc93b9a1547470d2284d7930f1594a5add80a41e"]
+  values = {
+    arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-contract-dev/runtime-settings-c416671c63ab6546f665c18acc93b9a1547470d2284d7930f1594a5add80a41e-Ab12Cd"
+    id  = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-contract-dev/runtime-settings-c416671c63ab6546f665c18acc93b9a1547470d2284d7930f1594a5add80a41e-Ab12Cd"
+  }
+}
+
+override_resource {
+  target = aws_secretsmanager_secret.runtime_settings["0565fd23202176b8b57c2d5a12df1175502ab2290a906d1ab57da4949ed875d5"]
+  values = {
+    arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-contract-dev/runtime-settings-0565fd23202176b8b57c2d5a12df1175502ab2290a906d1ab57da4949ed875d5-Ef34Gh"
+    id  = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-contract-dev/runtime-settings-0565fd23202176b8b57c2d5a12df1175502ab2290a906d1ab57da4949ed875d5-Ef34Gh"
+  }
+}
+
 variables {
   name_prefix          = "honua-contract"
   environment          = "dev"
@@ -138,15 +157,19 @@ run "handoff_reports_serving_alias_not_latest_function_version" {
     error_message = "The binding must identify the serving alias version, even when the function has a newer published version."
   }
   assert {
+    condition     = local.runtime_settings_hash == "c416671c63ab6546f665c18acc93b9a1547470d2284d7930f1594a5add80a41e"
+    error_message = "The mocked initial secret ARN must target the actual canonical document hash."
+  }
+  assert {
     condition     = output.runtime_binding_contract.resourceIdentity.apiGatewayIntegrationAliasArn == "arn:aws:lambda:us-east-1:123456789012:function:honua-contract-dev-honua:live" && aws_apigatewayv2_route.root.target == "integrations/${output.runtime_binding_contract.resourceIdentity.apiGatewayIntegrationId}" && aws_apigatewayv2_route.proxy.target == "integrations/${output.runtime_binding_contract.resourceIdentity.apiGatewayIntegrationId}"
     error_message = "Both API routes and the actual integration URI must bind the same named Lambda alias."
   }
   assert {
-    condition     = output.runtime_binding_contract.schemaVersion == "honua.runtime-binding/v1" && output.runtime_binding_contract.runtimeKind == "aws-lambda" && output.runtime_binding_contract.backend == "honua-gitops-aws-lambda" && output.runtime_binding_contract.platform.accountId == "123456789012" && output.runtime_binding_contract.platform.region == "us-east-1" && output.runtime_binding_contract.platform.partition == "aws" && output.runtime_binding_contract.targetId == "${aws_lambda_function.this.function_name}-${aws_lambda_alias.live.name}" && output.control_plane_target_id == output.runtime_binding_contract.targetId && jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].TargetId == output.runtime_binding_contract.targetId
+    condition     = output.runtime_binding_contract.schemaVersion == "honua.runtime-binding/v1" && output.runtime_binding_contract.runtimeKind == "aws-lambda" && output.runtime_binding_contract.backend == "honua-gitops-aws-lambda" && output.runtime_binding_contract.platform.accountId == "123456789012" && output.runtime_binding_contract.platform.region == "us-east-1" && output.runtime_binding_contract.platform.partition == "aws" && output.runtime_binding_contract.targetId == "${aws_lambda_function.this.function_name}-${aws_lambda_alias.live.name}" && output.control_plane_target_id == output.runtime_binding_contract.targetId && jsondecode(aws_secretsmanager_secret_version.runtime_settings[local.runtime_settings_hash].secret_string).ControlPlane.DeployTargets[0].TargetId == output.runtime_binding_contract.targetId
     error_message = "Runtime facts must preserve the provider account/region and canonical Lambda actuator."
   }
   assert {
-    condition     = jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].TargetName == output.runtime_binding_contract.resourceIdentity.functionArn && jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].Parameters["aws.region"] == output.runtime_binding_contract.platform.region && jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].Parameters["honua.runtime_kind"] == output.runtime_binding_contract.runtimeKind
+    condition     = jsondecode(aws_secretsmanager_secret_version.runtime_settings[local.runtime_settings_hash].secret_string).ControlPlane.DeployTargets[0].TargetName == output.runtime_binding_contract.resourceIdentity.functionArn && jsondecode(aws_secretsmanager_secret_version.runtime_settings[local.runtime_settings_hash].secret_string).ControlPlane.DeployTargets[0].Parameters["aws.region"] == output.runtime_binding_contract.platform.region && jsondecode(aws_secretsmanager_secret_version.runtime_settings[local.runtime_settings_hash].secret_string).ControlPlane.DeployTargets[0].Parameters["honua.runtime_kind"] == output.runtime_binding_contract.runtimeKind
     error_message = "The server registry must bind the actual function ARN, provider region, and declared runtime kind to the same handoff target."
   }
   assert {
@@ -161,17 +184,39 @@ run "handoff_reports_serving_alias_not_latest_function_version" {
     condition     = !contains(keys(output.runtime_binding_contract), "observation") && !strcontains(jsonencode(output.runtime_binding_contract), var.admin_password)
     error_message = "Configured facts must not contain credentials or claim live provider observation."
   }
+  assert {
+    condition = (
+      output.runtime_settings_retention_entry.hash == sha256(output.runtime_settings_retention_entry.document) &&
+      output.runtime_settings_retention_entry.document == jsonencode(jsondecode(output.runtime_settings_retention_entry.document)) &&
+      !strcontains(output.runtime_settings_retention_entry.document, var.admin_password) &&
+      !strcontains(output.runtime_settings_retention_entry.document, var.db_password)
+    )
+    error_message = "The Git retention entry must be canonical, hash-bound, and credential-free."
+  }
 }
 
 run "nondefault_alias_preserves_region_and_alias_registration" {
   command = plan
   variables {
     lambda_alias_name = "candidate"
+    retained_runtime_settings_documents = {
+      (run.handoff_reports_serving_alias_not_latest_function_version.runtime_settings_retention_entry.hash) = run.handoff_reports_serving_alias_not_latest_function_version.runtime_settings_retention_entry.document
+    }
   }
   assert {
-    condition     = jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].Parameters["aws.region"] == "us-east-1" && jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].Parameters["aws.lambda.alias_name"] == "candidate"
+    condition     = jsondecode(aws_secretsmanager_secret_version.runtime_settings[local.runtime_settings_hash].secret_string).ControlPlane.DeployTargets[0].Parameters["aws.region"] == "us-east-1" && jsondecode(aws_secretsmanager_secret_version.runtime_settings[local.runtime_settings_hash].secret_string).ControlPlane.DeployTargets[0].Parameters["aws.lambda.alias_name"] == "candidate"
     error_message = "An explicit alias must not replace or hide the server's registered region."
   }
+}
+
+run "invalid_retained_document_hash_is_rejected" {
+  command = plan
+  variables {
+    retained_runtime_settings_documents = {
+      "0000000000000000000000000000000000000000000000000000000000000000" = run.handoff_reports_serving_alias_not_latest_function_version.runtime_settings_retention_entry.document
+    }
+  }
+  expect_failures = [var.retained_runtime_settings_documents]
 }
 
 run "runtime_document_pins_versions_and_scopes_read_grants" {
@@ -180,16 +225,16 @@ run "runtime_document_pins_versions_and_scopes_read_grants" {
   assert {
     condition = alltrue([
       for environment in [local.lambda_environment, local.control_plane_reconcile_environment, local.control_plane_backstop_environment, local.control_plane_tick_environment] :
-      environment.HONUA_SETTINGS_DOCUMENT == "aws:secretsmanager:${aws_secretsmanager_secret.runtime_settings.name}?versionId=${aws_secretsmanager_secret_version.runtime_settings.version_id}"
+      environment.HONUA_SETTINGS_DOCUMENT == "aws:secretsmanager:${aws_secretsmanager_secret.runtime_settings[local.runtime_settings_hash].name}?versionId=${aws_secretsmanager_secret_version.runtime_settings[local.runtime_settings_hash].version_id}"
     ])
     error_message = "Every function must pin the same settings version; alias rollback must not read AWSCURRENT."
   }
   assert {
-    condition     = contains(jsondecode(aws_iam_policy.lambda_secrets.policy).Statement[0].Resource, aws_secretsmanager_secret.runtime_settings.arn) && contains(local.lambda_secret_arns, aws_secretsmanager_secret.runtime_settings.arn)
+    condition     = contains(jsondecode(aws_iam_policy.lambda_secrets.policy).Statement[0].Resource, aws_secretsmanager_secret.runtime_settings[local.runtime_settings_hash].arn) && contains(local.lambda_secret_arns, aws_secretsmanager_secret.runtime_settings[local.runtime_settings_hash].arn)
     error_message = "API and scheduled functions must have read permission on the exact runtime document secret."
   }
   assert {
-    condition     = jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].RequiresOutOfBandMigrations && !strcontains(aws_secretsmanager_secret_version.runtime_settings.secret_string, var.admin_password)
+    condition     = jsondecode(aws_secretsmanager_secret_version.runtime_settings[local.runtime_settings_hash].secret_string).ControlPlane.DeployTargets[0].RequiresOutOfBandMigrations && !strcontains(aws_secretsmanager_secret_version.runtime_settings[local.runtime_settings_hash].secret_string, var.admin_password)
     error_message = "Moving the target to JSON must retain the migration gate and exclude credentials."
   }
 }
@@ -240,33 +285,67 @@ run "unrelated_environment_settings_remain_available" {
     additional_env = { Logging__LogLevel__Default = "Warning" }
   }
   assert {
-    condition     = local.lambda_environment.Logging__LogLevel__Default == "Warning" && jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].TargetName == local.lambda_function_arn
+    condition     = local.lambda_environment.Logging__LogLevel__Default == "Warning" && jsondecode(aws_secretsmanager_secret_version.runtime_settings[local.runtime_settings_hash].secret_string).ControlPlane.DeployTargets[0].TargetName == local.lambda_function_arn
     error_message = "Unrelated custom settings must remain available without changing the registered deployment target."
   }
 }
 
 run "long_alias_a_has_bounded_stable_target_id" {
   command = plan
-  variables { lambda_alias_name = "${join("", [for _ in range(127) : "a"])}b" }
+  variables {
+    lambda_alias_name = "${join("", [for _ in range(127) : "a"])}b"
+    retained_runtime_settings_documents = {
+      (run.handoff_reports_serving_alias_not_latest_function_version.runtime_settings_retention_entry.hash) = run.handoff_reports_serving_alias_not_latest_function_version.runtime_settings_retention_entry.document
+    }
+  }
   override_resource {
     target = aws_lambda_alias.live
     values = { arn = "arn:aws:lambda:us-east-1:123456789012:function:honua-contract-dev-honua:${join("", [for _ in range(127) : "a"])}b" }
   }
   assert {
-    condition     = length(output.runtime_binding_contract.targetId) == 128 && output.runtime_binding_contract.targetId == "${substr(local.lambda_target_name, 0, 95)}-${substr(sha256(local.lambda_target_name), 0, 32)}" && output.control_plane_target_id == output.runtime_binding_contract.targetId && jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].TargetId == output.runtime_binding_contract.targetId && output.runtime_binding_contract.resourceIdentity.aliasArn == aws_lambda_alias.live.arn
+    condition     = length(output.runtime_binding_contract.targetId) == 128 && output.runtime_binding_contract.targetId == "${substr(local.lambda_target_name, 0, 95)}-${substr(sha256(local.lambda_target_name), 0, 32)}" && output.control_plane_target_id == output.runtime_binding_contract.targetId && jsondecode(aws_secretsmanager_secret_version.runtime_settings[local.runtime_settings_hash].secret_string).ControlPlane.DeployTargets[0].TargetId == output.runtime_binding_contract.targetId && output.runtime_binding_contract.resourceIdentity.aliasArn == aws_lambda_alias.live.arn
     error_message = "A valid maximum-length alias must retain its full authoritative ARN and use one bounded target ID in the handoff, output, and server registry."
   }
 }
 
 run "long_alias_b_with_same_prefix_has_distinct_target_id" {
   command = plan
-  variables { lambda_alias_name = "${join("", [for _ in range(127) : "a"])}c" }
+  variables {
+    lambda_alias_name = "${join("", [for _ in range(127) : "a"])}c"
+    retained_runtime_settings_documents = {
+      (run.handoff_reports_serving_alias_not_latest_function_version.runtime_settings_retention_entry.hash) = run.handoff_reports_serving_alias_not_latest_function_version.runtime_settings_retention_entry.document
+    }
+  }
   override_resource {
     target = aws_lambda_alias.live
     values = { arn = "arn:aws:lambda:us-east-1:123456789012:function:honua-contract-dev-honua:${join("", [for _ in range(127) : "a"])}c" }
   }
   assert {
-    condition     = length(output.runtime_binding_contract.targetId) == 128 && substr(output.runtime_binding_contract.targetId, 0, 95) == substr(run.long_alias_a_has_bounded_stable_target_id.runtime_binding_contract.targetId, 0, 95) && output.runtime_binding_contract.targetId != run.long_alias_a_has_bounded_stable_target_id.runtime_binding_contract.targetId && output.control_plane_target_id == output.runtime_binding_contract.targetId && jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].TargetId == output.runtime_binding_contract.targetId && output.runtime_binding_contract.resourceIdentity.aliasArn == aws_lambda_alias.live.arn
+    condition     = length(output.runtime_binding_contract.targetId) == 128 && substr(output.runtime_binding_contract.targetId, 0, 95) == substr(run.long_alias_a_has_bounded_stable_target_id.runtime_binding_contract.targetId, 0, 95) && output.runtime_binding_contract.targetId != run.long_alias_a_has_bounded_stable_target_id.runtime_binding_contract.targetId && output.control_plane_target_id == output.runtime_binding_contract.targetId && jsondecode(aws_secretsmanager_secret_version.runtime_settings[local.runtime_settings_hash].secret_string).ControlPlane.DeployTargets[0].TargetId == output.runtime_binding_contract.targetId && output.runtime_binding_contract.resourceIdentity.aliasArn == aws_lambda_alias.live.arn
     error_message = "Distinct long aliases sharing the readable prefix must retain distinct bounded handoff IDs and full resource ARNs."
+  }
+}
+
+run "apply_changed_document_with_git_retention_keeps_old_secret_and_grants" {
+  command = apply
+  variables {
+    image = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    retained_runtime_settings_documents = {
+      (run.handoff_reports_serving_alias_not_latest_function_version.runtime_settings_retention_entry.hash) = run.handoff_reports_serving_alias_not_latest_function_version.runtime_settings_retention_entry.document
+    }
+  }
+  assert {
+    condition = (
+      length(aws_secretsmanager_secret.runtime_settings) == 2 &&
+      local.runtime_settings_hash == "0565fd23202176b8b57c2d5a12df1175502ab2290a906d1ab57da4949ed875d5" &&
+      local.runtime_settings_hash != run.handoff_reports_serving_alias_not_latest_function_version.runtime_settings_retention_entry.hash &&
+      aws_secretsmanager_secret.runtime_settings[local.runtime_settings_hash].arn != run.handoff_reports_serving_alias_not_latest_function_version.runtime_settings_retention_entry.secretArn &&
+      aws_secretsmanager_secret_version.runtime_settings[run.handoff_reports_serving_alias_not_latest_function_version.runtime_settings_retention_entry.hash].secret_string == run.handoff_reports_serving_alias_not_latest_function_version.runtime_settings_retention_entry.document &&
+      aws_secretsmanager_secret.runtime_settings[run.handoff_reports_serving_alias_not_latest_function_version.runtime_settings_retention_entry.hash].arn == run.handoff_reports_serving_alias_not_latest_function_version.runtime_settings_retention_entry.secretArn &&
+      aws_secretsmanager_secret_version.runtime_settings[run.handoff_reports_serving_alias_not_latest_function_version.runtime_settings_retention_entry.hash].version_id == run.handoff_reports_serving_alias_not_latest_function_version.runtime_settings_retention_entry.versionId &&
+      alltrue([for secret in values(aws_secretsmanager_secret.runtime_settings) : contains(jsondecode(aws_iam_policy.lambda_secrets.policy).Statement[0].Resource, secret.arn)]) &&
+      alltrue([for secret in values(aws_secretsmanager_secret.runtime_settings) : contains(local.lambda_secret_arns, secret.arn)])
+    )
+    error_message = "A real shared-state update must retain both immutable settings documents and both exact read grants."
   }
 }

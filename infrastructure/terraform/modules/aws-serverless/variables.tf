@@ -209,6 +209,20 @@ variable "lambda_alias_version" {
   }
 }
 
+variable "retained_runtime_settings_documents" {
+  description = "Git-retained immutable settings documents for published Lambda rollback targets. Keys are the SHA-256 of each canonical JSON value. Carry the current output entry into this map before changing the settings document; ordinary plans refuse to destroy omitted entries."
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition = alltrue([
+      for hash, document in var.retained_runtime_settings_documents :
+      try(can(regex("^[0-9a-f]{64}$", hash)) && document == jsonencode(jsondecode(document)) && sha256(document) == hash, false)
+    ])
+    error_message = "Every retained runtime settings entry must use its full lowercase SHA-256 key and exact canonical JSON document."
+  }
+}
+
 variable "admin_password" {
   description = "Admin API password for Honua (required in non-dev)."
   type        = string

@@ -106,6 +106,12 @@ variable "lambda_alias_version" {
   default     = null
 }
 
+variable "retained_runtime_settings_documents" {
+  description = "Previously published runtime settings entries to retain for Lambda rollback, copied from the runtime_settings_retention_entry output."
+  type        = map(string)
+  default     = {}
+}
+
 variable "db_publicly_accessible" {
   description = "Expose RDS publicly for integration testing."
   type        = bool

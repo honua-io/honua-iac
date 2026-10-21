@@ -21,21 +21,42 @@ locals {
       }]
     }
   }
+  runtime_settings_json = jsonencode(local.runtime_settings_document)
+  runtime_settings_hash = sha256(local.runtime_settings_json)
+  runtime_settings_documents = merge(
+    var.retained_runtime_settings_documents,
+    { (local.runtime_settings_hash) = local.runtime_settings_json }
+  )
 }
 
-#checkov:skip=CKV2_AWS_57: Terraform versions this configuration document; automatic credential rotation does not apply.
+# Each document gets its own secret, with exactly one AWSCURRENT version.
+# Published Lambda versions pin that secret and version. A later deployment
+# cannot deprecate the old version through Secrets Manager's version cleanup.
+# The previous current document must be carried in the Git-owned retained map
+# before a changed document can be applied: prevent_destroy refuses omissions.
+#checkov:skip=CKV2_AWS_57: Immutable configuration identifiers, not credentials; rotation does not apply.
 resource "aws_secretsmanager_secret" "runtime_settings" {
-  #checkov:skip=CKV2_AWS_57: Terraform versions this configuration document; automatic credential rotation does not apply.
-  name        = "${local.name}/runtime-settings-document"
-  description = "Versioned Honua deployment target configuration."
+  #checkov:skip=CKV2_AWS_57: Immutable configuration identifiers, not credentials; rotation does not apply.
+  for_each = local.runtime_settings_documents
+
+  name        = "${local.name}/runtime-settings-${each.key}"
+  description = "Immutable Honua deployment target configuration ${each.key}."
   tags        = local.tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_secretsmanager_secret_version" "runtime_settings" {
-  secret_id     = aws_secretsmanager_secret.runtime_settings.id
-  secret_string = jsonencode(local.runtime_settings_document)
+  for_each = local.runtime_settings_documents
+
+  secret_id     = aws_secretsmanager_secret.runtime_settings[each.key].id
+  secret_string = each.value
 
   lifecycle {
+    prevent_destroy = true
+
     precondition {
       condition = alltrue([
         for key in keys(var.additional_env) :

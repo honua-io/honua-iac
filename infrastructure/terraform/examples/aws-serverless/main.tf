@@ -13,28 +13,29 @@ module "honua" {
   bedrock_ai_max_tokens         = var.bedrock_ai_max_tokens
   bedrock_ai_timeout_seconds    = var.bedrock_ai_timeout_seconds
 
-  environment                     = var.environment
-  name_prefix                     = var.name_prefix
-  existing_vpc_id                 = local.install_net_id
-  existing_vpc_cidr               = local.install_net_cidr
-  existing_public_subnet_ids      = local.install_net_pub_sub
-  existing_private_subnet_ids     = local.install_net_prv_sub
-  image                           = local.install_image
-  image_repository_policy_mode    = var.image_repository_policy_mode
-  lambda_architectures            = var.lambda_architectures
-  lambda_alias_name               = var.lambda_alias_name
-  lambda_alias_version            = var.lambda_alias_version
-  admin_password                  = var.honua_admin_password
-  db_password                     = var.db_password
-  existing_db_endpoint            = local.install_db_host
-  existing_db_port                = var.existing_db_port
-  existing_db_connection_string   = var.existing_db_connection_string
-  db_publicly_accessible          = local.install_db_public
-  db_additional_ingress_cidrs     = var.db_additional_ingress_cidrs
-  enable_postgis                  = local.install_db_postgis
-  postgis_readiness_max_attempts  = local.install_db_rdy_max
-  postgis_readiness_sleep_seconds = local.install_db_rdy_sleep
-  enable_rds_proxy                = var.enable_rds_proxy
+  environment                         = var.environment
+  name_prefix                         = var.name_prefix
+  existing_vpc_id                     = local.install_net_id
+  existing_vpc_cidr                   = local.install_net_cidr
+  existing_public_subnet_ids          = local.install_net_pub_sub
+  existing_private_subnet_ids         = local.install_net_prv_sub
+  image                               = local.install_image
+  image_repository_policy_mode        = var.image_repository_policy_mode
+  lambda_architectures                = var.lambda_architectures
+  lambda_alias_name                   = var.lambda_alias_name
+  lambda_alias_version                = var.lambda_alias_version
+  retained_runtime_settings_documents = var.retained_runtime_settings_documents
+  admin_password                      = var.honua_admin_password
+  db_password                         = var.db_password
+  existing_db_endpoint                = local.install_db_host
+  existing_db_port                    = var.existing_db_port
+  existing_db_connection_string       = var.existing_db_connection_string
+  db_publicly_accessible              = local.install_db_public
+  db_additional_ingress_cidrs         = var.db_additional_ingress_cidrs
+  enable_postgis                      = local.install_db_postgis
+  postgis_readiness_max_attempts      = local.install_db_rdy_max
+  postgis_readiness_sleep_seconds     = local.install_db_rdy_sleep
+  enable_rds_proxy                    = var.enable_rds_proxy
   # Proxy headroom: the share of max_connections the proxy may open; the rest
   # stays for direct sessions (migrate/seed from the runner, PostGIS bootstrap).
   rds_proxy_max_connections_percent           = var.rds_proxy_max_connections_percent
@@ -131,6 +132,11 @@ output "environment" {
 
 output "aws_region" {
   value = module.honua.aws_region
+}
+
+output "runtime_settings_retention_entry" {
+  description = "Credential-free hash/document entry to retain in Git before deploying changed runtime settings."
+  value       = module.honua.runtime_settings_retention_entry
 }
 
 output "lambda_architectures" {

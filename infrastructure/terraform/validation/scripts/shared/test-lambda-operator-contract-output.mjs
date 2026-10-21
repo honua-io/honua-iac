@@ -11,7 +11,23 @@ const runtimeValidator = new SchemaValidator(runtimeSchema);
 const events = readFileSync(process.argv[2], 'utf8').trim().split('\n').map(line => JSON.parse(line));
 const summary = events.find(event => event.type === 'test_summary')?.test_summary;
 assert.equal(summary?.status, 'pass', 'Terraform root tests must pass');
-assert.equal(summary.passed, 8, 'every Lambda producer scenario must run');
+const completedPasses = new Set(events
+  .filter(event => event.type === 'test_run' && event.test_run?.progress === 'complete' && event.test_run?.status === 'pass')
+  .map(event => event.test_run.run));
+const requiredRuns = [
+  'unqualified_development_contract',
+  'qualified_lambda_contract',
+  'configured_public_origin_projects_without_retargeting_ingress',
+  'older_alias_cannot_claim_current_dependency_settings',
+  'serving_alias_image_mismatch_refused',
+  'serving_alias_role_mismatch_refused',
+  'marketplace_image_override_cannot_bypass_identity',
+  'proxy_and_shared_storage_are_real_runtime_dependencies',
+  'external_database_is_not_claimed_as_managed',
+];
+for (const runName of requiredRuns) {
+  assert(completedPasses.has(runName), `${runName} must complete successfully`);
+}
 const positiveRuns = new Map([
   ['unqualified_development_contract', false],
   ['qualified_lambda_contract', true],
@@ -31,4 +47,4 @@ for (const [runName, requireQualified] of positiveRuns) {
     assert.equal(outputs[name].sensitive, false, `${runName}: ${name} must remain non-secret`);
   }
 }
-console.log('PASS: 4 applied Lambda contracts satisfy schema, identity, digest and secret-reference joins; all 8 scenarios passed');
+console.log('PASS: 4 applied Lambda contracts satisfy schema, identity, digest and secret-reference joins; all required Lambda scenarios passed');

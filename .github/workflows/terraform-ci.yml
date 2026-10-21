@@ -363,6 +363,10 @@ jobs:
           fi
           python3 -m unittest discover -s infrastructure/terraform/examples/aws-eks-native/tests -p 'test_*.py'
 
+      - name: Runtime settings history omission fails closed (mock providers only)
+        shell: bash
+        run: ./infrastructure/terraform/validation/scripts/shared/test-runtime-settings-retention-omission.sh
+
       - name: Module contract tests (multi-node topology, licensing mode)
         shell: bash
         run: |

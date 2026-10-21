@@ -119,6 +119,7 @@ passes them to the module (see the module's
 |----------|---------|-------------|
 | `domain_name` | `""` | Custom API hostname on any domain you own, for example `gis.example.com`. Set together with `route53_zone_id`; also sets `Public__BaseUrl`. |
 | `public_base_url` | `""` | Optional public origin for server-built absolute links (`Public__BaseUrl`), for example `https://maps.example.com`. Empty uses `https://<domain_name>`. |
+| `retained_runtime_settings_documents` | `{}` | Hash-keyed, canonical JSON documents for published Lambda rollback targets. Before a changed deployment, add the previous `runtime_settings_retention_entry` output to a Git-managed variables file; an omitted prior entry blocks the plan. |
 | `route53_zone_id` | `""` | Route53 hosted zone that owns `domain_name`; the module validates the ACM certificate and creates the alias record there. |
 
 With both set, `honua_url` and the deploy contract's `endpoint` are

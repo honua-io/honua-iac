@@ -220,10 +220,9 @@ locals {
     local.runtime_connection_secret.arn,
     aws_secretsmanager_secret.admin_password.arn,
     aws_secretsmanager_secret.master_key.arn,
-    aws_secretsmanager_secret.runtime_settings.arn,
     local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null,
     local.pro_license_effective_secret_arn
-  ]), local.operation_key_ring_certificate_secret_arns, local.audit_chain_key_secret_arns)
+  ]), [for secret in values(aws_secretsmanager_secret.runtime_settings) : secret.arn], local.operation_key_ring_certificate_secret_arns, local.audit_chain_key_secret_arns)
   # Lambda environment budget: AWS Lambda rejects a function whose environment
   # (every key and value) exceeds 4 KB, and the reference VALUES dominate it. A
   # full Secrets Manager ARN costs 59 bytes more than the secret's name
@@ -263,7 +262,7 @@ locals {
         connection_string = local.runtime_connection_secret
         admin_password    = aws_secretsmanager_secret.admin_password
         master_key        = aws_secretsmanager_secret.master_key
-        runtime_settings  = aws_secretsmanager_secret.runtime_settings
+        runtime_settings  = aws_secretsmanager_secret.runtime_settings[local.runtime_settings_hash]
       },
       local.redis_connection != "" ? { redis_connection = aws_secretsmanager_secret.redis_connection[0] } : {},
       local.pro_license_manage_secret ? { pro_license = aws_secretsmanager_secret.pro_license[0] } : {},
@@ -429,7 +428,7 @@ locals {
       HONUA_ADMIN_PASSWORD                      = "aws:secretsmanager:${local.lambda_module_secret_ids.admin_password}"
       Security__ConnectionEncryption__MasterKey = "aws:secretsmanager:${local.lambda_module_secret_ids.master_key}"
       HONUA_OBSERVABILITY                       = "true"
-      HONUA_SETTINGS_DOCUMENT                   = "aws:secretsmanager:${local.lambda_module_secret_ids.runtime_settings}?versionId=${aws_secretsmanager_secret_version.runtime_settings.version_id}"
+      HONUA_SETTINGS_DOCUMENT                   = "aws:secretsmanager:${local.lambda_module_secret_ids.runtime_settings}?versionId=${aws_secretsmanager_secret_version.runtime_settings[local.runtime_settings_hash].version_id}"
     }, local.gp_batch_environment, local.amazon_location_environment, local.public_base_url_environment, { for key, value in var.additional_env : key => value if var.platform_release == null || !startswith(lower(replace(key, ":", "__")), "controlplane__platformrelease__") }, local.platform_release_environment.api, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.db_pool_environment.lambda, local.lambda_secret_reference_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.transcript_signing_environment, local.cors_environment, local.file_storage_environment, local.oidc_static_environment,
     var.oidc_static_jwt == null ? {} : {
       Oidc__TokenValidation__SymmetricSigningKey = "aws:secretsmanager:${local.lambda_operator_secret_ids[var.oidc_static_jwt.signing_key_secret_arn]}${var.oidc_static_jwt.signing_key_secret_version_id == "" ? "" : "?versionId=${var.oidc_static_jwt.signing_key_secret_version_id}"}"
@@ -454,7 +453,7 @@ locals {
   lambda_environment_limit_bytes = 4096
   lambda_environment_size_stand_ins = merge(
     {
-      HONUA_SETTINGS_DOCUMENT              = "aws:secretsmanager:${aws_secretsmanager_secret.runtime_settings.name}?versionId=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      HONUA_SETTINGS_DOCUMENT              = "aws:secretsmanager:${aws_secretsmanager_secret.runtime_settings[local.runtime_settings_hash].name}?versionId=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
       ConnectionStrings__DefaultConnection = "aws:secretsmanager:${can(regex(local.ambiguous_secret_name, local.runtime_connection_secret.name)) ? "arn:${split(":", data.aws_caller_identity.current.arn)[1]}:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:${local.runtime_connection_secret.name}-XXXXXX" : local.runtime_connection_secret.name}"
     },
     local.gp_batch_enabled ? {
