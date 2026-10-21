@@ -260,8 +260,8 @@ resource "aws_security_group" "batch_provisioning" {
 
   egress {
     description = "PostgreSQL to the VPC (snapshot / DB reach during provisioning)"
-    from_port   = 5432
-    to_port     = 5432
+    from_port   = local.db_port
+    to_port     = local.db_port
     protocol    = "tcp"
     cidr_blocks = [local.vpc_cidr_block]
   }
@@ -322,8 +322,8 @@ resource "aws_security_group" "batch_execution" {
 
   egress {
     description = "PostgreSQL to the VPC (DB reach for the running job)"
-    from_port   = 5432
-    to_port     = 5432
+    from_port   = local.db_port
+    to_port     = local.db_port
     protocol    = "tcp"
     cidr_blocks = [local.vpc_cidr_block]
   }

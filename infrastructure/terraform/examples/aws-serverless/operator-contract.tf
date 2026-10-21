@@ -104,6 +104,19 @@ variable "operator_contract_validation" {
   }
 
   validation {
+    condition     = try(trimspace(var.operator_contract_validation.tenant_prefix) != "", false)
+    error_message = "operator_contract_validation.tenant_prefix must contain a non-whitespace character."
+  }
+
+  validation {
+    condition = alltrue([
+      for tool in var.operator_contract_validation.mcp_required_tools :
+      try(trimspace(tool) != "", false)
+    ])
+    error_message = "Every operator_contract_validation.mcp_required_tools entry must contain a non-whitespace tool name."
+  }
+
+  validation {
     condition = try(var.operator_contract_validation.mcp_transport, null) == null ? true : (
       contains(["http", "stdio"], var.operator_contract_validation.mcp_transport)
     )

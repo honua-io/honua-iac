@@ -805,9 +805,10 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
-resource "aws_iam_policy" "lambda_secrets" {
-  name = "${local.name}-lambda-secrets"
-  policy = jsonencode({
+locals {
+  # Count the complete minified policy actually sent to IAM, including every
+  # retained document and the optional OIDC/KMS grants. Keep exact ARN scope.
+  lambda_secrets_policy_json = jsonencode({
     Version = "2012-10-17"
     Statement = concat([
       {
@@ -823,7 +824,19 @@ resource "aws_iam_policy" "lambda_secrets" {
         Resource = concat(local.operation_key_ring_certificate_kms_key_arns, local.audit_chain_key_kms_key_arns, local.oidc_signing_kms_arns)
     }] : [])
   })
-  tags = local.tags
+}
+
+resource "aws_iam_policy" "lambda_secrets" {
+  name   = "${local.name}-lambda-secrets"
+  policy = local.lambda_secrets_policy_json
+  tags   = local.tags
+
+  lifecycle {
+    precondition {
+      condition     = length(local.lambda_secrets_policy_json) <= 6144
+      error_message = "The exact Lambda secret grants exceed the 6,144-character managed IAM policy limit. Stop for a reviewed published-version inventory and retirement design; do not drop retained settings or widen secret permissions."
+    }
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_secrets" {

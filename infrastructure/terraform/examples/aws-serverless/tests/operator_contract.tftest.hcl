@@ -404,3 +404,47 @@ run "fractional_ttl_is_rejected_before_contract_projection" {
   }
   expect_failures = [var.operator_contract_validation]
 }
+
+run "empty_validation_tenant_prefix_is_rejected" {
+  command = plan
+  variables {
+    operator_contract_validation = { tenant_prefix = "" }
+  }
+  expect_failures = [var.operator_contract_validation]
+}
+
+run "whitespace_validation_tenant_prefix_is_rejected" {
+  command = plan
+  variables {
+    operator_contract_validation = { tenant_prefix = "  " }
+  }
+  expect_failures = [var.operator_contract_validation]
+}
+
+run "blank_mcp_tool_is_rejected" {
+  command = plan
+  variables {
+    operator_contract_validation = {
+      mcp_enabled        = true
+      mcp_profile        = "default"
+      mcp_transport      = "http"
+      mcp_path           = "/mcp"
+      mcp_required_tools = ["honua_get_style", "  "]
+    }
+  }
+  expect_failures = [var.operator_contract_validation]
+}
+
+run "empty_mcp_tool_is_rejected" {
+  command = plan
+  variables {
+    operator_contract_validation = {
+      mcp_enabled        = true
+      mcp_profile        = "default"
+      mcp_transport      = "http"
+      mcp_path           = "/mcp"
+      mcp_required_tools = [""]
+    }
+  }
+  expect_failures = [var.operator_contract_validation]
+}

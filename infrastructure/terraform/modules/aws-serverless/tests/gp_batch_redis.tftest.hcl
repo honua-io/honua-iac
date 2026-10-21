@@ -255,3 +255,22 @@ run "existing_custom_database_port_reaches_gp_batch" {
     error_message = "GP Batch must reach a reused database only on its configured custom port."
   }
 }
+
+run "existing_custom_database_port_reaches_both_isolated_batch_phases" {
+  command = plan
+  variables {
+    operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+    existing_db_endpoint                      = "database.example"
+    existing_db_port                          = 5544
+    existing_db_connection_string             = "Host=database.example;Port=5544;Database=honua;Username=test;Password=synthetic-only"
+    enable_customcode_egress_isolation        = true
+  }
+  assert {
+    condition = alltrue([
+      for group in [aws_security_group.batch_provisioning[0], aws_security_group.batch_execution[0]] :
+      length([for rule in group.egress : rule if startswith(rule.description, "PostgreSQL to the VPC")]) == 1 &&
+      alltrue([for rule in group.egress : rule.from_port == 5544 && rule.to_port == 5544 if startswith(rule.description, "PostgreSQL to the VPC")])
+    ])
+    error_message = "Both isolated Batch phases must reach the reused database on its configured custom port."
+  }
+}

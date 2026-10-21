@@ -773,10 +773,13 @@ functions carry the API function's environment minus its HTTP-only settings
   Keep each entry while any published Lambda version refers to it. This module
   has no automatic retirement path; deletion requires a separate reviewed
   published-version inventory and retirement workflow. Exact retained-secret
-  grants also consume the AWS managed-policy document limit (6,144 characters),
-  so retention capacity is finite and an over-limit plan must stop for a
-  reviewed retirement design; do not drop retained entries or widen permissions
-  to make it fit. The module reserves `HONUA_SETTINGS_DOCUMENT`,
+  grants also consume the AWS managed-policy document limit (6,144 characters).
+  A resource precondition checks the complete minified secret policy before
+  IAM accepts an update, including retained documents and optional OIDC/KMS
+  grants. If resource ARNs are not yet known during planning, this check is
+  deferred until apply. Stop for a reviewed retirement design when the policy
+  exceeds that budget; do not drop retained entries or widen permissions to
+  make it fit. The module reserves `HONUA_SETTINGS_DOCUMENT`,
   `Settings__Document` and the complete `ControlPlane:DeployTargets` tree;
   `additional_env` cannot replace the document, override its registered target
   or append another target. Case and configuration-separator variants are also
