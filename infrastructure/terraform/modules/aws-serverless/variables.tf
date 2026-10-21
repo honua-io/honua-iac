@@ -209,6 +209,20 @@ variable "lambda_alias_version" {
   }
 }
 
+variable "retained_runtime_settings_documents" {
+  description = "Git-retained immutable settings documents for published Lambda rollback targets. Keys are the SHA-256 of each canonical JSON value. Carry the current output entry into this map before changing the settings document; ordinary plans refuse to destroy omitted entries."
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition = alltrue([
+      for hash, document in var.retained_runtime_settings_documents :
+      try(can(regex("^[0-9a-f]{64}$", hash)) && document == jsonencode(jsondecode(document)) && sha256(document) == hash, false)
+    ])
+    error_message = "Every retained runtime settings entry must use its full lowercase SHA-256 key and exact canonical JSON document."
+  }
+}
+
 variable "admin_password" {
   description = "Admin API password for Honua (required in non-dev)."
   type        = string
@@ -245,6 +259,42 @@ variable "connection_encryption_master_key" {
 
 variable "skip_migrations" {
   description = "Skip database migrations on startup."
+  type        = bool
+  default     = true
+}
+
+variable "migration_image" {
+  description = "Optional preview image derived from the exact serving Lambda image with docker/Dockerfile.migration-lambda. Must be digest-pinned in the same ECR repository. Enables isolated schema initialization and receipt verification before serving deployment. No matching public migration artifact is currently qualified; leave null for existing installs."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.migration_image == null ? true : can(regex("^[^@]+@sha256:[a-f0-9]{64}$", var.migration_image))
+    error_message = "migration_image must be null or a digest-pinned ECR image."
+  }
+}
+
+variable "migration_packaged_manifest_sha256" {
+  description = "Canonical packaged migration manifest hash from the matching qualified server release; required with migration_image. Not an image digest or a source-tree hash."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.migration_packaged_manifest_sha256 == null ? true : can(regex("^[a-f0-9]{64}$", var.migration_packaged_manifest_sha256))
+    error_message = "migration_packaged_manifest_sha256 must be a lowercase SHA-256 digest."
+  }
+}
+
+variable "migration_target_locator_sha256" {
+  description = "Optional canonical honua.database-locator/v1 hash override for an existing database with different locator names or connection-option overrides. Default hashes the direct endpoint, effective existing_db_port or managed port 5432, db_name and Database:Schema. The runtime verifies the resolved secret before database preflight or mutation."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.migration_target_locator_sha256 == null ? true : can(regex("^[a-f0-9]{64}$", var.migration_target_locator_sha256))
+    error_message = "migration_target_locator_sha256 must be a lowercase SHA-256 digest."
+  }
+}
+
+variable "migration_create_secretsmanager_endpoint" {
+  description = "Create a Secrets Manager interface endpoint for isolated migrations in a reused VPC or a module-created no-NAT VPC, unless custom-code isolation already owns one. Set false only when the VPC provides Secrets Manager reachability."
   type        = bool
   default     = true
 }
@@ -314,6 +364,16 @@ variable "existing_db_endpoint" {
   description = "Existing PostgreSQL endpoint to reuse. Set with existing_db_connection_string."
   type        = string
   default     = ""
+}
+
+variable "existing_db_port" {
+  description = "Port of the existing PostgreSQL endpoint and pinned connection string. Set with an existing database when it uses a nondefault port; the module-managed database remains on 5432."
+  type        = number
+  default     = 5432
+  validation {
+    condition     = var.existing_db_port >= 1 && var.existing_db_port <= 65535 && floor(var.existing_db_port) == var.existing_db_port
+    error_message = "existing_db_port must be a whole TCP port from 1 to 65535."
+  }
 }
 
 variable "existing_db_connection_string" {

@@ -19,6 +19,7 @@ locals {
   public_subnets     = local.use_existing_vpc ? var.existing_public_subnet_ids : module.vpc[0].public_subnets
   private_subnets    = local.use_existing_vpc ? var.existing_private_subnet_ids : module.vpc[0].private_subnets
   db_use_existing    = var.existing_db_endpoint != "" && var.existing_db_connection_string != ""
+  db_port            = local.db_use_existing ? var.existing_db_port : 5432
   redis_enabled      = var.redis_enabled || var.redis_connection_string != ""
   redis_create       = var.redis_enabled && var.redis_connection_string == ""
   image_ref          = split("@", var.image)[0]
@@ -105,7 +106,7 @@ locals {
   # bounds from Limits:Connections (local.db_pool_environment, per process).
   # db_connection_string_options comes last, so an operator keyword wins.
   db_pool_options      = ";Maximum Pool Size=${var.lambda_db_max_pool_size};Connection Idle Lifetime=${var.db_connection_idle_lifetime_seconds};Connection Pruning Interval=10;Timeout=15"
-  db_connection_string = local.db_use_existing ? var.existing_db_connection_string : "Host=${local.db_endpoint};Port=5432;Database=${var.db_name};Username=${var.db_username};Password=${local.db_password}${local.db_ssl}${local.db_pool_options}${local.db_conn_options}"
+  db_connection_string = local.db_use_existing ? var.existing_db_connection_string : "Host=${local.db_endpoint};Port=${local.db_port};Database=${var.db_name};Username=${var.db_username};Password=${local.db_password}${local.db_ssl}${local.db_pool_options}${local.db_conn_options}"
   # The server's NpgsqlDataSource (PostgresDataSourceFactory) overwrites the
   # connection string's pool keywords with Limits:Connections, whose defaults
   # are MaxConnectionPoolSize 200, MinConnectionPoolSize 20 (never pruned below)
@@ -172,7 +173,13 @@ locals {
     FileStorage__AwsS3__KeyPrefix = var.file_storage_aws_s3_key_prefix
   } : {}) : {}
   lambda_function_name = "${local.name}-honua"
-  lambda_target_id     = "${local.lambda_function_name}-${var.lambda_alias_name}"
+  # Compute from the same provider identity/name as the function, without a
+  # self-reference cycle through aws_lambda_function.this.environment.
+  lambda_function_arn = "arn:${split(":", data.aws_caller_identity.current.arn)[1]}:lambda:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:function:${local.lambda_function_name}"
+  lambda_target_name  = "${local.lambda_function_name}-${var.lambda_alias_name}"
+  # One bounded identifier is shared by the server registry, operator output,
+  # and agent handoff. Preserve existing short IDs and the full alias ARN.
+  lambda_target_id = length(local.lambda_target_name) <= 128 ? local.lambda_target_name : "${substr(local.lambda_target_name, 0, 95)}-${substr(sha256(local.lambda_target_name), 0, 32)}"
   # SNS targets for CloudWatch alarm/OK notifications: caller-supplied topic
   # ARNs plus an optional module-created topic (when alarm_email is set).
   alarm_action_arns = concat(var.alarm_sns_topic_arns, aws_sns_topic.alarms[*].arn)
@@ -215,7 +222,7 @@ locals {
     aws_secretsmanager_secret.master_key.arn,
     local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null,
     local.pro_license_effective_secret_arn
-  ]), local.operation_key_ring_certificate_secret_arns, local.audit_chain_key_secret_arns)
+  ]), [for secret in values(aws_secretsmanager_secret.runtime_settings) : secret.arn], local.operation_key_ring_certificate_secret_arns, local.audit_chain_key_secret_arns)
   # Lambda environment budget: AWS Lambda rejects a function whose environment
   # (every key and value) exceeds 4 KB, and the reference VALUES dominate it. A
   # full Secrets Manager ARN costs 59 bytes more than the secret's name
@@ -255,6 +262,7 @@ locals {
         connection_string = local.runtime_connection_secret
         admin_password    = aws_secretsmanager_secret.admin_password
         master_key        = aws_secretsmanager_secret.master_key
+        runtime_settings  = aws_secretsmanager_secret.runtime_settings[local.runtime_settings_hash]
       },
       local.redis_connection != "" ? { redis_connection = aws_secretsmanager_secret.redis_connection[0] } : {},
       local.pro_license_manage_secret ? { pro_license = aws_secretsmanager_secret.pro_license[0] } : {},
@@ -407,33 +415,21 @@ locals {
   #   so it is emitted only when true.
   # - HONUA_SERVE_ADMIN_UI / HONUA_ADMIN_UI are emitted only when true (absent
   #   and "false" are the same to every reader).
-  # - The deploy target's ParameterEntries are omitted where the
-  #   honua-gitops-aws-lambda backend derives the same value
-  #   (AwsLambdaGitOpsDeployBackend): aws.lambda.function_name falls back to
-  #   TargetName (the same function name), aws.lambda.alias_name to "live", and
-  #   aws.region to the SDK default, i.e. the AWS_REGION Lambda sets. A
-  #   non-default alias is still passed.
+  # - Deploy-target settings live in a version-pinned settings document, keeping
+  #   account/region/function/alias authority explicit without consuming the
+  #   environment budget with repeated ControlPlane__DeployTargets prefixes.
   lambda_environment = merge({ for i, h in local.lambda_additional_allowed_hosts : "HostValidation__AllowedHosts__${i + 1}" => h },
     var.skip_migrations ? { HONUA_SKIP_MIGRATIONS = "true" } : {},
     var.serve_admin_ui ? { HONUA_SERVE_ADMIN_UI = "true", HONUA_ADMIN_UI = "true" } : {},
     {
-      HostValidation__AllowedHosts__0                             = "*.execute-api.${data.aws_region.current.name}.amazonaws.com"
-      SecurityHeaders__HstsHttpsOnly                              = "false"
-      ConnectionStrings__DefaultConnection                        = "aws:secretsmanager:${local.lambda_module_secret_ids.connection_string}"
-      HONUA_ADMIN_PASSWORD                                        = "aws:secretsmanager:${local.lambda_module_secret_ids.admin_password}"
-      Security__ConnectionEncryption__MasterKey                   = "aws:secretsmanager:${local.lambda_module_secret_ids.master_key}"
-      HONUA_OBSERVABILITY                                         = "true"
-      ControlPlane__DeployTargets__0__TargetId                    = local.lambda_target_id
-      ControlPlane__DeployTargets__0__TargetKind                  = "AwsLambda"
-      ControlPlane__DeployTargets__0__Backend                     = "honua-gitops-aws-lambda"
-      ControlPlane__DeployTargets__0__Environment                 = var.environment
-      ControlPlane__DeployTargets__0__TargetName                  = local.lambda_function_name
-      ControlPlane__DeployTargets__0__ArtifactReference           = var.image
-      ControlPlane__DeployTargets__0__RequiresOutOfBandMigrations = "true"
-      }, var.lambda_alias_name != "live" ? {
-      ControlPlane__DeployTargets__0__ParameterEntries__0__Key   = "aws.lambda.alias_name"
-      ControlPlane__DeployTargets__0__ParameterEntries__0__Value = var.lambda_alias_name
-    } : {}, local.gp_batch_environment, local.amazon_location_environment, local.public_base_url_environment, { for key, value in var.additional_env : key => value if var.platform_release == null || !startswith(lower(replace(key, ":", "__")), "controlplane__platformrelease__") }, local.platform_release_environment.api, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.db_pool_environment.lambda, local.lambda_secret_reference_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.transcript_signing_environment, local.cors_environment, local.file_storage_environment, local.oidc_static_environment,
+      HostValidation__AllowedHosts__0           = "*.execute-api.${data.aws_region.current.name}.amazonaws.com"
+      SecurityHeaders__HstsHttpsOnly            = "false"
+      ConnectionStrings__DefaultConnection      = "aws:secretsmanager:${local.lambda_module_secret_ids.connection_string}"
+      HONUA_ADMIN_PASSWORD                      = "aws:secretsmanager:${local.lambda_module_secret_ids.admin_password}"
+      Security__ConnectionEncryption__MasterKey = "aws:secretsmanager:${local.lambda_module_secret_ids.master_key}"
+      HONUA_OBSERVABILITY                       = "true"
+      HONUA_SETTINGS_DOCUMENT                   = "aws:secretsmanager:${local.lambda_module_secret_ids.runtime_settings}?versionId=${aws_secretsmanager_secret_version.runtime_settings[local.runtime_settings_hash].version_id}"
+    }, local.gp_batch_environment, local.amazon_location_environment, local.public_base_url_environment, { for key, value in var.additional_env : key => value if var.platform_release == null || !startswith(lower(replace(key, ":", "__")), "controlplane__platformrelease__") }, local.platform_release_environment.api, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.db_pool_environment.lambda, local.lambda_secret_reference_environment, local.xray_environment, local.pro_license_environment, local.licensing_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.transcript_signing_environment, local.cors_environment, local.file_storage_environment, local.oidc_static_environment,
     var.oidc_static_jwt == null ? {} : {
       Oidc__TokenValidation__SymmetricSigningKey = "aws:secretsmanager:${local.lambda_operator_secret_ids[var.oidc_static_jwt.signing_key_secret_arn]}${var.oidc_static_jwt.signing_key_secret_version_id == "" ? "" : "?versionId=${var.oidc_static_jwt.signing_key_secret_version_id}"}"
   })
@@ -457,6 +453,7 @@ locals {
   lambda_environment_limit_bytes = 4096
   lambda_environment_size_stand_ins = merge(
     {
+      HONUA_SETTINGS_DOCUMENT              = "aws:secretsmanager:${aws_secretsmanager_secret.runtime_settings[local.runtime_settings_hash].name}?versionId=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
       ConnectionStrings__DefaultConnection = "aws:secretsmanager:${can(regex(local.ambiguous_secret_name, local.runtime_connection_secret.name)) ? "arn:${split(":", data.aws_caller_identity.current.arn)[1]}:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:${local.runtime_connection_secret.name}-XXXXXX" : local.runtime_connection_secret.name}"
     },
     local.gp_batch_enabled ? {
@@ -513,8 +510,8 @@ resource "aws_security_group" "lambda" {
 
   egress {
     description = "PostgreSQL access"
-    from_port   = 5432
-    to_port     = 5432
+    from_port   = local.db_port
+    to_port     = local.db_port
     protocol    = "tcp"
     cidr_blocks = [local.vpc_cidr_block]
   }
@@ -523,8 +520,8 @@ resource "aws_security_group" "lambda" {
     for_each = local.db_use_existing ? [1] : []
     content {
       description = "Existing PostgreSQL access"
-      from_port   = 5432
-      to_port     = 5432
+      from_port   = local.db_port
+      to_port     = local.db_port
       protocol    = "tcp"
       cidr_blocks = ["0.0.0.0/0"]
     }
@@ -808,9 +805,33 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
-resource "aws_iam_policy" "lambda_secrets" {
-  name = "${local.name}-lambda-secrets"
-  policy = jsonencode({
+locals {
+  # Count the complete minified policy actually sent to IAM, including every
+  # retained document and the optional OIDC/KMS grants. Keep exact ARN scope.
+  # A Secrets Manager ARN ends in a six-character generated suffix. Resource
+  # ARNs are unknown on the first plan, so use equal-length, plan-known names
+  # for the early budget guard. The actual policy below remains authoritative.
+  lambda_secret_arn_standin_prefix = "arn:${data.aws_partition.current.partition}:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:"
+  lambda_secret_arns_plan_known = concat(compact([
+    "${local.lambda_secret_arn_standin_prefix}${local.name}/${local.rds_proxy_enabled ? "db-proxy-connection" : "connection-string"}-XXXXXX",
+    "${local.lambda_secret_arn_standin_prefix}${local.name}/admin-password-XXXXXX",
+    "${local.lambda_secret_arn_standin_prefix}${local.name}/connection-encryption-master-key-XXXXXX",
+    local.redis_enabled ? "${local.lambda_secret_arn_standin_prefix}${local.name}/redis-connection-XXXXXX" : null,
+    local.pro_license_adopted ? trimspace(var.pro_license_secret_arn) : local.pro_license_manage_secret ? "${local.lambda_secret_arn_standin_prefix}${local.name}/license-pro-XXXXXX" : null
+  ]), [for hash in keys(local.runtime_settings_documents) : "${local.lambda_secret_arn_standin_prefix}${local.name}/runtime-settings-${hash}-XXXXXX"], local.operation_key_ring_certificate_secret_arns, local.audit_chain_key_secret_arns)
+  lambda_secrets_policy_plan_known_json = jsonencode({
+    Version = "2012-10-17"
+    Statement = concat([{
+      Effect   = "Allow"
+      Action   = ["secretsmanager:GetSecretValue"]
+      Resource = concat(local.lambda_secret_arns_plan_known, local.oidc_signing_secret_arns)
+      }], length(concat(local.operation_key_ring_certificate_kms_key_arns, local.audit_chain_key_kms_key_arns, local.oidc_signing_kms_arns)) > 0 ? [{
+      Effect   = "Allow"
+      Action   = ["kms:Decrypt", "kms:DescribeKey"]
+      Resource = concat(local.operation_key_ring_certificate_kms_key_arns, local.audit_chain_key_kms_key_arns, local.oidc_signing_kms_arns)
+    }] : [])
+  })
+  lambda_secrets_policy_json = jsonencode({
     Version = "2012-10-17"
     Statement = concat([
       {
@@ -826,7 +847,30 @@ resource "aws_iam_policy" "lambda_secrets" {
         Resource = concat(local.operation_key_ring_certificate_kms_key_arns, local.audit_chain_key_kms_key_arns, local.oidc_signing_kms_arns)
     }] : [])
   })
-  tags = local.tags
+}
+
+resource "terraform_data" "lambda_secrets_policy_budget" {
+  input = length(local.lambda_secrets_policy_plan_known_json)
+
+  lifecycle {
+    precondition {
+      condition     = length(local.lambda_secrets_policy_plan_known_json) <= 6144
+      error_message = "The plan-known complete Lambda secret grants exceed the 6,144-character managed IAM policy limit before immutable settings secrets can be created. Review retained versions; do not drop them or widen grants."
+    }
+  }
+}
+
+resource "aws_iam_policy" "lambda_secrets" {
+  name   = "${local.name}-lambda-secrets"
+  policy = local.lambda_secrets_policy_json
+  tags   = local.tags
+
+  lifecycle {
+    precondition {
+      condition     = length(local.lambda_secrets_policy_json) <= 6144
+      error_message = "The exact Lambda secret grants exceed the 6,144-character managed IAM policy limit. Stop for a reviewed published-version inventory and retirement design; do not drop retained settings or widen secret permissions."
+    }
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_secrets" {
@@ -1013,6 +1057,9 @@ resource "aws_lambda_function" "this" {
   }
 
   depends_on = [
+    aws_lambda_invocation.migration,
+    aws_iam_role_policy_attachment.lambda_secrets,
+    aws_iam_role_policy.lambda_request_secret_references,
     aws_ecr_repository_policy.lambda_image_access,
     aws_cloudwatch_log_group.lambda,
     aws_security_group_rule.rds_from_lambda,
@@ -1024,6 +1071,7 @@ resource "aws_lambda_function" "this" {
     null_resource.db_role_session_defaults,
     aws_secretsmanager_secret_version.admin_password,
     aws_secretsmanager_secret_version.master_key,
+    aws_secretsmanager_secret_version.runtime_settings,
     aws_secretsmanager_secret_version.redis_connection,
     aws_secretsmanager_secret_version.pro_license,
     aws_iam_role_policy.transcript_signing,

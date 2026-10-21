@@ -38,6 +38,16 @@ output "lambda_alias_function_version" {
   value = aws_lambda_alias.live.function_version
 }
 
+output "runtime_settings_retention_entry" {
+  description = "Credential-free canonical settings document to copy into retained_runtime_settings_documents before a subsequent changed deployment. Retain while any published Lambda version references it."
+  value = {
+    hash      = local.runtime_settings_hash
+    document  = local.runtime_settings_json
+    secretArn = aws_secretsmanager_secret.runtime_settings[local.runtime_settings_hash].arn
+    versionId = aws_secretsmanager_secret_version.runtime_settings[local.runtime_settings_hash].version_id
+  }
+}
+
 output "control_plane_target_kind" {
   value = "AwsLambda"
 }
@@ -47,7 +57,7 @@ output "control_plane_backend_name" {
 }
 
 output "control_plane_target_id" {
-  value = "${aws_lambda_function.this.function_name}-${aws_lambda_alias.live.name}"
+  value = local.lambda_target_id
 }
 
 output "control_plane_target_name" {

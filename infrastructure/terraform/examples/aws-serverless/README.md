@@ -11,6 +11,23 @@ terraform init
 terraform plan -var-file=presets/small.tfvars.example
 ```
 
+## Agent handoff
+
+This root emits `deployment_contract`, `validation_contract`, and
+`operations_contract` using [operator contract v2](../../../../docs/operator-contract.md).
+Pass the release and Terraform state identity through `operator_contract_identity`;
+omitting it produces an explicitly unqualified development contract. The contract
+contains secret locators, never credential values. Its database reference follows
+the runtime connection, including RDS Proxy; migration retains its separate
+direct connection reference.
+
+Immutable identity is refused when the configured image differs from the claim,
+the serving alias still selects an older configured version, or the alias's
+image/execution role differs from the claim. Complete the deployment or restore
+the matching configuration before creating the handoff. Matching contract output
+alone does not prove an installation: the agent must still bind the successful
+apply receipt and independently verify the actual runtime, readiness, and access.
+
 ## Redis and the operation key-ring certificate
 
 `redis_enabled` defaults to `true`, and a Redis-connected server refuses to start
@@ -102,6 +119,7 @@ passes them to the module (see the module's
 |----------|---------|-------------|
 | `domain_name` | `""` | Custom API hostname on any domain you own, for example `gis.example.com`. Set together with `route53_zone_id`; also sets `Public__BaseUrl`. |
 | `public_base_url` | `""` | Optional public origin for server-built absolute links (`Public__BaseUrl`), for example `https://maps.example.com`. Empty uses `https://<domain_name>`. |
+| `retained_runtime_settings_documents` | `{}` | Hash-keyed, canonical JSON documents for published Lambda rollback targets. Before a changed deployment, add the previous `runtime_settings_retention_entry` output to a Git-managed variables file; an omitted prior entry blocks the plan. |
 | `route53_zone_id` | `""` | Route53 hosted zone that owns `domain_name`; the module validates the ACM certificate and creates the alias record there. |
 
 With both set, `honua_url` and the deploy contract's `endpoint` are
@@ -149,29 +167,68 @@ input in that set.
 
 ## Migrations on the serverless root
 
-`skip_migrations` defaults to `true`: concurrent Lambda cold starts must not race
-to migrate the schema, so the Lambda never migrates the database. **Until
-honua-server ships a `HONUA_MIGRATE_ONLY` exit mode (planned for 2026.1.x), the
-release harness (or the operator) runs migrations out-of-band after `apply` and
-before the cell serves traffic**:
+`skip_migrations` defaults to `true`; serving cold starts must not race to initialize
+the schema. A fresh installation needs a separately verified initialization step
+before traffic. The historical start-a-web-server-and-wait-for-readiness procedure
+is not the isolated migration contract.
 
-1. Start the digest-pinned generic (ECS) honua-server image once, with
-   `ConnectionStrings__DefaultConnection`, `HONUA_ADMIN_PASSWORD` and
-   `Security__ConnectionEncryption__MasterKey` set from the secrets named by
-   `migrate_db_connection_secret_arn`, `migrate_admin_password_secret_arn` and
-   `migrate_master_key_secret_arn` (as `aws:secretsmanager:<arn>` references or
-   resolved values).
-2. Run it where the database is reachable: as an in-VPC task in
-   `migrate_private_subnet_ids` with `migrate_security_group_id`, or from a
-   runner admitted with `db_publicly_accessible = true` and
-   `db_additional_ingress_cidrs`.
-3. Wait for `GET /healthz/ready` to return 200 (the server migrates on startup),
-   then stop it. The Lambda can now serve.
+The optional `migration_image` preview wires a dedicated, published-version Lambda
+function derived from the exact serving image. Supply its digest and the matching
+`migration_packaged_manifest_sha256` from a qualified release. Terraform invokes
+only that numeric version, with a durable run ID and no connection data in the
+event. Serving API and control-plane functions depend on a successful receipt that
+matches the function ARN/version, run, database locator, metadata schema and
+packaged migration manifest. A failed or malformed receipt blocks that deployment.
+After a failed or malformed receipt, ordinary `terraform plan` can re-evaluate
+the retained failed invocation before it can propose a replacement. Inspect
+and fix the cause first. From this example root, review a plan that replaces
+**only** the retained run ID and `CREATE_ONLY` invocation:
 
-`migrate_required` is `true` while `skip_migrations` is on, and
-`migrate_guidance` repeats these steps. When `HONUA_MIGRATE_ONLY` exists, step 3
-becomes a run-to-completion exit and this section will be updated. Outputs carry
-ARNs and IDs only, never secret values.
+```bash
+umask 077
+terraform plan -out=migration-recovery.tfplan \
+  -replace='module.honua.random_uuid.migration[0]' \
+  -replace='module.honua.aws_lambda_invocation.migration[0]'
+terraform show migration-recovery.tfplan
+terraform apply migration-recovery.tfplan
+rm migration-recovery.tfplan
+```
+
+Verify that these are the only explicitly forced replacements; review other
+proposed creations or changes against the intended deployment before applying.
+Keep the saved plan private because it can contain state and secret material.
+The replacement creates a fresh
+run ID; the invocation must return a new exact successful receipt before
+serving deployment proceeds. This is an explicit operator action, not an
+automatic retry or a live AWS qualification claim.
+
+The migration role can read only the direct database secret's pinned version; it
+has no admin/Redis/license secret or alias-update authority. Reused VPCs and
+module-created no-NAT VPCs reuse the custom-code Secrets Manager endpoint or
+create a dedicated endpoint. A reused VPC's NAT routing is unknown to this
+module, even when `enable_nat_gateway` retains its default. Set
+`migration_create_secretsmanager_endpoint = false` only when that VPC already
+provides Secrets Manager reachability. PostGIS extension provisioning stays separate.
+
+Automatic locator hashing covers the module's ASCII endpoint, effective
+`existing_db_port` (5432 for a module-managed database), database name and
+configured `Database:Schema`. For a reused database, set `existing_db_port` to
+the port in the pinned `existing_db_connection_string`; the module uses it for
+narrow Lambda database egress as well. Existing databases with different locator
+names or connection-option overrides still need a canonical
+`migration_target_locator_sha256`; the runtime checks the actual resolved secret
+against it before database preflight or mutation. Function rollback does not undo
+database migrations.
+
+No matching public migration image or real AWS execution is qualified yet. Leave
+the preview disabled for existing installs. `migrate_required` reports whether
+initialization must be arranged separately; `migration_contract` preserves the
+exact invocation receipt when the preview is enabled. This output preserves the
+provider's sensitive-result marking and is hidden from ordinary Terraform output;
+do not declassify or publish a function response. The receipt contract contains
+identifiers and verification results, not credentials. A cached Terraform receipt is not a new check of
+current database state; runtime readiness and deployment recovery still require
+independent verification.
 
 
 ### Optional static JWT issuer

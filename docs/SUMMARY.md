@@ -30,3 +30,4 @@
 * [How modules are versioned and consumed](module-versioning.md)
 * [honua.operator-contract/v2](operator-contract.md)
 * [Plan and state lineage](operator-state.md)
+* [Runtime identity for agent handoff](runtime-binding.md)

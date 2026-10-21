@@ -224,6 +224,8 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
 
       - name: Terraform fmt check
         run: |
@@ -313,6 +315,9 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: Lambda secret-policy publication order contract
+        run: python3 infrastructure/terraform/validation/scripts/shared/test-lambda-secret-policy-order.py
+
       - name: Agent container isolation contracts (mock providers only)
         run: terraform -chdir=infrastructure/terraform/internal/aws-agent-worker test -no-color
 
@@ -350,6 +355,23 @@ jobs:
         shell: bash
         run: python3 -m unittest discover -s infrastructure/terraform/examples/aws-cert/postgis-bootstrap -p 'test_*.py'
 
+      - name: Native EKS runtime binding output (mock providers only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          native_tests="$RUNNER_TEMP/native-eks-tests.jsonl"
+          if terraform -chdir=infrastructure/terraform/examples/aws-eks-native test -json -verbose -filter=tests/native_install.tftest.hcl > "$native_tests"; then
+            node infrastructure/terraform/validation/scripts/shared/test-native-eks-runtime-binding-output.mjs "$native_tests"
+          else
+            node infrastructure/terraform/validation/scripts/shared/test-native-eks-runtime-binding-output.mjs "$native_tests" --diagnostics-only || true
+            exit 1
+          fi
+          python3 -m unittest discover -s infrastructure/terraform/examples/aws-eks-native/tests -p 'test_*.py'
+
+      - name: Runtime settings history omission fails closed (mock providers only)
+        shell: bash
+        run: ./infrastructure/terraform/validation/scripts/shared/test-runtime-settings-retention-omission.sh
+
       - name: Module contract tests (multi-node topology, licensing mode)
         shell: bash
         run: |
@@ -363,12 +385,22 @@ jobs:
           node infrastructure/terraform/validation/scripts/shared/test-deployment-safety-output.mjs "$RUNNER_TEMP/aws-safety-tests.jsonl"
           terraform -chdir=infrastructure/terraform/examples/aws test -no-color -filter=tests/operations_policy_passthrough.tftest.hcl -filter=tests/http_redirect_passthrough.tftest.hcl -filter=tests/studio_end_user_authorization_passthrough.tftest.hcl -filter=tests/platform_release.tftest.hcl -filter=tests/transcript_signing.tftest.hcl
           terraform -chdir=infrastructure/terraform/modules/aws-serverless test -no-color
-          terraform -chdir=infrastructure/terraform/examples/aws-serverless test -no-color
+          lambda_test_filters=()
+          for test_file in infrastructure/terraform/examples/aws-serverless/tests/*.tftest.hcl; do
+            [[ "${test_file##*/}" == "operator_contract.tftest.hcl" ]] && continue
+            lambda_test_filters+=("-filter=tests/${test_file##*/}")
+          done
+          terraform -chdir=infrastructure/terraform/examples/aws-serverless test -no-color "${lambda_test_filters[@]}"
+          lambda_tests="$RUNNER_TEMP/lambda-operator-tests.jsonl"
+          if terraform -chdir=infrastructure/terraform/examples/aws-serverless test -json -verbose -filter=tests/operator_contract.tftest.hcl > "$lambda_tests"; then
+            node infrastructure/terraform/validation/scripts/shared/test-lambda-operator-contract-output.mjs "$lambda_tests"
+          else
+            node infrastructure/terraform/validation/scripts/shared/test-lambda-operator-contract-output.mjs "$lambda_tests" --diagnostics-only || true
+            exit 1
+          fi
           terraform -chdir=infrastructure/terraform/examples/aws-cert test -no-color
           terraform -chdir=infrastructure/terraform/modules/aws-eks test -no-color
           terraform -chdir=infrastructure/terraform/examples/aws-eks test -no-color
-          terraform -chdir=infrastructure/terraform/examples/aws-eks-native test -no-color
-          python3 -m unittest discover -s infrastructure/terraform/examples/aws-eks-native/tests -p 'test_*.py'
           terraform -chdir=infrastructure/terraform/modules/azure-aca test -no-color
 
       - name: Post-apply caller and named-evidence contract

@@ -23,6 +23,16 @@ mock_provider "external" {
   }
 }
 
+# A mocked Kubernetes Service has an empty computed status unless its observed
+# LoadBalancer hostname is supplied. The root intentionally joins this value to
+# the exact AWS load balancer lookup and configured runtime binding.
+override_resource {
+  target = kubernetes_service_v1.public
+  values = { status = [{ load_balancer = [{ ingress = [{
+    hostname = "honua-it.elb.us-east-1.amazonaws.com"
+  }] }] }] }
+}
+
 override_data {
   target = data.external.public_certificate
   values = { result = {
@@ -112,7 +122,7 @@ variables {
 }
 
 run "native_install_projects_configured_resources" {
-  command = plan
+  command = apply
   assert {
     condition = (output.runtime_binding_contract.backend == "honua-kubernetes-deployment" &&
       output.runtime_binding_contract.resourceIdentity.routeKind == "LoadBalancerService" &&
@@ -146,7 +156,7 @@ run "native_install_projects_configured_resources" {
 }
 
 run "external_dns_is_unqualified" {
-  command = plan
+  command = apply
   variables {
     route53_zone_id = ""
   }

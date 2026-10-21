@@ -8,12 +8,22 @@ variable "environment" {
   description = "Environment name used in resource naming."
   type        = string
   default     = "it"
+
+  validation {
+    condition     = try(trimspace(var.environment) != "", false)
+    error_message = "environment must contain a non-whitespace character for resource and operator-contract identity."
+  }
 }
 
 variable "name_prefix" {
   description = "Prefix used for resource names."
   type        = string
   default     = "honuasl"
+
+  validation {
+    condition     = try(trimspace(var.name_prefix) != "", false)
+    error_message = "name_prefix must contain a non-whitespace character for resource and operator-contract identity."
+  }
 }
 
 variable "existing_vpc_id" {
@@ -59,6 +69,16 @@ variable "existing_db_endpoint" {
   default     = ""
 }
 
+variable "existing_db_port" {
+  description = "Port of the reused PostgreSQL endpoint and existing_db_connection_string. The module-managed database remains on 5432."
+  type        = number
+  default     = 5432
+  validation {
+    condition     = var.existing_db_port >= 1 && var.existing_db_port <= 65535 && floor(var.existing_db_port) == var.existing_db_port
+    error_message = "existing_db_port must be a whole TCP port from 1 to 65535."
+  }
+}
+
 variable "existing_db_connection_string" {
   description = "Existing PostgreSQL connection string to reuse."
   type        = string
@@ -94,6 +114,12 @@ variable "lambda_alias_version" {
   description = "Optional published Lambda version to pin the stable alias to."
   type        = string
   default     = null
+}
+
+variable "retained_runtime_settings_documents" {
+  description = "Previously published runtime settings entries to retain for Lambda rollback, copied from the runtime_settings_retention_entry output."
+  type        = map(string)
+  default     = {}
 }
 
 variable "db_publicly_accessible" {
@@ -183,6 +209,42 @@ variable "redis_connection_cidrs" {
   default     = []
 }
 
+variable "migration_image" {
+  description = "Optional preview image derived from the exact serving Lambda image with docker/Dockerfile.migration-lambda. Must be digest-pinned in the same ECR repository. Enables isolated schema initialization and receipt verification before serving deployment. No matching public migration artifact is currently qualified; leave null for existing installs."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.migration_image == null ? true : can(regex("^[^@]+@sha256:[a-f0-9]{64}$", var.migration_image))
+    error_message = "migration_image must be null or a digest-pinned ECR image."
+  }
+}
+
+variable "migration_packaged_manifest_sha256" {
+  description = "Canonical packaged migration manifest hash from the matching qualified server release; required with migration_image. Not an image digest or a source-tree hash."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.migration_packaged_manifest_sha256 == null ? true : can(regex("^[a-f0-9]{64}$", var.migration_packaged_manifest_sha256))
+    error_message = "migration_packaged_manifest_sha256 must be a lowercase SHA-256 digest."
+  }
+}
+
+variable "migration_target_locator_sha256" {
+  description = "Optional canonical honua.database-locator/v1 hash override for an existing database with different locator names or connection-option overrides. Default hashes the direct endpoint, effective existing_db_port or managed port 5432, db_name and Database:Schema. The runtime verifies the resolved secret before database preflight or mutation."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.migration_target_locator_sha256 == null ? true : can(regex("^[a-f0-9]{64}$", var.migration_target_locator_sha256))
+    error_message = "migration_target_locator_sha256 must be a lowercase SHA-256 digest."
+  }
+}
+
+variable "migration_create_secretsmanager_endpoint" {
+  description = "Create a Secrets Manager interface endpoint for isolated migrations in a reused VPC or a module-created no-NAT VPC, unless custom-code isolation already owns one. Set false only when the VPC provides Secrets Manager reachability."
+  type        = bool
+  default     = true
+}
+
 variable "skip_migrations" {
   description = "Skip migrations on Lambda startup (default true). The database must then be migrated out-of-band before serving; the migrate_* outputs carry the inputs for that step (see README, \"Migrations on the serverless root\")."
   type        = bool
@@ -193,6 +255,11 @@ variable "tags" {
   description = "Additional tags for resources."
   type        = map(string)
   default     = {}
+
+  validation {
+    condition     = try(alltrue([for key in keys(var.tags) : can(regex("^[ -~]+$", key))]), false)
+    error_message = "Tag names must contain only printable ASCII characters and cannot be empty, as required by the canonical operator contract."
+  }
 }
 
 variable "enable_dashboard" {

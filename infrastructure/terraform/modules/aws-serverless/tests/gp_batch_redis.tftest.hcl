@@ -199,6 +199,11 @@ run "redis_on_gp_job_carries_redis_and_key_ring_references" {
     condition     = contains(flatten([for i in aws_security_group.redis[0].ingress : i.security_groups if i.from_port == 6379]), aws_security_group.batch[0].id)
     error_message = "The module-managed Redis security group must admit the GP Batch security group."
   }
+
+  assert {
+    condition     = local.db_port == 5432 && length([for rule in aws_security_group.batch[0].egress : rule if rule.description == "PostgreSQL access"]) == 1 && alltrue([for rule in aws_security_group.batch[0].egress : rule.from_port == 5432 && rule.to_port == 5432 if rule.description == "PostgreSQL access"])
+    error_message = "GP Batch must retain narrow port 5432 egress for the module-managed database."
+  }
 }
 
 run "redis_off_gp_job_carries_neither" {
@@ -230,5 +235,42 @@ run "redis_off_gp_job_carries_neither" {
   assert {
     condition     = length([for e in aws_security_group.batch[0].egress : e if e.from_port == 6379]) == 0
     error_message = "Redis-off must not open Redis egress from the GP Batch security group."
+  }
+}
+
+run "existing_custom_database_port_reaches_gp_batch" {
+  command = plan
+  variables {
+    operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+    existing_db_endpoint                      = "database.example"
+    existing_db_port                          = 5544
+    existing_db_connection_string             = "Host=database.example;Port=5544;Database=honua;Username=test;Password=synthetic-only"
+  }
+  assert {
+    condition = (
+      local.db_port == 5544 &&
+      length([for rule in aws_security_group.batch[0].egress : rule if contains(["PostgreSQL access", "Existing PostgreSQL access"], rule.description)]) == 2 &&
+      alltrue([for rule in aws_security_group.batch[0].egress : rule.from_port == 5544 && rule.to_port == 5544 if contains(["PostgreSQL access", "Existing PostgreSQL access"], rule.description)])
+    )
+    error_message = "GP Batch must reach a reused database only on its configured custom port."
+  }
+}
+
+run "existing_custom_database_port_reaches_both_isolated_batch_phases" {
+  command = plan
+  variables {
+    operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+    existing_db_endpoint                      = "database.example"
+    existing_db_port                          = 5544
+    existing_db_connection_string             = "Host=database.example;Port=5544;Database=honua;Username=test;Password=synthetic-only"
+    enable_customcode_egress_isolation        = true
+  }
+  assert {
+    condition = alltrue([
+      for group in [aws_security_group.batch_provisioning[0], aws_security_group.batch_execution[0]] :
+      length([for rule in group.egress : rule if startswith(rule.description, "PostgreSQL to the VPC")]) == 1 &&
+      alltrue([for rule in group.egress : rule.from_port == 5544 && rule.to_port == 5544 if startswith(rule.description, "PostgreSQL to the VPC")])
+    ])
+    error_message = "Both isolated Batch phases must reach the reused database on its configured custom port."
   }
 }

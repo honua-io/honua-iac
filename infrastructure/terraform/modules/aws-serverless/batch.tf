@@ -245,8 +245,8 @@ resource "aws_security_group" "batch" {
 
   egress {
     description = "PostgreSQL access"
-    from_port   = 5432
-    to_port     = 5432
+    from_port   = local.db_port
+    to_port     = local.db_port
     protocol    = "tcp"
     cidr_blocks = [local.vpc_cidr_block]
   }
@@ -255,8 +255,8 @@ resource "aws_security_group" "batch" {
     for_each = local.db_use_existing ? [1] : []
     content {
       description = "Existing PostgreSQL access"
-      from_port   = 5432
-      to_port     = 5432
+      from_port   = local.db_port
+      to_port     = local.db_port
       protocol    = "tcp"
       cidr_blocks = ["0.0.0.0/0"]
     }

@@ -147,7 +147,7 @@ function deepEqual(a, b) {
   return false;
 }
 
-class SchemaValidator {
+export class SchemaValidator {
   constructor(root) {
     this.root = root;
   }
@@ -200,6 +200,16 @@ class SchemaValidator {
       }
       if (schema.minLength !== undefined && value.length < schema.minLength) {
         errors.push({ path, message: `shorter than minLength ${schema.minLength}` });
+      }
+      if (schema.maxLength !== undefined && value.length > schema.maxLength) {
+        errors.push({ path, message: `longer than maxLength ${schema.maxLength}` });
+      }
+      if (schema.format === 'uri') {
+        try {
+          new URL(value);
+        } catch {
+          errors.push({ path, message: 'not an absolute URI' });
+        }
       }
     }
 
@@ -508,12 +518,17 @@ function checkEndpointAgreement(envelope, findings) {
   const base = envelope.deployment_contract?.endpoints?.public_base_url;
   if (!base) return;
 
-  const ingress = envelope.deployment_contract?.dependencies?.ingress?.endpoint;
-  if (ingress && ingress !== base) {
+  const deployment = envelope.deployment_contract;
+  const ingress = deployment?.dependencies?.ingress;
+  const lambdaPublicOrigin = deployment?.stack?.platform === 'aws' &&
+    deployment?.stack?.runtime === 'lambda' &&
+    deployment?.workload?.kind === 'AwsLambda' &&
+    ingress?.kind === 'aws-apigatewayv2-http';
+  if (ingress?.endpoint && ingress.endpoint !== base && !lambdaPublicOrigin) {
     findings.push({
       code: 'E_ENDPOINT_MISMATCH',
       path: '$.deployment_contract.dependencies.ingress.endpoint',
-      message: `is ${ingress} but the public base URL is ${base}`,
+      message: `is ${ingress.endpoint} but the public base URL is ${base}`,
     });
   }
 

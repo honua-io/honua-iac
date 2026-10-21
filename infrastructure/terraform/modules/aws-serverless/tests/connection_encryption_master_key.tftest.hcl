@@ -142,7 +142,6 @@ override_resource {
   target = aws_secretsmanager_secret.redis_connection
   values = { arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test/redis-connection-Ab12Cd" }
 }
-
 variables {
   image          = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   admin_password = "Synthetic-Terraform-Test-Admin-4721!aA1"
@@ -188,10 +187,11 @@ run "control_plane_event_role_reads_the_api_secret_set" {
       "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test/admin-password-Ab12Cd",
       "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test/connection-encryption-master-key-Ab12Cd",
       "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test/redis-connection-Ab12Cd",
+      aws_secretsmanager_secret.runtime_settings[local.runtime_settings_hash].arn,
       "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123",
       "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123",
     ])
-    error_message = "The API Lambda role must read the connection string, admin password, master key, Redis, key-ring and audit-chain secrets."
+    error_message = "The API Lambda role must read exactly its connection string, admin password, master key, Redis, runtime settings, key-ring and audit-chain secrets."
   }
 
   assert {

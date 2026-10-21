@@ -289,13 +289,8 @@ run "release_redis_on_cell_on_a_long_customer_domain_fits" {
   }
 }
 
-# Every optional 2026.1 feature at once (the Pro license is 2026.2, below). The
-# iac-only reductions bring this under the cap but NOT under the 256-byte margin
-# the release cell keeps: the scheduled-tick function measures 4078 bytes
-# (3981 before the database pool cap and its matching MaxConcurrentQueries,
-# 49 + 48 bytes, which the server requires together).
-# A wider margin needs a server change (see the module README, "Lambda
-# environment budget"), so this run asserts the margin actually achieved.
+# Exercise the complete optional-feature combination with the pinned settings
+# document. Preserve the previous required margins as configuration grows.
 run "every_optional_feature_fits" {
   command = apply
 
@@ -366,13 +361,11 @@ run "every_optional_feature_with_rds_proxy_fits" {
   }
 }
 
-# The 2026.2 Pro license adds its secret reference and an inline trusted public
-# key. On top of every other feature the API function (about 4134 bytes since
-# the database pool cap) does not fit Lambda's 4 KB, and the module must say so
-# at PLAN time instead of letting CreateFunction fail. The control-plane event
-# functions fit: they carry no HTTP-serving settings (control-plane-events.tf).
-run "pro_license_on_top_of_every_feature_fails_at_plan" {
-  command = plan
+# Moving the registry out of the environment also makes this previously
+# oversized combination viable. The explicit oversized fixture below still
+# verifies that the hard limit fails at plan time.
+run "pro_license_on_top_of_every_feature_fits" {
+  command = apply
 
   variables {
     enable_bedrock_ai                                              = true
@@ -388,9 +381,17 @@ run "pro_license_on_top_of_every_feature_fails_at_plan" {
     pro_license_trusted_public_key                                 = "base64url:Y2XgDBncW5w6n7L3YG-T6HxX51DGybWazt0_gubk30k"
   }
 
-  expect_failures = [
-    aws_lambda_function.this,
-  ]
+  assert {
+    condition = alltrue([
+      for env in [
+        aws_lambda_function.this.environment[0].variables,
+        aws_lambda_function.control_plane_reconcile[0].environment[0].variables,
+        aws_lambda_function.control_plane_backstop[0].environment[0].variables,
+        aws_lambda_function.control_plane_tick[0].environment[0].variables,
+      ] : nonsensitive(sum([for k, v in env : length(k) + length(v) + 6]) + 1) <= 4096 - 16
+    ])
+    error_message = "The Pro combination must fit the unchanged 4 KB limit with at least 16 bytes of headroom on every function."
+  }
 }
 
 # Shared S3 file storage (file_storage_provider = AwsS3) adds FileStorage__Provider,
@@ -493,7 +494,9 @@ run "oversized_environment_fails_at_plan" {
     additional_env = {
       HONUA_SERVE_ADMIN_UI = "true"
       HONUA_ADMIN_UI       = "true"
-      HONUA_PADDING        = format("%1200s", "x")
+      # This value alone fills the AWS budget; the required keys must push it
+      # over regardless of how much ordinary configuration moves to a document.
+      HONUA_PADDING = format("%4096s", "x")
     }
   }
 

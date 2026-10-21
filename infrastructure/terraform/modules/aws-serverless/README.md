@@ -2,6 +2,36 @@
 
 Deploys Honua Server to AWS Lambda (container image) behind an API Gateway HTTP API, with RDS PostgreSQL and optional ElastiCache Redis.
 
+The opt-in migration function has its own role. Its database read is pinned to
+one secret version; ENI creation is limited to this deployment's subnets and
+security group. ENI maintenance permissions cover interfaces in the deployment's
+VPC and region; they are not restricted by per-function ENI tags. The role
+configures an explicit `lambda:SourceFunctionArn` deny for calls from migration
+code, while retaining Lambda service permissions for VPC lifecycle management.
+The deny uses the unqualified function ARN, as required by AWS's
+[source-function condition-key contract](https://docs.aws.amazon.com/lambda/latest/dg/permissions-source-function-arn.html).
+These tests check the policy document; actual denied EC2 calls from a running
+migration function have not been exercised. Cloud execution remains unqualified.
+Migration tracing follows `enable_xray_tracing` and grants only regional trace
+writer APIs when enabled.
+
+The immutable migration function configuration also pins
+`HONUA_MIGRATION_MANIFEST_SHA256` to the supplied packaged artifact manifest.
+The matching Server profile must verify its actual SQL and contract-template
+fingerprint before resolving the database secret or executing migrations.
+Terraform independently checks the returned manifest again before serving
+updates. Use matching qualified Server/IaC artifacts; this remains an opt-in
+preview and is not a live-cloud qualification claim.
+
+Migration logs and environment configuration use AWS's default encryption at
+rest. This preview profile does not provision customer-managed keys for either.
+The function has no asynchronous trigger: Terraform invokes its numeric version
+synchronously and blocks serving deployment unless the receipt verifies. Lambda
+code signing does not support container images; deployment requires an immutable
+image digest and the matching packaged migration manifest. See AWS's
+[VPC execution-role guidance](https://docs.aws.amazon.com/lambda/latest/dg/configuration-vpc.html)
+and [container-image signing limitation](https://docs.aws.amazon.com/lambda/latest/dg/configuration-codesigning-create.html).
+
 ## Pin to a release
 
 For a versioned, external pin, consume this module by Git source at a SemVer tag
@@ -40,7 +70,7 @@ module "honua" {
 
 - **ECR image**: Lambda container images must be stored in ECR. Push the Honua Lambda image (`*-lambda-aot` preferred; `*-lambda` debug fallback) to your ECR repository before applying.
 - **PostGIS + PostGIS Raster**: Set `enable_postgis = true` (requires `psql` on the apply machine with network access to RDS). For controlled temporary access from CI/local runners, use `db_additional_ingress_cidrs`.
-- **Migrations**: `skip_migrations` defaults to `true` for serverless, so the Lambda never migrates the database. Run migrations out-of-band before first use: run the generic (ECS) server image once against the `db_connection_secret_arn` connection string until `/healthz/ready` answers, then stop it. The deployable root `examples/aws-serverless` publishes the inputs for that step as `migrate_*` outputs; see its README, "Migrations on the serverless root". A server `HONUA_MIGRATE_ONLY` exit mode that makes this a single run-to-completion command is planned for 2026.1.x.
+- **Migrations**: `skip_migrations` defaults to `true` for serving functions. Schema initialization must complete before traffic. The optional `migration_image` preview uses an isolated, version-pinned function and gates serving deployment on its verified receipt; it requires a qualified matching image and `migration_packaged_manifest_sha256`. A failed receipt requires the [scoped recovery procedure](../../examples/aws-serverless/README.md#migrations-on-the-serverless-root). Reused VPCs get a Secrets Manager endpoint by default because this module cannot infer their NAT routing. No matching public migration artifact or real AWS run is qualified yet. HTTP readiness alone is not a migration receipt.
 
 ## Production example
 
@@ -111,6 +141,7 @@ module "honua" {
 | `lambda_alias_version` | `null` | Optional published version to pin the stable alias to; defaults to the version published by the current apply. |
 | `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster on RDS. **Set to true.** |
 | `existing_db_endpoint` | `""` | Reuse an existing PostgreSQL endpoint (must be paired with `existing_db_connection_string`). |
+| `existing_db_port` | `5432` | TCP port of the reused database. Set it to the port in the pinned `existing_db_connection_string`; Lambda database egress and the automatic migration locator hash use this port. The module-managed database remains on 5432. |
 | `existing_db_connection_string` | `""` | Reuse an existing PostgreSQL connection string (skips RDS provisioning and PostGIS local-exec). |
 | `skip_migrations` | true | Skip auto-migrations. Run them out-of-band for serverless. |
 | `db_instance_class` | `db.t3.micro` | RDS instance class. |
@@ -727,9 +758,33 @@ functions carry the API function's environment minus its HTTP-only settings
   cross-region operator secrets. The GP Batch job definitions keep full ARNs.
 - **No defaults restated.** Settings equal to the server's defaults are not
   emitted (`HONUA_SKIP_MIGRATIONS=false`, `HONUA_SERVE_ADMIN_UI`/`HONUA_ADMIN_UI`
-  `=false`, the deploy target's `aws.lambda.function_name`/`aws.region`/
-  `aws.lambda.alias_name=live` parameters, `batch.region`, and the Bedrock and
-  Amazon Location defaults above).
+  `=false`, `batch.region`, and the Bedrock and Amazon Location defaults above).
+- **Immutable registry document.** `HONUA_SETTINGS_DOCUMENT` references a
+  module-managed Secrets Manager JSON document containing the deployment target's
+  full function ARN, explicit region, alias and migration requirement. Its
+  canonical JSON hash selects a dedicated secret containing one version. Each
+  published Lambda version pins that secret and version; later deployments
+  cannot move its `AWSCURRENT` label or make it an unlabelled version subject to
+  Secrets Manager cleanup. Both execution roles can read the exact current and
+  retained secret ARNs. Before changing the document, copy the credential-free
+  `runtime_settings_retention_entry` output's `hash` and `document` into the
+  Git-owned `retained_runtime_settings_documents` map. Both secret resources
+  use `prevent_destroy`, so omitting a prior entry blocks an ordinary update.
+  Keep each entry while any published Lambda version refers to it. This module
+  has no automatic retirement path; deletion requires a separate reviewed
+  published-version inventory and retirement workflow. Exact retained-secret
+  grants also consume the AWS managed-policy document limit (6,144 characters).
+  A resource precondition checks the complete minified secret policy before
+  IAM accepts an update, including retained documents and optional OIDC/KMS
+  grants. If resource ARNs are not yet known during planning, this check is
+  deferred until apply. Stop for a reviewed retirement design when the policy
+  exceeds that budget; do not drop retained entries or widen permissions to
+  make it fit. The module reserves `HONUA_SETTINGS_DOCUMENT`,
+  `Settings__Document` and the complete `ControlPlane:DeployTargets` tree;
+  `additional_env` cannot replace the document, override its registered target
+  or append another target. Case and configuration-separator variants are also
+  rejected. Unrelated custom environment settings remain available.
+  Use a server image supporting the settings-document startup loader.
 - **HTTP-only settings stay on the API function.** EventBridge invokes the
   control-plane event functions; the only HTTP request they serve is the web
   adapter's loopback POST to the event route, which the server admits without
@@ -741,35 +796,13 @@ functions carry the API function's environment minus its HTTP-only settings
   `Import__Limits__BackgroundJobThresholdBytes` (read only by the HTTP import
   endpoints), whatever their source, `additional_env` included.
 
-Measured with `tests/lambda_environment_budget.tftest.hcl` (cell name
-`honuarawsse380460-it`, 12-digit account, release secret names): the release
-Redis-on cell with the key ring, audit key, GP Batch and the control-plane event
-functions is **3031** bytes on the API function and **3121** on the
-scheduled-tick function (4118 before the budget work). Every optional 2026.1
-feature at once (also Bedrock, Amazon Location, X-Ray, two CORS origins and the
-request-secret allowlists) is **4078** bytes on the scheduled-tick function,
-under the cap with only 18 bytes to spare; the database pool cap and its
-matching `MaxConcurrentQueries` (97 bytes together, see
-[Database connection budget](#database-connection-budget)) are the most recent
-additions. Those figures predate leaving the HTTP-only settings off the event
-functions, which now measure well under the API function. Adding the 2026.2 Pro
-license on top no longer fits the API function, and the plan fails with the
-size. More headroom needs a server-side
-change, for example a single `aws:secretsmanager:` reference to a JSON settings
-bundle that the server expands into configuration at startup; the server has no
-such source today.
-
-**Shared file storage on the release cell.** `file_storage_provider = "AwsS3"`
-adds about 214 bytes (release bucket, prefix `release-cells/<name_prefix>`). On
-the full release Redis-on cell (key ring, audit key, GP Batch, control-plane
-events, the import threshold, one CORS origin, Studio end-user authorization,
-the two release operation policy rules and the per-run custom domain) the API
-function measures **4077** bytes (3863 without file storage): under the cap,
-with only 19 bytes to spare. The event functions measure **3790** (reconcile),
-**3787** (backstop) and **3793** (scheduled tick), at least 256 bytes under the
-cap (`release_cell_with_shared_file_storage_fits`); with the HTTP-only settings
-still on them they measured 4161-4167 and did not fit. The next entry added to
-the API function on this cell needs room made elsewhere.
+`tests/lambda_environment_budget.tftest.hcl` exercises realistic release cell
+names, account identifiers, Redis, GP Batch, shared file storage, RDS Proxy,
+optional AI services and Pro licensing. It checks the rendered environments
+against the existing hard limit and required headroom, and verifies that an
+oversized operator environment fails at plan time. The version-pinned registry
+document removes repeated environment-key prefixes without shortening resource
+identity or relying on an ambient deployment region.
 
 ## Database connection budget
 
@@ -991,8 +1024,8 @@ Those pins end when the client disconnects, so the ceiling, the borrow queue
 and idle-client reaping still protect the database. The module leaves the
 query-cache default alone; if `DatabaseConnectionsCurrentlySessionPinned`
 stays high, set `Database__QueryCache__EnableAutomaticCaching=false` through
-`additional_env` (55 bytes of the Lambda environment budget, which the
-every-feature combination no longer has). Watch
+`additional_env` (55 bytes of the Lambda environment budget; the module checks
+the resulting total at plan time). Watch
 `DatabaseConnectionsCurrentlySessionPinned` and
 `DatabaseConnectionsBorrowLatency` in CloudWatch.
 
@@ -1269,3 +1302,18 @@ approved operator flow. Destroying the current Terraform resource does **not** d
 retained revisions. Reverting the flag later also does not discover or remove older revisions.
 The release harness owns this cleanup for its ephemeral, run-bound stacks; this input does not
 claim a successful update, rollback, exactly-once execution or cloud qualification.
+
+### Agent deployment identity
+
+The server's registered deploy target uses the full Lambda function ARN and an
+explicit AWS region. This lets the agent compare its provider observations with
+the server's configured account, region and function before accepting an
+installation handoff. The ARN is derived from the module's provider identity and
+function name; it does not require reading secrets or create a self-reference
+through the function environment. Non-default aliases remain explicit.
+
+`runtime_binding_contract` contains configured resource identities, not proof
+that the installed endpoint works. The agent must still verify the actual alias,
+published version, API Gateway integration/route and current server authority.
+The existing 4 KB environment limit and release configuration budget checks
+remain mandatory.
