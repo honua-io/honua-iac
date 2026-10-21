@@ -175,7 +175,10 @@ locals {
   # Compute from the same provider identity/name as the function, without a
   # self-reference cycle through aws_lambda_function.this.environment.
   lambda_function_arn = "arn:${split(":", data.aws_caller_identity.current.arn)[1]}:lambda:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:function:${local.lambda_function_name}"
-  lambda_target_id    = "${local.lambda_function_name}-${var.lambda_alias_name}"
+  lambda_target_name  = "${local.lambda_function_name}-${var.lambda_alias_name}"
+  # One bounded identifier is shared by the server registry, operator output,
+  # and agent handoff. Preserve existing short IDs and the full alias ARN.
+  lambda_target_id = length(local.lambda_target_name) <= 128 ? local.lambda_target_name : "${substr(local.lambda_target_name, 0, 95)}-${substr(sha256(local.lambda_target_name), 0, 32)}"
   # SNS targets for CloudWatch alarm/OK notifications: caller-supplied topic
   # ARNs plus an optional module-created topic (when alarm_email is set).
   alarm_action_arns = concat(var.alarm_sns_topic_arns, aws_sns_topic.alarms[*].arn)

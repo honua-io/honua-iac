@@ -47,7 +47,7 @@ output "control_plane_backend_name" {
 }
 
 output "control_plane_target_id" {
-  value = "${aws_lambda_function.this.function_name}-${aws_lambda_alias.live.name}"
+  value = local.lambda_target_id
 }
 
 output "control_plane_target_name" {

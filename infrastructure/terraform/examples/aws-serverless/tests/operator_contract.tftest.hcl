@@ -178,8 +178,8 @@ run "unqualified_development_contract" {
     error_message = "Development output must stay unqualified and must not resolve a caller's missing image identity."
   }
   assert {
-    condition     = length(output.runtime_binding_contract.targetId) == 128 && output.runtime_binding_contract.resourceIdentity.aliasArn == "arn:aws:lambda:us-east-1:123456789012:function:honua-contract-dev-honua:${join("", [for _ in range(127) : "a"])}b"
-    error_message = "The actual customer-root output for a valid long alias must satisfy the strict v1 targetId bound without replacing the alias ARN."
+    condition     = length(output.runtime_binding_contract.targetId) == 128 && output.control_plane_target_id == output.runtime_binding_contract.targetId && output.runtime_binding_contract.resourceIdentity.aliasArn == "arn:aws:lambda:us-east-1:123456789012:function:honua-contract-dev-honua:${join("", [for _ in range(127) : "a"])}b"
+    error_message = "The actual customer-root output for a valid long alias must keep the bounded handoff and control-plane IDs joined without replacing the alias ARN."
   }
 }
 
