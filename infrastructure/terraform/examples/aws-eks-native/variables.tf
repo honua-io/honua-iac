@@ -183,6 +183,35 @@ variable "audit_chain_key_secret_arn" {
   description = "Optional operator-owned audit-chain key secret ARN."
 }
 
+variable "operations_policy_rules" {
+  description = "Ordered first-match-wins operation policy rules from the existing EKS cell. Empty retains the production default deny."
+  type = list(object({
+    operation_id  = optional(string, "*")
+    role          = optional(string)
+    tier          = optional(string)
+    decision      = string
+    reason        = optional(string)
+    approval_lane = optional(string)
+  }))
+  default  = []
+  nullable = false
+  validation {
+    condition     = alltrue([for rule in var.operations_policy_rules : contains(["Allow", "RequireApproval", "DryRunFirst", "Deny"], rule.decision)])
+    error_message = "Each operations_policy_rules decision must be Allow, RequireApproval, DryRunFirst or Deny."
+  }
+  validation {
+    condition     = alltrue([for rule in var.operations_policy_rules : rule.operation_id != null && trimspace(rule.operation_id) != ""])
+    error_message = "Each operations_policy_rules operation_id must be nonempty."
+  }
+}
+
+variable "cors_allowed_origins" {
+  description = "Browser origins allowed to call the API, rendered as Cors__AllowedOrigins__<n>."
+  type        = list(string)
+  default     = []
+  nullable    = false
+}
+
 variable "public_hostname" {
   type        = string
   description = "Public DNS hostname on the ACM certificate. The verifier must later observe the route."

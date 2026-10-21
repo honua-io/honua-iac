@@ -368,6 +368,7 @@ jobs:
           terraform -chdir=infrastructure/terraform/modules/aws-eks test -no-color
           terraform -chdir=infrastructure/terraform/examples/aws-eks test -no-color
           terraform -chdir=infrastructure/terraform/examples/aws-eks-native test -no-color
+          python3 -m unittest discover -s infrastructure/terraform/examples/aws-eks-native/tests -p 'test_*.py'
           terraform -chdir=infrastructure/terraform/modules/azure-aca test -no-color
 
       - name: Post-apply caller and named-evidence contract

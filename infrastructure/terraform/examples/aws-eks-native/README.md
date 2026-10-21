@@ -23,7 +23,8 @@ no added Linux capabilities, and always pulls the digest-pinned image. Its
 root filesystem is read-only; ephemeral volumes provide the image's log,
 cache, diagnostics and temporary storage paths.
 
-The required inputs are the existing cluster name, environment, target and
+Copy `terraform.tfvars.example` to `terraform.tfvars` and replace its synthetic
+values with the reviewed artifact and existing cell outputs. The required inputs are the existing cluster name, environment, target and
 tenant IDs, immutable images, artifact capabilities, separate server/GP role
 ARNs and existing Pod Identity association IDs, database/admin/master-key and Redis secret ARNs, a public hostname and its validated ACM
 certificate ARN, and an explicit load balancer controller choice. Pass the
@@ -32,6 +33,10 @@ account, region and namespace. Redis is required because GP workers need the
 durable job store. Optional key-ring and audit-chain inputs are secret ARNs
 only. The native root builds the server's fixed
 `aws:secretsmanager:` environment references; do not pass secret values.
+Copy the existing EKS cell's `operations_policy_rules` and
+`cors_allowed_origins` into the native root. The server runs with a default
+deny operation policy in Production, so an empty rule list does not preserve
+an existing cell's allowed operations.
 
 The `load_balancer_controller` input is required. `legacy-service-controller`
 uses the EKS built-in Service controller's NLB annotation; `aws-load-balancer-controller`
@@ -63,7 +68,9 @@ actual Job image, service account and Pod Identity association.
 `public_hostname` to the Service load balancer. The root observes one active
 NLB with the Service hostname, selected controller's cluster/service tags,
 Honua target tag, and the selected TLS listener certificate before creating
-the alias. It also reads the exact Route53 hosted-zone ID and refuses a private
+the alias. It reads the exact ACM certificate and requires `ISSUED` status and
+an exact or one-label wildcard subject alternative name covering
+`public_hostname`. It also reads the exact Route53 hosted-zone ID and refuses a private
 zone or a hostname outside that zone. The output describes
 configured state; the verifier must still observe the live route.
 With externally managed DNS, Terraform can configure the Service and
