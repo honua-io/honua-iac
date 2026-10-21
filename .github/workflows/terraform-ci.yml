@@ -350,6 +350,19 @@ jobs:
         shell: bash
         run: python3 -m unittest discover -s infrastructure/terraform/examples/aws-cert/postgis-bootstrap -p 'test_*.py'
 
+      - name: Native EKS runtime binding output (mock providers only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          native_tests="$RUNNER_TEMP/native-eks-tests.jsonl"
+          if terraform -chdir=infrastructure/terraform/examples/aws-eks-native test -json -verbose -filter=tests/native_install.tftest.hcl > "$native_tests"; then
+            node infrastructure/terraform/validation/scripts/shared/test-native-eks-runtime-binding-output.mjs "$native_tests"
+          else
+            node infrastructure/terraform/validation/scripts/shared/test-native-eks-runtime-binding-output.mjs "$native_tests" --diagnostics-only || true
+            exit 1
+          fi
+          python3 -m unittest discover -s infrastructure/terraform/examples/aws-eks-native/tests -p 'test_*.py'
+
       - name: Module contract tests (multi-node topology, licensing mode)
         shell: bash
         run: |
@@ -374,9 +387,6 @@ jobs:
           terraform -chdir=infrastructure/terraform/examples/aws-cert test -no-color
           terraform -chdir=infrastructure/terraform/modules/aws-eks test -no-color
           terraform -chdir=infrastructure/terraform/examples/aws-eks test -no-color
-          terraform -chdir=infrastructure/terraform/examples/aws-eks-native test -json -verbose -filter=tests/native_install.tftest.hcl > "$RUNNER_TEMP/native-eks-tests.jsonl"
-          node infrastructure/terraform/validation/scripts/shared/test-native-eks-runtime-binding-output.mjs "$RUNNER_TEMP/native-eks-tests.jsonl"
-          python3 -m unittest discover -s infrastructure/terraform/examples/aws-eks-native/tests -p 'test_*.py'
           terraform -chdir=infrastructure/terraform/modules/azure-aca test -no-color
 
       - name: Post-apply caller and named-evidence contract

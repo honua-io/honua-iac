@@ -7,6 +7,27 @@ import { SchemaValidator } from './validate-operator-contract.mjs';
 const schema = JSON.parse(readFileSync(new URL('../../../contracts/runtime-binding.v1.schema.json', import.meta.url)));
 const validator = new SchemaValidator(schema);
 const events = readFileSync(process.argv[2], 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+if (process.argv[3] === '--diagnostics-only') {
+  // Terraform's verbose JSON includes planned state. Emit only bounded test
+  // status and diagnostic titles when a mocked test fails.
+  const safe = (value) => String(value ?? '').replace(/[\x00-\x1f\x7f]+/g, ' ').slice(0, 240);
+  const runs = events.filter((item) => item.type === 'test_run');
+  runs.sort((a, b) => Number(['fail', 'error'].includes(b.test_run?.status)) - Number(['fail', 'error'].includes(a.test_run?.status)));
+  for (const event of runs.slice(0, 16)) {
+    console.error(`Terraform test ${safe(event['@testrun'])}: ${safe(event.test_run?.status)}`);
+  }
+  const diagnostics = events.filter((item) => item.type === 'diagnostic');
+  diagnostics.sort((a, b) => Number(b.diagnostic?.severity === 'error') - Number(a.diagnostic?.severity === 'error'));
+  for (const event of diagnostics.slice(0, 12)) {
+    const range = event.diagnostic?.range;
+    const location = range?.filename && Number.isSafeInteger(range.start?.line)
+      ? ` (${safe(range.filename)}:${range.start.line})` : '';
+    console.error(`Terraform ${safe(event.diagnostic?.severity)}: ${safe(event.diagnostic?.summary)}${location}`);
+  }
+  const result = events.findLast((event) => event.type === 'test_summary')?.test_summary;
+  if (result) console.error(`Terraform summary: ${result.passed} passed, ${result.failed} failed, ${result.errored} errored`);
+  process.exit(0);
+}
 const summary = events.find((event) => event.type === 'test_summary')?.test_summary;
 assert.equal(summary?.status, 'pass', 'all native EKS Terraform tests must pass');
 assert.equal(summary.passed, 8, 'every native EKS scenario must run');
