@@ -56,7 +56,9 @@ data "aws_iam_role" "recovery_controller" {
 # The native backend mutates a RULE, not a listener default action. The
 # higher-priority header rule still permits candidate-only functional probes.
 resource "aws_lb_listener_rule" "protected_rollout" {
-  count        = local.safety_enabled ? 1 : 0
+  # Shared by the external (deployment_safety) and in-service
+  # (deploy_control_plane) controller topologies, which are mutually exclusive.
+  count        = local.safety_enabled || (local.deploy_control_plane_enabled && local.canary_enabled) ? 1 : 0
   listener_arn = local.use_https ? aws_lb_listener.https[0].arn : aws_lb_listener.http[0].arn
   priority     = 50000
 

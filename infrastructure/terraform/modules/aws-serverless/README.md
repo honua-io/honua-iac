@@ -139,6 +139,8 @@ module "honua" {
 | `route53_zone_id` | `""` | Route53 hosted zone that owns `domain_name`, for certificate validation and the alias record. Set together with `domain_name`; one without the other creates nothing and fails the `custom_domain_inputs` check. |
 | `lambda_alias_name` | `live` | Stable alias used for API Gateway traffic and control-plane rollback. |
 | `lambda_alias_version` | `null` | Optional published version to pin the stable alias to; defaults to the version published by the current apply. |
+| `lambda_alias_routing` | `null` | Optional `{ additional_version, weight }` weighted split on the live alias (`routing_config.additional_version_weights`). See [Weighted alias canaries](#weighted-alias-canaries). |
+| `lambda_deploy_canary` | `null` | Optional control-plane canary: canary weight and telemetry gate parameters on the deploy target plus a CloudWatch telemetry connection. See [Weighted alias canaries](#weighted-alias-canaries). |
 | `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster on RDS. **Set to true.** |
 | `existing_db_endpoint` | `""` | Reuse an existing PostgreSQL endpoint (must be paired with `existing_db_connection_string`). |
 | `existing_db_port` | `5432` | TCP port of the reused database. Set it to the port in the pinned `existing_db_connection_string`; Lambda database egress and the automatic migration locator hash use this port. The module-managed database remains on 5432. |
@@ -576,9 +578,18 @@ The module publishes immutable Lambda versions and keeps API Gateway bound to a 
 
 The module does not invent canary or previous-version state. It exposes the stable alias revision and the current published revision so a control-plane backend can observe the current state, capture the prior stable version, and move the alias honestly.
 
-The deployed Honua app also self-registers its `AwsLambda` deploy target through environment-based `ControlPlane__...` settings, so the admin API can plan and observe Lambda rollouts without a separate sidecar config file.
+The deployed Honua app also registers its `AwsLambda` deploy target (backend `honua-gitops-aws-lambda`) from the version-pinned settings document referenced by `HONUA_SETTINGS_DOCUMENT`, so the admin API can plan and observe Lambda rollouts without a separate sidecar config file.
 
-If you want staged Lambda rollout instead of direct alias cutover, add a deploy-target parameter such as `lambda.canary_weight_percentage=10` and a valid `telemetry.connection` in the Honua control-plane configuration. The Lambda backend only promotes or rolls back the alias after telemetry settles.
+### Weighted alias canaries
+
+Both inputs are off by default; with neither set, the alias routes all traffic to its version and the settings document is unchanged.
+
+- `lambda_alias_routing = { additional_version = "43", weight = 0.1 }` adds `routing_config.additional_version_weights` to the live alias. Terraform then sends 10% of alias traffic to version 43 and the rest to the alias version. Use it for an operator-run canary. The additional version must be a published version other than the alias version.
+- `lambda_deploy_canary = { weight_percentage = 10 }` lets the control plane shift the weights itself. It adds `aws.lambda.canary_weight_percentage`, `telemetry.connection` and the gate thresholds, budgets and sample floor to the deploy target. It adds a CloudWatch entry under `ControlPlane:TelemetryConnections` to the same settings document and grants the API role `cloudwatch:GetMetricData`. The backend routes the configured share to the candidate version and promotes or rolls back only after the telemetry gate settles. The server refuses a canary weight without `telemetry.connection`.
+
+The candidate version is only known when you plan a deploy operation, and Lambda publishes per-version metrics under the `ExecutedVersion` dimension. The target therefore carries no metric queries: an alias-wide query would let the stable version's traffic mask a failing candidate. Pass `telemetry.sample_count.query` and `telemetry.latency_p95.query` as parameter overrides when you create the operation. You can also pass `telemetry.error_rate.query` when you set `error_rate_threshold`. Copy them from the `lambda_deploy_canary.query_templates` output and replace `{version}` with the desired version. Lambda publishes `Errors` only for periods with failed invocations, and the CloudWatch reader evaluates one expression. An error-ratio expression can therefore read as no evidence on a healthy candidate (honua-io/honua-server#6474). That holds the rollout and rolls it back once the evidence grace expires, so add the error-rate signal only after you have checked it against your traffic.
+
+Changing `lambda_deploy_canary` changes the settings document hash. Carry the current `runtime_settings_retention_entry` into `retained_runtime_settings_documents` before applying, as for any document change. Terraform owns the alias, so do not apply this module while a deploy operation holds weighted traffic on it: an apply resets `routing_config` to `lambda_alias_routing`. The output reports `configured-unverified`; mock tests prove neither the expressions nor a live weight shift.
 
 ## GP on AWS Batch (Fargate Spot)
 

@@ -39,6 +39,14 @@ read APIs without resource-level authorization use `Resource = "*"`. Candidate
 tasks receive no rollout mutation permissions. Existing workload task S3 and
 execution-role secret/KMS/log permissions remain separate.
 
+The module also offers a weaker, mutually exclusive alternative for cells with
+no retained controller: `deploy_control_plane` registers the same backend and
+traffic rule in the serving tasks' own environment, with a CloudWatch telemetry
+connection, and grants the workload task role the rollout permissions. Every
+MultiNode task reconciles deploy operations, so the candidate receives those
+permissions too. It does not satisfy the protection profile described here. See
+the module README's "Upgrade safety" section.
+
 ## Configure and register
 
 In `examples/aws`, set the existing typed MultiNode, Redis, S3 and canary inputs

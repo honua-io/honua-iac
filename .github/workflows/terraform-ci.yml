@@ -383,7 +383,7 @@ jobs:
           # root's other test files run separately.
           terraform -chdir=infrastructure/terraform/examples/aws test -json -verbose -filter=tests/deployment_safety.tftest.hcl > "$RUNNER_TEMP/aws-safety-tests.jsonl"
           node infrastructure/terraform/validation/scripts/shared/test-deployment-safety-output.mjs "$RUNNER_TEMP/aws-safety-tests.jsonl"
-          terraform -chdir=infrastructure/terraform/examples/aws test -no-color -filter=tests/operations_policy_passthrough.tftest.hcl -filter=tests/http_redirect_passthrough.tftest.hcl -filter=tests/studio_end_user_authorization_passthrough.tftest.hcl -filter=tests/platform_release.tftest.hcl -filter=tests/transcript_signing.tftest.hcl
+          terraform -chdir=infrastructure/terraform/examples/aws test -no-color -filter=tests/operations_policy_passthrough.tftest.hcl -filter=tests/http_redirect_passthrough.tftest.hcl -filter=tests/studio_end_user_authorization_passthrough.tftest.hcl -filter=tests/platform_release.tftest.hcl -filter=tests/transcript_signing.tftest.hcl -filter=tests/upgrade_safety_passthrough.tftest.hcl
           terraform -chdir=infrastructure/terraform/modules/aws-serverless test -no-color
           lambda_test_filters=()
           for test_file in infrastructure/terraform/examples/aws-serverless/tests/*.tftest.hcl; do

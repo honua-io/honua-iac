@@ -221,7 +221,7 @@ When canary is enabled, the module also creates a header-based listener rule so 
 The module does not provision Prometheus itself, but it exports recommended Honua control-plane metadata so rollback gates can be wired consistently:
 
 - `control_plane_target_kind = "AwsEcs"`
-- `control_plane_backend_name = "honua-gitops-aws-ecs"`
+- `control_plane_backend_name = "honua-gitops-aws-ecs"`, or `honua-aws-ecs-alb` when `deployment_safety` or `deploy_control_plane` is set
 - `control_plane_telemetry_policy = "aws-alb-canary"` when canary is enabled, otherwise `honua-http`
 - `control_plane_telemetry_prometheus_job = "honua"`
 - `control_plane_telemetry_prometheus_canary_job = "honua-canary"` when canary is enabled
@@ -254,6 +254,8 @@ If your Prometheus scrape config uses different job names, override the correspo
 | `canary_weight_percentage` | 0 | Percentage of default ALB traffic routed to the canary target group. |
 | `canary_header_name` | `X-Honua-Canary` | Header name that forces ALB routing to the canary target group. |
 | `canary_header_value` | `always` | Header value that forces ALB routing to the canary target group. |
+| `deploy_control_plane` | `null` | Opt-in in-service `honua-aws-ecs-alb` deploy target and CloudWatch telemetry connection in the stable and canary task environments. Requires `canary_enabled`; mutually exclusive with `deployment_safety`. See [Upgrade safety](#upgrade-safety). |
+| `migration_safety` | `null` | Optional `Database__MigrationSafety__{ContractApplyPolicy,BackupCommand,Enforce}` for the inline startup migrations. See [Upgrade safety](#upgrade-safety). |
 | `enable_postgis` | **false** | Enable PostGIS + PostGIS Raster on RDS. The Terraform runner must have a network path to the database. |
 | `rds_deletion_protection` | **true** | Protect the managed RDS instance from deletion; disable in a separate apply before teardown. |
 | `existing_db_endpoint` | `""` | Reuse an existing PostgreSQL endpoint (must be paired with `existing_db_connection_string`). |
@@ -455,6 +457,89 @@ connection and reports the handoff as `configured-unverified`.
 See [AWS deployment safety](../../../../docs/devops/aws-deployment-safety.md) for
 runtime registration, finite limits, IAM/secret/storage validation and the
 candidate-bound live recovery evidence required before claiming protection.
+
+
+## Upgrade safety
+
+Honua's upgrade contract is expand/contract: a release that only adds schema
+can roll out while the previous version still serves, and a release that
+narrows schema must wait until no older reader remains. Read
+[Upgrade and roll back](https://github.com/honua-io/honua-server/blob/trunk/docs/guides/deploy/upgrade-and-rollback.md)
+first. This module wires two parts of that contract and leaves one out.
+
+### Migration safety
+
+ECS tasks apply pending migrations at startup, behind a PostgreSQL advisory
+lock. `migration_safety` renders `Database:MigrationSafety` on the stable and
+canary task definitions, and the typed values win over `additional_env`:
+
+```hcl
+migration_safety = {
+  contract_apply_policy = "Gate"                        # default; or "Auto"
+  backup_command        = "/opt/honua/pre-migrate.sh"   # optional
+}
+```
+
+With `Gate` (also the server default), a pending reviewed contract-phase
+migration on an existing database stops startup and prints a one-shot nonce.
+Supply it as `HONUA_APPROVE_CONTRACT_MIGRATIONS` in `canary_additional_env` (or
+`additional_env`) for that one apply, then remove it. `backup_command` runs
+inside the server container immediately before contract-phase scripts apply.
+A non-zero exit aborts the run. The stock image is not documented to ship
+`pg_dump`, so point it at a tool your image provides. The value is a plain
+environment variable: keep credentials out of it.
+
+### In-service deploy control plane
+
+`deploy_control_plane` registers this cell's canonical `honua-aws-ecs-alb`
+deploy target and a CloudWatch telemetry connection in the task environment,
+so the server's admin deploy API can plan, gate, promote and roll back an ECS
+canary without a separate controller:
+
+```hcl
+canary_enabled       = true
+deployment_mode      = "MultiNode"   # plus Redis and shared S3, as for any canary
+deploy_control_plane = {
+  canary_weight_percentage = 10      # null: direct cutover
+}
+```
+
+It renders `ControlPlane__DeployTargets__0__*`, with the dotted parameters as
+`ParameterEntries`, and `ControlPlane__TelemetryConnections__0__*`
+(`Provider=cloudwatch`). It installs the same stable=100/candidate=0 weighted
+rule at priority 50000 as `deployment_safety`, whose actions Terraform ignores
+afterwards. The task role may update the canary service, modify that rule,
+describe the stable service and read CloudWatch metrics. The default telemetry
+queries read `RequestCount` (the sample floor) and p95 `TargetResponseTime`
+for the canary target group only, so the stable service's traffic cannot mask
+the candidate. `RequiresApproval` defaults to `true`.
+
+The error-rate signal is off unless you set `error_rate_query`. ALB does not
+publish `HTTPCode_Target_5XX_Count` for a period with no 5XX responses. The
+server's CloudWatch reader evaluates a single expression and treats a missing
+series as no evidence, so a synthesized error ratio would hold a healthy
+rollout and then roll it back (honua-io/honua-server#6474). The `deploy_control_plane.alb_metric_dimensions`
+output gives the dimension values for writing your own expression.
+
+This topology is weaker than `deployment_safety`. Every MultiNode task
+reconciles active deploy operations under a lease, so the catalog, connection
+and permissions go to the stable and canary tasks alike, and a candidate can
+act on its own rollout. Prefer `deployment_safety` with an external retained
+controller where you have one; the two are mutually exclusive. Do not apply a
+new infrastructure or candidate change while an operation owns the target: an
+apply resets the canary service to the Terraform-registered task definition.
+The output reports `configured-unverified`. Mock tests prove neither the
+CloudWatch expressions nor a live rollback.
+
+### Out-of-band migrations: not wired
+
+The server's out-of-band pattern is `HONUA_SKIP_MIGRATIONS=true` on serving
+tasks plus a one-shot migrator, which on ECS would be an `aws ecs run-task`
+step. The server image has no migrate-and-exit entry point yet, tracked as
+honua-io/honua-server#6470. A full server start is the only path that applies
+migrations, and it also starts background work. Until that ships, this module
+neither defines a migration task nor sets `HONUA_SKIP_MIGRATIONS`, and serving
+tasks keep migrating inline under `migration_safety`.
 
 ## Certification inputs
 

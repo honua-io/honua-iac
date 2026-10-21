@@ -1109,6 +1109,24 @@ resource "aws_lambda_alias" "live" {
   description      = "Stable Honua deploy alias managed by the control plane."
   function_name    = aws_lambda_function.this.function_name
   function_version = coalesce(var.lambda_alias_version, aws_lambda_function.this.version)
+
+  # Opt-in weighted canary (lambda-canary.tf). Absent by default, so the alias
+  # routes all traffic to function_version as before.
+  dynamic "routing_config" {
+    for_each = var.lambda_alias_routing == null ? [] : [var.lambda_alias_routing]
+    content {
+      additional_version_weights = {
+        (routing_config.value.additional_version) = routing_config.value.weight
+      }
+    }
+  }
+
+  lifecycle {
+    precondition {
+      condition     = var.lambda_alias_routing == null ? true : var.lambda_alias_routing.additional_version != coalesce(var.lambda_alias_version, aws_lambda_function.this.version)
+      error_message = "lambda_alias_routing.additional_version must differ from the alias version; a weighted split needs two distinct published versions."
+    }
+  }
 }
 
 #checkov:skip=CKV_AWS_158: Log-group KMS integration is optional and supplied by the deployment environment.

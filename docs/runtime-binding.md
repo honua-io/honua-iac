@@ -31,13 +31,20 @@ verified handoff.
 
 The `examples/aws-eks` root provisions infrastructure, database and workload
 identity configuration; `examples/aws-eks-native` installs the workload and
-emits its configured binding. The EKS workflow requires the native
+emits its configured binding. The binding names the native
 `honua-kubernetes-deployment` backend, with no Argo installation, controller,
-CRD or API dependency. The actual Honua Deployment, Service, public route and
-bound Kubernetes cluster identity must be independently verified after apply
-before handoff. Honua
-approvals and durable operations govern upgrades, health checks and rollback
-to the recorded prior immutable image digest. The schema's EKS branch does not
+CRD or API dependency. Current honua-server builds do not register a backend
+by that name. Their Kubernetes backends are `honua-gitops-kubernetes` and
+`honua-kubernetes-argo-rollouts`. The honua-helm chart registers
+`honua-gitops-kubernetes` as `ControlPlane__DeployTargets__0__Backend`; it is
+a GitOps passthrough that cannot roll back by itself. Until the native backend
+ships (honua-iac#267), the EKS binding is a forward declaration: a Helm
+install registers `honua-gitops-kubernetes` and recovers with `helm rollback`.
+The actual Honua Deployment, Service, public route and bound Kubernetes
+cluster identity must be independently verified after apply before handoff.
+Once the native backend is available, Honua approvals and durable operations
+govern upgrades, health checks and rollback to the recorded prior immutable
+image digest. The schema's EKS branch does not
 assert live health, a verified provider observation or a qualified agent
 handoff; that end-to-end evidence remains outstanding.
 
