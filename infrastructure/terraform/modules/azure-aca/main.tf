@@ -375,6 +375,11 @@ resource "azurerm_container_app" "this" {
       }
 
       env {
+        name  = "Licensing__Mode"
+        value = var.licensing_mode
+      }
+
+      env {
         name  = "FileStorage__Provider"
         value = var.file_storage_provider
       }

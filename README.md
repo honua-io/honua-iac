@@ -10,11 +10,13 @@ Current infrastructure capabilities are summarized in [docs/features/README.md](
 
 ## Deploy Honua (operator path)
 
-1. Choose a target stack:
-   - `infrastructure/terraform/examples/aws` (AWS ECS/Fargate)
-   - `infrastructure/terraform/examples/azure` (Azure Container Apps)
-   - `infrastructure/terraform/examples/aws-serverless` (AWS Lambda)
-   - `infrastructure/terraform/examples/azure-functions` (Azure Functions)
+1. Choose a target stack. The qualified 2026.1 targets are the two AWS stacks.
+   Studio, mixed ECS+Batch, EKS, multi-tenancy, and Helm are outside that
+   scope. Azure is preview and is not qualified.
+   - `infrastructure/terraform/examples/aws` (AWS ECS/Fargate) — qualified 2026.1 target
+   - `infrastructure/terraform/examples/aws-serverless` (AWS Lambda) — qualified 2026.1 target
+   - `infrastructure/terraform/examples/azure` (Azure Container Apps) — preview, not a qualified 2026.1 target
+   - `infrastructure/terraform/examples/azure-functions` (Azure Functions) — preview, not a qualified 2026.1 target
 2. Copy the stack's `terraform.tfvars.example` to `terraform.tfvars` and fill in secrets/images.
 3. For a single-node development cell, add the stack's non-secret `small`
    overlay from `presets/small.tfvars.example`.

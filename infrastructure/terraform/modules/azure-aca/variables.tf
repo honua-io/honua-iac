@@ -23,7 +23,7 @@ variable "tags" {
 }
 
 variable "image" {
-  description = "Container image. Pin to an immutable release tag or digest; AOT builds are recommended for faster startup and lower memory."
+  description = "Container image. Pin the published image by digest (registry/name@sha256:<64 hex>). No v* honua-server tag exists. Container Apps accept that reference directly."
   type        = string
 }
 
@@ -229,9 +229,29 @@ variable "additional_env" {
       "filestorage__provider",
       "filestorage__azureblob__connectionstring",
       "filestorage__azureblob__containername",
-      "filestorage__azureblob__blobprefix"
+      "filestorage__azureblob__blobprefix",
+      "licensing__mode",
+      "licensing__edition",
+      "licensing__licensecontent",
+      "licensing__licensecontentsecretref"
     ]))) == 0
-    error_message = "Set deployment and file-storage settings through the typed module variables, not additional_env."
+    error_message = "Set deployment, file-storage and licensing settings through the typed module variables, not additional_env."
+  }
+}
+
+# The 2026.1 contract declares licensing DISABLED. The server's own default is
+# Licensing__Mode=Enabled, which with no license source boots the Community
+# edition and gates editing, sync, streaming and geocoding. Azure is preview
+# and is not a qualified 2026.1 target; the mode is still declared so a
+# preview stack does not boot that gated default.
+variable "licensing_mode" {
+  description = "Licensing deployment mode declared to the server as Licensing__Mode. Defaults to Disabled (no license, no metering, all entitlements active). Set to Enabled only to load and validate a license supplied out of band."
+  type        = string
+  default     = "Disabled"
+
+  validation {
+    condition     = contains(["Disabled", "Enabled"], var.licensing_mode)
+    error_message = "licensing_mode must be \"Disabled\" or \"Enabled\" (the server rejects any other value at startup)."
   }
 }
 

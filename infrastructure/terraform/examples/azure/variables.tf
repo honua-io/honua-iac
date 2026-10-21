@@ -50,8 +50,19 @@ variable "existing_db_connection_string" {
 }
 
 variable "honua_image" {
-  description = "Container image to deploy. Pin to an immutable release tag or digest."
+  description = "Container image to deploy. Pin the published image by digest (registry/name@sha256:<64 hex>). No v* honua-server tag exists."
   type        = string
+}
+
+variable "licensing_mode" {
+  description = "Licensing deployment mode declared to the server as Licensing__Mode. Defaults to Disabled (the 2026.1 contract). Azure Container Apps are preview and are not a qualified 2026.1 target."
+  type        = string
+  default     = "Disabled"
+
+  validation {
+    condition     = contains(["Disabled", "Enabled"], var.licensing_mode)
+    error_message = "licensing_mode must be \"Disabled\" or \"Enabled\"."
+  }
 }
 
 variable "registry_server" {

@@ -3,6 +3,11 @@ output "environment" {
   value       = var.environment
 }
 
+output "licensing_mode" {
+  description = "Licensing deployment mode declared to the server as Licensing__Mode. Disabled is the 2026.1 contract."
+  value       = var.licensing_mode
+}
+
 output "container_app_name" {
   description = "Container App name."
   value       = azurerm_container_app.this.name

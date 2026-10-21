@@ -350,7 +350,10 @@ locals {
     { for index, value in var.request_secret_reference_allowed_secret_reference_prefixes : "Security__RequestSecretReferences__AllowedSecretReferencePrefixes__${index}" => value },
   )
 
-  app_settings = merge(local.base_app_settings, local.control_plane_app_settings, local.redis_secret_settings, local.registry_settings, local.app_insights_settings, local.openai_ai_environment, local.pro_license_environment, local.managed_identity_settings, local.request_secret_reference_environment, var.additional_env)
+  # licensing_environment and pro_license_environment are last so a declared
+  # mode cannot be replaced by additional_env. additional_env is also refused
+  # when it names those keys.
+  app_settings = merge(local.base_app_settings, local.control_plane_app_settings, local.redis_secret_settings, local.registry_settings, local.app_insights_settings, local.openai_ai_environment, local.managed_identity_settings, local.request_secret_reference_environment, var.additional_env, local.licensing_environment, local.pro_license_environment)
 
   image_parts         = split("/", var.image)
   image_registry      = local.image_parts[0]

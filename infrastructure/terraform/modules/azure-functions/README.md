@@ -1,5 +1,7 @@
 # Azure Functions (Serverless) Module
 
+Preview. Not a qualified 2026.1 target. The module still declares `Licensing__Mode=Disabled` unless `enable_pro_license` forces Enabled, so a stack does not boot the server's Community default.
+
 Deploys Honua Server to Azure Functions (custom container) with PostgreSQL Flexible Server, optional Azure Cache for Redis, and Application Insights.
 
 ## Pin to a release
@@ -26,7 +28,7 @@ module "honua" {
 
   environment    = "dev"
   location       = "eastus"
-  image          = "myregistry.azurecr.io/honua-server:v1.2.3-aot"
+  image          = "myregistry.azurecr.io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   admin_password = var.honua_admin_password
   connection_encryption_master_key = null # Deliberate auto-generation for this new deployment
   enable_postgis = true  # Required — Honua needs PostGIS + PostGIS Raster
@@ -55,7 +57,7 @@ module "honua" {
   name_prefix = "honua"
 
   # Function App
-  image         = "myregistry.azurecr.io/honua-server:v1.2.3-aot"  # Pin to a release AOT tag
+  image         = "myregistry.azurecr.io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" # Published digest. No v* honua-server tag exists.
   plan_sku_name = "EP1"    # Premium plan (recommended for predictable cold starts)
 
   # Database
@@ -86,7 +88,8 @@ module "honua" {
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `image` | Required | Container image. Pin to an immutable release tag or digest. Prefer AOT builds; use JIT images only for debug fallback. |
+| `image` | Required | Container image. Pin the published digest (`registry/name@sha256:<64 hex>`). No `v*` honua-server tag exists. The docker site config splits that reference into image name and tag. |
+| `licensing_mode` | `Disabled` | Declared as `Licensing__Mode`. `enable_pro_license` forces Enabled. The server default is Enabled and boots Community. |
 | `connection_encryption_master_key` | Required (nullable) | Fail-closed connection-key decision. Set `null` explicitly only for a new deployment; existing deployments must supply their current key as described below. |
 | `deployment_slot_enabled` | false | Provision a staging slot for slot-based rollout workflows. |
 | `deployment_slot_name` | `staging` | Name of the optional staging slot. |

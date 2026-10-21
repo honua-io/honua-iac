@@ -8,7 +8,9 @@ tags: [presets, sizing, terraform]
 # Deployment presets
 
 The four primary deployable roots ship a `small` infrastructure preset for a
-single-node development cell:
+single-node development cell. The qualified 2026.1 targets are AWS ECS/Fargate
+and AWS Lambda. The Azure roots ship the same preset shape as preview and are
+not qualified.
 
 | Target | Terraform root | Preset behavior | Serving units |
 | --- | --- | --- | --- |

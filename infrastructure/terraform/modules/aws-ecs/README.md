@@ -25,7 +25,7 @@ module "honua" {
   source = "../../modules/aws-ecs"
 
   environment    = "dev"
-  image          = "123456789012.dkr.ecr.us-west-2.amazonaws.com/honua-server:v1.2.3-ecs-aot"
+  image          = "123456789012.dkr.ecr.us-west-2.amazonaws.com/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   admin_password = var.honua_admin_password
   connection_encryption_master_key = null # Deliberate auto-generation for this new deployment
   enable_postgis = true  # Required — Honua needs PostGIS + PostGIS Raster
@@ -55,7 +55,7 @@ module "honua" {
   name_prefix = "honua"
 
   # Container
-  image            = "123456789012.dkr.ecr.us-west-2.amazonaws.com/honua-server:v1.2.3-ecs-aot"  # Pin to a release ECS AOT tag in ECR
+  image            = "123456789012.dkr.ecr.us-west-2.amazonaws.com/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" # Published digest. No v* honua-server tag exists.
   container_cpu    = 1024   # 1 vCPU
   container_memory = 2048   # 2 GB
   desired_count    = 2      # Minimum 2 for HA
@@ -97,7 +97,7 @@ module "honua" {
 
   # Optional ALB canary path
   canary_enabled           = true
-  canary_image             = "123456789012.dkr.ecr.us-west-2.amazonaws.com/honua-server:v1.2.4-ecs-aot"
+  canary_image             = "123456789012.dkr.ecr.us-west-2.amazonaws.com/honua-server@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   canary_desired_count     = 1
   canary_weight_percentage = 0
 
@@ -194,7 +194,7 @@ Because the canary and primary services run concurrently, canary rollouts requir
 
 ```hcl
 canary_enabled           = true
-canary_image             = "ghcr.io/honua-io/honua-server:v1.2.4-aot"
+canary_image             = "ghcr.io/honua-io/honua-server@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 canary_desired_count     = 1
 canary_weight_percentage = 0
 ```

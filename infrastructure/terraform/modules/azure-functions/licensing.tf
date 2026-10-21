@@ -12,12 +12,21 @@
 # ~2KB envelope out of the app-settings size budget and matches the AWS
 # `aws:secretsmanager:<arn>` contract.
 #
-# Off by default so existing deploys run Community; when off the secret and env
-# are not emitted.
+# Off by default. With no envelope the module still declares
+# Licensing__Mode=Disabled: the server's own default (Enabled, no license
+# source) boots the Community edition. Enabling the envelope is the licensed
+# path and forces Enabled.
 ###############################################################################
 
 locals {
   pro_license_enabled = var.enable_pro_license
+
+  # Supplying an envelope forces Enabled. Otherwise licensing_mode decides and
+  # defaults to Disabled, the 2026.1 contract.
+  licensing_mode = local.pro_license_enabled ? "Enabled" : var.licensing_mode
+  licensing_environment = {
+    Licensing__Mode = local.licensing_mode
+  }
 
   # Server-side license reference (ticket #1745):
   #   azure:keyvault:https://<vault>.vault.azure.net/pro-license
