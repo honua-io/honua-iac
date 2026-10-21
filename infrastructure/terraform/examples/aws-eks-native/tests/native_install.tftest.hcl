@@ -24,6 +24,14 @@ mock_provider "external" {
 }
 
 override_data {
+  target = data.external.public_certificate
+  values = { result = {
+    certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    hostname        = "gis.example.com"
+  } }
+}
+
+override_data {
   target = data.external.pod_identity_agent
   values = { result = {
     status    = "ACTIVE"
@@ -96,6 +104,11 @@ variables {
   certificate_arn                    = "arn:aws:acm:us-east-1:123456789012:certificate/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
   route53_zone_id                    = "ZEXAMPLE"
   load_balancer_controller           = "legacy-service-controller"
+  operations_policy_rules = [
+    { operation_id = "service.publish", role = "publisher", decision = "Allow" },
+    { decision = "RequireApproval", approval_lane = "ops-review" },
+  ]
+  cors_allowed_origins = ["https://console.example.com"]
 }
 
 run "native_install_projects_configured_resources" {
@@ -123,6 +136,12 @@ run "native_install_projects_configured_resources" {
       aws_route53_record.public[0].type == "A" &&
     length(aws_route53_record.public) == 1)
     error_message = "Plan must contain the digest-pinned Deployment, selected service account, public TLS Service, and managed DNS record."
+  }
+  assert {
+    condition = (length([for env in kubernetes_deployment_v1.honua.spec[0].template[0].spec[0].container[0].env : env if env.name == "Operations__Policy__Rules__0__Role" && env.value == "publisher"]) == 1 &&
+      length([for env in kubernetes_deployment_v1.honua.spec[0].template[0].spec[0].container[0].env : env if env.name == "Operations__Policy__Rules__1__ApprovalLane" && env.value == "ops-review"]) == 1 &&
+    length([for env in kubernetes_deployment_v1.honua.spec[0].template[0].spec[0].container[0].env : env if env.name == "Cors__AllowedOrigins__0" && env.value == "https://console.example.com"]) == 1)
+    error_message = "Native server must preserve ordered operation-policy and CORS settings."
   }
 }
 

@@ -8,6 +8,15 @@ data "aws_eks_cluster" "selected" {
   name = var.cluster_name
 }
 
+data "external" "public_certificate" {
+  program = ["python3", "${path.module}/scripts/read-public-certificate.py"]
+  query = {
+    certificate_arn = var.certificate_arn
+    hostname        = var.public_hostname
+    region          = var.region
+  }
+}
+
 data "external" "public_zone" {
   count   = var.route53_zone_id == "" ? 0 : 1
   program = ["python3", "${path.module}/scripts/read-public-hosted-zone.py"]
@@ -129,6 +138,19 @@ locals {
     }, var.audit_chain_key_secret_arn == "" ? {} : {
     AuditLog__ChainVerification__Key = "aws:secretsmanager:${var.audit_chain_key_secret_arn}"
   })
+  operations_policy_environment = merge({}, [
+    for index, rule in var.operations_policy_rules : {
+      for field, value in {
+        OperationId  = rule.operation_id
+        Role         = rule.role
+        Tier         = rule.tier
+        Decision     = rule.decision
+        Reason       = rule.reason
+        ApprovalLane = rule.approval_lane
+      } : "Operations__Policy__Rules__${index}__${field}" => value if value != null
+    }
+  ]...)
+  cors_environment = { for index, origin in var.cors_allowed_origins : "Cors__AllowedOrigins__${index}" => origin }
   controller_annotations = var.load_balancer_controller == "aws-load-balancer-controller" ? {
     "service.beta.kubernetes.io/aws-load-balancer-type"            = "external"
     "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "ip"
@@ -272,7 +294,7 @@ resource "kubernetes_deployment_v1" "honua" {
             container_port = 8080
           }
           dynamic "env" {
-            for_each = merge(local.secret_environment, {
+            for_each = merge(local.secret_environment, local.operations_policy_environment, local.cors_environment, {
               ASPNETCORE_URLS                                    = "http://0.0.0.0:8080"
               TMPDIR                                             = "/tmp/honua-temp"
               Public__BaseUrl                                    = local.public_url
@@ -334,8 +356,10 @@ resource "kubernetes_deployment_v1" "honua" {
       error_message = "The Pod Identity agent must be ACTIVE and both existing associations must bind the selected namespace, service accounts and distinct workload roles."
     }
     precondition {
-      condition     = can(regex("^arn:${data.aws_partition.current.partition}:acm:${var.region}:${data.aws_caller_identity.current.account_id}:certificate/", var.certificate_arn))
-      error_message = "The public TLS certificate must belong to the selected cluster account and region."
+      condition = (can(regex("^arn:${data.aws_partition.current.partition}:acm:${var.region}:${data.aws_caller_identity.current.account_id}:certificate/", var.certificate_arn)) &&
+        data.external.public_certificate.result.certificate_arn == var.certificate_arn &&
+      data.external.public_certificate.result.hostname == var.public_hostname)
+      error_message = "The public TLS certificate must belong to the selected account and region, be issued, and cover the hostname."
     }
     precondition {
       condition = alltrue([for arn in concat(local.required_secret_arns, [for arn in local.optional_secret_arns : arn if arn != ""]) :

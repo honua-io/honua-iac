@@ -1,0 +1,2 @@
+# Optional small native-install preset; pass after terraform.tfvars.
+replicas = 1

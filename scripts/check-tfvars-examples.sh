@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Verify the operator tfvars contract for the four primary deployable roots.
+# Verify the operator tfvars contract for the primary deployable roots.
 #
 # The documented operator path is:
 #
@@ -30,6 +30,7 @@ roots=(
   azure
   aws-serverless
   azure-functions
+  aws-eks-native
 )
 
 failures=0
