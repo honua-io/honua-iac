@@ -146,8 +146,8 @@ run "handoff_reports_serving_alias_not_latest_function_version" {
     error_message = "Runtime facts must preserve the provider account/region and canonical Lambda actuator."
   }
   assert {
-    condition     = jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].TargetName == output.runtime_binding_contract.resourceIdentity.functionArn && jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].Parameters["aws.region"] == output.runtime_binding_contract.platform.region
-    error_message = "The server registry must bind the actual function ARN and explicit provider region; the agent's cloud identity alone is insufficient."
+    condition     = jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].TargetName == output.runtime_binding_contract.resourceIdentity.functionArn && jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].Parameters["aws.region"] == output.runtime_binding_contract.platform.region && jsondecode(aws_secretsmanager_secret_version.runtime_settings.secret_string).ControlPlane.DeployTargets[0].Parameters["honua.runtime_kind"] == output.runtime_binding_contract.runtimeKind
+    error_message = "The server registry must bind the actual function ARN, provider region, and declared runtime kind to the same handoff target."
   }
   assert {
     condition     = local.lambda_environment_bytes.api <= 4096 && local.lambda_environment_bytes.control_plane_tick <= 4096

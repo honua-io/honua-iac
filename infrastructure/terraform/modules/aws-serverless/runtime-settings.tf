@@ -16,6 +16,7 @@ locals {
         Parameters = {
           "aws.region"            = data.aws_region.current.name
           "aws.lambda.alias_name" = var.lambda_alias_name
+          "honua.runtime_kind"    = "aws-lambda"
         }
       }]
     }
