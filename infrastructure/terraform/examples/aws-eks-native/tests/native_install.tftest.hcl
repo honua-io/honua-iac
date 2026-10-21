@@ -112,7 +112,7 @@ variables {
 }
 
 run "native_install_projects_configured_resources" {
-  command = plan
+  command = apply
   assert {
     condition = (output.runtime_binding_contract.backend == "honua-kubernetes-deployment" &&
       output.runtime_binding_contract.resourceIdentity.routeKind == "LoadBalancerService" &&
@@ -146,7 +146,7 @@ run "native_install_projects_configured_resources" {
 }
 
 run "external_dns_is_unqualified" {
-  command = plan
+  command = apply
   variables {
     route53_zone_id = ""
   }
