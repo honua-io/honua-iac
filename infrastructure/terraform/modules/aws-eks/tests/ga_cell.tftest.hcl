@@ -221,16 +221,19 @@ run "managed_database_by_default_redis_off" {
   }
 
   assert {
-    condition = alltrue([
-      for policy in aws_iam_role_policy.workload_secrets :
-      toset(jsondecode(policy.policy).Statement[0].Resource) == toset([
+    condition = (
+      toset(jsondecode(aws_iam_role_policy.workload_secrets["server"].policy).Statement[0].Resource) == toset([
         "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test-db-AAAAAA",
         "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test-admin-BBBBBB",
         "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test-connection-encryption-CCCCCC",
         "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123",
+      ]) &&
+      toset(jsondecode(aws_iam_role_policy.workload_secrets["gp-job"].policy).Statement[0].Resource) == toset([
+        "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test-db-AAAAAA",
+        "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test-connection-encryption-CCCCCC",
       ])
-    ])
-    error_message = "Server and GP job roles must read exactly the runtime secrets in play."
+    )
+    error_message = "The GP job role must not inherit the server admin or audit secrets."
   }
 
   assert {

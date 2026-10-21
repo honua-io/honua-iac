@@ -8,9 +8,13 @@ data "aws_eks_cluster" "selected" {
   name = var.cluster_name
 }
 
-data "aws_route53_zone" "selected" {
+data "external" "public_zone" {
   count   = var.route53_zone_id == "" ? 0 : 1
-  zone_id = var.route53_zone_id
+  program = ["python3", "${path.module}/scripts/read-public-hosted-zone.py"]
+  query = {
+    zone_id = var.route53_zone_id
+    region  = var.region
+  }
 }
 
 # The existing cluster must be reachable from this exact-plan runner. The exec
@@ -58,6 +62,25 @@ data "external" "gp_job_association" {
     cluster_name   = var.cluster_name
     association_id = var.gp_job_pod_identity_association_id
   }
+}
+
+# Resolve the Service's AWS load balancer by its observed hostname after the
+# controller creates it. The read refuses ambiguous or differently tagged LBs.
+data "external" "public_load_balancer" {
+  program = ["python3", "${path.module}/scripts/read-service-load-balancer.py"]
+  query = {
+    region          = var.region
+    account_id      = data.aws_caller_identity.current.account_id
+    partition       = data.aws_partition.current.partition
+    cluster_name    = var.cluster_name
+    namespace       = var.namespace
+    service_name    = local.service_name
+    target_id       = var.target_id
+    controller      = var.load_balancer_controller
+    hostname        = local.lb_hostname
+    certificate_arn = var.certificate_arn
+  }
+  depends_on = [kubernetes_service_v1.public]
 }
 
 locals {
@@ -128,6 +151,24 @@ resource "kubernetes_service_account_v1" "gp_job" {
   }
 }
 
+# Only reference strings enter this Kubernetes Secret and Terraform state. The
+# worker resolves the AWS secrets using its own Pod Identity role at startup.
+resource "kubernetes_secret_v1" "gp_runtime_refs" {
+  metadata {
+    name      = "${substr(var.deployment_name, 0, 47)}-gp-runtime-refs"
+    namespace = kubernetes_namespace_v1.honua.metadata[0].name
+    labels    = local.labels
+  }
+  data = merge({
+    ConnectionStrings__DefaultConnection      = "aws:secretsmanager:${var.db_connection_secret_arn}"
+    ConnectionStrings__redis                  = "aws:secretsmanager:${var.redis_connection_secret_arn}"
+    Security__ConnectionEncryption__MasterKey = "aws:secretsmanager:${var.master_key_secret_arn}"
+    }, var.operation_key_ring_certificate_secret_arn == "" ? {} : {
+    Operations__SecretChannel__KeyRingCertificatePkcs12 = "aws:secretsmanager:${var.operation_key_ring_certificate_secret_arn}"
+  })
+  type = "Opaque"
+}
+
 # The server's Kubernetes Job backend needs namespace-scoped Job access. The GP
 # runner has its own service account and IAM role, never the node role.
 resource "kubernetes_role_v1" "server_jobs" {
@@ -191,11 +232,12 @@ resource "kubernetes_deployment_v1" "honua" {
           }
           dynamic "env" {
             for_each = merge(local.secret_environment, {
-              ASPNETCORE_URLS                                 = "http://0.0.0.0:8080"
-              Public__BaseUrl                                 = local.public_url
-              ControlPlane__Kubernetes__DefaultNamespace      = var.namespace
-              ControlPlane__Kubernetes__DefaultServiceAccount = var.gp_job_service_account_name
-              ControlPlane__Kubernetes__DefaultImage          = var.gp_job_image_reference
+              ASPNETCORE_URLS                                    = "http://0.0.0.0:8080"
+              Public__BaseUrl                                    = local.public_url
+              ControlPlane__Kubernetes__DefaultNamespace         = var.namespace
+              ControlPlane__Kubernetes__DefaultServiceAccount    = var.gp_job_service_account_name
+              ControlPlane__Kubernetes__DefaultImage             = var.gp_job_image_reference
+              ControlPlane__Kubernetes__DefaultEnvFromSecrets__0 = kubernetes_secret_v1.gp_runtime_refs.metadata[0].name
             })
             content {
               name  = env.key
@@ -212,7 +254,7 @@ resource "kubernetes_deployment_v1" "honua" {
           }
           liveness_probe {
             http_get {
-              path = "/healthz"
+              path = "/healthz/live"
               port = "http"
             }
             initial_delay_seconds = 30
@@ -259,6 +301,10 @@ resource "kubernetes_deployment_v1" "honua" {
       ])
       error_message = "Every runtime secret reference must be a Secrets Manager ARN in the selected cluster account and region."
     }
+    precondition {
+      condition     = var.redis_connection_secret_arn != ""
+      error_message = "GP execution workers require a Redis job store; redis_connection_secret_arn must be set."
+    }
   }
 }
 
@@ -268,9 +314,10 @@ resource "kubernetes_service_v1" "public" {
     namespace = kubernetes_namespace_v1.honua.metadata[0].name
     labels    = local.labels
     annotations = merge(local.controller_annotations, {
-      "service.beta.kubernetes.io/aws-load-balancer-scheme"    = "internet-facing"
-      "service.beta.kubernetes.io/aws-load-balancer-ssl-cert"  = var.certificate_arn
-      "service.beta.kubernetes.io/aws-load-balancer-ssl-ports" = "443"
+      "service.beta.kubernetes.io/aws-load-balancer-scheme"                   = "internet-facing"
+      "service.beta.kubernetes.io/aws-load-balancer-ssl-cert"                 = var.certificate_arn
+      "service.beta.kubernetes.io/aws-load-balancer-ssl-ports"                = "443"
+      "service.beta.kubernetes.io/aws-load-balancer-additional-resource-tags" = "honua.io/target-id=${var.target_id}"
     })
   }
   spec {
@@ -291,16 +338,19 @@ resource "aws_route53_record" "public" {
   count   = var.route53_zone_id == "" ? 0 : 1
   zone_id = var.route53_zone_id
   name    = var.public_hostname
-  type    = "CNAME"
-  ttl     = 60
-  records = [local.lb_hostname]
+  type    = "A"
+  alias {
+    name                   = data.external.public_load_balancer.result.dns_name
+    zone_id                = data.external.public_load_balancer.result.canonical_hosted_zone_id
+    evaluate_target_health = false
+  }
 
   lifecycle {
     precondition {
-      condition = (!data.aws_route53_zone.selected[0].private_zone &&
-        trimsuffix(var.public_hostname, ".") != trimsuffix(data.aws_route53_zone.selected[0].name, ".") &&
-      endswith(var.public_hostname, ".${trimsuffix(data.aws_route53_zone.selected[0].name, ".")}"))
-      error_message = "public_hostname must be a non-apex name inside a public Route53 zone to manage its CNAME."
+      condition = (data.external.public_zone[0].result.zone_id == var.route53_zone_id &&
+        (trimsuffix(var.public_hostname, ".") == trimsuffix(data.external.public_zone[0].result.name, ".") ||
+      endswith(var.public_hostname, ".${trimsuffix(data.external.public_zone[0].result.name, ".")}")))
+      error_message = "public_hostname must be inside a public Route53 zone to manage its A alias."
     }
   }
 }

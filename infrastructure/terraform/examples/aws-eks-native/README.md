@@ -10,7 +10,7 @@ is part of this install.
 
 The exact Terraform plan creates a Namespace, distinct server and GP Job
 ServiceAccounts, namespace-scoped Job RBAC for the server, a server Deployment,
-a public TLS LoadBalancer Service, and optionally a Route53 CNAME pointed at
+a public TLS LoadBalancer Service, and optionally a Route53 A alias pointed at
 the Service load balancer. The server container and configured GP Job image must
 both be pinned by OCI SHA-256 digest. `artifact_capabilities` must match those
 digests and declare the selected workload identity mode. The image capability
@@ -19,11 +19,12 @@ the image's compiled credential providers.
 
 The required inputs are the existing cluster name, environment, target and
 tenant IDs, immutable images, artifact capabilities, separate server/GP role
-ARNs and existing Pod Identity association IDs, three generated secret ARNs, a public hostname and its validated ACM
+ARNs and existing Pod Identity association IDs, database/admin/master-key and Redis secret ARNs, a public hostname and its validated ACM
 certificate ARN, and an explicit load balancer controller choice. Pass the
 values exposed by the existing `examples/aws-eks` outputs, using the **same**
-account, region and namespace. Optional Redis, key-ring and audit-chain inputs
-are secret ARNs only. The native root builds the server's fixed
+account, region and namespace. Redis is required because GP workers need the
+durable job store. Optional key-ring and audit-chain inputs are secret ARNs
+only. The native root builds the server's fixed
 `aws:secretsmanager:` environment references; do not pass secret values.
 
 The `load_balancer_controller` input is required. `legacy-service-controller`
@@ -43,8 +44,21 @@ before it plans the Deployment. It creates no IRSA annotations. The DevOps
 verifier must reread those associations and observe the selected provider in
 the running pod before binding a handoff.
 
-`route53_zone_id` is optional. When set, Terraform owns the CNAME from
-`public_hostname` to the Service load balancer hostname. The output describes
+The GP worker imports a Kubernetes Secret containing only AWS secret references
+for the database, Redis, encryption master key and optional secret channel.
+Its Pod Identity role can read only those secret ARNs; it has no admin-password
+or audit-key permission. The Server permits operator-owned workload/default
+image and service-account overrides; ordinary GP submissions cannot set the
+reserved `k8s.*` request metadata. This install configures defaults but does
+not prove an executed GP Job used them. That claim requires observation of the
+actual Job image, service account and Pod Identity association.
+
+`route53_zone_id` is optional. When set, Terraform owns an A alias from
+`public_hostname` to the Service load balancer. The root observes one active
+NLB with the Service hostname, selected controller's cluster/service tags,
+Honua target tag, and the selected TLS listener certificate before creating
+the alias. It also reads the exact Route53 hosted-zone ID and refuses a private
+zone or a hostname outside that zone. The output describes
 configured state; the verifier must still observe the live route.
 With externally managed DNS, Terraform can configure the Service and
 certificate, but cannot prove the external hostname points at it. The DevOps

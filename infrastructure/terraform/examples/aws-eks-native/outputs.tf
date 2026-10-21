@@ -26,8 +26,9 @@ locals {
     adminPasswordSecretArn         = var.admin_password_secret_arn
     masterKeySecretArn             = var.master_key_secret_arn
     }, var.route53_zone_id == "" ? {} : {
-    dnsZoneId     = aws_route53_record.public[0].zone_id
-    dnsRecordName = aws_route53_record.public[0].fqdn
+    loadBalancerArn = data.external.public_load_balancer.result.arn
+    dnsZoneId       = aws_route53_record.public[0].zone_id
+    dnsRecordName   = aws_route53_record.public[0].fqdn
   })
 }
 
@@ -52,17 +53,19 @@ output "runtime_binding_contract" {
 output "configured_install" {
   description = "Non-authoritative install inventory; external-DNS mode is unqualified until a trusted route is observed."
   value = {
-    status                 = "configured"
-    tenant_id              = var.tenant_id
-    image_reference        = kubernetes_deployment_v1.honua.spec[0].template[0].spec[0].container[0].image
-    image_digest           = local.server_digest
-    gp_job_image_reference = var.gp_job_image_reference
-    gp_job_image_digest    = local.gp_job_digest
-    workload_identity_mode = var.workload_identity_mode
-    load_balancer_hostname = local.lb_hostname
-    public_url             = local.public_url
-    route_management       = var.route53_zone_id == "" ? "external-unverified" : "route53-cname"
-    resources              = local.resource_identity
+    status                                 = "configured"
+    tenant_id                              = var.tenant_id
+    image_reference                        = kubernetes_deployment_v1.honua.spec[0].template[0].spec[0].container[0].image
+    image_digest                           = local.server_digest
+    gp_job_image_reference                 = var.gp_job_image_reference
+    gp_job_image_digest                    = local.gp_job_digest
+    workload_identity_mode                 = var.workload_identity_mode
+    load_balancer_hostname                 = local.lb_hostname
+    load_balancer_arn                      = data.external.public_load_balancer.result.arn
+    load_balancer_canonical_hosted_zone_id = data.external.public_load_balancer.result.canonical_hosted_zone_id
+    public_url                             = local.public_url
+    route_management                       = var.route53_zone_id == "" ? "external-unverified" : "route53-alias"
+    resources                              = local.resource_identity
     secret_refs = {
       db_connection                    = var.db_connection_secret_arn
       admin_password                   = var.admin_password_secret_arn

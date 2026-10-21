@@ -14,12 +14,6 @@ mock_provider "aws" {
       certificate_authority = [{ data = "Y2VydA==" }]
     }
   }
-  mock_data "aws_route53_zone" {
-    defaults = {
-      name         = "example.com."
-      private_zone = false
-    }
-  }
 }
 
 mock_provider "kubernetes" {}
@@ -59,6 +53,24 @@ override_data {
   } }
 }
 
+override_data {
+  target          = data.external.public_load_balancer
+  override_during = plan
+  values = { result = {
+    arn                      = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/net/honua-it/aaaaaaaaaaaaaaaa"
+    dns_name                 = "honua-it.elb.us-east-1.amazonaws.com"
+    canonical_hosted_zone_id = "ZELBEXAMPLE"
+  } }
+}
+
+override_data {
+  target = data.external.public_zone[0]
+  values = { result = {
+    name    = "example.com."
+    zone_id = "ZEXAMPLE"
+  } }
+}
+
 variables {
   region                 = "us-east-1"
   cluster_name           = "honua-it"
@@ -79,6 +91,7 @@ variables {
   db_connection_secret_arn           = "arn:aws:secretsmanager:us-east-1:123456789012:secret:db-123"
   admin_password_secret_arn          = "arn:aws:secretsmanager:us-east-1:123456789012:secret:admin-123"
   master_key_secret_arn              = "arn:aws:secretsmanager:us-east-1:123456789012:secret:master-123"
+  redis_connection_secret_arn        = "arn:aws:secretsmanager:us-east-1:123456789012:secret:redis-123"
   public_hostname                    = "gis.example.com"
   certificate_arn                    = "arn:aws:acm:us-east-1:123456789012:certificate/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
   route53_zone_id                    = "ZEXAMPLE"
@@ -92,6 +105,7 @@ run "native_install_projects_configured_resources" {
       output.runtime_binding_contract.resourceIdentity.routeKind == "LoadBalancerService" &&
       output.runtime_binding_contract.resourceIdentity.servicePort == "443" &&
       output.runtime_binding_contract.resourceIdentity.targetPort == "8080" &&
+      output.runtime_binding_contract.resourceIdentity.loadBalancerArn == data.external.public_load_balancer.result.arn &&
     output.runtime_binding_contract.resourceIdentity.serverRoleArn != output.runtime_binding_contract.resourceIdentity.gpRoleArn)
     error_message = "Native EKS binding must project the Terraform-owned Service route and distinct workload roles."
   }
@@ -102,8 +116,12 @@ run "native_install_projects_configured_resources" {
   assert {
     condition = (kubernetes_deployment_v1.honua.spec[0].template[0].spec[0].container[0].image == var.image_reference &&
       kubernetes_deployment_v1.honua.spec[0].template[0].spec[0].service_account_name == var.server_service_account_name &&
+      kubernetes_deployment_v1.honua.spec[0].template[0].spec[0].container[0].liveness_probe[0].http_get[0].path == "/healthz/live" &&
+      kubernetes_secret_v1.gp_runtime_refs.data["ConnectionStrings__redis"] == "aws:secretsmanager:${var.redis_connection_secret_arn}" &&
+      !contains(keys(kubernetes_secret_v1.gp_runtime_refs.data), "HONUA_ADMIN_PASSWORD") &&
       kubernetes_service_v1.public.spec[0].type == "LoadBalancer" &&
       kubernetes_service_v1.public.spec[0].port[0].port == 443 &&
+      aws_route53_record.public[0].type == "A" &&
     length(aws_route53_record.public) == 1)
     error_message = "Plan must contain the digest-pinned Deployment, selected service account, public TLS Service, and managed DNS record."
   }
@@ -154,6 +172,14 @@ run "irsa_refused_for_builtin_secret_resolver" {
     workload_identity_mode = "irsa"
   }
   expect_failures = [var.workload_identity_mode]
+}
+
+run "gp_worker_without_redis_refused" {
+  command = plan
+  variables {
+    redis_connection_secret_arn = ""
+  }
+  expect_failures = [kubernetes_deployment_v1.honua]
 }
 
 run "wrong_pod_association_refused" {

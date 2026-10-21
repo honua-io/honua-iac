@@ -168,7 +168,7 @@ variable "master_key_secret_arn" {
 variable "redis_connection_secret_arn" {
   type        = string
   default     = ""
-  description = "Optional Redis connection secret ARN."
+  description = "Redis connection secret ARN. Required for the GP execution worker's durable job store."
 }
 
 variable "operation_key_ring_certificate_secret_arn" {
@@ -204,7 +204,7 @@ variable "certificate_arn" {
 variable "route53_zone_id" {
   type        = string
   default     = ""
-  description = "Route53 hosted zone to manage a CNAME for public_hostname. Empty means external DNS ownership."
+  description = "Route53 hosted zone to manage an A alias for public_hostname. Empty means external DNS ownership."
   validation {
     condition     = var.route53_zone_id == "" || can(regex("^Z[A-Z0-9]+$", var.route53_zone_id))
     error_message = "route53_zone_id must be empty or a Route53 hosted zone ID."
