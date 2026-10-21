@@ -3,6 +3,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=cleanup-read-verdict.sh
+source "$SCRIPT_DIR/cleanup-read-verdict.sh"
 REPO_ROOT=""
 SEARCH_DIR="$SCRIPT_DIR"
 while [[ "$SEARCH_DIR" != "/" ]]; do
@@ -2602,52 +2604,14 @@ verify_no_leaks() {
   local i
 
   is_non_leaking_tagged_arn() {
-    local resource_arn="$1"
-    local status
-    local deleted_date
-    local key_state
-    local cluster_name
-    local service_name
-    local service_path
-
-    case "$resource_arn" in
-      arn:aws:ecs:*:cluster/*)
-        cluster_name="${resource_arn##*/}"
-        status="$(run_aws ecs describe-clusters --clusters "$cluster_name" --query 'clusters[0].status' --output text 2>/dev/null || echo MISSING)"
-        [[ "$status" != "ACTIVE" ]]
-        return
-        ;;
-      arn:aws:ecs:*:service/*/*)
-        service_path="${resource_arn#*:service/}"
-        cluster_name="${service_path%%/*}"
-        service_name="${service_path#*/}"
-        status="$(run_aws ecs describe-services --cluster "$cluster_name" --services "$service_name" --query 'services[0].status' --output text 2>/dev/null || echo MISSING)"
-        [[ "$status" != "ACTIVE" ]]
-        return
-        ;;
-      arn:aws:ecs:*:task-definition/*)
-        status="$(run_aws ecs describe-task-definition --task-definition "$resource_arn" --query 'taskDefinition.status' --output text 2>/dev/null || echo MISSING)"
-        [[ "$status" == "INACTIVE" || "$status" == "MISSING" ]]
-        return
-        ;;
-      arn:aws:secretsmanager:*)
-        deleted_date="$(run_aws secretsmanager describe-secret --secret-id "$resource_arn" --query 'DeletedDate' --output text 2>/dev/null || echo MISSING)"
-        [[ "$deleted_date" != "None" ]]
-        return
-        ;;
-      arn:aws:kms:*)
-        key_state="$(run_aws kms describe-key --key-id "$resource_arn" --query 'KeyMetadata.KeyState' --output text 2>/dev/null || echo MISSING)"
-        [[ "$key_state" == "PendingDeletion" || "$key_state" == "PendingReplicaDeletion" || "$key_state" == "MISSING" ]]
-        return
-        ;;
-      *)
-        return 1
-        ;;
-    esac
+    cleanup_resource_settled run_aws "$REGION" "$1"
   }
 
   collect_leaking_arns() {
-    arns_raw="$(run_aws resourcegroupstaggingapi get-resources --tag-filters Key=ValidationRunId,Values="$VALIDATION_RUN_ID" --query 'ResourceTagMappingList[].ResourceARN' --output text 2>/dev/null || echo '')"
+    if ! arns_raw="$(cleanup_tagged_arns run_aws --tag-filters Key=ValidationRunId,Values="$VALIDATION_RUN_ID")"; then
+      log_error "Could not verify tagged-resource inventory"
+      return 1
+    fi
 
     arns=()
     if [[ -n "$arns_raw" && "$arns_raw" != "None" ]]; then
@@ -2657,15 +2621,21 @@ verify_no_leaks() {
     fi
 
     leaking_arns=()
+    local observed=0
     for arn in "${arns[@]}"; do
-      if ! is_non_leaking_tagged_arn "$arn"; then
+      observed=0
+      is_non_leaking_tagged_arn "$arn" || observed=$?
+      if [[ "$observed" -eq 3 ]]; then
+        log_error "Could not verify tagged resource state: $arn"
+        return 1
+      elif [[ "$observed" -ne 0 ]]; then
         leaking_arns+=("$arn")
       fi
     done
   }
 
   for i in {1..20}; do
-    collect_leaking_arns
+    collect_leaking_arns || return 1
     if [[ "${#leaking_arns[@]}" -eq 0 ]]; then
       log_info "Leak janitor check passed (no tagged resources remain)"
       return 0

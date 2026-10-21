@@ -13,6 +13,8 @@
 * [Run a failover drill](devops/failover-drill-runbook.md)
 * [Execute the cloud runbooks manually](devops/manual-cloud-runbook-validation.md)
 * [Approve provisioning with two principals](devops/provision-approval-two-principal.md)
+* [Produce a private standing AWS certification plan](devops/standing-aws-cert-plan.md)
+* [Retain standing certification packets through encrypted transfer](devops/standing-cert-encrypted-packets.md)
 * [Validate Terraform on demand](devops/terraform-validation.md)
 * [Deploy Honua as a platform operator](operator-deployment.md)
 

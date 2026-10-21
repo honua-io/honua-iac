@@ -4,6 +4,10 @@ on:
   pull_request:
     paths:
       - 'infrastructure/terraform/**'
+      - 'release/aws-cert-plan-recipient.json'
+      - 'release/aws-cert-reviewed-modules.json'
+      - 'release/aws-cert-reviewed-bootstrap.json'
+      - 'release/component-versions.json'
       - 'scripts/run-aws-terraform-integration.sh'
       - 'scripts/run-azure-terraform-integration.sh'
       - 'scripts/run-aks-terraform-integration.sh'
@@ -53,6 +57,10 @@ on:
       - trunk
     paths:
       - 'infrastructure/terraform/**'
+      - 'release/aws-cert-plan-recipient.json'
+      - 'release/aws-cert-reviewed-modules.json'
+      - 'release/aws-cert-reviewed-bootstrap.json'
+      - 'release/component-versions.json'
       - 'scripts/run-aws-terraform-integration.sh'
       - 'scripts/run-azure-terraform-integration.sh'
       - 'scripts/run-aks-terraform-integration.sh'
@@ -110,6 +118,31 @@ env:
   TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
 
 jobs:
+  standing-cert-encryption-controls:
+    name: Standing certification encrypted packet controls (synthetic keys)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install pinned maintained encryption tools
+        run: |
+          install -d -m 700 "$RUNNER_TEMP/cert-plan-tools"
+          python3 infrastructure/terraform/validation/scripts/aws/cert_plan_envelope.py install-tools --directory "$RUNNER_TEMP/cert-plan-tools"
+      - name: Run real encryption and exact-run receiver controls
+        env:
+          HONUA_CERT_TEST_TOOLS: ${{ runner.temp }}/cert-plan-tools
+        run: python3 infrastructure/terraform/validation/scripts/aws/test_cert_plan_envelope.py -v
+
+  standing-cert-plan-controls:
+    name: Standing certification private plan controls (offline)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - run: python3 infrastructure/terraform/validation/scripts/aws/test_standing_cert_plan.py -v
+      - run: python3 infrastructure/terraform/validation/scripts/aws/test_verify_reviewed_modules.py -v
+      - run: python3 infrastructure/terraform/validation/scripts/aws/test_restore_reviewed_bootstrap.py -v
+
   terraform-1-5-validate:
     name: Terraform 1.5 Floor Validate
     runs-on: ubuntu-latest
@@ -246,6 +279,7 @@ jobs:
             "infrastructure/terraform/examples/aws-data"
             "infrastructure/terraform/examples/azure-aks"
             "infrastructure/terraform/examples/aws-eks"
+            "infrastructure/terraform/examples/aws-eks-native"
             "infrastructure/terraform/examples/observability"
             # Git-source external-consumer example. Unlike the other roots its
             # module is fetched from the repo over the network at the pinned
@@ -340,6 +374,8 @@ jobs:
           terraform -chdir=infrastructure/terraform/examples/aws-cert test -no-color
           terraform -chdir=infrastructure/terraform/modules/aws-eks test -no-color
           terraform -chdir=infrastructure/terraform/examples/aws-eks test -no-color
+          terraform -chdir=infrastructure/terraform/examples/aws-eks-native test -no-color
+          python3 -m unittest discover -s infrastructure/terraform/examples/aws-eks-native/tests -p 'test_*.py'
           terraform -chdir=infrastructure/terraform/modules/azure-aca test -no-color
 
       - name: Post-apply caller and named-evidence contract

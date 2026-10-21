@@ -1,0 +1,35 @@
+# Copy to terraform.tfvars and replace every synthetic value with the exact
+# reviewed artifact and existing aws-eks infrastructure outputs for this cell.
+region       = "us-east-1"
+cluster_name = "honua-example"
+environment  = "prod"
+target_id    = "honua-prod"
+tenant_id    = "tenant-example"
+
+image_reference        = "ghcr.io/honua-io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+gp_job_image_reference = "ghcr.io/honua-io/honua-server@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+artifact_capabilities = {
+  server_image_digest           = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  gp_job_image_digest           = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  supported_workload_identities = ["pod_identity"]
+}
+
+server_role_arn                    = "arn:aws:iam::123456789012:role/honua-prod-server"
+gp_job_role_arn                    = "arn:aws:iam::123456789012:role/honua-prod-gp-job"
+server_pod_identity_association_id = "a-serversynthetic"
+gp_job_pod_identity_association_id = "a-gpsynthetic"
+
+db_connection_secret_arn    = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-prod-db-ABC123"
+admin_password_secret_arn   = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-prod-admin-ABC123"
+master_key_secret_arn       = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-prod-master-ABC123"
+redis_connection_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-prod-redis-ABC123"
+
+# Copy the existing aws-eks cell's policy and browser-origin settings here.
+# Empty policy rules retain Production's fail-closed default deny.
+operations_policy_rules = []
+cors_allowed_origins    = []
+
+public_hostname         = "gis.example.com"
+certificate_arn         = "arn:aws:acm:us-east-1:123456789012:certificate/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+route53_zone_id         = "ZEXAMPLE"
+load_balancer_controller = "legacy-service-controller"

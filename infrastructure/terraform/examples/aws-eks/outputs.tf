@@ -37,6 +37,16 @@ output "server_role_arn" {
   value       = module.eks.server_role_arn
 }
 
+output "server_pod_identity_association_id" {
+  description = "Server Pod Identity association ID for the separate native workload root. Null in IRSA mode."
+  value       = module.eks.server_pod_identity_association_id
+}
+
+output "gp_job_pod_identity_association_id" {
+  description = "GP Job Pod Identity association ID for the separate native workload root. Null in IRSA mode."
+  value       = module.eks.gp_job_pod_identity_association_id
+}
+
 output "server_service_account_annotations" {
   description = "Chart serviceAccount.annotations (empty under pod_identity)."
   value       = module.eks.server_service_account_annotations

@@ -68,6 +68,7 @@ Tier 3 internal-only) are recorded in [`docs/module-publishing-decision.md`](../
 - `examples/aws-serverless`
 - `examples/azure-functions`
 - `examples/aws-eks`
+- `examples/aws-eks-native` — governed native Deployment, Service and route in an existing EKS cluster
 - `examples/azure-aks`
 - `examples/observability`
 

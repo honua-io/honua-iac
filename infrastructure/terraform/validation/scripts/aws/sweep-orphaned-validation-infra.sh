@@ -67,6 +67,9 @@
 
 set -euo pipefail
 
+# shellcheck source=cleanup-read-verdict.sh
+source "$(dirname "${BASH_SOURCE[0]}")/cleanup-read-verdict.sh"
+
 # Field separator for the internal records below. Deliberately NOT a tab: tab is
 # an IFS whitespace character, so `IFS=$'\t' read` collapses runs of tabs and
 # drops empty fields. A resource with no Stack tag would then have its
@@ -305,6 +308,11 @@ select_candidates() {
         --tag-filters "Key=Owner,Values=$OWNER_TAG" \
         --output json 2>/dev/null)"; then
     emit_fail "could not enumerate tagged resources in $region"
+    return 0
+  fi
+
+  if ! cleanup_validate_tag_response "$payload" >/dev/null; then
+    emit_fail "could not validate tagged resources in $region"
     return 0
   fi
 
@@ -743,46 +751,7 @@ delete_ec2() {
 # (The same predicate the in-run leak janitor uses in
 # run-aws-terraform-integration.sh::is_non_leaking_tagged_arn.)
 already_settled() {
-  local region="$1" arn="$2" state cluster path name
-
-  case "$arn" in
-    arn:aws:kms:*)
-      if ! state="$(aws_read kms describe-key --region "$region" --key-id "$arn" \
-        --query 'KeyMetadata.KeyState' --output text 2>&1)"; then
-        [[ "$state" == *NotFoundException* ]] && return 0
-        log_warn "Could not establish KMS key state: $arn"
-        return 3
-      fi
-      [[ "$state" == "PendingDeletion" || "$state" == "PendingReplicaDeletion" ]]
-      ;;
-    arn:aws:secretsmanager:*)
-      state="$(aws_read secretsmanager describe-secret --region "$region" --secret-id "$arn" \
-        --query 'DeletedDate' --output text 2>/dev/null || echo MISSING)"
-      [[ "$state" != "None" ]]
-      ;;
-    arn:aws:ecs:*:cluster/*)
-      cluster="${arn##*/}"
-      state="$(aws_read ecs describe-clusters --region "$region" --clusters "$cluster" \
-        --query 'clusters[0].status' --output text 2>/dev/null || echo MISSING)"
-      [[ "$state" != "ACTIVE" ]]
-      ;;
-    arn:aws:ecs:*:service/*/*)
-      path="${arn#*:service/}"
-      cluster="${path%%/*}"
-      name="${path#*/}"
-      state="$(aws_read ecs describe-services --region "$region" --cluster "$cluster" --services "$name" \
-        --query 'services[0].status' --output text 2>/dev/null || echo MISSING)"
-      [[ "$state" != "ACTIVE" ]]
-      ;;
-    arn:aws:ecs:*:task-definition/*)
-      state="$(aws_read ecs describe-task-definition --region "$region" --task-definition "$arn" \
-        --query 'taskDefinition.status' --output text 2>/dev/null || echo MISSING)"
-      [[ "$state" == "INACTIVE" || "$state" == "MISSING" ]]
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+  cleanup_resource_settled aws_read "$1" "$2"
 }
 
 delete_arn() {
@@ -1002,9 +971,12 @@ main() {
   # Whatever is still tagged after the pass is what was left behind.
   for region in "${REGIONS[@]}"; do
     local remaining
-    remaining="$(aws_read resourcegroupstaggingapi get-resources --region "$region" \
-      --tag-filters "Key=Owner,Values=$OWNER_TAG" \
-      --query 'ResourceTagMappingList[].ResourceARN' --output text 2>/dev/null || echo "")"
+    if ! remaining="$(cleanup_tagged_arns aws_read --region "$region" \
+      --tag-filters "Key=Owner,Values=$OWNER_TAG")"; then
+      log_error "Could not verify final tagged-resource inventory in $region"
+      FAILURES=1
+      continue
+    fi
     for arn in $remaining; do
       [[ -z "$arn" || "$arn" == "None" ]] && continue
       contains "$arn" ${SETTLED_ARNS[@]+"${SETTLED_ARNS[@]}"} && continue

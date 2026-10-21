@@ -5,8 +5,8 @@
 #   * server — the chart's server service account; resolves the
 #     aws:secretsmanager: references in honua_server_environment.
 #   * gp-job — the service account GP Jobs run as
-#     (ControlPlane:Kubernetes:DefaultServiceAccount); the job process composes
-#     the same server DI, so it reads the same secrets, plus the GP data bucket.
+#     (ControlPlane:Kubernetes:DefaultServiceAccount); the worker receives only
+#     database, Redis, encryption and optional secret-channel references.
 #
 # pod_identity (default): EKS Pod Identity associations, made through the EKS
 # API — no IAM OIDC provider, no service-account annotation. irsa: the cluster's
@@ -32,14 +32,13 @@ locals {
     }
   }
 
-  # Every secret the server process (and therefore a GP job, which composes the
-  # same DI) resolves. Operator-owned key-ring and audit-key secrets are granted
-  # only when they are in play, so a Redis-off cell takes no dependency on the
-  # key-ring certificate.
+  # Give each workload only the references it receives. A GP worker has no
+  # admin/authentication endpoint and does not receive the admin password or
+  # server audit key. The key-ring reference is present only when configured.
   operation_key_ring_secret_arns = var.redis_enabled && var.operation_key_ring_certificate_secret_arn != "" ? [var.operation_key_ring_certificate_secret_arn] : []
   audit_chain_key_secret_arns    = var.audit_chain_key_secret_arn != "" ? [var.audit_chain_key_secret_arn] : []
 
-  workload_secret_arns = concat(
+  server_secret_arns = concat(
     [
       aws_secretsmanager_secret.db_connection.arn,
       aws_secretsmanager_secret.admin_password.arn,
@@ -50,11 +49,32 @@ locals {
     local.audit_chain_key_secret_arns,
   )
 
-  workload_kms_key_arns = distinct(concat(
+  gp_job_secret_arns = concat(
+    [aws_secretsmanager_secret.db_connection.arn, aws_secretsmanager_secret.master_key.arn],
+    aws_secretsmanager_secret.redis_connection[*].arn,
+    local.operation_key_ring_secret_arns,
+  )
+
+  workload_secret_arns = {
+    server = local.server_secret_arns
+    gp-job = local.gp_job_secret_arns
+  }
+
+  server_kms_key_arns = distinct(concat(
     var.secrets_kms_key_arn != "" ? [var.secrets_kms_key_arn] : [],
     var.redis_enabled && var.operation_key_ring_certificate_secret_kms_key_arn != "" ? [var.operation_key_ring_certificate_secret_kms_key_arn] : [],
     var.audit_chain_key_secret_arn != "" && var.audit_chain_key_secret_kms_key_arn != "" ? [var.audit_chain_key_secret_kms_key_arn] : [],
   ))
+
+  gp_job_kms_key_arns = distinct(concat(
+    var.secrets_kms_key_arn != "" ? [var.secrets_kms_key_arn] : [],
+    var.redis_enabled && var.operation_key_ring_certificate_secret_kms_key_arn != "" ? [var.operation_key_ring_certificate_secret_kms_key_arn] : [],
+  ))
+
+  workload_kms_key_arns = {
+    server = local.server_kms_key_arns
+    gp-job = local.gp_job_kms_key_arns
+  }
 
   pod_identity_trust_policy = jsonencode({
     Version = "2012-10-17"
@@ -119,14 +139,15 @@ resource "aws_iam_role_policy" "workload_secrets" {
       Sid      = "ReadHonuaRuntimeSecrets"
       Effect   = "Allow"
       Action   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
-      Resource = local.workload_secret_arns
-      }], length(local.workload_kms_key_arns) > 0 ? [{
+      Resource = local.workload_secret_arns[each.key]
+      }], length(local.workload_kms_key_arns[each.key]) > 0 ? [{
       Sid      = "DecryptHonuaRuntimeSecrets"
       Effect   = "Allow"
       Action   = ["kms:Decrypt"]
-      Resource = local.workload_kms_key_arns
+      Resource = local.workload_kms_key_arns[each.key]
       Condition = {
-        StringLike = { "kms:ViaService" = "secretsmanager.*.amazonaws.com" }
+        StringLike   = { "kms:ViaService" = "secretsmanager.*.amazonaws.com" }
+        StringEquals = { "kms:EncryptionContext:SecretARN" = local.workload_secret_arns[each.key] }
       }
     }] : [])
   })

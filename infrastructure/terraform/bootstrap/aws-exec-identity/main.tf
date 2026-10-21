@@ -265,6 +265,9 @@ data "aws_iam_policy_document" "deployment" {
       "ec2:ReplaceRoute",
       "ec2:RevokeSecurityGroupEgress",
       "ec2:RevokeSecurityGroupIngress",
+      "eks:DescribeAddon",
+      "eks:DescribeCluster",
+      "eks:DescribePodIdentityAssociation",
       "ecs:Create*",
       "ecs:Delete*",
       "ecs:DeregisterTaskDefinition",
@@ -320,11 +323,6 @@ data "aws_iam_policy_document" "deployment" {
       "rds:ListTagsForResource",
       "rds:Modify*",
       "rds:RemoveTagsFromResource",
-      "route53:ChangeResourceRecordSets",
-      "route53:GetChange",
-      "route53:ListHostedZones",
-      "route53:ListResourceRecordSets",
-      "route53:ListTagsForResource",
       "s3:CreateBucket",
       "s3:DeleteBucket",
       "s3:DeleteObject",
@@ -361,6 +359,23 @@ data "aws_iam_policy_document" "deployment" {
       variable = "aws:RequestedRegion"
       values   = [var.aws_region]
     }
+  }
+
+  # Route53 uses a global endpoint, so aws:RequestedRegion cannot match the
+  # cell region outside us-east-1. Keep its existing actions in a separate
+  # statement and add the exact hosted-zone read needed by the native root.
+  statement {
+    sid    = "ManageHostedZoneRecords"
+    effect = "Allow"
+    actions = [
+      "route53:ChangeResourceRecordSets",
+      "route53:GetChange",
+      "route53:GetHostedZone",
+      "route53:ListHostedZones",
+      "route53:ListResourceRecordSets",
+      "route53:ListTagsForResource",
+    ]
+    resources = ["*"]
   }
 
   statement {

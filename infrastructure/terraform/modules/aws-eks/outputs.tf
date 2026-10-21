@@ -54,8 +54,8 @@ output "control_plane_target_kind" {
 }
 
 output "control_plane_backend_name" {
-  description = "Honua control-plane deploy backend name for Kubernetes GitOps."
-  value       = "honua-gitops-kubernetes"
+  description = "Native Honua Deployment backend hint. Cluster outputs alone do not establish an installed workload or verified handoff."
+  value       = "honua-kubernetes-deployment"
 }
 
 output "control_plane_telemetry_policy" {
@@ -103,6 +103,16 @@ output "server_service_account_name" {
 output "server_role_arn" {
   description = "IAM role the server pods assume (Secrets Manager reads for honua_server_environment; GP data bucket when enabled)."
   value       = aws_iam_role.workload["server"].arn
+}
+
+output "server_pod_identity_association_id" {
+  description = "Existing server EKS Pod Identity association ID for a separate native workload install. Null in IRSA mode."
+  value       = local.pod_identity_enabled ? aws_eks_pod_identity_association.workload["server"].association_id : null
+}
+
+output "gp_job_pod_identity_association_id" {
+  description = "Existing GP Job EKS Pod Identity association ID for a separate native workload install. Null in IRSA mode."
+  value       = local.pod_identity_enabled ? aws_eks_pod_identity_association.workload["gp-job"].association_id : null
 }
 
 output "server_service_account_annotations" {

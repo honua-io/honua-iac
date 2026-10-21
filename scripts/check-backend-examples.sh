@@ -41,6 +41,7 @@ roots=(
   aws
   aws-serverless
   aws-eks
+  aws-eks-native
   aws-data
   aws-cert
 )
