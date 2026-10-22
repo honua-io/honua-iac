@@ -426,10 +426,20 @@ assert_scoped_guard_detected() {
   rm -rf "$fixture"
 }
 
-# Occurrence 1 is the ECR repository policy principal, occurrence 2 the
-# execution-role trust the guard is actually about.
+# The Lambda service principal also appears in the ECR repository policy (one
+# statement per pulling function scope), so the execution-role trust is not at
+# a fixed index. Resolve the occurrence inside the trust block and delete
+# exactly that one, leaving the ECR copies as decoys.
+lambda_trust_occurrence="$(awk -v pat='identifiers.*lambda[.]amazonaws[.]com' '
+  /data "aws_iam_policy_document" "lambda_preview_trust"/ { in_trust = 1 }
+  $0 ~ pat { n++; if (in_trust) { print n; exit } }
+' "$FIXTURE_ROOT/$LAMBDA_CERT")"
+if [[ -z "$lambda_trust_occurrence" || "$lambda_trust_occurrence" -lt 2 ]]; then
+  echo "[ERROR] Could not resolve the lambda_preview_trust principal behind a decoy (got '${lambda_trust_occurrence}')" >&2
+  exit 1
+fi
 assert_scoped_guard_detected 'lambda-cert-service-trust' \
-  'identifiers.*lambda[.]amazonaws[.]com' 2
+  'identifiers.*lambda[.]amazonaws[.]com' "$lambda_trust_occurrence"
 # Occurrence 1 is the function invoke/delete lifecycle condition, occurrence 2
 # the ECR mirror grant.
 assert_scoped_guard_detected 'lambda-cert-tagged-lifecycle' \
