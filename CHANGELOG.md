@@ -34,6 +34,19 @@ module input/output contracts may still change.
 
 ### Added
 
+- `aws-ecs`: opt-in `migration_task` (default `false`) runs migrations out of
+  band with honua-server migrate-only mode (honua-server#6479). It registers a
+  one-shot `<name>-migrate-task` definition with the serving image (or
+  `migration_task_image`), secrets, roles, network and environment plus
+  `HONUA_MIGRATE_ONLY=true`, sets `HONUA_SKIP_MIGRATIONS=true` on the stable and
+  canary task definitions, and exports `migration_task` with the exact
+  `aws ecs run-task`, `aws ecs wait tasks-stopped`, `describe-tasks` exit-code
+  and CloudWatch summary commands. `migration_task_additional_env` carries a
+  one-shot `HONUA_APPROVE_CONTRACT_MIGRATIONS` nonce to the migrator only. The
+  plan refuses `HONUA_MIGRATE_ONLY` in any additional env and a manual
+  `HONUA_SKIP_MIGRATIONS` while the task is on. The `aws` example passes all
+  three inputs and the output through. Disabled, nothing changes.
+
 - `aws-serverless` and the `examples/aws-serverless` root: shared S3 file
   storage, with the same inputs as `aws-ecs` (`file_storage_provider`, default
   `Local`; `file_storage_aws_s3_bucket_name`; `file_storage_aws_s3_region`,

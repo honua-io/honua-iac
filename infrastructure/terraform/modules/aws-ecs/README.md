@@ -458,6 +458,59 @@ See [AWS deployment safety](../../../../docs/devops/aws-deployment-safety.md) fo
 runtime registration, finite limits, IAM/secret/storage validation and the
 candidate-bound live recovery evidence required before claiming protection.
 
+### Upgrade sequence with the migration task
+
+With `migration_task = true` (see [Out-of-band migrations](#out-of-band-migrations)),
+an image upgrade is four steps. Terraform never runs the migrator. Commands
+come from the module's `migration_task` output, which
+`examples/aws` exposes as `terraform output -json migration_task`:
+
+1. **Register and run the migration task.** Set `migration_task_image` to the
+   new digest and apply. Only the migration task definition changes; the
+   serving services keep their image. Then run it:
+
+   ```bash
+   out="$(terraform output -json migration_task)"
+   TASK_ARN="$(eval "$(jq -r .run_task_command <<<"$out")")"
+   until eval "$(jq -r .wait_command <<<"$out")"; do :; done   # waiter gives up after 10 min; repeat
+   ```
+
+2. **Verify exit 0 and the summary.** `exit_code_command` prints the container
+   exit code and the task's `stoppedReason`; `summary_command` prints the
+   `honua.migrate-only/v1` line from the task's log stream:
+
+   ```bash
+   eval "$(jq -r .exit_code_command <<<"$out")"    # expect: 0  Essential container in task exited
+   eval "$(jq -r .summary_command <<<"$out")"      # expect "outcome":"completed","exitCode":0
+   ```
+
+   Stop on anything but `0`. Nothing was applied by a refused run, and the
+   serving services are untouched. Exit `5` (`contract-approval-required`):
+   review `pendingScripts`, put the summary's `contractApproval.nonce` in
+   `migration_task_additional_env = { HONUA_APPROVE_CONTRACT_MIGRATIONS = "<nonce>" }`,
+   apply, run the task again, then remove the nonce. Exit `None` means the
+   container never started (image pull, secrets or network): read
+   `stoppedReason`. The other codes are listed under
+   [Out-of-band migrations](#out-of-band-migrations).
+
+3. **Roll the serving service.** Set `image` (and `canary_image` for a canary
+   rollout) to the same digest and apply. The serving tasks start with
+   `HONUA_SKIP_MIGRATIONS=true`, verify the journal against their binary and
+   never migrate. The ECS deployment circuit breaker rolls back a task
+   definition whose tasks fail to start. With a canary, the migrator runs the
+   canary image and environment, so step 1 targets the candidate.
+
+4. **Verify preflight.** `GET /api/v1/admin/deploy/preflight` must report no
+   pending migrations and readiness on every task before you shift traffic or
+   promote.
+
+The circuit breaker can only roll the service back to the previous task
+definition. It cannot downgrade the schema the migrator applied, and serving
+tasks with `HONUA_SKIP_MIGRATIONS=true` refuse to start on any journal entry
+their image does not ship (`schema_reader_incompatible`). Rolling the image
+back across an applied migration on this path therefore needs a database
+restore or a roll forward; take the backup before step 1.
+
 
 ## Upgrade safety
 
@@ -465,13 +518,15 @@ Honua's upgrade contract is expand/contract: a release that only adds schema
 can roll out while the previous version still serves, and a release that
 narrows schema must wait until no older reader remains. Read
 [Upgrade and roll back](https://github.com/honua-io/honua-server/blob/trunk/docs/guides/deploy/upgrade-and-rollback.md)
-first. This module wires two parts of that contract and leaves one out.
+first. This module wires migration safety, the in-service deploy control plane
+and an opt-in out-of-band migration task.
 
 ### Migration safety
 
-ECS tasks apply pending migrations at startup, behind a PostgreSQL advisory
-lock. `migration_safety` renders `Database:MigrationSafety` on the stable and
-canary task definitions, and the typed values win over `additional_env`:
+By default ECS tasks apply pending migrations at startup, behind a PostgreSQL
+advisory lock. `migration_safety` renders `Database:MigrationSafety` on the
+stable and canary task definitions (and on the migration task when
+`migration_task = true`), and the typed values win over `additional_env`:
 
 ```hcl
 migration_safety = {
@@ -531,15 +586,57 @@ apply resets the canary service to the Terraform-registered task definition.
 The output reports `configured-unverified`. Mock tests prove neither the
 CloudWatch expressions nor a live rollback.
 
-### Out-of-band migrations: not wired
+### Out-of-band migrations
 
-The server's out-of-band pattern is `HONUA_SKIP_MIGRATIONS=true` on serving
-tasks plus a one-shot migrator, which on ECS would be an `aws ecs run-task`
-step. The server image has no migrate-and-exit entry point yet, tracked as
-honua-io/honua-server#6470. A full server start is the only path that applies
-migrations, and it also starts background work. Until that ships, this module
-neither defines a migration task nor sets `HONUA_SKIP_MIGRATIONS`, and serving
-tasks keep migrating inline under `migration_safety`.
+`migration_task = true` (default `false`) moves migrations out of band using
+the server's migrate-only mode (honua-io/honua-server#6479). The image must
+ship that mode. An older image ignores `HONUA_MIGRATE_ONLY`, starts serving and
+never exits.
+
+```hcl
+migration_task       = true
+migration_task_image = "ghcr.io/honua-io/honua-server@sha256:<new digest>"  # optional; see the upgrade sequence
+```
+
+- The module registers a one-shot task definition `<name>-migrate-task`
+  (`skip_destroy`, like the serving definitions). It has the same image
+  (`migration_task_image`, else the canary image when `canary_enabled`, else
+  `image`), Secrets Manager secrets, execution and task roles, CPU and memory,
+  architecture and log group as the serving task. Its environment is the
+  serving environment (the canary's when `canary_enabled`), including
+  `migration_safety`, without `HONUA_SKIP_MIGRATIONS`, plus
+  `migration_task_additional_env` and `HONUA_MIGRATE_ONLY=true`. It has no
+  port mapping or health check, and logs under the `honua-migrate` stream
+  prefix.
+- The stable and canary task definitions get `HONUA_SKIP_MIGRATIONS=true`. The
+  serving tasks verify the journal and never migrate.
+- `output.migration_task` gives the task definition, cluster, launch type,
+  subnets, security groups and public-IP setting. It also gives the exact
+  `run_task_command`, `wait_command` (`aws ecs wait tasks-stopped`),
+  `exit_code_command` (`aws ecs describe-tasks`, container exit code plus
+  `stoppedReason`) and `summary_command` (CloudWatch Logs filter for the
+  `honua.migrate-only/v1` line). The `wait_command`, `exit_code_command` and
+  `summary_command` read the task ARN from `$TASK_ARN`.
+- The plan fails when `HONUA_MIGRATE_ONLY` appears in `additional_env`,
+  `canary_additional_env` or `migration_task_additional_env`, when
+  `HONUA_SKIP_MIGRATIONS` appears in `additional_env` or `canary_additional_env`
+  while `migration_task` is on, and when `migration_task_image` or
+  `migration_task_additional_env` is set without `migration_task`.
+
+The migrator's exit codes are `0` completed, `2` invalid configuration, `3`
+database unreachable, `4` PostGIS missing or unsupported, `5` contract approval
+needed, `6` unannotated contract migration, `7` backup command failed, `8`
+schema newer than this image, `9` migration lock timeout, `10` migration
+failed and `11` cancelled (SIGTERM). The task's `stopTimeout` is 120 seconds, so
+a stopped run reaches its next safe point. See
+[Run migrations out of band](https://github.com/honua-io/honua-server/blob/trunk/docs/guides/deploy/upgrade-and-rollback.md#run-migrations-out-of-band)
+for the summary fields and what to do for each code. `backup_command` runs
+inside the migrator container. The run sequence is under
+[Upgrade sequence with the migration task](#upgrade-sequence-with-the-migration-task).
+
+With `migration_task = false` nothing changes: no migration task, no
+`HONUA_SKIP_MIGRATIONS`, and serving tasks keep migrating inline under
+`migration_safety`.
 
 ## Certification inputs
 

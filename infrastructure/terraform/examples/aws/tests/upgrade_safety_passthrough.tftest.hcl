@@ -152,6 +152,7 @@ run "default_passes_nothing_through" {
     condition = (
       output.deploy_control_plane == null &&
       length(module.honua.migration_safety_environment) == 0 &&
+      output.migration_task == null &&
       output.deployment_contract.rollout.backend_name == "honua-gitops-aws-ecs"
     )
     error_message = "Unset deploy_control_plane and migration_safety must leave the module defaults and the GitOps rollout backend unchanged."
@@ -181,5 +182,24 @@ run "in_service_control_plane_and_migration_safety_pass_through" {
       module.honua.migration_safety_environment["Database__MigrationSafety__ContractApplyPolicy"] == "Gate"
     )
     error_message = "The example must pass deploy_control_plane and migration_safety to the module and project the in-service target into the rollout contract."
+  }
+}
+
+run "migration_task_passes_through" {
+  command = apply
+
+  variables {
+    migration_task                = true
+    migration_task_image          = "ghcr.io/honua-io/honua-server@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    migration_task_additional_env = { HONUA_APPROVE_CONTRACT_MIGRATIONS = "nonce" }
+  }
+
+  assert {
+    condition = (
+      output.migration_task.image == "ghcr.io/honua-io/honua-server@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" &&
+      output.migration_task.launch_type == "FARGATE" &&
+      startswith(output.migration_task.run_task_command, "aws ecs run-task ")
+    )
+    error_message = "The example must pass migration_task, migration_task_image and migration_task_additional_env to the module and expose its migration_task output."
   }
 }
