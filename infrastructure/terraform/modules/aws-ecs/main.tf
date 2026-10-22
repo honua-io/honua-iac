@@ -171,8 +171,7 @@ locals {
     FileStorage__AwsS3__BucketName = var.file_storage_aws_s3_bucket_name
     FileStorage__AwsS3__Region     = local.file_storage_aws_s3_region
     FileStorage__AwsS3__KeyPrefix  = var.file_storage_aws_s3_key_prefix
-  } : {}, local.licensing_environment, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.transcript_signing_environment, local.cors_environment, local.alb_tls_environment, local.public_base_url_environment, local.import_limits_environment, local.oidc_static_environment, local.migration_safety_environment, local.migration_task_serving_environment, local.deploy_control_plane_environment)
-  primary_container_environment = [
+  } : {}, local.licensing_environment, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.transcript_signing_environment, local.cors_environment, local.alb_tls_environment, local.public_base_url_environment, local.import_limits_environment, local.oidc_static_environment, local.browser_auth_environment, local.migration_safety_environment, local.migration_task_serving_environment, local.deploy_control_plane_environment)  primary_container_environment = [
     for key, value in merge({ for key, value in var.additional_env : key => value if var.platform_release == null || !startswith(lower(replace(key, ":", "__")), "controlplane__platformrelease__") }, local.runtime_environment, local.platform_release_environment.primary) : {
       name  = key
       value = value
@@ -235,7 +234,7 @@ locals {
     ] : [], var.oidc_static_jwt == null ? [] : [{
       name      = "Oidc__TokenValidation__SymmetricSigningKey"
       valueFrom = var.oidc_static_jwt.signing_key_secret_version_id == "" ? var.oidc_static_jwt.signing_key_secret_arn : "${var.oidc_static_jwt.signing_key_secret_arn}:::${var.oidc_static_jwt.signing_key_secret_version_id}"
-  }])
+  }], local.browser_auth_secrets)
   container_log_configuration = {
     logDriver = "awslogs"
     options = {
@@ -941,7 +940,9 @@ resource "aws_iam_policy" "secrets" {
           local.redis_enabled ? var.operation_key_ring_certificate_secret_arn : null,
           local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null,
           var.audit_chain_key_secret_arn != "" ? var.audit_chain_key_secret_arn : null,
-          var.oidc_static_jwt == null ? null : var.oidc_static_jwt.signing_key_secret_arn
+          var.oidc_static_jwt == null ? null : var.oidc_static_jwt.signing_key_secret_arn,
+          var.generic_oidc == null ? null : var.generic_oidc.client_secret_arn,
+          var.operator_bearer == null ? null : var.operator_bearer.signing_key_secret_arn
         ])
       },
       {
@@ -969,7 +970,12 @@ resource "aws_iam_policy" "secrets" {
         Effect   = "Allow"
         Action   = ["kms:Decrypt", "kms:DescribeKey"]
         Resource = local.oidc_signing_kms_arns
-    }] : [])
+        }] : [], length(local.browser_auth_kms_arns) == 0 ? [] : [{
+        Effect    = "Allow"
+        Action    = ["kms:Decrypt"]
+        Resource  = local.browser_auth_kms_arns
+        Condition = { StringEquals = { "kms:ViaService" = "secretsmanager.${data.aws_region.current.name}.${data.aws_partition.current.dns_suffix}" } }
+    }])
   })
 }
 
