@@ -171,7 +171,7 @@ locals {
     FileStorage__AwsS3__BucketName = var.file_storage_aws_s3_bucket_name
     FileStorage__AwsS3__Region     = local.file_storage_aws_s3_region
     FileStorage__AwsS3__KeyPrefix  = var.file_storage_aws_s3_key_prefix
-  } : {}, local.licensing_environment, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.transcript_signing_environment, local.cors_environment, local.alb_tls_environment, local.public_base_url_environment, local.import_limits_environment, local.oidc_static_environment, local.migration_safety_environment, local.deploy_control_plane_environment)
+  } : {}, local.licensing_environment, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.transcript_signing_environment, local.cors_environment, local.alb_tls_environment, local.public_base_url_environment, local.import_limits_environment, local.oidc_static_environment, local.migration_safety_environment, local.migration_task_serving_environment, local.deploy_control_plane_environment)
   primary_container_environment = [
     for key, value in merge({ for key, value in var.additional_env : key => value if var.platform_release == null || !startswith(lower(replace(key, ":", "__")), "controlplane__platformrelease__") }, local.runtime_environment, local.platform_release_environment.primary) : {
       name  = key

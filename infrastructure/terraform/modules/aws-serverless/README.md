@@ -23,6 +23,13 @@ Terraform independently checks the returned manifest again before serving
 updates. Use matching qualified Server/IaC artifacts; this remains an opt-in
 preview and is not a live-cloud qualification claim.
 
+The migration function expects a `honua.lambda-migration-run/v1` receipt that
+honua-server does not produce yet. honua-server#6479 shipped migrate-only mode
+for container tasks and Jobs only. That mode refuses to run inside AWS Lambda
+and prints `honua.migrate-only/v1`, not this receipt. Until the server ships
+the Lambda receipt, the migration function stays preview and unqualified, and
+the ECS module's `migration_task` is the supported out-of-band migrator.
+
 Migration logs and environment configuration use AWS's default encryption at
 rest. This preview profile does not provision customer-managed keys for either.
 The function has no asynchronous trigger: Terraform invokes its numeric version

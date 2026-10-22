@@ -1,6 +1,6 @@
-# Pass-throughs for the module's in-service deploy control plane and
-# Database:MigrationSafety settings. The module validates both; see
-# modules/aws-ecs/README.md "Upgrade safety".
+# Pass-throughs for the module's in-service deploy control plane,
+# Database:MigrationSafety settings and out-of-band migration task. The module
+# validates them; see modules/aws-ecs/README.md "Upgrade safety".
 variable "deploy_control_plane" {
   description = "Opt-in in-service honua-aws-ecs-alb deploy target and CloudWatch telemetry connection, rendered into the stable and canary task environments. Requires canary_enabled; mutually exclusive with deployment_safety. Null renders nothing."
   type = object({
@@ -38,4 +38,27 @@ variable "migration_safety" {
 output "deploy_control_plane" {
   description = "In-service deploy target registration (configured-unverified), or null."
   value       = module.honua.deploy_control_plane
+}
+
+variable "migration_task" {
+  description = "Register a one-shot migrate-only ECS task definition (HONUA_MIGRATE_ONLY=true) and set HONUA_SKIP_MIGRATIONS=true on the serving tasks. Requires a honua-server image with migrate-only mode. False keeps inline startup migrations."
+  type        = bool
+  default     = false
+}
+
+variable "migration_task_image" {
+  description = "Digest-pinned image for the migration task. Empty uses the canary image when canary_enabled, otherwise honua_image. Set it first, run the task, then change the serving image."
+  type        = string
+  default     = ""
+}
+
+variable "migration_task_additional_env" {
+  description = "Environment for the migration task only, for example HONUA_APPROVE_CONTRACT_MIGRATIONS with the nonce a refused run printed."
+  type        = map(string)
+  default     = {}
+}
+
+output "migration_task" {
+  description = "Migration task definition and the exact aws ecs run-task / wait / describe-tasks / logs commands, or null when migration_task is false."
+  value       = module.honua.migration_task
 }

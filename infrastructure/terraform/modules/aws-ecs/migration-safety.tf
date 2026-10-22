@@ -8,9 +8,9 @@
 # applies it unattended. BackupCommand runs inside the server container
 # immediately before contract-phase scripts apply; a non-zero exit aborts.
 #
-# Out-of-band migrations (HONUA_SKIP_MIGRATIONS=true on serving tasks plus a
-# one-shot `aws ecs run-task` migrator) are not wired: the server image has no
-# migrate-and-exit entry point yet (honua-io/honua-server#6470).
+# migration_task (migration-task.tf) moves migrations out of band: a one-shot
+# `aws ecs run-task` migrator applies them under the same settings, and the
+# serving tasks run with HONUA_SKIP_MIGRATIONS=true.
 variable "migration_safety" {
   description = "Optional Database:MigrationSafety settings rendered on the stable and canary task definitions as Database__MigrationSafety__{ContractApplyPolicy,BackupCommand,Enforce}. Null (default) renders nothing and keeps the server defaults (ContractApplyPolicy=Gate, Enforce=true, no backup command). Typed values win over the same keys in additional_env / canary_additional_env."
   type = object({

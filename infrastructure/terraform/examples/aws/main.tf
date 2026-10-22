@@ -24,6 +24,9 @@ module "honua" {
   deployment_safety                = var.deployment_safety
   deploy_control_plane             = var.deploy_control_plane
   migration_safety                 = var.migration_safety
+  migration_task                   = var.migration_task
+  migration_task_image             = var.migration_task_image
+  migration_task_additional_env    = var.migration_task_additional_env
   environment                      = var.environment
   name_prefix                      = var.name_prefix
   existing_vpc_id                  = local.install_net_id
