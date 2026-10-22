@@ -175,14 +175,14 @@ run "reject_excess_lifetime" {
 run "reject_plaintext_primary" {
   command = plan
   variables {
-    additional_env = { "Oidc:Generic:ClientSecret" = "no-secret" }
+    additional_env = { "oidc:generic:clientsecret" = "x" }
   }
   expect_failures = [var.additional_env]
 }
 run "reject_plaintext_canary" {
   command = plan
   variables {
-    canary_additional_env = { Authentication__OperatorBearer__SigningKey = "no-secret" }
+    canary_additional_env = { Authentication__OperatorBearer__SigningKey = "x" }
   }
   expect_failures = [var.canary_additional_env]
 }
