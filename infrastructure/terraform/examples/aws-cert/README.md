@@ -326,8 +326,13 @@ image predates the guard and serves a newer schema with no refusal. Rolling an
 older image back does not undo the schema. It happened on 2026-10-21: the first
 serving-mode apply put the candidate on ECS, it migrated the DB, and the standing
 Lambda's older image could no longer start. Move both serving surfaces together.
-Pin `honua_image` and `ecs_alb_image` to the same server revision, and never point
-either one at an image older than the schema. There is no release-named immutable
+Pin `honua_image` and `ecs_alb_image` to the same server revision during an
+upgrade so one surface does not migrate ahead of the other. A guarded additive
+rollback is allowed: either surface may then point at an older image that
+includes the schema-reader guard at schema 135 or later. Never point either
+surface at an image older than the schema when that image is unguarded, and
+never do so across a contract-phase migration; restore the backup taken before
+the upgrade instead. There is no release-named immutable
 tag for the 2026.1 image yet
 ([honua-io/honua-release#776](https://github.com/honua-io/honua-release/issues/776)).
 
