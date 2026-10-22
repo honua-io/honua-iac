@@ -175,7 +175,7 @@ run "cert_capture_exact_secret_set" {
   assert {
     condition = alltrue([for statement in data.aws_iam_policy_document.lambda_preview_certification.statement :
       toset(statement.actions) == toset(["secretsmanager:GetSecretValue"]) &&
-      toset(statement.resources) == toset(local.lambda_preview_secret_arns)
+      toset(statement.resources) == setunion(toset(local.lambda_preview_secret_arns), toset(local.lambda_preview_settings_secret_arns))
       if statement.sid == "CaptureCertificationSecretVersions"
     ]) && length([for statement in data.aws_iam_policy_document.lambda_preview_certification.statement : statement if statement.sid == "CaptureCertificationSecretVersions"]) == 1
     error_message = "The OIDC runner must have its own exact, read-only secret capture statement."
@@ -189,7 +189,7 @@ run "cert_capture_exact_secret_set" {
   }
   assert {
     condition = alltrue([for document in [data.aws_iam_policy_document.lambda_preview_execution_boundary, data.aws_iam_policy_document.lambda_preview_execution_secrets] :
-      length([for statement in document.statement : statement if statement.sid == "CertificationStackSecretsRead" && toset(statement.resources) == toset(local.lambda_preview_secret_arns) && toset(statement.actions) == toset(["secretsmanager:GetSecretValue"])]) == 1
+      length([for statement in document.statement : statement if statement.sid == "CertificationStackSecretsRead" && toset(statement.resources) == setunion(toset(local.lambda_preview_secret_arns), toset(local.lambda_preview_settings_secret_arns)) && toset(statement.actions) == toset(["secretsmanager:GetSecretValue"])]) == 1
     ])
     error_message = "Both runtime grants and the boundary must match the runner's exact secret set, including the keyring."
   }
@@ -314,7 +314,7 @@ run "signer_is_runtime_only_and_never_runner_capture" {
   assert {
     condition = (
       length(local.lambda_preview_secret_arns) == 6 && !contains(local.lambda_preview_secret_arns, var.transcript_signing.secret_arn) &&
-      toset(local.lambda_preview_runtime_secret_arns) == setunion(toset(local.lambda_preview_secret_arns), toset([var.transcript_signing.secret_arn]))
+      toset(local.lambda_preview_runtime_secret_arns) == setunion(toset(local.lambda_preview_secret_arns), toset(local.lambda_preview_settings_secret_arns), toset([var.transcript_signing.secret_arn]))
     )
     error_message = "Only the preview runtime secret set may include the signer; the runner capture set stays exactly six."
   }
