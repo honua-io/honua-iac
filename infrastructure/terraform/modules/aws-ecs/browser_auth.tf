@@ -56,6 +56,10 @@ locals {
 resource "terraform_data" "browser_auth" {
   lifecycle {
     precondition {
+      condition     = var.generic_oidc == null || var.operator_bearer == null ? true : var.generic_oidc.client_secret_arn != var.operator_bearer.signing_key_secret_arn
+      error_message = "Generic OIDC client and operator bearer signing secrets must be independent secret ARNs."
+    }
+    precondition {
       condition     = var.generic_oidc == null || var.oidc_static_jwt == null
       error_message = "generic_oidc and oidc_static_jwt configure different issuer contracts and cannot be combined."
     }

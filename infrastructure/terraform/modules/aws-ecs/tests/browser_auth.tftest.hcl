@@ -264,3 +264,12 @@ run "reject_callback_override" {
   }
   expect_failures = [terraform_data.browser_auth]
 }
+
+run "reject_reused_client_and_signing_secret" {
+  command = plan
+  variables {
+    generic_oidc    = { authority = "https://issuer.example.test", client_id = "client", client_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:client-AbC123" }
+    operator_bearer = { signing_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:client-AbC123" }
+  }
+  expect_failures = [terraform_data.browser_auth]
+}
