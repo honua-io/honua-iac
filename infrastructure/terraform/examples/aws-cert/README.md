@@ -316,13 +316,25 @@ the same name. The serving step also needs `REALAWS_CERT_ALB_QUERY_PATH`,
 **The cert DB schema is owned by the newest server image in the stack.** The
 serving task and the standing Lambda share the cert PostGIS, and both run startup
 migrations, so whichever surface starts the newer image migrates the shared schema
-forward. Every older image then refuses to start (`schema_reader_incompatible`),
-and the standing alias answers 502. That is not recoverable by rolling the older
-image back. It happened on 2026-10-21: the first serving-mode apply put the
-candidate on ECS, it migrated the DB, and the standing Lambda's older image could
-no longer start. Move both serving surfaces together. Pin `honua_image` and
-`ecs_alb_image` to the same server revision, and never point either one at an
-image older than the schema.
+forward. Roll back only to images that include the schema-reader guard: schema 135
+or later for additive migrations, and never across a contract-phase migration
+without a restore. An image with that guard refuses a journal entry it cannot
+qualify (`schema_reader_incompatible`), and the standing alias answers 502.
+`honua-2026.1` is not a safe rollback target across any migration, and the only
+safe way back to 2026.1 is restoring the backup taken before the upgrade: that
+image predates the guard and serves a newer schema with no refusal. Rolling an
+older image back does not undo the schema. It happened on 2026-10-21: the first
+serving-mode apply put the candidate on ECS, it migrated the DB, and the standing
+Lambda's older image could no longer start. Move both serving surfaces together.
+Pin `honua_image` and `ecs_alb_image` to the same server revision during an
+upgrade so one surface does not migrate ahead of the other. A guarded additive
+rollback is allowed: either surface may then point at an older image that
+includes the schema-reader guard at schema 135 or later. Never point either
+surface at an image older than the schema when that image is unguarded, and
+never do so across a contract-phase migration; restore the backup taken before
+the upgrade instead. There is no release-named immutable
+tag for the 2026.1 image yet
+([honua-io/honua-release#776](https://github.com/honua-io/honua-release/issues/776)).
 
 Changing `honua_image` also changes the module's runtime settings document. Copy
 the `runtime_settings_retention_entry` output into
