@@ -1002,13 +1002,13 @@ resource "aws_iam_role_policy" "task_request_secret_references" {
   })
 }
 
+# "=" is excluded for new deployments: a password that begins with it renders as
+# "Password==..." in the connection string, which Npgsql cannot parse (honua-iac#280).
+# Existing state keeps its password (ignore_changes below).
 resource "random_password" "db" {
   count            = var.db_password == null && !local.db_use_existing ? 1 : 0
   length           = 32
   special          = true
-  # "=" is excluded for new deployments: a password that begins with it renders as
-  # "Password==..." in the connection string, which Npgsql cannot parse (honua-iac#280).
-  # Existing state keeps its password (ignore_changes below).
   override_special = "#%*()-_+[]{}:?."
 
   lifecycle {

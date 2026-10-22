@@ -91,12 +91,12 @@ resource "azurerm_key_vault_secret" "redis_connection" {
 
 # --- PostgreSQL ---
 
+# "=" is excluded: a password that begins with it renders as "Password==..." in the
+# connection string, which Npgsql cannot parse (honua-iac#280).
 resource "random_password" "db" {
   count            = var.db_admin_password == null ? 1 : 0
   length           = 32
   special          = true
-  # "=" is excluded: a password that begins with it renders as "Password==..." in the
-  # connection string, which Npgsql cannot parse (honua-iac#280).
   override_special = "#%*()-_+[]{}:?."
 }
 
