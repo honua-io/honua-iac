@@ -77,6 +77,34 @@ data "aws_iam_policy_document" "lambda_preview_image_pull" {
       values   = [local.lambda_preview_function_arn]
     }
   }
+
+  # The lane's upgrade step points the STANDING function at the certified
+  # mirror (UpdateFunctionCode, then PublishVersion and the alias shift), so
+  # the standing function must pull from here too. Lambda used to add an
+  # account-wide LambdaECRImageRetrievalPolicy statement when it first used the
+  # repo; the 2026-10-21 reconcile removed it, and the upgrade then failed with
+  # "AWS lambda update-function-code failed". Scope it to that one function.
+  statement {
+    sid     = "StandingCertificationImagePull"
+    actions = ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+
+    condition {
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values   = [module.honua.lambda_function_arn, "${module.honua.lambda_function_arn}:*"]
+    }
+  }
 }
 
 resource "aws_ecr_repository_policy" "lambda_preview" {

@@ -313,6 +313,24 @@ the same name. The serving step also needs `REALAWS_CERT_ALB_QUERY_PATH`,
 `REALAWS_CERT_ALB_EXPECTED_COUNT` and, optionally, the
 `REALAWS_CERT_ALB_ADMIN_API_KEY` secret.
 
+**The cert DB schema is owned by the newest server image in the stack.** The
+serving task and the standing Lambda share the cert PostGIS, and both run startup
+migrations, so whichever surface starts the newer image migrates the shared schema
+forward. Every older image then refuses to start (`schema_reader_incompatible`),
+and the standing alias answers 502. That is not recoverable by rolling the older
+image back. It happened on 2026-10-21: the first serving-mode apply put the
+candidate on ECS, it migrated the DB, and the standing Lambda's older image could
+no longer start. Move both serving surfaces together. Pin `honua_image` and
+`ecs_alb_image` to the same server revision, and never point either one at an
+image older than the schema.
+
+Changing `honua_image` also changes the module's runtime settings document. Copy
+the `runtime_settings_retention_entry` output into
+`retained_runtime_settings_documents` first, or the plan refuses to destroy a
+document that published versions still pin. After any apply that re-registers the
+GP job definitions, refresh `REALAWS_CERT_JOBDEF_ARN_*` from
+`gp_job_definition_arns`.
+
 **Cost when on (default OFF).** Itemized standing cost while `enable_ecs_alb_cert
 = true` (us-east-1, on top of the base cert stack):
 
@@ -509,6 +527,7 @@ are introduced.
 | Execution inline / CertificationStackSecretsRead | `secretsmanager:GetSecretValue` | K, T when configured | The boundary above caps it to the same exact ARNs |
 | Execution inline / TranscriptSignerDecrypt | `kms:Decrypt` | M | Same exact signer key as the boundary; no runner decrypt grant |
 | ECR policy / LambdaCertificationImagePull | `ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer` | E | Service `lambda.amazonaws.com`; StringEquals `aws:SourceAccount=<current account>`; ArnLike `aws:SourceArn=F` |
+| ECR policy / StandingCertificationImagePull | `ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer` | E | Service `lambda.amazonaws.com`; StringEquals `aws:SourceAccount=<current account>`; ArnLike `aws:SourceArn=S, S:*` (the upgrade step points the standing function at the mirror) |
 | OIDC / PreserveCertificationRun (Deny) | `lambda:TagResource` | F | Null `aws:ResourceTag/honua-cert-run=false` AND StringNotEquals request run tag to existing resource run tag |
 | OIDC / PreserveCertificationPurpose (Deny) | `lambda:TagResource` | F | Null `aws:ResourceTag/honua-purpose=false` AND StringNotEquals request purpose tag to existing resource purpose tag |
 | OIDC / CreateTaggedCertificationFunction | `lambda:CreateFunction`, `lambda:TagResource` | F | StringEquals request `honua-purpose=lambda-preview-certification`; StringLike request `honua-cert-run=?*-?*`; ForAllValues:StringEquals `aws:TagKeys=[honua-cert-run,honua-purpose]` |
