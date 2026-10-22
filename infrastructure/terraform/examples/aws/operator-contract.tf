@@ -294,10 +294,12 @@ locals {
       identity         = try(local.operator_contract_identity_input.workload_identity, null)
     }
     rollout = {
-      backend_name    = module.honua.control_plane_backend_name
-      target_kind     = module.honua.control_plane_target_kind
-      target_id       = var.deployment_safety == null ? local.operator_contract_service_name : module.honua.deployment_safety.target_id
-      target_name     = var.deployment_safety == null ? local.operator_contract_service_name : module.honua.canary_ecs_service_name
+      backend_name = module.honua.control_plane_backend_name
+      target_kind  = module.honua.control_plane_target_kind
+      target_id = var.deployment_safety != null ? module.honua.deployment_safety.target_id : (
+        var.deploy_control_plane != null ? module.honua.deploy_control_plane.target_id : local.operator_contract_service_name
+      )
+      target_name     = var.deployment_safety == null && var.deploy_control_plane == null ? local.operator_contract_service_name : module.honua.canary_ecs_service_name
       target_resource = local.operator_contract_cluster_arn
       # Revisions are observed by the rollout controller after apply. Terraform
       # does not claim a revision it cannot prove.

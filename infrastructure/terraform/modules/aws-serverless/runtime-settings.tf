@@ -1,10 +1,12 @@
 # Keep the canonical server registry outside Lambda's 4 KB environment limit.
+# lambda_deploy_canary (lambda-canary.tf) adds canary/telemetry parameters and a
+# CloudWatch telemetry connection; unset, the document is unchanged.
 # This document contains configuration identifiers, not credential material.
 # Pin each function version to its document version so rolling back a function
 # does not silently read a newer deployment target configuration.
 locals {
   runtime_settings_document = {
-    ControlPlane = {
+    ControlPlane = merge(local.lambda_deploy_canary_telemetry_connections, {
       DeployTargets = [{
         TargetId                    = local.lambda_target_id
         TargetKind                  = "AwsLambda"
@@ -13,13 +15,13 @@ locals {
         TargetName                  = local.lambda_function_arn
         ArtifactReference           = var.image
         RequiresOutOfBandMigrations = true
-        Parameters = {
+        Parameters = merge({
           "aws.region"            = data.aws_region.current.name
           "aws.lambda.alias_name" = var.lambda_alias_name
           "honua.runtime_kind"    = "aws-lambda"
-        }
+        }, local.lambda_deploy_canary_parameters)
       }]
-    }
+    })
   }
   runtime_settings_json = jsonencode(local.runtime_settings_document)
   runtime_settings_hash = sha256(local.runtime_settings_json)

@@ -65,7 +65,7 @@ output "control_plane_target_kind" {
 
 output "control_plane_backend_name" {
   description = "Recommended Honua control-plane backend identifier for this environment."
-  value       = var.deployment_safety == null ? "honua-gitops-aws-ecs" : "honua-aws-ecs-alb"
+  value       = var.deployment_safety == null && var.deploy_control_plane == null ? "honua-gitops-aws-ecs" : "honua-aws-ecs-alb"
 }
 
 output "control_plane_telemetry_policy" {

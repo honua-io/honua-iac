@@ -24,6 +24,8 @@ module "honua" {
   lambda_architectures                = var.lambda_architectures
   lambda_alias_name                   = var.lambda_alias_name
   lambda_alias_version                = var.lambda_alias_version
+  lambda_alias_routing                = var.lambda_alias_routing
+  lambda_deploy_canary                = var.lambda_deploy_canary
   retained_runtime_settings_documents = var.retained_runtime_settings_documents
   admin_password                      = var.honua_admin_password
   db_password                         = var.db_password

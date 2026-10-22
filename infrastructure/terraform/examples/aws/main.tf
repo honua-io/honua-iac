@@ -22,6 +22,8 @@ module "honua" {
   bedrock_ai_timeout_seconds = var.bedrock_ai_timeout_seconds
 
   deployment_safety                = var.deployment_safety
+  deploy_control_plane             = var.deploy_control_plane
+  migration_safety                 = var.migration_safety
   environment                      = var.environment
   name_prefix                      = var.name_prefix
   existing_vpc_id                  = local.install_net_id
