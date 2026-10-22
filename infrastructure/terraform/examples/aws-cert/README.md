@@ -313,6 +313,16 @@ the same name. The serving step also needs `REALAWS_CERT_ALB_QUERY_PATH`,
 `REALAWS_CERT_ALB_EXPECTED_COUNT` and, optionally, the
 `REALAWS_CERT_ALB_ADMIN_API_KEY` secret.
 
+The serving task and the standing Lambda share the cert PostGIS, and both run
+startup migrations. A server refuses to start against a schema newer than it can
+verify (`schema_reader_incompatible`), so pin `honua_image` and `ecs_alb_image`
+to the same server revision, or the standing image to the newer one. Changing
+`honua_image` also changes the module's runtime settings document: copy the
+`runtime_settings_retention_entry` output into `retained_runtime_settings_documents`
+first, or the plan refuses to destroy the document published versions still pin.
+After any apply that re-registers the GP job definitions, refresh
+`REALAWS_CERT_JOBDEF_ARN_*` from `gp_job_definition_arns`.
+
 **Cost when on (default OFF).** Itemized standing cost while `enable_ecs_alb_cert
 = true` (us-east-1, on top of the base cert stack):
 
