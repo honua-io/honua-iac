@@ -18,11 +18,13 @@ locals {
   redis_connection     = var.redis_enabled ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true" : ""
 }
 
+# "=" is excluded: a password that begins with it renders as "Password==..." in the
+# connection string, which Npgsql cannot parse (honua-iac#280).
 resource "random_password" "db" {
   count            = var.db_password == null ? 1 : 0
   length           = 32
   special          = true
-  override_special = "#%*()-_=+[]{}:?."
+  override_special = "#%*()-_+[]{}:?."
 }
 
 resource "random_password" "redis_auth" {

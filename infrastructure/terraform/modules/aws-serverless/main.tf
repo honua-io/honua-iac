@@ -58,11 +58,13 @@ check "existing_redis_inputs" {
   }
 }
 
+# "=" is excluded: a password that begins with it renders as "Password==..." in the
+# connection string, which Npgsql cannot parse (honua-iac#280).
 resource "random_password" "db" {
   count            = var.db_password == null && !local.db_use_existing ? 1 : 0
   length           = 32
   special          = true
-  override_special = "#%*()-_=+[]{}:?"
+  override_special = "#%*()-_+[]{}:?"
 }
 
 resource "random_password" "redis_auth" {
