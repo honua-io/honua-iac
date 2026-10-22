@@ -109,9 +109,15 @@ run "default_browser_auth_disabled" {
 run "typed_browser_auth_primary_and_canary" {
   command = apply
   variables {
-    generic_oidc    = { authority = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fixture", client_id = "real-client-reference", admin_auth_callback_uri = "https://console.example.test/admin/auth/callback", client_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:oidc-client-AbC123", client_secret_kms_key_arn = "arn:aws:kms:us-east-1:123456789012:key/11111111-2222-3333-4444-555555555555" }
-    operator_bearer = { signing_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-key-AbC123", signing_key_kms_key_arn = "arn:aws:kms:us-east-1:123456789012:key/22222222-2222-3333-4444-555555555555" }
-    canary_enabled  = true
+    generic_oidc                              = { authority = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_fixture", client_id = "real-client-reference", admin_auth_callback_uri = "https://console.example.test/admin/auth/callback", client_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:oidc-client-AbC123", client_secret_kms_key_arn = "arn:aws:kms:us-east-1:123456789012:key/11111111-2222-3333-4444-555555555555" }
+    operator_bearer                           = { signing_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-key-AbC123", signing_key_kms_key_arn = "arn:aws:kms:us-east-1:123456789012:key/22222222-2222-3333-4444-555555555555" }
+    canary_enabled                            = true
+    deployment_mode                           = "MultiNode"
+    redis_connection_string                   = "redis.example.internal:6379,password=test,ssl=true"
+    redis_connection_cidrs                    = ["10.0.0.0/16"]
+    operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-AbC123"
+    file_storage_provider                     = "AwsS3"
+    file_storage_aws_s3_bucket_name           = "honua-test-files"
   }
   assert {
     condition = alltrue([for env in [local.primary_container_environment, local.canary_container_environment] : alltrue([
