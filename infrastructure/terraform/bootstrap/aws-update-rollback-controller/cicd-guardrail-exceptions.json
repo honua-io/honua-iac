@@ -1,0 +1,51 @@
+{
+  "role": "honua-release-cicd",
+  "policy": "release-cicd-guardrails",
+  "appliedOn": "2026-10-21",
+  "statements": [
+    {
+      "Sid": "DenyIamOutsideCellNamespace",
+      "Note": "existing statement; the controller role ARN is appended to NotResource",
+      "NotResourceAdded": [
+        "arn:aws:iam::585192672263:role/honua-release-update-rollback-controller"
+      ]
+    },
+    {
+      "Sid": "DenyRoleChaining",
+      "Effect": "Deny",
+      "Action": [
+        "sts:AssumeRoleWithWebIdentity",
+        "sts:AssumeRoleWithSAML",
+        "sts:GetFederationToken"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyRoleChainingExceptUpdateRollbackController",
+      "Effect": "Deny",
+      "Action": [
+        "sts:AssumeRole"
+      ],
+      "NotResource": [
+        "arn:aws:iam::585192672263:role/honua-release-update-rollback-controller"
+      ]
+    },
+    {
+      "Sid": "UpdateRollbackControllerInlinePoliciesOnly",
+      "Effect": "Deny",
+      "NotAction": [
+        "iam:PutRolePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:GetRole",
+        "iam:GetRolePolicy",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListRoleTags",
+        "sts:AssumeRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::585192672263:role/honua-release-update-rollback-controller"
+      ]
+    }
+  ]
+}
