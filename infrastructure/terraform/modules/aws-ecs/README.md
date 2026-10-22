@@ -506,15 +506,18 @@ come from the module's `migration_task` output, which
 
 The circuit breaker can only roll the service back to the previous task
 definition. It cannot downgrade the schema the migrator applied, and serving
-tasks with `HONUA_SKIP_MIGRATIONS=true` refuse to start on any journal entry
-their image does not ship (`schema_reader_incompatible`): they never accept
-the forward-compatibility declarations that images at schema 135 and later
-record (honua-io/honua-server#6478). Rolling the image back across an applied
+tasks with `HONUA_SKIP_MIGRATIONS=true` that include the schema-reader guard
+refuse to start on any journal entry their image does not ship
+(`schema_reader_incompatible`): they never accept the forward-compatibility
+declarations that images at schema 135 and later record
+(honua-io/honua-server#6478). Rolling the image back across an applied
 migration on this path therefore needs a database restore or a roll forward;
 take the backup before step 1. Only tasks that migrate inline
 (`migration_task = false`) at schema 135 or later accept a verified
-expand-only declaration on rollback; images at schema 134 and earlier, journals
-written before 135, and contract or reader-incompatible scripts still refuse.
+expand-only declaration on rollback. Images at schema 134 and earlier that
+include the schema-reader guard, journals written before 135, and contract or
+reader-incompatible scripts still refuse. An image without the guard does not
+refuse; see [Rollback target eligibility](#rollback-target-eligibility).
 
 
 ### Rollback target eligibility
