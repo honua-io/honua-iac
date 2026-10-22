@@ -1305,6 +1305,29 @@ exact KMS key ARN. No private value is read by Terraform. See the
 [operator signing guide](../../../../docs/devops/aws-transcript-signing.md) for
 runtime IAM, public-manifest binding, rotation and the Lambda server dependency.
 
+### Rollback target eligibility
+
+Image rollback never reverses migrations. Before you move the alias back to an earlier version or image, check that
+the target image can protect itself against the schema it will find (see
+[Rollback target eligibility](https://github.com/honua-io/honua-server/blob/trunk/docs/guides/deploy/upgrade-and-rollback.md#rollback-target-eligibility)):
+
+- **Roll back only to images that include the schema-reader guard.** Across
+  additive (expand-only) migrations that means schema 135 or later; those
+  images verify the forward-compatibility declarations a newer server
+  recorded.
+- **Never roll back across a contract-phase migration without a restore.** This
+  includes scripts marked `-- honua:reader-incompatible`. Restore the
+  pre-upgrade backup that matches the target revision instead.
+- **`honua-2026.1` is unguarded and not a safe rollback target across any
+  migration** ([honua-io/honua-server#6484](https://github.com/honua-io/honua-server/issues/6484)).
+  Its server image (honua-server `f897700`, schema 106) predates the
+  schema-reader guard: on a newer database it starts and serves without
+  refusing, even across contract-phase migrations. The only safe path back to
+  2026.1 is to restore the backup taken before the upgrade.
+- **Pin rollback targets by digest.** The tag named in the 2026.1 release notes
+  has since moved to a rebuild
+  ([honua-io/honua-release#776](https://github.com/honua-io/honua-release/issues/776)).
+
 ### Retaining Batch revisions for rollback
 
 `gp_batch_retain_prior_definitions = true` is an explicit, temporary rollback-window setting.
