@@ -390,6 +390,12 @@ variable "lambda_timeout_seconds" {
   default     = 90
 }
 
+variable "retained_runtime_settings_documents" {
+  description = "Immutable settings documents still pinned by published standing-function versions, keyed by SHA-256 (module aws-serverless). Before changing honua_image, copy the runtime_settings_retention_entry output's hash and document into this map; the module refuses to destroy an omitted entry."
+  type        = map(string)
+  default     = {}
+}
+
 variable "ecs_alb_serve_honua" {
   description = "Run a Honua server image (ecs_alb_image) behind the cutover ALB instead of the port-80 HTTP fixture."
   type        = bool
