@@ -14,7 +14,7 @@
 # runs it: the operator runs it between registering a new image and rolling the
 # serving services (output.migration_task has the exact commands).
 variable "migration_task" {
-  description = "Register a one-shot migration task definition (HONUA_MIGRATE_ONLY=true) and set HONUA_SKIP_MIGRATIONS=true on the serving task definitions. Requires a honua-server image with migrate-only mode (honua-server#6479). False (default) keeps the inline startup migrations."
+  description = "Register a one-shot migration task definition (HONUA_MIGRATE_ONLY=true) and set HONUA_SKIP_MIGRATIONS=true on the serving task definitions. Requires a honua-server image at or after the first release that ships HONUA_MIGRATE_ONLY (honua-server#6479; today the next release after 2026.1). False (default) keeps the inline startup migrations."
   type        = bool
   default     = false
 }
