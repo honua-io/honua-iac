@@ -147,6 +147,12 @@ module "honua" {
   skip_migrations = false
   db_password     = var.db_password
 
+  # A cold VPC-attached start resolves seven secrets and runs startup
+  # migrations; 30 s (the API Gateway ceiling) times out the init phase, so the
+  # function URL answers 502 (2026-10-21 reconcile). The certification target is
+  # the alias Function URL, not API Gateway.
+  lambda_timeout_seconds = var.lambda_timeout_seconds
+
   # Cert is short-lived: single-AZ, modest DB. Redis IS enabled (operator
   # ruling A, 2026-09-08): the Lambda certification lane mints a per-run
   # scoped API key and requires the candidate and the standing alias to share

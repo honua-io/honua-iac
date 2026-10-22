@@ -152,8 +152,15 @@ data "aws_iam_policy_document" "lambda_preview_execution_boundary" {
 locals {
   # Capture/readback authorization stays separate from candidate runtime reads.
   # The private signer is resolved only by the function's own role.
-  lambda_preview_runtime_secret_arns = concat(local.lambda_preview_secret_arns, var.transcript_signing == null ? [] : [var.transcript_signing.secret_arn])
-  lambda_preview_signer_kms_arns     = var.transcript_signing == null ? [] : compact([var.transcript_signing.kms_key_arn])
+  lambda_preview_runtime_secret_arns = concat(local.lambda_preview_capture_secret_arns, var.transcript_signing == null ? [] : [var.transcript_signing.secret_arn])
+  # The standing function also references the module's credential-free runtime
+  # settings document (HONUA_SETTINGS_DOCUMENT). The lane captures every
+  # aws:secretsmanager: reference it clones, and the candidate resolves it at
+  # startup, so the current document joins the capture and runtime sets. It is
+  # not an operator secret, so the contracts' secret inventory stays as is.
+  lambda_preview_settings_secret_arns = [module.honua.runtime_settings_retention_entry.secretArn]
+  lambda_preview_capture_secret_arns  = concat(local.lambda_preview_secret_arns, local.lambda_preview_settings_secret_arns)
+  lambda_preview_signer_kms_arns      = var.transcript_signing == null ? [] : compact([var.transcript_signing.kms_key_arn])
   lambda_preview_secret_arns = compact([
     module.honua.db_connection_secret_arn,
     module.honua.admin_password_secret_arn,
@@ -230,7 +237,7 @@ data "aws_iam_policy_document" "lambda_preview_certification" {
   statement {
     sid       = "CaptureCertificationSecretVersions"
     actions   = ["secretsmanager:GetSecretValue"]
-    resources = local.lambda_preview_secret_arns
+    resources = local.lambda_preview_capture_secret_arns
   }
 
   # TagResource is required by CreateFunction with tags. Prevent that grant

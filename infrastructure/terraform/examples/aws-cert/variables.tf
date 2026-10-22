@@ -384,6 +384,12 @@ variable "ecs_alb_image" {
 # with the same cert PostGIS, Redis, admin, master-key and key-ring secrets the
 # standing certification Lambda resolves, so real-aws-certification.yml can
 # certify Honua serving through the ALB data path.
+variable "lambda_timeout_seconds" {
+  description = "Timeout of the standing certification Lambda. The cold start (VPC attach, secret resolution, startup migrations) exceeds the 30 s API Gateway ceiling; the certification lane targets the alias Function URL."
+  type        = number
+  default     = 90
+}
+
 variable "ecs_alb_serve_honua" {
   description = "Run a Honua server image (ecs_alb_image) behind the cutover ALB instead of the port-80 HTTP fixture."
   type        = bool
