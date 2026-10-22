@@ -153,6 +153,10 @@ module "honua" {
   # the alias Function URL, not API Gateway.
   lambda_timeout_seconds = var.lambda_timeout_seconds
 
+  # Published versions pin their settings document; carry the previous
+  # runtime_settings_retention_entry here before changing honua_image.
+  retained_runtime_settings_documents = var.retained_runtime_settings_documents
+
   # Cert is short-lived: single-AZ, modest DB. Redis IS enabled (operator
   # ruling A, 2026-09-08): the Lambda certification lane mints a per-run
   # scoped API key and requires the candidate and the standing alias to share
