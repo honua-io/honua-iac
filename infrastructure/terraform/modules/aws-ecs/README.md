@@ -507,9 +507,14 @@ come from the module's `migration_task` output, which
 The circuit breaker can only roll the service back to the previous task
 definition. It cannot downgrade the schema the migrator applied, and serving
 tasks with `HONUA_SKIP_MIGRATIONS=true` refuse to start on any journal entry
-their image does not ship (`schema_reader_incompatible`). Rolling the image
-back across an applied migration on this path therefore needs a database
-restore or a roll forward; take the backup before step 1.
+their image does not ship (`schema_reader_incompatible`): they never accept
+the forward-compatibility declarations that images at schema 135 and later
+record (honua-io/honua-server#6478). Rolling the image back across an applied
+migration on this path therefore needs a database restore or a roll forward;
+take the backup before step 1. Only tasks that migrate inline
+(`migration_task = false`) at schema 135 or later accept a verified
+expand-only declaration on rollback; images at schema 134 and earlier, journals
+written before 135, and contract or reader-incompatible scripts still refuse.
 
 
 ## Upgrade safety
@@ -589,9 +594,11 @@ CloudWatch expressions nor a live rollback.
 ### Out-of-band migrations
 
 `migration_task = true` (default `false`) moves migrations out of band using
-the server's migrate-only mode (honua-io/honua-server#6479). The image must
-ship that mode. An older image ignores `HONUA_MIGRATE_ONLY`, starts serving and
-never exits.
+the server's migrate-only mode (honua-io/honua-server#6479). It requires a
+honua-server image at or after the first release that ships
+`HONUA_MIGRATE_ONLY`; today that is the next release after 2026.1 (the 2026.1
+server image does not have it). An older image ignores `HONUA_MIGRATE_ONLY`,
+starts serving and never exits.
 
 ```hcl
 migration_task       = true
