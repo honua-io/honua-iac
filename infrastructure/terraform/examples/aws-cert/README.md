@@ -527,6 +527,7 @@ are introduced.
 | Execution inline / CertificationStackSecretsRead | `secretsmanager:GetSecretValue` | K, T when configured | The boundary above caps it to the same exact ARNs |
 | Execution inline / TranscriptSignerDecrypt | `kms:Decrypt` | M | Same exact signer key as the boundary; no runner decrypt grant |
 | ECR policy / LambdaCertificationImagePull | `ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer` | E | Service `lambda.amazonaws.com`; StringEquals `aws:SourceAccount=<current account>`; ArnLike `aws:SourceArn=F` |
+| ECR policy / StandingCertificationImagePull | `ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer` | E | Service `lambda.amazonaws.com`; StringEquals `aws:SourceAccount=<current account>`; ArnLike `aws:SourceArn=S, S:*` (the upgrade step points the standing function at the mirror) |
 | OIDC / PreserveCertificationRun (Deny) | `lambda:TagResource` | F | Null `aws:ResourceTag/honua-cert-run=false` AND StringNotEquals request run tag to existing resource run tag |
 | OIDC / PreserveCertificationPurpose (Deny) | `lambda:TagResource` | F | Null `aws:ResourceTag/honua-purpose=false` AND StringNotEquals request purpose tag to existing resource purpose tag |
 | OIDC / CreateTaggedCertificationFunction | `lambda:CreateFunction`, `lambda:TagResource` | F | StringEquals request `honua-purpose=lambda-preview-certification`; StringLike request `honua-cert-run=?*-?*`; ForAllValues:StringEquals `aws:TagKeys=[honua-cert-run,honua-purpose]` |
