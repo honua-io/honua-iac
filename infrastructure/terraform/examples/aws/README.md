@@ -26,6 +26,26 @@ operations_policy_rules = [
 ```
 
 
+### Optional browser sign-in and operator bearer
+
+`generic_oidc` configures the Server's confidential Generic OIDC browser client
+with an HTTPS `authority`, `client_id`, existing `client_secret_arn`, optional
+`client_secret_kms_key_arn`, and scopes (default `openid`, `profile`, `email`).
+Set `admin_auth_callback_uri` to the exact HTTPS `/admin/auth/callback` URI
+registered with the provider when Console brokers the callback. Otherwise the
+Server derives it from its public base URL, which is required when the callback
+is omitted. The module checks the effective public origin on every enabled
+task before deployment. Do not combine this with
+`oidc_static_jwt`.
+
+`operator_bearer` enables the Server-issued bearer for an authenticated Server
+session. Supply an independent `signing_key_secret_arn` (at least 32 UTF-8 bytes)
+and optional `signing_key_kms_key_arn`; `max_lifetime_minutes` defaults to 30.
+Both objects default to null. ECS injects the referenced secrets at startup;
+Terraform does not read their values. These settings do not grant roles or
+resource access. Configure the identity provider, application permissions and
+Console separately. See `terraform.tfvars.example` for the input shapes.
+
 ### Optional static JWT issuer
 
 `oidc_static_jwt` is an opt-in object containing `issuer` (HTTPS), `audience`,

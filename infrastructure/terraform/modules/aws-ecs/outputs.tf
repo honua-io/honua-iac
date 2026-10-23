@@ -1,3 +1,23 @@
+output "vpc_id" {
+  description = "VPC containing the service, for explicitly authorized companion services."
+  value       = local.vpc_id
+}
+
+output "private_subnet_ids" {
+  description = "Private subnet IDs used by the service's companion tasks."
+  value       = local.private_subnets
+}
+
+output "alb_security_group_id" {
+  description = "ALB security group ID for narrowly scoped companion target ingress."
+  value       = aws_security_group.alb.id
+}
+
+output "https_listener_arn" {
+  description = "HTTPS listener ARN for explicit companion host rules, or null without HTTPS."
+  value       = try(aws_lb_listener.https[0].arn, null)
+}
+
 output "alb_dns_name" {
   description = "DNS name of the Application Load Balancer."
   value       = aws_lb.this.dns_name

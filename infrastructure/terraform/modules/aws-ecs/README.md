@@ -827,3 +827,37 @@ key ID and existing signing-secret ARN, with optional immutable version ID and
 exact KMS key ARN. No private value is read by Terraform. See the
 [operator signing guide](../../../../docs/devops/aws-transcript-signing.md) for
 runtime IAM, public-manifest binding, rotation and the Lambda server dependency.
+
+### Optional browser OIDC and operator bearer
+
+`generic_oidc` configures an actual confidential Generic OIDC client using an HTTPS
+`authority`, `client_id`, `scopes` (default `openid`, `profile`, `email`), and an
+existing `client_secret_arn`. `operator_bearer` separately enables Server-issued
+bearers with an existing `signing_key_secret_arn` and `max_lifetime_minutes`
+(default 30; integer 1–720). The signing secret must contain at least 32 UTF-8
+bytes. Terraform never reads either value. ECS injects both secrets into primary
+and canary tasks; the execution role receives exact secret read grants. Optional
+`client_secret_kms_key_arn` and `signing_key_kms_key_arn` grant exact-key decrypt
+through each paired secret's regional Secrets Manager service only. A secret
+may be in a different region from ECS, but its CMK must match the secret's
+region. Default null objects add nothing.
+
+Optional `generic_oidc.admin_auth_callback_uri` maps to `Oidc__AdminAuthCallbackUri`
+and requires HTTPS with the exact `/admin/auth/callback` path, without userinfo,
+query or fragment. It requires a Server version supporting that option; omission
+keeps Server's default callback behavior and does not change `Public__BaseUrl`.
+When omitted, every enabled task must have one valid public base URL from
+`public_base_url`, an HTTPS custom domain, or an environment override. Missing,
+empty, malformed or ambiguous public origins fail planning before OIDC login
+would refuse the request in Production. Authorities require ASCII/punycode DNS
+labels or valid bracketed IPv6, with optional numeric ports through 65535.
+Register the resulting callback URI
+with the real provider.
+
+Typed authentication settings cannot be overridden through primary/canary
+`additional_env`. Plaintext client secrets and bearer signing keys are always
+refused there. Static JWT issuer and Generic browser-client configurations cannot
+be combined. This module does not establish trusted Console ingress, human
+identity, claims-mapping entitlement, tenant/role grants, approval separation or
+an installed authentication flow. Already-issued operator bearers validate
+offline until bounded expiry; do not assume immediate revocation on logout.
