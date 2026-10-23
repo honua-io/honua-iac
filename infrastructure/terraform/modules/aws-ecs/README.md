@@ -868,3 +868,36 @@ selected security groups. The default is empty; this adds no CIDR ingress or
 public database exposure. It applies only to the database managed by this module;
 operators manage access to an existing external database separately. The deployable
 AWS example forwards the same input.
+
+## Private SCIM provisioning carrier
+
+`scim_provisioning` defaults to `null`, producing no SCIM environment, injection
+or IAM grants. For a Server build supporting native SCIM, pass an external secret
+reference; Terraform does not read its value or create users or memberships:
+
+```hcl
+scim_provisioning = {
+  oidc_issuer                       = "https://issuer.example.test"
+  bearer_token_secret_arn           = var.scim_bearer_secret_arn
+  bearer_token_secret_version_id    = var.scim_bearer_secret_version_id
+  bearer_token_secret_kms_key_arn   = var.scim_bearer_kms_key_arn
+}
+```
+
+The primary and canary task definitions receive `Scim__OidcIssuer` and inject
+`Scim__BearerToken` through ECS Secrets Manager integration. A supplied version
+uses `ARN:::version` and an execution-role version ceiling: requests for another
+version or without a version are denied, including overlapping policy grants.
+Use a dedicated bearer secret; reusing it in another unversioned secret slot will
+therefore fail. The version and customer-managed KMS key are independently
+optional for generic callers. A provisioning workflow requiring reproducibility
+must require and independently observe the immutable version on both Server and
+its dedicated provisioning task. The optional decrypt grant binds the exact key,
+Secrets Manager service region and bearer secret encryption context.
+
+`additional_env` and `canary_additional_env` cannot carry SCIM bearer or issuer
+settings, including colon, case and standard .NET environment-prefix variants.
+`ecs_task_definition_arn` exposes the exact primary Server revision for independent
+readback of the deployed issuer and secret version. Native SCIM capability and
+issuer validation remain runtime prerequisites. This carrier does not enable
+licensing or change the existing `Licensing__Mode=Disabled` default.

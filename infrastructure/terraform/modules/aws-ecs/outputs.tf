@@ -48,6 +48,11 @@ output "ecs_service_name" {
   value       = aws_ecs_service.this.name
 }
 
+output "ecs_task_definition_arn" {
+  description = "Exact primary Server task-definition revision for independent deployment configuration readback."
+  value       = aws_ecs_task_definition.this.arn
+}
+
 output "canary_enabled" {
   description = "Whether ALB canary resources are enabled."
   value       = var.canary_enabled
