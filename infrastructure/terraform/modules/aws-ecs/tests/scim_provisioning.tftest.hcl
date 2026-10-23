@@ -228,6 +228,7 @@ run "reject_kms_partition" {
 run "reject_plaintext_primary" {
   command = plan
   variables {
+    # checkov:skip=CKV_SECRET_6: Fixed rejected configuration key, not a credential; the value is test data.
     additional_env = { "Scim__BearerToken" = "must-not-reach-task" }
   }
   expect_failures = [terraform_data.scim_provisioning]
