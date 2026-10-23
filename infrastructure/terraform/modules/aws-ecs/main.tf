@@ -440,6 +440,17 @@ resource "aws_security_group" "rds" {
   }
 
   dynamic "ingress" {
+    for_each = var.db_additional_ingress_security_group_ids
+    content {
+      description     = "PostgreSQL from approved controller security group"
+      from_port       = 5432
+      to_port         = 5432
+      protocol        = "tcp"
+      security_groups = [ingress.value]
+    }
+  }
+
+  dynamic "ingress" {
     for_each = toset(var.db_additional_ingress_cidrs)
     content {
       description = "PostgreSQL additional CIDR ingress"

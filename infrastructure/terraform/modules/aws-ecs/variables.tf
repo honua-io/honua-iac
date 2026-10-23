@@ -243,6 +243,16 @@ variable "db_publicly_accessible" {
   default     = false
 }
 
+variable "db_additional_ingress_security_group_ids" {
+  description = "Security groups allowed to connect to module-managed PostgreSQL on TCP 5432 (for private controller or migration tasks). Existing external databases are managed separately."
+  type        = set(string)
+  default     = []
+  validation {
+    condition     = alltrue([for id in var.db_additional_ingress_security_group_ids : can(regex("^sg-([0-9a-f]{8}|[0-9a-f]{17})$", id))])
+    error_message = "Supply AWS security group IDs, never CIDRs or names."
+  }
+}
+
 variable "db_additional_ingress_cidrs" {
   description = "Additional CIDRs allowed to access PostgreSQL (for controlled migration/PostGIS operations)."
   type        = list(string)

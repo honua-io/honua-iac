@@ -176,3 +176,9 @@ API contracts: [ECS ListTasks](https://docs.aws.amazon.com/AmazonECS/latest/APIR
 [DynamoDB transactions](https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactWriteItems.html),
 [SDK integrations](https://docs.aws.amazon.com/step-functions/latest/dg/supported-services-awssdk.html),
 and [Scheduler with Step Functions](https://docs.aws.amazon.com/step-functions/latest/dg/using-eventbridge-scheduler.html).
+
+Set `permissions_boundary_arn` when the campaign provisioner requires a boundary.
+It is attached to all five roles: worker, execution, lifecycle, expiry reaper and
+scheduler. The ARN must belong to the reviewed account. Null preserves existing
+behavior. A boundary limits permissions; it does not grant the queue, claim,
+task, notification and cleanup actions that the module's policies require.

@@ -69,9 +69,10 @@ resource "aws_sqs_queue_policy" "tls" {
 }
 
 resource "aws_iam_role" "worker" {
-  name               = "${local.name}-worker"
-  assume_role_policy = local.task_trust
-  tags               = local.tags
+  permissions_boundary = var.permissions_boundary_arn
+  name                 = "${local.name}-worker"
+  assume_role_policy   = local.task_trust
+  tags                 = local.tags
 }
 
 resource "aws_iam_role_policy" "worker" {
@@ -92,9 +93,10 @@ resource "aws_cloudwatch_log_group" "worker" {
 }
 
 resource "aws_iam_role" "execution" {
-  name               = "${local.name}-execution"
-  assume_role_policy = local.task_trust
-  tags               = local.tags
+  permissions_boundary = var.permissions_boundary_arn
+  name                 = "${local.name}-execution"
+  assume_role_policy   = local.task_trust
+  tags                 = local.tags
 }
 
 resource "aws_iam_role_policy" "execution" {
@@ -147,6 +149,10 @@ resource "aws_ecs_task_definition" "worker" {
   tags = local.tags
   lifecycle {
     precondition {
+      condition     = var.permissions_boundary_arn == null ? true : startswith(var.permissions_boundary_arn, "arn:aws:iam::${var.account_id}:policy/")
+      error_message = "Worker permissions boundary must belong to the reviewed account."
+    }
+    precondition {
       condition     = startswith(var.image_uri, "${var.account_id}.dkr.ecr.${var.region}.amazonaws.com/") && startswith(var.cluster_arn, "arn:aws:ecs:${var.region}:${var.account_id}:cluster/")
       error_message = "Worker image and cluster must belong to the reviewed account and region."
     }
@@ -165,7 +171,8 @@ resource "aws_ecs_task_definition" "worker" {
 }
 
 resource "aws_iam_role" "lifecycle" {
-  name = "${local.name}-lifecycle"
+  permissions_boundary = var.permissions_boundary_arn
+  name                 = "${local.name}-lifecycle"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{ Effect = "Allow", Action = "sts:AssumeRole", Principal = { Service = "states.amazonaws.com" },

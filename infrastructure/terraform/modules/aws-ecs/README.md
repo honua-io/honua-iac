@@ -861,3 +861,10 @@ be combined. This module does not establish trusted Console ingress, human
 identity, claims-mapping entitlement, tenant/role grants, approval separation or
 an installed authentication flow. Already-issued operator bearers validate
 offline until bounded expiry; do not assume immediate revocation on logout.
+
+Private controller or migration tasks can use
+`db_additional_ingress_security_group_ids` to grant TCP 5432 access from explicitly
+selected security groups. The default is empty; this adds no CIDR ingress or
+public database exposure. It applies only to the database managed by this module;
+operators manage access to an existing external database separately. The deployable
+AWS example forwards the same input.
