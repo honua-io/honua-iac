@@ -152,8 +152,10 @@ def observe_lambda_readers(client, record):
                     if environment.get("Error"):
                         raise RetirementRefused("published function environment could not be inspected")
                     for reference in environment.get("Variables", {}).values():
-                        if isinstance(reference, str) and reference.startswith("aws:secretsmanager:"):
-                            secret = reference.removeprefix("aws:secretsmanager:").split("?", 1)[0]
+                        # The provider name is case-insensitive; preserve the
+                        # identifier's case when comparing actual secret names.
+                        if isinstance(reference, str) and reference[:4].lower() == "aws:" and reference[4:].startswith("secretsmanager:"):
+                            secret = reference[len("aws:secretsmanager:"):].split("?", 1)[0]
                             if secret in secret_identifiers and arn not in record["functions"]:
                                 raise RetirementRefused("a foreign published Lambda version reads retained settings")
     if not set(record["functions"]) <= seen:

@@ -130,6 +130,18 @@ class RetirementTests(unittest.TestCase):
             with self.subTest(versions=versions), self.assertRaises(RetirementRefused):
                 observe_lambda_readers(Lambda(versions), inspect(self.state))
 
+    def test_foreign_reader_provider_is_case_insensitive_but_identifier_is_not(self):
+        for provider in ("aws", "AWS", "Aws", "aWs"):
+            for identifier in (SECRET, SECRET[:-7], "owned/runtime-settings-abc"):
+                versions = {FUNCTION: [{"Version": "1"}], FUNCTION + "foreign": [
+                    {"Version": "7", "Environment": {"Variables": {
+                        "Settings__Document": provider + ":secretsmanager:" + identifier + "?versionId=v1"}}}]}
+                with self.subTest(provider=provider, identifier=identifier), self.assertRaises(RetirementRefused):
+                    observe_lambda_readers(Lambda(versions), inspect(self.state))
+        versions[FUNCTION + "foreign"][0]["Environment"]["Variables"]["Settings__Document"] = (
+            "AWS:secretsmanager:Owned/runtime-settings-abc?versionId=v1")
+        self.assertEqual(observe_lambda_readers(Lambda(versions), inspect(self.state))["foreignReaders"], 0)
+
     def test_partial_destroy_and_resource_substitution_refused(self):
         record = inspect(self.state)
         for mutate in (lambda p: p["resource_changes"].pop(),
