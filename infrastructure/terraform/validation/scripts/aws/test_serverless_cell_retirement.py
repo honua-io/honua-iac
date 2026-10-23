@@ -112,6 +112,46 @@ class RetirementTests(unittest.TestCase):
         with self.assertRaises(RetirementRefused):
             inspect(self.state)
 
+    def add_custom_domain(self):
+        domain = 'honuarawsse399115-aws-serverless-redis-off.cert.demo.honua.io'
+        certificate = f'arn:aws:acm:{REGION}:{ACCOUNT}:certificate/owned'
+        self.rows.extend([
+            row('aws_acm_certificate','api[0]',{'id':certificate,'arn':certificate,'domain_name':domain,
+                'domain_validation_options':[{'domain_name':domain,'resource_record_name':'_challenge.'+domain+'.',
+                    'resource_record_type':'CNAME','resource_record_value':'_validation.acm-validations.aws.'}]}),
+            row('aws_apigatewayv2_domain_name','this[0]',{'id':domain,'domain_name':domain,
+                'domain_name_configuration':[{'target_domain_name':'owned.execute-api.us-east-1.amazonaws.com',
+                    'hosted_zone_id':'ZAPI'}]}),
+            row('aws_route53_record','api_alias[0]',{'id':'ZSHARED_'+domain+'_A','name':domain,'type':'A',
+                'zone_id':'ZSHARED','alias':[{'name':'owned.execute-api.us-east-1.amazonaws.com.','zone_id':'ZAPI'}]},False),
+            row('aws_route53_record','api_cert_validation["'+domain+'"]',{'id':'ZSHARED_validation_CNAME',
+                'name':'_challenge.'+domain,'zone_id':'ZSHARED','type':'CNAME',
+                'records':['_validation.acm-validations.aws']},False)])
+
+    def test_actual_custom_domain_records_use_owned_parents_not_guessed_run_label(self):
+        self.add_custom_domain()
+        record = inspect(self.state)
+        self.assertEqual(validate_plan(plan_for(self.state), record)['destroyCount'],8)
+
+    def test_lookalike_or_foreign_dns_record_is_refused(self):
+        self.add_custom_domain()
+        for index, patch in ((-2,{'name':RUN+'-aws-serverless-redis-off.cert.foreign.example'}),
+                             (-2,{'alias':[{'name':'foreign.example','zone_id':'ZAPI'}]}),
+                             (-2,{'alias':[{'name':'owned.execute-api.us-east-1.amazonaws.com','zone_id':'ZFOREIGN'}]}),
+                             (-1,{'records':['foreign.acm-validations.aws']})):
+            state = copy.deepcopy(self.state)
+            state['values']['root_module']['child_modules'][0]['resources'][index]['values'].update(patch)
+            with self.subTest(patch=patch), self.assertRaises(RetirementRefused):
+                inspect(state)
+
+    def test_refreshed_dns_must_still_bind_original_owned_parent(self):
+        self.add_custom_domain()
+        record = inspect(self.state)
+        plan = copy.deepcopy(plan_for(self.state))
+        plan['resource_changes'][-2]['change']['before']['alias'][0]['name'] = 'foreign.example'
+        with self.assertRaises(RetirementRefused):
+            validate_plan(plan,record)
+
     def test_old_unaliased_foreign_function_version_refused(self):
         versions = {FUNCTION: [{"Version": "1"}], FUNCTION + "foreign": [
             {"Version": "$LATEST"}, {"Version": "3", "Environment": {"Variables": {

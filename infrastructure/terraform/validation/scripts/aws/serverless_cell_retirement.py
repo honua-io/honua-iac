@@ -64,6 +64,39 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
+def owned_dns_record(row, rows, owned):
+    """Bind shared-zone records to their actual owned API domain/certificate.
+
+    Older harnesses used different run labels. The authenticated original state
+    and refreshed parent resources establish ownership, not a guessed hostname.
+    """
+    values = row["values"]
+    name = str(values.get("name", "")).rstrip(".")
+    if not values.get("zone_id"):
+        return False
+    for parent in rows:
+        fields = parent.get("values") or {}
+        if fields.get("id") not in owned:
+            continue
+        if (row["address"] == "module.honua.aws_route53_record.api_alias[0]"
+                and parent["type"] == "aws_apigatewayv2_domain_name"
+                and name == fields.get("domain_name") and values.get("type") == "A"):
+            aliases, configurations = values.get("alias") or [], fields.get("domain_name_configuration") or []
+            if len(aliases) == 1 and len(configurations) == 1:
+                return (str(aliases[0].get("name", "")).rstrip(".") == configurations[0].get("target_domain_name")
+                        and aliases[0].get("zone_id") == configurations[0].get("hosted_zone_id"))
+        if (row["address"].startswith("module.honua.aws_route53_record.api_cert_validation[")
+                and parent["type"] == "aws_acm_certificate"):
+            for option in fields.get("domain_validation_options") or []:
+                if (option.get("domain_name") == fields.get("domain_name")
+                        and name == str(option.get("resource_record_name", "")).rstrip(".")
+                        and values.get("type") == option.get("resource_record_type") == "CNAME"
+                        and [str(value).rstrip(".") for value in values.get("records") or []]
+                        == [str(option.get("resource_record_value", "")).rstrip(".")]):
+                    return True
+    return False
+
+
 def inventory(state, *, run_id, cell, account_id, region):
     """Refuse foreign state, mixed ownership, and unowned child resources."""
     if not re.fullmatch(r"[1-9][0-9]+", run_id) or cell not in (
@@ -103,13 +136,10 @@ def inventory(state, *, run_id, cell, account_id, region):
             if len(parts) != 6 or parts[1] != "aws" or parts[3] not in ("", region) or parts[4] not in ("", account_id):
                 raise RetirementRefused(f"foreign account or region: {address}")
         records.append({"address": address, "type": kind, "id": values.get("id")})
-    domain = run_id + "-" + cell.replace("/", "-") + ".cert."
     for row in untagged:
         values, kind = row["values"], row["type"]
-        if kind == "aws_route53_record":
-            name = str(values.get("name", "")).rstrip(".")
-            if name.startswith(domain) or (name.startswith("_") and "." + domain in name):
-                continue
+        if kind == "aws_route53_record" and owned_dns_record(row, rows, owned):
+            continue
         if kind not in PARENTS or not all(values.get(key) in owned for key in PARENTS[kind]):
             raise RetirementRefused(f"unowned child resource: {row['address']}")
     functions = [r["values"].get("arn") for r in rows if r["type"] == "aws_lambda_function"]
