@@ -109,3 +109,13 @@ variable "cleanup_alarm_topic_arn" {
     error_message = "Supply a standard SNS topic ARN for independently monitored cleanup alarms."
   }
 }
+
+variable "permissions_boundary_arn" {
+  description = "Optional existing permissions boundary for every worker, execution, lifecycle and cleanup role. The boundary must allow the module's queue, task, claim and cleanup operations."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.permissions_boundary_arn == null ? true : can(regex("^arn:aws:iam::[0-9]{12}:policy/[^*?]+$", var.permissions_boundary_arn))
+    error_message = "Supply an exact IAM managed policy ARN in the reviewed worker account."
+  }
+}

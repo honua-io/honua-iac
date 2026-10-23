@@ -253,3 +253,38 @@ run "reject_foreign_cleanup_notification" {
   }
   expect_failures = [aws_ecs_task_definition.worker]
 }
+
+run "all_roles_preserve_operator_boundary" {
+  command = apply
+  variables {
+    permissions_boundary_arn = "arn:aws:iam::123456789012:policy/honua-pilot-controller-boundary"
+  }
+  assert {
+    condition     = alltrue([for role in [aws_iam_role.worker, aws_iam_role.execution, aws_iam_role.lifecycle, aws_iam_role.reaper, aws_iam_role.schedule] : role.permissions_boundary == var.permissions_boundary_arn])
+    error_message = "Every created role, including independent cleanup and scheduler, must retain the boundary."
+  }
+}
+
+run "default_boundary_remains_unset" {
+  command = apply
+  assert {
+    condition     = alltrue([for role in [aws_iam_role.worker, aws_iam_role.execution, aws_iam_role.lifecycle, aws_iam_role.reaper, aws_iam_role.schedule] : role.permissions_boundary == null])
+    error_message = "Omitted boundary must preserve the existing worker deployment contract."
+  }
+}
+
+run "reject_foreign_boundary" {
+  command = plan
+  variables {
+    permissions_boundary_arn = "arn:aws:iam::999999999999:policy/other"
+  }
+  expect_failures = [aws_ecs_task_definition.worker]
+}
+
+run "reject_wildcard_boundary" {
+  command = plan
+  variables {
+    permissions_boundary_arn = "arn:aws:iam::123456789012:policy/*"
+  }
+  expect_failures = [var.permissions_boundary_arn]
+}

@@ -10,7 +10,8 @@ locals {
 }
 
 resource "aws_iam_role" "reaper" {
-  name = local.reaper_name
+  permissions_boundary = var.permissions_boundary_arn
+  name                 = local.reaper_name
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{ Effect = "Allow", Action = "sts:AssumeRole", Principal = { Service = "states.amazonaws.com" },
@@ -125,7 +126,8 @@ resource "aws_sqs_queue_policy" "reaper_tls" {
 }
 
 resource "aws_iam_role" "schedule" {
-  name = "${local.name}-schedule"
+  permissions_boundary = var.permissions_boundary_arn
+  name                 = "${local.name}-schedule"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{ Effect = "Allow", Action = "sts:AssumeRole", Principal = { Service = "scheduler.amazonaws.com" },

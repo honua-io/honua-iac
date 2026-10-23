@@ -113,3 +113,6 @@ tags = {
 #   version_id  = "<immutable-secret-version-id>"
 #   kms_key_arn = "<optional-exact-customer-managed-KMS-key-ARN>"
 # }
+
+# Optional private controller access to the module-managed database (TCP 5432 only).
+# db_additional_ingress_security_group_ids = ["sg-0123456789abcdef0"]
