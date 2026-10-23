@@ -10,7 +10,6 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 RELATIVE = 'certification/hosted-pilot/bootstrap/deployments/foss4g-images.tfvars.json'
-RELEASE_ANCESTOR = 'ab250e990d7748f4abf76711eb18836ef371cec1'
 
 def require(value, reason):
     if not value: raise ValueError(reason)
@@ -47,7 +46,7 @@ def check(root=ROOT, *, release_source=None):
         release_source=Path(release_source).resolve()
         def git(*args):return subprocess.check_output(['git','-C',str(release_source),*args])
         source=git('rev-parse','HEAD').decode().strip()
-        subprocess.run(['git','-C',str(release_source),'merge-base','--is-ancestor',RELEASE_ANCESTOR,source],check=True)
+        subprocess.run(['git','-C',str(release_source),'merge-base','--is-ancestor',source,'origin/trunk'],check=True)
         require(git('show',source+':'+RELATIVE)==raw,'IaC configuration differs from exact reviewed release bytes')
         sys.path[:0]=[str(release_source/'tools/hosted_pilot'),str(release_source/'tools')]
         bootstrap=importlib.import_module('bootstrap')

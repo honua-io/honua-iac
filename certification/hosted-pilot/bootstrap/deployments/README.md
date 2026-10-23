@@ -6,8 +6,8 @@ No main Server/Console/Cognito deployment or model invocation is enabled.
 
 The bootstrap workflow checks its exact configuration against the selected
 protected release source before obtaining AWS credentials. That source must
-contain release commit ab250e990d7748f4abf76711eb18836ef371cec1 and its actual
-funding compiler. CI waits for the reviewed release prerequisite to land.
+be on the observed release trunk and contain the actual funding compiler.
+No pre-merge commit is assumed to survive a squash merge. CI waits for the reviewed release prerequisite to land.
 Null source/config hashes are explicit compiler inputs, never deployed ledger
 identities. The compiler derives actual SHA/file bytes from the original workflow
 source and retains original monetary reservations and stable allocation identity.
