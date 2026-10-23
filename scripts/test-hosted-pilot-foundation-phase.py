@@ -20,6 +20,13 @@ def validate(document):
         require(jobs[name]['needs']==expected,'approval cannot depend on completion of the retained-plan executor')
     require(jobs['bootstrap']['environment']=='terraform-ephemeral' and jobs['phase-approval']['environment']=='terraform-live-approval','real human environment must protect the separate approval job')
     require(jobs['phase-watchdog']['permissions']=={'contents':'read','actions':'write'} and all('permissions' not in job for name,job in jobs.items() if name!='phase-watchdog'),'only watchdog receives cancellation authority')
+    for name in ('review-ready','phase-approval','phase-watchdog'):
+        helper=jobs[name]['steps']
+        require(helper[0]['with']['ref']=='trunk' and helper[0]['with']['fetch-depth']==0 and
+            'git merge-base --is-ancestor "$PILOT_RELEASE_ROOT_SHA" origin/trunk' in helper[1].get('run','') and
+            "--jq '.protected'" in helper[1].get('run','') and
+            'git checkout --detach "$PILOT_RELEASE_ROOT_SHA"' in helper[1].get('run',''), 'helper must verify protected ancestry before executing exact release source')
+
     for name,job in jobs.items():
         if name!='bootstrap':
             require(not any('configure-aws-credentials@' in step.get('uses','') for step in job['steps']) and not any(key.startswith('AWS_') for key in job.get('env',{})) and 'secrets' not in json.dumps(job).lower(),'only original executor may receive AWS credentials')
@@ -51,6 +58,12 @@ class PhaseWorkflow(unittest.TestCase):
         with self.assertRaises(ValueError):validate(bad)
         bad=copy.deepcopy(self.document);bad['jobs']['phase-watchdog']['steps'].append({'run':'true','env':{'UNREVIEWED':'${{ secrets.AWS_SECRET_ACCESS_KEY }}'}})
         with self.assertRaises(ValueError):validate(bad)
+    def test_input_checkout_before_local_ancestry_check_refuses(self):
+        bad=copy.deepcopy(self.document);bad['jobs']['phase-watchdog']['steps'][0]['with']['ref']='${{ inputs.release_root_sha }}'
+        with self.assertRaises(ValueError):validate(bad)
+        bad=copy.deepcopy(self.document);bad['jobs']['phase-approval']['steps'][1]['run']='git checkout --detach "$PILOT_RELEASE_ROOT_SHA"'
+        with self.assertRaises(ValueError):validate(bad)
+
     def test_public_binary_upload_or_wrong_protection_refuses(self):
         bad=copy.deepcopy(self.document);upload=next(step for step in bad['jobs']['bootstrap']['steps'] if 'upload-artifact@' in step.get('uses',''));upload['with']['path']='private/custody.tfplan'
         with self.assertRaises(ValueError):validate(bad)
