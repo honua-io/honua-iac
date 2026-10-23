@@ -140,7 +140,7 @@ run "typed_browser_auth_primary_and_canary" {
     error_message = "Execution role must read only the selected auth secrets."
   }
   assert {
-    condition     = length([for statement in jsondecode(aws_iam_policy.secrets.policy).Statement : statement if try(statement.Condition.StringEquals["kms:ViaService"] == "secretsmanager.us-east-1.amazonaws.com" && toset(statement.Resource) == toset(local.browser_auth_kms_arns) && statement.Action == ["kms:Decrypt"], false)]) == 1
+    condition     = alltrue([for key in local.browser_auth_kms_arns : length([for statement in jsondecode(aws_iam_policy.secrets.policy).Statement : statement if try(statement.Condition.StringEquals["kms:ViaService"] == "secretsmanager.us-east-1.amazonaws.com" && statement.Resource == [key] && statement.Action == ["kms:Decrypt"], false)]) == 1])
     error_message = "Auth CMKs require an exact-key Secrets Manager ViaService decrypt grant."
   }
 }
@@ -379,6 +379,43 @@ run "reject_invalid_canary_callback_origin" {
     operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-AbC123"
     file_storage_provider                     = "AwsS3"
     file_storage_aws_s3_bucket_name           = "honua-test-files"
+  }
+  expect_failures = [terraform_data.browser_auth]
+}
+
+run "authentication_keys_follow_each_secret_region" {
+  command = apply
+  variables {
+    generic_oidc = {
+      authority                 = "https://issuer.example.test"
+      client_id                 = "client"
+      admin_auth_callback_uri   = "https://console.example.test/admin/auth/callback"
+      client_secret_arn         = "arn:aws:secretsmanager:us-west-2:123456789012:secret:oidc-client-AbC123"
+      client_secret_kms_key_arn = "arn:aws:kms:us-west-2:123456789012:key/11111111-2222-3333-4444-555555555555"
+    }
+    operator_bearer = {
+      signing_key_secret_arn  = "arn:aws:secretsmanager:eu-west-1:123456789012:secret:operator-key-AbC123"
+      signing_key_kms_key_arn = "arn:aws:kms:eu-west-1:123456789012:key/22222222-2222-3333-4444-555555555555"
+    }
+  }
+  assert {
+    condition = alltrue([for expected in [
+      { key = var.generic_oidc.client_secret_kms_key_arn, service = "secretsmanager.us-west-2.amazonaws.com" },
+      { key = var.operator_bearer.signing_key_kms_key_arn, service = "secretsmanager.eu-west-1.amazonaws.com" }
+      ] : length([for statement in jsondecode(aws_iam_policy.secrets.policy).Statement : statement if try(
+        statement.Resource == [expected.key] && statement.Action == ["kms:Decrypt"] &&
+    statement.Condition.StringEquals["kms:ViaService"] == expected.service, false)]) == 1])
+    error_message = "Each authentication key must be decryptable only through its paired secret region."
+  }
+}
+
+run "reject_authentication_key_in_different_region_from_secret" {
+  command = plan
+  variables {
+    operator_bearer = {
+      signing_key_secret_arn  = "arn:aws:secretsmanager:us-west-2:123456789012:secret:operator-key-AbC123"
+      signing_key_kms_key_arn = "arn:aws:kms:us-east-1:123456789012:key/22222222-2222-3333-4444-555555555555"
+    }
   }
   expect_failures = [terraform_data.browser_auth]
 }

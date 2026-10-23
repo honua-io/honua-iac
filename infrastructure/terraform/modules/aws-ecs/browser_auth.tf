@@ -52,6 +52,16 @@ locals {
   })
   browser_auth_secrets  = concat(var.generic_oidc == null ? [] : [{ name = "Oidc__Generic__ClientSecret", valueFrom = var.generic_oidc.client_secret_arn }], var.operator_bearer == null ? [] : [{ name = "Authentication__OperatorBearer__SigningKey", valueFrom = var.operator_bearer.signing_key_secret_arn }])
   browser_auth_kms_arns = distinct(compact([var.generic_oidc == null ? "" : var.generic_oidc.client_secret_kms_key_arn, var.operator_bearer == null ? "" : var.operator_bearer.signing_key_kms_key_arn]))
+  browser_auth_kms_bindings = distinct(concat(
+    var.generic_oidc == null ? [] : var.generic_oidc.client_secret_kms_key_arn == "" ? [] : [{
+      key_arn = var.generic_oidc.client_secret_kms_key_arn
+      region  = try(split(":", var.generic_oidc.client_secret_arn)[3], "")
+    }],
+    var.operator_bearer == null ? [] : var.operator_bearer.signing_key_kms_key_arn == "" ? [] : [{
+      key_arn = var.operator_bearer.signing_key_kms_key_arn
+      region  = try(split(":", var.operator_bearer.signing_key_secret_arn)[3], "")
+    }]
+  ))
   browser_auth_public_origins = [for environment in concat(
     [local.primary_container_environment], local.canary_enabled ? [local.canary_container_environment] : []) : [
     for entry in environment : entry.value
@@ -60,6 +70,10 @@ locals {
 }
 resource "terraform_data" "browser_auth" {
   lifecycle {
+    precondition {
+      condition     = alltrue([for binding in local.browser_auth_kms_bindings : try(split(":", binding.key_arn)[3] == binding.region, false)])
+      error_message = "Each browser authentication CMK must be in the same region as its paired Secrets Manager secret."
+    }
     precondition {
       condition = var.generic_oidc == null ? true : var.generic_oidc.admin_auth_callback_uri != null ? true : alltrue([
         for origins in local.browser_auth_public_origins : length(origins) == 1 && alltrue([

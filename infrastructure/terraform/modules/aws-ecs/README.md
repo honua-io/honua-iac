@@ -838,7 +838,9 @@ bearers with an existing `signing_key_secret_arn` and `max_lifetime_minutes`
 bytes. Terraform never reads either value. ECS injects both secrets into primary
 and canary tasks; the execution role receives exact secret read grants. Optional
 `client_secret_kms_key_arn` and `signing_key_kms_key_arn` grant exact-key decrypt
-through regional Secrets Manager only. Default null objects add nothing.
+through each paired secret's regional Secrets Manager service only. A secret
+may be in a different region from ECS, but its CMK must match the secret's
+region. Default null objects add nothing.
 
 Optional `generic_oidc.admin_auth_callback_uri` maps to `Oidc__AdminAuthCallbackUri`
 and requires HTTPS with the exact `/admin/auth/callback` path, without userinfo,
