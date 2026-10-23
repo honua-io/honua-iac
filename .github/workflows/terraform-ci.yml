@@ -372,6 +372,11 @@ jobs:
         shell: bash
         run: ./infrastructure/terraform/validation/scripts/shared/test-runtime-settings-retention-omission.sh
 
+      - name: Complete release-cell retirement boundaries (offline)
+        run: |
+          python3 -m unittest discover -s infrastructure/terraform/validation/scripts/aws -p test_serverless_cell_retirement.py
+          python3 infrastructure/terraform/validation/scripts/shared/test-serverless-retirement-override.py
+
       - name: Module contract tests (multi-node topology, licensing mode)
         shell: bash
         run: |
