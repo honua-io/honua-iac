@@ -47,4 +47,47 @@ class NonsecretPilotInputs(unittest.TestCase):
         original=self.root/'original.json';original.write_text(json.dumps(self.value));self.path.symlink_to(original)
         with self.assertRaisesRegex(ValueError,'configuration missing'):check.check(self.root)
 
+    def test_equivalent_or_parent_path_spellings_refuse_before_profile_selection(self):
+        for selected in ('./'+check.RELATIVE,check.RELATIVE.replace('deployments/','deployments/../deployments/'),
+                         check.RELATIVE.replace('deployments/','deployments//'),'/'+check.RELATIVE,check.RELATIVE.replace('/',chr(92))):
+            with self.subTest(selected=selected),self.assertRaisesRegex(ValueError,'canonical reviewed'):
+                check.canonical_path(selected)
+    def compiled(self,value):
+        result=copy.deepcopy(value);result.pop('image_preparation_funding')
+        result['budget_ledger'].update(source_sha='a'*40,config_sha256=check.hashlib.sha256(b'actual-funding-source').hexdigest())
+        return result
+    def test_complete_compiled_output_allows_only_two_derived_hash_fields(self):
+        before=copy.deepcopy(self.original)
+        def resolve(value,root,sha,**kwargs):
+            self.assertEqual(kwargs,{'config_path':check.RELATIVE})
+            return self.compiled(value)
+        self.assertEqual(check.check_compiled(self.original,self.root,'a'*40,resolve,b'actual-funding-source'),self.compiled(self.original))
+        self.assertEqual(self.original,before)
+    def test_any_compiled_ledger_field_or_added_authority_change_refuses(self):
+        for field in self.original['budget_ledger']:
+            def resolve(value,root,sha,**kwargs):
+                result=self.compiled(value);old=result['budget_ledger'][field]
+                result['budget_ledger'][field]=old+1 if isinstance(old,(int,float)) else old+'-changed'
+                return result
+            with self.subTest(field=field),self.assertRaisesRegex(ValueError,'compiler changed reviewed'):
+                check.check_compiled(self.original,self.root,'a'*40,resolve,b'actual-funding-source')
+        def added(value,root,sha,**kwargs):return self.compiled(value)|{'unreviewed_authority':True}
+        with self.assertRaisesRegex(ValueError,'compiler changed reviewed'):
+            check.check_compiled(self.original,self.root,'a'*40,added,b'actual-funding-source')
+    def test_compiler_cannot_modify_the_input_to_change_its_expected_output(self):
+        before=copy.deepcopy(self.original)
+        def mutation(value,root,sha,**kwargs):
+            value['budget_ledger']['reserved_usd']=0
+            return self.compiled(value)
+        with self.assertRaisesRegex(ValueError,'compiler changed reviewed'):
+            check.check_compiled(self.original,self.root,'a'*40,mutation,b'actual-funding-source')
+        self.assertEqual(self.original,before)
+    def test_other_canonical_explicit_budget_path_remains_available(self):
+        relative='certification/hosted-pilot/bootstrap/deployments/other-reviewed.tfvars.json'
+        path=self.root/relative;path.write_text('{"budget_ledger":{"source_sha":"reviewed-explicit-source"}}')
+        self.assertEqual(len(check.check(self.root,configuration_path=relative)),64)
+        path.write_text(json.dumps(self.original))
+        with self.assertRaisesRegex(ValueError,'exact reviewed configuration path'):
+            check.check(self.root,configuration_path=relative)
+
 if __name__=='__main__':unittest.main()

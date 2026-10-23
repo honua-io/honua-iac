@@ -107,9 +107,10 @@ jobs:
           git checkout --detach "$ROOT_SHA"
           test "$(git rev-parse HEAD)" = "$ROOT_SHA"
       - name: Verify exact candidate-independent configuration and release compiler before AWS credentials
-        if: inputs.config_path == 'certification/hosted-pilot/bootstrap/deployments/foss4g-images.tfvars.json'
         working-directory: foundation-source
-        run: python3 scripts/check-hosted-pilot-foundation-inputs.py --release-source ../release-source
+        env:
+          CONFIG_PATH: ${{ inputs.config_path }}
+        run: python3 scripts/check-hosted-pilot-foundation-inputs.py --configuration-path "$CONFIG_PATH" --release-source ../release-source
       - name: Verify recovery metadata producer when recovering initial custody
         if: inputs.recovery_run_id != ''
         env:

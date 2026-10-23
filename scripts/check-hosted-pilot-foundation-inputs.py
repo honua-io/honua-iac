@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Validate only the reviewed candidate-independent, nonsecret pilot inputs."""
 import argparse
+import copy
 import hashlib
 import importlib
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import subprocess
 import sys
 
@@ -14,10 +15,30 @@ RELATIVE = 'certification/hosted-pilot/bootstrap/deployments/foss4g-images.tfvar
 def require(value, reason):
     if not value: raise ValueError(reason)
 
-def check(root=ROOT, *, release_source=None):
-    path=Path(root)/RELATIVE
+def canonical_path(value):
+    require(isinstance(value,str) and value==str(PurePosixPath(value)) and not PurePosixPath(value).is_absolute() and
+        '..' not in PurePosixPath(value).parts and '\\' not in value and
+        value.startswith('certification/hosted-pilot/bootstrap/deployments/') and value.endswith('.tfvars.json'),
+        'use an exact canonical reviewed foundation configuration path')
+    return value
+
+def check_compiled(cfg, release_source, source, resolve, funding_bytes):
+    expected=copy.deepcopy(cfg)
+    expected.pop('image_preparation_funding')
+    expected['budget_ledger'].update(source_sha=source,config_sha256=hashlib.sha256(funding_bytes).hexdigest())
+    compiled=resolve(copy.deepcopy(cfg),release_source,source,config_path=RELATIVE)
+    def canonical(value):return json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False)
+    require(canonical(compiled)==canonical(expected),'compiler changed reviewed funding or configuration fields')
+    return compiled
+
+def check(root=ROOT, *, release_source=None, configuration_path=RELATIVE):
+    configuration_path=canonical_path(configuration_path)
+    path=Path(root)/configuration_path
     require(path.is_file() and not path.is_symlink(),'reviewed nonsecret pilot configuration missing')
     raw=path.read_bytes(); cfg=json.loads(raw)
+    if configuration_path!=RELATIVE:
+        require('image_preparation_funding' not in cfg,'image funding requires its exact reviewed configuration path')
+        return hashlib.sha256(raw).hexdigest()
     fields={'account_id','region','name_prefix','owner','expires_at','oidc_provider_arn','runtime_secret_arns',
         'runtime_kms_key_arns','enable_agent_controller','controller_model_resource_arns','provision_policy_document',
         'image_preparation_funding','budget_ledger'}
@@ -51,15 +72,13 @@ def check(root=ROOT, *, release_source=None):
         sys.path[:0]=[str(release_source/'tools/hosted_pilot'),str(release_source/'tools')]
         bootstrap=importlib.import_module('bootstrap')
         require(callable(getattr(bootstrap,'resolve_image_funding',None)),'selected release source lacks the reviewed funding compiler')
-        compiled=bootstrap.resolve_image_funding(cfg,release_source,source,config_path=RELATIVE)
         funding=release_source/'certification/hosted-pilot/deployments/foss4g-image-preparation.tfvars.json'
-        require('image_preparation_funding' not in compiled and compiled['budget_ledger']['source_sha']==source and
-            compiled['budget_ledger']['config_sha256']==hashlib.sha256(funding.read_bytes()).hexdigest(),
-            'actual release source did not compile exact private funding identities')
+        check_compiled(cfg,release_source,source,bootstrap.resolve_image_funding,funding.read_bytes())
     return hashlib.sha256(raw).hexdigest()
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--release-source',type=Path)
+    parser.add_argument('--configuration-path',default=RELATIVE)
     args=parser.parse_args()
-    print('Reviewed nonsecret foundation input SHA256: '+check(release_source=args.release_source))
+    print('Reviewed nonsecret foundation input SHA256: '+check(release_source=args.release_source,configuration_path=args.configuration_path))
