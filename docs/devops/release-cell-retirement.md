@@ -1,3 +1,9 @@
+---
+type: guide
+title: "Retire disposable Lambda release cells"
+description: "Original state ownership, complete deletion plans, retained recovery evidence, and independent cleanup obligations."
+tags: [terraform, validation, runbook]
+---
 # Disposable release-cell retirement
 
 The Lambda runtime-settings module keeps its `prevent_destroy` guards during
