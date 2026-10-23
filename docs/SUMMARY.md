@@ -13,6 +13,7 @@
 * [Run a failover drill](devops/failover-drill-runbook.md)
 * [Execute the cloud runbooks manually](devops/manual-cloud-runbook-validation.md)
 * [Approve provisioning with two principals](devops/provision-approval-two-principal.md)
+* [Retire disposable Lambda release cells](devops/release-cell-retirement.md)
 * [Produce a private standing AWS certification plan](devops/standing-aws-cert-plan.md)
 * [Retain standing certification packets through encrypted transfer](devops/standing-cert-encrypted-packets.md)
 * [Validate Terraform on demand](devops/terraform-validation.md)
