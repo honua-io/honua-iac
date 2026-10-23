@@ -14,6 +14,7 @@ on:
 permissions:
   contents: read
   actions: read
+  deployments: read
 concurrency:
   group: release-cell-inventory-policy
   cancel-in-progress: false
