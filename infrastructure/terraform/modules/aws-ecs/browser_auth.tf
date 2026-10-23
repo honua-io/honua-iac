@@ -52,9 +52,22 @@ locals {
   })
   browser_auth_secrets  = concat(var.generic_oidc == null ? [] : [{ name = "Oidc__Generic__ClientSecret", valueFrom = var.generic_oidc.client_secret_arn }], var.operator_bearer == null ? [] : [{ name = "Authentication__OperatorBearer__SigningKey", valueFrom = var.operator_bearer.signing_key_secret_arn }])
   browser_auth_kms_arns = distinct(compact([var.generic_oidc == null ? "" : var.generic_oidc.client_secret_kms_key_arn, var.operator_bearer == null ? "" : var.operator_bearer.signing_key_kms_key_arn]))
+  browser_auth_public_origins = [for environment in concat(
+    [local.primary_container_environment], local.canary_enabled ? [local.canary_container_environment] : []) : [
+    for entry in environment : entry.value
+    if contains(["public__baseurl", "public_base_url"], lower(replace(entry.name, ":", "__")))
+  ]]
 }
 resource "terraform_data" "browser_auth" {
   lifecycle {
+    precondition {
+      condition = var.generic_oidc == null ? true : var.generic_oidc.admin_auth_callback_uri != null ? true : alltrue([
+        for origins in local.browser_auth_public_origins : length(origins) == 1 && alltrue([
+          for origin in origins : can(regex("^https?://[^/?#@[:space:]]+(/[^?#[:space:]]*)?$", origin))
+        ])
+      ])
+      error_message = "generic_oidc without admin_auth_callback_uri requires one valid Public:BaseUrl on every enabled task. Set public_base_url, an HTTPS custom domain, or a single Public__BaseUrl/PUBLIC_BASE_URL environment setting."
+    }
     precondition {
       condition     = var.generic_oidc == null || var.operator_bearer == null ? true : var.generic_oidc.client_secret_arn != var.operator_bearer.signing_key_secret_arn
       error_message = "Generic OIDC client and operator bearer signing secrets must be independent secret ARNs."

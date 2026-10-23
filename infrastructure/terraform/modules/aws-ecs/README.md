@@ -844,7 +844,11 @@ Optional `generic_oidc.admin_auth_callback_uri` maps to `Oidc__AdminAuthCallback
 and requires HTTPS with the exact `/admin/auth/callback` path, without userinfo,
 query or fragment. It requires a Server version supporting that option; omission
 keeps Server's default callback behavior and does not change `Public__BaseUrl`.
-The selected URI must be registered with the real provider.
+When omitted, every enabled task must have one valid public base URL from
+`public_base_url`, an HTTPS custom domain, or an environment override. Missing,
+empty, malformed or ambiguous public origins fail planning before OIDC login
+would refuse the request in Production. Register the resulting callback URI
+with the real provider.
 
 Typed authentication settings cannot be overridden through primary/canary
 `additional_env`. Plaintext client secrets and bearer signing keys are always

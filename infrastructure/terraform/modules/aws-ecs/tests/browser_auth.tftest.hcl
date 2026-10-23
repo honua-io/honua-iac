@@ -304,3 +304,81 @@ run "reject_reused_client_and_signing_secret" {
   }
   expect_failures = [terraform_data.browser_auth]
 }
+
+run "reject_missing_callback_origin" {
+  command = plan
+  variables {
+    generic_oidc = { authority = "https://issuer.example.test", client_id = "client", client_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:client-AbC123" }
+
+  }
+  expect_failures = [terraform_data.browser_auth]
+}
+
+run "derive_callback_from_public_origin" {
+  command = plan
+  variables {
+    generic_oidc    = { authority = "https://issuer.example.test", client_id = "client", client_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:client-AbC123" }
+    public_base_url = "https://server.example.test/gis"
+  }
+}
+
+run "derive_callback_from_https_domain" {
+  command = plan
+  variables {
+    generic_oidc        = { authority = "https://issuer.example.test", client_id = "client", client_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:client-AbC123" }
+    domain_name         = "server.example.test"
+    alb_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000001"
+  }
+}
+
+run "derive_callback_from_environment_origin" {
+  command = plan
+  variables {
+    generic_oidc   = { authority = "https://issuer.example.test", client_id = "client", client_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:client-AbC123" }
+    additional_env = { PUBLIC_BASE_URL = "https://server.example.test" }
+  }
+}
+
+run "reject_empty_callback_origin" {
+  command = plan
+  variables {
+    generic_oidc   = { authority = "https://issuer.example.test", client_id = "client", client_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:client-AbC123" }
+    additional_env = { Public__BaseUrl = "" }
+  }
+  expect_failures = [terraform_data.browser_auth]
+}
+
+run "reject_malformed_callback_origin" {
+  command = plan
+  variables {
+    generic_oidc   = { authority = "https://issuer.example.test", client_id = "client", client_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:client-AbC123" }
+    additional_env = { Public__BaseUrl = "server.example.test" }
+  }
+  expect_failures = [terraform_data.browser_auth]
+}
+
+run "reject_ambiguous_callback_origin" {
+  command = plan
+  variables {
+    generic_oidc   = { authority = "https://issuer.example.test", client_id = "client", client_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:client-AbC123" }
+    additional_env = { Public__BaseUrl = "https://one.example.test", PUBLIC_BASE_URL = "https://two.example.test" }
+  }
+  expect_failures = [terraform_data.browser_auth]
+}
+
+run "reject_invalid_canary_callback_origin" {
+  command = plan
+  variables {
+    generic_oidc                              = { authority = "https://issuer.example.test", client_id = "client", client_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:client-AbC123" }
+    additional_env                            = { Public__BaseUrl = "https://server.example.test" }
+    canary_additional_env                     = { Public__BaseUrl = "" }
+    canary_enabled                            = true
+    deployment_mode                           = "MultiNode"
+    redis_connection_string                   = "redis.example.internal:6379,password=test,ssl=true"
+    redis_connection_cidrs                    = ["10.0.0.0/16"]
+    operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-AbC123"
+    file_storage_provider                     = "AwsS3"
+    file_storage_aws_s3_bucket_name           = "honua-test-files"
+  }
+  expect_failures = [terraform_data.browser_auth]
+}

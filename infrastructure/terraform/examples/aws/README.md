@@ -33,7 +33,9 @@ with an HTTPS `authority`, `client_id`, existing `client_secret_arn`, optional
 `client_secret_kms_key_arn`, and scopes (default `openid`, `profile`, `email`).
 Set `admin_auth_callback_uri` to the exact HTTPS `/admin/auth/callback` URI
 registered with the provider when Console brokers the callback. Otherwise the
-Server derives it from its public base URL. Do not combine this with
+Server derives it from its public base URL, which is required when the callback
+is omitted. The module checks the effective public origin on every enabled
+task before deployment. Do not combine this with
 `oidc_static_jwt`.
 
 `operator_bearer` enables the Server-issued bearer for an authenticated Server
