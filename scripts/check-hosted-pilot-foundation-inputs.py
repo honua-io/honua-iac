@@ -51,7 +51,7 @@ def check(root=ROOT, *, release_source=None):
         sys.path[:0]=[str(release_source/'tools/hosted_pilot'),str(release_source/'tools')]
         bootstrap=importlib.import_module('bootstrap')
         require(callable(getattr(bootstrap,'resolve_image_funding',None)),'selected release source lacks the reviewed funding compiler')
-        compiled=bootstrap.resolve_image_funding(cfg,release_source,source)
+        compiled=bootstrap.resolve_image_funding(cfg,release_source,source,config_path=RELATIVE)
         funding=release_source/'certification/hosted-pilot/deployments/foss4g-image-preparation.tfvars.json'
         require('image_preparation_funding' not in compiled and compiled['budget_ledger']['source_sha']==source and
             compiled['budget_ledger']['config_sha256']==hashlib.sha256(funding.read_bytes()).hexdigest(),
