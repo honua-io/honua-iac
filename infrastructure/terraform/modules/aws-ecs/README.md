@@ -849,7 +849,9 @@ keeps Server's default callback behavior and does not change `Public__BaseUrl`.
 When omitted, every enabled task must have one valid public base URL from
 `public_base_url`, an HTTPS custom domain, or an environment override. Missing,
 empty, malformed or ambiguous public origins fail planning before OIDC login
-would refuse the request in Production. Register the resulting callback URI
+would refuse the request in Production. Authorities require ASCII/punycode DNS
+labels or valid bracketed IPv6, with optional numeric ports through 65535.
+Register the resulting callback URI
 with the real provider.
 
 Typed authentication settings cannot be overridden through primary/canary

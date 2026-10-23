@@ -419,3 +419,73 @@ run "reject_authentication_key_in_different_region_from_secret" {
   }
   expect_failures = [terraform_data.browser_auth]
 }
+
+run "reject_callback_nonnumeric_port" {
+  command = plan
+  variables {
+    generic_oidc   = { authority = "https://issuer.example.test", client_id = "client", client_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:client-AbC123" }
+    additional_env = { PUBLIC_BASE_URL = "https://example.test:notaport" }
+  }
+  expect_failures = [terraform_data.browser_auth]
+}
+
+run "reject_callback_port_out_of_range" {
+  command = plan
+  variables {
+    generic_oidc    = { authority = "https://issuer.example.test", client_id = "client", client_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:client-AbC123" }
+    public_base_url = "https://example.test:65536"
+  }
+  expect_failures = [terraform_data.browser_auth]
+}
+
+run "reject_callback_empty_port" {
+  command = plan
+  variables {
+    generic_oidc   = { authority = "https://issuer.example.test", client_id = "client", client_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:client-AbC123" }
+    additional_env = { PUBLIC_BASE_URL = "https://example.test:" }
+  }
+  expect_failures = [terraform_data.browser_auth]
+}
+
+run "reject_callback_invalid_ipv6" {
+  command = plan
+  variables {
+    generic_oidc   = { authority = "https://issuer.example.test", client_id = "client", client_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:client-AbC123" }
+    additional_env = { PUBLIC_BASE_URL = "https://[1:2:3]:443" }
+  }
+  expect_failures = [terraform_data.browser_auth]
+}
+
+run "reject_callback_empty_dns_label" {
+  command = plan
+  variables {
+    generic_oidc   = { authority = "https://issuer.example.test", client_id = "client", client_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:client-AbC123" }
+    additional_env = { PUBLIC_BASE_URL = "https://example..test" }
+  }
+  expect_failures = [terraform_data.browser_auth]
+}
+
+run "reject_callback_invalid_dns_label" {
+  command = plan
+  variables {
+    generic_oidc   = { authority = "https://issuer.example.test", client_id = "client", client_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:client-AbC123" }
+    additional_env = { PUBLIC_BASE_URL = "https://-example.test" }
+  }
+  expect_failures = [terraform_data.browser_auth]
+}
+
+run "derive_callback_from_numeric_port" {
+  command = plan
+  variables {
+    generic_oidc    = { authority = "https://issuer.example.test", client_id = "client", client_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:client-AbC123" }
+    public_base_url = "https://example.test:8443/gis"
+  }
+}
+
+run "derive_callback_from_ipv6_origin" {
+  command = plan
+  variables {
+    generic_oidc   = { authority = "https://issuer.example.test", client_id = "client", client_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:client-AbC123" }
+    additional_env = { PUBLIC_BASE_URL = "https://[2001:db8::1]:8443/gis" }
+  }
+}

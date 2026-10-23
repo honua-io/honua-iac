@@ -67,6 +67,12 @@ locals {
     for entry in environment : entry.value
     if contains(["public__baseurl", "public_base_url"], lower(replace(entry.name, ":", "__")))
   ]]
+  # Parse the authority separately: a non-separator regex also accepts invalid
+  # ports and malformed IPv6. DNS labels use their ASCII/punycode form.
+  browser_auth_origin_pattern = "^https?://(?P<host>\\[[0-9A-Fa-f:.]+\\]|[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\\.?)(?::(?P<port>[0-9]+))?(?:/[^?#[:space:]]*)?$"
+  browser_auth_origin_authorities = [for origins in local.browser_auth_public_origins : [
+    for origin in origins : try(regex(local.browser_auth_origin_pattern, origin), null)
+  ]]
 }
 resource "terraform_data" "browser_auth" {
   lifecycle {
@@ -76,8 +82,11 @@ resource "terraform_data" "browser_auth" {
     }
     precondition {
       condition = var.generic_oidc == null ? true : var.generic_oidc.admin_auth_callback_uri != null ? true : alltrue([
-        for origins in local.browser_auth_public_origins : length(origins) == 1 && alltrue([
-          for origin in origins : can(regex("^https?://[^/?#@[:space:]]+(/[^?#[:space:]]*)?$", origin))
+        for authorities in local.browser_auth_origin_authorities : length(authorities) == 1 && alltrue([
+          for authority in authorities : authority == null ? false : (
+            try(tonumber(coalesce(authority.port, "443")) <= 65535, false) &&
+            (startswith(authority.host, "[") ? can(cidrhost("${trimprefix(trimsuffix(authority.host, "]"), "[")}/128", 0)) : length(authority.host) <= 253)
+          )
         ])
       ])
       error_message = "generic_oidc without admin_auth_callback_uri requires one valid Public:BaseUrl on every enabled task. Set public_base_url, an HTTPS custom domain, or a single Public__BaseUrl/PUBLIC_BASE_URL environment setting."
