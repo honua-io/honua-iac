@@ -1,0 +1,38 @@
+name: Hosted pilot foundation inputs
+on:
+  pull_request:
+    paths:
+      - certification/hosted-pilot/**
+      - scripts/check-hosted-pilot-foundation-inputs.py
+      - scripts/test-hosted-pilot-foundation-inputs.py
+      - .github/workflows/hosted-pilot-inputs.yml
+      - .github/workflows/hosted-pilot-bootstrap.yml
+  push:
+    branches: [trunk]
+    paths:
+      - certification/hosted-pilot/**
+      - scripts/check-hosted-pilot-foundation-inputs.py
+      - scripts/test-hosted-pilot-foundation-inputs.py
+      - .github/workflows/hosted-pilot-inputs.yml
+      - .github/workflows/hosted-pilot-bootstrap.yml
+permissions:
+  contents: read
+jobs:
+  exact-nonsecret-inputs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: honua-io/honua-release
+          ref: trunk
+          path: release-source
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify only reviewed inputs and reject changed funding or workload authority
+        run: python3 scripts/test-hosted-pilot-foundation-inputs.py -v
+      - name: Require exact reviewed release source and actual funding compiler
+        run: python3 scripts/check-hosted-pilot-foundation-inputs.py --release-source release-source
