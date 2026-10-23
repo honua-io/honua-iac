@@ -129,6 +129,12 @@ output "admin_password_secret_arn" {
   value       = aws_secretsmanager_secret.admin_password.arn
 }
 
+output "admin_password_secret_version_id" {
+  description = "Immutable version ID of the managed admin password, for independently bound private bootstrap credential injection. Contains no secret value."
+  value       = aws_secretsmanager_secret_version.admin_password.version_id
+}
+
+
 output "connection_encryption_master_key_secret_arn" {
   description = "Secrets Manager ARN for the independent connection-encryption master key."
   value       = aws_secretsmanager_secret.master_key.arn

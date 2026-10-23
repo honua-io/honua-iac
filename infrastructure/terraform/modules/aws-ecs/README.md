@@ -18,6 +18,12 @@ module "honua" {
 
 Bump `?ref=` to move to a newer release and run `terraform init -upgrade`.
 
+`admin_password_secret_arn` and `admin_password_secret_version_id` identify the
+managed private root credential and its exact immutable version for a separately
+authorized bootstrap task. These outputs contain no password; existing Server
+injection behavior stays unchanged. The bootstrap task must bind the same actual
+secret/version and must keep the credential out of worker and model inputs.
+
 ## Quick start (dev)
 
 ```hcl
