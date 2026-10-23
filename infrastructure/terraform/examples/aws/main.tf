@@ -93,6 +93,8 @@ module "honua" {
   canary_platform_release = var.canary_platform_release
 
   oidc_static_jwt = var.oidc_static_jwt
+  generic_oidc    = var.generic_oidc
+  operator_bearer = var.operator_bearer
 
   additional_env = {
     HONUA_SERVE_ADMIN_UI    = "true"

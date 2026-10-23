@@ -144,6 +144,31 @@ run "typed_browser_auth_primary_and_canary" {
     error_message = "Auth CMKs require an exact-key Secrets Manager ViaService decrypt grant."
   }
 }
+run "china_auth_key_uses_kms_service_name" {
+  command = apply
+  override_data {
+    target = data.aws_region.current
+    values = { id = "cn-north-1", name = "cn-north-1", region = "cn-north-1" }
+  }
+  override_data {
+    target = data.aws_partition.current
+    values = { id = "aws-cn", partition = "aws-cn", dns_suffix = "amazonaws.com.cn", reverse_dns_prefix = "cn.com.amazonaws" }
+  }
+  variables {
+    operator_bearer = {
+      signing_key_secret_arn  = "arn:aws-cn:secretsmanager:cn-north-1:123456789012:secret:operator-key-AbC123"
+      signing_key_kms_key_arn = "arn:aws-cn:kms:cn-north-1:123456789012:key/22222222-2222-3333-4444-555555555555"
+    }
+  }
+  assert {
+    condition = length([for statement in jsondecode(aws_iam_policy.secrets.policy).Statement : statement if try(
+      statement.Condition.StringEquals["kms:ViaService"] == "secretsmanager.cn-north-1.amazonaws.com" &&
+      statement.Resource == [var.operator_bearer.signing_key_kms_key_arn] &&
+    statement.Action == ["kms:Decrypt"], false)]) == 1
+    error_message = "China auth keys must use the KMS ViaService name, not the regional endpoint DNS suffix."
+  }
+}
+
 run "reject_http_authority" {
   command = plan
   variables {

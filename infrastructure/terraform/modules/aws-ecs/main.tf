@@ -972,10 +972,11 @@ resource "aws_iam_policy" "secrets" {
         Action   = ["kms:Decrypt", "kms:DescribeKey"]
         Resource = local.oidc_signing_kms_arns
         }] : [], length(local.browser_auth_kms_arns) == 0 ? [] : [{
-        Effect    = "Allow"
-        Action    = ["kms:Decrypt"]
-        Resource  = local.browser_auth_kms_arns
-        Condition = { StringEquals = { "kms:ViaService" = "secretsmanager.${data.aws_region.current.name}.${data.aws_partition.current.dns_suffix}" } }
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = local.browser_auth_kms_arns
+        # KMS ViaService uses amazonaws.com in every partition, including China.
+        Condition = { StringEquals = { "kms:ViaService" = "secretsmanager.${data.aws_region.current.name}.amazonaws.com" } }
     }])
   })
 }
