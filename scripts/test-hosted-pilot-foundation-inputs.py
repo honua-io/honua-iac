@@ -47,6 +47,15 @@ class NonsecretPilotInputs(unittest.TestCase):
         original=self.root/'original.json';original.write_text(json.dumps(self.value));self.path.symlink_to(original)
         with self.assertRaisesRegex(ValueError,'configuration missing'):check.check(self.root)
 
+    def test_both_original_expiration_deadlines_are_pinned(self):
+        for scope in ('infrastructure','funding'):
+            self.value=copy.deepcopy(self.original)
+            target=self.value if scope=='infrastructure' else self.value['budget_ledger']
+            target['expires_at']='2026-11-30T00:00:00Z'
+            self.path.write_text(json.dumps(self.value))
+            with self.subTest(scope=scope),self.assertRaisesRegex(ValueError,'deadline differs'):
+                check.check(self.root)
+
     def test_equivalent_or_parent_path_spellings_refuse_before_profile_selection(self):
         for selected in ('./'+check.RELATIVE,check.RELATIVE.replace('deployments/','deployments/../deployments/'),
                          check.RELATIVE.replace('deployments/','deployments//'),'/'+check.RELATIVE,check.RELATIVE.replace('/',chr(92))):

@@ -44,6 +44,9 @@ def check(root=ROOT, *, release_source=None, configuration_path=RELATIVE):
         'image_preparation_funding','budget_ledger'}
     require(set(cfg)==fields and cfg['account_id']=='585192672263' and cfg['region']=='us-east-1' and
         cfg['name_prefix']=='honua-pilot-foss4g' and cfg['owner']=='Mike McDougall','reviewed pilot identity differs')
+    require(cfg['expires_at']=='2026-10-30T00:00:00Z' and
+        cfg['budget_ledger'].get('expires_at')=='2026-10-24T13:45:00Z',
+        'reviewed infrastructure or funding deadline differs; renewal requires explicit source review')
     require(cfg['oidc_provider_arn']=='arn:aws:iam::585192672263:oidc-provider/token.actions.githubusercontent.com' and
         cfg['runtime_secret_arns']==['arn:aws:secretsmanager:us-east-1:585192672263:secret:honua-release/cert/operation-key-ring-zDn618',
             'arn:aws:secretsmanager:us-east-1:585192672263:secret:honua-release/cert/audit-chain-key-RLtpME'] and
