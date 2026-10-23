@@ -119,6 +119,12 @@ class RetirementTests(unittest.TestCase):
         with self.assertRaises(RetirementRefused):
             observe_lambda_readers(Lambda(versions), inspect(self.state))
 
+    def test_foreign_reader_using_partial_secret_arn_is_refused(self):
+        versions = {FUNCTION: [{"Version":"1"}], FUNCTION + "foreign": [{"Version":"7", "Environment":{
+            "Variables":{"Settings__Document":"aws:secretsmanager:" + SECRET[:-7] + "?versionId=v1"}}}]}
+        with self.assertRaises(RetirementRefused):
+            observe_lambda_readers(Lambda(versions), inspect(self.state))
+
     def test_unreadable_or_missing_function_refused(self):
         for versions in ({}, {FUNCTION: [{"Environment": {"Error": {"ErrorCode": "AccessDenied"}}}]}):
             with self.subTest(versions=versions), self.assertRaises(RetirementRefused):
@@ -146,6 +152,26 @@ class RetirementTests(unittest.TestCase):
         plan["complete"] = False
         with self.assertRaises(RetirementRefused):
             validate_plan(plan, inspect(self.state))
+
+    def test_refreshed_foreign_ownership_or_parent_cannot_use_stale_owned_state(self):
+        for mutate in (lambda p: p['resource_changes'][0]['change']['before']['tags_all'].update({RUN_TAG:'foreign'}),
+                       lambda p: p['resource_changes'][0]['change']['before'].update(tags_all={}),
+                       lambda p: p['resource_changes'][-1]['change']['before'].update(function_name='foreign')):
+            plan = copy.deepcopy(plan_for(self.state))
+            mutate(plan)
+            with self.assertRaises(RetirementRefused):
+                validate_plan(plan, inspect(self.state))
+
+    def test_deposed_and_duplicate_changes_are_not_hidden_by_address(self):
+        for deposed in (False, True):
+            plan = copy.deepcopy(plan_for(self.state))
+            duplicate = copy.deepcopy(plan['resource_changes'][0])
+            if deposed:
+                duplicate['deposed'] = 'deadbeef'
+                duplicate['change']['before']['id'] = 'never-inventoried'
+            plan['resource_changes'].insert(0, duplicate)
+            with self.subTest(deposed=deposed), self.assertRaises(RetirementRefused):
+                validate_plan(plan, inspect(self.state))
 
     def test_existing_override_refused(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -135,6 +135,12 @@ def observe_lambda_readers(client, record):
     """
     seen = set()
     versions = 0
+    secret_identifiers = set(record["settings"])
+    for identifier in record["settings"]:
+        # Secrets Manager accepts the full ARN and the partial ARN without its
+        # generated six-character suffix, as well as the original secret name.
+        if re.fullmatch(r"arn:aws:secretsmanager:[^:]+:[0-9]{12}:secret:.+-[A-Za-z0-9]{6}", identifier):
+            secret_identifiers.add(identifier[:-7])
     for page in client.get_paginator("list_functions").paginate():
         for function in page.get("Functions", []):
             arn = function["FunctionArn"]
@@ -148,7 +154,7 @@ def observe_lambda_readers(client, record):
                     for reference in environment.get("Variables", {}).values():
                         if isinstance(reference, str) and reference.startswith("aws:secretsmanager:"):
                             secret = reference.removeprefix("aws:secretsmanager:").split("?", 1)[0]
-                            if secret in record["settings"] and arn not in record["functions"]:
+                            if secret in secret_identifiers and arn not in record["functions"]:
                                 raise RetirementRefused("a foreign published Lambda version reads retained settings")
     if not set(record["functions"]) <= seen:
         raise RetirementRefused("original function inventory changed; reconcile state before retirement")
@@ -175,7 +181,12 @@ def validate_plan(plan, record):
     if plan.get("errored") or plan.get("applyable") is False or plan.get("complete") is False:
         raise RetirementRefused("retirement plan is incomplete or invalid")
     expected = {r["address"]: r for r in record["resources"]}
-    changes = {r["address"]: r for r in plan.get("resource_changes", []) if r.get("mode") == "managed"}
+    managed_changes = [r for r in plan.get("resource_changes", []) if r.get("mode") == "managed"]
+    if any(r.get("deposed") is not None for r in managed_changes):
+        raise RetirementRefused("deposed objects require original-state reconciliation before retirement")
+    changes = {r["address"]: r for r in managed_changes}
+    if len(changes) != len(managed_changes):
+        raise RetirementRefused("duplicate resource identity in retirement plan")
     if len(changes) != len(expected) or set(changes) != set(expected):
         raise RetirementRefused("retirement must destroy the entire original cell")
     for address, change in changes.items():
@@ -184,6 +195,16 @@ def validate_plan(plan, record):
             raise RetirementRefused(f"retirement plan contains a non-delete action: {address}")
         if before.get("id") != expected[address]["id"]:
             raise RetirementRefused(f"retirement plan replaced an original resource: {address}")
+    # A saved plan contains the provider-refreshed current ownership in before.
+    # Revalidate it: matching an old state's IDs cannot authorize deletion after
+    # an existing resource was retagged or moved under a foreign parent.
+    refreshed = {"values": {"root_module": {"resources": [
+        {"address": r["address"], "type": r["type"], "mode": "managed", "values": r["change"]["before"]}
+        for r in managed_changes]}}}
+    current = inventory(refreshed, run_id=record["runId"], cell=record["cell"],
+                        account_id=record["accountId"], region=record["region"])
+    if current["functions"] != record["functions"] or current["settings"] != record["settings"]:
+        raise RetirementRefused("refreshed Lambda or settings identities differ from original inventory")
     return {"planSha256": digest(plan), "destroyCount": len(changes)}
 
 

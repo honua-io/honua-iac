@@ -22,3 +22,6 @@ scripts/tf-pass-insert.local.sh
 
 # Local pinned tool downloads (terraform binary for agent worktrees).
 .tools/
+# Disposable-cell plans, raw state observations and diagnostics contain secrets.
+**/.release-cell-retirement/
+**/release_cell_retirement_override.tf.json
