@@ -51,6 +51,7 @@ on:
       - '.github/workflows/terraform-manual-validation.yml'
       - '.github/workflows/terraform-validation-infra-reaper.yml'
       - '.github/workflows/terraform-validation-iam-sweeper.yml'
+      - '.github/workflows/release-cell-inventory-policy.yml'
       - 'tests/workflows/**'
   push:
     branches:
@@ -104,6 +105,7 @@ on:
       - '.github/workflows/terraform-manual-validation.yml'
       - '.github/workflows/terraform-validation-infra-reaper.yml'
       - '.github/workflows/terraform-validation-iam-sweeper.yml'
+      - '.github/workflows/release-cell-inventory-policy.yml'
       - 'tests/workflows/**'
 
 permissions:

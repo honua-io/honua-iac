@@ -1,0 +1,93 @@
+name: Release cell inventory policy
+on:
+  workflow_dispatch:
+    inputs:
+      release_root_sha:
+        description: Full reviewed honua-release trunk commit containing the fixed policy root
+        required: true
+        type: string
+      mode:
+        description: Review metadata only, or apply the single imported policy through human approval
+        required: true
+        type: choice
+        options: [plan, deploy]
+permissions:
+  contents: read
+  actions: read
+  deployments: read
+concurrency:
+  group: release-cell-inventory-policy
+  cancel-in-progress: false
+jobs:
+  approval-policy:
+    if: github.repository == 'honua-io/honua-iac' && github.ref == 'refs/heads/trunk'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: honua-io/honua-release
+          ref: trunk
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify reviewed source and the existing approval policy
+        env:
+          ROOT_SHA: ${{ inputs.release_root_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$ROOT_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$ROOT_SHA" origin/trunk
+          git checkout --detach "$ROOT_SHA"
+          test "$(git rev-parse HEAD)" = "$ROOT_SHA"
+          python3 tools/hosted_pilot/foundation_environment.py check
+  policy:
+    needs: approval-policy
+    if: github.repository == 'honua-io/honua-iac' && github.ref == 'refs/heads/trunk'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ inputs.mode == 'deploy' && 'terraform-live-approval' || 'terraform-ephemeral' }}
+    env:
+      TF_IN_AUTOMATION: 'true'
+      AWS_EC2_METADATA_DISABLED: 'true'
+      RELEASE_ROOT_SHA: ${{ inputs.release_root_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: honua-io/honua-release
+          ref: trunk
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require the reviewed source on protected trunk
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_ROOT_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$RELEASE_ROOT_SHA" origin/trunk
+          git checkout --detach "$RELEASE_ROOT_SHA"
+          test "$(git rev-parse HEAD)" = "$RELEASE_ROOT_SHA"
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.13.5
+          terraform_wrapper: false
+      - name: Install the read-only observation client
+        run: python3 -m pip install 'boto3>=1.35,<2'
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Review and optionally apply the sole imported inline policy
+        env:
+          MODE: ${{ inputs.mode }}
+        run: python3 tools/cloud_cell_inventory_policy.py "$MODE"
+      - name: Retain metadata only; no policy documents, state, plans or private logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-cell-inventory-review-${{ github.run_id }}
+          path: ${{ runner.temp }}/cell-inventory-review.json
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Remove private executor material
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/cell-inventory-private"
