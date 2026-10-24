@@ -3,6 +3,15 @@ mock_provider "aws" {
     defaults = { arn = "arn:aws:dynamodb:us-east-1:123456789012:table/fixture" }
   }
 }
+override_resource {
+  target = aws_dynamodb_table.history["state"]
+  values = { arn = "arn:aws:dynamodb:us-east-1:123456789012:table/fixture-state", name = "fixture-state" }
+}
+override_resource {
+  target = aws_dynamodb_table.history["claims"]
+  values = { arn = "arn:aws:dynamodb:us-east-1:123456789012:table/fixture-claims", name = "fixture-claims" }
+}
+
 variables {
   region                 = "us-east-1"
   account_id             = "123456789012"

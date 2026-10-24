@@ -44,10 +44,10 @@ for (const value of [
 ]) assert.equal(await accepted(value),false, 'closed identity, integer clocks and original funding bounds must refuse');
 const canonical = await evaluate(states.CanonicalInstalledInput.Output,input);
 const expected = '{"candidateKey":"sha256:'+'a'.repeat(64)+'","claimGeneration":7,"executionId":"execution-'+'1'.repeat(32)+'","expiresEpoch":1792080300,"nativeBindingDigest":"sha256:'+'b'.repeat(64)+'","runtimeId":"runtime_01","schemaVersion":1,"slotId":"fixed-slot","targetId":"target-é","turnId":"turn😀\\\"\\\\","workspaceId":"workspace"}';
-assert.equal(canonical._slot.inputString,expected,'canonical input must preserve UTF-8/escape bytes and sorted keys');
+assert.equal(canonical.installation.inputString,expected,'canonical input must preserve UTF-8/escape bytes and sorted keys');
 assert.deepEqual(JSON.parse(expected),input);
-assert.equal(canonical._slot.nameInput,'{"candidateKey":"'+input.candidateKey+'","executionId":"'+input.executionId+'"}');
-const executionName='worker-'+createHash('sha256').update(canonical._slot.nameInput,'utf8').digest('hex');
+assert.equal(canonical.installation.nameInput,'{"candidateKey":"'+input.candidateKey+'","executionId":"'+input.executionId+'"}');
+const executionName='worker-'+createHash('sha256').update(canonical.installation.nameInput,'utf8').digest('hex');
 assert.match(executionName,/^worker-[0-9a-f]{64}$/);
 const cleanup = reaper.States.StopTasks.ItemProcessor.States;
 const arn = 'arn:aws:ecs:us-east-1:123456789012:task/isolated-agents/original';

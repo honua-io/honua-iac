@@ -12,7 +12,7 @@ locals {
     executionId         = { "S.$" = "$.executionId" }
     executionArn        = { "S.$" = "$$.Execution.Id" }
     taskDefinitionArn   = { S = aws_ecs_task_definition.worker.arn }
-    inputDigest         = { "S.$" = "$._slot.hash.inputDigest" }
+    inputDigest         = { "S.$" = "$.installation.hash.inputDigest" }
     claimGeneration     = { "N.$" = "States.Format('{}', $.claimGeneration)" }
     expiresEpoch        = { "N.$" = "States.Format('{}', $.expiresEpoch)" }
     nativeBindingDigest = { "S.$" = "$.nativeBindingDigest" }
@@ -23,7 +23,7 @@ locals {
   slot_owner_values = {
     ":execution"  = { "S.$" = "$$.Execution.Id" }
     ":native"     = { "S.$" = "$.executionId" }
-    ":digest"     = { "S.$" = "$._slot.hash.inputDigest" }
+    ":digest"     = { "S.$" = "$.installation.hash.inputDigest" }
     ":definition" = { S = aws_ecs_task_definition.worker.arn }
   }
   slot_owner_condition = "activeExecutionId = :native AND inputDigest = :digest AND executionArn = :execution AND taskDefinitionArn = :definition"
@@ -60,7 +60,7 @@ locals {
         Type = "Pass", QueryLanguage = "JSONata", Next = "HashInstalledInput"
         Output = trimspace(<<-JSONATA
           {% ($j := function($v) { $substring($string([$v]), 1, $length($string([$v])) - 2) };
-            $merge([$states.input, {'_slot': {
+            $merge([$states.input, {'installation': {
               'nameInput': '{"candidateKey":' & $j($states.input.candidateKey) & ',"executionId":' & $j($states.input.executionId) & '}',
               'inputString': '{' & $join($map($sort($keys($states.input)), function($k) { $j($k) & ':' & $j($lookup($states.input, $k)) }), ',') & '}'
             }}])) %}
@@ -68,14 +68,14 @@ locals {
         )
       }
       HashInstalledInput = {
-        Type = "Pass", ResultPath = "$._slot.hash", Next = "CheckExecutionName"
+        Type = "Pass", ResultPath = "$.installation.hash", Next = "CheckExecutionName"
         Parameters = {
-          "name.$"        = "States.Format('worker-{}', States.Hash($._slot.nameInput, 'SHA-256'))"
-          "inputDigest.$" = "States.Format('sha256:{}', States.Hash($._slot.inputString, 'SHA-256'))"
+          "name.$"        = "States.Format('worker-{}', States.Hash($.installation.nameInput, 'SHA-256'))"
+          "inputDigest.$" = "States.Format('sha256:{}', States.Hash($.installation.inputString, 'SHA-256'))"
         }
       }
       CheckExecutionName = {
-        Type    = "Choice", Choices = [{ Variable = "$$.Execution.Name", StringEqualsPath = "$._slot.hash.name", Next = "ClaimInstalledExecution" }]
+        Type    = "Choice", Choices = [{ Variable = "$$.Execution.Name", StringEqualsPath = "$.installation.hash.name", Next = "ClaimInstalledExecution" }]
         Default = "InvalidInstalledInput"
       }
       ClaimInstalledExecution = {

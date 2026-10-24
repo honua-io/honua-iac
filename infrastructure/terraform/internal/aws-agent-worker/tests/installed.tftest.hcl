@@ -57,7 +57,9 @@ run "installed_slot_protocol" {
     error_message = "One native execution must identify the sole launch without retries or arbitrary task overrides."
   }
   assert {
-    condition     = jsondecode(aws_sfn_state_machine.worker.definition).StartAt == "ValidateInstalledInput" && strcontains(jsondecode(aws_sfn_state_machine.worker.definition).States.ValidateInstalledInput.Choices[0].Condition, "$count($keys($states.input)) = 11") && jsondecode(aws_sfn_state_machine.worker.definition).States.CheckExecutionName.Choices[0].StringEqualsPath == "$._slot.hash.name" && jsondecode(aws_sfn_state_machine.worker.definition).TimeoutSeconds == 6300
+    condition     = jsondecode(aws_sfn_state_machine.worker.definition).StartAt == "ValidateInstalledInput" && strcontains(jsondecode(aws_sfn_state_machine.worker.definition).States.ValidateInstalledInput.Choices[0].Condition, "$count($keys($states.input)) = 11") && jsondecode(aws_sfn_state_machine.worker.definition).States.CheckExecutionName.Choices[0].StringEqualsPath == "$.installation.hash.name" && jsondecode(aws_sfn_state_machine.worker.definition).TimeoutSeconds == 6300 &&
+      jsondecode(aws_sfn_state_machine.worker.definition).States.HashInstalledInput.Parameters["name.$"] == "States.Format('worker-{}', States.Hash($.installation.nameInput, 'SHA-256'))" &&
+      jsondecode(aws_sfn_state_machine.worker.definition).States.HashInstalledInput.Parameters["inputDigest.$"] == "States.Format('sha256:{}', States.Hash($.installation.inputString, 'SHA-256'))"
     error_message = "Closed native input, deterministic execution name and the bounded execution clock must precede any claim or launch."
   }
 }
@@ -127,4 +129,10 @@ run "reject_unbounded_installed_execution" {
     installed_slot = { runtime_id = "runtime_01", slot_id = "fixed-slot", original_funding_expires_epoch = 1792166400, max_execution_seconds = 6001 }
   }
   expect_failures = [var.installed_slot]
+}
+
+run "reject_unescaped_installed_cluster" {
+  command = plan
+  variables { cluster_arn = "arn:aws:ecs:us-east-1:123456789012:cluster/unsafe'name" }
+  expect_failures = [var.cluster_arn]
 }

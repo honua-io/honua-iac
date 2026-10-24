@@ -1,6 +1,10 @@
 variable "region" {
   type    = string
   default = "us-east-1"
+  validation {
+    condition     = can(regex("^[a-z]{2}(-[a-z]+)+-[0-9]+$", var.region))
+    error_message = "Supply an exact AWS region identifier."
+  }
 }
 
 variable "account_id" {
@@ -71,6 +75,10 @@ variable "lifetime_seconds" {
 variable "cluster_arn" {
   description = "Existing isolated Fargate cluster provisioned by the campaign infrastructure."
   type        = string
+  validation {
+    condition     = can(regex("^arn:aws:ecs:[a-z0-9-]+:[0-9]{12}:cluster/[A-Za-z0-9_-]{1,255}$", var.cluster_arn))
+    error_message = "Supply an exact commercial-partition ECS cluster ARN; no expression characters or wildcard."
+  }
 }
 
 variable "subnet_ids" {
