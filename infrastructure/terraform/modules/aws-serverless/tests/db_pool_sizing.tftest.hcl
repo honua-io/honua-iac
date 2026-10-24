@@ -266,7 +266,8 @@ run "rds_proxy_keeps_the_previous_cap_and_skips_the_check" {
     lambda_reserved_concurrent_executions = 25
     enable_rds_proxy                      = true
     lambda_db_max_pool_size               = 8
-    db_password                           = "Synthetic-Terraform-Test-Db-Password-1"
+    # checkov:skip=CKV_SECRET_6: Synthetic test-only database password for mocked providers, not a credential.
+    db_password = "Synthetic-Terraform-Test-Db-Password-1"
   }
 
   assert {
@@ -324,7 +325,8 @@ run "module_built_redis_string_carries_client_timeouts" {
   command = apply
 
   variables {
-    redis_enabled                             = true
+    redis_enabled = true
+    # checkov:skip=CKV_SECRET_6: Synthetic test-only Redis token for mocked providers, not a credential.
     redis_auth_token                          = "SyntheticRedisToken0123456789abcdef"
     operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
   }
