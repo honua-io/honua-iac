@@ -59,10 +59,11 @@ locals {
       CanonicalInstalledInput = {
         Type = "Pass", QueryLanguage = "JSONata", Next = "HashInstalledInput"
         Output = trimspace(<<-JSONATA
-          {% $merge([$states.input, {'_slot': {
-            'nameInput': '{"candidateKey":' & $string($states.input.candidateKey) & ',"executionId":' & $string($states.input.executionId) & '}',
-            'inputString': '{' & $join($map($sort($keys($states.input)), function($k) { $string($k) & ':' & $string($lookup($states.input, $k)) }), ',') & '}'
-          }}]) %}
+          {% ($j := function($v) { $substring($string([$v]), 1, $length($string([$v])) - 2) };
+            $merge([$states.input, {'_slot': {
+              'nameInput': '{"candidateKey":' & $j($states.input.candidateKey) & ',"executionId":' & $j($states.input.executionId) & '}',
+              'inputString': '{' & $join($map($sort($keys($states.input)), function($k) { $j($k) & ':' & $j($lookup($states.input, $k)) }), ',') & '}'
+            }}])) %}
         JSONATA
         )
       }

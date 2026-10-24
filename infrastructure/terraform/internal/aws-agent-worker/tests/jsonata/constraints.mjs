@@ -1,5 +1,6 @@
 // Evaluate the exact Terraform-generated ASL expressions in the AWS-documented
-// JSONata 2.0.6 engine. These are synthetic controls, never hosted execution.
+// JSONata 2.0.6 function subset using a patched compatible interpreter.
+// These are synthetic controls; AWS service validation/runtime remain separate.
 import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {dirname,join} from 'node:path';
@@ -25,6 +26,8 @@ const input = {schemaVersion:1,candidateKey:'sha256:'+'a'.repeat(64),runtimeId:'
 let instant = '2026-10-15T16:00:10Z';
 async function evaluate(source, value, when=instant) {
   assert.ok(source.startsWith('{%') && source.endsWith('%}'));
+  const allowed = new Set(['count','keys','type','match','floor','toMillis','length','merge','substring','string','join','map','sort','lookup','j','number']);
+  for (const match of source.matchAll(/\$([A-Za-z0-9]+)\s*\(/g)) assert.ok(allowed.has(match[1]),'only reviewed AWS 2.0.6 functions may be used');
   return jsonata(source.slice(2,-2)).evaluate(null, {states:{input:value,context:{
     State:{EnteredTime:when},Execution:{StartTime:'2026-10-15T16:00:00Z'}}}});
 }
@@ -63,4 +66,4 @@ for(const created of [1792080005,'2026-10-15T16:00:05Z']) {
  assert.equal(await evaluate(cleanup.CheckExecutionExpiry.Choices[1].Condition,value),false);
  assert.equal(await evaluate(cleanup.CheckExecutionExpiry.Choices[1].Condition,value,'2026-10-15T16:05:00Z'),true);
 }
-console.log(JSON.stringify({engine:'jsonata@2.0.6',source:'actual Terraform mock-state ASL',controls:'closed-input/canonical-UTF8/expiry/foreign-and-missing-ECS',passed:true,qualification:false}));
+console.log(JSON.stringify({engine:'jsonata@2.2.2',language:'AWS JSONata 2.0.6 subset',source:'actual Terraform mock-state ASL',controls:'closed-input/canonical-UTF8/expiry/foreign-and-missing-ECS',passed:true,qualification:false}));
