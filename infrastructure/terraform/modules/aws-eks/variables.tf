@@ -546,3 +546,107 @@ variable "ingress_load_balancer_hostname" {
   default     = ""
   nullable    = false
 }
+
+# --- Database connection sizing (db-pool-sizing.tf; README: Database connection sizing) ---
+
+variable "db_max_connections_override" {
+  description = "PostgreSQL max_connections to size the server pools from, instead of the module's table for the database instance class or SKU. Set it when a custom parameter changes max_connections, for a class or SKU missing from the table, or with an existing database. Null (default) uses the table."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.db_max_connections_override == null || try(var.db_max_connections_override >= 1 && floor(var.db_max_connections_override) == var.db_max_connections_override, false)
+    error_message = "db_max_connections_override must be null or a whole number of at least 1."
+  }
+}
+
+variable "db_pool_size_override" {
+  description = "Per-pool connection cap for every server process (Limits:Connections:MaxConnectionPoolSize and MaxConcurrentQueries). Null (default) derives it from max_connections and the worst-case process count. Plan fails when the override cannot fit the database, unless db_connection_pooler_enabled."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.db_pool_size_override == null || try(var.db_pool_size_override >= 1 && var.db_pool_size_override <= 1000 && floor(var.db_pool_size_override) == var.db_pool_size_override, false)
+    error_message = "db_pool_size_override must be null or a whole number from 1 to 1000."
+  }
+}
+
+variable "db_pools_per_process" {
+  description = "Npgsql pools each server process opens on the database (the main data source and the connection-string pool; add one per bound secure connection). Used to size the pools and in the connection-budget check."
+  type        = number
+  default     = 2
+  nullable    = false
+
+  validation {
+    condition     = var.db_pools_per_process >= 1 && var.db_pools_per_process <= 10 && floor(var.db_pools_per_process) == var.db_pools_per_process
+    error_message = "db_pools_per_process must be a whole number from 1 to 10."
+  }
+}
+
+variable "db_connection_safety_fraction" {
+  description = "Share of the usable database connections (max_connections less the reserved slots) the server pools may take when sized; the rest stays for migrations, bootstrap and operator sessions."
+  type        = number
+  default     = 0.85
+  nullable    = false
+
+  validation {
+    condition     = var.db_connection_safety_fraction > 0 && var.db_connection_safety_fraction <= 1
+    error_message = "db_connection_safety_fraction must be greater than 0 and at most 1."
+  }
+}
+
+variable "db_connection_pooler_enabled" {
+  description = "Set true when the server reaches PostgreSQL through a connection pooler (PgBouncer, a proxy) that bounds database connections itself. Pools then keep the server default (or db_pool_size_override) and the connection-budget check is skipped."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "server_max_replicas" {
+  description = "The most server pods the Helm release runs (replicas, or the HPA maxReplicas). Null (default) leaves the database pools at the server default because this module does not own the replica count; set it to size them and add the Limits__Connections__* keys to chart_config_env (README: Database connection sizing)."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.server_max_replicas == null || try(var.server_max_replicas >= 1 && floor(var.server_max_replicas) == var.server_max_replicas, false)
+    error_message = "server_max_replicas must be null or a whole number of at least 1."
+  }
+}
+
+# --- Redis client timeouts (README: Redis connections) ---
+
+variable "redis_connect_timeout_ms" {
+  description = "connectTimeout (milliseconds) appended to the Redis connection string this module builds. Default 5000 ms, the StackExchange.Redis default. Not applied to a caller-supplied redis_connection_string."
+  type        = number
+  default     = 5000
+  nullable    = false
+
+  validation {
+    condition     = var.redis_connect_timeout_ms >= 1000 && var.redis_connect_timeout_ms <= 60000 && floor(var.redis_connect_timeout_ms) == var.redis_connect_timeout_ms
+    error_message = "redis_connect_timeout_ms must be a whole number from 1000 to 60000."
+  }
+}
+
+variable "redis_sync_timeout_ms" {
+  description = "syncTimeout (milliseconds) appended to the Redis connection string this module builds. Default 10000, twice the StackExchange.Redis default of 5000, which has timed out under load (honua-server PR #4967). Not applied to a caller-supplied redis_connection_string."
+  type        = number
+  default     = 10000
+  nullable    = false
+
+  validation {
+    condition     = var.redis_sync_timeout_ms >= 1000 && var.redis_sync_timeout_ms <= 60000 && floor(var.redis_sync_timeout_ms) == var.redis_sync_timeout_ms
+    error_message = "redis_sync_timeout_ms must be a whole number from 1000 to 60000."
+  }
+}
+
+variable "redis_keep_alive_seconds" {
+  description = "keepAlive (seconds) appended to the Redis connection string this module builds, below the server-side idle timeout so idle connections are not dropped. Not applied to a caller-supplied redis_connection_string."
+  type        = number
+  default     = 60
+  nullable    = false
+
+  validation {
+    condition     = var.redis_keep_alive_seconds >= 1 && var.redis_keep_alive_seconds <= 300 && floor(var.redis_keep_alive_seconds) == var.redis_keep_alive_seconds
+    error_message = "redis_keep_alive_seconds must be a whole number from 1 to 300."
+  }
+}

@@ -426,6 +426,7 @@ jobs:
           terraform -chdir=infrastructure/terraform/modules/aws-eks test -no-color
           terraform -chdir=infrastructure/terraform/examples/aws-eks test -no-color
           terraform -chdir=infrastructure/terraform/modules/azure-aca test -no-color
+          terraform -chdir=infrastructure/terraform/modules/azure-functions test -no-color
 
       - name: Post-apply caller and named-evidence contract
         shell: bash
@@ -486,6 +487,10 @@ jobs:
       - name: Scheduled cleanup role precondition contract
         shell: bash
         run: python3 tests/workflows/test_cleanup_role_precondition.py
+
+      - name: Database pool sizing block is identical across modules
+        shell: bash
+        run: python3 tests/terraform/test_db_pool_sizing.py -v
 
       - name: Certification image pins and revision orchestration
         shell: bash

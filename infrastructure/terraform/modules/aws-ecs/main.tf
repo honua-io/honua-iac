@@ -40,7 +40,7 @@ locals {
   redis_enabled         = var.redis_enabled || var.redis_connection_string != ""
   redis_create          = var.redis_enabled && var.redis_connection_string == ""
   redis_auth_token      = var.redis_auth_token != "" ? var.redis_auth_token : (local.redis_create ? random_password.redis_auth[0].result : "")
-  redis_connection      = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true" : "")
+  redis_connection      = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true${local.redis_client_options}" : "")
   redis_egress_cidrs    = local.redis_create ? [local.vpc_cidr_block] : var.redis_connection_cidrs
   multi_replica_enabled = var.desired_count > 1 || var.max_capacity > 1 || (local.canary_enabled && var.canary_desired_count > 0)
   shared_file_storage_configured = (
@@ -173,13 +173,13 @@ locals {
     FileStorage__AwsS3__KeyPrefix  = var.file_storage_aws_s3_key_prefix
   } : {}, local.licensing_environment, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.transcript_signing_environment, local.cors_environment, local.alb_tls_environment, local.public_base_url_environment, local.import_limits_environment, local.oidc_static_environment, local.browser_auth_environment, local.scim_environment, local.migration_safety_environment, local.migration_task_serving_environment, local.deploy_control_plane_environment)
   primary_container_environment = [
-    for key, value in merge({ for key, value in var.additional_env : key => value if var.platform_release == null || !startswith(lower(replace(key, ":", "__")), "controlplane__platformrelease__") }, local.runtime_environment, local.platform_release_environment.primary) : {
+    for key, value in merge(local.db_pool_sizing_environment, { for key, value in var.additional_env : key => value if var.platform_release == null || !startswith(lower(replace(key, ":", "__")), "controlplane__platformrelease__") }, local.runtime_environment, local.platform_release_environment.primary) : {
       name  = key
       value = value
     }
   ]
   canary_container_environment = [
-    for key, value in merge({ for key, value in merge(var.additional_env, var.canary_additional_env) : key => value if local.platform_releases.canary == null || !startswith(lower(replace(key, ":", "__")), "controlplane__platformrelease__") }, local.runtime_environment, local.platform_release_environment.canary) : {
+    for key, value in merge(local.db_pool_sizing_environment, { for key, value in merge(var.additional_env, var.canary_additional_env) : key => value if local.platform_releases.canary == null || !startswith(lower(replace(key, ":", "__")), "controlplane__platformrelease__") }, local.runtime_environment, local.platform_release_environment.canary) : {
       name  = key
       value = value
     }
@@ -251,6 +251,12 @@ locals {
     retries     = 3
     startPeriod = 60
   }
+}
+
+# Client timeouts on the module-built Redis connection string (README: Redis
+# connections). A caller-supplied redis_connection_string is used unchanged.
+locals {
+  redis_client_options = ",connectTimeout=${var.redis_connect_timeout_ms},syncTimeout=${var.redis_sync_timeout_ms},keepAlive=${var.redis_keep_alive_seconds}"
 }
 
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.

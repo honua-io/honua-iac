@@ -195,6 +195,91 @@ module "eks" {
 }
 ```
 
+## Database connection sizing
+
+honua-server sizes every Npgsql pool from `Limits:Connections`, and its
+defaults are generous: `MaxConnectionPoolSize` 200 and `MinConnectionPoolSize`
+20 per pool. Each server process opens at least two pools on the database
+(the main data source, and the pool keyed by its connection string that the
+publish, import and migration paths open directly; each bound secure
+connection adds one more). Left at the defaults, a few processes exhaust a
+small database with PostgreSQL `53300` (on the public demo the FeatureServer
+then answered `Query execution failed` inside HTTP 200).
+
+The module sizes the pools from its own inputs (`db-pool-sizing.tf`; the
+shared block is identical in `aws-serverless`, `aws-ecs`, `aws-eks`,
+`azure-aca` and `azure-functions`):
+
+```
+usable           = max_connections - reserved
+per_process_pool = floor((floor(usable x db_connection_safety_fraction) - other_connections)
+                         / (max_processes x db_pools_per_process))
+                   clamped to [1, 200]
+```
+
+and renders `Limits__Connections__MaxConnectionPoolSize` and
+`Limits__Connections__MaxConcurrentQueries` (equal: the server refuses to
+start when the query limit exceeds the pool), plus `MinConnectionPoolSize` (`min(20, pool)`). `max_connections` comes from
+a table, or `db_max_connections_override`:
+
+- **RDS for PostgreSQL**: `LEAST({DBInstanceClassMemory/9531392}, 5000)`
+  ([RDS limits](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_Limits.html#RDS_Limits.MaxConnections)),
+  computed from 75% of the class's nominal memory because
+  `DBInstanceClassMemory` excludes what the OS and RDS keep (observed:
+  `db.t3.micro` 87 and `db.t4g.small` about 180, the table gives 84 and 168).
+  Families t3/t4g, m5/m6g/m6i/m7g/m7i and r5/r6g/r6i/r7g/r7i; 5 reserved
+  (`superuser_reserved_connections` 3 + `rds.rds_superuser_reserved_connections` 2).
+  Aurora is not provisioned by these modules.
+- **Azure Database for PostgreSQL flexible server**: the documented default per
+  SKU ([limits](https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/concepts-limits#maximum-connections)),
+  `B_Standard_B1ms` 50 up to 5000; 15 reserved.
+
+| Input | Default | Meaning |
+|-------|---------|---------|
+| `server_max_replicas` | `null` | The chart's replica ceiling (replicas or HPA `maxReplicas`). Null renders no pool keys. |
+| `db_pool_size_override` | `null` | Pool size to render instead of the derived one. |
+| `db_connection_pooler_enabled` | `false` | The server reaches PostgreSQL through a pooler; skips the budget check. |
+| `db_max_connections_override` | `null` | `max_connections` to size from (custom parameter, a class/SKU missing from the table, or an existing database). |
+| `db_pools_per_process` | `2` | Pools each server process opens. |
+| `db_connection_safety_fraction` | `0.85` | Share of the usable connections the server pools may take; the rest is for migrations, bootstrap and operator sessions. |
+
+`plan` fails (a precondition on the `db_connection_budget` output) when
+`max_processes x db_pools_per_process x pool + other_connections` exceeds the
+usable connections, unless `db_connection_pooler_enabled`. The derived pool only fails it when even a pool of 1
+does not fit; an override that is too large always does. The
+`db_connection_budget` output reports every term and `source`: `derived`,
+`override`, `fallback` (the module's previous value) or `server-default` (no
+keys rendered). Sizing needs a known `max_connections` and a bounded process
+count; without either the module renders what it rendered before.
+
+**Processes.** The Helm chart owns the replica count, so sizing is opt-in:
+set `server_max_replicas` and the keys join `chart_config_env` and
+`honua_server_environment`. The worst case adds the Deployment's default
+`maxSurge` of 25% (`server_max_replicas + ceil(server_max_replicas x 0.25)`).
+
+**Example.** `db.t3.micro` with `server_max_replicas = 4`: 5 processes,
+`67 / (5 x 2) = 6` per pool (worst case 60 of 79 usable).
+
+**Upgrade note.** With `server_max_replicas` unset nothing changes.
+
+## Redis connections
+
+Redis needs no pool formula: each server process holds one StackExchange.Redis
+multiplexer for infrastructure (events, coordination) and a second one for the
+distributed cache when that is enabled, about two sockets each, so roughly
+**4 connections per process** whatever the request concurrency. Budget
+`max processes x 4` against the Redis server's client limit. ElastiCache for Redis allows 65,000 client connections per node (`maxclients`, not configurable). In a non-Development environment with Redis configured the server requires durable distributed events, so Redis is a hard startup dependency for every pod.
+
+The server forces only `abortConnect=false`, `connectRetry>=3` and an
+exponential reconnect policy; timeouts come from the connection string. The
+string this module builds therefore ends with
+`,connectTimeout=5000,syncTimeout=10000,keepAlive=60`
+(`redis_connect_timeout_ms`, `redis_sync_timeout_ms`,
+`redis_keep_alive_seconds`); the 5000 ms `syncTimeout` default has timed out
+under load (honua-server PR #4967). It is stored in the connection secret, not
+in the process environment. A caller-supplied `redis_connection_string` is used
+unchanged. Existing deployments see an in-place update of that secret.
+
 ## Outputs
 
 Cluster configuration: `environment`, `cluster_name`, `cluster_arn`,
