@@ -119,8 +119,14 @@ locals {
   db_connection_string = local.db_use_existing ? var.existing_db_connection_string : "Host=${azurerm_postgresql_flexible_server.this[0].fqdn};Port=5432;Database=${var.db_name};Username=${var.db_admin_username};Password=${local.db_password};SSL Mode=Require;Trust Server Certificate=false"
   redis_enabled        = var.redis_enabled || var.redis_connection_string != ""
   redis_create         = var.redis_enabled && var.redis_connection_string == ""
-  redis_connection     = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? azurerm_redis_cache.this[0].primary_connection_string : "")
+  redis_connection     = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${azurerm_redis_cache.this[0].primary_connection_string}${local.redis_client_options}" : "")
   master_key           = var.connection_encryption_master_key != null ? var.connection_encryption_master_key : random_password.master_key[0].result
+}
+
+# Client timeouts on the module-built Redis connection string (README: Redis
+# connections). A caller-supplied redis_connection_string is used unchanged.
+locals {
+  redis_client_options = ",connectTimeout=${var.redis_connect_timeout_ms},syncTimeout=${var.redis_sync_timeout_ms},keepAlive=${var.redis_keep_alive_seconds}"
 }
 
 #checkov:skip=CKV2_AZURE_57: Private endpoints are configured outside this module.
@@ -355,7 +361,7 @@ locals {
   # licensing_environment and pro_license_environment are last so a declared
   # mode cannot be replaced by additional_env. additional_env is also refused
   # when it names those keys.
-  app_settings = merge(local.base_app_settings, local.control_plane_app_settings, local.redis_secret_settings, local.registry_settings, local.app_insights_settings, local.openai_ai_environment, local.managed_identity_settings, local.request_secret_reference_environment, var.additional_env, local.licensing_environment, local.pro_license_environment)
+  app_settings = merge(local.base_app_settings, local.control_plane_app_settings, local.redis_secret_settings, local.registry_settings, local.app_insights_settings, local.openai_ai_environment, local.managed_identity_settings, local.request_secret_reference_environment, local.db_pool_sizing_environment, var.additional_env, local.licensing_environment, local.pro_license_environment)
 
   image_parts         = split("/", var.image)
   image_registry      = local.image_parts[0]
@@ -403,6 +409,7 @@ resource "azurerm_linux_function_app" "this" {
 
   site_config {
     always_on                         = var.plan_sku_name != "Y1"
+    app_scale_limit                   = var.functions_max_instances
     health_check_path                 = "/healthz/ready"
     health_check_eviction_time_in_min = 2
 
@@ -464,6 +471,7 @@ resource "azurerm_linux_function_app_slot" "staging" {
 
   site_config {
     always_on                         = var.plan_sku_name != "Y1"
+    app_scale_limit                   = var.functions_max_instances
     health_check_path                 = "/healthz/ready"
     health_check_eviction_time_in_min = 2
 

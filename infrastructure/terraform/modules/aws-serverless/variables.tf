@@ -691,14 +691,48 @@ variable "db_connection_string_options" {
 }
 
 variable "lambda_db_max_pool_size" {
-  description = "Maximum PostgreSQL connections each warm API Lambda instance may hold (Limits:Connections:MaxConnectionPoolSize, and Maximum Pool Size on the module-built connection string). Keep warm instances x this + event functions + GP jobs under the RDS max_connections; see the README's database connection budget."
+  description = "Override for the PostgreSQL connections each warm API Lambda instance may hold (Limits:Connections:MaxConnectionPoolSize and MaxConcurrentQueries, and Maximum Pool Size on the module-built connection string). Null (default) sizes it from db_instance_class (or db_max_connections_override) and lambda_reserved_concurrent_executions, and falls back to 8 when either is unknown or RDS Proxy is on; see the README's Database connection sizing."
   type        = number
-  default     = 8
+  default     = null
+
+  validation {
+    condition     = var.lambda_db_max_pool_size == null || try(var.lambda_db_max_pool_size >= 1 && var.lambda_db_max_pool_size <= 1000 && floor(var.lambda_db_max_pool_size) == var.lambda_db_max_pool_size, false)
+    error_message = "lambda_db_max_pool_size must be null or a whole number from 1 to 1000."
+  }
+}
+
+variable "db_max_connections_override" {
+  description = "PostgreSQL max_connections to size the pools from, instead of the module's table for db_instance_class. Set it when a custom parameter group changes max_connections, for an instance class missing from the table, or with existing_db_endpoint. Null (default) uses the table (README: Database connection sizing)."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.db_max_connections_override == null || try(var.db_max_connections_override >= 1 && floor(var.db_max_connections_override) == var.db_max_connections_override, false)
+    error_message = "db_max_connections_override must be null or a whole number of at least 1."
+  }
+}
+
+variable "db_pools_per_process" {
+  description = "Npgsql pools each server process opens on the database (the main data source and the connection-string pool; add one per bound secure connection). Used to size the pools and in the connection-budget check."
+  type        = number
+  default     = 2
   nullable    = false
 
   validation {
-    condition     = var.lambda_db_max_pool_size >= 1 && var.lambda_db_max_pool_size <= 1000 && floor(var.lambda_db_max_pool_size) == var.lambda_db_max_pool_size
-    error_message = "lambda_db_max_pool_size must be a whole number from 1 to 1000."
+    condition     = var.db_pools_per_process >= 1 && var.db_pools_per_process <= 10 && floor(var.db_pools_per_process) == var.db_pools_per_process
+    error_message = "db_pools_per_process must be a whole number from 1 to 10."
+  }
+}
+
+variable "db_connection_safety_fraction" {
+  description = "Share of the usable database connections (max_connections less the reserved slots) the server pools may take when sized; the rest stays for migrations, bootstrap and operator sessions."
+  type        = number
+  default     = 0.85
+  nullable    = false
+
+  validation {
+    condition     = var.db_connection_safety_fraction > 0 && var.db_connection_safety_fraction <= 1
+    error_message = "db_connection_safety_fraction must be greater than 0 and at most 1."
   }
 }
 
@@ -1594,5 +1628,43 @@ variable "rds_proxy_idle_client_timeout_seconds" {
   validation {
     condition     = var.rds_proxy_idle_client_timeout_seconds >= 1 && var.rds_proxy_idle_client_timeout_seconds <= 28800 && floor(var.rds_proxy_idle_client_timeout_seconds) == var.rds_proxy_idle_client_timeout_seconds
     error_message = "rds_proxy_idle_client_timeout_seconds must be a whole number from 1 to 28800."
+  }
+}
+
+# --- Redis client timeouts (README: Redis connections) ---
+
+variable "redis_connect_timeout_ms" {
+  description = "connectTimeout (milliseconds) appended to the Redis connection string this module builds. Default 10000 ms: a cold Lambda instance opens its first TLS connection during startup, often in parallel with the database. Not applied to a caller-supplied redis_connection_string."
+  type        = number
+  default     = 10000
+  nullable    = false
+
+  validation {
+    condition     = var.redis_connect_timeout_ms >= 1000 && var.redis_connect_timeout_ms <= 60000 && floor(var.redis_connect_timeout_ms) == var.redis_connect_timeout_ms
+    error_message = "redis_connect_timeout_ms must be a whole number from 1000 to 60000."
+  }
+}
+
+variable "redis_sync_timeout_ms" {
+  description = "syncTimeout (milliseconds) appended to the Redis connection string this module builds. Default 10000, twice the StackExchange.Redis default of 5000, which has timed out under load (honua-server PR #4967). Not applied to a caller-supplied redis_connection_string."
+  type        = number
+  default     = 10000
+  nullable    = false
+
+  validation {
+    condition     = var.redis_sync_timeout_ms >= 1000 && var.redis_sync_timeout_ms <= 60000 && floor(var.redis_sync_timeout_ms) == var.redis_sync_timeout_ms
+    error_message = "redis_sync_timeout_ms must be a whole number from 1000 to 60000."
+  }
+}
+
+variable "redis_keep_alive_seconds" {
+  description = "keepAlive (seconds) appended to the Redis connection string this module builds, below the server-side idle timeout so idle connections are not dropped. Not applied to a caller-supplied redis_connection_string."
+  type        = number
+  default     = 60
+  nullable    = false
+
+  validation {
+    condition     = var.redis_keep_alive_seconds >= 1 && var.redis_keep_alive_seconds <= 300 && floor(var.redis_keep_alive_seconds) == var.redis_keep_alive_seconds
+    error_message = "redis_keep_alive_seconds must be a whole number from 1 to 300."
   }
 }

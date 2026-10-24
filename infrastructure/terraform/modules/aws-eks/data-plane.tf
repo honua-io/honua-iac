@@ -23,10 +23,16 @@ locals {
   master_key     = var.connection_encryption_master_key != null ? var.connection_encryption_master_key : random_password.master_key[0].result
 
   redis_auth_token = var.redis_auth_token != "" ? var.redis_auth_token : (var.redis_enabled ? random_password.redis_auth[0].result : "")
-  redis_connection = var.redis_enabled ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true" : ""
+  redis_connection = var.redis_enabled ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true${local.redis_client_options}" : ""
 
   # Empty string means the AWS-managed aws/secretsmanager key.
   secrets_kms_key_id = var.secrets_kms_key_arn != "" ? var.secrets_kms_key_arn : null
+}
+
+# Client timeouts on the module-built Redis connection string (README: Redis
+# connections). A caller-supplied redis_connection_string is used unchanged.
+locals {
+  redis_client_options = ",connectTimeout=${var.redis_connect_timeout_ms},syncTimeout=${var.redis_sync_timeout_ms},keepAlive=${var.redis_keep_alive_seconds}"
 }
 
 resource "random_password" "db" {

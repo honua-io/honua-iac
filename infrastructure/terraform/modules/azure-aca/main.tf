@@ -127,7 +127,7 @@ locals {
   db_connection_string  = local.db_use_existing ? var.existing_db_connection_string : "Host=${azurerm_postgresql_flexible_server.this[0].fqdn};Port=5432;Database=${var.db_name};Username=${var.db_admin_username};Password=${local.db_password};SSL Mode=Require;Trust Server Certificate=false"
   redis_enabled         = var.redis_enabled || var.redis_connection_string != ""
   redis_create          = var.redis_enabled && var.redis_connection_string == ""
-  redis_connection      = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? azurerm_redis_cache.this[0].primary_connection_string : "")
+  redis_connection      = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${azurerm_redis_cache.this[0].primary_connection_string}${local.redis_client_options}" : "")
   multi_replica_enabled = var.min_replicas > 1 || var.max_replicas > 1
   shared_file_storage_configured = (
     var.file_storage_provider == "AzureBlob" &&
@@ -140,6 +140,12 @@ locals {
     local.shared_file_storage_configured
   )
   secret_expiration_date = timeadd(time_static.secret_baseline.rfc3339, format("%dh", var.secret_expiration_days * 24))
+}
+
+# Client timeouts on the module-built Redis connection string (README: Redis
+# connections). A caller-supplied redis_connection_string is used unchanged.
+locals {
+  redis_client_options = ",connectTimeout=${var.redis_connect_timeout_ms},syncTimeout=${var.redis_sync_timeout_ms},keepAlive=${var.redis_keep_alive_seconds}"
 }
 
 #checkov:skip=CKV2_AZURE_57: Private endpoints are configured outside this module.
@@ -420,6 +426,14 @@ resource "azurerm_container_app" "this" {
 
       dynamic "env" {
         for_each = merge(local.request_secret_reference_environment, local.request_secret_reference_azure_identity_environment)
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
+      dynamic "env" {
+        for_each = local.db_pool_container_environment
         content {
           name  = env.key
           value = env.value

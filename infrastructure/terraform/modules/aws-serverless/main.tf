@@ -27,8 +27,14 @@ locals {
   image_repo_name    = split(":", local.image_repo_path)[0]
   image_registry     = split("/", local.image_ref)[0]
   redis_auth_token   = var.redis_auth_token != "" ? var.redis_auth_token : (local.redis_create ? random_password.redis_auth[0].result : "")
-  redis_connection   = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true" : "")
+  redis_connection   = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true${local.redis_client_options}" : "")
   redis_egress_cidrs = local.redis_create ? [local.vpc_cidr_block] : var.redis_connection_cidrs
+}
+
+# Client timeouts on the module-built Redis connection string (README: Redis
+# connections). A caller-supplied redis_connection_string is used unchanged.
+locals {
+  redis_client_options = ",connectTimeout=${var.redis_connect_timeout_ms},syncTimeout=${var.redis_sync_timeout_ms},keepAlive=${var.redis_keep_alive_seconds}"
 }
 
 check "existing_db_inputs" {
@@ -107,13 +113,14 @@ locals {
   # API's cap. The server's main NpgsqlDataSource ignores them and takes its
   # bounds from Limits:Connections (local.db_pool_environment, per process).
   # db_connection_string_options comes last, so an operator keyword wins.
-  db_pool_options      = ";Maximum Pool Size=${var.lambda_db_max_pool_size};Connection Idle Lifetime=${var.db_connection_idle_lifetime_seconds};Connection Pruning Interval=10;Timeout=15"
+  db_pool_options      = ";Maximum Pool Size=${local.db_pool_size};Connection Idle Lifetime=${var.db_connection_idle_lifetime_seconds};Connection Pruning Interval=10;Timeout=15"
   db_connection_string = local.db_use_existing ? var.existing_db_connection_string : "Host=${local.db_endpoint};Port=${local.db_port};Database=${var.db_name};Username=${var.db_username};Password=${local.db_password}${local.db_ssl}${local.db_pool_options}${local.db_conn_options}"
   # The server's NpgsqlDataSource (PostgresDataSourceFactory) overwrites the
   # connection string's pool keywords with Limits:Connections, whose defaults
   # are MaxConnectionPoolSize 200, MinConnectionPoolSize 20 (never pruned below)
   # and ConnectionIdleLifetimeSeconds 600, so each process gets its cap through
-  # the environment.
+  # the environment. The API Lambda's cap, local.db_pool_size, is sized from
+  # the database and reserved concurrency in db-pool-sizing.tf.
   #
   # The Lambda functions carry only the cap (Lambda 4 KB environment budget).
   # A Lambda instance is frozen between invocations, so Npgsql's idle pruning
@@ -143,7 +150,7 @@ locals {
   # HTTP import endpoints read it, and those functions serve no uploads.
   db_pool_environment = {
     for process, size in {
-      lambda        = var.lambda_db_max_pool_size
+      lambda        = local.db_pool_size
       control_plane = var.control_plane_db_max_pool_size
       gp_batch      = var.gp_batch_db_max_pool_size
       } : process => merge({

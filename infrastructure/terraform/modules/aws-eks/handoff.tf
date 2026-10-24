@@ -83,6 +83,7 @@ locals {
     local.cors_environment,
     local.control_plane_kubernetes_environment,
     local.public_base_url_environment,
+    local.db_pool_sizing_environment,
   )
 
   # honua_server_environment: the complete environment, with the generated
