@@ -127,3 +127,7 @@ never creates a task, paid admission, supervisor, registration, or launch.
 The default empty list preserves the existing controller and static claim path.
 Deployment/receipt producers must authenticate the actual resulting role and full
 policy map before freezing an installed declaration or installing its supervisor.
+
+Dedicated pollers cannot write the permanent initialization marker or installed
+worker/controller provenance prefixes, even if another identity policy permits
+S3 appends. Those originals remain deployment-produced read-only inputs.

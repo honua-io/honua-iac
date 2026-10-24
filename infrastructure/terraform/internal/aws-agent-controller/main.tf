@@ -64,7 +64,7 @@ resource "aws_s3_bucket_policy" "state" {
   depends_on = [aws_s3_bucket_public_access_block.state]
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat([
       { Sid      = "RequireTLS", Effect = "Deny", Principal = "*", Action = "s3:*",
         Resource = [local.bucket_arn, "${local.bucket_arn}/*"],
       Condition = { Bool = { "aws:SecureTransport" = "false" } } },
@@ -81,7 +81,11 @@ resource "aws_s3_bucket_policy" "state" {
         NotAction = ["s3:GetBucketVersioning", "s3:ListBucketVersions", "s3:GetObject", "s3:GetObjectVersion", "s3:PutObject"],
         Resource  = [local.bucket_arn, "${local.bucket_arn}/*"],
       Condition = { ArnEquals = { "aws:PrincipalArn" = sort(tolist(local.runtime_principals)) } } }
-    ]
+      ], length(var.installed_runtime_controllers) == 0 ? [] : [{
+        Sid       = "InstalledRuntimeCannotForgeProvisioningOriginals", Effect = "Deny", Principal = "*", Action = "s3:PutObject",
+        Resource  = ["${local.bucket_arn}/${local.state_prefix}initialization.json", "${local.bucket_arn}/${local.state_prefix}installed-controllers/*", "${local.bucket_arn}/${local.state_prefix}installed-workers/*"],
+        Condition = { ArnEquals = { "aws:PrincipalArn" = [for controller in var.installed_runtime_controllers : controller.role_arn] } }
+    }])
   })
 }
 

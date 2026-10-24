@@ -24,6 +24,10 @@ run "dedicated_poller_keeps_runtime_fences" {
     error_message = "The dedicated poller must receive runtime retention restrictions without administrator or lifecycle status."
   }
   assert {
+    condition     = jsondecode(aws_s3_bucket_policy.state.policy).Statement[4].Action == "s3:PutObject" && jsondecode(aws_s3_bucket_policy.state.policy).Statement[4].Resource == ["${local.bucket_arn}/${local.state_prefix}initialization.json", "${local.bucket_arn}/${local.state_prefix}installed-controllers/*", "${local.bucket_arn}/${local.state_prefix}installed-workers/*"] && jsondecode(aws_s3_bucket_policy.state.policy).Statement[4].Condition.ArnEquals["aws:PrincipalArn"] == [var.installed_runtime_controllers[0].role_arn]
+    error_message = "Poller state writes must not forge installation/identity originals or initialize another accounting generation."
+  }
+  assert {
     condition     = aws_iam_role_policy.installed_controller_state[var.installed_runtime_controllers[0].role_arn].role == "poller" && aws_iam_role_policy.installed_controller_state[var.installed_runtime_controllers[0].role_arn].policy == aws_iam_role_policy.controller_state.policy && jsondecode(aws_iam_role_policy.controller_state.policy).Statement[4].Condition["ForAllValues:StringEquals"]["dynamodb:LeadingKeys"] == [var.candidate_digest] && jsondecode(aws_iam_role_policy.controller_state.policy).Statement[6].Condition.StringEquals["dynamodb:EnclosingOperation"] == "TransactWriteItems"
     error_message = "Additional state policies must preserve exact candidate fencing and transaction-only original-head checks."
   }
