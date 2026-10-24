@@ -103,3 +103,12 @@ terraform test
 
 Tests use a mock AWS provider (Terraform 1.7+), never credentials or live resources.
 The root itself retains the repository's Terraform 1.5 minimum.
+
+Optional `installed_worker_slots` declares at most four exact fixed runtime/slot
+allocations, each backed by its existing `claim_writer_role_arns` lifecycle role.
+Empty preserves the static campaign claims policy. In installed mode the original
+controller may condition-check only its candidate head in the state table during
+retirement, while claims-table updates remain transaction-only and confined to
+reviewed slot/retirement keys. The worker never gains accounting access. These
+policies do not establish actual task stop, native retirement, settled cost or a
+released paid admission; the private controller must retain and fence those proofs.

@@ -48,3 +48,15 @@ variable "state_admin_role_arns" {
     error_message = "Supply at least one exact state administration role ARN without wildcards."
   }
 }
+
+variable "installed_worker_slots" {
+  description = "Optional exact installed allocations. Empty preserves legacy claims policy. The immutable slot state machines and controller identity policy must be reviewed together."
+  type        = list(object({ runtime_id = string, slot_id = string }))
+  default     = []
+  validation {
+    condition = length(var.installed_worker_slots) <= 4 && length(distinct([for slot in var.installed_worker_slots : slot.slot_id])) == length(var.installed_worker_slots) && alltrue([
+      for slot in var.installed_worker_slots : can(regex("^[A-Za-z0-9_-]{1,128}$", slot.runtime_id)) && can(regex("^[a-z0-9-]{3,40}$", slot.slot_id))
+    ])
+    error_message = "Review at most four distinct fixed physical slots and exact runtime IDs."
+  }
+}

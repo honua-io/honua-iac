@@ -4,27 +4,48 @@ provider "aws" {
 }
 
 locals {
+  installed = var.installed_slot != null
+  slot = var.installed_slot == null ? {
+    runtime_id                     = "unused", slot_id = var.attempt_id,
+    original_funding_expires_epoch = var.issued_epoch + var.lifetime_seconds,
+    max_execution_seconds          = var.lifetime_seconds
+  } : var.installed_slot
   name                = "honua-agent-${var.attempt_id}"
-  expires_epoch       = var.issued_epoch + var.lifetime_seconds
+  expires_epoch       = local.slot.original_funding_expires_epoch
   expires_at          = timeadd("1970-01-01T00:00:00Z", "${local.expires_epoch}s")
   claim_key           = "${var.candidate_digest}/worker/${var.attempt_id}"
   candidate_claim_key = "${var.candidate_digest}/active-worker"
   stopped_key         = "${local.claim_key}/stopped"
   table_arn           = "arn:aws:dynamodb:${var.region}:${var.account_id}:table/${var.claim_table_name}"
   image_repo          = split("@", split("amazonaws.com/", var.image_uri)[1])[0]
-  tags = {
+  tags = merge({
     ManagedBy               = "terraform"
     Owner                   = "honua-agent-e2e"
     "honua-agent-attempt"   = var.attempt_id
     "honua-agent-candidate" = var.candidate_digest
     "honua-agent-expires"   = tostring(local.expires_epoch)
-  }
-  transport = {
+    }, local.installed ? {
+    "honua-agent-mode"    = "installed-slot",
+    "honua-agent-runtime" = local.slot.runtime_id,
+    "honua-agent-slot"    = local.slot.slot_id
+  } : {})
+  static_transport = {
     commandQueueUrl = aws_sqs_queue.channel["commands"].url
     replyQueueUrl   = aws_sqs_queue.channel["replies"].url
     attemptId       = var.attempt_id
     expiresEpoch    = local.expires_epoch
   }
+  installed_transport = {
+    schemaVersion               = 2, mode = "installed-slot",
+    candidateKey                = var.candidate_digest, runtimeId = local.slot.runtime_id, slotId = local.slot.slot_id,
+    commandQueueUrl             = aws_sqs_queue.channel["commands"].url,
+    replyQueueUrl               = aws_sqs_queue.channel["replies"].url,
+    originalFundingExpiresEpoch = local.slot.original_funding_expires_epoch,
+    maxExecutionSeconds         = local.slot.max_execution_seconds
+  }
+  # Preserve numeric types and the exact legacy object instead of coercing a
+  # conditional object with different fields into a map of strings.
+  transport = jsondecode(local.installed ? jsonencode(local.installed_transport) : jsonencode(local.static_transport))
   task_trust = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -149,6 +170,13 @@ resource "aws_ecs_task_definition" "worker" {
   tags = local.tags
   lifecycle {
     precondition {
+      condition = !local.installed || (local.slot.slot_id == var.attempt_id &&
+        local.slot.original_funding_expires_epoch > var.issued_epoch &&
+        local.slot.original_funding_expires_epoch <= var.issued_epoch + 7 * 86400 &&
+      var.mcp_configuration != null)
+      error_message = "An installed slot must match its fixed physical allocation, retain an original funding window of at most seven days, and pin an existing MCP configuration version."
+    }
+    precondition {
       condition     = var.permissions_boundary_arn == null ? true : startswith(var.permissions_boundary_arn, "arn:aws:iam::${var.account_id}:policy/")
       error_message = "Worker permissions boundary must belong to the reviewed account."
     }
@@ -186,10 +214,11 @@ resource "aws_iam_role_policy" "lifecycle" {
   role = aws_iam_role.lifecycle.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat(jsondecode(local.installed ? jsonencode(local.installed_lifecycle_claim_statements) : jsonencode([
       { Effect = "Allow", Action = "dynamodb:PutItem", Resource = local.table_arn,
         Condition = { "ForAllValues:StringEquals" = { "dynamodb:LeadingKeys" = [local.claim_key, local.candidate_claim_key, local.stopped_key] },
-      StringEquals = { "dynamodb:EnclosingOperation" = "TransactWriteItems" } } },
+      StringEquals = { "dynamodb:EnclosingOperation" = "TransactWriteItems" } } }
+      ])), [
       { Effect = "Allow", Action = "ecs:RunTask", Resource = aws_ecs_task_definition.worker.arn,
       Condition = { ArnEquals = { "ecs:cluster" = var.cluster_arn }, DateLessThan = { "aws:CurrentTime" = local.expires_at } } },
       { Effect = "Allow", Action = "ecs:TagResource", Resource = "${replace(var.cluster_arn, ":cluster/", ":task/")}/*",
@@ -199,7 +228,7 @@ resource "aws_iam_role_policy" "lifecycle" {
       "aws:ResourceTag/honua-agent-attempt" = var.attempt_id, "aws:ResourceTag/honua-agent-candidate" = var.candidate_digest } } },
       { Effect = "Allow", Action = "iam:PassRole", Resource = [aws_iam_role.worker.arn, aws_iam_role.execution.arn],
       Condition = { StringEquals = { "iam:PassedToService" = "ecs-tasks.amazonaws.com" } } }
-    ]
+    ])
   })
 }
 
@@ -209,6 +238,6 @@ resource "aws_sfn_state_machine" "worker" {
   type     = "STANDARD"
   depends_on = [aws_iam_role_policy.lifecycle, aws_iam_role_policy.worker, aws_iam_role_policy.execution, aws_iam_role_policy.mcp_configuration,
   aws_scheduler_schedule.reaper, aws_cloudwatch_metric_alarm.reaper, aws_cloudwatch_metric_alarm.reaper_delivery]
-  definition = jsonencode(local.worker_lifecycle)
+  definition = local.installed ? jsonencode(local.installed_worker_lifecycle) : jsonencode(local.worker_lifecycle)
   tags       = local.tags
 }

@@ -1,6 +1,10 @@
 variable "region" {
   type    = string
   default = "us-east-1"
+  validation {
+    condition     = can(regex("^[a-z]{2}(-[a-z]+)+-[0-9]+$", var.region))
+    error_message = "Supply an exact AWS region identifier."
+  }
 }
 
 variable "account_id" {
@@ -13,11 +17,33 @@ variable "account_id" {
 }
 
 variable "attempt_id" {
-  description = "Globally unique attempt identity; never reuse after failure."
+  description = "Globally unique static attempt identity, or fixed physical slot allocation in installed mode. Never repurpose an old allocation after failure."
   type        = string
   validation {
     condition     = can(regex("^[a-z0-9-]{3,40}$", var.attempt_id))
     error_message = "Use 3–40 lowercase letters, digits or hyphens."
+  }
+}
+
+variable "installed_slot" {
+  description = "Optional installed runtime slot. Null preserves the static campaign protocol. These are installation identities and the original funding deadline, never per-turn inputs."
+  type = object({
+    runtime_id                     = string
+    slot_id                        = string
+    original_funding_expires_epoch = number
+    max_execution_seconds          = number
+  })
+  default = null
+  validation {
+    condition = var.installed_slot == null ? true : (
+      can(regex("^[A-Za-z0-9_-]{1,128}$", var.installed_slot.runtime_id)) &&
+      can(regex("^[a-z0-9-]{3,40}$", var.installed_slot.slot_id)) &&
+      var.installed_slot.original_funding_expires_epoch == floor(var.installed_slot.original_funding_expires_epoch) &&
+      var.installed_slot.original_funding_expires_epoch > 0 &&
+      var.installed_slot.max_execution_seconds == floor(var.installed_slot.max_execution_seconds) &&
+      var.installed_slot.max_execution_seconds >= 60 && var.installed_slot.max_execution_seconds <= 6000
+    )
+    error_message = "An installed slot requires bounded runtime/slot identities, an integer original funding deadline, and a 60–6000 second execution ceiling."
   }
 }
 
@@ -49,6 +75,10 @@ variable "lifetime_seconds" {
 variable "cluster_arn" {
   description = "Existing isolated Fargate cluster provisioned by the campaign infrastructure."
   type        = string
+  validation {
+    condition     = can(regex("^arn:aws:ecs:[a-z0-9-]+:[0-9]{12}:cluster/[A-Za-z0-9_-]{1,255}$", var.cluster_arn))
+    error_message = "Supply an exact commercial-partition ECS cluster ARN; no expression characters or wildcard."
+  }
 }
 
 variable "subnet_ids" {

@@ -326,6 +326,23 @@ jobs:
       - name: Agent controller state contracts (mock providers only)
         run: terraform -chdir=infrastructure/terraform/internal/aws-agent-controller test -no-color
 
+      - name: Installed worker JSONata constraints (synthetic mock state only)
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/installed-slot-control"
+          terraform -chdir=infrastructure/terraform/internal/aws-agent-worker test -filter=tests/installed.tftest.hcl -verbose -json > "$RUNNER_TEMP/installed-slot-control/worker.mock.jsonl"
+          npm ci --ignore-scripts --prefix infrastructure/terraform/internal/aws-agent-worker/tests/jsonata
+          node infrastructure/terraform/internal/aws-agent-worker/tests/jsonata/constraints.mjs "$RUNNER_TEMP/installed-slot-control/worker.mock.jsonl"
+
+      - name: Retain synthetic installed worker controls
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: synthetic-installed-worker-controls-${{ github.run_id }}
+          path: ${{ runner.temp }}/installed-slot-control/
+          retention-days: 3
+          if-no-files-found: ignore
+
       - name: Marketplace manifest path check
         shell: bash
         run: ./scripts/check-marketplace-paths.sh

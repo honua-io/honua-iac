@@ -43,65 +43,8 @@ resource "aws_sfn_state_machine" "reaper" {
   role_arn   = aws_iam_role.reaper.arn
   type       = "STANDARD"
   depends_on = [aws_iam_role_policy.reaper]
-  definition = jsonencode({
-    StartAt = "CheckExpiry", TimeoutSeconds = 300
-    States = {
-      CheckExpiry = {
-        Type    = "Choice"
-        Choices = [{ Variable = "$$.State.EnteredTime", TimestampGreaterThanEquals = local.expires_at, Next = "ListTasks" }]
-        Default = "NotExpired"
-      }
-      NotExpired = { Type = "Fail", Error = "AttemptNotExpired" }
-      ListTasks = {
-        Type       = "Task", Resource = "arn:aws:states:::aws-sdk:ecs:listTasks"
-        Parameters = local.list_expired, ResultPath = "$.page", Next = "StopTasks"
-      }
-      ListNextPage = {
-        Type       = "Task", Resource = "arn:aws:states:::aws-sdk:ecs:listTasks"
-        Parameters = merge(local.list_expired, { "NextToken.$" = "$.page.NextToken" })
-        ResultPath = "$.page", Next = "StopTasks"
-      }
-      StopTasks = {
-        Type         = "Map", ItemsPath = "$.page.TaskArns", MaxConcurrency = 1, ResultPath = null, Next = "HasMore"
-        ItemSelector = { "taskArn.$" = "$$.Map.Item.Value" }
-        ItemProcessor = {
-          ProcessorConfig = { Mode = "INLINE" }, StartAt = "StopTask"
-          States = {
-            StopTask = {
-              Type       = "Task", Resource = "arn:aws:states:::aws-sdk:ecs:stopTask", ResultPath = null, Next = "WaitForStop"
-              Parameters = { Cluster = var.cluster_arn, "Task.$" = "$.taskArn", Reason = "Agent attempt absolute expiry" }
-            }
-            WaitForStop = { Type = "Wait", Seconds = 5, Next = "ObserveTask" }
-            ObserveTask = {
-              Type       = "Task", Resource = "arn:aws:states:::aws-sdk:ecs:describeTasks", ResultPath = "$.observed", Next = "Stopped"
-              Parameters = { Cluster = var.cluster_arn, "Tasks.$" = "States.Array($.taskArn)" }
-            }
-            Stopped = {
-              Type = "Choice"
-              Choices = [
-                { Variable = "$.observed.Failures[0]", IsPresent = true, Next = "Unobserved" },
-                { Variable = "$.observed.Tasks[0].LastStatus", StringEquals = "STOPPED", Next = "Confirmed" }
-              ]
-              Default = "WaitForStop"
-            }
-            Unobserved = { Type = "Fail", Error = "CleanupNotObserved" }
-            Confirmed  = { Type = "Succeed" }
-          }
-        }
-      }
-      HasMore = {
-        Type = "Choice"
-        Choices = [{ And = [
-          { Variable = "$.page.NextToken", IsPresent = true },
-          { Variable = "$.page.NextToken", IsNull = false },
-          { Not = { Variable = "$.page.NextToken", StringEquals = "" } }
-        ], Next = "ListNextPage" }]
-        Default = "Complete"
-      }
-      Complete = { Type = "Succeed" }
-    }
-  })
-  tags = local.tags
+  definition = local.installed ? jsonencode(local.installed_reaper) : jsonencode(local.static_reaper)
+  tags       = local.tags
 }
 
 resource "aws_scheduler_schedule_group" "reaper" {
@@ -153,7 +96,7 @@ resource "aws_scheduler_schedule" "reaper" {
   group_name                   = aws_scheduler_schedule_group.reaper.name
   schedule_expression          = "rate(1 minute)"
   schedule_expression_timezone = "UTC"
-  start_date                   = local.expires_at
+  start_date                   = local.installed ? null : local.expires_at
   end_date                     = timeadd(local.expires_at, "24h")
   flexible_time_window { mode = "OFF" }
   target {

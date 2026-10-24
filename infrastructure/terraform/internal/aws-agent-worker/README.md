@@ -182,3 +182,42 @@ It is attached to all five roles: worker, execution, lifecycle, expiry reaper an
 scheduler. The ARN must belong to the reviewed account. Null preserves existing
 behavior. A boundary limits permissions; it does not grant the queue, claim,
 task, notification and cleanup actions that the module's policies require.
+
+## Optional installed worker slot
+
+`installed_slot` installs one fixed physical task/role/queue allocation for native
+Console execution IDs. Null preserves the static campaign protocol above. Supply
+the original funding deadline and a per-execution ceiling of at most 6000 seconds.
+The descriptor and schema-2 transport contain static installation metadata only;
+the immutable MCP secret uses `bindingMode: native-execution/v1`, the same runtime
+and slot, and no static workspace/turn. The private controller supplies the first
+native bind after independently observing the actual physical task. An unbound
+worker must exit within its fixed startup deadline; ECS tags do not prove binding.
+
+The launch input is closed: schemaVersion, candidateKey, runtimeId, slotId,
+executionId, targetId, workspaceId, turnId, claimGeneration, expiresEpoch and
+nativeBindingDigest. The execution ID is `execution-` plus 32 lowercase hex
+characters. The Step Functions execution name is `worker-` plus SHA256 of compact,
+sorted-key UTF-8 JSON containing exactly candidateKey and executionId. The native
+binding digest authorizes the pre-task claim; it does not identify a physical task.
+RunTask uses the exact native execution ID as its client token. The lifecycle has
+no retry/redrive or input override of task, role, image, network or credential.
+
+One transaction creates a permanent candidate/runtime/execution claim and acquires
+the fixed slot only when activeExecutionId is absent. A later transaction appends
+the actual launch. Observing the exact task STOPPED appends evidence only: neither
+that observation nor lifecycle success releases the slot. The independent reaper
+runs throughout installation, verifies exact task/revision/ownership tags and
+stops tasks at their bounded execution expiry. Missing/aged metadata remains
+unknown, and the reaper has no DynamoDB authority.
+
+Upgrade the accounting module with the same exact `installed_worker_slots`
+allocations and fixed lifecycle role list. Its optional resource policies permit
+only transaction-enclosed slot updates and retirement records, and allow the
+controller to condition-check its original candidate head in the separate state
+table. The controller must first retain genuine stopped/native-retired/cost-settled
+proof, release the existing combined paid admission, then atomically condition-check
+that head, append the permanent execution retirement and remove only the matching
+slot's active ownership. No TTL, deletion, deadline renewal or blind lost-ACK retry
+may retire a slot. This infrastructure contract creates no paid admission and does
+not replace the existing candidate-wide maximum of four combined admissions.
