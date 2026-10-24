@@ -112,3 +112,18 @@ retirement, while claims-table updates remain transaction-only and confined to
 reviewed slot/retirement keys. The worker never gains accounting access. These
 policies do not establish actual task stop, native retirement, settled cost or a
 released paid admission; the private controller must retain and fence those proofs.
+
+### Dedicated installed controllers
+
+`installed_runtime_controllers` optionally binds a dedicated poller role to one
+already allocated installed runtime. The role stays outside
+`state_admin_role_arns` and `claim_writer_role_arns`. It receives the same
+create-only object writes and fenced candidate-head operations as the original
+controller. Installed claim writes remain transaction-only, with each additional
+poller restricted to its own exact slot and execution retirement keys. Identity
+policies must separately grant only the required installed operations; this input
+never creates a task, paid admission, supervisor, registration, or launch.
+
+The default empty list preserves the existing controller and static claim path.
+Deployment/receipt producers must authenticate the actual resulting role and full
+policy map before freezing an installed declaration or installing its supervisor.
