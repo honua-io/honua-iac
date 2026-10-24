@@ -45,8 +45,8 @@ run "installed_slot_protocol" {
     error_message = "Installed transport must contain only fixed installation bindings, never an epoch/turn credential."
   }
   assert {
-    condition     = length(jsondecode(aws_ecs_task_definition.worker.container_definitions)[0].environment) == 1 && jsondecode(aws_ecs_task_definition.worker.container_definitions)[0].environment[0].name == "HONUA_AGENT_TRANSPORT" && jsondecode(aws_ecs_task_definition.worker.container_definitions)[0].secrets == [{ name = "HONUA_AGENT_MCP_CONFIG", valueFrom = "${var.mcp_configuration.secret_arn}:::${var.mcp_configuration.version_id}" }]
-    error_message = "The task must retain one static transport and one immutable private MCP configuration."
+    condition     = jsondecode(aws_ecs_task_definition.worker.container_definitions)[0].environment == [{ name = "HONUA_AGENT_TRANSPORT", value = jsonencode(local.transport) }, { name = "AWS_DEFAULT_REGION", value = var.region }] && jsondecode(aws_ecs_task_definition.worker.container_definitions)[0].secrets == [{ name = "HONUA_AGENT_MCP_CONFIG", valueFrom = "${var.mcp_configuration.secret_arn}:::${var.mcp_configuration.version_id}" }]
+    error_message = "The task must retain exactly its static transport, reviewed AWS region and one immutable private MCP configuration."
   }
   assert {
     condition     = output.installed_worker_slot.schema == "honua.installed-worker-slot/v1" && output.installed_worker_slot.runtimeId == "runtime_01" && output.installed_worker_slot.claimTable == var.claim_table_name && output.installed_worker_slot.image == var.image_uri && output.installed_worker_slot.mcpSecret == { secretArn = var.mcp_configuration.secret_arn, versionId = var.mcp_configuration.version_id } && output.installed_worker_slot.definitionDigest == "sha256:${sha256(jsonencode(jsondecode(aws_sfn_state_machine.worker.definition)))}"
