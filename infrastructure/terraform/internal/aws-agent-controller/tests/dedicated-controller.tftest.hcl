@@ -32,8 +32,18 @@ run "dedicated_poller_keeps_runtime_fences" {
     error_message = "Additional state policies must preserve exact candidate fencing and transaction-only original-head checks."
   }
   assert {
-    condition     = [for s in jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement : s.Condition["ForAnyValue:StringNotLike"]["dynamodb:LeadingKeys"] if s.Sid == "InstalledController0OwnRuntimeOnly"][0] == ["${var.candidate_digest}/runtime/runtime_01/slot/fixed-slot", "${var.candidate_digest}/runtime/runtime_01/execution/execution-????????????????????????????????", "${var.candidate_digest}/runtime/runtime_01/execution/execution-????????????????????????????????/retired"] && jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement[6].Condition.StringNotEquals["dynamodb:EnclosingOperation"] == "TransactWriteItems" && alltrue([for s in jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement : s.Effect == "Deny"])
-    error_message = "A poller must not read or retire another runtime's claims, bypass transactions or gain resource-policy Allow authority."
+    condition     = [for s in jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement : s.Condition["ForAnyValue:StringNotLike"]["dynamodb:LeadingKeys"] if s.Sid == "InstalledController0OwnRuntimeOnly"][0] == ["${var.candidate_digest}/runtime/runtime_01/slot/fixed-slot", "${var.candidate_digest}/runtime/runtime_01/execution/execution-????????????????????????????????/retired"] && jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement[6].Condition.StringNotEquals["dynamodb:EnclosingOperation"] == "TransactWriteItems" && alltrue([for s in jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement : s.Effect == "Deny"])
+    error_message = "A poller must not retire another runtime's claims, bypass transactions or gain resource-policy Allow authority."
+  }
+  assert {
+    condition = [for s in jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement : s.Condition["ForAnyValue:StringNotLike"]["dynamodb:LeadingKeys"] if s.Sid == "InstalledController0ReadsOwnRuntimeOnly"][0] == [
+      "${var.candidate_digest}/runtime/runtime_01/slot/fixed-slot",
+      "${var.candidate_digest}/runtime/runtime_01/execution/execution-????????????????????????????????",
+      "${var.candidate_digest}/runtime/runtime_01/execution/execution-????????????????????????????????/launched",
+      "${var.candidate_digest}/runtime/runtime_01/execution/execution-????????????????????????????????/stopped",
+      "${var.candidate_digest}/runtime/runtime_01/execution/execution-????????????????????????????????/retired"
+    ] && [for s in jsondecode(aws_dynamodb_resource_policy.claims.policy).Statement : s.Action if s.Sid == "InstalledController0OwnRuntimeOnly"][0] == ["dynamodb:PutItem", "dynamodb:UpdateItem"]
+    error_message = "Read fencing must include original launched/stopped records without letting the controller write lifecycle-owned execution or observation rows."
   }
 }
 run "reject_poller_admin_overlap" {

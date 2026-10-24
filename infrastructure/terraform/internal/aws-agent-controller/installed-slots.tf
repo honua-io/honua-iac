@@ -52,12 +52,20 @@ locals {
       Condition = { ArnEquals = { "aws:PrincipalArn" = sort(tolist(local.runtime_principals)) },
     "ForAnyValue:StringNotLike" = { "dynamodb:LeadingKeys" = concat(local.installed_slot_keys, local.installed_retirement_keys) } } }
     ], [for controller in var.installed_runtime_controllers : {
-      Sid      = "InstalledController${index(var.installed_runtime_controllers, controller)}OwnRuntimeOnly", Effect = "Deny", Principal = "*", Action = ["dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:GetItem"],
+      Sid      = "InstalledController${index(var.installed_runtime_controllers, controller)}OwnRuntimeOnly", Effect = "Deny", Principal = "*", Action = ["dynamodb:PutItem", "dynamodb:UpdateItem"],
       Resource = aws_dynamodb_table.history["claims"].arn,
       Condition = { ArnEquals = { "aws:PrincipalArn" = controller.role_arn },
         "ForAnyValue:StringNotLike" = { "dynamodb:LeadingKeys" = concat(
           [for slot in var.installed_worker_slots : "${var.candidate_digest}/runtime/${slot.runtime_id}/slot/${slot.slot_id}" if slot.runtime_id == controller.runtime_id],
-          ["${var.candidate_digest}/runtime/${controller.runtime_id}/execution/execution-????????????????????????????????", "${var.candidate_digest}/runtime/${controller.runtime_id}/execution/execution-????????????????????????????????/retired"]
+          ["${var.candidate_digest}/runtime/${controller.runtime_id}/execution/execution-????????????????????????????????/retired"]
+      ) } }
+      }], [for controller in var.installed_runtime_controllers : {
+      Sid      = "InstalledController${index(var.installed_runtime_controllers, controller)}ReadsOwnRuntimeOnly", Effect = "Deny", Principal = "*", Action = "dynamodb:GetItem",
+      Resource = aws_dynamodb_table.history["claims"].arn,
+      Condition = { ArnEquals = { "aws:PrincipalArn" = controller.role_arn },
+        "ForAnyValue:StringNotLike" = { "dynamodb:LeadingKeys" = concat(
+          [for slot in var.installed_worker_slots : "${var.candidate_digest}/runtime/${slot.runtime_id}/slot/${slot.slot_id}" if slot.runtime_id == controller.runtime_id],
+          [for suffix in ["", "/launched", "/stopped", "/retired"] : "${var.candidate_digest}/runtime/${controller.runtime_id}/execution/execution-????????????????????????????????${suffix}"]
       ) } }
       }], [for slot in var.installed_worker_slots : {
       Sid      = "Slot${index(var.installed_worker_slots, slot)}LifecycleUpdatesOnlyOwnSlot", Effect = "Deny", Principal = "*", Action = "dynamodb:UpdateItem",
