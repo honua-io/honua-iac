@@ -15,6 +15,7 @@ output "lifecycle" {
     claim_table_name    = var.claim_table_name
     task_definition_arn = aws_ecs_task_definition.worker.arn
     worker_role_arn     = aws_iam_role.worker.arn
+    lifecycle_role_arn  = aws_iam_role.lifecycle.arn
     expires_at          = local.expires_at
     claim_key           = local.claim_key
     candidate_claim_key = local.candidate_claim_key
@@ -26,7 +27,7 @@ output "controller_policy" {
   description = "Attach only to the trusted controller; never to a worker. Redrive bypasses the launch claim and is denied."
   value = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat([
       { Effect = "Allow", Action = "sqs:SendMessage", Resource = aws_sqs_queue.channel["commands"].arn },
       { Effect = "Allow", Action = ["sqs:ReceiveMessage", "sqs:DeleteMessage"], Resource = aws_sqs_queue.channel["replies"].arn },
       { Effect = "Allow", Action = ["states:StartExecution", "states:DescribeStateMachine"], Resource = aws_sfn_state_machine.worker.arn },
@@ -38,10 +39,35 @@ output "controller_policy" {
           "aws:ResourceTag/honua-agent-attempt"   = var.attempt_id,
           "aws:ResourceTag/honua-agent-candidate" = var.candidate_digest
       } } },
-      { Effect = "Allow", Action = "dynamodb:GetItem", Resource = local.table_arn,
-      Condition = { "ForAllValues:StringEquals" = { "dynamodb:LeadingKeys" = [local.claim_key, local.candidate_claim_key, local.stopped_key] } } }
-    ]
+      ], jsondecode(local.installed ? jsonencode(local.installed_controller_claim_statements) : jsonencode([
+        { Effect = "Allow", Action = "dynamodb:GetItem", Resource = local.table_arn,
+        Condition = { "ForAllValues:StringEquals" = { "dynamodb:LeadingKeys" = [local.claim_key, local.candidate_claim_key, local.stopped_key] } } }
+    ])))
   })
+}
+
+output "installed_worker_slot" {
+  description = "Fixed installed-slot source descriptor, not worker execution or retirement evidence. Null preserves static campaign mode."
+  value = local.installed ? {
+    schema                      = "honua.installed-worker-slot/v1"
+    candidateKey                = var.candidate_digest
+    runtimeId                   = local.slot.runtime_id
+    slotId                      = local.slot.slot_id
+    originalFundingExpiresEpoch = local.slot.original_funding_expires_epoch
+    maxExecutionSeconds         = local.slot.max_execution_seconds
+    region                      = var.region
+    clusterArn                  = var.cluster_arn
+    claimTable                  = var.claim_table_name
+    image                       = var.image_uri
+    mcpSecret                   = { secretArn = try(var.mcp_configuration.secret_arn, null), versionId = try(var.mcp_configuration.version_id, null) }
+    taskDefinitionArn           = aws_ecs_task_definition.worker.arn
+    taskRoleArn                 = aws_iam_role.worker.arn
+    stateMachineArn             = aws_sfn_state_machine.worker.arn
+    stateMachineRoleArn         = aws_iam_role.lifecycle.arn
+    definitionDigest            = "sha256:${sha256(jsonencode(jsondecode(aws_sfn_state_machine.worker.definition)))}"
+    commandQueueUrl             = aws_sqs_queue.channel["commands"].url
+    replyQueueUrl               = aws_sqs_queue.channel["replies"].url
+  } : null
 }
 
 output "independent_cleanup" {

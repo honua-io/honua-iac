@@ -4,7 +4,8 @@
   "contractVersions": {
     "operator-contract": "honua.operator-contract/v2",
     "runtime-binding": "honua.runtime-binding/v1",
-    "lambda-migration-binding": "honua.lambda-migration-binding/v1"
+    "lambda-migration-binding": "honua.lambda-migration-binding/v1",
+    "installed-worker-slot": "honua.installed-worker-slot/v1"
   },
   "schemaVersions": {
     "terraform-exact-plan": "v1",
@@ -20,6 +21,7 @@
     "standing-cert-bootstrap-artifact": "v1",
     "standing-cert-module-inputs": "v2",
     "standing-cert-reviewed-modules": "v1",
-    "standing-cert-reviewed-bootstrap": "v1"
+    "standing-cert-reviewed-bootstrap": "v1",
+    "installed-worker-transport": "v2"
   }
 }

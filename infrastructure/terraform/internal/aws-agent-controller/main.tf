@@ -27,7 +27,7 @@ resource "aws_s3_bucket" "state" {
   lifecycle {
     prevent_destroy = true
     precondition {
-      condition     = alltrue([for arn in setunion(toset(local.state_principals), var.claim_writer_role_arns) : startswith(arn, "arn:aws:iam::${var.account_id}:role/")]) && !contains(var.state_admin_role_arns, var.controller_role_arn) && length(setintersection(var.claim_writer_role_arns, toset(local.state_principals))) == 0
+      condition     = alltrue([for arn in setunion(toset(local.state_principals), var.claim_writer_role_arns) : startswith(arn, "arn:aws:iam::${var.account_id}:role/")]) && !contains(var.state_admin_role_arns, var.controller_role_arn) && length(setintersection(var.claim_writer_role_arns, toset(local.state_principals))) == 0 && length(setsubtract(local.installed_lifecycle_roles, var.claim_writer_role_arns)) == 0
       error_message = "All state roles must belong to the reviewed account; runtime and administration roles must be separate."
     }
   }
@@ -111,7 +111,7 @@ resource "aws_dynamodb_resource_policy" "state" {
         Resource = aws_dynamodb_table.history["state"].arn,
       Condition = { ArnNotEquals = { "aws:PrincipalArn" = local.state_principals } } },
       { Sid       = "RuntimeCanOnlyUseFencedStateOperations", Effect = "Deny", Principal = "*",
-        NotAction = ["dynamodb:GetItem", "dynamodb:UpdateItem", "dynamodb:DescribeTable"],
+        NotAction = concat(["dynamodb:GetItem", "dynamodb:UpdateItem", "dynamodb:DescribeTable"], local.has_installed_slots ? ["dynamodb:ConditionCheckItem"] : []),
         Resource  = aws_dynamodb_table.history["state"].arn,
       Condition = { ArnEquals = { "aws:PrincipalArn" = var.controller_role_arn } } }
     ]
@@ -121,36 +121,8 @@ resource "aws_dynamodb_resource_policy" "state" {
 resource "aws_dynamodb_resource_policy" "claims" {
   resource_arn = aws_dynamodb_table.history["claims"].arn
   policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      { Sid       = "RuntimeCanOnlyClaimOrObserve", Effect = "Deny", Principal = "*",
-        NotAction = ["dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:DescribeTable"],
-        Resource  = aws_dynamodb_table.history["claims"].arn,
-      Condition = { ArnNotEquals = { "aws:PrincipalArn" = sort(tolist(var.state_admin_role_arns)) } } },
-      { Sid      = "OnlyFixedLifecycleRolesMayClaim", Effect = "Deny", Principal = "*", Action = "dynamodb:PutItem",
-        Resource = aws_dynamodb_table.history["claims"].arn,
-      Condition = { ArnNotEquals = { "aws:PrincipalArn" = sort(tolist(setunion(var.state_admin_role_arns, var.claim_writer_role_arns))) } } },
-      # Only the fixed lifecycle may atomically claim the attempt/candidate and
-      # record observed STOPPED. Its identity policy permits PutItem on exact keys.
-      { Sid      = "OnlyFixedLifecycleMayTransactWrites", Effect = "Deny", Principal = "*", Action = "dynamodb:*",
-        Resource = aws_dynamodb_table.history["claims"].arn,
-        Condition = {
-          ArnNotEquals = { "aws:PrincipalArn" = sort(tolist(setunion(var.state_admin_role_arns, var.claim_writer_role_arns))) }
-          StringEquals = { "dynamodb:EnclosingOperation" = "TransactWriteItems" }
-      } },
-      { Sid      = "RuntimeCannotTransactReads", Effect = "Deny", Principal = "*", Action = "dynamodb:*",
-        Resource = aws_dynamodb_table.history["claims"].arn,
-        Condition = {
-          ArnNotEquals = { "aws:PrincipalArn" = sort(tolist(var.state_admin_role_arns)) }
-          StringEquals = { "dynamodb:EnclosingOperation" = "TransactGetItems" }
-      } },
-      { Sid      = "RuntimeClaimWritesMustBeTransactional", Effect = "Deny", Principal = "*", Action = "dynamodb:PutItem",
-        Resource = aws_dynamodb_table.history["claims"].arn,
-        Condition = {
-          ArnNotEquals    = { "aws:PrincipalArn" = sort(tolist(var.state_admin_role_arns)) }
-          StringNotEquals = { "dynamodb:EnclosingOperation" = "TransactWriteItems" }
-      } }
-    ]
+    Version   = "2012-10-17"
+    Statement = jsondecode(local.has_installed_slots ? jsonencode(local.installed_claim_statements) : jsonencode(local.static_claim_statements))
   })
 }
 
@@ -160,7 +132,7 @@ resource "aws_iam_role_policy" "controller_state" {
   depends_on = [aws_s3_bucket_versioning.state, aws_s3_bucket_policy.state, aws_dynamodb_resource_policy.state]
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat([
       { Sid = "ObserveVersioning", Effect = "Allow", Action = "s3:GetBucketVersioning", Resource = local.bucket_arn },
       { Sid = "InspectRetainedCandidateHistory", Effect = "Allow", Action = "s3:ListBucketVersions", Resource = local.bucket_arn,
       Condition = { StringLike = { "s3:prefix" = ["${local.state_prefix}*", "${local.evidence_prefix}*"] } } },
@@ -173,6 +145,10 @@ resource "aws_iam_role_policy" "controller_state" {
         Resource = aws_dynamodb_table.history["state"].arn,
       Condition = { "ForAllValues:StringEquals" = { "dynamodb:LeadingKeys" = [var.candidate_digest] } } },
       { Sid = "ObserveStateTable", Effect = "Allow", Action = "dynamodb:DescribeTable", Resource = aws_dynamodb_table.history["state"].arn }
-    ]
+      ], local.has_installed_slots ? [{
+        Sid = "FenceInstalledRetirement", Effect = "Allow", Action = "dynamodb:ConditionCheckItem", Resource = aws_dynamodb_table.history["state"].arn,
+        Condition = { "ForAllValues:StringEquals" = { "dynamodb:LeadingKeys" = [var.candidate_digest] },
+        StringEquals = { "dynamodb:EnclosingOperation" = "TransactWriteItems" } }
+    }] : [])
   })
 }

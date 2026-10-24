@@ -1,0 +1,8 @@
+{
+  "name": "honua-installed-worker-constraints",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "jsonata": "2.0.6"
+  }
+}
