@@ -60,3 +60,15 @@ variable "installed_worker_slots" {
     error_message = "Review at most four distinct fixed physical slots and exact runtime IDs."
   }
 }
+
+variable "installed_runtime_controllers" {
+  description = "Optional dedicated installed pollers, each bound to one existing installed runtime. These are runtime principals, never state administrators or lifecycle claim writers. Empty preserves legacy authority."
+  type        = list(object({ runtime_id = string, role_arn = string }))
+  default     = []
+  validation {
+    condition = length(var.installed_runtime_controllers) <= 4 && length(distinct([for controller in var.installed_runtime_controllers : controller.role_arn])) == length(var.installed_runtime_controllers) && alltrue([
+      for controller in var.installed_runtime_controllers : can(regex("^[A-Za-z0-9_-]{1,128}$", controller.runtime_id)) && can(regex("^arn:aws:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]+$", controller.role_arn))
+    ])
+    error_message = "Bind at most four distinct exact installed controller roles to reviewed runtime IDs."
+  }
+}

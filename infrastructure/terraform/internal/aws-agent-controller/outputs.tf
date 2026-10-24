@@ -19,3 +19,8 @@ output "evidence_prefix" {
 output "candidate_digest" {
   value = var.candidate_digest
 }
+
+output "installed_controller_policy_json" {
+  description = "Exact nonsecret candidate-state policy for authenticated installed-controller identity receipts; not an activation or admission."
+  value       = aws_iam_role_policy.controller_state.policy
+}

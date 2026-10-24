@@ -11,7 +11,8 @@ locals {
   state_prefix         = "agent-e2e/${local.candidate_hex}/"
   evidence_prefix      = "evidence/${local.candidate_hex}/"
   controller_role_name = element(reverse(split("/", var.controller_role_arn)), 0)
-  state_principals     = sort(tolist(setunion(var.state_admin_role_arns, toset([var.controller_role_arn]))))
+  runtime_principals   = setunion(toset([var.controller_role_arn]), toset([for controller in var.installed_runtime_controllers : controller.role_arn]))
+  state_principals     = sort(tolist(setunion(var.state_admin_role_arns, local.runtime_principals)))
   tags = {
     ManagedBy               = "terraform"
     Owner                   = "honua-agent-e2e"
@@ -27,7 +28,7 @@ resource "aws_s3_bucket" "state" {
   lifecycle {
     prevent_destroy = true
     precondition {
-      condition     = alltrue([for arn in setunion(toset(local.state_principals), var.claim_writer_role_arns) : startswith(arn, "arn:aws:iam::${var.account_id}:role/")]) && !contains(var.state_admin_role_arns, var.controller_role_arn) && length(setintersection(var.claim_writer_role_arns, toset(local.state_principals))) == 0 && length(setsubtract(local.installed_lifecycle_roles, var.claim_writer_role_arns)) == 0
+      condition     = alltrue([for arn in setunion(toset(local.state_principals), var.claim_writer_role_arns) : startswith(arn, "arn:aws:iam::${var.account_id}:role/")]) && length(setintersection(var.state_admin_role_arns, local.runtime_principals)) == 0 && !contains([for controller in var.installed_runtime_controllers : controller.role_arn], var.controller_role_arn) && alltrue([for controller in var.installed_runtime_controllers : contains([for slot in var.installed_worker_slots : slot.runtime_id], controller.runtime_id)]) && length(setintersection(var.claim_writer_role_arns, toset(local.state_principals))) == 0 && length(setsubtract(local.installed_lifecycle_roles, var.claim_writer_role_arns)) == 0
       error_message = "All state roles must belong to the reviewed account; runtime and administration roles must be separate."
     }
   }
@@ -63,7 +64,7 @@ resource "aws_s3_bucket_policy" "state" {
   depends_on = [aws_s3_bucket_public_access_block.state]
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat([
       { Sid      = "RequireTLS", Effect = "Deny", Principal = "*", Action = "s3:*",
         Resource = [local.bucket_arn, "${local.bucket_arn}/*"],
       Condition = { Bool = { "aws:SecureTransport" = "false" } } },
@@ -79,8 +80,12 @@ resource "aws_s3_bucket_policy" "state" {
       { Sid       = "RuntimeCannotEraseOrReconfigureHistory", Effect = "Deny", Principal = "*",
         NotAction = ["s3:GetBucketVersioning", "s3:ListBucketVersions", "s3:GetObject", "s3:GetObjectVersion", "s3:PutObject"],
         Resource  = [local.bucket_arn, "${local.bucket_arn}/*"],
-      Condition = { ArnEquals = { "aws:PrincipalArn" = var.controller_role_arn } } }
-    ]
+      Condition = { ArnEquals = { "aws:PrincipalArn" = sort(tolist(local.runtime_principals)) } } }
+      ], length(var.installed_runtime_controllers) == 0 ? [] : [{
+        Sid       = "InstalledRuntimeCannotForgeProvisioningOriginals", Effect = "Deny", Principal = "*", Action = "s3:PutObject",
+        Resource  = ["${local.bucket_arn}/${local.state_prefix}initialization.json", "${local.bucket_arn}/${local.state_prefix}installed-controllers/*", "${local.bucket_arn}/${local.state_prefix}installed-workers/*"],
+        Condition = { ArnEquals = { "aws:PrincipalArn" = [for controller in var.installed_runtime_controllers : controller.role_arn] } }
+    }])
   })
 }
 
@@ -113,7 +118,7 @@ resource "aws_dynamodb_resource_policy" "state" {
       { Sid       = "RuntimeCanOnlyUseFencedStateOperations", Effect = "Deny", Principal = "*",
         NotAction = concat(["dynamodb:GetItem", "dynamodb:UpdateItem", "dynamodb:DescribeTable"], local.has_installed_slots ? ["dynamodb:ConditionCheckItem"] : []),
         Resource  = aws_dynamodb_table.history["state"].arn,
-      Condition = { ArnEquals = { "aws:PrincipalArn" = var.controller_role_arn } } }
+      Condition = { ArnEquals = { "aws:PrincipalArn" = sort(tolist(local.runtime_principals)) } } }
     ]
   })
 }
@@ -151,4 +156,13 @@ resource "aws_iam_role_policy" "controller_state" {
         StringEquals = { "dynamodb:EnclosingOperation" = "TransactWriteItems" } }
     }] : [])
   })
+}
+
+# Preserve the original controller policy/address. Optional pollers receive the
+# same candidate head fencing and append-only object policy, without admin status.
+resource "aws_iam_role_policy" "installed_controller_state" {
+  for_each = { for controller in var.installed_runtime_controllers : controller.role_arn => controller }
+  name     = "${local.name}-state"
+  role     = element(reverse(split("/", each.key)), 0)
+  policy   = aws_iam_role_policy.controller_state.policy
 }
