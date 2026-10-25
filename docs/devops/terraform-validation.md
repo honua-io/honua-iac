@@ -380,6 +380,59 @@ The scheduled run is strict by default. Missing seeded profile env or
 credentials should fail the workflow so demo readiness is visible instead of
 falling back silently to fixtures.
 
+## Untagged release-cell retirement (artifact expired)
+
+Disposable `e2e-cloud-aws` Lambda cells are normally retired by honua-release
+`cloud-cell-retirement.yml`, which restores the run's sealed Terraform state from
+the `cloud-cell-handoff-*` / `cloud-cell-state-*` artifacts and destroys exactly
+what that state owns (`serverless_cell_retirement.py`, see
+[release-cell-retirement.md](release-cell-retirement.md)). **That stateful path is
+always preferred.** It is the only path while those artifacts exist.
+
+The artifacts have 1-day retention. If a run's cell is stranded after they expire,
+the infra reaper cannot help: release cells carry only `Name` and
+`ManagedBy=terraform` (no `Owner` / `ValidationRunId` / `ExpiresAtUTC`), and the
+tag-driven `sweep-orphaned-validation-infra.sh` cannot see untagged resources by
+construction. That blindness is intentional and is not weakened. Stranded cells
+hold NAT EIPs against the account quota and block new runs.
+
+For that one case only, run the **Release Cell Untagged Retirement** workflow
+(`release-cell-untagged-retirement.yml`, dispatch only) or
+`infrastructure/terraform/validation/scripts/aws/retire_untagged_release_cell.py`
+directly. Inputs: run id, `redis` off/on, `apply` (default false = dry run),
+`grace_hours` (default 24). Always dispatch the dry run first and read the plan.
+
+The tool refuses (exit 2, nothing deleted) unless all of these hold:
+
+- the run is a `completed` `e2e-cloud-aws` run in `honua-io/honua-release` on
+  `trunk`, finished more than `grace_hours` ago;
+- no non-expired `cloud-cell-handoff-*` / `cloud-cell-state-*` artifact exists
+  (otherwise use the stateful path);
+- exactly one VPC is named `honua{n|r}awsse<first 6 run-id digits>-it-vpc` with
+  `ManagedBy=terraform`, and the NAT/RDS/cache creation times fall inside that
+  run's own time window (six digits alone can collide between runs);
+- every candidate is inside that VPC, carries the exact `honua{n|r}awsse<run6>-it-`
+  prefix, or is one of the exact DNS names
+  `<run id>-aws-serverless-redis-{off,on}.cert.demo.honua.io` (plus its ACM
+  `_<hex>.` validation CNAMEs) in zone `Z089181827C9GKIKHXUTT`;
+- nothing named `honua-cert-*` / `honua-demo-*` is ever a candidate;
+- nothing unexpected is in the VPC (EC2 instances, load balancers, foreign ENIs,
+  peering, VPN, non-default NACLs, foreign RDS/Lambda/cache, routes to peers);
+- no resource of a type the tool cannot safely delete (Batch, ECR, CodeArtifact,
+  Location place index, RDS Proxy, S3) exists under the prefix;
+- RDS deletion protection is off, unless `--disable-rds-deletion-protection` was
+  passed explicitly.
+
+With `apply`, it deletes in dependency order (Route53 records, API Gateway, ACM,
+Lambda, RDS/ElastiCache, NAT gateway then its EIPs, secrets with
+`--force-delete-without-recovery` only under the cell prefix, log groups, IAM,
+security groups, subnets/route tables/IGW, VPC), then enumerates again and exits
+non-zero if anything remains. The summary JSON (schema
+`honua.release-cell-untagged-retirement/v1`) is uploaded as a workflow artifact.
+The role in `HONUA_AWS_VALIDATION_REAPER_ROLE_ARN` must be allowed to perform
+these deletes (including IAM role/policy deletion under the cell prefix); the
+tool fails visibly rather than widening anything if it is not.
+
 ## Notes
 
 - Azure/AWS credential secrets are treated as bootstrap credentials. The workflow creates ephemeral least-privilege identities per stack (`aca`, `functions`, `ecs`, `serverless`, `aks`, `eks`), runs validation with those identities, then destroys them.

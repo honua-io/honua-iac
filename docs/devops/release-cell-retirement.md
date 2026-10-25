@@ -43,3 +43,8 @@ cost accounting finish.
 
 Offline boundary tests run in Terraform CI. The existing mocked omitted-history
 test remains mandatory and must continue rejecting ordinary retention loss.
+
+If the original run's state artifacts have already expired, this path is
+unavailable; see "Untagged release-cell retirement" in
+[terraform-validation.md](terraform-validation.md) for the last-resort,
+fail-closed alternative.

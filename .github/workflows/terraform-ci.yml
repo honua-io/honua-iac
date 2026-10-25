@@ -396,6 +396,12 @@ jobs:
           python3 -m unittest discover -s infrastructure/terraform/validation/scripts/aws -p test_serverless_cell_retirement.py
           python3 infrastructure/terraform/validation/scripts/shared/test-serverless-retirement-override.py
 
+      - name: Untagged release-cell retirement refusals (offline, mocked AWS)
+        working-directory: infrastructure/terraform/validation/scripts/aws
+        run: |
+          python3 -m pip install --user --quiet 'pytest==8.3.3'
+          python3 -m pytest -q -p no:cacheprovider test_retire_untagged_release_cell.py
+
       - name: Module contract tests (multi-node topology, licensing mode)
         shell: bash
         run: |

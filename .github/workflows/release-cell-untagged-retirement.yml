@@ -1,0 +1,126 @@
+name: Release Cell Untagged Retirement
+
+# LAST-RESORT retirement of a stranded, untagged e2e-cloud-aws Lambda cell whose
+# Terraform state artifacts (cloud-cell-handoff-* / cloud-cell-state-*, 1-day
+# retention) have expired. The stateful path -- honua-release
+# cloud-cell-retirement.yml + serverless_cell_retirement.py -- is preferred and
+# is the only path while the artifacts exist; the tool refuses if they do.
+#
+# Manual only. `apply` defaults to false: a dispatch with no changes enumerates
+# the cell, prints the full plan and deletes nothing. All refusal rules live in
+# retire_untagged_release_cell.py and are exercised by
+# test_retire_untagged_release_cell.py; see docs/devops/terraform-validation.md.
+#
+# Shares the reaper's concurrency group so the two never delete in the same
+# account at once.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "honua-release e2e-cloud-aws run id that created the cell"
+        required: true
+        type: string
+      redis:
+        description: "Which cell of the run: redis off or on"
+        required: true
+        type: choice
+        options:
+          - "off"
+          - "on"
+      apply:
+        description: "Delete the cell. Leave false to enumerate and print the plan only"
+        required: true
+        type: boolean
+        default: false
+      grace_hours:
+        description: "Hours the run must have been completed before its cell is retirable"
+        required: false
+        type: string
+        default: "24"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: terraform-validation-infra-reaper
+  cancel-in-progress: false
+
+jobs:
+  retire:
+    name: Retire untagged release cell
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      AWS_DEFAULT_REGION: ${{ vars.HONUA_AWS_VALIDATION_REGION || 'us-east-1' }}
+      GH_TOKEN: ${{ github.token }}
+      RUN_ID: ${{ inputs.run_id }}
+      REDIS: ${{ inputs.redis }}
+      APPLY: ${{ inputs.apply }}
+      GRACE_HOURS: ${{ inputs.grace_hours || '24' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Require OIDC role
+        env:
+          ROLE_ARN: ${{ vars.HONUA_AWS_VALIDATION_REAPER_ROLE_ARN }}
+        run: ': "${ROLE_ARN:?Configure the OIDC cleanup role ARN (HONUA_AWS_VALIDATION_REAPER_ROLE_ARN)}"'
+
+      - name: Configure AWS OIDC session
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.HONUA_AWS_VALIDATION_REAPER_ROLE_ARN }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+          role-duration-seconds: 7200
+          unset-current-credentials: true
+
+      - name: Install boto3
+        run: python3 -m pip install --user --quiet 'boto3==1.35.49'
+
+      - name: Retire cell
+        id: retire
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${RUN_ID}" =~ ^[1-9][0-9]{7,}$ ]] || { echo "run_id must be numeric" >&2; exit 2; }
+          [[ "${GRACE_HOURS}" =~ ^[0-9]+$ ]] || { echo "grace_hours must be an integer" >&2; exit 2; }
+          account_id="$(aws sts get-caller-identity --query Account --output text)"
+          summary="${RUNNER_TEMP}/release-cell-untagged-retirement.json"
+          echo "summary=${summary}" >> "$GITHUB_OUTPUT"
+
+          args=(
+            --run-id "${RUN_ID}"
+            --redis "${REDIS}"
+            --account-id "${account_id}"
+            --region "${AWS_DEFAULT_REGION}"
+            --grace-hours "${GRACE_HOURS}"
+            --summary-file "${summary}"
+          )
+          if [[ "${APPLY}" == "true" ]]; then
+            args+=(--apply)
+          else
+            args+=(--dry-run)
+          fi
+
+          set +e
+          python3 infrastructure/terraform/validation/scripts/aws/retire_untagged_release_cell.py "${args[@]}"
+          status=$?
+          set -e
+          if [[ -f "${summary}" ]]; then
+            {
+              echo "### Release cell untagged retirement (run ${RUN_ID}, redis ${REDIS})"
+              python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); print("- mode: %s\n- status: %s\n- refusal: %s\n- planned types: %s\n- deleted: %d, failed: %d, remaining: %s" % (s["mode"], s["status"], s.get("refusal", "-"), {k: len(v) for k, v in s["resources"].items()}, len(s["deleted"]), len(s["failed"]), s["remaining"] or "none"))' "${summary}"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "${status}"
+
+      - name: Upload summary
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-cell-untagged-retirement-${{ inputs.run_id }}-${{ inputs.redis }}
+          path: ${{ steps.retire.outputs.summary }}
+          if-no-files-found: ignore
+          retention-days: 30
