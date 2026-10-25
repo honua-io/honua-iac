@@ -165,6 +165,28 @@ class RetirementTests(unittest.TestCase):
         with self.assertRaises(RetirementRefused):
             observe_lambda_readers(Lambda(versions), inspect(self.state))
 
+    def test_guardrail_protected_standing_functions_are_recorded_not_listed(self):
+        standing = f"arn:aws:lambda:{REGION}:{ACCOUNT}:function:honua-cert-cert-honua"
+        demo = f"arn:aws:lambda:{REGION}:{ACCOUNT}:function:honua-demo-tiles"
+        lookalike = FUNCTION + "-honua-cert-lookalike"
+        client = Lambda({FUNCTION: [{"Version": "1"}], lookalike: [{"Version": "2"}]})
+        listed = client.get_paginator
+        def guarded(name):
+            if name == "list_functions":
+                return Paginator(lambda: [{"Functions": [{"FunctionArn": arn}
+                                                          for arn in (FUNCTION, standing, demo, lookalike)]}])
+            def versions(FunctionName):
+                self.assertNotIn(FunctionName, (standing, demo), "guardrail-protected function must not be listed")
+                return listed(name).paginate(FunctionName=FunctionName)
+            return Paginator(versions)
+        client.get_paginator = guarded
+        observed = observe_lambda_readers(client, inspect(self.state))
+        self.assertEqual(observed["standingExcluded"], sorted([standing, demo]))
+        self.assertEqual((observed["functionCount"], observed["versionCount"], observed["foreignReaders"]), (4, 2, 0))
+        record = dict(inspect(self.state), functions=[standing])
+        with self.assertRaises(RetirementRefused):
+            observe_lambda_readers(client, record)
+
     def test_unreadable_or_missing_function_refused(self):
         for versions in ({}, {FUNCTION: [{"Environment": {"Error": {"ErrorCode": "AccessDenied"}}}]}):
             with self.subTest(versions=versions), self.assertRaises(RetirementRefused):

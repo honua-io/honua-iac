@@ -157,13 +157,28 @@ def inventory(state, *, run_id, cell, account_id, region):
             "stateSha256": digest(state)}
 
 
+# Standing release stacks whose names the aws-release-cells guardrail
+# (ProtectStandingNames) denies to every cell role. They are provisioned by
+# separate reviewed roots, never by a disposable cell, so listing their versions
+# from a cell role is an explicit deny. They are recorded, not inspected.
+STANDING_FUNCTION_PREFIXES = ("honua-cert-", "honua-demo-")
+
+
+def standing_function(arn):
+    name = arn.rsplit(":function:", 1)[-1].split(":", 1)[0]
+    return name.startswith(STANDING_FUNCTION_PREFIXES)
+
+
 def observe_lambda_readers(client, record):
     """Read every published function version in the region, not only $LATEST.
 
     API failures propagate. A function outside the owned destroy set referencing
     a retained settings document prevents retirement even if it has no alias.
+    Guardrail-protected standing functions are excluded by exact name prefix and
+    listed in the observation; a disposable cell can never own one.
     """
     seen = set()
+    standing = set()
     versions = 0
     secret_identifiers = set(record["settings"])
     for identifier in record["settings"]:
@@ -175,6 +190,11 @@ def observe_lambda_readers(client, record):
         for function in page.get("Functions", []):
             arn = function["FunctionArn"]
             seen.add(arn)
+            if standing_function(arn):
+                if arn in record["functions"]:
+                    raise RetirementRefused("a guardrail-protected standing function cannot belong to a disposable cell")
+                standing.add(arn)
+                continue
             for version_page in client.get_paginator("list_versions_by_function").paginate(FunctionName=arn):
                 for version in version_page.get("Versions", []):
                     versions += 1
@@ -190,7 +210,8 @@ def observe_lambda_readers(client, record):
                                 raise RetirementRefused("a foreign published Lambda version reads retained settings")
     if not set(record["functions"]) <= seen:
         raise RetirementRefused("original function inventory changed; reconcile state before retirement")
-    return {"functionCount": len(seen), "versionCount": versions, "foreignReaders": 0}
+    return {"functionCount": len(seen), "versionCount": versions, "foreignReaders": 0,
+            "standingExcluded": sorted(standing)}
 
 
 def prepare_override(module, record, observation):
