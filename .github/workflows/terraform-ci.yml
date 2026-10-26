@@ -402,6 +402,10 @@ jobs:
           set -euo pipefail
           terraform -chdir=infrastructure/terraform/bootstrap/aws-release-cells test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-exec-identity test -no-color
+          terraform -chdir=infrastructure/terraform/bootstrap/aws-ecs test -no-color
+          terraform -chdir=infrastructure/terraform/bootstrap/aws-serverless test -no-color
+          terraform -chdir=infrastructure/terraform/bootstrap/aws-eks test -no-color
+          terraform -chdir=infrastructure/terraform/components/aws-github-oidc test -no-color
           terraform -chdir=infrastructure/terraform/modules/aws-ecs test -no-color
           # The output check counts exactly the deployment-safety scenarios, so the
           # root's other test files run separately.

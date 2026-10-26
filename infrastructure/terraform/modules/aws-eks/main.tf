@@ -135,6 +135,9 @@ module "eks" {
   # No account-level OIDC provider unless the operator chose IRSA (see locals).
   enable_irsa = local.irsa_enabled
 
+  # Cluster role boundary. Empty keeps the upstream default (no boundary).
+  iam_role_permissions_boundary = var.infrastructure_permissions_boundary_arn != "" ? var.infrastructure_permissions_boundary_arn : null
+
   cluster_enabled_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
 
   vpc_id                   = module.vpc.vpc_id
@@ -154,6 +157,8 @@ module "eks" {
 
       iam_role_name            = local.node_group_role_name
       iam_role_use_name_prefix = false
+
+      iam_role_permissions_boundary = var.infrastructure_permissions_boundary_arn != "" ? var.infrastructure_permissions_boundary_arn : null
     }
   }
 

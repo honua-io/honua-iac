@@ -7,6 +7,12 @@ for AWS vs Azure.
 ## Templates
 - `aws-ecs` — IAM user + policy for the ECS/Fargate + RDS + ALB module.
 - `aws-serverless` — IAM user + policy for Lambda/API Gateway style deployments.
+- `aws-eks` — IAM user + policy for the EKS module.
+
+The three AWS IAM-user templates are local-only. Their IAM grants are confined
+to the deployed stack's name prefix, every role they create must carry the
+workload permissions boundary they emit, and `iam:PassRole` is limited to the
+services each stack uses. See each template's `README.md` ("IAM scope").
 - `azure-aca` — Azure AD service principal + custom role for Azure Container Apps.
 - `azure-functions` — Azure AD service principal + custom role for Azure Functions.
 

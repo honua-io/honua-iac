@@ -20,10 +20,11 @@ honua-iac#2164), but reusable for any repo/workflow → AWS OIDC need.
   `sts:AssumeRoleWithWebIdentity` only when:
   - the principal is this OIDC provider,
   - `aud == sts.amazonaws.com`, and
-  - `sub` matches the scoped patterns — default
-    `repo:<owner>/<repo>:*`, tightenable to a ref or a GitHub **Environment**
-    (e.g. `repo:honua-io/honua-server:environment:cert`) via
-    `github_oidc_subjects`.
+  - `sub` **exactly equals** (`StringEquals`, no wildcards) one subject —
+    default `repo:<owner>/<repo>:ref:refs/heads/trunk` (`github_oidc_ref`),
+    or a GitHub **Environment** subject via `github_oidc_environment`
+    (e.g. `repo:honua-io/honua-server:environment:cert`), or the explicit
+    `github_oidc_subjects` override.
 - A least-privilege inline **permission policy** scoped by Resource/Condition to
   the `honua-cert-*` surface: Batch `SubmitJob` on the **standing** cert
   queue/job-definition pool (`resource_name_prefix`, e.g. `honua-cert-cert-*`);
@@ -54,15 +55,55 @@ fails if that file declares any federation or trust of its own.
 
 ## Trust scoping
 
+Every subject is matched with `StringEquals`; wildcard subjects are refused at
+plan time. The earlier repo-wide `repo:<owner>/<repo>:*` default (any branch,
+any PR, any environment) is gone.
+
 | Goal | Set |
 |---|---|
-| Any workflow on the repo | default (`github_owner` + `github_repository`) |
-| Only the `cert` GitHub Environment | `github_oidc_subjects = ["repo:honua-io/honua-server:environment:cert"]` |
-| A single branch | `github_oidc_subjects = ["repo:honua-io/honua-server:ref:refs/heads/cert"]` |
+| Jobs on the protected `trunk` branch (no `environment:`) | default (`github_owner` + `github_repository`, `github_oidc_ref = "refs/heads/trunk"`) |
+| Only the `cert` GitHub Environment | `github_oidc_environment = "cert"` or `github_oidc_subjects = ["repo:honua-io/honua-server:environment:cert"]` |
+| A different single branch | `github_oidc_ref = "refs/heads/cert"` |
+
+A job that declares `environment:` presents the environment subject, not the
+ref subject, so pin such jobs by environment and give that environment a
+deployment-branch policy that allows only `trunk`.
 
 The tightest practical scope for a **dispatched** cert workflow is a dedicated
 GitHub Environment, because `workflow_dispatch` runs do not carry a stable PR
 ref. Pin to `:environment:cert` and require that environment in the workflow.
+
+## Hosted-pilot bootstrap executor role (optional)
+
+`hosted_pilot_bootstrap_role_enabled = true` adds a second role,
+`honua-hosted-pilot-bootstrap-gha`, for the `bootstrap` job of honua-iac's
+`.github/workflows/hosted-pilot-bootstrap.yml`. It replaces the static
+`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` repository secrets.
+
+- Trust: this OIDC provider, `aud = sts.amazonaws.com`, and `sub` exactly
+  `repo:honua-io/honua-iac:environment:terraform-ephemeral`
+  (`hosted_pilot_bootstrap_oidc_subjects`). GitHub never puts the ref and the
+  environment in one `sub`, so the trunk pin comes from the workflow's
+  `github.ref == 'refs/heads/trunk'` guard plus a trunk-only deployment-branch
+  policy on the `terraform-ephemeral` environment. Set that policy.
+- Permissions: whatever reviewed managed policies you pass in
+  `hosted_pilot_bootstrap_policy_arns` (required; AWS administrator policies are
+  refused). Attach the policy the static-key principal holds today.
+- Optional `hosted_pilot_bootstrap_permissions_boundary_arn`.
+
+Operator rollout:
+
+1. Apply this component in the hosted-pilot account with
+   `hosted_pilot_bootstrap_role_enabled = true` and the policy ARNs
+   (`create_oidc_provider = false` plus `existing_oidc_provider_arn` if the
+   account already has the GitHub provider).
+2. Set the repository variable `HONUA_AWS_HOSTED_PILOT_BOOTSTRAP_ROLE_ARN` in
+   `honua-io/honua-iac` to the `hosted_pilot_bootstrap_role_arn` output.
+3. Restrict the `terraform-ephemeral` environment's deployment branches to
+   `trunk`.
+4. Run the workflow once with `mode=plan`, then delete the
+   `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` repository and environment
+   secrets and deactivate and delete the IAM user access key behind them.
 
 ## Usage in a workflow
 

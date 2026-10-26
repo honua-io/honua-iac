@@ -162,6 +162,12 @@ variable "permissions_boundary_arn" {
   default     = ""
 }
 
+variable "infrastructure_permissions_boundary_arn" {
+  description = "Optional IAM permissions boundary for the EKS cluster and node-group roles. Set it (usually to the same ARN as permissions_boundary_arn) when deploying as the bootstrap/aws-eks user, which may only create bounded roles."
+  type        = string
+  default     = ""
+}
+
 # --- GA cell: runtime secrets ---------------------------------------------------
 
 variable "honua_admin_password" {

@@ -33,3 +33,20 @@ variable "tags" {
   description = "Tags to apply to the IAM user and policy."
   default     = {}
 }
+
+variable "workload_name_prefix" {
+  type        = string
+  description = "Name prefix of the IAM roles and policies the deployed stack creates (the example's name_prefix, e.g. honuasl for examples/aws-serverless). The deploy user may create, edit, pass and delete IAM only under role/<prefix>* and policy/<prefix>*."
+  default     = "honua"
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9+=,.@_-]{3,}$", var.workload_name_prefix))
+    error_message = "workload_name_prefix must be at least 3 IAM name characters and must not contain wildcards."
+  }
+}
+
+variable "protected_role_arns" {
+  type        = list(string)
+  description = "Additional role ARNs (wildcards allowed) the deploy user must never pass, edit or delete, even when they match workload_name_prefix. The governed *-deploy, *-gha and honua-terraform-backend* roles are always protected."
+  default     = []
+}

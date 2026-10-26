@@ -12,8 +12,44 @@ provider "aws" {
   region = var.aws_region
 }
 
+data "aws_partition" "current" {}
+data "aws_caller_identity" "current" {}
+
 locals {
   user_name = var.user_name != "" ? var.user_name : "${var.name_prefix}-${var.environment}"
+
+  partition      = data.aws_partition.current.partition
+  account_id     = data.aws_caller_identity.current.account_id
+  iam_arn_prefix = "arn:${local.partition}:iam::${local.account_id}"
+
+  # IAM the deploy user may manage is confined to the workload namespace that
+  # modules/aws-serverless names its roles and policies under
+  # (<name_prefix>-<environment>-lambda-, -migration-, -gp-*, -rds-proxy-, ...).
+  workload_role_arns = [
+    "${local.iam_arn_prefix}:role/${var.workload_name_prefix}*",
+  ]
+  workload_policy_arns = [
+    "${local.iam_arn_prefix}:policy/${var.workload_name_prefix}*",
+  ]
+
+  # Deterministic ARNs for the identities this root creates, so the policy can
+  # protect them without a dependency cycle.
+  deployment_policy_arns = [
+    "${local.iam_arn_prefix}:policy/${local.user_name}-policy",
+    "${local.iam_arn_prefix}:policy/${local.user_name}-iam",
+  ]
+  workload_boundary_name = "${local.user_name}-workload-boundary"
+  workload_boundary_arn  = "${local.iam_arn_prefix}:policy/${local.workload_boundary_name}"
+
+  # Governed identities that may share the account (and the workload prefix)
+  # and must never be handed to a service or rewritten by this user:
+  # bootstrap/aws-exec-identity (*-deploy), bootstrap/aws-terraform-oidc
+  # (honua-terraform-backend), and GitHub OIDC workflow roles (*-gha).
+  protected_role_arns = distinct(concat([
+    "${local.iam_arn_prefix}:role/*-deploy",
+    "${local.iam_arn_prefix}:role/*-gha",
+    "${local.iam_arn_prefix}:role/honua-terraform-backend*",
+  ], var.protected_role_arns))
 
   # HARD MARKER. This root provisions a long-lived IAM user, which the governed
   # AWS release lane refuses. The tags travel with the principal so an auditor
@@ -257,64 +293,233 @@ data "aws_iam_policy_document" "terraform" {
       values   = [var.aws_region]
     }
   }
+}
+
+# IAM management and the separation denials live in their own managed policy:
+# together with the service grants above they exceed the 6144-character
+# managed-policy quota. Both policies are attached to the user, and both are
+# immutable to it.
+data "aws_iam_policy_document" "iam" {
+  #checkov:skip=CKV_AWS_109: IAM management is confined to the workload prefix and requires the workload boundary.
+  #checkov:skip=CKV_AWS_110: Role creation and role-policy edits require the workload boundary, which excludes IAM.
+  #checkov:skip=CKV_AWS_356: Only read-only discovery and explicit Deny statements use Resource "*".
+  # --- IAM: workload roles only, always under the workload boundary ---------
+
+  # Role lifecycle and inline/managed policy wiring for the Lambda, migration,
+  # control-plane, RDS Proxy and GP/custom-code Batch roles. Creating a role,
+  # or changing what it is allowed to do, requires the role to carry (or be
+  # created with) this root's workload permissions boundary, so no role the
+  # user creates or edits can exceed the boundary, whatever policy it is given.
+  statement {
+    sid    = "CreateBoundedWorkloadRoles"
+    effect = "Allow"
+    actions = [
+      "iam:AttachRolePolicy",
+      "iam:CreateRole",
+      "iam:DeleteRolePolicy",
+      "iam:DetachRolePolicy",
+      "iam:PutRolePermissionsBoundary",
+      "iam:PutRolePolicy",
+    ]
+    resources = local.workload_role_arns
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PermissionsBoundary"
+      values   = [local.workload_boundary_arn]
+    }
+  }
 
   statement {
-    sid = "IamForLambda"
+    sid    = "ManageWorkloadRoles"
+    effect = "Allow"
     actions = [
-      "iam:CreateRole",
       "iam:DeleteRole",
-      "iam:GetRole",
-      "iam:ListRoles",
-      "iam:PassRole",
-      "iam:AttachRolePolicy",
-      "iam:DetachRolePolicy",
-      "iam:PutRolePolicy",
-      "iam:DeleteRolePolicy",
       "iam:GetRolePolicy",
       "iam:ListAttachedRolePolicies",
       "iam:ListInstanceProfilesForRole",
       "iam:ListRolePolicies",
-      "iam:CreatePolicy",
-      "iam:DeletePolicy",
-      "iam:GetPolicy",
-      "iam:GetPolicyVersion",
-      "iam:ListPolicyVersions",
-      "iam:CreatePolicyVersion",
-      "iam:DeletePolicyVersion",
       "iam:TagRole",
       "iam:UntagRole",
+    ]
+    resources = local.workload_role_arns
+  }
+
+  statement {
+    sid    = "ManageWorkloadPolicies"
+    effect = "Allow"
+    actions = [
+      "iam:CreatePolicy",
+      "iam:CreatePolicyVersion",
+      "iam:DeletePolicy",
+      "iam:DeletePolicyVersion",
+      "iam:ListPolicyVersions",
       "iam:TagPolicy",
       "iam:UntagPolicy",
-      "iam:CreateServiceLinkedRole"
+    ]
+    resources = local.workload_policy_arns
+  }
+
+  # Read-only IAM discovery (managed-policy documents, externally supplied
+  # role names). None of these can change a principal.
+  statement {
+    sid    = "IamReadOnlyDiscovery"
+    effect = "Allow"
+    actions = [
+      "iam:GetPolicy",
+      "iam:GetPolicyVersion",
+      "iam:GetRole",
+      "iam:ListRoles",
     ]
     resources = ["*"]
   }
 
-  # --- GP Batch role PassRole (scoped by consuming service) ----------------
-  # The gated enable_gp_batch stack creates three roles — the Batch service
-  # role, the Fargate task-execution role, and the GP job (task) role — and
-  # AWS Batch / ECS must be able to assume them. iam:CreateRole / PutRolePolicy
-  # / AttachRolePolicy for these roles are already covered by IamForLambda
-  # above (resources "*"); this statement adds the PassRole grant, scoped via
-  # iam:PassedToService so the deploy identity can only hand these roles to the
-  # Batch and ECS-tasks principals (not to arbitrary services). Batch also
-  # auto-provisions its service-linked role, covered by CreateServiceLinkedRole.
+  # Batch, RDS, ElastiCache, ECS (Fargate under Batch) and API Gateway custom
+  # domains create their own service-linked roles on first use in an account.
   statement {
-    sid = "GpBatchPassRole"
-    actions = [
-      "iam:PassRole"
-    ]
-    resources = ["*"]
+    sid       = "CreateServerlessServiceLinkedRoles"
+    effect    = "Allow"
+    actions   = ["iam:CreateServiceLinkedRole"]
+    resources = ["${local.iam_arn_prefix}:role/aws-service-role/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:AWSServiceName"
+      values = [
+        "batch.amazonaws.com",
+        "ecs.amazonaws.com",
+        "elasticache.amazonaws.com",
+        "ops.apigateway.amazonaws.com",
+        "rds.amazonaws.com",
+      ]
+    }
+  }
+
+  statement {
+    sid       = "PassWorkloadRolesToServerlessServicesOnly"
+    effect    = "Allow"
+    actions   = ["iam:PassRole"]
+    resources = local.workload_role_arns
 
     condition {
       test     = "StringEquals"
       variable = "iam:PassedToService"
       values = [
         "batch.amazonaws.com",
-        "ecs-tasks.amazonaws.com"
+        "ecs-tasks.amazonaws.com",
+        "lambda.amazonaws.com",
+        "rds.amazonaws.com",
+        "scheduler.amazonaws.com",
       ]
     }
   }
+
+  # --- separation denials (ported from bootstrap/aws-exec-identity) ---------
+
+  statement {
+    sid    = "DenyLongLivedCredentials"
+    effect = "Deny"
+    actions = [
+      "iam:AttachUserPolicy",
+      "iam:CreateAccessKey",
+      "iam:CreateLoginProfile",
+      "iam:CreateServiceSpecificCredential",
+      "iam:CreateUser",
+      "iam:PutUserPolicy",
+      "iam:ResetServiceSpecificCredential",
+      "iam:UpdateAccessKey",
+      "iam:UpdateLoginProfile",
+      "iam:UploadSSHPublicKey",
+    ]
+    resources = ["*"]
+  }
+
+  # A role whose trust policy names this user directly would be assumable
+  # without an identity-policy grant; refuse every role hop outright.
+  statement {
+    sid    = "DenyRoleChaining"
+    effect = "Deny"
+    actions = [
+      "sts:AssumeRole",
+      "sts:AssumeRoleWithSAML",
+      "sts:AssumeRoleWithWebIdentity",
+      "sts:GetFederationToken",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "DenyPassingPrivilegedRoles"
+    effect    = "Deny"
+    actions   = ["iam:PassRole"]
+    resources = local.protected_role_arns
+  }
+
+  # The deploy user's own policy and the workload boundary may match the
+  # workload prefix; neither may be rewritten, and no protected role may be
+  # touched.
+  statement {
+    sid    = "DenyDeploymentIdentityMutation"
+    effect = "Deny"
+    actions = [
+      "iam:AttachRolePolicy",
+      "iam:CreatePolicyVersion",
+      "iam:DeletePolicy",
+      "iam:DeletePolicyVersion",
+      "iam:DeleteRole",
+      "iam:DeleteRolePolicy",
+      "iam:DetachRolePolicy",
+      "iam:PutRolePermissionsBoundary",
+      "iam:PutRolePolicy",
+      "iam:SetDefaultPolicyVersion",
+      "iam:UpdateAssumeRolePolicy",
+    ]
+    resources = concat(
+      local.deployment_policy_arns,
+      [local.workload_boundary_arn],
+      local.protected_role_arns,
+    )
+  }
+
+  statement {
+    sid       = "DenyBoundaryRemoval"
+    effect    = "Deny"
+    actions   = ["iam:DeleteRolePermissionsBoundary"]
+    resources = ["*"]
+  }
+}
+
+# Ceiling for every role the deploy user creates. Workload roles keep whatever
+# service permissions their own policies grant, but can never administer IAM,
+# the organization or the account, and can never assume another role.
+data "aws_iam_policy_document" "workload_boundary" {
+  #checkov:skip=CKV_AWS_107: A permissions boundary is a ceiling, not a grant; the roles' own policies scope access.
+  #checkov:skip=CKV_AWS_108: A permissions boundary is a ceiling, not a grant; the roles' own policies scope access.
+  #checkov:skip=CKV_AWS_109: The ceiling is NotAction iam:*; checkov reads NotAction as a grant of everything.
+  #checkov:skip=CKV_AWS_110: The ceiling is NotAction iam:*; checkov reads NotAction as a grant of everything.
+  #checkov:skip=CKV_AWS_111: A permissions boundary is a ceiling, not a grant; the roles' own policies scope access.
+  #checkov:skip=CKV_AWS_356: A permissions boundary is a ceiling, not a grant; the roles' own policies scope resources.
+  statement {
+    sid    = "WorkloadServiceCeiling"
+    effect = "Allow"
+    not_actions = [
+      "account:*",
+      "iam:*",
+      "organizations:*",
+      "sts:AssumeRole",
+      "sts:AssumeRoleWithSAML",
+      "sts:AssumeRoleWithWebIdentity",
+      "sts:GetFederationToken",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_policy" "workload_boundary" {
+  name        = local.workload_boundary_name
+  description = "Permissions boundary required on every role created by the local-only ${local.user_name} bootstrap user."
+  policy      = data.aws_iam_policy_document.workload_boundary.json
+  tags        = local.tags
 }
 
 resource "aws_iam_policy" "terraform" {
@@ -327,4 +532,17 @@ resource "aws_iam_user_policy_attachment" "terraform" {
   #checkov:skip=CKV_AWS_40: Bootstrap policy attached directly to the automation user.
   user       = aws_iam_user.terraform.name
   policy_arn = aws_iam_policy.terraform.arn
+}
+
+resource "aws_iam_policy" "iam" {
+  name        = "${local.user_name}-iam"
+  description = "Prefix-scoped, boundary-enforced IAM management and separation denials for the local-only ${local.user_name} bootstrap user."
+  policy      = data.aws_iam_policy_document.iam.json
+  tags        = local.tags
+}
+
+resource "aws_iam_user_policy_attachment" "iam" {
+  #checkov:skip=CKV_AWS_40: Bootstrap policy attached directly to the automation user.
+  user       = aws_iam_user.terraform.name
+  policy_arn = aws_iam_policy.iam.arn
 }

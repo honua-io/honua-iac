@@ -122,6 +122,7 @@ the names and semantics of `modules/aws-ecs` and `modules/aws-serverless`:
 | `gp_job_image` | `""` | GP Job image, pinned by digest. |
 | `gp_job_data_bucket_arn` / `gp_job_data_bucket_enabled` | `""` / `false` | S3 bucket both workload roles may use; set together (the flag is plan-time known). |
 | `permissions_boundary_arn` | `""` | Boundary for the workload roles. |
+| `infrastructure_permissions_boundary_arn` | `""` | Boundary for the EKS cluster and managed node-group roles (required when deploying as the `bootstrap/aws-eks` user). |
 | `existing_db_endpoint` / `existing_db_connection_string` | `""` | Both set: no RDS. |
 | `db_username`, `db_name`, `db_password` | `honua`, `honua`, generated | Managed RDS credentials. |
 | `db_instance_class`, `db_allocated_storage`, `db_max_allocated_storage`, `db_engine_version`, `db_multi_az` | `db.t3.micro`, 20, 100, `15`, `false` | RDS sizing. |

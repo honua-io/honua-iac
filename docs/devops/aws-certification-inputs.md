@@ -69,6 +69,15 @@ keys. The operator must provision exact-subject OIDC roles and set:
 | `HONUA_AWS_DRIFT_ROLE_ARN` | Read-only drift plans, 4 hours |
 | `HONUA_AWS_VALIDATION_REAPER_ROLE_ARN` | Fresh session for teardown and scheduled infra sweep, 2 hours |
 | `HONUA_AWS_VALIDATION_IAM_SWEEPER_ROLE_ARN` | Legacy orphan IAM cleanup only, 2 hours |
+| `HONUA_AWS_HOSTED_PILOT_BOOTSTRAP_ROLE_ARN` | `hosted-pilot-bootstrap.yml` foundation executor (`bootstrap` job only), 1 hour |
+
+The hosted-pilot bootstrap role comes from
+`components/aws-github-oidc` (`hosted_pilot_bootstrap_role_enabled = true`); its
+trust is exactly `repo:honua-io/honua-iac:environment:terraform-ephemeral`, so
+restrict that environment's deployment branches to `trunk`. Once the variable is
+set and a `mode=plan` run succeeds, delete the retired `AWS_ACCESS_KEY_ID` /
+`AWS_SECRET_ACCESS_KEY` secrets and the access key behind them; the workflow no
+longer reads them and has no static-key fallback.
 
 Role maximum session duration must permit the requested lifetime. Live role trust
 must match the selected `terraform-ephemeral` / `terraform-live-approval` GitHub

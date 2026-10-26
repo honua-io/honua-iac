@@ -206,6 +206,18 @@ variable "permissions_boundary_arn" {
   nullable    = false
 }
 
+variable "infrastructure_permissions_boundary_arn" {
+  description = "Optional IAM permissions boundary attached to the EKS cluster role and the managed node-group role. Separate from permissions_boundary_arn because those roles need EC2/ELB/EKS infrastructure permissions a workload boundary may refuse. Required when the deploying identity may only create bounded roles (bootstrap/aws-eks)."
+  type        = string
+  default     = ""
+  nullable    = false
+
+  validation {
+    condition     = var.infrastructure_permissions_boundary_arn == "" || can(regex("^arn:[^:]+:iam::[0-9]{12}:policy/.+$", var.infrastructure_permissions_boundary_arn))
+    error_message = "infrastructure_permissions_boundary_arn must be empty or an IAM managed policy ARN."
+  }
+}
+
 # --- Database (RDS PostgreSQL + PostGIS) ----------------------------------------
 
 variable "existing_db_endpoint" {

@@ -19,7 +19,12 @@ def validate(document):
     for name,expected in [('bootstrap','approval-policy'),('review-ready','approval-policy'),('phase-watchdog','approval-policy'),('phase-approval',['approval-policy','review-ready'])]:
         require(jobs[name]['needs']==expected,'approval cannot depend on completion of the retained-plan executor')
     require(jobs['bootstrap']['environment']=='terraform-ephemeral' and jobs['phase-approval']['environment']=='terraform-live-approval','real human environment must protect the separate approval job')
-    require(jobs['phase-watchdog']['permissions']=={'contents':'read','actions':'write'} and all('permissions' not in job for name,job in jobs.items() if name!='phase-watchdog'),'only watchdog receives cancellation authority')
+    require(jobs['phase-watchdog']['permissions']=={'contents':'read','actions':'write'} and all('permissions' not in job for name,job in jobs.items() if name not in ('phase-watchdog','bootstrap')),'only watchdog receives cancellation authority')
+    require(jobs['bootstrap'].get('permissions')=={'contents':'read','actions':'read','id-token':'write'},'only the original executor may mint an OIDC token, with read-only repository scopes')
+    aws=[step for step in jobs['bootstrap']['steps'] if 'configure-aws-credentials@' in step.get('uses','')]
+    require(len(aws)==1 and aws[0]['with'].get('role-to-assume')=='${{ vars.HONUA_AWS_HOSTED_PILOT_BOOTSTRAP_ROLE_ARN }}' and
+        not {'aws-access-key-id','aws-secret-access-key','aws-session-token'} & set(aws[0]['with']) and
+        'secrets.aws_' not in json.dumps(jobs['bootstrap']).lower(),'executor must assume the OIDC role; static AWS key secrets are refused')
     for name in ('review-ready','phase-approval','phase-watchdog'):
         helper=jobs[name]['steps']
         require(helper[0]['with']['ref']=='trunk' and helper[0]['with']['fetch-depth']==0 and
@@ -57,6 +62,16 @@ class PhaseWorkflow(unittest.TestCase):
         bad=copy.deepcopy(self.document);bad['jobs']['phase-approval']['env']['AWS_ACCESS_KEY_ID']='forbidden-test-placeholder'
         with self.assertRaises(ValueError):validate(bad)
         bad=copy.deepcopy(self.document);bad['jobs']['phase-watchdog']['steps'].append({'run':'true','env':{'UNREVIEWED':'${{ secrets.AWS_SECRET_ACCESS_KEY }}'}})
+        with self.assertRaises(ValueError):validate(bad)
+    def test_static_aws_keys_or_unscoped_oidc_refuse(self):
+        bad=copy.deepcopy(self.document);step=next(step for step in bad['jobs']['bootstrap']['steps'] if 'configure-aws-credentials@' in step.get('uses',''))
+        step['with'].pop('role-to-assume');step['with']['aws-access-key-id']='${{ secrets.AWS_ACCESS_KEY_ID }}';step['with']['aws-secret-access-key']='${{ secrets.AWS_SECRET_ACCESS_KEY }}'
+        with self.assertRaises(ValueError):validate(bad)
+        bad=copy.deepcopy(self.document);bad['permissions']['id-token']='write'
+        with self.assertRaises(ValueError):validate(bad)
+        bad=copy.deepcopy(self.document);bad['jobs']['phase-approval']['permissions']={'id-token':'write'}
+        with self.assertRaises(ValueError):validate(bad)
+        bad=copy.deepcopy(self.document);bad['jobs']['bootstrap']['permissions']['contents']='write'
         with self.assertRaises(ValueError):validate(bad)
     def test_input_checkout_before_local_ancestry_check_refuses(self):
         bad=copy.deepcopy(self.document);bad['jobs']['phase-watchdog']['steps'][0]['with']['ref']='${{ inputs.release_root_sha }}'
