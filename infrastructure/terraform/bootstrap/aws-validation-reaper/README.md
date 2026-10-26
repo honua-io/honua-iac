@@ -22,13 +22,12 @@ The repository variable `HONUA_AWS_VALIDATION_REAPER_ROLE_ARN` must name this ro
 
 ## Apply (operator)
 
-State is in the account's state bucket, like `bootstrap/aws-update-rollback-controller`. With Terraform 1.10 or later, lock with `-backend-config=use_lockfile=true`. Older releases lock with `-backend-config=dynamodb_table=honua-tfstate-lock`.
+State is in the account's state bucket. Copy `backend.tf.example` to `backend.tf` (gitignored; never commit it), set `bucket` to `honua-tfstate-585192672263` for this account, then init. With Terraform below 1.10, drop `use_lockfile` and use the `dynamodb_table = "honua-tfstate-lock"` line instead.
 
 ```sh
-terraform -chdir=infrastructure/terraform/bootstrap/aws-validation-reaper init \
-  -backend-config=bucket=honua-tfstate-585192672263 \
-  -backend-config=key=bootstrap/aws-validation-reaper/terraform.tfstate \
-  -backend-config=region=us-east-1 -backend-config=use_lockfile=true -backend-config=encrypt=true
+cp infrastructure/terraform/bootstrap/aws-validation-reaper/backend.tf.example \
+  infrastructure/terraform/bootstrap/aws-validation-reaper/backend.tf
+terraform -chdir=infrastructure/terraform/bootstrap/aws-validation-reaper init
 terraform -chdir=infrastructure/terraform/bootstrap/aws-validation-reaper apply \
   -var oidc_provider_arn=arn:aws:iam::585192672263:oidc-provider/token.actions.githubusercontent.com
 gh variable set HONUA_AWS_VALIDATION_REAPER_ROLE_ARN -R honua-io/honua-iac \
