@@ -23,11 +23,11 @@ terraform -chdir=infrastructure/terraform/examples/registry-pin plan
 
 `terraform init` resolves `module.source`'s `?ref=` against a Git ref in this
 repository, so the ref must exist before `init` can fetch the module. The
-operator contract is to pin an immutable SemVer **tag** (e.g. `?ref=v0.2.0`) and
+operator contract is to pin an immutable SemVer **tag** (e.g. `?ref=v0.3.0`) and
 bump it to move to a newer release, then run `terraform init -upgrade`. See
 `docs/module-versioning.md` for the release process.
 
-`main.tf` pins the latest release tag, `?ref=v0.2.0`.
+`main.tf` pins the latest release tag, `?ref=v0.3.0`.
 
 ## CI validation
 
