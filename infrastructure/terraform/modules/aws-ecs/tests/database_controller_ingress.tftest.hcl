@@ -106,6 +106,28 @@ run "default_database_ingress_stays_service_only" {
     condition     = length(aws_security_group.rds[0].ingress) == 1 && one(aws_security_group.rds[0].ingress).security_groups == toset([aws_security_group.ecs.id])
     error_message = "No controller access may be added by default."
   }
+  assert {
+    condition     = length(aws_security_group.rds[0].egress) == 0
+    error_message = "The RDS security group answers connections only and must carry no egress rule (Trivy AWS-0104, D1 2026-10-26)."
+  }
+}
+
+run "redis_security_group_has_no_egress" {
+  command = plan
+  variables {
+    file_storage_provider                     = "AwsS3"
+    file_storage_aws_s3_bucket_name           = "honua-test-files"
+    redis_enabled                             = true
+    operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+  }
+  assert {
+    condition     = length(aws_security_group.redis[0].egress) == 0 && length(aws_security_group.rds[0].egress) == 0
+    error_message = "The ElastiCache and RDS security groups answer connections only and must carry no egress rule."
+  }
+  assert {
+    condition     = alltrue([for rule in aws_security_group.ecs.egress : rule.from_port != 443 ? !contains(coalesce(rule.cidr_blocks, []), "0.0.0.0/0") : true])
+    error_message = "Only the documented app-tier HTTPS rule may reach 0.0.0.0/0; data-tier egress stays inside the VPC."
+  }
 }
 
 run "only_selected_groups_reach_private_postgres" {

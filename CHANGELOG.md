@@ -16,6 +16,14 @@ module input/output contracts may still change.
 
 ### Changed
 
+- `aws-ecs`: the RDS and ElastiCache security groups carry no egress rule
+  (`egress = []`). RDS lost `TCP 443 to 0.0.0.0/0` (Trivy `AWS-0104`, CRITICAL)
+  and Redis lost all-protocol egress to the VPC CIDR. Both only answer
+  connections, and security groups are stateful, so replies are unaffected. On
+  the next apply Terraform removes the old rules from existing groups in place;
+  nothing is replaced. The ECS task group keeps outbound HTTPS to `0.0.0.0/0` as
+  a documented exception in `.trivyignore.yaml`, to be replaced by VPC endpoints
+  and an egress allow-list (#311). Founder decision D1, 2026-10-26.
 - `aws-serverless`: the control-plane event functions (reconcile, backstop,
   scheduled tick) no longer carry the HTTP-only settings
   `HostValidation__AllowedHosts__*`, `Cors__AllowedOrigins__*`,
