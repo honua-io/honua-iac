@@ -26,7 +26,12 @@
         "iam:ListRoleTags",
         "application-autoscaling:Describe*",
         "application-autoscaling:ListTagsForResource",
-        "apigateway:GET"
+        "apigateway:GET",
+        "elasticache:Describe*",
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:ListSecrets",
+        "batch:Describe*",
+        "batch:List*"
       ],
       "Resource": "*"
     },
@@ -103,6 +108,38 @@
       }
     },
     {
+      "Sid": "DeleteCellElastiCache",
+      "Effect": "Allow",
+      "Action": [
+        "elasticache:DeleteReplicationGroup",
+        "elasticache:DeleteCacheCluster",
+        "elasticache:DeleteCacheSubnetGroup",
+        "elasticache:DeleteCacheParameterGroup"
+      ],
+      "Resource": [
+        "arn:aws:elasticache:${region}:${account_id}:replicationgroup:honuar*",
+        "arn:aws:elasticache:${region}:${account_id}:cluster:honuar*",
+        "arn:aws:elasticache:${region}:${account_id}:subnetgroup:honuar*",
+        "arn:aws:elasticache:${region}:${account_id}:parametergroup:honuar*",
+        "arn:aws:elasticache:${region}:${account_id}:replicationgroup:honuan*",
+        "arn:aws:elasticache:${region}:${account_id}:cluster:honuan*",
+        "arn:aws:elasticache:${region}:${account_id}:subnetgroup:honuan*",
+        "arn:aws:elasticache:${region}:${account_id}:parametergroup:honuan*",
+        "arn:aws:elasticache:${region}:${account_id}:replicationgroup:honuaeks*",
+        "arn:aws:elasticache:${region}:${account_id}:cluster:honuaeks*",
+        "arn:aws:elasticache:${region}:${account_id}:subnetgroup:honuaeks*",
+        "arn:aws:elasticache:${region}:${account_id}:parametergroup:honuaeks*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Owner": "release-cell"
+        },
+        "Null": {
+          "aws:ResourceTag/ValidationRunId": "false"
+        }
+      }
+    },
+    {
       "Sid": "DeleteCellDbProxy",
       "Effect": "Allow",
       "Action": [
@@ -140,7 +177,8 @@
         "ec2:ReleaseAddress",
         "ec2:DeleteNetworkInterface",
         "ec2:RevokeSecurityGroupIngress",
-        "ec2:RevokeSecurityGroupEgress"
+        "ec2:RevokeSecurityGroupEgress",
+        "ec2:DeleteVpcEndpoints"
       ],
       "Resource": "arn:aws:ec2:${region}:${account_id}:*/*",
       "Condition": {

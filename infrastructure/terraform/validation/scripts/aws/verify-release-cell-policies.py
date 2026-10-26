@@ -105,6 +105,23 @@ def main():
     case('reaper', 'unowned-proxy-delete', 'rds:DeleteDBProxy', proxy, 'implicitDeny')
     case('reaper', 'no-proxy-create', 'rds:CreateDBProxy', '*', 'implicitDeny', request)
     case('reaper', 'owned-proxy-deregister', 'rds:DeregisterDBProxyTargets', proxy_tg, 'allowed', tags)
+    # ElastiCache and VPC endpoints: the sweep tears these down for stranded
+    # aws-ecs/aws-serverless cells. Owned + namespaced only; standing is denied.
+    cache = f'arn:aws:elasticache:us-east-1:{account}:replicationgroup:honuarfixture-redis'
+    case('reaper', 'owned-cache-delete', 'elasticache:DeleteReplicationGroup', cache, 'allowed', tags)
+    case('reaper', 'unowned-cache-delete', 'elasticache:DeleteReplicationGroup', cache, 'implicitDeny')
+    case('reaper', 'outside-namespace-cache-delete', 'elasticache:DeleteReplicationGroup', cache.replace('honuarfixture', 'customer-production'), 'implicitDeny', tags)
+    case('reaper', 'standing-cache-delete', 'elasticache:DeleteReplicationGroup', cache, 'explicitDeny', {**tags, 'aws:ResourceTag/Environment': 'cert'})
+    case('reaper', 'owned-cache-subnet-group-delete', 'elasticache:DeleteCacheSubnetGroup', f'arn:aws:elasticache:us-east-1:{account}:subnetgroup:honuarfixture-redis', 'allowed', tags)
+    endpoint = f'arn:aws:ec2:us-east-1:{account}:vpc-endpoint/vpce-0123456789abcdef0'
+    ec2_tags = {'ec2:ResourceTag/Owner': 'release-cell', 'ec2:ResourceTag/ValidationRunId': 'gha-208-aws-serverless'}
+    case('reaper', 'owned-endpoint-delete', 'ec2:DeleteVpcEndpoints', endpoint, 'allowed', ec2_tags)
+    case('reaper', 'unowned-endpoint-delete', 'ec2:DeleteVpcEndpoints', endpoint, 'implicitDeny')
+    case('reaper', 'standing-endpoint-delete', 'ec2:DeleteVpcEndpoints', endpoint, 'explicitDeny', {**ec2_tags, 'ec2:ResourceTag/Environment': 'cert'})
+    case('reaper', 'describe-secret', 'secretsmanager:DescribeSecret', f'arn:aws:secretsmanager:us-east-1:{account}:secret:honuarfixture-abc', 'allowed')
+    case('reaper', 'no-secret-value', 'secretsmanager:GetSecretValue', f'arn:aws:secretsmanager:us-east-1:{account}:secret:honuarfixture-abc', 'implicitDeny', tags)
+    case('reaper', 'batch-read', 'batch:DescribeJobQueues', '*', 'allowed')
+    case('reaper', 'no-batch-delete', 'batch:DeleteJobQueue', f'arn:aws:batch:us-east-1:{account}:job-queue/honuarfixture-gp', 'implicitDeny', tags)
     scaling = f'arn:aws:application-autoscaling:us-east-1:{account}:scalable-target/fixture'
     case('provision', 'tagged-scaling-create', 'application-autoscaling:RegisterScalableTarget', scaling, 'allowed', request)
     case('reaper', 'owned-scaling-delete', 'application-autoscaling:DeregisterScalableTarget', scaling, 'allowed', tags)
