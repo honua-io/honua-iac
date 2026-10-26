@@ -44,6 +44,42 @@ returns a false implicit deny for concrete log-stream ARNs even with an isolated
 allow-all policy. The verifier additionally checks exact ECS/Lambda/Batch stream
 ARNs against the rendered resource ceiling and rejects an unrelated stream.
 
+## State and apply (operator)
+
+The identities were first applied on 2026-10-10 without retained state. They are now imported into the account's state bucket, at key `bootstrap/aws-release-cells/terraform.tfstate`. Copy `backend.tf.example` to the gitignored `backend.tf`, set `bucket` to `honua-tfstate-585192672263`, and keep the account's applied inputs in a gitignored `terraform.tfvars`:
+
+```hcl
+oidc_provider_arn     = "arn:aws:iam::585192672263:oidc-provider/token.actions.githubusercontent.com"
+mirror_repository_arn = "arn:aws:ecr:us-east-1:585192672263:repository/honua-server"
+runtime_bedrock_model_arns = [
+  "arn:aws:bedrock:us-east-1:585192672263:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+  "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
+  "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
+  "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
+]
+runtime_operation_key_ring_certificate_secret_arns = ["arn:aws:secretsmanager:us-east-1:585192672263:secret:honua-release/cert/operation-key-ring-zDn618"]
+runtime_audit_chain_key_secret_arns                = ["arn:aws:secretsmanager:us-east-1:585192672263:secret:honua-release/cert/audit-chain-key-RLtpME"]
+```
+
+These values reproduce the live workload boundary exactly. The one-time import that adopted the existing resources:
+
+```sh
+A=arn:aws:iam::585192672263:policy
+for lane in provision reaper mirror; do
+  terraform import "aws_iam_role.cell[\"$lane\"]" "honua-release-cell-$lane"
+  terraform import "aws_iam_role_policy.cell[\"$lane\"]" "honua-release-cell-$lane:cell-permissions"
+  terraform import "aws_iam_role_policy_attachment.guardrails[\"$lane\"]" "honua-release-cell-$lane/$A/honua-release-cell-guardrails"
+done
+terraform import aws_iam_policy.guardrails "$A/honua-release-cell-guardrails"
+terraform import aws_iam_policy.workload_boundary "$A/honua-release-cell-workload-boundary"
+terraform import aws_iam_role.approver honua-release-approver
+terraform import aws_iam_role_policy.approver honua-release-approver:approver-generate-mac-only
+terraform import aws_iam_role_policy.verifier honua-release-cell-provision:approval-verifier-no-generate-mac
+terraform plan -out=cell-identities.tfplan   # expect in-place policy updates only
+```
+
+The `honua-release-approval-mac-*` managed-policy attachments on the provision and approver roles belong to `bootstrap/aws-exec-identity`, not this root.
+
 ## Caller migration (required before activation)
 
 - Provision, mirror and reap jobs use their corresponding `role_arns` output and
