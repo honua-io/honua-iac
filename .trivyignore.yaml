@@ -1,0 +1,22 @@
+# Trivy accepted-exception ledger (YAML ignorefile: `trivy ... --ignorefile .trivyignore.yaml`).
+#
+# Each entry is one reviewed exception for one rule, scoped to the file that holds it. An entry
+# records reason, owner, review point and follow-up in `statement`, which Trivy reports with the
+# suppressed finding (`--show-suppressed --format json`). Remove an entry when its rule is tightened.
+# Data-tier security groups (RDS, ElastiCache) carry no egress and need no entry.
+#
+# The same exception is recorded in honua-release `.trivyignore.yaml` for the copy of this module
+# that its hosted-pilot root pins, because gate-security scans that copy.
+
+misconfigurations:
+  - id: AWS-0104
+    paths:
+      - "infrastructure/terraform/modules/aws-ecs/main.tf"
+    statement: >-
+      aws_security_group.ecs "Outbound HTTPS" (TCP 443 to 0.0.0.0/0).
+      Reason: the server task reaches image registries, OIDC discovery/JWKS, STS, S3,
+      Secrets Manager, KMS, CloudWatch Logs, geocoders and customer data sources through the NAT.
+      Owner: Mike McDougall (mike@honua.io).
+      Review: 2026.1.x.
+      Follow-up: VPC endpoints + egress allow-list/proxy for app tier, honua-io/honua-iac#311.
+      Decision: founder D1, 2026-10-26.

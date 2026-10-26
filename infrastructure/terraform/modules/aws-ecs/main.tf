@@ -407,6 +407,10 @@ resource "aws_security_group" "ecs" {
     cidr_blocks = local.db_use_existing ? ["0.0.0.0/0"] : [local.vpc_cidr_block]
   }
 
+  # Accepted Trivy AWS-0104 exception (founder decision D1, 2026-10-26),
+  # recorded in .trivyignore.yaml: the server task needs outbound HTTPS through
+  # the NAT for image pulls, OIDC, STS, S3, Secrets Manager, KMS, geocoders and
+  # customer data sources. Follow-up: honua-io/honua-iac#311.
   egress {
     description = "Outbound HTTPS"
     from_port   = 443
@@ -467,13 +471,10 @@ resource "aws_security_group" "rds" {
     }
   }
 
-  egress {
-    description = "Outbound HTTPS"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+  # RDS only answers connections; security groups are stateful, so replies need
+  # no egress rule. `egress = []` (not an omitted block) makes Terraform remove
+  # any egress rule already on the group, including AWS's default allow-all.
+  egress = []
 
   tags = local.tags
 }
@@ -492,13 +493,8 @@ resource "aws_security_group" "redis" {
     security_groups = [aws_security_group.ecs.id]
   }
 
-  egress {
-    description = "Redis outbound"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = [local.vpc_cidr_block]
-  }
+  # ElastiCache only answers connections from ECS; replies need no egress rule.
+  egress = []
 
   tags = local.tags
 }
