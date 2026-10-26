@@ -47,6 +47,30 @@
 #   * --dry-run makes the whole thing read-only: it enumerates, prints the exact
 #     plan, and issues no mutating API call.
 #
+# LEGACY RELEASE-CELL VPCs (opt-in, --legacy-release-cell-vpcs). honua-release
+# e2e-cloud-aws cells created before the cells were tagged with
+# honua-release:run-id carry only Project/Environment=it/ManagedBy/Name, so the
+# Owner-tag path above cannot see them. A failed teardown can leave such a VPC
+# behind as an empty shell (subnets, IGW, security groups, a DB subnet group)
+# that still holds one of the region's VPC slots. The opt-in pass reaps ONLY a
+# VPC for which ALL of these hold, and each is a test case:
+#
+#   * its tag set is EXACTLY Project=honua-server, Environment=it,
+#     ManagedBy=terraform and Name -- any Owner, ValidationRunId,
+#     honua-release:*, Lifecycle or Purpose tag (owned or protected) excludes it;
+#   * Name is honua{n|r}aws{ec|se}<6 digits>-it-vpc, the release cell namespace;
+#   * it holds no network interface and no live NAT gateway, so nothing in it
+#     runs (no instance, load balancer, RDS, Lambda, endpoint or cache);
+#   * CloudTrail holds exactly one CreateVpc record for it (no record -- e.g.
+#     older than CloudTrail's 90-day lookup window -- means no proof: skipped);
+#   * exactly one run of the release workflow whose id starts with those six
+#     digits was created in the six hours before that CreateVpc, it ran on
+#     trunk, it is `completed`, the CreateVpc falls inside its own
+#     started..updated window, and it completed longer than --grace-hours ago;
+#   * no run of the release workflow is in progress (the pass defers);
+#   * any DB subnet group in the VPC carries the same cell name prefix.
+# Its plan joins the normal plan, so --dry-run and --max-delete apply unchanged.
+#
 # The in-job caller (terraform-manual-validation's always-step) passes
 # --this-run with the run ids it owns, which waives the run-state and grace
 # checks for exactly those ids and nothing else -- the job knows its own run is
@@ -111,6 +135,16 @@ Options:
   --dry-run                Enumerate and print the plan; delete nothing
   --no-defer-on-active     Do not defer when a validation run is in progress.
                            Only safe with --this-run.
+  --legacy-release-cell-vpcs
+                           Also reap empty pre-run-id honua-release cell VPCs
+                           (see LEGACY RELEASE-CELL VPCs above). Not with
+                           --this-run.
+  --legacy-release-repo <owner/name>
+                           Repository of the release cells' workflow
+                           (default: honua-io/honua-release)
+  --legacy-release-workflow <file>
+                           Workflow that created the release cells
+                           (default: e2e-cloud-aws.yml)
   -h, --help               Show this help
 USAGE
 }
@@ -128,6 +162,9 @@ MAX_DELETE=400
 SUMMARY_FILE=""
 DRY_RUN=false
 DEFER_ON_ACTIVE=true
+LEGACY_RELEASE_VPCS=false
+LEGACY_REPO="honua-io/honua-release"
+LEGACY_WORKFLOW="e2e-cloud-aws.yml"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -138,6 +175,9 @@ while [[ $# -gt 0 ]]; do
     --workflow) WORKFLOW_FILE="$2"; shift 2 ;;
     --run-id) ONLY_RUN_IDS+=("$2"); shift 2 ;;
     --this-run) THIS_RUN=true; shift ;;
+    --legacy-release-cell-vpcs) LEGACY_RELEASE_VPCS=true; shift ;;
+    --legacy-release-repo) LEGACY_REPO="$2"; shift 2 ;;
+    --legacy-release-workflow) LEGACY_WORKFLOW="$2"; shift 2 ;;
     --stack) STACK_FILTERS+=("$2"); shift 2 ;;
     --protect-run-id) PROTECT_RUN_IDS+=("$2"); shift 2 ;;
     --max-delete) MAX_DELETE="$2"; shift 2 ;;
@@ -161,6 +201,11 @@ fi
 
 if ! [[ "$MAX_DELETE" =~ ^[0-9]+$ ]] || (( MAX_DELETE < 1 )); then
   log_error "--max-delete must be a positive integer (got '$MAX_DELETE')"
+  exit 1
+fi
+
+if [[ "$LEGACY_RELEASE_VPCS" == "true" && "$THIS_RUN" == "true" ]]; then
+  log_error "--legacy-release-cell-vpcs is a scheduled-sweep pass; it cannot be combined with --this-run"
   exit 1
 fi
 
@@ -395,6 +440,142 @@ select_candidates() {
     | ($tags | map(select(.Key == "Stack")) | first | .Value // "") as $stack
     | ($tags | map(select(.Key == "ExpiresAtUTC")) | first | .Value // "") as $expires
     | [$r.ResourceARN, $run, $stack, $expires] | join("\u001f")
+  ' <<<"$payload")
+}
+
+# ---------------------------------------------------------------------------
+# legacy release-cell VPCs (opt-in; see LEGACY RELEASE-CELL VPCs above)
+# ---------------------------------------------------------------------------
+
+release_runs_active() {
+  local payload count state
+  gh_available || return 0
+  for state in queued in_progress waiting requested pending; do
+    if ! payload="$(gh api "repos/$LEGACY_REPO/actions/workflows/$LEGACY_WORKFLOW/runs?status=$state&per_page=1" 2>/dev/null)"; then
+      return 0  # cannot prove idle: treat as active
+    fi
+    count="$(jq -r '.total_count // 0' <<<"$payload" 2>/dev/null || echo 0)"
+    [[ "$count" =~ ^[0-9]+$ ]] && (( count > 0 )) && return 0
+  done
+  return 1
+}
+
+# Emits the same CAND/SKIP/FAIL records as select_candidates.
+select_legacy_release_vpcs() {
+  local region="$1" payload
+  if ! payload="$(aws_read resourcegroupstaggingapi get-resources \
+        --region "$region" \
+        --tag-filters "Key=Environment,Values=it" "Key=ManagedBy,Values=terraform" "Key=Project,Values=honua-server" \
+        --resource-type-filters ec2:vpc \
+        --output json 2>/dev/null)"; then
+    emit_fail "could not enumerate legacy release-cell VPCs in $region"
+    return 0
+  fi
+  if ! cleanup_validate_tag_response "$payload" >/dev/null; then
+    emit_fail "could not validate legacy release-cell VPC tags in $region"
+    return 0
+  fi
+
+  local arn exact name vpc_id prefix run6 enis nats events created created_epoch runs match
+  local run_id started_epoch updated_epoch subgroups foreign subgrp_arns
+  while IFS="$US" read -r arn exact name; do
+    [[ -z "$arn" ]] && continue
+    vpc_id="${arn##*/}"
+
+    if [[ "$exact" != "true" ]]; then
+      emit_skip "$arn" "legacy: tag set is not exactly Project/Environment=it/ManagedBy/Name"
+      continue
+    fi
+    if [[ ! "$name" =~ ^(honua[nr]aws(ec|se)([0-9]{6})-it-)vpc$ ]]; then
+      emit_skip "$arn" "legacy: Name '$name' is not a release cell VPC name"
+      continue
+    fi
+    prefix="${BASH_REMATCH[1]}"
+    run6="${BASH_REMATCH[3]}"
+
+    if ! enis="$(aws_read ec2 describe-network-interfaces --region "$region" \
+          --filters "Name=vpc-id,Values=$vpc_id" --output json 2>/dev/null)" ||
+       ! enis="$(jq -er '.NetworkInterfaces | length' <<<"$enis" 2>/dev/null)"; then
+      emit_skip "$arn" "legacy: could not read the VPC's network interfaces"
+      continue
+    fi
+    if (( enis != 0 )); then
+      emit_skip "$arn" "legacy: VPC holds $enis network interface(s); only an empty shell is reapable"
+      continue
+    fi
+    if ! nats="$(aws_read ec2 describe-nat-gateways --region "$region" \
+          --filter "Name=vpc-id,Values=$vpc_id" \
+          --query 'length(NatGateways[?State!=`deleted`])' --output text 2>/dev/null)" || [[ "$nats" != "0" ]]; then
+      emit_skip "$arn" "legacy: VPC has a live NAT gateway or it could not be read"
+      continue
+    fi
+
+    if ! events="$(aws_read cloudtrail lookup-events --region "$region" \
+          --lookup-attributes "AttributeKey=ResourceName,AttributeValue=$vpc_id" --output json 2>/dev/null)"; then
+      emit_skip "$arn" "legacy: CloudTrail unreadable; creation cannot be attributed"
+      continue
+    fi
+    created="$(jq -r '[.Events[]? | select(.EventName == "CreateVpc") | .EventTime] | if length == 1 then .[0] else "" end' <<<"$events" 2>/dev/null || echo "")"
+    created_epoch=""
+    [[ -n "$created" ]] && created_epoch="$(epoch_of "$created")"
+    if [[ -z "$created_epoch" ]]; then
+      emit_skip "$arn" "legacy: no single CloudTrail CreateVpc record; creation cannot be attributed"
+      continue
+    fi
+
+    if ! runs="$(gh api "repos/$LEGACY_REPO/actions/workflows/$LEGACY_WORKFLOW/runs?created=$(date -u -d "@$(( created_epoch - 6 * 3600 ))" +%Y-%m-%dT%H:%M:%SZ)..$(date -u -d "@$created_epoch" +%Y-%m-%dT%H:%M:%SZ)&per_page=100" 2>/dev/null)"; then
+      emit_skip "$arn" "legacy: could not list $LEGACY_WORKFLOW runs around the VPC's creation"
+      continue
+    fi
+    match="$(jq -c --arg run6 "$run6" --arg path ".github/workflows/$LEGACY_WORKFLOW" '
+      [.workflow_runs[]? | select((.id | tostring) | startswith($run6))]
+      | if length == 1 and .[0].path == $path then .[0] else empty end' <<<"$runs" 2>/dev/null || echo "")"
+    if [[ -z "$match" ]]; then
+      emit_skip "$arn" "legacy: not exactly one $LEGACY_WORKFLOW run $run6* created before the VPC"
+      continue
+    fi
+    run_id="$(jq -r '.id' <<<"$match")"
+    if [[ "$(jq -r '.status' <<<"$match")" != "completed" || "$(jq -r '.head_branch' <<<"$match")" != "trunk" ]]; then
+      emit_skip "$arn" "legacy: run $run_id is not a completed trunk run"
+      continue
+    fi
+    started_epoch="$(epoch_of "$(jq -r '.run_started_at // ""' <<<"$match")")"
+    updated_epoch="$(epoch_of "$(jq -r '.updated_at // ""' <<<"$match")")"
+    if [[ -z "$started_epoch" || -z "$updated_epoch" ]] ||
+       (( created_epoch < started_epoch || created_epoch > updated_epoch )); then
+      emit_skip "$arn" "legacy: CreateVpc is outside run $run_id's own window"
+      continue
+    fi
+    if (( NOW_EPOCH < updated_epoch + GRACE_HOURS * 3600 )); then
+      emit_skip "$arn" "legacy: run $run_id completed inside the ${GRACE_HOURS}h grace window"
+      continue
+    fi
+
+    if ! subgroups="$(aws_read rds describe-db-subnet-groups --region "$region" --output json 2>/dev/null)"; then
+      emit_skip "$arn" "legacy: could not read DB subnet groups"
+      continue
+    fi
+    foreign="$(jq -r --arg vpc "$vpc_id" --arg prefix "$prefix" '
+      [.DBSubnetGroups[]? | select(.VpcId == $vpc) | select(.DBSubnetGroupName | startswith($prefix) | not)] | length' <<<"$subgroups")"
+    if [[ "$foreign" != "0" ]]; then
+      emit_skip "$arn" "legacy: VPC is used by a DB subnet group outside the cell prefix"
+      continue
+    fi
+    subgrp_arns="$(jq -r --arg vpc "$vpc_id" '[.DBSubnetGroups[]? | select(.VpcId == $vpc) | .DBSubnetGroupArn] | join(" ")' <<<"$subgroups")"
+
+    local subgrp
+    for subgrp in $subgrp_arns; do
+      printf 'CAND%s%s%s%s%s%s\n' "$US" "$subgrp" "$US" "legacy-$run_id" "$US" "legacy-release-cell"
+    done
+    printf 'CAND%s%s%s%s%s%s\n' "$US" "$arn" "$US" "legacy-$run_id" "$US" "legacy-release-cell"
+  done < <(jq -r '
+    .ResourceTagMappingList[]
+    | . as $r
+    | ($r.Tags // []) as $tags
+    | ($tags | map({(.Key): .Value}) | add // {}) as $t
+    | ((($tags | map(.Key) | sort) == ["Environment", "ManagedBy", "Name", "Project"])
+       and $t.Environment == "it" and $t.ManagedBy == "terraform" and $t.Project == "honua-server") as $exact
+    | [$r.ResourceARN, ($exact | tostring), ($t.Name // "")] | join("\u001f")
   ' <<<"$payload")
 }
 
@@ -895,6 +1076,27 @@ main() {
       esac
     done < <(select_candidates "$region")
   done
+
+  if [[ "$LEGACY_RELEASE_VPCS" == "true" ]]; then
+    if release_runs_active; then
+      log_warn "A $LEGACY_REPO $LEGACY_WORKFLOW run is in progress (or unverifiable); deferring the legacy release-cell VPC pass."
+      SKIPPED_LINES+=("legacy release-cell VPCs | deferred: a $LEGACY_WORKFLOW run is in progress or unverifiable")
+    else
+      for region in "${REGIONS[@]}"; do
+        while IFS= read -r line; do
+          [[ -z "$line" ]] && continue
+          kind="${line%%"$US"*}"
+          rest="${line#*"$US"}"
+          case "$kind" in
+            CAND) candidates+=("$region$US$rest") ;;
+            SKIP) SKIPPED_LINES+=("${rest%%"$US"*} | ${rest#*"$US"}") ;;
+            FAIL) log_warn "$rest"; FAILURES=1 ;;
+            *) log_warn "Unrecognised candidate record: $line" ;;
+          esac
+        done < <(select_legacy_release_vpcs "$region")
+      done
+    fi
+  fi
 
   # Print the refusals as well as the plan. "Why was this NOT reaped" is the
   # question anyone reading this log actually has.

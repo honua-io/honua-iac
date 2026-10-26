@@ -67,6 +67,11 @@ case "$service $operation" in
     # The Owner tag filter is the reaper's containment boundary. Anything not
     # matching it is simply not returned, exactly as the real API behaves.
     filter="$(value_of --tag-filters)"
+    if [[ "$filter" == "Key=Environment,Values=it" ]]; then
+      # Legacy release-cell VPC pass (only when the sweep opts in).
+      cat "${FIXTURE_LEGACY:-/dev/null}" 2>/dev/null | grep . || echo '{"ResourceTagMappingList":[]}'
+      exit 0
+    fi
     if [[ "$filter" != "Key=Owner,Values=terraform-validation" ]]; then
       echo '{"ResourceTagMappingList":[]}'
       exit 0
@@ -118,10 +123,16 @@ case "$service $operation" in
     echo "${FAKE_ENIS:-{\"NetworkInterfaces\":[]}}"
     ;;
   "ec2 describe-nat-gateways")
-    if has_flag --query; then echo "0"; else echo '{"NatGateways":[]}'; fi
+    if has_flag --query; then echo "${FAKE_LIVE_NATS:-0}"; else echo '{"NatGateways":[]}'; fi
     ;;
   "ec2 describe-subnets")
     echo "${FAKE_SUBNET_IDS:-}"
+    ;;
+  "cloudtrail lookup-events")
+    if [[ -n "${FAKE_CLOUDTRAIL:-}" ]]; then echo "$FAKE_CLOUDTRAIL"; else echo '{"Events":[]}'; fi
+    ;;
+  "rds describe-db-subnet-groups")
+    if [[ -n "${FAKE_DB_SUBNET_GROUPS:-}" ]]; then echo "$FAKE_DB_SUBNET_GROUPS"; else echo '{"DBSubnetGroups":[]}'; fi
     ;;
   "ec2 describe-route-tables")
     echo '{"RouteTables":[]}'
@@ -145,6 +156,12 @@ cat > "$FAKE_BIN/gh" <<'FAKE_GH'
 set -uo pipefail
 path="${2:-}"
 case "$path" in
+  *"/actions/workflows/e2e-cloud-aws.yml/runs?status="*)
+    echo "{\"total_count\": ${FAKE_ACTIVE_RELEASE_RUNS:-0}}"
+    ;;
+  *"/actions/workflows/e2e-cloud-aws.yml/runs?created="*)
+    if [[ -n "${FAKE_RELEASE_RUN_LIST:-}" ]]; then cat "$FAKE_RELEASE_RUN_LIST"; else echo '{"workflow_runs":[]}'; fi
+    ;;
   *"/actions/workflows/"*"/runs?status="*)
     echo "{\"total_count\": ${FAKE_ACTIVE_RUNS:-0}}"
     ;;
@@ -513,6 +530,138 @@ FAKE_FINAL_TAG_ERROR=denied run_sweeper "$(resources "$REAPABLE")"
 if [[ "$RC" -ne 0 ]]; then check "final tag error refuses clean verdict" ok; else check "final tag error refuses clean verdict" no; fi
 FAKE_FINAL_TAG_MALFORMED=true run_sweeper "$(resources "$REAPABLE")"
 if [[ "$RC" -ne 0 ]]; then check "final malformed tags refuse clean verdict" ok; else check "final malformed tags refuse clean verdict" no; fi
+
+echo "== legacy release-cell VPCs (opt-in) =="
+
+# A pre-run-id honua-release e2e-cloud-aws cell VPC left as an empty shell, as
+# vpc-026e9d745f4e54ab4 (honuanawsec365606-it-vpc, run 36560629698) was.
+LEG_ARN='arn:aws:ec2:us-west-2:1:vpc/vpc-legacy'
+LEG_SUBGRP='arn:aws:rds:us-west-2:1:subgrp:honuanawsec365606-it-postgres-abc'
+legacy_vpc() {
+  # legacy_vpc <name> [extra Key=Value ...]
+  local name="$1"; shift
+  local extra='[]' kv
+  for kv in "$@"; do extra="$(jq -c --arg k "${kv%%=*}" --arg v "${kv#*=}" '. + [{Key:$k,Value:$v}]' <<<"$extra")"; done
+  jq -n --arg arn "$LEG_ARN" --arg name "$name" --argjson extra "$extra" \
+    '{ResourceTagMappingList:[{ResourceARN:$arn, Tags:([{Key:"Project",Value:"honua-server"},{Key:"Environment",Value:"it"},
+      {Key:"ManagedBy",Value:"terraform"},{Key:"Name",Value:$name}] + $extra)}]}' > "$TMP_DIR/legacy.json"
+  export FIXTURE_LEGACY="$TMP_DIR/legacy.json"
+}
+RUN_START="$(iso $(( now_epoch - 80 * 3600 )))"
+VPC_CREATED="$(iso $(( now_epoch - 79 * 3600 )))"
+RUN_END="$(iso $(( now_epoch - 78 * 3600 )))"
+release_runs() {
+  # release_runs <status> <updated_at> [extra run ids sharing the prefix...]
+  local status="$1" updated="$2"; shift 2
+  jq -n --arg st "$status" --arg start "$RUN_START" --arg end "$updated" --args '
+    {workflow_runs: ([{id:36560629698}] + ($ARGS.positional | map({id:(.|tonumber)})))
+      | map(. + {status:$st, head_branch:"trunk", path:".github/workflows/e2e-cloud-aws.yml",
+                 run_started_at:$start, updated_at:$end})}' "$@" > "$TMP_DIR/release-runs.json"
+  export FAKE_RELEASE_RUN_LIST="$TMP_DIR/release-runs.json"
+}
+legacy_defaults() {
+  legacy_vpc honuanawsec365606-it-vpc
+  release_runs completed "$RUN_END"
+  export FAKE_CLOUDTRAIL="{\"Events\":[{\"EventName\":\"DetachInternetGateway\",\"EventTime\":\"$RUN_END\"},{\"EventName\":\"CreateVpc\",\"EventTime\":\"$VPC_CREATED\"}]}"
+  export FAKE_DB_SUBNET_GROUPS="{\"DBSubnetGroups\":[{\"DBSubnetGroupName\":\"honuanawsec365606-it-postgres-abc\",\"VpcId\":\"vpc-legacy\",\"DBSubnetGroupArn\":\"$LEG_SUBGRP\"}]}"
+  unset FAKE_ENIS FAKE_LIVE_NATS FAKE_ACTIVE_RELEASE_RUNS
+}
+legacy_refused() {
+  # legacy_refused <name> -- after run_sweeper: the VPC was neither planned nor touched
+  assert_not_planned "$1: not planned" "$LEG_ARN"
+  assert_no_mutations "$1: no mutating call"
+}
+EMPTY_OWNED="$(resources)"
+
+# L1. Off by default: without the opt-in flag the legacy VPC is invisible.
+legacy_defaults
+run_sweeper "$EMPTY_OWNED"
+legacy_refused "legacy pass is opt-in"
+
+# L2. Positive: every condition holds -> the subnet group and VPC are planned,
+#     the dry run touches nothing, and a real run deletes the group before the VPC.
+legacy_defaults
+run_sweeper "$EMPTY_OWNED" --legacy-release-cell-vpcs --dry-run
+if grep -q "PLAN delete $LEG_ARN (run=legacy-36560629698" <<<"$OUT" && grep -q "PLAN delete $LEG_SUBGRP" <<<"$OUT"; then
+  check "legacy dry run plans the VPC and its DB subnet group" ok; else check "legacy dry run plans the VPC and its DB subnet group" no; fi
+assert_no_mutations "legacy dry run triggers no mutating call"
+run_sweeper "$EMPTY_OWNED" --legacy-release-cell-vpcs
+assert_deleted "legacy VPC is deleted" "$LEG_ARN"
+sub_line="$(grep -n 'delete-db-subnet-group' "$AWS_CALL_LOG" | head -1 | cut -d: -f1)"
+vpc_line="$(grep -n 'ec2 delete-vpc ' "$AWS_CALL_LOG" | head -1 | cut -d: -f1)"
+if [[ -n "$sub_line" && -n "$vpc_line" ]] && (( sub_line < vpc_line )); then
+  check "legacy DB subnet group goes before the VPC" ok; else check "legacy DB subnet group goes before the VPC" no; fi
+
+# L3. Any owned or protected tag beyond the exact it-tag set excludes it.
+for kv in Owner=release-standing Lifecycle=standing ValidationRunId=gha-1-x honua-release:run-id=1 Purpose=public-demo; do
+  legacy_defaults; legacy_vpc honuanawsec365606-it-vpc "$kv"
+  run_sweeper "$EMPTY_OWNED" --legacy-release-cell-vpcs
+  legacy_refused "legacy VPC with extra tag $kv"
+done
+
+# L4. A name outside the release cell namespace.
+for name in honua-cert-cert-vpc honuanawsec36560-it-vpc honuaxawsec365606-it-vpc; do
+  legacy_defaults; legacy_vpc "$name"
+  run_sweeper "$EMPTY_OWNED" --legacy-release-cell-vpcs
+  legacy_refused "legacy name $name"
+done
+
+# L5. Not an empty shell: a network interface or a live NAT gateway.
+legacy_defaults; export FAKE_ENIS='{"NetworkInterfaces":[{"NetworkInterfaceId":"eni-1","Status":"in-use"}]}'
+run_sweeper "$EMPTY_OWNED" --legacy-release-cell-vpcs
+legacy_refused "legacy VPC holding an ENI"
+legacy_defaults; export FAKE_LIVE_NATS=1
+run_sweeper "$EMPTY_OWNED" --legacy-release-cell-vpcs
+legacy_refused "legacy VPC with a live NAT gateway"
+
+# L6. No CloudTrail CreateVpc record (e.g. past the 90-day lookup window).
+legacy_defaults; export FAKE_CLOUDTRAIL='{"Events":[]}'
+run_sweeper "$EMPTY_OWNED" --legacy-release-cell-vpcs
+legacy_refused "legacy VPC without a CreateVpc record"
+
+# L7. The owning run is not completed, or completed inside the grace window.
+legacy_defaults; release_runs in_progress "$RUN_END"
+run_sweeper "$EMPTY_OWNED" --legacy-release-cell-vpcs
+legacy_refused "legacy VPC whose run is in progress"
+legacy_defaults; release_runs completed "$JUST_NOW"
+run_sweeper "$EMPTY_OWNED" --legacy-release-cell-vpcs
+legacy_refused "legacy VPC whose run completed inside the grace window"
+
+# L8. CreateVpc outside the run's own window (a six-digit collision).
+legacy_defaults
+export FAKE_CLOUDTRAIL="{\"Events\":[{\"EventName\":\"CreateVpc\",\"EventTime\":\"$(iso $(( now_epoch - 81 * 3600 )))\"}]}"
+run_sweeper "$EMPTY_OWNED" --legacy-release-cell-vpcs
+legacy_refused "legacy CreateVpc outside the run window"
+
+# L9. Two runs share the six-digit prefix: ambiguous, so no proof.
+legacy_defaults; release_runs completed "$RUN_END" 36560629699
+run_sweeper "$EMPTY_OWNED" --legacy-release-cell-vpcs
+legacy_refused "legacy VPC with an ambiguous run prefix"
+
+# L10. A live release run defers the whole legacy pass.
+legacy_defaults; export FAKE_ACTIVE_RELEASE_RUNS=1
+run_sweeper "$EMPTY_OWNED" --legacy-release-cell-vpcs
+legacy_refused "legacy pass while a release run is live"
+if grep -q "deferring the legacy release-cell VPC pass" <<<"$OUT"; then check "legacy pass reports its deferral" ok; else check "legacy pass reports its deferral" no; fi
+
+# L11. A DB subnet group outside the cell prefix uses the VPC.
+legacy_defaults
+export FAKE_DB_SUBNET_GROUPS='{"DBSubnetGroups":[{"DBSubnetGroupName":"someone-else","VpcId":"vpc-legacy","DBSubnetGroupArn":"arn:aws:rds:us-west-2:1:subgrp:someone-else"}]}'
+run_sweeper "$EMPTY_OWNED" --legacy-release-cell-vpcs
+legacy_refused "legacy VPC used by a foreign DB subnet group"
+
+# L12. --max-delete still caps the combined plan.
+legacy_defaults
+run_sweeper "$EMPTY_OWNED" --legacy-release-cell-vpcs --max-delete 1
+if [[ "$RC" -ne 0 ]] && grep -q "over the --max-delete cap" <<<"$OUT"; then check "legacy plan honours --max-delete" ok; else check "legacy plan honours --max-delete" no; fi
+assert_no_mutations "capped legacy plan triggers no mutating call"
+
+# L13. The in-job --this-run caller cannot opt in.
+legacy_defaults
+run_sweeper "$EMPTY_OWNED" --legacy-release-cell-vpcs --this-run --run-id gha-111-aws-ecs
+if [[ "$RC" -ne 0 ]]; then check "legacy pass refused with --this-run" ok; else check "legacy pass refused with --this-run" no; fi
+assert_no_mutations "legacy pass with --this-run triggers no mutating call"
+unset FIXTURE_LEGACY FAKE_RELEASE_RUN_LIST FAKE_CLOUDTRAIL FAKE_DB_SUBNET_GROUPS FAKE_ENIS FAKE_LIVE_NATS FAKE_ACTIVE_RELEASE_RUNS
 
 echo
 echo "passed: $PASS  failed: $FAIL"
