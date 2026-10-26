@@ -187,3 +187,41 @@ run "reject_wildcard_approver_subject" {
   }
   expect_failures = [var.approver_oidc_subject]
 }
+
+run "reaper_retires_every_cell_service_it_finds" {
+  command = plan
+  assert {
+    condition = (
+      one([for s in jsondecode(local.grant_policies.reaper).Statement : s if s.Sid == "DeleteCellElastiCache"]).Condition.StringEquals["aws:ResourceTag/Owner"] == "release-cell" &&
+      one([for s in jsondecode(local.grant_policies.reaper).Statement : s if s.Sid == "DeleteCellElastiCache"]).Condition.Null["aws:ResourceTag/ValidationRunId"] == "false" &&
+      alltrue([for r in one([for s in jsondecode(local.grant_policies.reaper).Statement : s if s.Sid == "DeleteCellElastiCache"]).Resource :
+      can(regex("^arn:aws:elasticache:us-east-1:123456789012:(replicationgroup|cluster|subnetgroup|parametergroup):(honuar|honuan|honuaeks)\\*$", r))])
+    )
+    error_message = "ElastiCache teardown must be limited to tagged release cells in the cell namespaces."
+  }
+  assert {
+    condition = (
+      contains(one([for s in jsondecode(local.grant_policies.reaper).Statement : s if s.Sid == "DeleteCellNetwork"]).Action, "ec2:DeleteVpcEndpoints") &&
+      one([for s in jsondecode(local.grant_policies.reaper).Statement : s if s.Sid == "DeleteCellNetwork"]).Condition.StringEquals["ec2:ResourceTag/Owner"] == "release-cell"
+    )
+    error_message = "VPC endpoint deletion must carry the cell network's ownership condition."
+  }
+  assert {
+    condition = alltrue([for a in ["elasticache:Describe*", "secretsmanager:DescribeSecret", "secretsmanager:ListSecrets", "batch:Describe*", "batch:List*", "rds:Describe*"] :
+    contains(one([for s in jsondecode(local.grant_policies.reaper).Statement : s if s.Sid == "Discovery"]).Action, a)])
+    error_message = "The reaper must be able to discover ElastiCache, Secrets Manager, Batch and RDS Proxy resources."
+  }
+  assert {
+    condition = alltrue([for a in flatten([for s in jsondecode(local.grant_policies.reaper).Statement : s.Action]) :
+    !startswith(a, "batch:") || startswith(a, "batch:Describe") || startswith(a, "batch:List")])
+    error_message = "The reaper's Batch access is read-only."
+  }
+  assert {
+    condition     = !strcontains(local.grant_policies.reaper, "secretsmanager:GetSecretValue") && !strcontains(local.grant_policies.reaper, "secretsmanager:*")
+    error_message = "The reaper may describe secrets but never read their values."
+  }
+  assert {
+    condition     = length([for s in jsondecode(local.lane_policies.reaper).Statement : s if contains(["ProtectStandingEnvironment", "ProtectStandingLifecycle", "ProtectEc2Environment", "ProtectEc2Lifecycle", "ProtectStandingNames"], s.Sid) && s.Effect == "Deny"]) == 5
+    error_message = "The reaper keeps every standing/demo deny."
+  }
+}
