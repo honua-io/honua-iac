@@ -178,12 +178,12 @@ jobs:
     timeout-minutes: 35
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
 
       - name: Terraform fmt check
         run: |
@@ -240,18 +240,18 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
 
       - name: Setup tflint
-        uses: terraform-linters/setup-tflint@v4
+        uses: terraform-linters/setup-tflint@90f302c255ef959cbfb4bd10581afecdb7ece3e6 # v4.1.1
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.11'
 
@@ -318,12 +318,12 @@ jobs:
       HONUA_PLATFORM_VALIDATION_IMPORT_TABLE_PREFIX: ${{ inputs.deployment_profile == 'ephemeral' && inputs.no_destroy == false && format('cloud{0}{1}', github.run_id, github.run_attempt) || '' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
       - name: Checkout honua-server platform validation suite
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: honua-io/honua-server
           ref: ${{ inputs.honua_server_ref || 'trunk' }}
@@ -346,16 +346,16 @@ jobs:
           echo "honua-server exact checkout: $actual"
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: '10.0.200'
 
       - name: Restore Azure data reuse cache
         if: ${{ inputs.reuse_data_stack && inputs.run_live }}
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ github.workspace }}/.gha-cache/azure-data-reuse.env
           key: terraform-manual-validation-azure-data-${{ needs.resolve-candidate.outputs.candidate_sha }}-${{ env.AZURE_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -633,14 +633,14 @@ jobs:
 
       - name: Upload Azure post-apply evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: platform-post-apply-azure-${{ github.run_id }}-${{ github.run_attempt }}
           path: honua-server/tests/TestResults/post-apply/**/*.trx
           if-no-files-found: ignore
       - name: Upload Azure plan artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: azure-plan-artifacts-${{ github.run_id }}
           path: ${{ runner.temp }}/plans/azure
@@ -662,7 +662,7 @@ jobs:
 
       - name: Save Azure data reuse cache
         if: ${{ always() && inputs.reuse_data_stack && inputs.run_live && steps.azure-data-cache.outputs.exists == 'true' }}
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ github.workspace }}/.gha-cache/azure-data-reuse.env
           key: terraform-manual-validation-azure-data-${{ needs.resolve-candidate.outputs.candidate_sha }}-${{ env.AZURE_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -696,12 +696,12 @@ jobs:
       HONUA_PLATFORM_VALIDATION_IMPORT_TABLE_PREFIX: ${{ inputs.deployment_profile == 'ephemeral' && inputs.no_destroy == false && format('cloud{0}{1}', github.run_id, github.run_attempt) || '' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
       - name: Checkout honua-server platform validation suite
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: honua-io/honua-server
           ref: ${{ inputs.honua_server_ref || 'trunk' }}
@@ -728,7 +728,7 @@ jobs:
         run: ': "${HONUA_AWS_VALIDATION_ROLE_ARN:?Configure the protected environment OIDC role ARN}"'
 
       - name: Configure AWS OIDC session
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ vars.HONUA_AWS_VALIDATION_ROLE_ARN }}
           aws-region: ${{ env.AWS_VALIDATION_REGION }}
@@ -736,16 +736,16 @@ jobs:
           unset-current-credentials: true
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: '10.0.200'
 
       - name: Restore AWS data reuse cache
         if: ${{ inputs.reuse_data_stack && inputs.run_live }}
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ github.workspace }}/.gha-cache/aws-data-reuse.env
           key: terraform-manual-validation-aws-data-${{ needs.resolve-candidate.outputs.candidate_sha }}-${{ env.AWS_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -908,14 +908,14 @@ jobs:
 
       - name: Upload AWS post-apply evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: platform-post-apply-aws-${{ github.run_id }}-${{ github.run_attempt }}
           path: honua-server/tests/TestResults/post-apply/**/*.trx
           if-no-files-found: ignore
       - name: Upload AWS plan artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: aws-plan-artifacts-${{ github.run_id }}
           path: ${{ runner.temp }}/plans/aws
@@ -937,7 +937,7 @@ jobs:
 
       - name: Save AWS data reuse cache
         if: ${{ always() && inputs.reuse_data_stack && inputs.run_live && steps.aws-data-cache.outputs.exists == 'true' }}
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ github.workspace }}/.gha-cache/aws-data-reuse.env
           key: terraform-manual-validation-aws-data-${{ needs.resolve-candidate.outputs.candidate_sha }}-${{ env.AWS_VALIDATION_REGION }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -964,7 +964,7 @@ jobs:
 
       - name: Refresh OIDC session for teardown
         if: ${{ always() && inputs.no_destroy == false }}
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ vars.HONUA_AWS_VALIDATION_REAPER_ROLE_ARN }}
           aws-region: ${{ env.AWS_VALIDATION_REGION }}
@@ -1024,18 +1024,18 @@ jobs:
       HONUA_ADMIN_PASSWORD: ${{ secrets.HONUA_ADMIN_PASSWORD }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
 
       - name: Setup kubectl
-        uses: azure/setup-kubectl@v4
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
 
       - name: Setup Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
 
       - name: Install k3d
         shell: bash
@@ -1146,12 +1146,12 @@ jobs:
       HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/cloud/run-cloud-post-apply-validation.sh
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
       - name: Checkout honua-server platform validation suite
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: honua-io/honua-server
           ref: ${{ inputs.honua_server_ref || 'trunk' }}
@@ -1174,18 +1174,18 @@ jobs:
           echo "honua-server exact checkout: $actual"
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: '10.0.200'
 
       - name: Setup kubectl
-        uses: azure/setup-kubectl@v4
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
 
       - name: Setup Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
 
       - name: Validate required secrets (AKS)
         shell: bash
@@ -1340,14 +1340,14 @@ jobs:
 
       - name: Upload AKS post-apply evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: platform-post-apply-aks-${{ github.run_id }}-${{ github.run_attempt }}
           path: honua-server/tests/TestResults/post-apply/**/*.trx
           if-no-files-found: ignore
       - name: Upload AKS plan artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: aks-plan-artifacts-${{ github.run_id }}
           path: ${{ runner.temp }}/plans/aks
@@ -1372,12 +1372,12 @@ jobs:
       HONUA_PLATFORM_VALIDATION_SCRIPT: ${{ github.workspace }}/honua-server/scripts/cloud/run-cloud-post-apply-validation.sh
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
       - name: Checkout honua-server platform validation suite
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: honua-io/honua-server
           ref: ${{ inputs.honua_server_ref || 'trunk' }}
@@ -1404,7 +1404,7 @@ jobs:
         run: ': "${HONUA_AWS_VALIDATION_ROLE_ARN:?Configure the protected environment OIDC role ARN}"'
 
       - name: Configure AWS OIDC session
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ vars.HONUA_AWS_EKS_VALIDATION_ROLE_ARN }}
           aws-region: ${{ env.AWS_VALIDATION_REGION }}
@@ -1412,18 +1412,18 @@ jobs:
           unset-current-credentials: true
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: '10.0.200'
 
       - name: Setup kubectl
-        uses: azure/setup-kubectl@v4
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
 
       - name: Setup Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
 
       - name: Validate required secrets (EKS)
         shell: bash
@@ -1529,14 +1529,14 @@ jobs:
 
       - name: Upload EKS post-apply evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: platform-post-apply-eks-${{ github.run_id }}-${{ github.run_attempt }}
           path: honua-server/tests/TestResults/post-apply/**/*.trx
           if-no-files-found: ignore
       - name: Upload EKS plan artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: eks-plan-artifacts-${{ github.run_id }}
           path: ${{ runner.temp }}/plans/eks
@@ -1562,7 +1562,7 @@ jobs:
 
       - name: Refresh OIDC session for teardown
         if: ${{ always() && inputs.no_destroy == false }}
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ vars.HONUA_AWS_VALIDATION_REAPER_ROLE_ARN }}
           aws-region: ${{ env.AWS_VALIDATION_REGION }}
@@ -1612,7 +1612,7 @@ jobs:
       HONUA_DB_PASSWORD: ${{ secrets.HONUA_DB_PASSWORD }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ needs.resolve-candidate.outputs.candidate_sha }}
 
@@ -1623,7 +1623,7 @@ jobs:
 
       - name: Configure AWS OIDC session
         if: ${{ inputs.cloud == 'aws' || inputs.cloud == 'both' }}
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ vars.HONUA_AWS_DRIFT_ROLE_ARN }}
           aws-region: ${{ env.AWS_VALIDATION_REGION }}
@@ -1631,7 +1631,7 @@ jobs:
           unset-current-credentials: true
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
 
       - name: Run drift detection
         shell: bash
@@ -1691,7 +1691,7 @@ jobs:
 
       - name: Upload drift artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: drift-artifacts-${{ github.run_id }}
           path: ${{ runner.temp }}/drift
