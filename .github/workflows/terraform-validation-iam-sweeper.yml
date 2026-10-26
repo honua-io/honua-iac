@@ -77,7 +77,7 @@ jobs:
       HONUA_AWS_SWEEP_REGIONS: ${{ vars.HONUA_AWS_SWEEP_REGIONS || 'us-east-1,us-west-2' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Require OIDC role
         env:
@@ -85,7 +85,7 @@ jobs:
         run: ': "${ROLE_ARN:?Configure the OIDC cleanup role ARN}"'
 
       - name: Configure AWS OIDC session
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ vars.HONUA_AWS_VALIDATION_IAM_SWEEPER_ROLE_ARN }}
           aws-region: ${{ env.AWS_DEFAULT_REGION }}
