@@ -217,7 +217,7 @@ variable "github_repository" {
 }
 
 variable "github_oidc_subjects" {
-  description = "Explicit OIDC `sub` patterns allowed to assume the cert role. Overrides github_owner/github_repository when non-empty. The cert stack defaults to the tightest practical scope — the `cert` GitHub Environment on honua-io/honua-server — so the dispatched cert workflow MUST run in a GitHub Environment named `cert`. Override only to pin a different ref/environment."
+  description = "Exact OIDC `sub` values (StringEquals; components/aws-github-oidc refuses wildcards) allowed to assume the cert role. Overrides github_owner/github_repository when non-empty. The cert stack defaults to the tightest practical scope — the `cert` GitHub Environment on honua-io/honua-server — so the dispatched cert workflow MUST run in a GitHub Environment named `cert`. Override only to pin a different ref/environment."
   type        = list(string)
   default     = ["repo:honua-io/honua-server:environment:cert"]
 }

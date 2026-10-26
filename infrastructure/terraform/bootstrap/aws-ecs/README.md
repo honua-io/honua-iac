@@ -28,6 +28,39 @@ terraform init
 terraform apply
 ```
 
+## IAM scope
+
+The user can manage IAM only for the stack it deploys:
+
+- Roles and customer-managed policies are confined to
+  `role/<workload_name_prefix>*` and `policy/<workload_name_prefix>*`. Set
+  `workload_name_prefix` to the example's `name_prefix` (`honuaecs` for `examples/aws`; the
+  default `honua` covers every shipped example).
+- `iam:CreateRole`, and any later attach/detach/put/delete of a role policy,
+  requires the role to carry this root's workload permissions boundary
+  (`iam:PermissionsBoundary` condition). The boundary
+  (`<user_name>-workload-boundary`, output `workload_permissions_boundary_arn`)
+  allows service actions but never IAM, Organizations, Account or role
+  assumption. Pass it as `permissions_boundary_arn` to `examples/aws`.
+- `iam:PassRole` is allowed only for prefix roles and only to `ecs-tasks.amazonaws.com`.
+- The separation denials from `bootstrap/aws-exec-identity` are ported:
+  `DenyLongLivedCredentials`, `DenyPassingPrivilegedRoles` and
+  `DenyDeploymentIdentityMutation` (the user's own `-policy` and `-iam`
+  policies, the boundary, and the governed `*-deploy`, `*-gha` and
+  `honua-terraform-backend*` roles, plus `protected_role_arns`), along with
+  `DenyRoleChaining` and `DenyBoundaryRemoval`.
+- IAM grants live in a second managed policy (`<user_name>-iam`, output
+  `iam_policy_arn`) because the combined document exceeds the 6144-character
+  managed-policy quota.
+
+Upgrading an existing deployment: roles created by an earlier, unbounded
+version of this user carry no boundary, so this user can no longer edit them.
+Have an administrator attach the boundary (`aws iam put-role-permissions-boundary`)
+or recreate the stack. The optional `deployment_safety` controller role from `bootstrap/aws-update-rollback-controller` carries its own boundary; wire it with an identity that owns that role.
+
+`terraform test` in this directory checks the scope offline (real provider,
+fake credentials, no AWS calls).
+
 ## Notes
 - The policy is scoped to the AWS services used by the ECS/Fargate module (VPC, ECS, ALB, RDS,
   ElastiCache, CloudWatch Logs, Secrets Manager, KMS, S3, ACM, Route53, WAF).

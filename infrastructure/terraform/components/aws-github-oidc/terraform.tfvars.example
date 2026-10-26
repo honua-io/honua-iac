@@ -8,9 +8,12 @@ environment = "cert"
 github_owner      = "honua-io"
 github_repository = "honua-server"
 
-# Tightest practical scoping: pin to a GitHub Environment (recommended) so only
-# the cert workflow running in that environment can assume the role. Leave empty
-# to fall back to repo-wide (repo:honua-io/honua-server:*).
+# Subjects are matched exactly (StringEquals). The default pins to the trunk
+# branch: repo:honua-io/honua-server:ref:refs/heads/trunk. A job that declares
+# a GitHub Environment presents the environment subject instead, so pin the cert
+# workflow to its environment (recommended):
+# github_oidc_environment = "cert"
+# or set exact subjects explicitly (wildcards are refused):
 # github_oidc_subjects = ["repo:honua-io/honua-server:environment:cert"]
 
 oidc_audience                = "sts.amazonaws.com"
@@ -26,6 +29,10 @@ resource_name_prefix = "honua-cert-cert"
 # If the account already has a GitHub OIDC provider (only one per issuer URL):
 # create_oidc_provider       = false
 # existing_oidc_provider_arn = "arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com"
+
+# Optional: honua-iac hosted-pilot-bootstrap.yml executor (replaces static keys).
+# hosted_pilot_bootstrap_role_enabled = true
+# hosted_pilot_bootstrap_policy_arns  = ["arn:aws:iam::<account>:policy/<reviewed-hosted-pilot-executor-policy>"]
 
 tags = {
   CostCenter = "certification"

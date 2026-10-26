@@ -543,6 +543,10 @@ assert_mutation_detected 'oidc-trust-subject-condition' "$OIDC_COMPONENT" \
   's|values   = local.oidc_subjects|values   = ["repo:honua-io/other-repo:*"]|' "$NOT_FOUND"
 assert_mutation_detected 'oidc-trust-audience-condition' "$OIDC_COMPONENT" \
   '/^data "aws_iam_policy_document" "trust"/,/^}/s|test     = "StringEquals"|test     = "StringLike"|' "$NOT_FOUND"
+# The subject must stay an exact match: a StringLike subject would let a
+# wildcard (repo:<owner>/<repo>:*) admit every branch, PR and environment.
+assert_mutation_detected 'oidc-trust-subject-condition' "$OIDC_COMPONENT" \
+  '/^data "aws_iam_policy_document" "trust"/,/^}/{/test     = "StringEquals"/{N;s|test     = "StringEquals"\(\n[[:space:]]*variable = "token.actions.githubusercontent.com:sub"\)|test     = "StringLike"\1|}}' "$NOT_FOUND"
 assert_mutation_detected 'oidc-trust-subject-wiring' "$OIDC_COMPONENT" \
   's|? var.github_oidc_subjects :|? ["repo:honua-io/other-repo:*"] :|' "$NOT_FOUND"
 assert_mutation_detected 'oidc-trust-subject-wiring' 'examples/aws-cert/main.tf' \

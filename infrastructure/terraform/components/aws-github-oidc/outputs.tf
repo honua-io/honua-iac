@@ -14,6 +14,16 @@ output "role_name" {
 }
 
 output "oidc_subjects" {
-  description = "The `sub` claim patterns the role trust policy authorizes."
+  description = "The exact `sub` claim values (StringEquals) the cert role trust policy authorizes."
   value       = local.oidc_subjects
+}
+
+output "hosted_pilot_bootstrap_role_arn" {
+  description = "ARN of the hosted-pilot bootstrap executor role (null when disabled). Set it as the HONUA_AWS_HOSTED_PILOT_BOOTSTRAP_ROLE_ARN repository variable in honua-io/honua-iac."
+  value       = one(aws_iam_role.hosted_pilot_bootstrap[*].arn)
+}
+
+output "hosted_pilot_bootstrap_oidc_subjects" {
+  description = "The exact `sub` values the hosted-pilot bootstrap role trust authorizes (empty when disabled)."
+  value       = var.hosted_pilot_bootstrap_role_enabled ? var.hosted_pilot_bootstrap_oidc_subjects : []
 }

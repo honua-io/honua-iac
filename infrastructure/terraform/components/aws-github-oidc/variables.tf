@@ -59,9 +59,11 @@ variable "github_oidc_thumbprints" {
 
 # ---------------------------------------------------------------------------
 # Trust scoping. The role trust policy authorizes ONLY tokens whose `sub`
-# matches these patterns. Default scopes to the cert workflow on the
-# honua-server repo. Tighten to a single ref or a GitHub Environment for the
-# narrowest blast radius (e.g. repo:honua-io/honua-server:environment:cert).
+# EXACTLY equals one of the computed subjects (StringEquals, no wildcards).
+# Default: repo:<github_owner>/<github_repository>:ref:<github_oidc_ref>, i.e.
+# the protected trunk branch of the honua-server repo. Set
+# github_oidc_environment (or github_oidc_subjects) to pin to a GitHub
+# Environment instead, e.g. repo:honua-io/honua-server:environment:cert.
 # ---------------------------------------------------------------------------
 
 variable "github_owner" {
@@ -76,10 +78,37 @@ variable "github_repository" {
   default     = "honua-server"
 }
 
+variable "github_oidc_ref" {
+  description = "Git ref the default subject pins to (repo:<owner>/<repo>:ref:<ref>). Ignored when github_oidc_environment or github_oidc_subjects is set."
+  type        = string
+  default     = "refs/heads/trunk"
+
+  validation {
+    condition     = can(regex("^refs/(heads|tags)/[^*?]+$", var.github_oidc_ref))
+    error_message = "github_oidc_ref must be an exact refs/heads/... or refs/tags/... ref with no wildcards."
+  }
+}
+
+variable "github_oidc_environment" {
+  description = "GitHub Environment the default subject pins to (repo:<owner>/<repo>:environment:<name>). Use it when the assuming job declares `environment:`, because such a job presents the environment subject instead of the ref subject. Empty pins to github_oidc_ref."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = !can(regex("[*?]", var.github_oidc_environment))
+    error_message = "github_oidc_environment must not contain wildcards."
+  }
+}
+
 variable "github_oidc_subjects" {
-  description = "Explicit list of OIDC `sub` claim patterns allowed to assume the role. When non-empty this overrides github_owner/github_repository scoping entirely. Use this to pin to a specific ref or GitHub Environment, e.g. [\"repo:honua-io/honua-server:environment:cert\"]."
+  description = "Explicit list of exact OIDC `sub` claim values allowed to assume the role (matched with StringEquals). When non-empty this overrides github_owner/github_repository/github_oidc_ref/github_oidc_environment entirely, e.g. [\"repo:honua-io/honua-server:environment:cert\"]. Wildcards are refused."
   type        = list(string)
   default     = []
+
+  validation {
+    condition     = alltrue([for subject in var.github_oidc_subjects : startswith(subject, "repo:") && !can(regex("[*?]", subject))])
+    error_message = "github_oidc_subjects must be exact repo:<owner>/<repo>:... subjects with no * or ? wildcards (the trust policy uses StringEquals)."
+  }
 }
 
 variable "oidc_audience" {
@@ -139,4 +168,67 @@ variable "jobdef_lifecycle_name_prefix" {
   description = "Name prefix for EPHEMERAL per-run Batch job definitions the certification tests register/deregister/tag (honua-certrun-<runid>-*). MUST be a namespace DISJOINT from resource_name_prefix (the standing submittable pool) so this register/deregister grant can never touch a standing definition — the cert stack passes \"honua-certrun\", which shares no wildcard-matching prefix with honua-cert-cert-*. Defaults to resource_name_prefix when empty (no separation — only safe when nothing standing shares the prefix)."
   type        = string
   default     = ""
+}
+
+# ---------------------------------------------------------------------------
+# Optional hosted-pilot foundation bootstrap executor role
+# (honua-iac .github/workflows/hosted-pilot-bootstrap.yml). See main.tf.
+# ---------------------------------------------------------------------------
+
+variable "hosted_pilot_bootstrap_role_enabled" {
+  description = "Create the OIDC role assumed by honua-iac's hosted-pilot-bootstrap.yml `bootstrap` job. Set its role_arn output as the HONUA_AWS_HOSTED_PILOT_BOOTSTRAP_ROLE_ARN repository variable."
+  type        = bool
+  default     = false
+}
+
+variable "hosted_pilot_bootstrap_role_name" {
+  description = "Name of the hosted-pilot bootstrap executor role. Keep the -gha suffix: the local-only bootstrap users deny passing or editing *-gha roles."
+  type        = string
+  default     = "honua-hosted-pilot-bootstrap-gha"
+}
+
+variable "hosted_pilot_bootstrap_oidc_subjects" {
+  description = "Exact `sub` values (StringEquals) allowed to assume the hosted-pilot bootstrap role. Default: the honua-iac job running in the terraform-ephemeral environment. Pair it with a trunk-only deployment-branch policy on that environment."
+  type        = list(string)
+  default     = ["repo:honua-io/honua-iac:environment:terraform-ephemeral"]
+
+  validation {
+    condition = length(var.hosted_pilot_bootstrap_oidc_subjects) > 0 && alltrue([
+      for subject in var.hosted_pilot_bootstrap_oidc_subjects :
+      startswith(subject, "repo:honua-io/honua-iac:") && !can(regex("[*?]", subject))
+    ])
+    error_message = "hosted_pilot_bootstrap_oidc_subjects must be exact repo:honua-io/honua-iac:... subjects with no wildcards."
+  }
+}
+
+variable "hosted_pilot_bootstrap_policy_arns" {
+  description = "Managed policy ARNs granting the reviewed hosted-pilot foundation executor permissions (the policy the retired static-key principal held). Required when the role is enabled. Broad AWS-managed administrator policies are refused."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for arn in var.hosted_pilot_bootstrap_policy_arns :
+      can(regex("^arn:[^:]+:iam::([0-9]{12}|aws):policy/.+$", arn)) &&
+      !can(regex(":policy/(AdministratorAccess|PowerUserAccess|IAMFullAccess)$", arn))
+    ])
+    error_message = "hosted_pilot_bootstrap_policy_arns must be IAM managed policy ARNs and must not be AdministratorAccess, PowerUserAccess or IAMFullAccess."
+  }
+}
+
+variable "hosted_pilot_bootstrap_permissions_boundary_arn" {
+  description = "Optional permissions boundary for the hosted-pilot bootstrap role. Empty attaches none."
+  type        = string
+  default     = ""
+}
+
+variable "hosted_pilot_bootstrap_max_session_duration_seconds" {
+  description = "Maximum session duration for the hosted-pilot bootstrap role. The workflow requests one hour, which covers its 45-minute job deadline."
+  type        = number
+  default     = 3600
+
+  validation {
+    condition     = var.hosted_pilot_bootstrap_max_session_duration_seconds >= 3600 && var.hosted_pilot_bootstrap_max_session_duration_seconds <= 43200
+    error_message = "hosted_pilot_bootstrap_max_session_duration_seconds must be between 3600 and 43200."
+  }
 }

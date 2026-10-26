@@ -23,15 +23,16 @@ module "eks" {
   cluster_secret_encryption_enabled        = var.cluster_secret_encryption_enabled
   cluster_secret_encryption_key_arn        = var.cluster_secret_encryption_key_arn
 
-  workload_identity_mode      = var.workload_identity_mode
-  kubernetes_namespace        = var.kubernetes_namespace
-  server_service_account_name = var.server_service_account_name
-  gp_job_namespace            = var.gp_job_namespace
-  gp_job_service_account_name = var.gp_job_service_account_name
-  gp_job_image                = var.gp_job_image
-  gp_job_data_bucket_arn      = var.gp_job_data_bucket_arn
-  gp_job_data_bucket_enabled  = var.gp_job_data_bucket_enabled
-  permissions_boundary_arn    = var.permissions_boundary_arn
+  workload_identity_mode                  = var.workload_identity_mode
+  kubernetes_namespace                    = var.kubernetes_namespace
+  server_service_account_name             = var.server_service_account_name
+  gp_job_namespace                        = var.gp_job_namespace
+  gp_job_service_account_name             = var.gp_job_service_account_name
+  gp_job_image                            = var.gp_job_image
+  gp_job_data_bucket_arn                  = var.gp_job_data_bucket_arn
+  gp_job_data_bucket_enabled              = var.gp_job_data_bucket_enabled
+  permissions_boundary_arn                = var.permissions_boundary_arn
+  infrastructure_permissions_boundary_arn = var.infrastructure_permissions_boundary_arn
 
   admin_password                                    = var.honua_admin_password
   connection_encryption_master_key                  = var.honua_connection_encryption_master_key

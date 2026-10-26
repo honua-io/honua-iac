@@ -598,7 +598,7 @@ run_custom_policy_checks() {
   assert_scoped_pattern "oidc-trust-audience-condition" "$oidc_component" \
     'test = "StringEquals" variable = "token\.actions\.githubusercontent\.com:aud" values = \[var\.oidc_audience\]' "$oidc_trust"
   assert_scoped_pattern "oidc-trust-subject-condition" "$oidc_component" \
-    'test = "StringLike" variable = "token\.actions\.githubusercontent\.com:sub" values = local\.oidc_subjects' "$oidc_trust"
+    'test = "StringEquals" variable = "token\.actions\.githubusercontent\.com:sub" values = local\.oidc_subjects' "$oidc_trust"
   assert_regex_present '^[[:space:]]*oidc_subjects[[:space:]]*=[[:space:]]*length\(var\.github_oidc_subjects\)[[:space:]]*>[[:space:]]*0[[:space:]]*\?[[:space:]]*var\.github_oidc_subjects[[:space:]]*:' \
     "$oidc_component" "oidc-trust-subject-wiring"
   assert_regex_present_in_block "oidc-trust-subject-wiring" "$ROOT/examples/aws-cert/main.tf" \

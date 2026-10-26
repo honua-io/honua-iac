@@ -33,3 +33,13 @@ output "release_posture" {
     reason                = "Creates a long-lived IAM user principal. The certified lane requires short-lived SSO/OIDC/STS federation and creates no IAM user or access key."
   }
 }
+
+output "workload_permissions_boundary_arn" {
+  description = "Permissions boundary every role created by this user must carry. Pass it as permissions_boundary_arn to examples/aws-serverless (with use_batch_service_linked_role = true when GP Batch is enabled)."
+  value       = aws_iam_policy.workload_boundary.arn
+}
+
+output "iam_policy_arn" {
+  description = "Prefix-scoped, boundary-enforced IAM management policy attached to the user alongside policy_arn."
+  value       = aws_iam_policy.iam.arn
+}

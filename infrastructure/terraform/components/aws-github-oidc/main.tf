@@ -6,7 +6,9 @@
 # no long-lived IAM access key. The trust policy pins:
 #   - issuer  = token.actions.githubusercontent.com (the OIDC provider)
 #   - aud     = sts.amazonaws.com
-#   - sub     = repo:<owner>/<repo>:* (or the explicit subjects override)
+#   - sub     = repo:<owner>/<repo>:ref:refs/heads/trunk by default, or
+#               repo:<owner>/<repo>:environment:<name>, or the explicit
+#               subjects override -- always matched with StringEquals
 # and the permission policy is scoped by Resource/Condition to the
 # honua-cert-* certification surface (Batch submit against the STANDING pool +
 # job-definition register/deregister/tag scoped to a DISJOINT run-only namespace
@@ -31,9 +33,12 @@ locals {
 
   oidc_provider_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : var.existing_oidc_provider_arn
 
-  # Trust `sub` patterns. Explicit subjects win; otherwise scope to the repo.
+  # Exact trust `sub` values (StringEquals). Explicit subjects win; otherwise
+  # pin to one GitHub Environment when named, else to one ref (default trunk).
+  # A job that declares an environment presents the environment subject, not
+  # the ref subject.
   oidc_subjects = length(var.github_oidc_subjects) > 0 ? var.github_oidc_subjects : [
-    "repo:${var.github_owner}/${var.github_repository}:*"
+    var.github_oidc_environment != "" ? "repo:${var.github_owner}/${var.github_repository}:environment:${var.github_oidc_environment}" : "repo:${var.github_owner}/${var.github_repository}:ref:${var.github_oidc_ref}"
   ]
 
   account_id = data.aws_caller_identity.current.account_id
@@ -69,7 +74,8 @@ resource "aws_iam_openid_connect_provider" "github" {
 
 # ---------------------------------------------------------------------------
 # Assume-role trust policy — web identity federation scoped to the OIDC
-# provider, the sts.amazonaws.com audience, and the repo/ref `sub` patterns.
+# provider, the sts.amazonaws.com audience, and the exact repo/ref or
+# repo/environment `sub` values.
 # ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "trust" {
@@ -89,7 +95,7 @@ data "aws_iam_policy_document" "trust" {
     }
 
     condition {
-      test     = "StringLike"
+      test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
       values   = local.oidc_subjects
     }
@@ -333,4 +339,71 @@ resource "aws_iam_role_policy" "permissions" {
   name   = "${local.name}-cert-permissions"
   role   = aws_iam_role.github_actions.id
   policy = data.aws_iam_policy_document.permissions.json
+}
+
+# ---------------------------------------------------------------------------
+# Optional: honua-iac hosted-pilot foundation bootstrap executor
+# (.github/workflows/hosted-pilot-bootstrap.yml, job `bootstrap`). Replaces the
+# static AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY repository secrets with a
+# short-lived web-identity session. Disabled by default.
+#
+# GitHub puts either the environment or the ref in `sub`, never both, and the
+# job runs in the terraform-ephemeral environment, so the trust pins the exact
+# repo + environment subject. The trunk-only half of the pin is enforced by the
+# workflow's own `github.ref == 'refs/heads/trunk'` guard and must also be set
+# as the environment's deployment-branch policy (trunk only).
+#
+# This component does not invent the executor's permissions: the operator
+# attaches the reviewed policy the static-key principal held today.
+# ---------------------------------------------------------------------------
+
+data "aws_iam_policy_document" "hosted_pilot_bootstrap_trust" {
+  count = var.hosted_pilot_bootstrap_role_enabled ? 1 : 0
+
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = [local.oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = [var.oidc_audience]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = var.hosted_pilot_bootstrap_oidc_subjects
+    }
+  }
+}
+
+resource "aws_iam_role" "hosted_pilot_bootstrap" {
+  count = var.hosted_pilot_bootstrap_role_enabled ? 1 : 0
+
+  name                 = var.hosted_pilot_bootstrap_role_name
+  description          = "Short-lived OIDC executor for honua-iac hosted-pilot-bootstrap.yml (terraform-ephemeral, trunk)."
+  assume_role_policy   = data.aws_iam_policy_document.hosted_pilot_bootstrap_trust[0].json
+  max_session_duration = var.hosted_pilot_bootstrap_max_session_duration_seconds
+  permissions_boundary = var.hosted_pilot_bootstrap_permissions_boundary_arn != "" ? var.hosted_pilot_bootstrap_permissions_boundary_arn : null
+  tags                 = merge(local.tags, { Purpose = "hosted-pilot-foundation-bootstrap" })
+
+  lifecycle {
+    precondition {
+      condition     = length(var.hosted_pilot_bootstrap_policy_arns) > 0
+      error_message = "hosted_pilot_bootstrap_policy_arns must name the reviewed executor policy when hosted_pilot_bootstrap_role_enabled = true."
+    }
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "hosted_pilot_bootstrap" {
+  for_each = var.hosted_pilot_bootstrap_role_enabled ? toset(var.hosted_pilot_bootstrap_policy_arns) : toset([])
+
+  role       = aws_iam_role.hosted_pilot_bootstrap[0].name
+  policy_arn = each.value
 }
