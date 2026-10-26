@@ -269,6 +269,7 @@ jobs:
             "infrastructure/terraform/bootstrap/aws-tfstate"
             "infrastructure/terraform/bootstrap/aws-terraform-oidc"
             "infrastructure/terraform/bootstrap/aws-release-cells"
+            "infrastructure/terraform/bootstrap/aws-validation-reaper"
             "infrastructure/terraform/bootstrap/aws-exec-identity"
             "infrastructure/terraform/bootstrap/aws-serverless"
             "infrastructure/terraform/bootstrap/aws-eks"
@@ -401,6 +402,7 @@ jobs:
         run: |
           set -euo pipefail
           terraform -chdir=infrastructure/terraform/bootstrap/aws-release-cells test -no-color
+          terraform -chdir=infrastructure/terraform/bootstrap/aws-validation-reaper test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-exec-identity test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-ecs test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-serverless test -no-color

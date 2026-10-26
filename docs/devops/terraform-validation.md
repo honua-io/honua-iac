@@ -420,3 +420,19 @@ falling back silently to fixtures.
 - Azure reuse is now resilient to compute-stage failures: if the Azure data stack was created successfully and `destroy-data` is disabled, the workflow keeps that PostGIS/Redis stack for the next run even when ACA/Functions verification fails later.
 - The manual validation workflow concurrency key now includes `inputs.cloud`, so separate `cloud=aws` and `cloud=azure` dispatches can run concurrently on the same ref without blocking each other.
 - To run the cross-repo platform suite locally after apply, point the live validation scripts at the `honua-server` runner: `export HONUA_PLATFORM_VALIDATION_SCRIPT=/path/to/honua-server/scripts/run-cloud-post-apply-validation.sh`.
+
+## Legacy release-cell VPCs (opt-in)
+
+Before honua-release tagged its `e2e-cloud-aws` cells with `honua-release:run-id`, a cell carried only `Project`, `Environment=it`, `ManagedBy=terraform` and `Name`. If its teardown failed, it could leave an empty VPC shell behind: subnets, an IGW, security groups and a DB subnet group, still holding one of the region's VPC slots. One example is `vpc-026e9d745f4e54ab4` (`honuanawsec365606-it-vpc`, run 36560629698).
+
+The infra reaper reaps such a VPC only when it is dispatched with `legacy_release_cell_vpcs: true` (`--legacy-release-cell-vpcs`). The schedule never opts in. The pass refuses unless every check below holds. Each check is a case in `test-sweep-orphaned-validation-infra.sh`.
+
+- The tag set is exactly those four tags, and the name is `honua{n|r}aws{ec|se}<6 digits>-it-vpc`.
+- The VPC holds no network interface and no live NAT gateway.
+- CloudTrail has exactly one `CreateVpc` record for it. With no record, for example past the 90-day lookup window, nothing is reaped.
+- Exactly one trunk run of `e2e-cloud-aws.yml` with that six-digit prefix was created in the six hours before the `CreateVpc`. That run is `completed`, the `CreateVpc` falls inside its own window, and it completed more than `grace_hours` ago.
+- No `e2e-cloud-aws.yml` run is in progress.
+- Every DB subnet group in the VPC carries the cell name prefix.
+
+`dry_run` and `max_delete` apply to this pass unchanged. Always dispatch the dry run first and read the plan.
+
