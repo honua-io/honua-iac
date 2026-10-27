@@ -4,7 +4,7 @@ Two plan-only OIDC roles for nightly drift plans (honua-iac#320, honua-demo-infr
 
 | Role | Assumed by | Trusts exactly | Plans |
 |---|---|---|---|
-| `honua-demo-infra-drift-gha` | honua-demo-infra `.github/workflows/drift-plan.yml` | `repo:honua-io/honua-demo-infra:environment:demo-drift` | every stack under `stacks/` (state prefix `demo/aws-demo/`) |
+| `honua-demo-infra-drift-gha` | honua-demo-infra `.github/workflows/drift-plan.yml` | `repo:honua-io@217718039/honua-demo-infra@1310514636:environment:demo-drift` (honua-demo-infra uses immutable subjects) | every stack under `stacks/` (state prefix `demo/aws-demo/`) |
 | `honua-iac-bootstrap-drift-gha` | honua-iac `.github/workflows/bootstrap-drift-plan.yml` | `repo:honua-io/honua-iac:environment:bootstrap-drift` | the bootstrap roots in `infrastructure/terraform/bootstrap/drift-roots.json` (state prefix `bootstrap/`) |
 
 Both roles come from `components/aws-github-oidc`, with the account's existing GitHub provider (`create_oidc_provider = false`), exact environment subjects and `cert_permissions_enabled = false`. GitHub puts either the environment or the ref in `sub`, never both. So "trunk only" is the environment's deployment-branch policy: give `demo-drift` and `bootstrap-drift` a policy that allows only `trunk`. Branch and `pull_request` subjects are refused by variable validation.

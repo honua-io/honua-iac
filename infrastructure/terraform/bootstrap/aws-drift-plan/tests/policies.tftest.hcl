@@ -52,10 +52,10 @@ run "trust_is_exact_environment_subjects" {
     condition = jsondecode(module.oidc["demo_infra"].trust_policy_json).Statement[0].Condition == {
       StringEquals = {
         "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-        "token.actions.githubusercontent.com:sub" = "repo:honua-io/honua-demo-infra:environment:demo-drift"
+        "token.actions.githubusercontent.com:sub" = "repo:honua-io@217718039/honua-demo-infra@1310514636:environment:demo-drift"
       }
     }
-    error_message = "The demo drift role must trust only the demo-drift environment subject."
+    error_message = "The demo drift role must trust only honua-demo-infra's immutable demo-drift environment subject."
   }
 
   assert {
@@ -144,7 +144,7 @@ run "branch_subjects_are_refused" {
   command = plan
 
   variables {
-    demo_infra_oidc_subjects = ["repo:honua-io/honua-demo-infra:ref:refs/heads/trunk"]
+    demo_infra_oidc_subjects = ["repo:honua-io@217718039/honua-demo-infra@1310514636:ref:refs/heads/trunk"]
   }
 
   expect_failures = [var.demo_infra_oidc_subjects]
@@ -160,4 +160,27 @@ run "demo_role_reads_every_managed_secret_version" {
     ])
     error_message = "Refresh reads the module secrets and the STAC seed receipt secret; both prefixes are needed."
   }
+}
+
+run "name_form_demo_infra_subject_is_refused" {
+  # honua-demo-infra tokens carry the immutable subject; a name-form subject
+  # never matches (drift-plan run 40579808276), so it must not pass review.
+  command = plan
+
+  variables {
+    demo_infra_oidc_subjects = ["repo:honua-io/honua-demo-infra:environment:demo-drift"]
+  }
+
+  expect_failures = [var.demo_infra_oidc_subjects]
+}
+
+run "immutable_form_iac_subject_is_refused" {
+  # honua-iac tokens carry the name-form subject (use_immutable_subject = false).
+  command = plan
+
+  variables {
+    iac_bootstrap_oidc_subjects = ["repo:honua-io@217718039/honua-iac@1:environment:bootstrap-drift"]
+  }
+
+  expect_failures = [var.iac_bootstrap_oidc_subjects]
 }

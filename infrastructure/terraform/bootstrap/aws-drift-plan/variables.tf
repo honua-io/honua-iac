@@ -36,14 +36,21 @@ variable "demo_infra_oidc_subjects" {
     drift job, which runs in the demo-drift environment. Give that environment a
     deployment-branch policy of trunk only, so the role is reachable only from
     trunk AND that environment (GitHub puts one of the two in `sub`, never both).
+
+    honua-io/honua-demo-infra issues IMMUTABLE subjects
+    (`gh api repos/honua-io/honua-demo-infra/actions/oidc/customization/sub`:
+    use_immutable_subject = true), so `sub` is
+    repo:honua-io@<owner id>/honua-demo-infra@<repo id>:environment:<name>, never
+    the name form. The name form never matches and every assume fails
+    (drift-plan run 40579808276). Same form as stacks/aws/stac-seed-gate.tf there.
   EOT
   type        = list(string)
-  default     = ["repo:honua-io/honua-demo-infra:environment:demo-drift"]
+  default     = ["repo:honua-io@217718039/honua-demo-infra@1310514636:environment:demo-drift"]
   validation {
     condition = length(var.demo_infra_oidc_subjects) > 0 && alltrue([
-      for subject in var.demo_infra_oidc_subjects : can(regex("^repo:honua-io/honua-demo-infra:environment:[A-Za-z0-9_.-]+$", subject))
+      for subject in var.demo_infra_oidc_subjects : can(regex("^repo:honua-io@[0-9]+/honua-demo-infra@[0-9]+:environment:[A-Za-z0-9_.-]+$", subject))
     ])
-    error_message = "Only exact honua-io/honua-demo-infra environment subjects may assume the demo drift role (no wildcards, no branch or pull_request subjects)."
+    error_message = "honua-demo-infra uses immutable OIDC subjects: only exact repo:honua-io@<owner id>/honua-demo-infra@<repo id>:environment:<name> subjects may assume the demo drift role (no name-form, wildcard, branch or pull_request subjects)."
   }
 }
 
@@ -80,7 +87,7 @@ variable "demo_readable_object_arns" {
 # --- honua-iac bootstrap roots ---------------------------------------------
 
 variable "iac_bootstrap_oidc_subjects" {
-  description = "Exact subjects allowed to assume the bootstrap plan-only role: the honua-iac bootstrap-drift environment (trunk-only deployment-branch policy)."
+  description = "Exact subjects allowed to assume the bootstrap plan-only role: the honua-iac bootstrap-drift environment (trunk-only deployment-branch policy). honua-io/honua-iac issues name-form subjects (use_immutable_subject = false), like the reaper and release-cell roles that already work."
   type        = list(string)
   default     = ["repo:honua-io/honua-iac:environment:bootstrap-drift"]
   validation {
