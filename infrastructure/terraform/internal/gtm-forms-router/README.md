@@ -60,5 +60,8 @@ configuration value to force a refresh.
 
 ## State
 
-State is local to this root (`terraform.tfstate`, gitignored). Do not point
-this root at the state of any other stack.
+State is remote, at `internal/gtm-forms-router/terraform.tfstate` in the
+account's state bucket (`backend.tf.example`; copy it to the gitignored
+`backend.tf`). It used to be local, and no copy of that local state survives:
+the live role and function are unmanaged until they are imported into the
+remote state (honua-iac#320). Never point this root at another stack's state.

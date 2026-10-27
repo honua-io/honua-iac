@@ -1,0 +1,26 @@
+# Remote state for the state substrate itself (bucket and lock table).
+#
+# Copy to backend.tf (gitignored) and replace the bucket placeholder with the
+# account's state bucket from bootstrap/aws-tfstate (honua-tfstate-585192672263
+# in the Honua account). Never commit the activated backend.tf.
+#
+# Chicken and egg: the first apply of this root creates the bucket, so it runs
+# with local state. Immediately afterwards, copy this file to backend.tf and run
+# `terraform init -migrate-state` so the substrate's own state lives in the
+# bucket it created. Delete the local terraform.tfstate once the migration is
+# confirmed (`terraform state list` against the remote backend).
+# The key is exclusive to this root. Locking: `use_lockfile = true` needs
+# Terraform >= 1.10; on 1.5-1.9 drop it and use the dynamodb_table line.
+
+terraform {
+  backend "s3" {
+    bucket       = "REPLACE_WITH_STATE_BUCKET_NAME"
+    key          = "bootstrap/aws-tfstate/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
+
+    # Terraform 1.5-1.9 fallback:
+    # dynamodb_table = "honua-tfstate-lock"
+  }
+}

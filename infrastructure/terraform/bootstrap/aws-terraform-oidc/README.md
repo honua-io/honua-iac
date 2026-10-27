@@ -7,3 +7,7 @@ The trust policy matches one exact issuer, audience, and subject. The inline pol
 Apply this root only after `bootstrap/aws-tfstate` has been applied. Supply the existing OIDC provider and the exact backend resource ARNs through variables. The `workload_identity_contract` output contains references and identity metadata only; tokens, credentials, state contents, and secrets are never outputs.
 
 Terraform validation is the supported local check. No live AWS qualification is implied by a successful plan or validation.
+
+## State
+
+Remote, at `bootstrap/aws-terraform-oidc/terraform.tfstate` (`backend.tf.example`; copy it to the gitignored `backend.tf`). In the Honua account the role `honua-terraform-backend` exists, but no state for it was kept. Import it into the remote state before the next apply of this root (honua-iac#320).

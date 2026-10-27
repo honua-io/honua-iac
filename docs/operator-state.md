@@ -76,6 +76,22 @@ shipping one, if two roots claim the same object key, or if a root goes back to
 declaring a backend inside a tracked `.tf` file. The documentation cannot claim a
 `backend.tf.example` that does not exist again.
 
+### Every root, not only the release-qualified ones
+
+`scripts/check-terraform-roots.py` (CI, honua-iac#320) extends the backend
+contract to every Terraform root under `infrastructure/terraform`:
+
+- each root either ships a `backend.tf.example` with an active remote backend,
+  or is listed in `infrastructure/terraform/terraform-roots.json` with the reason
+  it never holds shared state (customer and Azure templates, the unsupported
+  IAM-user bootstraps);
+- no tracked `.tf` file declares a backend;
+- no `*.tfstate` is committed anywhere;
+- `terraform.tfstate` and `backend.tf` are gitignored in every root.
+
+The bootstrap roots applied in the Honua account are also drift-planned nightly
+against their remote state (`.github/workflows/bootstrap-drift-plan.yml`).
+
 Backend creation is a **separate, explicitly applied operation**. Apply
 `bootstrap/aws-tfstate` on its own, with its own plan/apply/teardown decision, so
 the bucket is never a hidden side effect of `terraform init`.
