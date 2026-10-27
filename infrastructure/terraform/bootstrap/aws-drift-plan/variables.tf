@@ -59,10 +59,10 @@ variable "demo_region" {
   default     = "us-west-2"
 }
 
-variable "demo_secret_name_prefix" {
-  description = "Terraform-managed demo secrets. Refresh reads their values (aws_secretsmanager_secret_version), so the role may GetSecretValue on exactly these."
-  type        = string
-  default     = "honua-demo-demo/"
+variable "demo_secret_name_prefixes" {
+  description = "Name prefixes of the Terraform-managed demo secrets. Refresh reads their values (aws_secretsmanager_secret_version), so the role may GetSecretValue on exactly these: the module's secrets and the STAC seed receipt secret."
+  type        = list(string)
+  default     = ["honua-demo-demo/", "honua-demo/demo/"]
 }
 
 variable "demo_denied_secret_names" {

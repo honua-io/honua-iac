@@ -149,3 +149,15 @@ run "branch_subjects_are_refused" {
 
   expect_failures = [var.demo_infra_oidc_subjects]
 }
+
+run "demo_role_reads_every_managed_secret_version" {
+  command = plan
+
+  assert {
+    condition = toset(flatten([one([for s in jsondecode(data.aws_iam_policy_document.plan_only["demo_infra"].json).Statement : s if try(s.Sid, "") == "ManagedSecretRefresh"]).Resource])) == toset([
+      "arn:aws:secretsmanager:us-west-2:123456789012:secret:honua-demo-demo/*",
+      "arn:aws:secretsmanager:us-west-2:123456789012:secret:honua-demo/demo/*",
+    ])
+    error_message = "Refresh reads the module secrets and the STAC seed receipt secret; both prefixes are needed."
+  }
+}

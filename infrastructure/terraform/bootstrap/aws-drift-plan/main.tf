@@ -124,7 +124,9 @@ locals {
     "arn:aws:s3:::honua-demo-data-${local.account_id}/manifest/*",
   ]
 
-  demo_secret_arn = "arn:aws:secretsmanager:${var.demo_region}:${local.account_id}:secret:${var.demo_secret_name_prefix}*"
+  demo_secret_arns = [
+    for prefix in var.demo_secret_name_prefixes : "arn:aws:secretsmanager:${var.demo_region}:${local.account_id}:secret:${prefix}*"
+  ]
   demo_denied_secret_arns = [
     for name in var.demo_denied_secret_names : "arn:aws:secretsmanager:*:${local.account_id}:secret:${name}*"
   ]
@@ -222,7 +224,7 @@ data "aws_iam_policy_document" "plan_only" {
       sid       = "ManagedSecretRefresh"
       effect    = "Allow"
       actions   = ["secretsmanager:GetSecretValue"]
-      resources = [local.demo_secret_arn]
+      resources = local.demo_secret_arns
     }
   }
 
