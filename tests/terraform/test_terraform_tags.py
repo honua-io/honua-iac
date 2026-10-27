@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -80,6 +81,36 @@ class TagResolution(unittest.TestCase):
     def test_comments_do_not_count(self):
         expr = expression(tags.strip_comments(resource('  tags = { ManagedBy = "t" } # Owner = "x"')))
         self.assertFalse(tags.covered(expr, {}))
+
+
+class ScanRoots(unittest.TestCase):
+    """scan() over a throwaway tree: provider default_tags resolved through locals."""
+
+    def scan(self, provider_tags: str):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            root = repo / "infrastructure" / "terraform" / "bootstrap" / "x"
+            root.mkdir(parents=True)
+            (root / "main.tf").write_text(
+                LOCALS
+                + f'provider "aws" {{\n  default_tags {{\n    tags = {provider_tags}\n  }}\n}}\n'
+                + 'resource "aws_iam_role" "r" {\n  name = "x"\n}\n'
+            )
+            saved = tags.REPO, tags.TERRAFORM
+            tags.REPO, tags.TERRAFORM = repo, repo / "infrastructure" / "terraform"
+            try:
+                return tags.scan({"aws_iam_role"})
+            finally:
+                tags.REPO, tags.TERRAFORM = saved
+
+    def test_default_tags_from_a_local_cover_untagged_resources(self):
+        findings, summary = self.scan("local.common_tags")
+        self.assertEqual(findings, [])
+        self.assertTrue(summary[0][1], "provider default_tags through local.common_tags must count as covered")
+
+    def test_default_tags_from_a_partial_local_do_not(self):
+        findings, _ = self.scan("local.partial")
+        self.assertEqual(len(findings), 1)
 
 
 if __name__ == "__main__":
