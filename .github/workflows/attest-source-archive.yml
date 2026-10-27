@@ -1,0 +1,99 @@
+name: Attest Source Archive
+
+# Publisher attestations for the archive release locks pin. honua-release pins
+# honua-iac as https://github.com/honua-io/honua-iac/archive/<commit>.tar.gz by
+# the sha256 of the bytes GitHub serves. Its post-gate collector looks up
+# repos/honua-io/honua-iac/attestations/sha256:<those bytes> and verifies each
+# bundle with --source-digest <pinned commit> --signer-workflow this file, so
+# each trunk commit is attested by a run whose github.sha is that commit.
+
+on:
+  push:
+    branches: [trunk]
+  pull_request:
+    paths:
+      - ".github/workflows/attest-source-archive.yml"
+      - "scripts/verify_source_archive.py"
+      - "scripts/test_verify_source_archive.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: attest-source-archive-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    name: Archive verifier tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run archive verifier and workflow contract tests
+        run: python3 -m unittest discover -s scripts -p 'test_verify_source_archive.py' -v
+
+  attest:
+    name: Attest the commit archive
+    needs: contract
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/trunk'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # GitHub generates these bytes, so attest them only after proving the
+      # archive is exactly this commit's tree (pax commit id plus every member).
+      - name: Fetch and verify the published archive
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          archive="${RUNNER_TEMP}/honua-iac-${GITHUB_SHA}.tar.gz"
+          url="https://github.com/${GITHUB_REPOSITORY}/archive/${GITHUB_SHA}.tar.gz"
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 -o "${archive}" "${url}"
+          digest="$(python3 scripts/verify_source_archive.py \
+            --archive "${archive}" \
+            --commit "${GITHUB_SHA}" \
+            --prefix "${GITHUB_REPOSITORY#*/}-${GITHUB_SHA}")"
+          mkdir -p "${RUNNER_TEMP}/tree"
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}/tree"
+          echo "ARCHIVE=${archive}" >> "${GITHUB_ENV}"
+          echo "Verified ${digest} at ${url}" >> "${GITHUB_STEP_SUMMARY}"
+
+      # CycloneDX: actions/attest types SPDX as .../Document/v2.3, which the
+      # collector does not accept; it accepts https://cyclonedx.org/bom.
+      - name: Generate the archive SBOM
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          path: ${{ runner.temp }}/tree
+          format: cyclonedx-json
+          output-file: ${{ runner.temp }}/archive.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Refuse an empty SBOM
+        run: |
+          python3 - "${RUNNER_TEMP}/archive.cdx.json" <<'PY'
+          import json, sys
+          bom = json.load(open(sys.argv[1], encoding="utf-8"))
+          if bom.get("bomFormat") != "CycloneDX" or not bom.get("components"):
+              raise SystemExit(f"{sys.argv[1]} is not a non-empty CycloneDX SBOM")
+          PY
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ env.ARCHIVE }}
+
+      - name: Attest the SBOM
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: ${{ env.ARCHIVE }}
+          sbom-path: ${{ runner.temp }}/archive.cdx.json
