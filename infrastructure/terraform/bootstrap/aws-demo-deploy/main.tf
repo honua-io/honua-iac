@@ -270,10 +270,15 @@ data "aws_iam_policy_document" "apply" {
   }
 
   # --- denies: hold whatever else is ever attached ---------------------------
+  # Every regional service the Allows above reach (global IAM, CloudFront,
+  # Route 53 and Budgets requests are signed for us-east-1).
   statement {
-    sid       = "DenyOtherRegions"
-    effect    = "Deny"
-    actions   = ["*"]
+    sid    = "DenyOtherRegions"
+    effect = "Deny"
+    actions = [
+      "acm:*", "apigateway:*", "cloudwatch:*", "ec2:*", "ecr:*", "elasticache:*", "geo:*",
+      "kms:*", "lambda:*", "logs:*", "rds:*", "s3:*", "secretsmanager:*",
+    ]
     resources = ["*"]
     condition {
       test     = "StringNotEquals"
