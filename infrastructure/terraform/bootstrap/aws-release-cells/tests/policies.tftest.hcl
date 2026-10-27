@@ -225,3 +225,15 @@ run "reaper_retires_every_cell_service_it_finds" {
     error_message = "The reaper keeps every standing/demo deny."
   }
 }
+
+run "only_the_reaper_lane_gets_a_two_hour_session" {
+  command = plan
+  assert {
+    condition = (
+      aws_iam_role.cell["reaper"].max_session_duration == 7200 &&
+      aws_iam_role.cell["provision"].max_session_duration == 3600 &&
+      aws_iam_role.cell["mirror"].max_session_duration == 3600
+    )
+    error_message = "The reaper lane must accept the sweep's 7200 s session; provision and mirror stay at one hour."
+  }
+}
