@@ -103,7 +103,7 @@ data "aws_iam_policy_document" "trust" {
 }
 
 resource "aws_iam_role" "github_actions" {
-  name                 = "${local.name}-gha"
+  name                 = var.role_name != "" ? var.role_name : "${local.name}-gha"
   assume_role_policy   = data.aws_iam_policy_document.trust.json
   max_session_duration = var.max_session_duration_seconds
   tags                 = local.tags
@@ -336,9 +336,19 @@ data "aws_iam_policy_document" "permissions" {
 }
 
 resource "aws_iam_role_policy" "permissions" {
+  count = var.cert_permissions_enabled ? 1 : 0
+
   name   = "${local.name}-cert-permissions"
   role   = aws_iam_role.github_actions.id
   policy = data.aws_iam_policy_document.permissions.json
+}
+
+# The cert policy became optional (cert_permissions_enabled) so a consumer can
+# reuse this federation for a non-cert role and attach its own policy to
+# role_name. Existing consumers keep the same object at the indexed address.
+moved {
+  from = aws_iam_role_policy.permissions
+  to   = aws_iam_role_policy.permissions[0]
 }
 
 # ---------------------------------------------------------------------------

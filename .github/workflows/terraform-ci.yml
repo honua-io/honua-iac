@@ -21,6 +21,9 @@ on:
       - 'scripts/check-tfvars-examples.sh'
       - 'scripts/bootstrap-gh-vars.sh'
       - 'scripts/check-backend-examples.sh'
+      - 'scripts/bootstrap-drift-roots.py'
+      - 'scripts/terraform-plan-report.py'
+      - '.github/workflows/bootstrap-drift-plan.yml'
       - 'scripts/package-customer-dist.sh'
       - 'scripts/new-terraform-lineage-contract.ps1'
       - 'scripts/terraform-exact-plan.sh'
@@ -75,6 +78,9 @@ on:
       - 'scripts/check-tfvars-examples.sh'
       - 'scripts/bootstrap-gh-vars.sh'
       - 'scripts/check-backend-examples.sh'
+      - 'scripts/bootstrap-drift-roots.py'
+      - 'scripts/terraform-plan-report.py'
+      - '.github/workflows/bootstrap-drift-plan.yml'
       - 'scripts/package-customer-dist.sh'
       - 'scripts/new-terraform-lineage-contract.ps1'
       - 'scripts/terraform-exact-plan.sh'
@@ -270,6 +276,7 @@ jobs:
             "infrastructure/terraform/bootstrap/aws-terraform-oidc"
             "infrastructure/terraform/bootstrap/aws-release-cells"
             "infrastructure/terraform/bootstrap/aws-validation-reaper"
+            "infrastructure/terraform/bootstrap/aws-drift-plan"
             "infrastructure/terraform/bootstrap/aws-exec-identity"
             "infrastructure/terraform/bootstrap/aws-serverless"
             "infrastructure/terraform/bootstrap/aws-eks"
@@ -403,6 +410,7 @@ jobs:
           set -euo pipefail
           terraform -chdir=infrastructure/terraform/bootstrap/aws-release-cells test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-validation-reaper test -no-color
+          terraform -chdir=infrastructure/terraform/bootstrap/aws-drift-plan test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-exec-identity test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-ecs test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-serverless test -no-color
@@ -493,6 +501,12 @@ jobs:
       - name: Scheduled cleanup role precondition contract
         shell: bash
         run: python3 tests/workflows/test_cleanup_role_precondition.py
+
+      - name: Bootstrap drift plan contract (root coverage, redacted report)
+        shell: bash
+        run: |
+          python3 scripts/bootstrap-drift-roots.py --check
+          python3 tests/workflows/test_bootstrap_drift_plan.py
 
       - name: Database pool sizing block is identical across modules
         shell: bash

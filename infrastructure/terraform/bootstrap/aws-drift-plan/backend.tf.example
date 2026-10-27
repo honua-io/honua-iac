@@ -1,0 +1,21 @@
+# Remote state for the plan-only drift roles.
+#
+# Copy to backend.tf (gitignored) and replace the bucket placeholder with the
+# account's state bucket from bootstrap/aws-tfstate (honua-tfstate-585192672263
+# in the Honua account). Never commit the activated backend.tf.
+#
+# The key is exclusive to this root. Locking: `use_lockfile = true` needs
+# Terraform >= 1.10; on 1.5-1.9 drop it and use the dynamodb_table line.
+
+terraform {
+  backend "s3" {
+    bucket       = "REPLACE_WITH_STATE_BUCKET_NAME"
+    key          = "bootstrap/aws-drift-plan/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
+
+    # Terraform 1.5-1.9 fallback:
+    # dynamodb_table = "honua-tfstate-lock"
+  }
+}
