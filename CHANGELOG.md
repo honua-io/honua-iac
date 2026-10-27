@@ -14,6 +14,16 @@ module input/output contracts may still change.
 
 ## Unreleased
 
+## v0.3.0
+
+Third pinnable release, cut from trunk `d5b7bec` (the #312 merge commit, which
+also carries #310). It is a `0.x` **minor** bump, not a patch: per
+[`docs/module-versioning.md`](docs/module-versioning.md) it adds optional inputs
+and changes defaults that alter apply behaviour. Upgrading changes the `aws-ecs`
+RDS and ElastiCache security groups in place (their egress rules are removed);
+review the plan before applying. These notes moved here from `Unreleased` after
+the tag; the tagged tree still lists them under `Unreleased`.
+
 ### Changed
 
 - `aws-ecs`: the RDS and ElastiCache security groups carry no egress rule
