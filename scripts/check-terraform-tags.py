@@ -133,11 +133,11 @@ def scan(taggable: set[str] | None):
     for root in aws_roots():
         text = {tf: strip_comments(tf.read_text(encoding="utf-8")) for tf in sorted(root.glob("*.tf"))}
         joined = "\n".join(text.values())
+        locals_ = local_maps(joined)
         providers = [body for _, body, _ in blocks(joined, r'^provider\s+"aws"\s*\{')]
         default_ok = bool(providers) and all(
-            any(has_keys(dt) for _, dt, _ in blocks(body, r'^\s*default_tags\s*\{')) for body in providers
+            any(covered(dt, locals_) for _, dt, _ in blocks(body, r'^\s*default_tags\s*\{')) for body in providers
         )
-        locals_ = local_maps(joined)
         missing = []
         total = 0
         for tf, content in text.items():

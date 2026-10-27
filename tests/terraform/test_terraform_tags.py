@@ -72,6 +72,11 @@ class TagResolution(unittest.TestCase):
         body = next(tags.blocks(provider, r'^provider\s+"aws"\s*\{'))[1]
         self.assertTrue(any(tags.has_keys(dt) for _, dt, _ in tags.blocks(body, r'^\s*default_tags\s*\{')))
 
+    def test_default_tags_through_a_local(self):
+        provider = 'provider "aws" {\n  default_tags {\n    tags = local.common_tags\n  }\n}\n'
+        body = next(tags.blocks(provider, r'^provider\s+"aws"\s*\{'))[1]
+        self.assertTrue(any(tags.covered(dt, self.locals_) for _, dt, _ in tags.blocks(body, r'^\s*default_tags\s*\{')))
+
     def test_comments_do_not_count(self):
         expr = expression(tags.strip_comments(resource('  tags = { ManagedBy = "t" } # Owner = "x"')))
         self.assertFalse(tags.covered(expr, {}))
