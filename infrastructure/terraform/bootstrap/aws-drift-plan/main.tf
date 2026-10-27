@@ -228,6 +228,54 @@ data "aws_iam_policy_document" "plan_only" {
     }
   }
 
+  # Refresh decrypts through two services, and the NotAction backstop below
+  # denied both until kms:Decrypt was listed (honua-demo-infra drift run
+  # 40588126748: "Access to KMS is not allowed" on every secret version, and
+  # every Lambda environment read back as null). The keys are the AWS managed
+  # aws/secretsmanager and aws/lambda keys, whose key policies already allow any
+  # account principal via the service, so IAM is the only gate. Each grant is
+  # bound to its service and to the demo's own secrets and functions through the
+  # encryption context.
+  dynamic "statement" {
+    for_each = each.value.secrets ? [1] : []
+    content {
+      sid       = "DecryptManagedSecretsViaSecretsManager"
+      effect    = "Allow"
+      actions   = ["kms:Decrypt"]
+      resources = ["arn:aws:kms:${var.demo_region}:${local.account_id}:key/*"]
+      condition {
+        test     = "StringEquals"
+        variable = "kms:ViaService"
+        values   = ["secretsmanager.${var.demo_region}.amazonaws.com"]
+      }
+      condition {
+        test     = "StringLike"
+        variable = "kms:EncryptionContext:SecretARN"
+        values   = local.demo_secret_arns
+      }
+    }
+  }
+
+  dynamic "statement" {
+    for_each = each.value.secrets ? [1] : []
+    content {
+      sid       = "DecryptDemoLambdaEnvironmentViaLambda"
+      effect    = "Allow"
+      actions   = ["kms:Decrypt"]
+      resources = ["arn:aws:kms:${var.demo_region}:${local.account_id}:key/*"]
+      condition {
+        test     = "StringEquals"
+        variable = "kms:ViaService"
+        values   = ["lambda.${var.demo_region}.amazonaws.com"]
+      }
+      condition {
+        test     = "StringLike"
+        variable = "kms:EncryptionContext:aws:lambda:FunctionArn"
+        values   = ["arn:aws:lambda:${var.demo_region}:${local.account_id}:function:${var.demo_function_name_prefix}*"]
+      }
+    }
+  }
+
   dynamic "statement" {
     for_each = each.value.secrets && length(local.demo_denied_secret_arns) > 0 ? [1] : []
     content {
@@ -248,9 +296,68 @@ data "aws_iam_policy_document" "plan_only" {
       local.state_object_actions,
       local.lock_object_actions,
       length(each.value.object_arns) > 0 ? local.demo_object_reads : [],
-      each.value.secrets ? ["secretsmanager:GetSecretValue"] : [],
+      each.value.secrets ? ["secretsmanager:GetSecretValue", "kms:Decrypt"] : [],
     ))
     resources = ["*"]
+  }
+
+  # The AWS managed keys' policies allow Decrypt to every account principal via
+  # their service, so an IAM Allow alone would not bound it: without these
+  # denies the role could read any function's environment (lambda:Get* is
+  # account-wide). Decrypt stays limited to the demo's secrets and functions.
+  dynamic "statement" {
+    for_each = each.value.secrets ? [1] : []
+    content {
+      sid       = "DenyDecryptOutsideSecretsManagerAndLambda"
+      effect    = "Deny"
+      actions   = ["kms:Decrypt"]
+      resources = ["*"]
+      condition {
+        test     = "StringNotEquals"
+        variable = "kms:ViaService"
+        values   = ["secretsmanager.${var.demo_region}.amazonaws.com", "lambda.${var.demo_region}.amazonaws.com"]
+      }
+    }
+  }
+
+  dynamic "statement" {
+    for_each = each.value.secrets ? [1] : []
+    content {
+      sid       = "DenyDecryptOfOtherSecrets"
+      effect    = "Deny"
+      actions   = ["kms:Decrypt"]
+      resources = ["*"]
+      condition {
+        test     = "StringEquals"
+        variable = "kms:ViaService"
+        values   = ["secretsmanager.${var.demo_region}.amazonaws.com"]
+      }
+      condition {
+        test     = "StringNotLike"
+        variable = "kms:EncryptionContext:SecretARN"
+        values   = local.demo_secret_arns
+      }
+    }
+  }
+
+  dynamic "statement" {
+    for_each = each.value.secrets ? [1] : []
+    content {
+      sid       = "DenyDecryptOfOtherFunctionEnvironments"
+      effect    = "Deny"
+      actions   = ["kms:Decrypt"]
+      resources = ["*"]
+      condition {
+        test     = "StringEquals"
+        variable = "kms:ViaService"
+        values   = ["lambda.${var.demo_region}.amazonaws.com"]
+      }
+      condition {
+        test     = "StringNotLike"
+        variable = "kms:EncryptionContext:aws:lambda:FunctionArn"
+        values   = ["arn:aws:lambda:${var.demo_region}:${local.account_id}:function:${var.demo_function_name_prefix}*"]
+      }
+    }
   }
 
   # The only writes are lock files under the role's own state prefix.
