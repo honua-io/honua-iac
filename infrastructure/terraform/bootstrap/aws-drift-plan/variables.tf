@@ -32,10 +32,16 @@ variable "max_session_duration_seconds" {
 
 variable "demo_infra_oidc_subjects" {
   description = <<-EOT
-    Exact subjects allowed to assume the demo plan-only role. Default: the nightly
-    drift job, which runs in the demo-drift environment. Give that environment a
-    deployment-branch policy of trunk only, so the role is reachable only from
-    trunk AND that environment (GitHub puts one of the two in `sub`, never both).
+    Exact subjects allowed to assume the demo plan-only role:
+      demo-drift  the nightly drift job. Its deployment-branch policy is trunk only,
+                  so this subject means trunk AND that environment (GitHub puts one
+                  of the two in `sub`, never both).
+      demo-plan   the pull-request plan job of terraform.yml (honua-demo-infra#104).
+                  It runs on PR branches, so it is NOT trunk-pinned: any writer who
+                  can push a branch can run a read-only plan with this role, which
+                  includes reading state and the Terraform-managed demo secrets.
+                  Add required reviewers to demo-plan to gate that, or drop the
+                  subject to stop PR plans.
 
     honua-io/honua-demo-infra issues IMMUTABLE subjects
     (`gh api repos/honua-io/honua-demo-infra/actions/oidc/customization/sub`:
@@ -45,7 +51,10 @@ variable "demo_infra_oidc_subjects" {
     (drift-plan run 40579808276). Same form as stacks/aws/stac-seed-gate.tf there.
   EOT
   type        = list(string)
-  default     = ["repo:honua-io@217718039/honua-demo-infra@1310514636:environment:demo-drift"]
+  default = [
+    "repo:honua-io@217718039/honua-demo-infra@1310514636:environment:demo-drift",
+    "repo:honua-io@217718039/honua-demo-infra@1310514636:environment:demo-plan",
+  ]
   validation {
     condition = length(var.demo_infra_oidc_subjects) > 0 && alltrue([
       for subject in var.demo_infra_oidc_subjects : can(regex("^repo:honua-io@[0-9]+/honua-demo-infra@[0-9]+:environment:[A-Za-z0-9_.-]+$", subject))

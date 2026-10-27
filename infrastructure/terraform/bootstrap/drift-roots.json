@@ -2,6 +2,14 @@
   "comment": "Every root under infrastructure/terraform/bootstrap and how .github/workflows/bootstrap-drift-plan.yml treats it (honua-iac#320). scripts/bootstrap-drift-roots.py refuses an unlisted root. applied=true: planned nightly against its state with the inputs below ({account_id} and {state_bucket} are filled in at run time); any change is drift. applied=false: the job asserts that no state object exists under its key. A standing entry tolerates ONE exact provider artifact and must link the issue that removes it.",
   "state_key_prefix": "bootstrap/",
   "roots": {
+    "aws-demo-deploy": {
+      "applied": true,
+      "state_key": "bootstrap/aws-demo-deploy/terraform.tfstate",
+      "vars": {
+        "oidc_provider_arn": "arn:aws:iam::{account_id}:oidc-provider/token.actions.githubusercontent.com",
+        "state_bucket_name": "{state_bucket}"
+      }
+    },
     "aws-drift-plan": {
       "applied": true,
       "state_key": "bootstrap/aws-drift-plan/terraform.tfstate",
