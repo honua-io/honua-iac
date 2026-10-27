@@ -22,13 +22,14 @@ cell or the reaper can own them.
 
 ## Apply
 
-State is in the account's state bucket:
+State is in the account's state bucket, at the same key as before. The backend
+moved from a tracked partial `backend "s3" {}` block to `backend.tf.example`
+(AGENTS.md; honua-iac#320). An existing working directory needs
+`terraform init -reconfigure` once; the state itself does not move.
 
 ```sh
-terraform init \
-  -backend-config=bucket=honua-tfstate-585192672263 \
-  -backend-config=key=bootstrap/aws-update-rollback-controller/terraform.tfstate \
-  -backend-config=region=us-east-1 -backend-config=use_lockfile=true -backend-config=encrypt=true
+sed 's/REPLACE_WITH_STATE_BUCKET_NAME/honua-tfstate-585192672263/' backend.tf.example > backend.tf
+terraform init -reconfigure
 terraform plan -out=controller.tfplan
 terraform apply controller.tfplan
 ```

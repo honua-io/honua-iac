@@ -94,3 +94,7 @@ see `scripts/terraform-backend-identity.sh` and
 This root creates no IAM users, access keys, OIDC providers, or workload roles.
 Short-lived execution identity lives in `bootstrap/aws-terraform-oidc` (backend
 access) and `bootstrap/aws-exec-identity` (infrastructure deployment).
+
+## State of this root
+
+The first apply creates the bucket, so it runs with local state. Right after that, copy `backend.tf.example` to `backend.tf` and run `terraform init -migrate-state`, so the substrate's own state lives in the bucket it created. In the Honua account the bucket exists, but this root's state was not kept. Import the bucket and lock table into `bootstrap/aws-tfstate/terraform.tfstate` before changing it with Terraform (honua-iac#320).

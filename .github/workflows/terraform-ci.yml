@@ -24,6 +24,8 @@ on:
       - 'scripts/bootstrap-drift-roots.py'
       - 'scripts/terraform-plan-report.py'
       - '.github/workflows/bootstrap-drift-plan.yml'
+      - 'scripts/check-terraform-roots.py'
+      - 'scripts/check-terraform-tags.py'
       - 'scripts/package-customer-dist.sh'
       - 'scripts/new-terraform-lineage-contract.ps1'
       - 'scripts/terraform-exact-plan.sh'
@@ -81,6 +83,8 @@ on:
       - 'scripts/bootstrap-drift-roots.py'
       - 'scripts/terraform-plan-report.py'
       - '.github/workflows/bootstrap-drift-plan.yml'
+      - 'scripts/check-terraform-roots.py'
+      - 'scripts/check-terraform-tags.py'
       - 'scripts/package-customer-dist.sh'
       - 'scripts/new-terraform-lineage-contract.ps1'
       - 'scripts/terraform-exact-plan.sh'
@@ -277,6 +281,7 @@ jobs:
             "infrastructure/terraform/bootstrap/aws-release-cells"
             "infrastructure/terraform/bootstrap/aws-validation-reaper"
             "infrastructure/terraform/bootstrap/aws-drift-plan"
+            "infrastructure/terraform/bootstrap/aws-update-rollback-controller"
             "infrastructure/terraform/bootstrap/aws-exec-identity"
             "infrastructure/terraform/bootstrap/aws-serverless"
             "infrastructure/terraform/bootstrap/aws-eks"
@@ -373,6 +378,24 @@ jobs:
       - name: Backend example gate regression test (refusal rules)
         shell: bash
         run: ./infrastructure/terraform/validation/scripts/shared/test-backend-examples.sh
+
+      # honua-iac#320: every root keeps remote state (backend.tf.example) or is a
+      # listed local-only template, no tracked backend block, no committed state.
+      - name: Terraform root state contract
+        shell: bash
+        run: |
+          python3 scripts/check-terraform-roots.py
+          python3 tests/terraform/test_terraform_roots.py
+
+      # honua-iac#320: ManagedBy/Owner on taggable AWS resources. WARNING mode
+      # (annotations, exit 0) until the existing roots are tagged; then add --strict.
+      - name: ManagedBy/Owner tag check (warning)
+        shell: bash
+        run: |
+          python3 scripts/check-terraform-tags.py \
+            --schema-root infrastructure/terraform/bootstrap/aws-validation-reaper \
+            --summary "$GITHUB_STEP_SUMMARY"
+          python3 tests/terraform/test_terraform_tags.py
 
       # The aws-cert postgis-bootstrap Lambda applies the certification serving
       # fixture as one transaction, so its SQL splitter and sha256 verification

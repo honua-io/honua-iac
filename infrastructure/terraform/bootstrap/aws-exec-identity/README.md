@@ -162,3 +162,7 @@ assert on.
 
 Terraform validation is the supported local check. A successful plan or validate
 implies no live AWS qualification; that gate is honua-iac#118.
+
+## State
+
+Remote, at `bootstrap/aws-exec-identity/terraform.tfstate` (`backend.tf.example`; copy it to the gitignored `backend.tf`). Never keep this root's state on a workstation: the nightly bootstrap drift plan can only see roots whose state is in the bucket.

@@ -1,0 +1,22 @@
+{
+  "comment": "Terraform roots that may run on local state, each with the reason it never holds shared or long-lived state. scripts/check-terraform-roots.py fails CI for any root that is neither listed here nor ships backend.tf.example (honua-iac#320). Adding a root here is a reviewed decision: a root applied in the Honua account must ship backend.tf.example instead.",
+  "local_state_allowed": {
+    "infrastructure/terraform/bootstrap/aws-ecs": "Unsupported local-only IAM-user bootstrap; the policy gate keeps its unsupported markers. Never applied in the Honua account.",
+    "infrastructure/terraform/bootstrap/aws-eks": "Unsupported local-only IAM-user bootstrap; the policy gate keeps its unsupported markers. Never applied in the Honua account.",
+    "infrastructure/terraform/bootstrap/aws-serverless": "Unsupported local-only IAM-user bootstrap; the policy gate keeps its unsupported markers. Never applied in the Honua account.",
+    "infrastructure/terraform/bootstrap/aws-support-access": "Template a customer applies in their own account to grant Honua support access; the customer owns its state. Never applied in the Honua account.",
+    "infrastructure/terraform/bootstrap/azure-aca": "Azure operator template; Azure state qualification is out of scope (honua-iac#149). The operator supplies an azurerm backend.",
+    "infrastructure/terraform/bootstrap/azure-aks": "Azure operator template; Azure state qualification is out of scope (honua-iac#149). The operator supplies an azurerm backend.",
+    "infrastructure/terraform/bootstrap/azure-functions": "Azure operator template; Azure state qualification is out of scope (honua-iac#149). The operator supplies an azurerm backend.",
+    "infrastructure/terraform/bootstrap/azure-support-access": "Template a customer applies in their own Azure subscription; the customer owns its state.",
+    "infrastructure/terraform/components/aws-github-oidc": "Component consumed as a module (examples/aws-cert, bootstrap/aws-drift-plan, bootstrap/aws-demo-deploy); state lives with the consuming root. A standalone apply is an operator template.",
+    "infrastructure/terraform/components/cloud-demo-smoke-credentials": "Azure federated-identity component (examples/azure-cert copies it); Azure state qualification is out of scope (honua-iac#149).",
+    "infrastructure/terraform/examples/azure": "Azure operator example; Azure state qualification is out of scope (honua-iac#149). The operator supplies an azurerm backend.",
+    "infrastructure/terraform/examples/azure-aks": "Azure operator example; Azure state qualification is out of scope (honua-iac#149). The operator supplies an azurerm backend.",
+    "infrastructure/terraform/examples/azure-cert": "Azure certification example; Azure state qualification is out of scope (honua-iac#149).",
+    "infrastructure/terraform/examples/azure-data": "Azure operator example; Azure state qualification is out of scope (honua-iac#149). The operator supplies an azurerm backend.",
+    "infrastructure/terraform/examples/azure-functions": "Azure operator example; Azure state qualification is out of scope (honua-iac#149). The operator supplies an azurerm backend.",
+    "infrastructure/terraform/examples/observability": "Kubernetes add-on example installed into an operator's cluster; the operator supplies the backend.",
+    "infrastructure/terraform/examples/registry-pin": "External-consumer example of the Git-source module pin; validated in CI, never applied by Honua."
+  }
+}
