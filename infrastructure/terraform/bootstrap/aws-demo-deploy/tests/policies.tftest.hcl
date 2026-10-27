@@ -47,7 +47,7 @@ run "trust_is_the_protected_demo_environment_only" {
     condition = jsondecode(module.oidc.trust_policy_json).Statement[0].Condition == {
       StringEquals = {
         "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-        "token.actions.githubusercontent.com:sub" = "repo:honua-io/honua-demo-infra:environment:demo"
+        "token.actions.githubusercontent.com:sub" = "repo:honua-io@217718039/honua-demo-infra@1310514636:environment:demo"
       }
     }
     error_message = "The apply role must trust only the demo environment subject."
@@ -111,7 +111,18 @@ run "pull_request_subjects_are_refused" {
   command = plan
 
   variables {
-    oidc_subjects = ["repo:honua-io/honua-demo-infra:pull_request"]
+    oidc_subjects = ["repo:honua-io@217718039/honua-demo-infra@1310514636:pull_request"]
+  }
+
+  expect_failures = [var.oidc_subjects]
+}
+
+run "name_form_subject_is_refused" {
+  # honua-demo-infra tokens carry the immutable subject; the name form never matches.
+  command = plan
+
+  variables {
+    oidc_subjects = ["repo:honua-io/honua-demo-infra:environment:demo"]
   }
 
   expect_failures = [var.oidc_subjects]

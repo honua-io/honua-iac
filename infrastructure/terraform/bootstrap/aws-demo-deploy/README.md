@@ -4,7 +4,7 @@ The apply role for demo.honua.io (honua-demo-infra#104). honua-demo-infra `.gith
 
 ## Trust
 
-Built with `components/aws-github-oidc`: the account's existing provider, `cert_permissions_enabled = false`, and one exact subject, `repo:honua-io/honua-demo-infra:environment:demo`. GitHub puts either the environment or the ref in `sub`, never both. Configure `demo` with:
+Built with `components/aws-github-oidc`: the account's existing provider, `cert_permissions_enabled = false`, and one exact subject, `repo:honua-io@217718039/honua-demo-infra@1310514636:environment:demo`. honua-demo-infra issues immutable OIDC subjects (`use_immutable_subject = true`), and validation refuses the name form, which would never match. GitHub puts either the environment or the ref in `sub`, never both. Configure `demo` with:
 - **required reviewers**, so every apply is approved by a person;
 - a **deployment-branch policy of `trunk` only**.
 

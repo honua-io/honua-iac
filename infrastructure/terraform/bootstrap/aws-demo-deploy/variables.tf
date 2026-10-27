@@ -27,14 +27,17 @@ variable "oidc_subjects" {
     Exact subjects allowed to assume the apply role. Default: the apply job of
     honua-demo-infra .github/workflows/terraform.yml, which runs in the protected
     `demo` environment (required reviewers, trunk-only deployment-branch policy).
+    honua-io/honua-demo-infra issues immutable subjects (use_immutable_subject =
+    true): repo:honua-io@<owner id>/honua-demo-infra@<repo id>:environment:<name>.
+    The name form never matches (honua-demo-infra drift-plan run 40579808276).
   EOT
   type        = list(string)
-  default     = ["repo:honua-io/honua-demo-infra:environment:demo"]
+  default     = ["repo:honua-io@217718039/honua-demo-infra@1310514636:environment:demo"]
   validation {
     condition = length(var.oidc_subjects) > 0 && alltrue([
-      for subject in var.oidc_subjects : can(regex("^repo:honua-io/honua-demo-infra:environment:[A-Za-z0-9_.-]+$", subject))
+      for subject in var.oidc_subjects : can(regex("^repo:honua-io@[0-9]+/honua-demo-infra@[0-9]+:environment:[A-Za-z0-9_.-]+$", subject))
     ])
-    error_message = "Only exact honua-io/honua-demo-infra environment subjects may assume the apply role (no wildcards, no branch or pull_request subjects)."
+    error_message = "honua-demo-infra uses immutable OIDC subjects: only exact repo:honua-io@<owner id>/honua-demo-infra@<repo id>:environment:<name> subjects may assume the apply role (no name-form, wildcard, branch or pull_request subjects)."
   }
 }
 
