@@ -117,6 +117,7 @@ locals {
     "route53:GetHostedZone",
     "route53:ListHostedZones",
     "route53:ListHostedZonesByName",
+    "route53:ListTagsForResource",
   ]
 
   state_object_actions = ["s3:GetObject"]
