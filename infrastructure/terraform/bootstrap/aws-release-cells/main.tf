@@ -73,9 +73,11 @@ resource "aws_iam_policy" "workload_boundary" {
 }
 
 resource "aws_iam_role" "cell" {
-  for_each             = local.lane_policies
-  name                 = "${var.name}-${each.key}"
-  max_session_duration = 3600
+  for_each = local.lane_policies
+  name     = "${var.name}-${each.key}"
+  # The reaper's sweep waits on RDS/ElastiCache deletion and requests a 7200 s session
+  # (honua-release release-cell-reaper.yml); the other lanes stay at one hour.
+  max_session_duration = each.key == "reaper" ? 7200 : 3600
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
