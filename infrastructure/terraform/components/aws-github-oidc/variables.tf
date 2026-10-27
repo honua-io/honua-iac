@@ -117,6 +117,23 @@ variable "oidc_audience" {
   default     = "sts.amazonaws.com"
 }
 
+variable "role_name" {
+  description = "Name of the federated role. Empty keeps the historical \"<name_prefix>-<environment>-gha\" name."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.role_name == "" || can(regex("^[A-Za-z0-9+=,.@_-]{1,64}$", var.role_name))
+    error_message = "role_name must be empty or a valid IAM role name (at most 64 characters)."
+  }
+}
+
+variable "cert_permissions_enabled" {
+  description = "Attach the honua-cert-* certification permission policy to the role. Set false to reuse this federation for another purpose and attach that purpose's policy to the role_name output instead (bootstrap/aws-drift-plan does this for the plan-only drift roles)."
+  type        = bool
+  default     = true
+}
+
 variable "max_session_duration_seconds" {
   description = "Maximum assumed-role session duration in seconds (900-43200). A short ceiling bounds a leaked cert credential."
   type        = number

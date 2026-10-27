@@ -157,3 +157,38 @@ run "hosted_pilot_bootstrap_refuses_wildcard_subject" {
 
   expect_failures = [var.hosted_pilot_bootstrap_oidc_subjects]
 }
+
+run "reuse_without_cert_permissions" {
+  command = plan
+
+  variables {
+    github_repository        = "honua-demo-infra"
+    github_oidc_environment  = "demo-drift"
+    role_name                = "honua-demo-infra-drift-gha"
+    cert_permissions_enabled = false
+  }
+
+  assert {
+    condition     = aws_iam_role.github_actions.name == "honua-demo-infra-drift-gha"
+    error_message = "role_name must name the federated role."
+  }
+
+  assert {
+    condition     = length(aws_iam_role_policy.permissions) == 0
+    error_message = "cert_permissions_enabled = false must attach no certification policy."
+  }
+
+  assert {
+    condition     = tolist(local.oidc_subjects) == tolist(["repo:honua-io/honua-demo-infra:environment:demo-drift"])
+    error_message = "The reused role keeps the exact environment subject."
+  }
+}
+
+run "cert_permissions_stay_default" {
+  command = plan
+
+  assert {
+    condition     = length(aws_iam_role_policy.permissions) == 1 && aws_iam_role.github_actions.name == "honua-cert-cert-gha"
+    error_message = "Existing consumers keep the certification policy and the historical role name."
+  }
+}

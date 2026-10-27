@@ -1,0 +1,61 @@
+{
+  "comment": "Every root under infrastructure/terraform/bootstrap and how .github/workflows/bootstrap-drift-plan.yml treats it (honua-iac#320). scripts/bootstrap-drift-roots.py refuses an unlisted root. applied=true: planned nightly against its state with the inputs below ({account_id} and {state_bucket} are filled in at run time); any change is drift. applied=false: the job asserts that no state object exists under its key. A standing entry tolerates ONE exact provider artifact and must link the issue that removes it.",
+  "state_key_prefix": "bootstrap/",
+  "roots": {
+    "aws-drift-plan": {
+      "applied": true,
+      "state_key": "bootstrap/aws-drift-plan/terraform.tfstate",
+      "vars": {
+        "oidc_provider_arn": "arn:aws:iam::{account_id}:oidc-provider/token.actions.githubusercontent.com",
+        "state_bucket_name": "{state_bucket}"
+      }
+    },
+    "aws-release-cells": {
+      "applied": true,
+      "state_key": "bootstrap/aws-release-cells/terraform.tfstate",
+      "vars": {
+        "oidc_provider_arn": "arn:aws:iam::{account_id}:oidc-provider/token.actions.githubusercontent.com",
+        "mirror_repository_arn": "arn:aws:ecr:us-east-1:{account_id}:repository/honua-server",
+        "runtime_bedrock_model_arns": [
+          "arn:aws:bedrock:us-east-1:{account_id}:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+          "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
+          "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
+          "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0"
+        ],
+        "runtime_operation_key_ring_certificate_secret_arns": ["arn:aws:secretsmanager:us-east-1:{account_id}:secret:honua-release/cert/operation-key-ring-zDn618"],
+        "runtime_audit_chain_key_secret_arns": ["arn:aws:secretsmanager:us-east-1:{account_id}:secret:honua-release/cert/audit-chain-key-RLtpME"]
+      }
+    },
+    "aws-update-rollback-controller": {
+      "applied": true,
+      "state_key": "bootstrap/aws-update-rollback-controller/terraform.tfstate",
+      "vars": {}
+    },
+    "aws-validation-reaper": {
+      "applied": true,
+      "state_key": "bootstrap/aws-validation-reaper/terraform.tfstate",
+      "vars": {
+        "oidc_provider_arn": "arn:aws:iam::{account_id}:oidc-provider/token.actions.githubusercontent.com"
+      }
+    },
+    "aws-ecs": {"applied": false, "state_key": "bootstrap/aws-ecs/terraform.tfstate"},
+    "aws-eks": {"applied": false, "state_key": "bootstrap/aws-eks/terraform.tfstate"},
+    "aws-exec-identity": {"applied": false, "state_key": "bootstrap/aws-exec-identity/terraform.tfstate"},
+    "aws-serverless": {"applied": false, "state_key": "bootstrap/aws-serverless/terraform.tfstate"},
+    "aws-support-access": {"applied": false, "state_key": "bootstrap/aws-support-access/terraform.tfstate"},
+    "aws-terraform-oidc": {
+      "applied": false,
+      "state_key": "bootstrap/aws-terraform-oidc/terraform.tfstate",
+      "note": "Role honua-terraform-backend exists in the Honua account but no state does: live and unmanaged. Adopting it (import into remote state) is a separate change."
+    },
+    "aws-tfstate": {
+      "applied": false,
+      "state_key": "bootstrap/aws-tfstate/terraform.tfstate",
+      "note": "The state bucket exists; its own root's state was never kept remotely (chicken and egg). Adopting it is a separate change."
+    },
+    "azure-aca": {"applied": false, "state_key": "bootstrap/azure-aca/terraform.tfstate"},
+    "azure-aks": {"applied": false, "state_key": "bootstrap/azure-aks/terraform.tfstate"},
+    "azure-functions": {"applied": false, "state_key": "bootstrap/azure-functions/terraform.tfstate"},
+    "azure-support-access": {"applied": false, "state_key": "bootstrap/azure-support-access/terraform.tfstate"}
+  }
+}

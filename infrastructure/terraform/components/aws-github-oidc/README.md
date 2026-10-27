@@ -73,6 +73,16 @@ The tightest practical scope for a **dispatched** cert workflow is a dedicated
 GitHub Environment, because `workflow_dispatch` runs do not carry a stable PR
 ref. Pin to `:environment:cert` and require that environment in the workflow.
 
+## Reusing the federation for another role
+
+`cert_permissions_enabled = false` attaches no certification policy, and
+`role_name` names the role. The consumer then attaches its own policy to the
+`role_name` output. `bootstrap/aws-drift-plan` builds its two plan-only drift
+roles this way. The trust policy and its exact-subject rules are unchanged.
+Existing consumers keep the policy at `aws_iam_role_policy.permissions[0]`
+(a `moved` block covers the address change), along with their historical role
+name.
+
 ## Hosted-pilot bootstrap executor role (optional)
 
 `hosted_pilot_bootstrap_role_enabled = true` adds a second role,

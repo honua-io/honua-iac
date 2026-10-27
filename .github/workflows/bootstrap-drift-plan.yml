@@ -1,0 +1,258 @@
+name: Bootstrap Drift Plan
+
+# Nightly READ-ONLY `terraform plan` of every bootstrap root that holds state
+# in the Honua account (honua-iac#320). It never applies.
+#
+# On 2026-10-26/27 two bootstrap roots (aws-validation-reaper,
+# aws-release-cells) were found with no remote state, and live IAM had drifted
+# from trunk unseen. infrastructure/terraform/bootstrap/drift-roots.json lists
+# every root under bootstrap/: applied roots are planned against their state
+# with their recorded inputs; the others must still have no state object.
+# scripts/bootstrap-drift-roots.py fails CI when a root is not listed.
+#
+# Result contract:
+#   - any change in any applied root, or state appearing for a root recorded as
+#     never applied                                 -> RED, and the issue
+#     "Terraform drift: bootstrap roots do not match trunk" is opened or updated;
+#   - the plan could not run (role unset, AccessDenied, error) -> RED;
+#   - everything clean                              -> green; an open drift
+#     issue is closed with a comment.
+# There is no skip path: an unconfigured run is a red run.
+#
+# Identity: iac_bootstrap_drift_role_arn from
+# infrastructure/terraform/bootstrap/aws-drift-plan. It trusts exactly
+# repo:honua-io/honua-iac:environment:bootstrap-drift (trunk-only
+# deployment-branch policy), reads IAM and the bootstrap/ state prefix, and
+# writes only *.tflock objects there. Set environment variable
+# HONUA_BOOTSTRAP_DRIFT_ROLE_ARN on bootstrap-drift.
+#
+# This repository and its logs are public: the plan text is never printed.
+# scripts/terraform-plan-report.py renders addresses, actions and
+# non-sensitive attribute values.
+
+on:
+  schedule:
+    - cron: "43 9 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bootstrap-drift-plan
+  cancel-in-progress: false
+
+env:
+  TERRAFORM_VERSION: "1.15.8"
+  STATE_REGION: us-east-1
+
+jobs:
+  roots:
+    name: Root coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Every bootstrap root is listed in drift-roots.json
+        id: matrix
+        run: |
+          set -euo pipefail
+          python3 scripts/bootstrap-drift-roots.py --check
+          echo "matrix=$(python3 scripts/bootstrap-drift-roots.py --matrix)" >> "$GITHUB_OUTPUT"
+
+  plan:
+    name: Drift plan (${{ matrix.root }})
+    needs: roots
+    # No branch filter: a dispatch from another branch is refused by the
+    # bootstrap-drift environment's trunk-only policy and goes red.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: bootstrap-drift
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include: ${{ fromJSON(needs.roots.outputs.matrix) }}
+    env:
+      ROOT: ${{ matrix.root }}
+      ROOT_DIR: infrastructure/terraform/bootstrap/${{ matrix.root }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Start the report
+        run: |
+          set -euo pipefail
+          mkdir -p drift-report
+          printf 'error\n' > "drift-report/$ROOT.status"
+          printf '### bootstrap/%s: the plan did not complete\n\nSee the job log of run %s.\n' \
+            "$ROOT" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > "drift-report/$ROOT.md"
+
+      - name: Require the drift role (never green while unconfigured)
+        env:
+          ROLE_ARN: ${{ vars.HONUA_BOOTSTRAP_DRIFT_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${ROLE_ARN}" =~ ^arn:aws:iam::[0-9]{12}:role/.+$ ]]; then
+            echo "::error title=drift plan not configured::HONUA_BOOTSTRAP_DRIFT_ROLE_ARN is unset or not a role ARN in the bootstrap-drift environment. Apply infrastructure/terraform/bootstrap/aws-drift-plan and set it."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials (OIDC, plan-only role)
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ vars.HONUA_BOOTSTRAP_DRIFT_ROLE_ARN }}
+          aws-region: ${{ env.STATE_REGION }}
+
+      - name: Resolve account and state bucket
+        env:
+          BUCKET_OVERRIDE: ${{ vars.HONUA_TFSTATE_BUCKET }}
+        run: |
+          set -euo pipefail
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          echo "ACCOUNT_ID=$account" >> "$GITHUB_ENV"
+          echo "STATE_BUCKET=${BUCKET_OVERRIDE:-honua-tfstate-$account}" >> "$GITHUB_ENV"
+
+      - name: Never-applied root has no state
+        if: ${{ !matrix.applied }}
+        run: |
+          set -euo pipefail
+          key="$(python3 scripts/bootstrap-drift-roots.py --get "$ROOT" state_key)"
+          if aws s3api head-object --bucket "$STATE_BUCKET" --key "$key" >/dev/null 2>head.err; then
+            echo "::error::state object $key exists, but drift-roots.json records $ROOT as never applied. Mark it applied (with its inputs) in the same PR that applies it."
+            printf 'drift\n' > "drift-report/$ROOT.status"
+            printf '### bootstrap/%s: CHANGES\n\nRecorded as never applied, but `%s` exists.\n' "$ROOT" "$key" > "drift-report/$ROOT.md"
+            exit 1
+          elif ! grep -q '404\|Not Found' head.err; then
+            cat head.err >&2
+            exit 1
+          fi
+          printf 'clean\n' > "drift-report/$ROOT.status"
+          printf '### bootstrap/%s: not applied, no state\n' "$ROOT" > "drift-report/$ROOT.md"
+
+      - name: Setup Terraform
+        if: ${{ matrix.applied }}
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform init (remote state, read)
+        if: ${{ matrix.applied }}
+        run: |
+          set -euo pipefail
+          key="$(python3 scripts/bootstrap-drift-roots.py --get "$ROOT" state_key)"
+          # A root ships backend.tf.example (AGENTS.md: no tracked backend
+          # blocks); activate it on the runner only.
+          if [[ -f "$ROOT_DIR/backend.tf.example" ]]; then
+            cp "$ROOT_DIR/backend.tf.example" "$ROOT_DIR/backend.tf"
+          fi
+          terraform -chdir="$ROOT_DIR" init -input=false -no-color \
+            -backend-config="bucket=$STATE_BUCKET" -backend-config="key=$key" \
+            -backend-config="region=$STATE_REGION" -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+
+      - name: terraform plan (read-only, never applied)
+        if: ${{ matrix.applied }}
+        run: |
+          set -euo pipefail
+          python3 scripts/bootstrap-drift-roots.py --tfvars "$ROOT" "$ACCOUNT_ID" "$STATE_BUCKET" > "$RUNNER_TEMP/drift.tfvars.json"
+          set +e
+          terraform -chdir="$ROOT_DIR" plan -input=false -no-color -lock-timeout=10m -detailed-exitcode \
+            -var-file="$RUNNER_TEMP/drift.tfvars.json" -out="$RUNNER_TEMP/drift.tfplan" > "$RUNNER_TEMP/plan.txt"
+          code=$?
+          set -e
+          echo "terraform plan exit code: $code"
+          if [[ "$code" != 0 && "$code" != 2 ]]; then
+            grep -E '^(Error|│ Error)' "$RUNNER_TEMP/plan.txt" || true
+            exit 1
+          fi
+
+      - name: Classify and report
+        if: ${{ matrix.applied }}
+        run: |
+          set -euo pipefail
+          terraform -chdir="$ROOT_DIR" show -json "$RUNNER_TEMP/drift.tfplan" > "$RUNNER_TEMP/plan.json"
+          set +e
+          python3 scripts/terraform-plan-report.py --plan "$RUNNER_TEMP/plan.json" --root "$ROOT" \
+            --title "bootstrap/$ROOT" --out "drift-report/$ROOT.md"
+          code=$?
+          set -e
+          cat "drift-report/$ROOT.md" >> "$GITHUB_STEP_SUMMARY"
+          case "$code" in
+            0) printf 'clean\n' > "drift-report/$ROOT.status" ;;
+            2) printf 'drift\n' > "drift-report/$ROOT.status"
+               echo "::error title=drift::bootstrap/$ROOT: live IAM differs from trunk. See the drift issue and the job summary."
+               exit 1 ;;
+            *) exit 1 ;;
+          esac
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: drift-report-${{ matrix.root }}
+          path: drift-report/
+          retention-days: 14
+
+  issue:
+    name: Open, update or close the drift issue
+    needs: [roots, plan]
+    if: always() && github.ref == 'refs/heads/trunk'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PLAN_RESULT: ${{ needs.plan.result }}
+      ROOTS_RESULT: ${{ needs.roots.result }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Download reports
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: drift-report-*
+          path: reports
+          merge-multiple: true
+
+      - name: Reconcile the issue
+        run: |
+          set -euo pipefail
+          title="Terraform drift: bootstrap roots do not match trunk"
+          {
+            echo "Nightly bootstrap drift plan $(date -u +%Y-%m-%dT%H:%MZ), trunk \`${GITHUB_SHA::12}\`: $RUN_URL"
+            echo
+            for status in reports/*.status; do
+              [[ -e "$status" ]] || continue
+              [[ "$(cat "$status")" == clean ]] && continue
+              cat "${status%.status}.md"
+              echo
+            done
+            echo "Live AWS changes only through IaC (founder rule). Fix drift by applying trunk from the root's README, or by a PR that makes trunk match. Never with the AWS CLI."
+          } > body.md
+          existing="$(gh issue list --state open --search "\"$title\" in:title" --json number,title \
+            --jq "map(select(.title == \"$title\")) | .[0].number // empty")"
+          if [[ "$PLAN_RESULT" == "success" && "$ROOTS_RESULT" == "success" ]]; then
+            if [[ -n "$existing" ]]; then
+              gh issue close "$existing" --reason completed --comment "Every bootstrap root plans clean: $RUN_URL"
+            fi
+            exit 0
+          fi
+          if [[ -n "$existing" ]]; then
+            gh issue comment "$existing" --body-file body.md
+          else
+            gh label create drift --color B60205 --description "Live infrastructure differs from trunk" 2>/dev/null || true
+            gh issue create --title "$title" --label drift --body-file body.md
+          fi
+          echo "::error::bootstrap drift plan is red: $PLAN_RESULT"
+          exit 1
