@@ -72,6 +72,12 @@ variable "demo_secret_name_prefixes" {
   default     = ["honua-demo-demo/", "honua-demo/demo/"]
 }
 
+variable "demo_function_name_prefix" {
+  description = "Name prefix of the demo's Lambda functions. Refresh reads their environment, which Lambda decrypts with kms:Decrypt on the caller's behalf."
+  type        = string
+  default     = "honua-demo-demo-"
+}
+
 variable "demo_denied_secret_names" {
   description = "Demo secrets the role may never read, even under demo_secret_name_prefix: operator-owned material that Terraform only references by ARN."
   type        = list(string)
