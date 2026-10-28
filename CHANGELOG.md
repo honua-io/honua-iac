@@ -23,6 +23,10 @@ module input/output contracts may still change.
   "AI disclosure is not approved ...". `aws-serverless` is unchanged: the approval's seven variables
   do not fit Lambda's 4 KB environment budget alongside the release cell's other settings.
 
+- `aws-ecs`: enabling Bedrock also sets `AiExecutionAdmission__DeploymentId` to the deployment name.
+  honua-server #6597 refuses every model invocation without a named deployment whose admission
+  ledger an administrator has initialized and resumed (`admin.ai.admission.initialize` / `resume`).
+
 ### Added
 
 - `aws-ecs`: optional `bedrock_ai_data_classification` (default `unclassified`), the

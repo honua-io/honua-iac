@@ -29,6 +29,9 @@ locals {
   # proxy refuses it ("AI disclosure is not approved ..."). Enabling Bedrock here is that approval,
   # for exactly the configured model and region and the studio-chat use case.
   bedrock_disclosure_environment = {
+    # honua-server #6597: model invocations also need a durable AI execution admission for a named
+    # deployment; an administrator initializes and resumes that deployment's ledger after deploy.
+    AiExecutionAdmission__DeploymentId                          = local.name
     StudioAiProxy__Disclosure__WorkloadDataClassification       = var.bedrock_ai_data_classification
     StudioAiProxy__Disclosure__Approvals__0__Provider           = "bedrock"
     StudioAiProxy__Disclosure__Approvals__0__Kind               = "bedrock"
