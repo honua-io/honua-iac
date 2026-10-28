@@ -16,15 +16,16 @@ module input/output contracts may still change.
 
 ### Fixed
 
-- `aws-ecs`, `aws-serverless`: enabling Bedrock (`enable_bedrock_ai`) now also emits the
+- `aws-ecs`: enabling Bedrock (`enable_bedrock_ai`) now also emits the
   `StudioAiProxy__Disclosure__*` approval that honua-server's fail-closed AI disclosure policy
   requires. It approves exactly the configured `bedrock_ai_model` and `bedrock_ai_region` for the
   `studio-chat` use case. Without it every Studio model call was refused with
-  "AI disclosure is not approved ...".
+  "AI disclosure is not approved ...". `aws-serverless` is unchanged: the approval's seven variables
+  do not fit Lambda's 4 KB environment budget alongside the release cell's other settings.
 
 ### Added
 
-- `aws-ecs`, `aws-serverless`: optional `bedrock_ai_data_classification` (default `unclassified`), the
+- `aws-ecs`: optional `bedrock_ai_data_classification` (default `unclassified`), the
   workload classification the Bedrock approval is granted at.
 
 ## v0.3.0
