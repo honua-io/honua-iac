@@ -24,11 +24,28 @@ locals {
     [for region in local.bedrock_inference_member_regions : "arn:aws:bedrock:${region}::foundation-model/${local.bedrock_foundation_model_id}"]
   ) : ["arn:aws:bedrock:${var.bedrock_ai_region}::foundation-model/${var.bedrock_ai_model}"]
 
+  # honua-server's AI disclosure policy is fail-closed: a Studio model call needs an exact operator
+  # approval of provider, kind, destination, model, use case and workload classification, or the
+  # proxy refuses it ("AI disclosure is not approved ..."). Enabling Bedrock here is that approval,
+  # for exactly the configured model and region and the studio-chat use case.
+  bedrock_disclosure_environment = {
+    # honua-server #6597: model invocations also need a durable AI execution admission for a named
+    # deployment; an administrator initializes and resumes that deployment's ledger after deploy.
+    AiExecutionAdmission__DeploymentId                          = local.name
+    StudioAiProxy__Disclosure__WorkloadDataClassification       = var.bedrock_ai_data_classification
+    StudioAiProxy__Disclosure__Approvals__0__Provider           = "bedrock"
+    StudioAiProxy__Disclosure__Approvals__0__Kind               = "bedrock"
+    StudioAiProxy__Disclosure__Approvals__0__Destination        = "aws-bedrock:${var.bedrock_ai_region}"
+    StudioAiProxy__Disclosure__Approvals__0__Model              = var.bedrock_ai_model
+    StudioAiProxy__Disclosure__Approvals__0__UseCase            = "studio-chat"
+    StudioAiProxy__Disclosure__Approvals__0__DataClassification = var.bedrock_ai_data_classification
+  }
+
   # WorkflowGeneration env that routes the AI studio flows to Bedrock. Mirrors
   # the config in honua-server#1737 (WorkflowGeneration:DefaultProvider=bedrock
   # + the bedrock provider Model/Region/MaxTokens/TimeoutSeconds), expressed in
   # ASP.NET Core double-underscore env-var form.
-  bedrock_ai_environment = local.bedrock_ai_enabled ? {
+  bedrock_ai_environment = local.bedrock_ai_enabled ? merge({
     StudioAiProxy__Enabled                                 = "true"
     StudioAiProxy__DefaultProvider                         = "bedrock"
     StudioAiProxy__Providers__bedrock__Kind                = "bedrock"
@@ -42,7 +59,7 @@ locals {
     WorkflowGeneration__Providers__bedrock__Region         = var.bedrock_ai_region
     WorkflowGeneration__Providers__bedrock__MaxTokens      = tostring(var.bedrock_ai_max_tokens)
     WorkflowGeneration__Providers__bedrock__TimeoutSeconds = tostring(var.bedrock_ai_timeout_seconds)
-  } : {}
+  }, local.bedrock_disclosure_environment) : {}
 }
 
 # Least-privilege Bedrock invoke grant on the Lambda execution role, scoped to
