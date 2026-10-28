@@ -21,8 +21,11 @@ module input/output contracts may still change.
   example `us.openai.gpt-6.1-terra`), still exact ids or `us.` profiles only. The default moves from
   Claude Sonnet 4.5 to `us.anthropic.claude-sonnet-4-6`; deployments that relied on the old default and
   an IAM boundary admitting only Sonnet 4.5 must widen that boundary or pin the old id.
-- `bootstrap/aws-release-cells`: the documented release-cell Bedrock boundary is Claude Sonnet 5.5,
-  Claude Sonnet 4.6 and OpenAI GPT-6.1 Terra (each US profile plus member regions); Sonnet 4.5 is retired.
+- `bootstrap/aws-release-cells`: the release-cell Bedrock boundary is Claude Sonnet 4.6 and OpenAI
+  GPT-6.1 Terra (each US profile plus member regions), applied 2026-10-28; Sonnet 4.5 is retired. Sonnet
+  5.5 is not added yet: the account is not granted it, and its four ARNs would push the managed
+  workload-boundary policy past IAM's 6,144-character limit (it is at about 6,000). Adding it means
+  replacing another model's ARNs.
 
 ### Fixed
 

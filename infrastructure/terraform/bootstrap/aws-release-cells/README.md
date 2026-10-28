@@ -52,10 +52,6 @@ The identities were first applied on 2026-10-10 without retained state. They are
 oidc_provider_arn     = "arn:aws:iam::585192672263:oidc-provider/token.actions.githubusercontent.com"
 mirror_repository_arn = "arn:aws:ecr:us-east-1:585192672263:repository/honua-server"
 runtime_bedrock_model_arns = [
-  "arn:aws:bedrock:us-east-1:585192672263:inference-profile/us.anthropic.claude-sonnet-5-5",
-  "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-5-5",
-  "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-5-5",
-  "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-5-5",
   "arn:aws:bedrock:us-east-1:585192672263:inference-profile/us.anthropic.claude-sonnet-4-6",
   "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-6",
   "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-6",
