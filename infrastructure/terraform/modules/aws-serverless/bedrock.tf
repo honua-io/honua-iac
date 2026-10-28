@@ -60,6 +60,20 @@ locals {
   #   (BedrockChatClientAdapter), not to the function's region.
   # Kind, DefaultProvider and Model stay explicit: they have no default and
   # startup validation fails without them.
+  # honua-server's AI disclosure policy is fail-closed: a Studio model call needs an exact operator
+  # approval of provider, kind, destination, model, use case and workload classification, or the
+  # proxy refuses it ("AI disclosure is not approved ..."). Enabling Bedrock here is that approval,
+  # for exactly the configured model and region and the studio-chat use case.
+  bedrock_disclosure_environment = {
+    StudioAiProxy__Disclosure__WorkloadDataClassification       = var.bedrock_ai_data_classification
+    StudioAiProxy__Disclosure__Approvals__0__Provider           = "bedrock"
+    StudioAiProxy__Disclosure__Approvals__0__Kind               = "bedrock"
+    StudioAiProxy__Disclosure__Approvals__0__Destination        = "aws-bedrock:${var.bedrock_ai_region}"
+    StudioAiProxy__Disclosure__Approvals__0__Model              = var.bedrock_ai_model
+    StudioAiProxy__Disclosure__Approvals__0__UseCase            = "studio-chat"
+    StudioAiProxy__Disclosure__Approvals__0__DataClassification = var.bedrock_ai_data_classification
+  }
+
   bedrock_ai_environment = local.bedrock_ai_enabled ? merge({
     StudioAiProxy__Enabled                   = "true"
     StudioAiProxy__DefaultProvider           = "bedrock"
@@ -69,6 +83,7 @@ locals {
     var.bedrock_ai_region != "us-west-2" ? { StudioAiProxy__Providers__bedrock__Region = var.bedrock_ai_region } : {},
     var.bedrock_ai_max_tokens != 4096 ? { StudioAiProxy__Providers__bedrock__MaxTokens = tostring(var.bedrock_ai_max_tokens) } : {},
     var.bedrock_ai_timeout_seconds != 120 ? { StudioAiProxy__Providers__bedrock__TimeoutSeconds = tostring(var.bedrock_ai_timeout_seconds) } : {},
+    local.bedrock_disclosure_environment,
   ) : {}
 }
 

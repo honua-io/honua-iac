@@ -1052,3 +1052,14 @@ variable "redis_keep_alive_seconds" {
     error_message = "redis_keep_alive_seconds must be a whole number from 1 to 300."
   }
 }
+
+variable "bedrock_ai_data_classification" {
+  description = "Operator-asserted classification of the data this deployment's Studio may send to Bedrock (StudioAiProxy:Disclosure:WorkloadDataClassification). Enabling Bedrock approves exactly the configured model and region for the studio-chat use case at this classification."
+  type        = string
+  default     = "unclassified"
+
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9-]{0,63}$", var.bedrock_ai_data_classification))
+    error_message = "bedrock_ai_data_classification must be a lowercase identifier (letters, digits, hyphens; at most 64 characters)."
+  }
+}
