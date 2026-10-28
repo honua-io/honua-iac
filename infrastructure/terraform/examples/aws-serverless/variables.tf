@@ -323,9 +323,9 @@ variable "pro_license_trusted_public_key" {
 }
 
 variable "bedrock_ai_model" {
-  description = "Bedrock model id for the AI studio flows. Defaults to the cross-region Claude Sonnet 4.5 inference profile."
+  description = "Bedrock model id for the AI studio flows. Defaults to the cross-region Claude Sonnet 4.6 inference profile; Claude and OpenAI GPT models on Bedrock are accepted."
   type        = string
-  default     = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+  default     = "us.anthropic.claude-sonnet-4-6"
 }
 
 variable "bedrock_ai_region" {

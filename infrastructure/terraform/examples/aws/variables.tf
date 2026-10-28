@@ -473,12 +473,12 @@ variable "enable_bedrock_ai" {
 }
 
 variable "bedrock_ai_model" {
-  description = "Bedrock model id the server's WorkflowGeneration uses. Defaults to the cross-region Claude Sonnet 4.5 inference profile (the `us.` prefix routes across us-east-1/us-east-2/us-west-2). The IAM grant is scoped to this model's inference-profile + foundation-model ARNs."
+  description = "Bedrock model id the server's WorkflowGeneration uses. Defaults to the cross-region Claude Sonnet 4.6 inference profile; Claude and OpenAI GPT models on Bedrock are accepted (the `us.` prefix routes across us-east-1/us-east-2/us-west-2). The IAM grant is scoped to this model's inference-profile + foundation-model ARNs."
   type        = string
-  default     = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+  default     = "us.anthropic.claude-sonnet-4-6"
   validation {
-    condition     = can(regex("^(us[.])?anthropic[.]claude-[a-z0-9-]+-v[0-9]+:[0-9]+$", var.bedrock_ai_model))
-    error_message = "Pin a versioned Claude foundation model or us. inference profile; wildcards and arbitrary ARN grants are forbidden."
+    condition     = can(regex("^(us[.])?(anthropic[.]claude-[a-z0-9-]+(-v[0-9]+:[0-9]+)?|openai[.]gpt-[a-z0-9.-]+)$", var.bedrock_ai_model))
+    error_message = "Pin an exact Claude or OpenAI GPT Bedrock model id or us. inference profile; wildcards and arbitrary ARN grants are forbidden."
   }
 }
 

@@ -14,6 +14,16 @@ module input/output contracts may still change.
 
 ## Unreleased
 
+### Changed
+
+- `aws-ecs`, `aws-serverless`, `examples/aws`: `bedrock_ai_model` now accepts current Claude ids without
+  a version suffix (for example `us.anthropic.claude-sonnet-4-6`) and OpenAI GPT models on Bedrock (for
+  example `us.openai.gpt-6.1-terra`), still exact ids or `us.` profiles only. The default moves from
+  Claude Sonnet 4.5 to `us.anthropic.claude-sonnet-4-6`; deployments that relied on the old default and
+  an IAM boundary admitting only Sonnet 4.5 must widen that boundary or pin the old id.
+- `bootstrap/aws-release-cells`: the documented release-cell Bedrock boundary is Claude Sonnet 5.5,
+  Claude Sonnet 4.6 and OpenAI GPT-6.1 Terra (each US profile plus member regions); Sonnet 4.5 is retired.
+
 ### Fixed
 
 - `aws-ecs`: enabling Bedrock (`enable_bedrock_ai`) now also emits the
