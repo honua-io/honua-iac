@@ -1218,6 +1218,21 @@ resource "aws_apigatewayv2_stage" "this" {
       integrationStatus       = "$context.integrationStatus"
       integrationErrorMessage = "$context.integrationErrorMessage"
       errorMessage            = "$context.error.message"
+      # Where the time of a slow or timed-out request went. A gateway 503
+      # "Service Unavailable" at the 30 s integration timeout looks the same
+      # whether the function was cold-starting, queued or running; these
+      # separate them. requestTimeEpoch is the start in ms (requestTime has
+      # whole seconds). integrationLatency is "-" when no integration
+      # response arrived. integrationRequestId is the Lambda RequestId, which
+      # joins the request to its START/REPORT lines (Duration, Init Duration)
+      # in the function's log group. integrationError is the integration's
+      # own error text (honua-release e2e-cloud-aws run 40832719280: three
+      # 30 s stalls left only status 503 and integrationStatus 200).
+      requestTimeEpoch     = "$context.requestTimeEpoch"
+      responseLatency      = "$context.responseLatency"
+      integrationLatency   = "$context.integrationLatency"
+      integrationRequestId = "$context.integration.requestId"
+      integrationError     = "$context.integration.error"
     })
   }
 

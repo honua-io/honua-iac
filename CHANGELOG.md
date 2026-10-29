@@ -24,6 +24,11 @@ module input/output contracts may still change.
   environments use the open values, so only reserved concurrency changes. New output
   `serving_reserved_concurrency`. A `lambda_reserved_concurrent_executions` of 0 no longer feeds the
   database pool sizing (it would divide by zero); the API pool falls back as if it were unset.
+- `aws-serverless`: the HTTP API access log also records `requestTimeEpoch`, `responseLatency`,
+  `integrationLatency`, `integrationRequestId` (the Lambda RequestId) and `integrationError`. Three 30 s
+  stalls that ended in the gateway's own 503 (honua-release e2e-cloud-aws run 40832719280) logged only
+  status 503 and integrationStatus 200, which cannot tell a cold start, a queued invocation and a slow
+  handler apart; the RequestId joins a request to its function `REPORT` line (Duration, Init Duration).
 
 ### Changed
 
