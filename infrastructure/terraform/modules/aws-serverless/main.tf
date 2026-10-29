@@ -1025,7 +1025,9 @@ resource "aws_lambda_function" "this" {
     size = var.lambda_ephemeral_storage_mb
   }
 
-  reserved_concurrent_executions = var.lambda_reserved_concurrent_executions
+  # serving_closed holds the function at 0 until the database is migrated
+  # (honua-server#6750); local.serving_reserved_concurrency in db-pool-sizing.tf.
+  reserved_concurrent_executions = local.serving_reserved_concurrency.api
 
   vpc_config {
     subnet_ids         = local.private_subnets

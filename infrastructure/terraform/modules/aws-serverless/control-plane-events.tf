@@ -285,7 +285,7 @@ resource "aws_lambda_function" "control_plane_reconcile" {
     size = var.lambda_ephemeral_storage_mb
   }
 
-  reserved_concurrent_executions = local.control_plane_reserved_concurrency.reconcile
+  reserved_concurrent_executions = local.serving_reserved_concurrency.control_plane.reconcile
 
   vpc_config {
     subnet_ids         = local.private_subnets
@@ -361,7 +361,7 @@ resource "aws_lambda_function" "control_plane_backstop" {
     size = var.lambda_ephemeral_storage_mb
   }
 
-  reserved_concurrent_executions = local.control_plane_reserved_concurrency.backstop
+  reserved_concurrent_executions = local.serving_reserved_concurrency.control_plane.backstop
 
   vpc_config {
     subnet_ids         = local.private_subnets
@@ -451,7 +451,7 @@ resource "aws_lambda_function" "control_plane_tick" {
     size = var.lambda_ephemeral_storage_mb
   }
 
-  reserved_concurrent_executions = local.control_plane_reserved_concurrency.tick
+  reserved_concurrent_executions = local.serving_reserved_concurrency.control_plane.tick
 
   vpc_config {
     subnet_ids         = local.private_subnets

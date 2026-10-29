@@ -187,9 +187,15 @@ variable "lambda_architectures" {
 }
 
 variable "lambda_reserved_concurrent_executions" {
-  description = "Reserved concurrency limit for the Lambda function (null for unreserved)."
+  description = "Reserved concurrency limit for the Lambda function (null for unreserved). 0 stops the function; to hold a deployment closed while it is migrated, prefer serving_closed, which keeps the pool sizing derived from this open value."
   type        = number
   default     = null
+}
+
+variable "serving_closed" {
+  description = "Hold every request-serving and event-driven function closed: reserved concurrency 0 on the API function and on the control-plane event functions (reconcile, backstop, tick), so nothing (API Gateway, an internet scanner, EventBridge) can start an instance. Set it for the first apply of a new deployment whose database is migrated out-of-band, run the migration, then apply again with false. Only the reserved concurrency changes between the two applies: database pool sizing and the function environments are derived from the open values. The isolated migration function (migration_image) is never closed."
+  type        = bool
+  default     = false
 }
 
 variable "lambda_alias_name" {

@@ -557,3 +557,12 @@ output "gp_batch_prior_definitions_retained" {
   description = "Whether prior Batch revisions remain ACTIVE for a governed rollback window. Prior retained revisions require explicit cleanup after all jobs and the rollback window finish."
   value       = local.gp_batch_enabled && var.gp_batch_retain_prior_definitions
 }
+
+output "serving_reserved_concurrency" {
+  description = "Reserved concurrency applied to the API function (null = unreserved) and the control-plane event functions (null when they are disabled). All 0 while serving_closed is true."
+  value = {
+    closed        = var.serving_closed
+    api           = local.serving_reserved_concurrency.api
+    control_plane = local.control_plane_events_enabled ? local.serving_reserved_concurrency.control_plane : null
+  }
+}

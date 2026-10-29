@@ -251,6 +251,12 @@ variable "skip_migrations" {
   default     = true
 }
 
+variable "serving_closed" {
+  description = "Hold the deployment closed until its database is migrated: reserved concurrency 0 on the API function and the control-plane event functions, so no request or event can start an instance against an unmigrated schema (honua-server#6750). With skip_migrations=true, apply a new deployment with true, run the out-of-band migration (migrate_* outputs), then apply again with false; only reserved concurrency changes. Default false."
+  type        = bool
+  default     = false
+}
+
 variable "tags" {
   description = "Additional tags for resources."
   type        = map(string)

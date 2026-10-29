@@ -47,6 +47,7 @@ module "honua" {
   redis_connection_string                     = var.redis_connection_string
   redis_connection_cidrs                      = var.redis_connection_cidrs
   skip_migrations                             = var.skip_migrations
+  serving_closed                              = var.serving_closed
   migration_image                             = var.migration_image
   migration_packaged_manifest_sha256          = var.migration_packaged_manifest_sha256
   migration_target_locator_sha256             = var.migration_target_locator_sha256
@@ -231,6 +232,11 @@ output "pro_license_enabled" {
 
 output "pro_license_secret_arn" {
   value = module.honua.pro_license_secret_arn
+}
+
+output "serving_reserved_concurrency" {
+  description = "Reserved concurrency on the API and control-plane event functions; all 0 while serving_closed is true."
+  value       = module.honua.serving_reserved_concurrency
 }
 
 output "control_plane_events_enabled" {

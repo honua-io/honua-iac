@@ -14,6 +14,17 @@ module input/output contracts may still change.
 
 ## Unreleased
 
+### Added
+
+- `aws-serverless`, `examples/aws-serverless`: `serving_closed` (default `false`) holds a deployment closed
+  until its database is migrated: reserved concurrency 0 on the API function and the control-plane event
+  functions (reconcile, backstop, tick), so an early request (an internet scanner on the API Gateway URL)
+  or event cannot cold-start an instance into the unrecoverable schema-floor state (honua-server#6750).
+  Apply with `true`, run the out-of-band migration, apply again with `false`; pool sizing and function
+  environments use the open values, so only reserved concurrency changes. New output
+  `serving_reserved_concurrency`. A `lambda_reserved_concurrent_executions` of 0 no longer feeds the
+  database pool sizing (it would divide by zero); the API pool falls back as if it were unset.
+
 ### Changed
 
 - `aws-ecs`, `aws-serverless`, `examples/aws`: `bedrock_ai_model` now accepts current Claude ids without

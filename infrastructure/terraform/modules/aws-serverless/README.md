@@ -153,6 +153,7 @@ module "honua" {
 | `existing_db_port` | `5432` | TCP port of the reused database. Set it to the port in the pinned `existing_db_connection_string`; Lambda database egress and the automatic migration locator hash use this port. The module-managed database remains on 5432. |
 | `existing_db_connection_string` | `""` | Reuse an existing PostgreSQL connection string (skips RDS provisioning and PostGIS local-exec). |
 | `skip_migrations` | true | Skip auto-migrations. Run them out-of-band for serverless. |
+| `serving_closed` | false | Reserved concurrency 0 on the API and control-plane event functions, so nothing can start an instance before the out-of-band migration has run (honua-server#6750). Apply with `true`, migrate, apply again with `false`; pool sizing and environments use the open values, so only reserved concurrency changes. |
 | `db_instance_class` | `db.t3.micro` | RDS instance class. |
 | `lambda_db_max_pool_size` / `control_plane_db_max_pool_size` / `gp_batch_db_max_pool_size` | derived (else `8`) / `2` / `4` | PostgreSQL pool cap per warm API Lambda instance, per warm control-plane Lambda instance and per running GP Batch job. The API cap is derived from `db_instance_class` and `lambda_reserved_concurrent_executions`; see [Database connection sizing](#database-connection-sizing). |
 | `db_max_connections_override` / `db_pools_per_process` / `db_connection_safety_fraction` | `null` / `2` / `0.85` | Inputs to the derived API pool; see [Database connection sizing](#database-connection-sizing). |
