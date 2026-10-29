@@ -230,10 +230,12 @@ run "managed_database_by_default_redis_off" {
       ]) &&
       toset(jsondecode(aws_iam_role_policy.workload_secrets["gp-job"].policy).Statement[0].Resource) == toset([
         "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test-db-AAAAAA",
+        "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test-admin-BBBBBB",
         "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-test-connection-encryption-CCCCCC",
+        "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123",
       ])
     )
-    error_message = "The GP job role must not inherit the server admin or audit secrets."
+    error_message = "The GP job role must read every security reference the server environment carries (the worker imports it through envFrom and resolves it at startup), including the audit-chain key (honua-release#1059)."
   }
 
   assert {
@@ -321,6 +323,37 @@ run "redis_on_with_key_ring" {
       jsondecode(policy.policy).Statement[1].Resource == ["arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000001"]
     ])
     error_message = "Both workload roles must read the key ring and Redis secrets and decrypt the key-ring CMK."
+  }
+}
+
+run "gp_job_reads_the_audit_chain_key_and_its_cmk" {
+  command = plan
+
+  variables {
+    redis_enabled                                     = true
+    operation_key_ring_certificate_secret_arn         = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+    operation_key_ring_certificate_secret_kms_key_arn = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000001"
+    audit_chain_key_secret_kms_key_arn                = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000002"
+  }
+
+  # honua-release#1059: every S10 worker Job on aws-eks/redis-on exited at startup with
+  # AccessDeniedException resolving AuditLog:ChainVerification:Key, which the chart
+  # imports into the worker from the server's config ConfigMap.
+  assert {
+    condition = (
+      contains(jsondecode(aws_iam_role_policy.workload_secrets["gp-job"].policy).Statement[0].Resource, "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123") &&
+      contains(jsondecode(aws_iam_role_policy.workload_secrets["gp-job"].policy).Statement[1].Resource, "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000002") &&
+      contains(jsondecode(aws_iam_role_policy.workload_secrets["gp-job"].policy).Statement[1].Condition.StringEquals["kms:EncryptionContext:SecretARN"], "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123")
+    )
+    error_message = "The GP job role must read the audit-chain key secret and decrypt it with its customer-managed key."
+  }
+
+  assert {
+    condition = (
+      toset(jsondecode(aws_iam_role_policy.workload_secrets["gp-job"].policy).Statement[0].Resource) ==
+      toset(jsondecode(aws_iam_role_policy.workload_secrets["server"].policy).Statement[0].Resource)
+    )
+    error_message = "The GP job role must read the same secret set as the server: it imports the server's environment."
   }
 }
 
