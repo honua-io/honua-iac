@@ -191,13 +191,44 @@ run "bedrock_cross_region_profile" {
   }
   assert {
     condition = toset(jsondecode(aws_iam_role_policy.task_bedrock_invoke[0].policy).Statement[0].Resource) == toset([
-      "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-      "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
-      "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
-      "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0"
+      "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-4-6",
+      "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-6",
+      "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-6",
+      "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-6"
     ])
     error_message = "The US profile grants exactly its three pinned model destinations and profile ARN."
   }
+}
+
+run "bedrock_openai_gpt_profile" {
+  command = apply
+  variables {
+    enable_bedrock_ai = true
+    bedrock_ai_region = "us-east-1"
+    bedrock_ai_model  = "us.openai.gpt-6.1-terra"
+  }
+  assert {
+    condition = toset(jsondecode(aws_iam_role_policy.task_bedrock_invoke[0].policy).Statement[0].Resource) == toset([
+      "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.openai.gpt-6.1-terra",
+      "arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-6.1-terra",
+      "arn:aws:bedrock:us-east-2::foundation-model/openai.gpt-6.1-terra",
+      "arn:aws:bedrock:us-west-2::foundation-model/openai.gpt-6.1-terra"
+    ])
+    error_message = "An OpenAI GPT US profile grants exactly its profile and member-region model ARNs."
+  }
+  assert {
+    condition     = one([for e in jsondecode(aws_ecs_task_definition.this.container_definitions)[0].environment : e.value if e.name == "StudioAiProxy__Disclosure__Approvals__0__Model"]) == "us.openai.gpt-6.1-terra"
+    error_message = "The disclosure approval names the configured GPT model."
+  }
+}
+
+run "bedrock_rejects_unpinned_model" {
+  command = plan
+  variables {
+    enable_bedrock_ai = true
+    bedrock_ai_model  = "us.openai.*"
+  }
+  expect_failures = [var.bedrock_ai_model]
 }
 
 run "redis_on_requires_operation_certificate" {
