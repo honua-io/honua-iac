@@ -238,10 +238,23 @@ run "off_keeps_the_direct_endpoint_everywhere" {
     ])
     error_message = "With the proxy off no GP Batch job definition may set Database__SessionSettings__Mode."
   }
+
+  # Direct connections keep the server's prepared-statement cache: the settings
+  # document carries no Database section and no GP Batch tier turns it off.
+  assert {
+    condition = !contains(keys(jsondecode(local.runtime_settings_json)), "Database") && alltrue([
+      for tier, jd in aws_batch_job_definition.gp :
+      length([for e in jsondecode(jd.container_properties).environment : e if e.name == "Database__QueryCache__EnableAutomaticCaching"]) == 0
+    ])
+    error_message = "With the proxy off the prepared-statement cache must stay at the server default."
+  }
 }
 
 run "on_creates_the_proxy_and_routes_every_process_through_it" {
-  command = apply
+  # enable_rds_proxy changes the settings document (Database:QueryCache); a
+  # fresh state keeps this run from planning to destroy the retained default one.
+  state_key = "rds_proxy"
+  command   = apply
 
   variables {
     enable_rds_proxy = true
@@ -368,6 +381,32 @@ run "on_creates_the_proxy_and_routes_every_process_through_it" {
     error_message = "Behind the proxy every GP Batch job-definition tier must set Database__SessionSettings__Mode=role-defaults."
   }
 
+  # honua-release run 40865466550: every proxied connection the API prepared
+  # statements on stayed pinned while its environment was frozen; the S9 demo
+  # burst (39 environments) pinned all 25 allowed database connections and
+  # borrows waited 29 s. The Lambdas take the switch from the settings
+  # document (no 4 KB cap), the GP Batch jobs from their environment.
+  assert {
+    condition = (
+      jsondecode(local.runtime_settings_json).Database.QueryCache.EnableAutomaticCaching == false &&
+      jsondecode(aws_secretsmanager_secret_version.runtime_settings[local.runtime_settings_hash].secret_string).Database.QueryCache.EnableAutomaticCaching == false &&
+      alltrue([
+        for fn in [aws_lambda_function.this, aws_lambda_function.control_plane_reconcile[0], aws_lambda_function.control_plane_backstop[0], aws_lambda_function.control_plane_tick[0]] :
+        startswith(fn.environment[0].variables["HONUA_SETTINGS_DOCUMENT"], "aws:secretsmanager:") &&
+        !contains(keys(fn.environment[0].variables), "Database__QueryCache__EnableAutomaticCaching")
+      ])
+    )
+    error_message = "Behind the proxy the Lambdas' settings document must set Database:QueryCache:EnableAutomaticCaching=false, outside the 4 KB environment."
+  }
+
+  assert {
+    condition = length(aws_batch_job_definition.gp) > 0 && alltrue([
+      for tier, jd in aws_batch_job_definition.gp :
+      one([for e in jsondecode(jd.container_properties).environment : e.value if e.name == "Database__QueryCache__EnableAutomaticCaching"]) == "false"
+    ])
+    error_message = "Behind the proxy every GP Batch job-definition tier must set Database__QueryCache__EnableAutomaticCaching=false."
+  }
+
   # The module runs ALTER ROLE through psql like enable_postgis, which these
   # inputs leave off, so nothing runs here (role_session_defaults_* below).
   assert {
@@ -395,7 +434,10 @@ run "on_creates_the_proxy_and_routes_every_process_through_it" {
 # them (server defaults, Limits:Connections) on the instance it owns. Plan
 # only: the local-exec would run psql on apply.
 run "role_session_defaults_follow_enable_postgis" {
-  command = plan
+  # enable_rds_proxy changes the settings document (Database:QueryCache); a
+  # fresh state keeps this run from planning to destroy the retained default one.
+  state_key = "rds_proxy"
+  command   = plan
 
   variables {
     enable_rds_proxy = true
@@ -428,7 +470,10 @@ run "role_session_defaults_follow_enable_postgis" {
 }
 
 run "role_session_defaults_can_be_forced_on" {
-  command = plan
+  # enable_rds_proxy changes the settings document (Database:QueryCache); a
+  # fresh state keeps this run from planning to destroy the retained default one.
+  state_key = "rds_proxy"
+  command   = plan
 
   variables {
     enable_rds_proxy                    = true
@@ -444,7 +489,10 @@ run "role_session_defaults_can_be_forced_on" {
 
 # Left to the operator: nothing runs, and the module outputs the statements.
 run "role_session_defaults_can_be_left_to_the_operator" {
-  command = plan
+  # enable_rds_proxy changes the settings document (Database:QueryCache); a
+  # fresh state keeps this run from planning to destroy the retained default one.
+  state_key = "rds_proxy"
+  command   = plan
 
   variables {
     enable_rds_proxy                    = true
@@ -468,7 +516,10 @@ run "role_session_defaults_can_be_left_to_the_operator" {
 }
 
 run "on_admits_the_egress_isolation_phases" {
-  command = apply
+  # enable_rds_proxy changes the settings document (Database:QueryCache); a
+  # fresh state keeps this run from planning to destroy the retained default one.
+  state_key = "rds_proxy"
+  command   = apply
 
   variables {
     enable_rds_proxy                   = true
@@ -483,9 +534,10 @@ run "on_admits_the_egress_isolation_phases" {
   assert {
     condition = length(aws_batch_job_definition.gp_provisioning) > 0 && alltrue([
       for tier, jd in aws_batch_job_definition.gp_provisioning :
-      one([for e in jsondecode(jd.container_properties).environment : e.value if e.name == "Database__SessionSettings__Mode"]) == "role-defaults"
+      one([for e in jsondecode(jd.container_properties).environment : e.value if e.name == "Database__SessionSettings__Mode"]) == "role-defaults" &&
+      one([for e in jsondecode(jd.container_properties).environment : e.value if e.name == "Database__QueryCache__EnableAutomaticCaching"]) == "false"
     ])
-    error_message = "The provisioning job definitions read the proxy connection string, so they must set Database__SessionSettings__Mode=role-defaults too."
+    error_message = "The provisioning job definitions read the proxy connection string, so they must set Database__SessionSettings__Mode=role-defaults and Database__QueryCache__EnableAutomaticCaching=false too."
   }
 }
 
@@ -504,7 +556,10 @@ run "on_with_an_existing_database_is_rejected" {
 }
 
 run "idle_above_the_ceiling_is_rejected" {
-  command = plan
+  # enable_rds_proxy changes the settings document (Database:QueryCache); a
+  # fresh state keeps this run from planning to destroy the retained default one.
+  state_key = "rds_proxy"
+  command   = plan
 
   variables {
     enable_rds_proxy                       = true
@@ -519,7 +574,10 @@ run "idle_above_the_ceiling_is_rejected" {
 # Overriding the server's session timeouts (or Database:Schema) through
 # additional_env would make them differ from the role defaults the module sets.
 run "on_with_overridden_session_timeouts_warns" {
-  command = plan
+  # enable_rds_proxy changes the settings document (Database:QueryCache); a
+  # fresh state keeps this run from planning to destroy the retained default one.
+  state_key = "rds_proxy"
+  command   = plan
 
   variables {
     enable_rds_proxy = true

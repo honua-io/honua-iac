@@ -142,7 +142,10 @@ locals {
   # Behind RDS Proxy every process also carries
   # local.db_session_settings_environment (rds-proxy.tf), which moves the
   # server's session timeouts from a per-connection SET onto the database
-  # role's defaults so the proxy can multiplex instead of pinning.
+  # role's defaults so the proxy can multiplex instead of pinning, and no
+  # process prepares statements (Database:QueryCache:EnableAutomaticCaching
+  # false: the settings document on the Lambda functions, the environment on
+  # the GP Batch jobs; rds-proxy.tf).
   #
   # The same per-process map also carries local.import_limits_environment for
   # the API Lambda and the GP Batch job. The control-plane event functions drop
@@ -156,10 +159,10 @@ locals {
       } : process => merge({
         Limits__Connections__MaxConnectionPoolSize = tostring(size)
         Limits__Connections__MaxConcurrentQueries  = tostring(size)
-        }, process == "gp_batch" ? {
-        Limits__Connections__MinConnectionPoolSize         = "0"
-        Limits__Connections__ConnectionIdleLifetimeSeconds = tostring(var.db_connection_idle_lifetime_seconds)
-    } : {}, local.db_session_settings_environment, local.import_limits_environment)
+        }, process == "gp_batch" ? merge({
+          Limits__Connections__MinConnectionPoolSize         = "0"
+          Limits__Connections__ConnectionIdleLifetimeSeconds = tostring(var.db_connection_idle_lifetime_seconds)
+    }, local.db_proxy_query_cache_environment) : {}, local.db_session_settings_environment, local.import_limits_environment)
   }
   # Upload size (bytes) above which honua-server runs an import as a background
   # job instead of inline (Import:Limits:BackgroundJobThresholdBytes). Null

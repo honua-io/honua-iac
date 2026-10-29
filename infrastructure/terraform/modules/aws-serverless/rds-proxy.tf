@@ -51,11 +51,29 @@
 #     as defaults on the database role (it logs event 5870 with the ALTER ROLE
 #     statements when they are missing); null_resource.db_role_session_defaults
 #     (main.tf) sets them on the direct endpoint before the proxy target exists.
-# What can still pin: the server's own prepared-statement cache
-# (Database:QueryCache:EnableAutomaticCaching, default on; PREPARE pins),
-# session advisory locks (migrations, schedulers) and tenant set_config calls.
-# Those pins last only until the client disconnects; the proxy's ceiling,
-# borrow queue and idle-client reaping still bound the database.
+#   - Database:QueryCache:EnableAutomaticCaching=false on every server
+#     process (local.db_proxy_query_cache_environment). With it on (the server
+#     default) each API instance's HighFrequencyQueryPreparationService
+#     PREPAREs its hot queries on one pooled connection about 5 s after start,
+#     and PreparedStatementCache PREPAREs repeated request SQL. PREPARE pins,
+#     and the pinned connection stays in the Npgsql pool of a frozen
+#     environment until the proxy reaps it (idle_client_timeout). honua-release
+#     e2e-cloud-aws run 40865466550 (aws-serverless/redis-on, db.t3.micro): the
+#     proxy's pinned count equalled its borrowed count all run (4 of 4 before
+#     load); the S9 demo burst took the API to 39 concurrent environments, every
+#     one of the proxy's 25 allowed database connections was pinned, borrow
+#     latency reached 29 s and API invocations and inits hit the 30 s timeout
+#     (gateway 503 with integrationStatus 200), and the pins held from 14:19
+#     to 14:26 UTC, failing /healthz/ready, an API-key revoke and a datasource
+#     test minutes after the burst. Unprepared parameterized commands (the
+#     extended protocol's unnamed statements) multiplex.
+#     The Lambda functions get it through the settings document
+#     (local.db_proxy_settings_document, runtime-settings.tf), which has no
+#     4 KB environment cap; the GP Batch jobs get the environment variable.
+# What can still pin: session advisory locks (migrations, schedulers) and
+# tenant set_config calls. Those pins last only until the client disconnects;
+# the proxy's ceiling, borrow queue and idle-client reaping still bound the
+# database.
 # ---------------------------------------------------------------------------
 
 locals {
@@ -71,6 +89,16 @@ locals {
   # Merged into local.db_pool_environment (main.tf).
   db_session_settings_environment = local.rds_proxy_enabled ? {
     Database__SessionSettings__Mode = "role-defaults"
+  } : {}
+
+  # No server-side prepared statements behind the proxy (see Pinning). The
+  # Lambda functions read it from the settings document; the GP Batch jobs,
+  # which have no environment cap, from the environment (main.tf).
+  db_proxy_settings_document = local.rds_proxy_enabled ? {
+    Database = { QueryCache = { EnableAutomaticCaching = false } }
+  } : {}
+  db_proxy_query_cache_environment = local.rds_proxy_enabled ? {
+    Database__QueryCache__EnableAutomaticCaching = "false"
   } : {}
   db_proxy_connection_string = local.rds_proxy_enabled ? join("", [
     "Host=${aws_db_proxy.this[0].endpoint};Port=5432;Database=${var.db_name};Username=${var.db_username};Password=${local.db_password}",

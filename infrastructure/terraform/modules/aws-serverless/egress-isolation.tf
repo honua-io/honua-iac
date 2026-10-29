@@ -487,8 +487,9 @@ resource "aws_batch_job_definition" "gp_provisioning" {
         value = "aws:secretsmanager:${local.runtime_connection_secret.arn}"
       }
       ], [
-      # Behind RDS Proxy the server issues no session SET (rds-proxy.tf, Pinning).
-      for name, value in local.db_session_settings_environment : {
+      # Behind RDS Proxy the server issues no session SET and prepares no
+      # statements (rds-proxy.tf, Pinning).
+      for name, value in merge(local.db_session_settings_environment, local.db_proxy_query_cache_environment) : {
         name  = name
         value = value
       }
