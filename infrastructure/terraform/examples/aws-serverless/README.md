@@ -172,6 +172,16 @@ the schema. A fresh installation needs a separately verified initialization step
 before traffic. The historical start-a-web-server-and-wait-for-readiness procedure
 is not the isolated migration contract.
 
+`serving_closed` (default `false`) holds the deployment closed while that step
+runs: the API function and the control-plane event functions get reserved
+concurrency 0, so nothing (an internet scanner on the API Gateway URL, an
+EventBridge schedule) can cold-start an instance against an unmigrated schema
+(honua-server#6750). Apply a new deployment with `serving_closed = true`, migrate
+the database out-of-band (the `migrate_*` outputs), then apply again with
+`serving_closed = false`. Only reserved concurrency changes on the second apply:
+database pool sizing and the function environments use the open values. The
+`migration_image` function below is never closed.
+
 The optional `migration_image` preview wires a dedicated, published-version Lambda
 function derived from the exact serving image. Supply its digest and the matching
 `migration_packaged_manifest_sha256` from a qualified release. Terraform invokes

@@ -16,6 +16,21 @@
 # (4 KB environment budget, lambda_environment_limit_bytes); honua-server
 # already defaults MinConnectionPoolSize to 0 on Lambda when it is unset.
 locals {
+  # serving_closed (honua-server#6750): reserved concurrency 0 on the API and
+  # control-plane event functions until the database is migrated, so an early
+  # request (an internet scanner on the API Gateway URL) cannot cold-start an
+  # instance against an unmigrated schema. Pool sizing below always uses the
+  # open values, so opening the deployment changes only reserved concurrency,
+  # never a function environment or the connection string. A
+  # lambda_reserved_concurrent_executions of 0 is a closed function too: it
+  # bounds no open instances, so the API pool falls back as if unset.
+  serving_reserved_concurrency = {
+    api = var.serving_closed ? 0 : var.lambda_reserved_concurrent_executions
+    control_plane = {
+      for kind, value in local.control_plane_reserved_concurrency : kind => var.serving_closed ? 0 : value
+    }
+  }
+
   db_pool_control_plane_connections = local.control_plane_events_enabled ? (
     (local.control_plane_reserved_concurrency.reconcile + local.control_plane_reserved_concurrency.backstop + local.control_plane_reserved_concurrency.tick)
     * var.control_plane_db_max_pool_size * var.db_pools_per_process
@@ -29,7 +44,7 @@ locals {
     instance                 = var.db_instance_class
     external_database        = var.existing_db_endpoint != ""
     max_connections_override = var.db_max_connections_override
-    max_processes            = var.lambda_reserved_concurrent_executions
+    max_processes            = var.lambda_reserved_concurrent_executions == 0 ? null : var.lambda_reserved_concurrent_executions
     pools_per_process        = var.db_pools_per_process
     other_connections        = local.db_pool_control_plane_connections + local.db_pool_gp_batch_connections
     safety_fraction          = var.db_connection_safety_fraction
