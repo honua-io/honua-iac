@@ -368,3 +368,54 @@ run "reject_canary_audit_chain_key_override" {
   variables { canary_additional_env = { AuditLog__ChainVerification__Key = "plaintext" } }
   expect_failures = [var.canary_additional_env]
 }
+
+run "studio_ai_proxy_limits_reach_bedrock_cells_only" {
+  command = apply
+  variables {
+    enable_bedrock_ai      = true
+    bedrock_ai_region      = "us-east-1"
+    studio_ai_proxy_limits = { max_prompt_characters = 400000, max_request_bytes = 4194304, max_event_bytes = 4194304, max_response_bytes = 8388608 }
+  }
+  assert {
+    condition = alltrue([for name, value in {
+      StudioAiProxy__MaxPromptCharacters = "400000"
+      StudioAiProxy__MaxRequestBytes     = "4194304"
+      StudioAiProxy__MaxEventBytes       = "4194304"
+      StudioAiProxy__MaxResponseBytes    = "8388608"
+    } : one([for e in jsondecode(aws_ecs_task_definition.this.container_definitions)[0].environment : e.value if e.name == name]) == value])
+    error_message = "Configured Studio AI proxy limits reach the Bedrock-enabled task."
+  }
+}
+
+run "studio_ai_proxy_limits_partial_and_absent" {
+  command = apply
+  variables {
+    enable_bedrock_ai      = true
+    bedrock_ai_region      = "us-east-1"
+    studio_ai_proxy_limits = { max_prompt_characters = 400000 }
+  }
+  assert {
+    condition     = length([for e in jsondecode(aws_ecs_task_definition.this.container_definitions)[0].environment : e if startswith(e.name, "StudioAiProxy__Max")]) == 1
+    error_message = "Only the set limit is emitted; unset limits keep the server defaults."
+  }
+}
+
+run "studio_ai_proxy_limits_without_bedrock_emit_nothing" {
+  command = apply
+  variables {
+    studio_ai_proxy_limits = { max_prompt_characters = 400000 }
+  }
+  assert {
+    condition     = length([for e in jsondecode(aws_ecs_task_definition.this.container_definitions)[0].environment : e if startswith(e.name, "StudioAiProxy__Max")]) == 0
+    error_message = "Without Bedrock the proxy is off and no limit is emitted."
+  }
+}
+
+run "studio_ai_proxy_limits_reject_out_of_range" {
+  command = plan
+  variables {
+    enable_bedrock_ai      = true
+    studio_ai_proxy_limits = { max_prompt_characters = 600000 }
+  }
+  expect_failures = [var.studio_ai_proxy_limits]
+}

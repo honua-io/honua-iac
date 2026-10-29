@@ -16,6 +16,14 @@ module input/output contracts may still change.
 
 ### Added
 
+- `aws-ecs`, `examples/aws`: optional `studio_ai_proxy_limits` (`max_prompt_characters`,
+  `max_request_bytes`, `max_event_bytes`, `max_response_bytes`), emitted as `StudioAiProxy__Max*` only
+  when Bedrock is enabled. Null fields keep the server defaults. A genuine-model agent turn carries the
+  whole bounded tool view plus signed provenance, which exceeds the 128,000-character default prompt limit
+  (honua-release e2e-cloud-aws run 40947050732).
+
+### Added
+
 - `aws-serverless`, `examples/aws-serverless`: `serving_closed` (default `false`) holds a deployment closed
   until its database is migrated: reserved concurrency 0 on the API function and the control-plane event
   functions (reconcile, backstop, tick), so an early request (an internet scanner on the API Gateway URL)

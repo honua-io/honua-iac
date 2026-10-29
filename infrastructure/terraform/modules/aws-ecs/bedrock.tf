@@ -59,7 +59,18 @@ locals {
     WorkflowGeneration__Providers__bedrock__Region         = var.bedrock_ai_region
     WorkflowGeneration__Providers__bedrock__MaxTokens      = tostring(var.bedrock_ai_max_tokens)
     WorkflowGeneration__Providers__bedrock__TimeoutSeconds = tostring(var.bedrock_ai_timeout_seconds)
-  }, local.bedrock_disclosure_environment) : {}
+  }, local.bedrock_disclosure_environment, local.studio_ai_proxy_limits_environment) : {}
+
+  # Optional Studio AI proxy size limits (server defaults apply when unset). A genuine-model agent turn
+  # carries the whole bounded tool view plus signed provenance, which can exceed the defaults.
+  studio_ai_proxy_limits_environment = var.studio_ai_proxy_limits == null ? {} : {
+    for key, value in {
+      StudioAiProxy__MaxPromptCharacters = var.studio_ai_proxy_limits.max_prompt_characters
+      StudioAiProxy__MaxRequestBytes     = var.studio_ai_proxy_limits.max_request_bytes
+      StudioAiProxy__MaxEventBytes       = var.studio_ai_proxy_limits.max_event_bytes
+      StudioAiProxy__MaxResponseBytes    = var.studio_ai_proxy_limits.max_response_bytes
+    } : key => tostring(value) if value != null
+  }
 }
 
 # Least-privilege Bedrock invoke grant on the Lambda execution role, scoped to
