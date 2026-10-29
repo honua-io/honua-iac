@@ -50,10 +50,13 @@ an EKS cell. The other half was the node-group role: the upstream default name
 `default-eks-node-group-*` falls outside the cell's IAM name prefix, so the role
 is now named under `<name_prefix>-<environment>`. Both workload roles are too.
 
-The server role reads the database, admin password, master key, optional Redis,
-key-ring and audit-chain secrets. The GP Job role reads only the database,
-master key, optional Redis and key-ring secrets; it cannot read the admin
-password or audit-chain key. Customer-managed KMS decrypt grants are scoped to
+Both workload roles read the database, admin password, master key, optional
+Redis, key-ring and audit-chain secrets. The GP Job role needs the same set: the
+chart's `geoprocessing.kubernetesJobs.envFromServer` mode (default on) imports the
+server's runtime Secret and config ConfigMap into each worker, and honua-server
+resolves every `aws:secretsmanager:` security reference at startup, so a reference
+the worker cannot read fails the Job before it runs (honua-release#1059).
+Customer-managed KMS decrypt grants are scoped to
 the role's matching secret ARNs through the Secrets Manager encryption context. With
 `gp_job_data_bucket_enabled`, both read and write `gp_job_data_bucket_arn`.
 

@@ -53,6 +53,15 @@ module input/output contracts may still change.
 
 ### Fixed
 
+- `aws-eks`: the `<name>-gp-job` workload role now reads the same Secrets Manager references as the
+  server role, adding the admin password and the audit-chain key (and its customer-managed KMS key). The
+  honua-helm chart's `geoprocessing.kubernetesJobs.envFromServer` mode (default on) imports the server's
+  runtime Secret and config ConfigMap into each GP Job worker, and honua-server resolves every
+  `aws:secretsmanager:` security reference at startup. On honua-release e2e-cloud-aws run 40947860102
+  (aws-eks/redis-on) all three S10 large-import worker Jobs exited 139 before running with `Failed to
+  resolve the security setting 'AuditLog:ChainVerification:Key' from AWS Secrets Manager` /
+  `AccessDeniedException`, so the import ended `Import failed.` with 0 features (honua-release#1059).
+  The aws-serverless Batch job role already had this grant.
 - `aws-serverless`: with `enable_rds_proxy`, every server process now runs with
   `Database:QueryCache:EnableAutomaticCaching=false`, so honua-server no longer `PREPARE`s statements
   through the proxy. `PREPARE` pins the client connection, and a frozen API Lambda environment keeps

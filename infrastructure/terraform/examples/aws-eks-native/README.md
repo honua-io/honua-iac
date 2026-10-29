@@ -57,8 +57,10 @@ the running pod before binding a handoff.
 
 The GP worker imports a Kubernetes Secret containing only AWS secret references
 for the database, Redis, encryption master key and optional secret channel.
-Its Pod Identity role can read only those secret ARNs; it has no admin-password
-or audit-key permission. The Server permits operator-owned workload/default
+This worker needs only those secret ARNs. The GP role that `examples/aws-eks`
+creates can also read the admin-password and audit-key secrets, because the
+chart path imports the server's whole environment into each worker
+(honua-release#1059). The Server permits operator-owned workload/default
 image and service-account overrides; ordinary GP submissions cannot set the
 reserved `k8s.*` request metadata. This install configures defaults but does
 not prove an executed GP Job used them. That claim requires observation of the
