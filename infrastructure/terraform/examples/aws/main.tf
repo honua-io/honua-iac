@@ -17,6 +17,7 @@ module "honua" {
   source                     = "../../modules/aws-ecs"
   enable_bedrock_ai          = var.enable_bedrock_ai
   bedrock_ai_model           = var.bedrock_ai_model
+  studio_ai_proxy_limits     = var.studio_ai_proxy_limits
   bedrock_ai_region          = var.bedrock_ai_region
   bedrock_ai_max_tokens      = var.bedrock_ai_max_tokens
   bedrock_ai_timeout_seconds = var.bedrock_ai_timeout_seconds
