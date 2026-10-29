@@ -259,7 +259,10 @@ run "typed_input_wins_over_additional_env" {
 # under Lambda's 4096-byte cap, which also absorbs a longer per-run hostname
 # (ACM allows 64 octets, 3 more than this one, rendered twice).
 run "release_redis_on_cell_with_threshold_fits_under_the_cap" {
-  command = apply
+  # enable_rds_proxy changes the settings document (Database:QueryCache); a
+  # fresh state keeps this run from planning to destroy the retained default one.
+  state_key = "rds_proxy"
+  command   = apply
 
   override_resource {
     target = aws_acm_certificate.api[0]

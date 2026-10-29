@@ -1150,17 +1150,34 @@ closes with its client (`rds_proxy_idle_client_timeout_seconds`). A lower idle
 percentage (for example 20) recycles them sooner; rebooting the instance once
 starts clean.
 
-What can still pin a client connection with role defaults: the server's
-prepared-statement cache (`Database:QueryCache:EnableAutomaticCaching`, on by
-default; `PREPARE` pins), session advisory locks (migrations, background
-schedulers) and the tenant `set_config` calls of some feature-store paths.
-Those pins end when the client disconnects, so the ceiling, the borrow queue
-and idle-client reaping still protect the database. The module leaves the
-query-cache default alone; if `DatabaseConnectionsCurrentlySessionPinned`
-stays high, set `Database__QueryCache__EnableAutomaticCaching=false` through
-`additional_env` (55 bytes of the Lambda environment budget; the module checks
-the resulting total at plan time). Watch
-`DatabaseConnectionsCurrentlySessionPinned` and
+The server's prepared-statement cache (`Database:QueryCache:EnableAutomaticCaching`,
+on by default) also pins: each API instance's `HighFrequencyQueryPreparationService`
+runs `PREPARE` on one pooled connection about 5 s after start, and
+`PreparedStatementCache` prepares repeated request SQL. A frozen Lambda
+environment keeps that pinned connection in its pool until the proxy reaps it
+(`rds_proxy_idle_client_timeout_seconds`), so the proxy can serve no more API
+environments than it has database connections. On honua-release e2e-cloud-aws
+run 40865466550 (aws-serverless/redis-on, db.t3.micro) the proxy's pinned
+count equalled its borrowed count all run; a demo burst took the API to 39
+concurrent environments, all 25 allowed database connections were pinned,
+`DatabaseConnectionsBorrowLatency` reached 29 s, API invocations and inits hit
+the 30 s Lambda timeout (API Gateway's own 503), and the pins held for seven
+minutes. With the proxy on, the module therefore turns the cache off on every
+server process: through the settings document (`HONUA_SETTINGS_DOCUMENT`,
+`Database:QueryCache:EnableAutomaticCaching=false`) on the API and
+control-plane event Lambdas, which costs nothing of the
+[Lambda environment budget](#lambda-environment-budget), and as
+`Database__QueryCache__EnableAutomaticCaching=false` on the GP Batch and
+custom-code provisioning job definitions. Unprepared parameterized commands (the extended protocol's
+unnamed statements) still multiplex. Turning the proxy on or off changes the
+settings document, so carry `runtime_settings_retention_entry` into
+`retained_runtime_settings_documents` first, as for any document change.
+
+What can still pin a client connection with role defaults: session advisory
+locks (migrations, background schedulers) and the tenant `set_config` calls of
+some feature-store paths. Those pins end when the client disconnects, so the
+ceiling, the borrow queue and idle-client reaping still protect the database.
+Watch `DatabaseConnectionsCurrentlySessionPinned` and
 `DatabaseConnectionsBorrowLatency` in CloudWatch.
 
 **What stays on the direct endpoint.** The proxy is reachable only inside the

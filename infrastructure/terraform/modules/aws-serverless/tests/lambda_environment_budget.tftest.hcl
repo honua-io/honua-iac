@@ -325,7 +325,10 @@ run "every_optional_feature_fits" {
 # and the proxy connection-string secret is referenced by its shorter name, so
 # the scheduled-tick function measures 4070 bytes, still under the margin.
 run "every_optional_feature_with_rds_proxy_fits" {
-  command = apply
+  # enable_rds_proxy changes the settings document (Database:QueryCache); a
+  # fresh state keeps this run from planning to destroy the retained default one.
+  state_key = "rds_proxy"
+  command   = apply
 
   # The mock provider generates a random name, which aws_db_proxy_target
   # rejects when it starts with a digit; pin the real default name.

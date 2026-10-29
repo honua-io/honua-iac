@@ -321,7 +321,10 @@ run "marketplace_image_override_cannot_bypass_identity" {
 }
 
 run "proxy_and_shared_storage_are_real_runtime_dependencies" {
-  command = apply
+  # enable_rds_proxy changes the settings document (Database:QueryCache); a
+  # fresh state keeps this run from planning to destroy the retained default one.
+  state_key = "rds_proxy"
+  command   = apply
   variables {
     enable_rds_proxy                = true
     file_storage_provider           = "AwsS3"

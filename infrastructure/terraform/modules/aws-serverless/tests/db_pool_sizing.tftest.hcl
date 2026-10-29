@@ -259,7 +259,10 @@ run "fitting_override_wins" {
 }
 
 run "rds_proxy_keeps_the_previous_cap_and_skips_the_check" {
-  command = plan
+  # enable_rds_proxy changes the settings document (Database:QueryCache); a
+  # fresh state keeps this run from planning to destroy the retained default one.
+  state_key = "rds_proxy"
+  command   = plan
 
   variables {
     db_instance_class                     = "db.t4g.small"

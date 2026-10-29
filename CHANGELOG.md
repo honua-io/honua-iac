@@ -45,6 +45,21 @@ module input/output contracts may still change.
 
 ### Fixed
 
+- `aws-serverless`: with `enable_rds_proxy`, every server process now runs with
+  `Database:QueryCache:EnableAutomaticCaching=false`, so honua-server no longer `PREPARE`s statements
+  through the proxy. `PREPARE` pins the client connection, and a frozen API Lambda environment keeps
+  its pinned connection until the proxy reaps it, so the proxy could serve no more API environments
+  than it had database connections. On honua-release e2e-cloud-aws run 40865466550
+  (aws-serverless/redis-on, db.t3.micro) a demo burst took the API to 39 concurrent environments,
+  all 25 of the proxy's allowed database connections were pinned, borrow latency reached 29 s, and
+  API invocations and inits hit the 30 s Lambda timeout, which API Gateway answered with its own
+  503 (integrationStatus 200); the pins held for seven minutes and also failed `/healthz/ready`, an
+  API-key revoke and a datasource connection test. The Lambda functions get the setting through the
+  settings document (no change to the 4 KB environment); the GP Batch and custom-code provisioning job
+  definitions through `Database__QueryCache__EnableAutomaticCaching`. Upgrade note: for a deployment with the proxy on,
+  this changes the settings document, so carry the current `runtime_settings_retention_entry` into
+  `retained_runtime_settings_documents` before applying. Deployments without the proxy are unchanged.
+
 - `aws-ecs`: enabling Bedrock (`enable_bedrock_ai`) now also emits the
   `StudioAiProxy__Disclosure__*` approval that honua-server's fail-closed AI disclosure policy
   requires. It approves exactly the configured `bedrock_ai_model` and `bedrock_ai_region` for the

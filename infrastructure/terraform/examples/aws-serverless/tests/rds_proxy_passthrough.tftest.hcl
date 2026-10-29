@@ -143,7 +143,10 @@ run "proxy_is_off_by_default" {
 }
 
 run "proxy_passes_through_to_the_module" {
-  command = apply
+  # enable_rds_proxy changes the settings document (Database:QueryCache); a
+  # fresh state keeps this run from planning to destroy the retained default one.
+  state_key = "rds_proxy"
+  command   = apply
 
   variables {
     enable_rds_proxy = true
@@ -161,7 +164,10 @@ run "proxy_passes_through_to_the_module" {
 }
 
 run "proxy_defaults_reach_the_module" {
-  command = plan
+  # enable_rds_proxy changes the settings document (Database:QueryCache); a
+  # fresh state keeps this run from planning to destroy the retained default one.
+  state_key = "rds_proxy"
+  command   = plan
 
   variables {
     enable_rds_proxy = true
@@ -176,7 +182,10 @@ run "proxy_defaults_reach_the_module" {
 # The certification cell (db.t3.micro, runner migrate/seed on the direct
 # endpoint) declares a lower ceiling so direct sessions keep headroom.
 run "proxy_pool_settings_pass_through" {
-  command = plan
+  # enable_rds_proxy changes the settings document (Database:QueryCache); a
+  # fresh state keeps this run from planning to destroy the retained default one.
+  state_key = "rds_proxy"
+  command   = plan
 
   variables {
     enable_rds_proxy                            = true
@@ -192,7 +201,10 @@ run "proxy_pool_settings_pass_through" {
 }
 
 run "proxy_percent_out_of_range_is_rejected" {
-  command = plan
+  # enable_rds_proxy changes the settings document (Database:QueryCache); a
+  # fresh state keeps this run from planning to destroy the retained default one.
+  state_key = "rds_proxy"
+  command   = plan
 
   variables {
     enable_rds_proxy                  = true
