@@ -5,9 +5,12 @@
 #   * server — the chart's server service account; resolves the
 #     aws:secretsmanager: references in honua_server_environment.
 #   * gp-job — the service account GP Jobs run as
-#     (ControlPlane:Kubernetes:DefaultServiceAccount). The chart's envFromServer
-#     mode (honua-helm#99, default on) hands the worker the server's runtime
-#     Secret and config ConfigMap, so it resolves the same references.
+#     (ControlPlane:Kubernetes:DefaultServiceAccount). The worker resolves only
+#     the database, master key, Redis and key-ring references: the chart scopes
+#     the worker environment to them (honua-helm#110,
+#     geoprocessing.kubernetesJobs.environmentScope=worker). The admin password
+#     and audit-chain key stay with the server unless
+#     gp_job_reads_server_secrets is true.
 #
 # pod_identity (default): EKS Pod Identity associations, made through the EKS
 # API — no IAM OIDC provider, no service-account annotation. irsa: the cluster's
@@ -33,15 +36,15 @@ locals {
     }
   }
 
-  # The worker imports the server's environment, and honua-server resolves every
-  # aws:secretsmanager: security reference it finds (admin password, master key,
-  # audit-chain key) at process start, before any job code runs. A reference the
-  # worker role cannot read fails the pod at startup: on honua-release
-  # e2e-cloud-aws run 40947860102 (aws-eks/redis-on) every S10 import worker
-  # exited 139 on "Failed to resolve the security setting
-  # 'AuditLog:ChainVerification:Key' from AWS Secrets Manager ... AccessDeniedException".
-  # So the GP job role reads the server's secret set, as the aws-serverless Batch
-  # job role does. The key-ring reference is present only when configured.
+  # honua-server resolves every aws:secretsmanager: security reference in its
+  # environment at process start, before any job code runs, so a reference the
+  # worker role cannot read fails the pod (honua-release#1059: S10 workers exited
+  # 139 on AuditLog:ChainVerification:Key when a chart before honua-helm#110
+  # imported the server's whole environment). A chart with honua-helm#110 gives
+  # the worker only the database, master key, Redis and key-ring references, so
+  # the GP job role reads only those. gp_job_reads_server_secrets restores the
+  # server's set for an older chart, or for environmentScope=server.
+  # The key-ring reference is present only when configured.
   operation_key_ring_secret_arns = var.redis_enabled && var.operation_key_ring_certificate_secret_arn != "" ? [var.operation_key_ring_certificate_secret_arn] : []
   audit_chain_key_secret_arns    = var.audit_chain_key_secret_arn != "" ? [var.audit_chain_key_secret_arn] : []
 
@@ -56,9 +59,18 @@ locals {
     local.audit_chain_key_secret_arns,
   )
 
+  gp_job_secret_arns = var.gp_job_reads_server_secrets ? local.server_secret_arns : concat(
+    [
+      aws_secretsmanager_secret.db_connection.arn,
+      aws_secretsmanager_secret.master_key.arn,
+    ],
+    aws_secretsmanager_secret.redis_connection[*].arn,
+    local.operation_key_ring_secret_arns,
+  )
+
   workload_secret_arns = {
     server = local.server_secret_arns
-    gp-job = local.server_secret_arns
+    gp-job = local.gp_job_secret_arns
   }
 
   server_kms_key_arns = distinct(concat(
@@ -67,9 +79,14 @@ locals {
     var.audit_chain_key_secret_arn != "" && var.audit_chain_key_secret_kms_key_arn != "" ? [var.audit_chain_key_secret_kms_key_arn] : [],
   ))
 
+  gp_job_kms_key_arns = var.gp_job_reads_server_secrets ? local.server_kms_key_arns : distinct(concat(
+    var.secrets_kms_key_arn != "" ? [var.secrets_kms_key_arn] : [],
+    var.redis_enabled && var.operation_key_ring_certificate_secret_kms_key_arn != "" ? [var.operation_key_ring_certificate_secret_kms_key_arn] : [],
+  ))
+
   workload_kms_key_arns = {
     server = local.server_kms_key_arns
-    gp-job = local.server_kms_key_arns
+    gp-job = local.gp_job_kms_key_arns
   }
 
   pod_identity_trust_policy = jsonencode({

@@ -14,6 +14,17 @@ module input/output contracts may still change.
 
 ## Unreleased
 
+### Changed
+
+- `aws-eks`: the `<name>-gp-job` workload role again reads only the database, master key, optional Redis
+  and key-ring secrets (and their CMKs). It no longer reads the admin password or the audit-chain key and
+  its CMK. honua-helm#110 scopes the GP worker environment
+  (`geoprocessing.kubernetesJobs.environmentScope=worker`, the chart default), so a worker no longer
+  imports or resolves those references. The new `gp_job_reads_server_secrets` input on the module and on
+  `examples/aws-eks` (default `false`) restores the server's secret set from #334. Set it to `true` while
+  you deploy a honua-helm chart that predates #110, or with `environmentScope=server`. Otherwise every GP
+  worker fails at startup on the audit-chain reference (honua-release#1059).
+
 ### Fixed
 
 - `aws-serverless`: `rds.force_ssl=1` now uses `apply_method` `pending-reboot`. PostgreSQL 15 already defaults that parameter to 1 and AWS refreshes the default as `pending-reboot`, so `immediate` showed the same in-place update on every plan (honua-iac#321, demo.honua.io drift). The value is unchanged, so no reboot follows.

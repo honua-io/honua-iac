@@ -31,6 +31,7 @@ module "eks" {
   gp_job_image                            = var.gp_job_image
   gp_job_data_bucket_arn                  = var.gp_job_data_bucket_arn
   gp_job_data_bucket_enabled              = var.gp_job_data_bucket_enabled
+  gp_job_reads_server_secrets             = var.gp_job_reads_server_secrets
   permissions_boundary_arn                = var.permissions_boundary_arn
   infrastructure_permissions_boundary_arn = var.infrastructure_permissions_boundary_arn
 
