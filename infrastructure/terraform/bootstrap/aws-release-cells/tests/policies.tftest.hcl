@@ -226,6 +226,63 @@ run "reaper_retires_every_cell_service_it_finds" {
   }
 }
 
+run "cert_demo_zone_absent_by_default" {
+  command = plan
+  assert {
+    condition = alltrue([for lane in ["provision", "reaper", "mirror"] :
+      !strcontains(local.grant_policies[lane], "route53:") &&
+      !strcontains(local.grant_policies[lane], "acm:") &&
+      !strcontains(local.grant_policies[lane], "domainnames")
+    ])
+    error_message = "An empty cert demo zone must grant no DNS, certificate, or API Gateway domain permissions."
+  }
+}
+
+run "cert_demo_zone_scopes_records_certificates_and_domain_names" {
+  command = plan
+  variables {
+    cert_demo_hosted_zone_id = "Z089181827C9GKIKHXUTT"
+  }
+  assert {
+    condition = (
+      one([for statement in jsondecode(local.grant_policies.provision).Statement : statement if statement.Sid == "ChangeCertDemoRecords"]).Resource == "arn:aws:route53:::hostedzone/Z089181827C9GKIKHXUTT" &&
+      one([for statement in jsondecode(local.grant_policies.provision).Statement : statement if statement.Sid == "ChangeCertDemoRecords"]).Condition["ForAllValues:StringLike"]["route53:ChangeResourceRecordSetsNormalizedRecordNames"] == ["*.cert.demo.honua.io"] &&
+      one([for statement in jsondecode(local.grant_policies.provision).Statement : statement if statement.Sid == "ChangeCertDemoRecords"]).Condition.Null["route53:ChangeResourceRecordSetsNormalizedRecordNames"] == "false" &&
+      one([for statement in jsondecode(local.grant_policies.reaper).Statement : statement if statement.Sid == "ChangeCertDemoRecords"]).Resource == "arn:aws:route53:::hostedzone/Z089181827C9GKIKHXUTT" &&
+      !strcontains(local.grant_policies.mirror, "route53:") &&
+      !strcontains(local.grant_policies.provision, "demo.honua.io.")
+    )
+    error_message = "DNS changes must be the one hosted zone and only *.cert.demo.honua.io."
+  }
+  assert {
+    condition = (
+      contains(one([for statement in jsondecode(local.grant_policies.provision).Statement : statement if statement.Sid == "RequestCellCertificate"]).Action, "acm:RequestCertificate") &&
+      one([for statement in jsondecode(local.grant_policies.provision).Statement : statement if statement.Sid == "RequestCellCertificate"]).Condition.StringEquals["aws:RequestTag/Owner"] == "release-cell" &&
+      one([for statement in jsondecode(local.grant_policies.reaper).Statement : statement if statement.Sid == "DeleteCellCertificate"]).Condition.StringEquals["aws:ResourceTag/Owner"] == "release-cell"
+    )
+    error_message = "Certificate grants must stay on cell request and resource tags."
+  }
+  assert {
+    condition = (
+      one([for statement in jsondecode(local.grant_policies.provision).Statement : statement if statement.Sid == "CreateCellDomainName"]).Resource == "arn:aws:apigateway:us-east-1::/domainnames" &&
+      contains(tolist(one([for statement in jsondecode(local.grant_policies.reaper).Statement : statement if statement.Sid == "DeleteCellDomainName"]).Action), "apigateway:DELETE")
+    )
+    error_message = "API Gateway domain grants must be domain-name resources, not the whole API."
+  }
+  assert {
+    condition     = alltrue([for policy in values(local.grant_policies) : length(policy) <= 10240])
+    error_message = "Cert demo statements must still fit the inline grant quota. Lengths: ${length(local.grant_policies.provision)} ${length(local.grant_policies.reaper)} ${length(local.grant_policies.mirror)}."
+  }
+}
+
+run "reject_wildcard_cert_demo_zone" {
+  command = plan
+  variables {
+    cert_demo_hosted_zone_id = "Z*"
+  }
+  expect_failures = [var.cert_demo_hosted_zone_id]
+}
+
 run "only_the_reaper_lane_gets_a_two_hour_session" {
   command = plan
   assert {

@@ -10,6 +10,20 @@ The release promise is safe AWS certification of the GA ECS/Lambda substrates:
 a disposable certification run must not modify or destroy standing certification
 or demo resources. This is the pre-cut containment work in honua-iac#208.
 
+## Certification hostnames
+
+`cert_demo_hosted_zone_id` defaults to empty. An empty value adds no Route 53,
+ACM, or API Gateway custom-domain permissions. Set it to the public zone that
+owns `cert.demo.honua.io` only after confirming that zone is not tagged
+`Environment` `cert`, `standing`, or `demo`, and is not tagged `Lifecycle`
+`standing` or `demo`. The guardrail denies those tags, and an allow cannot
+override that deny. The grants then let the provision and reaper roles manage
+`*.cert.demo.honua.io` records in that one zone, cell-tagged ACM certificates,
+and tagged API Gateway domain names. They do not grant changes to the zone
+apex. Customer cells keep the caller's domain and `cors_allowed_origins`; this
+bootstrap does not bake a harness origin into a customer default. Applying the
+variable is an operator action and is not part of the change that adds it.
+
 ## Plan and verify
 
 Supply the existing GitHub OIDC provider and ECR mirror repository ARNs:
