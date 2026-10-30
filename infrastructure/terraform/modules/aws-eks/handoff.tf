@@ -74,6 +74,16 @@ locals {
   )
   public_base_url_environment = local.public_base_url != "" ? { Public__BaseUrl = local.public_base_url } : {}
 
+  # The managed certificate terminates TLS on the chart's Service load balancer
+  # and the backend protocol is HTTP (ingress.tf). honua-server then sees an
+  # http request and, with SecurityHeaders:HstsHttpsOnly at its default, omits
+  # Strict-Transport-Security on the public https:// endpoint (honua-release
+  # e2e-cloud-aws run 41038212574, both EKS cells). Same contract as
+  # modules/aws-ecs and modules/aws-serverless: emit the header for that
+  # trusted hop. A plain-HTTP Service, including one that only sets
+  # public_base_url, keeps the server default.
+  hsts_environment = local.use_managed_cert ? { SecurityHeaders__HstsHttpsOnly = "false" } : {}
+
   # chart_config_env: everything the chart's config.env needs EXCEPT the
   # credentials that belong in the chart's Secret (database, admin password,
   # master key, Redis). Safe to render into release values.
@@ -83,6 +93,7 @@ locals {
     local.cors_environment,
     local.control_plane_kubernetes_environment,
     local.public_base_url_environment,
+    local.hsts_environment,
     local.db_pool_sizing_environment,
   )
 

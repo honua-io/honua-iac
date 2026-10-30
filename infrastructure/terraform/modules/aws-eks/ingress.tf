@@ -17,7 +17,9 @@ locals {
 
   # Annotations for the chart's LoadBalancer Service: TLS on 443 with the
   # managed certificate, plain HTTP to the pods. Understood by both the in-tree
-  # cloud provider and the AWS Load Balancer Controller.
+  # cloud provider and the AWS Load Balancer Controller. chart_config_env sets
+  # SecurityHeaders__HstsHttpsOnly=false for this hop (handoff.tf): the server
+  # would otherwise omit Strict-Transport-Security because it sees HTTP.
   ingress_service_annotations = local.use_managed_cert ? {
     "service.beta.kubernetes.io/aws-load-balancer-ssl-cert"         = local.certificate_arn
     "service.beta.kubernetes.io/aws-load-balancer-ssl-ports"        = "443"
