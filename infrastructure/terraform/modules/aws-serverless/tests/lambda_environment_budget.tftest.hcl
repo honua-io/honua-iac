@@ -505,3 +505,73 @@ run "oversized_environment_fails_at_plan" {
 
   expect_failures = [aws_lambda_function.this]
 }
+
+# Genuine-model serverless cell (honua-iac#282, honua-release#1061). The harness
+# turns Bedrock on for aws-serverless redis-on and redis-off and, once this root
+# declares studio_ai_proxy_limits, passes the canary sizes. That is the release
+# Redis-on shape (file storage, custom domain, RDS Proxy, control-plane events).
+# The four limits are published in the settings document: as Lambda environment
+# variables this shape measured 4155 bytes.
+run "release_redis_on_bedrock_canary_limits_fit" {
+  # Bedrock, the proxy, and file storage each change the retained settings
+  # document. A fresh state keeps this plan from trying to destroy the one
+  # the earlier runs published. Apply, like the file-storage and RDS Proxy
+  # runs above: the proxy connection-string secret name is unknown at plan,
+  # so a plan-time byte count cannot be evaluated.
+  state_key = "bedrock_canary_limits"
+  command   = apply
+
+  # The mock provider generates a random name, which aws_db_proxy_target
+  # rejects when it starts with a digit; pin the real default name.
+  override_resource {
+    target = aws_db_proxy_default_target_group.this[0]
+    values = { name = "default" }
+  }
+
+  override_resource {
+    target = aws_acm_certificate.api[0]
+    values = {
+      arn = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
+      domain_validation_options = [{
+        domain_name           = "honuarawsse380460-aws-serverless-redis-on.cert.demo.honua.io"
+        resource_record_name  = "_abc.honuarawsse380460-aws-serverless-redis-on.cert.demo.honua.io."
+        resource_record_type  = "CNAME"
+        resource_record_value = "_def.acm-validations.aws."
+      }]
+    }
+  }
+
+  variables {
+    enable_bedrock_ai                     = true
+    bedrock_ai_region                     = "us-east-1"
+    studio_ai_proxy_limits                = { max_prompt_characters = 400000, max_request_bytes = 4194304, max_event_bytes = 4194304, max_response_bytes = 8388608 }
+    enable_rds_proxy                      = true
+    rds_proxy_max_connections_percent     = 70
+    rds_proxy_idle_client_timeout_seconds = 60
+    enable_control_plane_events           = true
+    import_background_job_threshold_bytes = 67108864
+    cors_allowed_origins                  = ["http://127.0.0.1:18099"]
+    studio_end_user_authorization         = true
+    operations_policy_rules = [
+      { operation_id = "*", role = "scoped-admin-key", decision = "Allow", reason = "Release cell: scoped admin keys run typed operations" },
+      { operation_id = "*", role = "admin", decision = "Allow", reason = "Release cell: bootstrap and full admins run typed operations" },
+    ]
+    domain_name                     = "honuarawsse380460-aws-serverless-redis-on.cert.demo.honua.io"
+    route53_zone_id                 = "Z089181827C9GKIKHXUTT"
+    file_storage_provider           = "AwsS3"
+    file_storage_aws_s3_bucket_name = "release-cells-file-storage-585192672263"
+    file_storage_aws_s3_key_prefix  = "release-cells/honuarawsse380460"
+  }
+
+  assert {
+    condition = (
+      jsondecode(aws_secretsmanager_secret_version.runtime_settings[local.runtime_settings_hash].secret_string).StudioAiProxy.MaxEventBytes == 4194304 &&
+      jsondecode(aws_secretsmanager_secret_version.runtime_settings[local.runtime_settings_hash].secret_string).StudioAiProxy.MaxResponseBytes == 8388608 &&
+      length([for key in keys(aws_lambda_function.this.environment[0].variables) : key if startswith(key, "StudioAiProxy__Max")]) == 0 &&
+      nonsensitive(sum([for k, v in aws_lambda_function.this.environment[0].variables : length(k) + length(v) + 6]) + 1) <= 4096 &&
+      nonsensitive(sum([for k, v in aws_lambda_function.control_plane_tick[0].environment[0].variables : length(k) + length(v) + 6]) + 1) <= 4096 &&
+      length([for key in keys(aws_lambda_function.control_plane_tick[0].environment[0].variables) : key if startswith(key, "StudioAiProxy__Max")]) == 0
+    )
+    error_message = "The Bedrock redis-on cell with canary proxy limits is ${nonsensitive(sum([for k, v in aws_lambda_function.this.environment[0].variables : length(k) + length(v) + 6]) + 1)} bytes on the API and ${nonsensitive(sum([for k, v in aws_lambda_function.control_plane_tick[0].environment[0].variables : length(k) + length(v) + 6]) + 1)} bytes on the scheduled tick; both must stay within 4096, the limits must be in the settings document, and neither function may carry StudioAiProxy__Max* environment variables."
+  }
+}

@@ -4,11 +4,13 @@
 # enable_rds_proxy adds Database:QueryCache:EnableAutomaticCaching=false
 # (local.db_proxy_settings_document, rds-proxy.tf); without the proxy the
 # document is unchanged.
+# studio_ai_proxy_limits, with Bedrock on, adds StudioAiProxy:Max* (bedrock.tf).
+# Those limits do not fit in the Lambda environment on the Redis-on cell.
 # This document contains configuration identifiers, not credential material.
 # Pin each function version to its document version so rolling back a function
 # does not silently read a newer deployment target configuration.
 locals {
-  runtime_settings_document = merge(local.db_proxy_settings_document, {
+  runtime_settings_document = merge(local.db_proxy_settings_document, local.studio_ai_proxy_limits_document, {
     ControlPlane = merge(local.lambda_deploy_canary_telemetry_connections, {
       DeployTargets = [{
         TargetId                    = local.lambda_target_id

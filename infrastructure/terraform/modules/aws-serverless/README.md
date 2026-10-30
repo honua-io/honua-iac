@@ -184,6 +184,7 @@ module "honua" {
 | `enable_bedrock_ai` | false | Grant the Lambda role `bedrock:InvokeModel`/`InvokeModelWithResponseStream` for the configured Claude model and route the AI studio (WorkflowGeneration) flows to Amazon Bedrock. |
 | `bedrock_ai_model` | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` | Bedrock model id for the AI studio flows (cross-region Claude Sonnet 4.5 inference profile). |
 | `bedrock_ai_region` | `us-west-2` | Region the server invokes Bedrock in. |
+| `studio_ai_proxy_limits` | `null` | Optional `max_prompt_characters`, `max_request_bytes`, `max_event_bytes`, `max_response_bytes`. Published as `StudioAiProxy` in the runtime settings document only when Bedrock is enabled and the field is set. Null fields keep the server defaults. |
 | `enable_amazon_location_geocoding` | false | Provision an Amazon Location place index, grant the Lambda role `geo:Search*`/`DescribePlaceIndex` on it, and route `Geocoding:DefaultProvider` to `amazon-location` (Nominatim explicitly disabled). |
 | `amazon_location_place_index_name` | `""` (→ `<name_prefix>-<environment>-geocode`) | Name of the Amazon Location place index. |
 | `amazon_location_data_source` | `Esri` | Upstream data provider for the place index (`Esri` or `Here` — not OpenStreetMap). |
@@ -468,8 +469,15 @@ the Lambda execution role a least-privilege `bedrock:InvokeModel` /
 the server's Studio AI proxy uses, and injects the `StudioAiProxy__*` env
 (`Enabled`, `DefaultProvider`, the `bedrock` provider's `Kind` and `Model`, plus
 `Region`/`MaxTokens`/`TimeoutSeconds` only where they differ from the server's
-defaults of us-west-2/4096/120) so the AI console routes to Bedrock. The
-`WorkflowGeneration__*` settings are no longer emitted: honua-server removed the
+defaults of us-west-2/4096/120) so the AI console routes to Bedrock. Optional
+`studio_ai_proxy_limits` publishes `StudioAiProxy:MaxPromptCharacters`,
+`MaxRequestBytes`, `MaxEventBytes` and `MaxResponseBytes` in the runtime
+settings document for the fields that are set. A genuine-model turn exceeds
+the server's 128,000-character default, and the four values as Lambda
+environment variables push the Redis-on cell past 4096 bytes. The server
+loads that document as configuration underneath environment variables.
+Control-plane event functions still drop `StudioAiProxy__Max*` environment
+keys. The `WorkflowGeneration__*` settings are no longer emitted: honua-server removed the
 options that read them (ADR-0076, #3255). The server authenticates via the AWS credential chain
 (the Lambda execution role) — without this grant the AI console gets
 `AccessDenied`.

@@ -89,9 +89,13 @@ locals {
   # receive the signing reference or a grant to read the private seed.
   # These settings are left out, from any source (additional_env included):
   # HostValidation__AllowedHosts__*, Cors__AllowedOrigins__*,
-  # SecurityHeaders__HstsHttpsOnly, HONUA_SERVE_ADMIN_UI, HONUA_ADMIN_UI and
-  # Import__Limits__BackgroundJobThresholdBytes.
-  control_plane_events_http_only_key_prefixes = concat(["HostValidation__AllowedHosts__", "Cors__AllowedOrigins__"], var.transcript_signing == null ? [] : ["StudioAiProxy__TranscriptSigning__"])
+  # SecurityHeaders__HstsHttpsOnly, HONUA_SERVE_ADMIN_UI, HONUA_ADMIN_UI,
+  # Import__Limits__BackgroundJobThresholdBytes and StudioAiProxy__Max*
+  # (studio request/response size limits; event functions do not serve turns).
+  control_plane_events_http_only_key_prefixes = concat(
+    ["HostValidation__AllowedHosts__", "Cors__AllowedOrigins__", "StudioAiProxy__Max"],
+    var.transcript_signing == null ? [] : ["StudioAiProxy__TranscriptSigning__"],
+  )
   control_plane_events_http_only_keys = [
     "SecurityHeaders__HstsHttpsOnly",
     "HONUA_SERVE_ADMIN_UI",
