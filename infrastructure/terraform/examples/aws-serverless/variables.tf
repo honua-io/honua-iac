@@ -507,6 +507,18 @@ variable "rds_proxy_max_connections_percent" {
   }
 }
 
+variable "rds_proxy_idle_client_timeout_seconds" {
+  description = "With enable_rds_proxy: seconds a client connection may sit idle before the proxy closes it. This is what returns database connections held, and pinned, by frozen Lambda environments. A short value suits a small cell whose burst of new environments would otherwise keep every proxy connection pinned."
+  type        = number
+  default     = 600
+  nullable    = false
+
+  validation {
+    condition     = var.rds_proxy_idle_client_timeout_seconds >= 1 && var.rds_proxy_idle_client_timeout_seconds <= 28800 && floor(var.rds_proxy_idle_client_timeout_seconds) == var.rds_proxy_idle_client_timeout_seconds
+    error_message = "rds_proxy_idle_client_timeout_seconds must be a whole number from 1 to 28800."
+  }
+}
+
 variable "rds_proxy_max_idle_connections_percent" {
   description = "With enable_rds_proxy: idle database connections the proxy keeps open, as a percentage of the instance's max_connections. At most rds_proxy_max_connections_percent."
   type        = number

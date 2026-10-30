@@ -174,7 +174,7 @@ run "proxy_defaults_reach_the_module" {
   }
 
   assert {
-    condition     = module.honua.rds_proxy_connection_pool == { max_connections_percent = 90, max_idle_connections_percent = 50, connection_borrow_timeout = 120 }
+    condition     = module.honua.rds_proxy_connection_pool == { max_connections_percent = 90, max_idle_connections_percent = 50, connection_borrow_timeout = 120, idle_client_timeout = 600 }
     error_message = "Without overrides the proxy must use the module's pool defaults."
   }
 }
@@ -195,7 +195,7 @@ run "proxy_pool_settings_pass_through" {
   }
 
   assert {
-    condition     = module.honua.rds_proxy_connection_pool == { max_connections_percent = 70, max_idle_connections_percent = 20, connection_borrow_timeout = 60 }
+    condition     = module.honua.rds_proxy_connection_pool == { max_connections_percent = 70, max_idle_connections_percent = 20, connection_borrow_timeout = 60, idle_client_timeout = 600 }
     error_message = "rds_proxy_max_connections_percent, rds_proxy_max_idle_connections_percent and rds_proxy_connection_borrow_timeout_seconds must reach the module."
   }
 }
@@ -212,4 +212,31 @@ run "proxy_percent_out_of_range_is_rejected" {
   }
 
   expect_failures = [var.rds_proxy_max_connections_percent]
+}
+
+run "proxy_idle_client_timeout_passes_through" {
+  state_key = "rds_proxy"
+  command   = plan
+
+  variables {
+    enable_rds_proxy                      = true
+    rds_proxy_idle_client_timeout_seconds = 60
+  }
+
+  assert {
+    condition     = module.honua.rds_proxy_connection_pool.idle_client_timeout == 60
+    error_message = "rds_proxy_idle_client_timeout_seconds must reach the module's proxy."
+  }
+}
+
+run "proxy_idle_client_timeout_out_of_range_is_rejected" {
+  state_key = "rds_proxy"
+  command   = plan
+
+  variables {
+    enable_rds_proxy                      = true
+    rds_proxy_idle_client_timeout_seconds = 0
+  }
+
+  expect_failures = [var.rds_proxy_idle_client_timeout_seconds]
 }

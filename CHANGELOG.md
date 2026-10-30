@@ -16,6 +16,15 @@ module input/output contracts may still change.
 
 ### Added
 
+- `examples/aws-serverless`: `rds_proxy_idle_client_timeout_seconds` (default 600, unchanged), passed to
+  the proxy. Frozen Lambda environments keep their client connections, and a pinned connection is
+  released only when the proxy closes that idle client. On a small cell a burst of new environments
+  pinned every proxy connection for minutes and the next request timed out (honua-release
+  e2e-cloud-aws run 40961202761; pinning at host start is honua-server#6760). The module's
+  `rds_proxy_connection_pool` output now includes `idle_client_timeout`.
+
+### Added
+
 - `aws-ecs`, `examples/aws`: optional `studio_ai_proxy_limits` (`max_prompt_characters`,
   `max_request_bytes`, `max_event_bytes`, `max_response_bytes`), emitted as `StudioAiProxy__Max*` only
   when Bedrock is enabled. Null fields keep the server defaults. A genuine-model agent turn carries the
