@@ -185,6 +185,13 @@ variable "gp_job_image" {
   nullable    = false
 }
 
+variable "gp_job_reads_server_secrets" {
+  description = "Let the GP job role read the server's whole secret set (admin password and audit-chain key included). Leave false with a honua-helm chart that carries honua-helm#110 (geoprocessing.kubernetesJobs.environmentScope=worker, its default): the worker then resolves only the database, master key, Redis and key-ring references. Set true for an older chart, or for environmentScope=server, whose workers import the server's whole environment and fail at startup on a reference they cannot read (honua-release#1059)."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "gp_job_data_bucket_arn" {
   description = "Optional S3 bucket ARN the GP job role (and the server role, which stages inputs and reads results) may read and write. Only used when gp_job_data_bucket_enabled is true."
   type        = string

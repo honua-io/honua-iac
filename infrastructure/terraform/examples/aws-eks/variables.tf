@@ -150,6 +150,13 @@ variable "gp_job_data_bucket_arn" {
   default     = ""
 }
 
+variable "gp_job_reads_server_secrets" {
+  description = "Let the GP job role read the server's whole secret set. Leave false with a honua-helm chart that carries honua-helm#110 (scoped worker environment); set true for an older chart or environmentScope=server."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "gp_job_data_bucket_enabled" {
   description = "Grant the GP job and server roles S3 access to gp_job_data_bucket_arn. Set both together."
   type        = bool
