@@ -9,7 +9,9 @@ locals {
     mirror_repository_arn = var.mirror_repository_arn
   }
   guardrails = jsondecode(templatefile("${path.module}/policies/guardrails.json.tftpl", local.template_vars)).Statement
-  # Opt-in only. A zone tagged Environment=demo or Lifecycle=demo stays denied by the guardrail.
+  # Opt-in only. Route 53 does not evaluate resource tags, so the zone id and the
+  # record-name condition are the DNS boundary. Do not point this at a standing
+  # or demo zone. The tag guardrail still denies tagged ACM and API Gateway resources.
   cert_demo_record_names = ["*.cert.demo.honua.io"]
   cert_demo_zone_arn     = "arn:aws:route53:::hostedzone/${var.cert_demo_hosted_zone_id}"
   cert_demo_request_tags = {
@@ -111,7 +113,11 @@ locals {
     Statement = concat([for statement in jsondecode(templatefile("${path.module}/policies/runtime.json.tftpl", local.template_vars)).Statement :
       merge(statement, contains(["CellVpcNetworking", "CreateCellVpcNetworkInterface"], statement.Sid) ? { Condition = { ArnEquals = { "ec2:Vpc" = var.workload_vpc_arns } } } : {})
       if !contains(["CellVpcNetworking", "CreateCellVpcNetworkInterface", "NewCellNetworkInterface"], statement.Sid) || length(var.workload_vpc_arns) > 0
-      ], [for statement in local.guardrails : statement if !contains(["ProtectBoundary", "NeverRemoveBoundary", "RequireBoundary", "NoRetaggingOwner", "NoStandingCreation", "NoStandingLifecycle"], statement.Sid)],
+      ], [for statement in local.guardrails :
+      # The cell roles need Route 53's global endpoint. The workload boundary does not.
+      jsondecode(statement.Sid == "CertificationRegionOnly" ? jsonencode(merge(statement, { NotAction = ["iam:*", "sts:*"] })) : jsonencode(statement))
+      if !contains(["ProtectBoundary", "NeverRemoveBoundary", "RequireBoundary", "NoRetaggingOwner", "NoStandingCreation", "NoStandingLifecycle"], statement.Sid)
+      ],
       length(var.runtime_bedrock_model_arns) == 0 ? [] : [{
         Sid      = "InvokeApprovedBedrockModels"
         Effect   = "Allow"

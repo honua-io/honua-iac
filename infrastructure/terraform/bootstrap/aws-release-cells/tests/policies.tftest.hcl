@@ -250,9 +250,11 @@ run "cert_demo_zone_scopes_records_certificates_and_domain_names" {
       one([for statement in jsondecode(local.grant_policies.provision).Statement : statement if statement.Sid == "ChangeCertDemoRecords"]).Condition.Null["route53:ChangeResourceRecordSetsNormalizedRecordNames"] == "false" &&
       one([for statement in jsondecode(local.grant_policies.reaper).Statement : statement if statement.Sid == "ChangeCertDemoRecords"]).Resource == "arn:aws:route53:::hostedzone/Z089181827C9GKIKHXUTT" &&
       !strcontains(local.grant_policies.mirror, "route53:") &&
-      !strcontains(local.grant_policies.provision, "demo.honua.io.")
+      !strcontains(local.grant_policies.provision, "demo.honua.io.") &&
+      !can(one([for statement in jsondecode(local.grant_policies.provision).Statement : statement if statement.Sid == "ChangeCertDemoRecords"]).Condition.StringEquals["aws:ResourceTag/Environment"]) &&
+      contains(one([for statement in jsondecode(local.lane_policies.provision).Statement : statement if statement.Sid == "CertificationRegionOnly"]).NotAction, "route53:ChangeResourceRecordSets")
     )
-    error_message = "DNS changes must be the one hosted zone and only *.cert.demo.honua.io."
+    error_message = "DNS changes must be the one hosted zone and only *.cert.demo.honua.io. Route 53 is not tag-scoped, and its record API is exempt from the regional deny."
   }
   assert {
     condition = (
