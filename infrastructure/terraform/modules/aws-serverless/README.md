@@ -1213,8 +1213,8 @@ the DB instance it targets.
 The module-managed RDS security group declares no inline rules. Every
 PostgreSQL rule is a standalone `aws_security_group_rule`: `rds_from_lambda`,
 `rds_from_cidrs` (one per `db_additional_ingress_cidrs` entry),
-`rds_from_batch`, and the custom-code `rds_from_batch_provisioning` and
-`rds_from_batch_execution`. Terraform does not support inline rules alongside
+`rds_from_batch`, and the custom-code `rds_from_batch_execution`.
+Dependency restore has no database rule. Terraform does not support inline rules alongside
 standalone rules on one group (the inline set is authoritative and strips the
 others on every other apply).
 

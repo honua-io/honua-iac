@@ -46,8 +46,25 @@ locals {
   # These ARNs are deterministic from the inputs. Keeping them independent of
   # the resources lets the role preconditions and policy document refer to the
   # identities they protect without creating a dependency cycle.
-  deployment_role_arn   = "arn:${local.partition}:iam::${local.account_id}:role/${local.name}-deploy"
-  deployment_policy_arn = "arn:${local.partition}:iam::${local.account_id}:policy/${local.name}-deploy"
+  deployment_role_arn            = "arn:${local.partition}:iam::${local.account_id}:role/${local.name}-deploy"
+  deployment_policy_arn          = "arn:${local.partition}:iam::${local.account_id}:policy/${local.name}-deploy"
+  deployment_workload_policy_arn = "arn:${local.partition}:iam::${local.account_id}:policy/${local.name}-deploy-workload"
+
+  # Deterministic so the deployment policy can require this boundary without a
+  # cycle through the policy resource.
+  workload_boundary_name = "${local.name}-workload-boundary"
+  workload_boundary_arn  = "arn:${local.partition}:iam::${local.account_id}:policy/${local.workload_boundary_name}"
+
+  # Managed policies the stack modules attach to workload roles, plus policies
+  # this root's name prefix owns. AdministratorAccess is not in the list.
+  attachable_policy_arns = [
+    "arn:${local.partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
+    "arn:${local.partition}:iam::aws:policy/service-role/AWSBatchServiceRole",
+    "arn:${local.partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+    "arn:${local.partition}:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
+    "arn:${local.partition}:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy",
+    "arn:${local.partition}:iam::${local.account_id}:policy/${var.name_prefix}*",
+  ]
 
   passable_role_arns = distinct(compact([
     "arn:${local.partition}:iam::${local.account_id}:role/${var.task_execution_role_name_prefix}*",
@@ -110,11 +127,17 @@ locals {
         created_by         = "modules/aws-ecs"
         passable_by_deploy = true
       }
+      workload_permissions_boundary = {
+        purpose    = "ceiling-for-roles-this-identity-creates"
+        policy_arn = local.workload_boundary_arn
+        created_by = "bootstrap/aws-exec-identity"
+      }
     }
     separation = {
       backend_access_denied_to_deployment = true
       long_lived_credentials_denied       = true
       deployment_role_not_passable        = true
+      workload_boundary_required          = true
       iam_user_created                    = false
       access_key_created                  = false
     }
@@ -378,20 +401,64 @@ data "aws_iam_policy_document" "deployment" {
     resources = ["*"]
   }
 
+}
+
+# Role administration is its own managed policy. The deployment document is
+# already near the 6,144 non-whitespace character quota; these statements
+# pushed a single policy over it. Denies stay with the grants they constrain.
+data "aws_iam_policy_document" "deployment_workload" {
+  # Creating or editing a workload role requires this root's boundary. The
+  # condition key is absent on service-linked roles, so those are a separate
+  # statement below.
+  statement {
+    sid    = "CreateBoundedWorkloadRoles"
+    effect = "Allow"
+    actions = [
+      "iam:CreateRole",
+      "iam:DeleteRolePolicy",
+      "iam:DetachRolePolicy",
+      "iam:PutRolePermissionsBoundary",
+      "iam:PutRolePolicy",
+    ]
+    resources = [
+      "arn:${local.partition}:iam::${local.account_id}:role/${var.name_prefix}*",
+    ]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PermissionsBoundary"
+      values   = [local.workload_boundary_arn]
+    }
+  }
+
+  statement {
+    sid       = "AttachBoundedWorkloadPolicies"
+    effect    = "Allow"
+    actions   = ["iam:AttachRolePolicy"]
+    resources = ["arn:${local.partition}:iam::${local.account_id}:role/${var.name_prefix}*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PermissionsBoundary"
+      values   = [local.workload_boundary_arn]
+    }
+
+    condition {
+      test     = "ArnLike"
+      variable = "iam:PolicyARN"
+      values   = local.attachable_policy_arns
+    }
+  }
+
   statement {
     sid    = "ManageWorkloadRoles"
     effect = "Allow"
     actions = [
-      "iam:AttachRolePolicy",
       "iam:CreatePolicy",
       "iam:CreatePolicyVersion",
-      "iam:CreateRole",
-      "iam:CreateServiceLinkedRole",
       "iam:DeletePolicy",
       "iam:DeletePolicyVersion",
       "iam:DeleteRole",
-      "iam:DeleteRolePolicy",
-      "iam:DetachRolePolicy",
       "iam:GetPolicy",
       "iam:GetPolicyVersion",
       "iam:GetRole",
@@ -401,7 +468,6 @@ data "aws_iam_policy_document" "deployment" {
       "iam:ListPolicyVersions",
       "iam:ListRolePolicies",
       "iam:ListRoles",
-      "iam:PutRolePolicy",
       "iam:TagPolicy",
       "iam:TagRole",
       "iam:UntagPolicy",
@@ -411,6 +477,26 @@ data "aws_iam_policy_document" "deployment" {
       "arn:${local.partition}:iam::${local.account_id}:role/${var.name_prefix}*",
       "arn:${local.partition}:iam::${local.account_id}:policy/${var.name_prefix}*",
     ]
+  }
+
+  statement {
+    sid       = "CreateServiceLinkedRoles"
+    effect    = "Allow"
+    actions   = ["iam:CreateServiceLinkedRole"]
+    resources = ["arn:${local.partition}:iam::${local.account_id}:role/aws-service-role/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:AWSServiceName"
+      values = [
+        "batch.amazonaws.com",
+        "ecs.amazonaws.com",
+        "ecs.application-autoscaling.amazonaws.com",
+        "elasticache.amazonaws.com",
+        "elasticloadbalancing.amazonaws.com",
+        "rds.amazonaws.com",
+      ]
+    }
   }
 
   statement {
@@ -497,12 +583,93 @@ data "aws_iam_policy_document" "deployment" {
       "iam:PutRolePolicy",
     ]
     resources = compact([
-      aws_iam_role.deployment.arn,
+      local.deployment_role_arn,
       local.deployment_policy_arn,
+      local.deployment_workload_policy_arn,
+      local.workload_boundary_arn,
       var.backend_access_role_arn,
       var.backend_access_policy_arn,
     ])
   }
+
+  statement {
+    sid       = "DenyBoundaryRemoval"
+    effect    = "Deny"
+    actions   = ["iam:DeleteRolePermissionsBoundary"]
+    resources = ["*"]
+  }
+}
+
+# Ceiling for every role this identity creates. The role's own policy still
+# scopes the grant. This document removes IAM, role chaining, the state
+# substrate, and the deployer/backend identities from that ceiling.
+data "aws_iam_policy_document" "workload_boundary" {
+  #checkov:skip=CKV_AWS_107: A permissions boundary is a ceiling, not a grant; the roles' own policies scope access.
+  #checkov:skip=CKV_AWS_108: A permissions boundary is a ceiling, not a grant; the roles' own policies scope access.
+  #checkov:skip=CKV_AWS_109: The ceiling is NotAction iam:*; checkov reads NotAction as a grant of everything.
+  #checkov:skip=CKV_AWS_110: The ceiling is NotAction iam:*; checkov reads NotAction as a grant of everything.
+  #checkov:skip=CKV_AWS_111: A permissions boundary is a ceiling, not a grant; the roles' own policies scope access.
+  #checkov:skip=CKV_AWS_356: A permissions boundary is a ceiling, not a grant; the roles' own policies scope resources.
+
+  statement {
+    sid    = "WorkloadServiceCeiling"
+    effect = "Allow"
+    not_actions = [
+      "account:*",
+      "iam:*",
+      "organizations:*",
+      "sts:AssumeRole",
+      "sts:AssumeRoleWithSAML",
+      "sts:AssumeRoleWithWebIdentity",
+      "sts:GetFederationToken",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "DenyStateSubstrate"
+    effect = "Deny"
+    actions = [
+      "dynamodb:DeleteItem",
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+      "s3:DeleteObject",
+      "s3:DeleteObjectVersion",
+      "s3:GetObject",
+      "s3:GetObjectVersion",
+      "s3:PutObject",
+    ]
+    resources = local.state_substrate_arns
+  }
+
+  statement {
+    sid    = "DenyPrivilegedIdentities"
+    effect = "Deny"
+    actions = [
+      "iam:AttachRolePolicy",
+      "iam:DeleteRole",
+      "iam:DeleteRolePermissionsBoundary",
+      "iam:DeleteRolePolicy",
+      "iam:DetachRolePolicy",
+      "iam:PassRole",
+      "iam:PutRolePermissionsBoundary",
+      "iam:PutRolePolicy",
+      "iam:UpdateAssumeRolePolicy",
+      "sts:AssumeRole",
+      "sts:AssumeRoleWithSAML",
+      "sts:AssumeRoleWithWebIdentity",
+      "sts:GetFederationToken",
+    ]
+    resources = local.unpassable_role_arns
+  }
+}
+
+resource "aws_iam_policy" "workload_boundary" {
+  name        = local.workload_boundary_name
+  description = "Permissions boundary required on every role created by the certified deployment role."
+  policy      = data.aws_iam_policy_document.workload_boundary.json
+  tags        = local.tags
 }
 
 resource "aws_iam_policy" "deployment" {
@@ -515,4 +682,16 @@ resource "aws_iam_policy" "deployment" {
 resource "aws_iam_role_policy_attachment" "deployment" {
   role       = aws_iam_role.deployment.name
   policy_arn = aws_iam_policy.deployment.arn
+}
+
+resource "aws_iam_policy" "deployment_workload" {
+  name        = "${local.name}-deploy-workload"
+  description = "Role-administration grants for the certified deployment role, split so each managed policy stays inside the size quota."
+  policy      = data.aws_iam_policy_document.deployment_workload.json
+  tags        = local.tags
+}
+
+resource "aws_iam_role_policy_attachment" "deployment_workload" {
+  role       = aws_iam_role.deployment.name
+  policy_arn = aws_iam_policy.deployment_workload.arn
 }

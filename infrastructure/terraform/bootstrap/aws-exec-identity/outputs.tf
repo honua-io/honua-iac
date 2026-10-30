@@ -13,6 +13,11 @@ output "deployment_policy_arn" {
   value       = aws_iam_policy.deployment.arn
 }
 
+output "workload_permissions_boundary_arn" {
+  description = "Permissions boundary required on every role this deployment identity creates. Pass it to module permissions_boundary_arn. CreateRole, AttachRolePolicy, and PassRole are denied without it."
+  value       = aws_iam_policy.workload_boundary.arn
+}
+
 output "execution_identity_contract" {
   description = "Evidence-safe execution identity contract: role separation, federation references, and session bounds. No token, credential, or secret is emitted."
   value       = local.execution_identity_contract

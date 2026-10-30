@@ -155,10 +155,20 @@ remaining work.
 ## Evidence
 
 `execution_identity_contract` and its digest carry account, partition, region,
-issuer, audience, subjects, session bounds, and the four role references. They
-carry no token, no source credential, and no session name. The
-`long_lived_credentials_created` output is a hard `false` the release lane can
-assert on.
+issuer, audience, subjects, session bounds, the role references, and the
+workload permissions boundary. They carry no token, no source credential, and
+no session name. The `long_lived_credentials_created` output is a hard `false`
+the release lane can assert on.
+
+`workload_permissions_boundary_arn` is the ceiling for roles this identity
+creates. Workload modules already accept `permissions_boundary_arn`. Pass this
+output there. Without it, CreateRole and AttachRolePolicy are denied.
+PassRole is limited to ecs-tasks.amazonaws.com and the workload role prefix.
+IAM does not evaluate iam:PermissionsBoundary on PassRole, so that condition
+is not on the allow. The boundary is a ceiling: the role's own policy still
+scopes the grant. Service-linked roles are created separately and cannot
+carry this boundary. Role administration is a second managed policy so neither
+document exceeds the managed-policy size quota.
 
 Terraform validation is the supported local check. A successful plan or validate
 implies no live AWS qualification; that gate is honua-iac#118.
