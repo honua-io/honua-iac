@@ -86,7 +86,7 @@ runtime_operation_key_ring_certificate_secret_arns = ["arn:aws:secretsmanager:us
 runtime_audit_chain_key_secret_arns                = ["arn:aws:secretsmanager:us-east-1:585192672263:secret:honua-release/cert/audit-chain-key-RLtpME"]
 ```
 
-These values reproduce the live workload boundary exactly. The one-time import that adopted the existing resources:
+These values reproduce the live workload boundary exactly (shipped Sonnet 4.6 and GPT-6.1 Terra). The same variable accepts the identical four-ARN shape for `us.anthropic.claude-opus-5-5`, `us.anthropic.claude-sonnet-5-5` and `us.openai.gpt-6.1-sol`. This root is not applied from the model-allowlist change. The one-time import that adopted the existing resources:
 
 ```sh
 A=arn:aws:iam::585192672263:policy

@@ -130,8 +130,8 @@ def main():
         case('runtime', 'approved-vpc-' + action, action, eni, 'allowed', {'ec2:Vpc': f'arn:aws:ec2:us-east-1:{account}:vpc/vpc-0123456789abcdef0'})
         case('runtime', 'other-vpc-' + action, action, eni, 'implicitDeny', {'ec2:Vpc': f'arn:aws:ec2:us-east-1:{account}:vpc/vpc-other'})
     for action in ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream']:
-        case('runtime', 'approved-model-' + action, action, 'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0', 'allowed')
-        case('runtime', 'other-model-' + action, action, 'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0', 'implicitDeny')
+        case('runtime', 'approved-model-' + action, action, 'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-6', 'allowed')
+        case('runtime', 'other-model-' + action, action, 'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-not-in-allowlist', 'implicitDeny')
     for prefix in ['honuarfixture', 'honuanfixture']:
         case('runtime', 'submit-' + prefix, 'batch:SubmitJob', f'arn:aws:batch:us-east-1:{account}:job-queue/{prefix}-gp', 'allowed')
         case('runtime', 'logs-' + prefix, 'logs:PutLogEvents', f'arn:aws:logs:us-east-1:{account}:log-group:/aws/lambda/{prefix}-honua:*', 'allowed')

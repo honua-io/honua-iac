@@ -120,7 +120,7 @@ run "bedrock_studio" {
   variables {
     enable_bedrock_ai = true
     bedrock_ai_region = "us-east-1"
-    bedrock_ai_model  = "anthropic.claude-sonnet-4-5-20250929-v1:0"
+    bedrock_ai_model  = "anthropic.claude-sonnet-4-6"
     additional_env    = { StudioAiProxy__Providers__bedrock__Model = "unapproved-model" }
   }
   assert {
@@ -128,11 +128,11 @@ run "bedrock_studio" {
     error_message = "StudioAiProxy must select the IAM-authenticated Bedrock adapter."
   }
   assert {
-    condition     = one([for e in jsondecode(aws_ecs_task_definition.this.container_definitions)[0].environment : e.value if e.name == "StudioAiProxy__Providers__bedrock__Model"]) == "anthropic.claude-sonnet-4-5-20250929-v1:0" && one([for e in jsondecode(aws_ecs_task_definition.this.container_definitions)[0].environment : e.value if e.name == "StudioAiProxy__Providers__bedrock__Region"]) == "us-east-1"
+    condition     = one([for e in jsondecode(aws_ecs_task_definition.this.container_definitions)[0].environment : e.value if e.name == "StudioAiProxy__Providers__bedrock__Model"]) == "anthropic.claude-sonnet-4-6" && one([for e in jsondecode(aws_ecs_task_definition.this.container_definitions)[0].environment : e.value if e.name == "StudioAiProxy__Providers__bedrock__Region"]) == "us-east-1"
     error_message = "The running configuration must match the exact authorized model and region, despite additional_env."
   }
   assert {
-    condition     = toset(jsondecode(aws_iam_role_policy.task_bedrock_invoke[0].policy).Statement[0].Resource) == toset(["arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0"])
+    condition     = toset(jsondecode(aws_iam_role_policy.task_bedrock_invoke[0].policy).Statement[0].Resource) == toset(["arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-6"])
     error_message = "A foundation model grant must contain exactly the pinned model ARN."
   }
   assert {
@@ -219,6 +219,68 @@ run "bedrock_openai_gpt_profile" {
   assert {
     condition     = one([for e in jsondecode(aws_ecs_task_definition.this.container_definitions)[0].environment : e.value if e.name == "StudioAiProxy__Disclosure__Approvals__0__Model"]) == "us.openai.gpt-6.1-terra"
     error_message = "The disclosure approval names the configured GPT model."
+  }
+}
+
+run "bedrock_opus_5_5_profile" {
+  command = apply
+  variables {
+    enable_bedrock_ai = true
+    bedrock_ai_region = "us-east-1"
+    bedrock_ai_model  = "us.anthropic.claude-opus-5-5"
+  }
+  assert {
+    condition = toset(jsondecode(aws_iam_role_policy.task_bedrock_invoke[0].policy).Statement[0].Resource) == toset([
+      "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-opus-5-5",
+      "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-opus-5-5",
+      "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-opus-5-5",
+      "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-opus-5-5"
+    ])
+    error_message = "Opus 5.5 grants exactly its US profile and the three member-region foundation models."
+  }
+  assert {
+    condition     = one([for e in jsondecode(aws_ecs_task_definition.this.container_definitions)[0].environment : e.value if e.name == "StudioAiProxy__Disclosure__Approvals__0__Model"]) == "us.anthropic.claude-opus-5-5"
+    error_message = "The disclosure approval names Opus 5.5."
+  }
+}
+
+run "bedrock_sonnet_5_5_profile" {
+  command = apply
+  variables {
+    enable_bedrock_ai = true
+    bedrock_ai_region = "us-east-1"
+    bedrock_ai_model  = "us.anthropic.claude-sonnet-5-5"
+  }
+  assert {
+    condition = toset(jsondecode(aws_iam_role_policy.task_bedrock_invoke[0].policy).Statement[0].Resource) == toset([
+      "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-5-5",
+      "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-5-5",
+      "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-5-5",
+      "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-5-5"
+    ])
+    error_message = "Sonnet 5.5 grants exactly its US profile and the three member-region foundation models."
+  }
+}
+
+run "bedrock_gpt_6_1_sol_profile" {
+  command = apply
+  variables {
+    enable_bedrock_ai = true
+    bedrock_ai_region = "us-east-1"
+    bedrock_ai_model  = "us.openai.gpt-6.1-sol"
+  }
+  assert {
+    condition = toset(jsondecode(aws_iam_role_policy.task_bedrock_invoke[0].policy).Statement[0].Resource) == toset([
+      "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.openai.gpt-6.1-sol",
+      "arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-6.1-sol",
+      "arn:aws:bedrock:us-east-2::foundation-model/openai.gpt-6.1-sol",
+      "arn:aws:bedrock:us-west-2::foundation-model/openai.gpt-6.1-sol"
+    ])
+    error_message = "GPT-6.1 Sol grants exactly its US profile and the three member-region foundation models."
+  }
+  assert {
+    condition     = one([for e in jsondecode(aws_ecs_task_definition.this.container_definitions)[0].environment : e.value if e.name == "StudioAiProxy__Disclosure__Approvals__0__Model"]) == "us.openai.gpt-6.1-sol"
+    error_message = "The disclosure approval names GPT-6.1 Sol."
   }
 }
 

@@ -357,3 +357,48 @@ variable "ingress_load_balancer_hostname" {
   type        = string
   default     = ""
 }
+
+variable "enable_bedrock_ai" {
+  description = "Grant the EKS server workload role bedrock:InvokeModel and InvokeModelWithResponseStream for one configured model. Off by default. The GP job role is not granted invoke."
+  type        = bool
+  default     = false
+}
+
+variable "bedrock_ai_model" {
+  description = "Bedrock model id the server uses. Defaults to the shipped cross-region Claude Sonnet 4.6 profile. Opus 5.5, Sonnet 5.5, GPT-6.1 Sol and GPT-6.1 Terra are the same us. profile shape. The IAM grant is only this model's profile and foundation-model ARNs."
+  type        = string
+  default     = "us.anthropic.claude-sonnet-4-6"
+
+  validation {
+    condition     = can(regex("^(us[.])?(anthropic[.]claude-[a-z0-9-]+(-v[0-9]+:[0-9]+)?|openai[.]gpt-[a-z0-9.-]+)$", var.bedrock_ai_model))
+    error_message = "Pin an exact Claude or OpenAI GPT Bedrock model id or us. inference profile; wildcards and arbitrary ARN grants are forbidden."
+  }
+}
+
+variable "bedrock_ai_region" {
+  description = "AWS region the server invokes Bedrock in. Defaults to us-west-2."
+  type        = string
+  default     = "us-west-2"
+}
+
+variable "bedrock_ai_max_tokens" {
+  description = "Max output tokens for Bedrock AI generation."
+  type        = number
+  default     = 4096
+
+  validation {
+    condition     = var.bedrock_ai_max_tokens >= 256 && var.bedrock_ai_max_tokens <= 32768
+    error_message = "bedrock_ai_max_tokens must be between 256 and 32768."
+  }
+}
+
+variable "bedrock_ai_timeout_seconds" {
+  description = "Per-request timeout for Bedrock AI generation."
+  type        = number
+  default     = 120
+
+  validation {
+    condition     = var.bedrock_ai_timeout_seconds >= 5 && var.bedrock_ai_timeout_seconds <= 300
+    error_message = "bedrock_ai_timeout_seconds must be between 5 and 300."
+  }
+}

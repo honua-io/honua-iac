@@ -9,8 +9,8 @@
 # on enable_bedrock_ai (default false) and scoped least-privilege to the single
 # Claude model the server is configured to use.
 #
-# Cross-region inference: the default model id is the `us.` inference profile
-# (us.anthropic.claude-sonnet-4-5-...). Invoking through an inference profile
+# Cross-region inference: the default model id is the shipped `us.` profile
+# (us.anthropic.claude-sonnet-4-6). Invoking through an inference profile
 # requires BOTH the inference-profile ARN (in the calling region) AND the
 # underlying foundation-model ARNs in every member region the profile routes to
 # (us-east-1 / us-east-2 / us-west-2). Granting only the profile yields

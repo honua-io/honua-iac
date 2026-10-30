@@ -681,3 +681,127 @@ run "bare_host_public_base_url_is_rejected" {
 
   expect_failures = [var.public_base_url]
 }
+
+run "bedrock_off_by_default" {
+  command = plan
+
+  assert {
+    condition     = length(aws_iam_role_policy.server_bedrock_invoke) == 0 && !contains(keys(output.chart_config_env), "StudioAiProxy__Enabled")
+    error_message = "Bedrock stays off and the GP job role receives no invoke grant."
+  }
+}
+
+run "bedrock_ships_sonnet_4_6" {
+  command = plan
+
+  variables {
+    enable_bedrock_ai = true
+    bedrock_ai_region = "us-east-1"
+  }
+
+  assert {
+    condition = toset(jsondecode(aws_iam_role_policy.server_bedrock_invoke[0].policy).Statement[0].Resource) == toset([
+      "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-4-6",
+      "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-6",
+      "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-6",
+      "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-6",
+    ]) && aws_iam_role_policy.server_bedrock_invoke[0].role == aws_iam_role.workload["server"].name && aws_iam_role_policy.server_bedrock_invoke[0].role != aws_iam_role.workload["gp-job"].name
+    error_message = "The default grant is exactly the shipped Sonnet 4.6 profile and its three member models, on the server role only."
+  }
+
+  assert {
+    condition     = output.chart_config_env["StudioAiProxy__Disclosure__Approvals__0__Model"] == "us.anthropic.claude-sonnet-4-6"
+    error_message = "The disclosure approval names the shipped default model."
+  }
+}
+
+run "bedrock_opus_5_5" {
+  command = plan
+
+  variables {
+    enable_bedrock_ai = true
+    bedrock_ai_region = "us-east-1"
+    bedrock_ai_model  = "us.anthropic.claude-opus-5-5"
+  }
+
+  assert {
+    condition = toset(jsondecode(aws_iam_role_policy.server_bedrock_invoke[0].policy).Statement[0].Resource) == toset([
+      "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-opus-5-5",
+      "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-opus-5-5",
+      "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-opus-5-5",
+      "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-opus-5-5",
+    ])
+    error_message = "Opus 5.5 grants exactly its US profile and the three member-region foundation models."
+  }
+}
+
+run "bedrock_sonnet_5_5" {
+  command = plan
+
+  variables {
+    enable_bedrock_ai = true
+    bedrock_ai_region = "us-east-1"
+    bedrock_ai_model  = "us.anthropic.claude-sonnet-5-5"
+  }
+
+  assert {
+    condition = toset(jsondecode(aws_iam_role_policy.server_bedrock_invoke[0].policy).Statement[0].Resource) == toset([
+      "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-5-5",
+      "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-5-5",
+      "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-5-5",
+      "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-5-5",
+    ])
+    error_message = "Sonnet 5.5 grants exactly its US profile and the three member-region foundation models."
+  }
+}
+
+run "bedrock_gpt_6_1_sol" {
+  command = plan
+
+  variables {
+    enable_bedrock_ai = true
+    bedrock_ai_region = "us-east-1"
+    bedrock_ai_model  = "us.openai.gpt-6.1-sol"
+  }
+
+  assert {
+    condition = toset(jsondecode(aws_iam_role_policy.server_bedrock_invoke[0].policy).Statement[0].Resource) == toset([
+      "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.openai.gpt-6.1-sol",
+      "arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-6.1-sol",
+      "arn:aws:bedrock:us-east-2::foundation-model/openai.gpt-6.1-sol",
+      "arn:aws:bedrock:us-west-2::foundation-model/openai.gpt-6.1-sol",
+    ]) && output.chart_config_env["StudioAiProxy__Disclosure__Approvals__0__Model"] == "us.openai.gpt-6.1-sol"
+    error_message = "GPT-6.1 Sol grants exactly its profile and member models, and the disclosure names that model."
+  }
+}
+
+run "bedrock_gpt_6_1_terra" {
+  command = plan
+
+  variables {
+    enable_bedrock_ai = true
+    bedrock_ai_region = "us-east-1"
+    bedrock_ai_model  = "us.openai.gpt-6.1-terra"
+  }
+
+  assert {
+    condition = toset(jsondecode(aws_iam_role_policy.server_bedrock_invoke[0].policy).Statement[0].Resource) == toset([
+      "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.openai.gpt-6.1-terra",
+      "arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-6.1-terra",
+      "arn:aws:bedrock:us-east-2::foundation-model/openai.gpt-6.1-terra",
+      "arn:aws:bedrock:us-west-2::foundation-model/openai.gpt-6.1-terra",
+    ])
+    error_message = "GPT-6.1 Terra grants exactly its profile and member models."
+  }
+}
+
+run "bedrock_rejects_unpinned_model" {
+  command = plan
+
+  variables {
+    enable_bedrock_ai = true
+    bedrock_ai_model  = "us.openai.*"
+  }
+
+  expect_failures = [var.bedrock_ai_model]
+}

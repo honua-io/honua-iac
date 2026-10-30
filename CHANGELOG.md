@@ -31,6 +31,8 @@ module input/output contracts may still change.
 
 ### Added
 
+- `aws-eks` and `examples/aws-eks`: optional Bedrock invoke on the server workload role (`enable_bedrock_ai`, default false). The grant is the configured model's inference-profile ARN plus its foundation-model ARNs in us-east-1, us-east-2 and us-west-2. The default model stays `us.anthropic.claude-sonnet-4-6`. The GP job role is not granted invoke. Quota requests for Opus 5.5 and Sonnet 5.5 TPM stay in the separate bootstrap quota root.
+
 - `aws-serverless`, `examples/aws-serverless`: optional `studio_ai_proxy_limits` (`max_prompt_characters`,
   `max_request_bytes`, `max_event_bytes`, `max_response_bytes`), the same object `aws-ecs` already takes.
   With Bedrock enabled, set fields are published as `StudioAiProxy` in the runtime settings document.

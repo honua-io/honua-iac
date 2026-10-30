@@ -11,10 +11,10 @@ run "policies" {
   command = plan
   variables {
     runtime_bedrock_model_arns = [
-      "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-      "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
-      "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0",
-      "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0"
+      "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-4-6",
+      "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-6",
+      "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-6",
+      "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-6"
     ]
     enable_workload_role_passing = true
     workload_vpc_arns            = ["arn:aws:ec2:us-east-1:123456789012:vpc/vpc-0123456789abcdef0"]
@@ -126,6 +126,34 @@ run "reject_wildcard_operation_key_ring_certificate" {
     runtime_operation_key_ring_certificate_secret_arns = ["arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-*"]
   }
   expect_failures = [var.runtime_operation_key_ring_certificate_secret_arns]
+}
+
+run "latest_models_are_an_exact_boundary" {
+  command = plan
+  variables {
+    runtime_bedrock_model_arns = [
+      "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-opus-5-5",
+      "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-opus-5-5",
+      "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-opus-5-5",
+      "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-opus-5-5",
+      "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-sonnet-5-5",
+      "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-5-5",
+      "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-5-5",
+      "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-5-5",
+      "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.openai.gpt-6.1-sol",
+      "arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-6.1-sol",
+      "arn:aws:bedrock:us-east-2::foundation-model/openai.gpt-6.1-sol",
+      "arn:aws:bedrock:us-west-2::foundation-model/openai.gpt-6.1-sol",
+      "arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.openai.gpt-6.1-terra",
+      "arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-6.1-terra",
+      "arn:aws:bedrock:us-east-2::foundation-model/openai.gpt-6.1-terra",
+      "arn:aws:bedrock:us-west-2::foundation-model/openai.gpt-6.1-terra",
+    ]
+  }
+  assert {
+    condition     = toset(one([for statement in jsondecode(output.runtime_boundary).Statement : statement if statement.Sid == "InvokeApprovedBedrockModels"]).Resource) == var.runtime_bedrock_model_arns && length(output.runtime_boundary) <= 6144
+    error_message = "The workload boundary grants exactly the four latest-model ARN sets and still fits the managed policy quota."
+  }
 }
 
 run "reject_wildcard_bedrock_boundary" {
