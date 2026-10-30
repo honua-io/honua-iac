@@ -353,6 +353,32 @@ resource "aws_iam_role" "egress_isolation_job" {
   tags                 = local.tags
 }
 
+# The provisioning job writes the dependency layer to the same artifact bucket
+# the spatial job already uses. This grant is that bucket only. It does not
+# attach the database, admin, or master-key policies from aws_iam_role.batch_job.
+resource "aws_iam_role_policy" "egress_isolation_artifacts" {
+  count = local.egress_isolation_enabled && var.gp_batch_data_bucket_enabled ? 1 : 0
+  name  = "${local.egress_isolation_name}-job-artifacts"
+  role  = aws_iam_role.egress_isolation_job[0].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "ArtifactObjects"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+        Resource = ["${var.gp_batch_data_bucket_arn}/*"]
+      },
+      {
+        Sid      = "ArtifactList"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = [var.gp_batch_data_bucket_arn]
+      }
+    ]
+  })
+}
+
 resource "aws_iam_role_policy" "batch_job_codeartifact" {
   count = local.egress_isolation_enabled ? 1 : 0
   name  = "${local.egress_isolation_name}-job-codeartifact"

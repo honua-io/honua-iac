@@ -92,7 +92,9 @@ managed **prefix list** — there is no `0.0.0.0/0` rule on either phase.
   (interface), and `aws_vpc_endpoint.customcode_s3` (gateway; CodeArtifact serves
   assets from S3, and the artifact-bucket handoff rides the same prefix list).
 - IAM: `aws_iam_role.egress_isolation_job` is the provisioning job role. It
-  receives only `aws_iam_role_policy.batch_job_codeartifact`:
+  receives `aws_iam_role_policy.batch_job_codeartifact` and, when
+  `gp_batch_data_bucket_enabled` is set, `aws_iam_role_policy.egress_isolation_artifacts`
+  on that bucket only. The CodeArtifact policy is:
   `codeartifact:GetAuthorizationToken` (domain-scoped),
   `codeartifact:GetRepositoryEndpoint` + `codeartifact:ReadFromRepository`
   (repo-scoped), and `sts:GetServiceBearerToken` **conditioned** on

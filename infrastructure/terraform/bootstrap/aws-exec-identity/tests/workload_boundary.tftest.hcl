@@ -50,7 +50,7 @@ run "created_roles_require_the_boundary" {
 
   assert {
     condition = one([
-      for statement in jsondecode(data.aws_iam_policy_document.deployment.json).Statement : statement
+      for statement in jsondecode(data.aws_iam_policy_document.deployment_workload.json).Statement : statement
       if statement.Sid == "CreateBoundedWorkloadRoles"
     ]).Condition.StringEquals["iam:PermissionsBoundary"] == "arn:aws:iam::123456789012:policy/honua-prod-workload-boundary"
     error_message = "CreateRole must require the workload permissions boundary."
@@ -59,12 +59,12 @@ run "created_roles_require_the_boundary" {
   assert {
     condition = (
       one([
-        for statement in jsondecode(data.aws_iam_policy_document.deployment.json).Statement : statement
+        for statement in jsondecode(data.aws_iam_policy_document.deployment_workload.json).Statement : statement
         if statement.Sid == "AttachBoundedWorkloadPolicies"
       ]).Condition.StringEquals["iam:PermissionsBoundary"] == "arn:aws:iam::123456789012:policy/honua-prod-workload-boundary"
       && !anytrue([
         for arn in flatten([one([
-          for statement in jsondecode(data.aws_iam_policy_document.deployment.json).Statement : statement
+          for statement in jsondecode(data.aws_iam_policy_document.deployment_workload.json).Statement : statement
           if statement.Sid == "AttachBoundedWorkloadPolicies"
         ]).Condition.ArnLike["iam:PolicyARN"]]) : strcontains(arn, "AdministratorAccess")
       ])
@@ -74,26 +74,40 @@ run "created_roles_require_the_boundary" {
 
   assert {
     condition = !can(one([
-      for statement in jsondecode(data.aws_iam_policy_document.deployment.json).Statement : statement
+      for statement in jsondecode(data.aws_iam_policy_document.deployment_workload.json).Statement : statement
       if statement.Sid == "CreateServiceLinkedRoles"
       ]).Condition.StringEquals["iam:PermissionsBoundary"]) && contains(flatten([one([
-        for statement in jsondecode(data.aws_iam_policy_document.deployment.json).Statement : statement
+        for statement in jsondecode(data.aws_iam_policy_document.deployment_workload.json).Statement : statement
         if statement.Sid == "CreateServiceLinkedRoles"
     ]).Condition.StringEquals["iam:AWSServiceName"]]), "batch.amazonaws.com")
     error_message = "Service-linked roles are a separate statement and cannot carry this boundary."
   }
 
   assert {
-    condition = one([
-      for statement in jsondecode(data.aws_iam_policy_document.deployment.json).Statement : statement
-      if statement.Sid == "PassWorkloadRolesToEcsOnly"
-    ]).Condition.StringEquals["iam:PermissionsBoundary"] == "arn:aws:iam::123456789012:policy/honua-prod-workload-boundary"
-    error_message = "PassRole must require the workload permissions boundary."
+    condition = (
+      one([
+        for statement in jsondecode(data.aws_iam_policy_document.deployment_workload.json).Statement : statement
+        if statement.Sid == "PassWorkloadRolesToEcsOnly"
+      ]).Condition.StringEquals["iam:PassedToService"] == "ecs-tasks.amazonaws.com"
+      && !can(one([
+        for statement in jsondecode(data.aws_iam_policy_document.deployment_workload.json).Statement : statement
+        if statement.Sid == "PassWorkloadRolesToEcsOnly"
+      ]).Condition.StringEquals["iam:PermissionsBoundary"])
+    )
+    error_message = "PassRole must be limited to ecs-tasks. IAM does not evaluate iam:PermissionsBoundary on PassRole."
+  }
+
+  assert {
+    condition = (
+      length(replace(replace(replace(data.aws_iam_policy_document.deployment.json, " ", ""), "\n", ""), "\t", "")) <= 6144
+      && length(replace(replace(replace(data.aws_iam_policy_document.deployment_workload.json, " ", ""), "\n", ""), "\t", "")) <= 6144
+    )
+    error_message = "Each deployment managed policy must stay within the 6144 non-whitespace character quota."
   }
 
   assert {
     condition = one([
-      for statement in jsondecode(data.aws_iam_policy_document.deployment.json).Statement : statement
+      for statement in jsondecode(data.aws_iam_policy_document.deployment_workload.json).Statement : statement
       if statement.Sid == "DenyBoundaryRemoval"
     ]).Effect == "Deny"
     error_message = "Removing a permissions boundary must be denied."

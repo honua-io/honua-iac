@@ -46,8 +46,9 @@ locals {
   # These ARNs are deterministic from the inputs. Keeping them independent of
   # the resources lets the role preconditions and policy document refer to the
   # identities they protect without creating a dependency cycle.
-  deployment_role_arn   = "arn:${local.partition}:iam::${local.account_id}:role/${local.name}-deploy"
-  deployment_policy_arn = "arn:${local.partition}:iam::${local.account_id}:policy/${local.name}-deploy"
+  deployment_role_arn            = "arn:${local.partition}:iam::${local.account_id}:role/${local.name}-deploy"
+  deployment_policy_arn          = "arn:${local.partition}:iam::${local.account_id}:policy/${local.name}-deploy"
+  deployment_workload_policy_arn = "arn:${local.partition}:iam::${local.account_id}:policy/${local.name}-deploy-workload"
 
   # Deterministic so the deployment policy can require this boundary without a
   # cycle through the policy resource.
@@ -400,6 +401,12 @@ data "aws_iam_policy_document" "deployment" {
     resources = ["*"]
   }
 
+}
+
+# Role administration is its own managed policy. The deployment document is
+# already near the 6,144 non-whitespace character quota; these statements
+# pushed a single policy over it. Denies stay with the grants they constrain.
+data "aws_iam_policy_document" "deployment_workload" {
   # Creating or editing a workload role requires this root's boundary. The
   # condition key is absent on service-linked roles, so those are a separate
   # statement below.
@@ -505,12 +512,6 @@ data "aws_iam_policy_document" "deployment" {
       variable = "iam:PassedToService"
       values   = ["ecs-tasks.amazonaws.com"]
     }
-
-    condition {
-      test     = "StringEquals"
-      variable = "iam:PermissionsBoundary"
-      values   = [local.workload_boundary_arn]
-    }
   }
 
   # --- separation denials --------------------------------------------------
@@ -584,6 +585,7 @@ data "aws_iam_policy_document" "deployment" {
     resources = compact([
       local.deployment_role_arn,
       local.deployment_policy_arn,
+      local.deployment_workload_policy_arn,
       local.workload_boundary_arn,
       var.backend_access_role_arn,
       var.backend_access_policy_arn,
@@ -680,4 +682,16 @@ resource "aws_iam_policy" "deployment" {
 resource "aws_iam_role_policy_attachment" "deployment" {
   role       = aws_iam_role.deployment.name
   policy_arn = aws_iam_policy.deployment.arn
+}
+
+resource "aws_iam_policy" "deployment_workload" {
+  name        = "${local.name}-deploy-workload"
+  description = "Role-administration grants for the certified deployment role, split so each managed policy stays inside the size quota."
+  policy      = data.aws_iam_policy_document.deployment_workload.json
+  tags        = local.tags
+}
+
+resource "aws_iam_role_policy_attachment" "deployment_workload" {
+  role       = aws_iam_role.deployment.name
+  policy_arn = aws_iam_policy.deployment_workload.arn
 }
