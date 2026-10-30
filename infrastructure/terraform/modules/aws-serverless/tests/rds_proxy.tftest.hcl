@@ -295,7 +295,7 @@ run "on_creates_the_proxy_and_routes_every_process_through_it" {
   }
 
   assert {
-    condition     = output.rds_proxy_connection_pool == { max_connections_percent = 90, max_idle_connections_percent = 50, connection_borrow_timeout = 120 }
+    condition     = output.rds_proxy_connection_pool == { max_connections_percent = 90, max_idle_connections_percent = 50, connection_borrow_timeout = 120, idle_client_timeout = 600 }
     error_message = "rds_proxy_connection_pool must report the default target group's pool settings."
   }
 

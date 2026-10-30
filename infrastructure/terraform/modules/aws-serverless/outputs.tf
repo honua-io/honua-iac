@@ -530,11 +530,12 @@ output "rds_proxy_arn" {
 }
 
 output "rds_proxy_connection_pool" {
-  description = "Connection-pool settings of the RDS Proxy default target group (max_connections_percent, max_idle_connections_percent, connection_borrow_timeout seconds) when enable_rds_proxy is true; null otherwise."
+  description = "Connection-pool settings of the RDS Proxy default target group (max_connections_percent, max_idle_connections_percent, connection_borrow_timeout seconds) and the proxy's idle_client_timeout seconds when enable_rds_proxy is true; null otherwise."
   value = local.rds_proxy_enabled ? {
     max_connections_percent      = var.rds_proxy_max_connections_percent
     max_idle_connections_percent = var.rds_proxy_max_idle_connections_percent
     connection_borrow_timeout    = var.rds_proxy_connection_borrow_timeout_seconds
+    idle_client_timeout          = aws_db_proxy.this[0].idle_client_timeout
   } : null
 }
 
