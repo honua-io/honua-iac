@@ -52,10 +52,13 @@ run "trust_is_exact_environment_subjects" {
     condition = jsondecode(module.oidc["demo_infra"].trust_policy_json).Statement[0].Condition == {
       StringEquals = {
         "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-        "token.actions.githubusercontent.com:sub" = "repo:honua-io@217718039/honua-demo-infra@1310514636:environment:demo-drift"
+        "token.actions.githubusercontent.com:sub" = [
+          "repo:honua-io@217718039/honua-demo-infra@1310514636:environment:demo-drift",
+          "repo:honua-io@217718039/honua-demo-infra@1310514636:environment:demo-plan",
+        ]
       }
     }
-    error_message = "The demo drift role must trust only honua-demo-infra's immutable demo-drift environment subject."
+    error_message = "The demo plan-only role must trust only honua-demo-infra's immutable demo-drift and demo-plan environment subjects."
   }
 
   assert {

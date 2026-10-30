@@ -282,6 +282,7 @@ jobs:
             "infrastructure/terraform/bootstrap/aws-validation-reaper"
             "infrastructure/terraform/bootstrap/aws-drift-plan"
             "infrastructure/terraform/bootstrap/aws-update-rollback-controller"
+            "infrastructure/terraform/bootstrap/aws-demo-deploy"
             "infrastructure/terraform/bootstrap/aws-exec-identity"
             "infrastructure/terraform/bootstrap/aws-serverless"
             "infrastructure/terraform/bootstrap/aws-eks"
@@ -434,6 +435,7 @@ jobs:
           terraform -chdir=infrastructure/terraform/bootstrap/aws-release-cells test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-validation-reaper test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-drift-plan test -no-color
+          terraform -chdir=infrastructure/terraform/bootstrap/aws-demo-deploy test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-exec-identity test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-ecs test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-serverless test -no-color

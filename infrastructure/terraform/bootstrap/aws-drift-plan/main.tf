@@ -109,10 +109,15 @@ locals {
     "sns:ListTagsForResource",
   ]
 
-  # The bootstrap roots in this account manage IAM only.
+  # The bootstrap roots in this account manage IAM only (aws-demo-deploy also
+  # looks up the demo's public hosted zone by name).
   bootstrap_control_plane_reads = [
     "iam:Get*",
     "iam:List*",
+    "route53:GetHostedZone",
+    "route53:ListHostedZones",
+    "route53:ListHostedZonesByName",
+    "route53:ListTagsForResource",
   ]
 
   state_object_actions = ["s3:GetObject"]

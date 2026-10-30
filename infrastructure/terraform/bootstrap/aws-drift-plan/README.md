@@ -4,10 +4,12 @@ Two plan-only OIDC roles for nightly drift plans (honua-iac#320, honua-demo-infr
 
 | Role | Assumed by | Trusts exactly | Plans |
 |---|---|---|---|
-| `honua-demo-infra-drift-gha` | honua-demo-infra `.github/workflows/drift-plan.yml` | `repo:honua-io@217718039/honua-demo-infra@1310514636:environment:demo-drift` (honua-demo-infra uses immutable subjects) | every stack under `stacks/` (state prefix `demo/aws-demo/`) |
+| `honua-demo-infra-drift-gha` | honua-demo-infra `.github/workflows/drift-plan.yml`, and the PR plan job of `terraform.yml` | `repo:honua-io@217718039/honua-demo-infra@1310514636:environment:demo-drift`, `…:environment:demo-plan` (honua-demo-infra uses immutable subjects) | every stack under `stacks/` (state prefix `demo/aws-demo/`) |
 | `honua-iac-bootstrap-drift-gha` | honua-iac `.github/workflows/bootstrap-drift-plan.yml` | `repo:honua-io/honua-iac:environment:bootstrap-drift` | the bootstrap roots in `infrastructure/terraform/bootstrap/drift-roots.json` (state prefix `bootstrap/`) |
 
-Both roles come from `components/aws-github-oidc`, with the account's existing GitHub provider (`create_oidc_provider = false`), exact environment subjects and `cert_permissions_enabled = false`. GitHub puts either the environment or the ref in `sub`, never both. So "trunk only" is the environment's deployment-branch policy: give `demo-drift` and `bootstrap-drift` a policy that allows only `trunk`. Branch and `pull_request` subjects are refused by variable validation.
+Both roles come from `components/aws-github-oidc`, with the account's existing GitHub provider (`create_oidc_provider = false`), exact environment subjects and `cert_permissions_enabled = false`. GitHub puts either the environment or the ref in `sub`, never both. So "trunk only" is the environment's deployment-branch policy: give `demo-drift` and `bootstrap-drift` a policy that allows only `trunk`.
+
+`demo-plan` is the exception. Pull-request plans run on PR branches, so that subject is not trunk-pinned. Any writer who can push a branch can run a read-only plan with this role, which reads state and the Terraform-managed demo secrets. External pull requests are closed automatically, and forks get no OIDC token. Add required reviewers to `demo-plan` if that is too open, or remove the subject to stop PR plans. Branch and `pull_request` subjects are refused by variable validation.
 
 ## Permissions (inline policy `plan-only`)
 
