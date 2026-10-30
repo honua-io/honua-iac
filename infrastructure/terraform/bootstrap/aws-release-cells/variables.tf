@@ -90,6 +90,16 @@ variable "runtime_audit_chain_key_secret_arns" {
   }
 }
 
+variable "cert_demo_hosted_zone_id" {
+  description = "Public Route 53 zone for *.cert.demo.honua.io. Empty grants no DNS, ACM, or API Gateway custom-domain permissions. Route 53 does not evaluate resource tags, so this zone id and the record-name condition are the DNS boundary. Do not set a standing or demo zone. The tag guardrail still denies tagged ACM and API Gateway resources."
+  type        = string
+  default     = ""
+  validation {
+    condition     = var.cert_demo_hosted_zone_id == "" || can(regex("^Z[A-Z0-9]{1,31}$", var.cert_demo_hosted_zone_id))
+    error_message = "cert_demo_hosted_zone_id must be a Route 53 hosted zone id or empty."
+  }
+}
+
 variable "approver_role_name" {
   description = "Role that issues honua-devops provision-approval receipts (kms:GenerateMac only). Pass it to aws-exec-identity approval_signer_role_names."
   type        = string

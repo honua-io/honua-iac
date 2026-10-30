@@ -10,6 +10,27 @@ The release promise is safe AWS certification of the GA ECS/Lambda substrates:
 a disposable certification run must not modify or destroy standing certification
 or demo resources. This is the pre-cut containment work in honua-iac#208.
 
+## Certification hostnames
+
+`cert_demo_hosted_zone_id` defaults to empty. An empty value adds no Route 53,
+ACM, or API Gateway custom-domain permissions. Set it only to the public zone
+that should own `*.cert.demo.honua.io`. Route 53 does not evaluate resource
+tags, so the Environment and Lifecycle guardrail cannot deny a record change
+in that zone. The enforceable DNS boundary is the zone id itself plus the
+`*.cert.demo.honua.io` name condition. Do not set the variable to a standing
+or demo zone; an allow cannot add a tag check Route 53 will not enforce.
+Confirm the zone is not tagged `Environment` `cert`, `standing`, or `demo`,
+and is not tagged `Lifecycle` `standing` or `demo`, before choosing it. The
+tag guardrail still denies ACM certificates and other taggable resources that
+carry those tags. The grants let the provision and reaper roles manage
+`*.cert.demo.honua.io` records in that one zone, cell-tagged ACM certificates,
+and tagged API Gateway domain names. They do not grant the zone apex. Route 53
+is global, so those four DNS actions are exempt from the regional deny; every
+other action stays in the cell region. Customer cells keep the caller's domain
+and `cors_allowed_origins`; this bootstrap does not bake a harness origin into
+a customer default. Applying the variable is an operator action and is not
+part of the change that adds it.
+
 ## Plan and verify
 
 Supply the existing GitHub OIDC provider and ECR mirror repository ARNs:

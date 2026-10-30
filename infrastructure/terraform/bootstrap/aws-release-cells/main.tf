@@ -9,9 +9,99 @@ locals {
     mirror_repository_arn = var.mirror_repository_arn
   }
   guardrails = jsondecode(templatefile("${path.module}/policies/guardrails.json.tftpl", local.template_vars)).Statement
+  # Opt-in only. Route 53 does not evaluate resource tags, so the zone id and the
+  # record-name condition are the DNS boundary. Do not point this at a standing
+  # or demo zone. The tag guardrail still denies tagged ACM and API Gateway resources.
+  cert_demo_record_names = ["*.cert.demo.honua.io"]
+  cert_demo_zone_arn     = "arn:aws:route53:::hostedzone/${var.cert_demo_hosted_zone_id}"
+  cert_demo_request_tags = {
+    StringEquals = { "aws:RequestTag/Owner" = "release-cell" }
+    StringLike   = { "aws:RequestTag/ValidationRunId" = "gha-?*" }
+  }
+  cert_demo_resource_tags = {
+    StringEquals = { "aws:ResourceTag/Owner" = "release-cell" }
+    Null         = { "aws:ResourceTag/ValidationRunId" = "false" }
+  }
+  cert_demo_change = {
+    Sid      = "ChangeCertDemoRecords"
+    Effect   = "Allow"
+    Action   = ["route53:ChangeResourceRecordSets"]
+    Resource = local.cert_demo_zone_arn
+    Condition = {
+      "ForAllValues:StringLike" = { "route53:ChangeResourceRecordSetsNormalizedRecordNames" = local.cert_demo_record_names }
+      Null                      = { "route53:ChangeResourceRecordSetsNormalizedRecordNames" = "false" }
+    }
+  }
+  cert_demo_read = {
+    Sid      = "ReadCertDemoZone"
+    Effect   = "Allow"
+    Action   = ["route53:GetChange", "route53:ListResourceRecordSets", "route53:GetHostedZone"]
+    Resource = [local.cert_demo_zone_arn, "arn:aws:route53:::change/*"]
+  }
+  cert_demo_provision = jsonencode([
+    local.cert_demo_change,
+    local.cert_demo_read,
+    {
+      Sid       = "RequestCellCertificate"
+      Effect    = "Allow"
+      Action    = ["acm:RequestCertificate"]
+      Resource  = "*"
+      Condition = local.cert_demo_request_tags
+    },
+    {
+      Sid       = "ManageCellCertificate"
+      Effect    = "Allow"
+      Action    = ["acm:AddTagsToCertificate", "acm:DeleteCertificate", "acm:DescribeCertificate", "acm:ListTagsForCertificate"]
+      Resource  = "*"
+      Condition = local.cert_demo_resource_tags
+    },
+    {
+      Sid       = "CreateCellDomainName"
+      Effect    = "Allow"
+      Action    = ["apigateway:POST"]
+      Resource  = "arn:aws:apigateway:${var.region}::/domainnames"
+      Condition = local.cert_demo_request_tags
+    },
+    {
+      Sid       = "ConfigureCellDomainName"
+      Effect    = "Allow"
+      Action    = ["apigateway:POST", "apigateway:PATCH"]
+      Resource  = "arn:aws:apigateway:${var.region}::/domainnames/*"
+      Condition = local.cert_demo_resource_tags
+    },
+    {
+      Sid       = "DeleteCellDomainName"
+      Effect    = "Allow"
+      Action    = ["apigateway:DELETE"]
+      Resource  = "arn:aws:apigateway:${var.region}::/domainnames/*"
+      Condition = local.cert_demo_resource_tags
+    },
+  ])
+  cert_demo_reaper = jsonencode([
+    local.cert_demo_change,
+    local.cert_demo_read,
+    {
+      Sid       = "DeleteCellCertificate"
+      Effect    = "Allow"
+      Action    = ["acm:DescribeCertificate", "acm:DeleteCertificate"]
+      Resource  = "*"
+      Condition = local.cert_demo_resource_tags
+    },
+    {
+      Sid       = "DeleteCellDomainName"
+      Effect    = "Allow"
+      Action    = ["apigateway:DELETE"]
+      Resource  = "arn:aws:apigateway:${var.region}::/domainnames/*"
+      Condition = local.cert_demo_resource_tags
+    },
+  ])
   lane_policies = { for lane in ["provision", "reaper", "mirror"] : lane => jsonencode({
-    Version   = "2012-10-17"
-    Statement = concat([for statement in jsondecode(templatefile("${path.module}/policies/${lane}.json.tftpl", local.template_vars)).Statement : statement if statement.Sid != "PassCellRoles" || var.enable_workload_role_passing], local.guardrails)
+    Version = "2012-10-17"
+    Statement = concat(
+      [for statement in jsondecode(templatefile("${path.module}/policies/${lane}.json.tftpl", local.template_vars)).Statement : statement if statement.Sid != "PassCellRoles" || var.enable_workload_role_passing],
+      jsondecode(var.cert_demo_hosted_zone_id == "" || lane == "mirror" ? "[]" : (lane == "provision" ? local.cert_demo_provision : local.cert_demo_reaper)),
+      local.guardrails,
+    )
   }) }
   grant_policies = { for lane, policy in local.lane_policies : lane => jsonencode({
     Version   = "2012-10-17"
@@ -23,7 +113,11 @@ locals {
     Statement = concat([for statement in jsondecode(templatefile("${path.module}/policies/runtime.json.tftpl", local.template_vars)).Statement :
       merge(statement, contains(["CellVpcNetworking", "CreateCellVpcNetworkInterface"], statement.Sid) ? { Condition = { ArnEquals = { "ec2:Vpc" = var.workload_vpc_arns } } } : {})
       if !contains(["CellVpcNetworking", "CreateCellVpcNetworkInterface", "NewCellNetworkInterface"], statement.Sid) || length(var.workload_vpc_arns) > 0
-      ], [for statement in local.guardrails : statement if !contains(["ProtectBoundary", "NeverRemoveBoundary", "RequireBoundary", "NoRetaggingOwner", "NoStandingCreation", "NoStandingLifecycle"], statement.Sid)],
+      ], [for statement in local.guardrails :
+      # The cell roles need Route 53's global endpoint. The workload boundary does not.
+      jsondecode(statement.Sid == "CertificationRegionOnly" ? jsonencode(merge(statement, { NotAction = ["iam:*", "sts:*"] })) : jsonencode(statement))
+      if !contains(["ProtectBoundary", "NeverRemoveBoundary", "RequireBoundary", "NoRetaggingOwner", "NoStandingCreation", "NoStandingLifecycle"], statement.Sid)
+      ],
       length(var.runtime_bedrock_model_arns) == 0 ? [] : [{
         Sid      = "InvokeApprovedBedrockModels"
         Effect   = "Allow"
