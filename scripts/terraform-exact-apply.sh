@@ -281,6 +281,20 @@ if [[ "$DRY_RUN" == "true" ]]; then
   exit 0
 fi
 
+# The installed host's v2 lane has one additional authority transition. Its
+# fixed worker must durably win Server's prewrite CAS after every original
+# read-only binding above and before this script marks local mutation started.
+# The ordinary v1/manual lane remains unchanged.
+if [[ -n "${HONUA_IAC_EXACT_APPLY_HOST_V2:-}" ]]; then
+  [[ "$HONUA_IAC_EXACT_APPLY_HOST_V2" == "1" ]] ||
+    refuse "host-prewrite-invalid" "the private host mode is invalid"
+  if ! HONUA_IAC_PREWRITE_PLAN_SHA256="$(json_get "$METADATA" plan.sha256)" \
+       HONUA_IAC_PREWRITE_METADATA_DIGEST="$BOUND_METADATA_DIGEST" \
+       python3 "$REPO_ROOT/scripts/lib/exact-apply-prewrite-v2.py"; then
+    refuse "host-prewrite-refused" "the private host did not authorize this exact forward mutation"
+  fi
+fi
+
 # --- execute exactly the saved plan ------------------------------------------
 claim_phase "$CLAIM_DIR" "mutation-started"
 set +e
