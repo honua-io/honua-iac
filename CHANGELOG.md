@@ -14,6 +14,10 @@ module input/output contracts may still change.
 
 ## Unreleased
 
+### Fixed
+
+- `aws-serverless`: `rds.force_ssl=1` now uses `apply_method` `pending-reboot`. PostgreSQL 15 already defaults that parameter to 1 and AWS refreshes the default as `pending-reboot`, so `immediate` showed the same in-place update on every plan (honua-iac#321, demo.honua.io drift). The value is unchanged, so no reboot follows.
+
 ### Added
 
 - `examples/aws-serverless`: `rds_proxy_idle_client_timeout_seconds` (default 600, unchanged), passed to

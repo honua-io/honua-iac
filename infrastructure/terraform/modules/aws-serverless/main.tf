@@ -677,6 +677,19 @@ resource "aws_elasticache_replication_group" "redis" {
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
 #checkov:skip=CKV_AWS_133: Backup retention is configured in this module call.
 #checkov:skip=CKV_AWS_304: Secret rotation is handled outside this module.
+# PostgreSQL 15's engine default for rds.force_ssl is already 1. DescribeDBParameters
+# refreshes that default with apply_method pending-reboot, so configuring immediate
+# shows the same in-place update on every plan and apply never clears it (honua-iac#321).
+locals {
+  rds_parameters = [
+    {
+      name         = "rds.force_ssl"
+      value        = "1"
+      apply_method = "pending-reboot"
+    }
+  ]
+}
+
 module "rds" {
   count = local.db_use_existing ? 0 : 1
   #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
@@ -699,15 +712,10 @@ module "rds" {
 
   # Enforce server-side TLS so the database rejects non-SSL connections,
   # matching the require_secure_transport posture of the Azure data stack and
-  # the shared aws-data module.
+  # the shared aws-data module. PostgreSQL 15 already defaults rds.force_ssl to
+  # 1 and reports that default as pending-reboot; see local.rds_parameters.
   create_db_parameter_group = true
-  parameters = [
-    {
-      name         = "rds.force_ssl"
-      value        = "1"
-      apply_method = "immediate"
-    }
-  ]
+  parameters                = local.rds_parameters
 
   db_name                     = var.db_name
   username                    = var.db_username

@@ -165,6 +165,17 @@ run "rds_rules_are_standalone_and_complete" {
   }
 }
 
+# honua-iac#321: PostgreSQL 15 already forces SSL, and AWS refreshes that
+# parameter as pending-reboot. immediate never sticks, so every plan diffs.
+run "rds_force_ssl_uses_the_engine_default_apply_method" {
+  command = plan
+
+  assert {
+    condition     = one(local.rds_parameters).name == "rds.force_ssl" && one(local.rds_parameters).value == "1" && one(local.rds_parameters).apply_method == "pending-reboot"
+    error_message = "rds.force_ssl=1 must use apply_method pending-reboot so refresh and configuration agree. immediate is a perpetual in-place diff."
+  }
+}
+
 run "existing_database_creates_no_rds_rules" {
   command = plan
 
