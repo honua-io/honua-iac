@@ -226,7 +226,7 @@ resource "aws_vpc_endpoint" "customcode_s3" {
 #     auth token).
 #   - S3 gateway prefix-list (CodeArtifact assets + write the dependency layer to
 #     the artifact bucket prefix).
-#   - 5432 to the VPC (snapshot / DB reach during provisioning if needed).
+#   - No PostgreSQL. Dependency restore does not read the platform database.
 #   - A TIGHT GitHub egress allowlist (var.customcode_github_egress_cidrs) for
 #     git-clone of the pinned SHA. EMPTY by default => no GitHub egress at all
 #     (operators that restore purely from CodeArtifact leave it empty; those that
@@ -256,14 +256,6 @@ resource "aws_security_group" "batch_provisioning" {
     to_port         = 443
     protocol        = "tcp"
     prefix_list_ids = [aws_vpc_endpoint.customcode_s3[0].prefix_list_id]
-  }
-
-  egress {
-    description = "PostgreSQL to the VPC (snapshot / DB reach during provisioning)"
-    from_port   = local.db_port
-    to_port     = local.db_port
-    protocol    = "tcp"
-    cidr_blocks = [local.vpc_cidr_block]
   }
 
   # TIGHT GitHub egress allowlist for git-clone of the pinned SHA. Empty default
@@ -331,19 +323,8 @@ resource "aws_security_group" "batch_execution" {
   tags = local.tags
 }
 
-# Let the two phases reach the module-managed RDS instance (mirrors
-# rds_from_batch in batch.tf for the MVP SG).
-resource "aws_security_group_rule" "rds_from_batch_provisioning" {
-  count                    = local.egress_isolation_enabled && !local.db_use_existing ? 1 : 0
-  type                     = "ingress"
-  description              = "PostgreSQL from custom-code GP provisioning tasks"
-  from_port                = 5432
-  to_port                  = 5432
-  protocol                 = "tcp"
-  security_group_id        = aws_security_group.rds[0].id
-  source_security_group_id = aws_security_group.batch_provisioning[0].id
-}
-
+# The execution phase reaches the module-managed RDS instance. Dependency
+# restore does not: it holds no platform secret and has no database path.
 resource "aws_security_group_rule" "rds_from_batch_execution" {
   count                    = local.egress_isolation_enabled && !local.db_use_existing ? 1 : 0
   type                     = "ingress"
@@ -356,19 +337,26 @@ resource "aws_security_group_rule" "rds_from_batch_execution" {
 }
 
 # ---------------------------------------------------------------------------
-# IAM — CodeArtifact read for the PROVISIONING phase (granted to the GP job role).
+# IAM — dependency restore only.
 #
-# Scoped to the domain + the two pull-through repo ARNs; sts:GetServiceBearerToken
-# is conditioned on the codeartifact service name (the only way the bearer token
-# is minted). NEVER Action="*" (the policy gate forbids it); resources are ARN-
-# scoped. The execution phase does NOT receive this grant — it cannot mint a
-# CodeArtifact token, reinforcing the no-dependency-egress posture.
+# The provisioning job restores packages. It must not hold the platform
+# database, admin, or master-key secrets that aws_iam_role.batch_job carries,
+# and it has no path to PostgreSQL. The execution phase is the spatial GP job
+# definition, which still uses batch_job because that phase reads the database.
 # ---------------------------------------------------------------------------
+
+resource "aws_iam_role" "egress_isolation_job" {
+  count                = local.egress_isolation_enabled ? 1 : 0
+  permissions_boundary = var.permissions_boundary_arn
+  name_prefix          = "${local.egress_isolation_name}-job-"
+  assume_role_policy   = data.aws_iam_policy_document.batch_execution_assume[0].json
+  tags                 = local.tags
+}
 
 resource "aws_iam_role_policy" "batch_job_codeartifact" {
   count = local.egress_isolation_enabled ? 1 : 0
   name  = "${local.egress_isolation_name}-job-codeartifact"
-  role  = aws_iam_role.batch_job[0].id
+  role  = aws_iam_role.egress_isolation_job[0].id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -433,7 +421,7 @@ resource "aws_batch_job_definition" "gp_provisioning" {
 
   container_properties = jsonencode(merge({
     image            = local.gp_batch_image
-    jobRoleArn       = aws_iam_role.batch_job[0].arn
+    jobRoleArn       = aws_iam_role.egress_isolation_job[0].arn
     executionRoleArn = aws_iam_role.batch_execution[0].arn
 
     resourceRequirements = [
@@ -457,7 +445,7 @@ resource "aws_batch_job_definition" "gp_provisioning" {
     # PROVISIONING phase marker + CodeArtifact pull-through config. The worker's
     # restore step reads these to point pip/nuget at the CodeArtifact repos
     # (resolved via the VPC endpoints) instead of public registries.
-    environment = concat([
+    environment = [
       {
         name  = "HONUA_JOB_PHASE"
         value = "provisioning"
@@ -482,18 +470,7 @@ resource "aws_batch_job_definition" "gp_provisioning" {
         name  = "HONUA_CODEARTIFACT_REGION"
         value = local.ca_region
       },
-      {
-        name  = "ConnectionStrings__DefaultConnection"
-        value = "aws:secretsmanager:${local.runtime_connection_secret.arn}"
-      }
-      ], [
-      # Behind RDS Proxy the server issues no session SET and prepares no
-      # statements (rds-proxy.tf, Pinning).
-      for name, value in merge(local.db_session_settings_environment, local.db_proxy_query_cache_environment) : {
-        name  = name
-        value = value
-      }
-    ])
+    ]
 
     logConfiguration = {
       logDriver = "awslogs"

@@ -527,17 +527,19 @@ run "on_admits_the_egress_isolation_phases" {
   }
 
   assert {
-    condition     = toset(keys(aws_security_group_rule.rds_proxy_from_clients)) == toset(["lambda", "gp_batch", "gp_batch_provisioning", "gp_batch_execution"])
-    error_message = "With custom-code egress isolation, the provisioning and execution security groups must reach the proxy too."
+    condition     = toset(keys(aws_security_group_rule.rds_proxy_from_clients)) == toset(["lambda", "gp_batch", "gp_batch_execution"])
+    error_message = "Dependency restore must not reach the proxy. The execution security group still does."
   }
 
   assert {
-    condition = length(aws_batch_job_definition.gp_provisioning) > 0 && alltrue([
+    condition = length(aws_iam_role.egress_isolation_job) == 1 && strcontains(aws_iam_role.egress_isolation_job[0].name_prefix, "-cc-job-") && length(aws_batch_job_definition.gp_provisioning) > 0 && alltrue([
       for tier, jd in aws_batch_job_definition.gp_provisioning :
-      one([for e in jsondecode(jd.container_properties).environment : e.value if e.name == "Database__SessionSettings__Mode"]) == "role-defaults" &&
-      one([for e in jsondecode(jd.container_properties).environment : e.value if e.name == "Database__QueryCache__EnableAutomaticCaching"]) == "false"
+      jsondecode(jd.container_properties).jobRoleArn == aws_iam_role.egress_isolation_job[0].arn &&
+      !contains([for e in jsondecode(jd.container_properties).environment : e.name], "ConnectionStrings__DefaultConnection") &&
+      !contains([for e in jsondecode(jd.container_properties).environment : e.name], "Database__SessionSettings__Mode") &&
+      !contains([for e in jsondecode(jd.container_properties).environment : e.name], "Database__QueryCache__EnableAutomaticCaching")
     ])
-    error_message = "The provisioning job definitions read the proxy connection string, so they must set Database__SessionSettings__Mode=role-defaults and Database__QueryCache__EnableAutomaticCaching=false too."
+    error_message = "The provisioning job must run as the secret-less egress role, with no database connection or session settings."
   }
 }
 

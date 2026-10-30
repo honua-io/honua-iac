@@ -113,8 +113,7 @@ locals {
     { lambda = aws_security_group.lambda.id },
     local.gp_batch_enabled ? { gp_batch = one(aws_security_group.batch[*].id) } : {},
     local.egress_isolation_enabled ? {
-      gp_batch_provisioning = one(aws_security_group.batch_provisioning[*].id)
-      gp_batch_execution    = one(aws_security_group.batch_execution[*].id)
+      gp_batch_execution = one(aws_security_group.batch_execution[*].id)
     } : {},
   ) : {}
 }

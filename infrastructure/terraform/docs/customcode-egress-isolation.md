@@ -73,7 +73,7 @@ compute environments, and two queues.
 
 | Phase | 443 to CodeArtifact/STS/Secrets endpoints | S3 gateway (artifact bucket) | GitHub | Open internet (`0.0.0.0/0`) | 5432 (DB) |
 |-------|:--:|:--:|:--:|:--:|:--:|
-| **Provisioning** | yes | yes | tight allowlist (`customcode_github_egress_cidrs`, empty ⇒ none) | **no** | yes |
+| **Provisioning** | yes | yes | tight allowlist (`customcode_github_egress_cidrs`, empty ⇒ none) | **no** | **no** |
 | **Execution** | yes (Secrets/STS only) | yes | **no** | **no** | yes |
 
 The two SGs egress `443` to the dedicated endpoint SG
@@ -91,12 +91,15 @@ managed **prefix list** — there is no `0.0.0.0/0` rule on either phase.
   `aws_vpc_endpoint.customcode_sts`, `aws_vpc_endpoint.customcode_secretsmanager`
   (interface), and `aws_vpc_endpoint.customcode_s3` (gateway; CodeArtifact serves
   assets from S3, and the artifact-bucket handoff rides the same prefix list).
-- IAM: `aws_iam_role_policy.batch_job_codeartifact` grants the GP job role
+- IAM: `aws_iam_role.egress_isolation_job` is the provisioning job role. It
+  receives only `aws_iam_role_policy.batch_job_codeartifact`:
   `codeartifact:GetAuthorizationToken` (domain-scoped),
   `codeartifact:GetRepositoryEndpoint` + `codeartifact:ReadFromRepository`
   (repo-scoped), and `sts:GetServiceBearerToken` **conditioned** on
   `sts:AWSServiceName = codeartifact.amazonaws.com`. No `Action = "*"`; resources
-  are ARN-scoped (the policy gate forbids wildcard actions).
+  are ARN-scoped (the policy gate forbids wildcard actions). The role has no
+  platform secret grant and no database path. The execution phase stays on
+  `aws_iam_role.batch_job` because that job reads the database.
 
 The provisioning job-def passes `HONUA_CODEARTIFACT_*` env (domain, owner, repo
 names, region) so the worker's restore step points pip/nuget at the CodeArtifact

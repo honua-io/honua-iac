@@ -571,8 +571,9 @@ resource "aws_security_group" "rds" {
 
   # No inline ingress/egress: every RDS rule is a standalone
   # aws_security_group_rule (rds_from_lambda and rds_from_cidrs below,
-  # rds_from_batch in batch.tf, rds_from_batch_provisioning/execution in
-  # egress-isolation.tf). Terraform does not support inline rules alongside
+  # rds_from_batch in batch.tf, rds_from_batch_execution in
+  # egress-isolation.tf). The provisioning phase has no database path.
+  # Terraform does not support inline rules alongside
   # standalone rules on one group: the inline set is authoritative, so each
   # apply would strip the standalone rules and the next would re-add them.
 
