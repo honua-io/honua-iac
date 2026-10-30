@@ -401,6 +401,27 @@ variable "bedrock_ai_timeout_seconds" {
   }
 }
 
+variable "studio_ai_proxy_limits" {
+  description = "Optional Studio AI proxy size limits, passed through to the module. With Bedrock enabled the module publishes set fields in the runtime settings document. Null fields keep the server defaults (MaxPromptCharacters 128000, MaxRequestBytes/MaxEventBytes/MaxResponseBytes per StudioAiProxyConfiguration)."
+  type = object({
+    max_prompt_characters = optional(number)
+    max_request_bytes     = optional(number)
+    max_event_bytes       = optional(number)
+    max_response_bytes    = optional(number)
+  })
+  default = null
+
+  validation {
+    condition = var.studio_ai_proxy_limits == null ? true : alltrue([
+      try(var.studio_ai_proxy_limits.max_prompt_characters, null) == null ? true : (var.studio_ai_proxy_limits.max_prompt_characters >= 1000 && var.studio_ai_proxy_limits.max_prompt_characters <= 500000),
+      try(var.studio_ai_proxy_limits.max_request_bytes, null) == null ? true : (var.studio_ai_proxy_limits.max_request_bytes >= 1024 && var.studio_ai_proxy_limits.max_request_bytes <= 16777216),
+      try(var.studio_ai_proxy_limits.max_event_bytes, null) == null ? true : (var.studio_ai_proxy_limits.max_event_bytes >= 1024 && var.studio_ai_proxy_limits.max_event_bytes <= 16777216),
+      try(var.studio_ai_proxy_limits.max_response_bytes, null) == null ? true : (var.studio_ai_proxy_limits.max_response_bytes >= 1024 && var.studio_ai_proxy_limits.max_response_bytes <= 33554432),
+    ])
+    error_message = "studio_ai_proxy_limits: max_prompt_characters 1000-500000; byte limits 1 KiB-16 MiB (response up to 32 MiB)."
+  }
+}
+
 variable "permissions_boundary_arn" {
   description = "Operator-owned boundary for every workload role in a certification cell."
   type        = string

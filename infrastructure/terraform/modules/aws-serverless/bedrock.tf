@@ -60,6 +60,33 @@ locals {
   #   (BedrockChatClientAdapter), not to the function's region.
   # Kind, DefaultProvider and Model stay explicit: they have no default and
   # startup validation fails without them.
+  #
+  # Studio AI proxy size limits are optional. A genuine-model agent turn
+  # carries the bounded tool view plus signed provenance, which exceeds the
+  # server defaults (128000 characters / the StudioAiProxyConfiguration byte
+  # caps). Null keeps those defaults.
+  #
+  # They go in the runtime settings document, not the Lambda environment.
+  # The Redis-on cell with Bedrock, the proxy, file storage and these four
+  # variables as env measured 4155 bytes, and Lambda refuses more than 4096
+  # (honua-iac#282). The server loads HONUA_SETTINGS_DOCUMENT as configuration
+  # underneath environment variables (SettingsDocumentConfiguration), so
+  # StudioAiProxy:Max* there bind the same options and add no env bytes.
+  # aws-ecs keeps them as env vars; a task definition has no 4 KB cap.
+  # Control-plane event functions still drop StudioAiProxy__Max* if something
+  # else injects them (control-plane-events.tf).
+  studio_ai_proxy_limits_values = var.studio_ai_proxy_limits == null ? {} : {
+    for key, value in {
+      MaxPromptCharacters = var.studio_ai_proxy_limits.max_prompt_characters
+      MaxRequestBytes     = var.studio_ai_proxy_limits.max_request_bytes
+      MaxEventBytes       = var.studio_ai_proxy_limits.max_event_bytes
+      MaxResponseBytes    = var.studio_ai_proxy_limits.max_response_bytes
+    } : key => value if value != null
+  }
+  studio_ai_proxy_limits_document = local.bedrock_ai_enabled && length(local.studio_ai_proxy_limits_values) > 0 ? {
+    StudioAiProxy = local.studio_ai_proxy_limits_values
+  } : {}
+
   bedrock_ai_environment = local.bedrock_ai_enabled ? merge({
     StudioAiProxy__Enabled                   = "true"
     StudioAiProxy__DefaultProvider           = "bedrock"

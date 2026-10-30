@@ -1321,6 +1321,27 @@ variable "bedrock_ai_timeout_seconds" {
   }
 }
 
+variable "studio_ai_proxy_limits" {
+  description = "Optional Studio AI proxy size limits, published in the runtime settings document only when Bedrock is enabled. Null fields keep the server defaults (MaxPromptCharacters 128000, MaxRequestBytes/MaxEventBytes/MaxResponseBytes per StudioAiProxyConfiguration). The genuine-model canary raises all four; the release harness passes this object when the root declares it. The Lambda environment cannot hold the four variables on the Redis-on cell."
+  type = object({
+    max_prompt_characters = optional(number)
+    max_request_bytes     = optional(number)
+    max_event_bytes       = optional(number)
+    max_response_bytes    = optional(number)
+  })
+  default = null
+
+  validation {
+    condition = var.studio_ai_proxy_limits == null ? true : alltrue([
+      try(var.studio_ai_proxy_limits.max_prompt_characters, null) == null ? true : (var.studio_ai_proxy_limits.max_prompt_characters >= 1000 && var.studio_ai_proxy_limits.max_prompt_characters <= 500000),
+      try(var.studio_ai_proxy_limits.max_request_bytes, null) == null ? true : (var.studio_ai_proxy_limits.max_request_bytes >= 1024 && var.studio_ai_proxy_limits.max_request_bytes <= 16777216),
+      try(var.studio_ai_proxy_limits.max_event_bytes, null) == null ? true : (var.studio_ai_proxy_limits.max_event_bytes >= 1024 && var.studio_ai_proxy_limits.max_event_bytes <= 16777216),
+      try(var.studio_ai_proxy_limits.max_response_bytes, null) == null ? true : (var.studio_ai_proxy_limits.max_response_bytes >= 1024 && var.studio_ai_proxy_limits.max_response_bytes <= 33554432),
+    ])
+    error_message = "studio_ai_proxy_limits: max_prompt_characters 1000-500000; byte limits 1 KiB-16 MiB (response up to 32 MiB)."
+  }
+}
+
 # ---------------------------------------------------------------------------
 # Amazon Location Service geocoding — replaces an external Nominatim provider
 # for VPCs with no NAT/internet-gateway egress (honua-server#2948). Off by

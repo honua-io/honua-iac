@@ -16,6 +16,15 @@ module input/output contracts may still change.
 
 ### Added
 
+- `aws-serverless`, `examples/aws-serverless`: optional `studio_ai_proxy_limits` (`max_prompt_characters`,
+  `max_request_bytes`, `max_event_bytes`, `max_response_bytes`), the same object `aws-ecs` already takes.
+  With Bedrock enabled, set fields are published as `StudioAiProxy` in the runtime settings document.
+  The server loads that document as configuration underneath environment variables. The same four
+  values as Lambda environment variables measured 4155 bytes on the Redis-on cell, past the 4096 cap
+  (honua-iac#282). Null adds nothing. honua-release already passes this object when the pinned root
+  declares it (honua-release#1061); ECS emits the same object as environment variables and shipped in
+  v0.4.4 (honua-iac#333).
+
 - `examples/aws-serverless`: `rds_proxy_idle_client_timeout_seconds` (default 600, unchanged), passed to
   the proxy. Frozen Lambda environments keep their client connections, and a pinned connection is
   released only when the proxy closes that idle client. On a small cell a burst of new environments

@@ -159,6 +159,61 @@ run "bedrock_disabled" {
     error_message = "Disabled Bedrock must grant and configure nothing."
   }
 }
+
+run "studio_ai_proxy_limits_reach_the_settings_document" {
+  # Publishing limits changes the retained settings document. A fresh state
+  # keeps this plan from destroying the document the earlier runs published.
+  state_key = "proxy_limits_full"
+  command   = plan
+  variables {
+    enable_bedrock_ai      = true
+    bedrock_ai_region      = "us-east-1"
+    studio_ai_proxy_limits = { max_prompt_characters = 400000, max_request_bytes = 4194304, max_event_bytes = 4194304, max_response_bytes = 8388608 }
+  }
+  assert {
+    condition = alltrue([for name, value in {
+      MaxPromptCharacters = 400000
+      MaxRequestBytes     = 4194304
+      MaxEventBytes       = 4194304
+      MaxResponseBytes    = 8388608
+    } : local.runtime_settings_document.StudioAiProxy[name] == value]) && length([for key in keys(local.bedrock_ai_environment) : key if startswith(key, "StudioAiProxy__Max")]) == 0
+    error_message = "Configured Studio AI proxy limits must reach the settings document the API loads, not the Lambda environment."
+  }
+}
+
+run "studio_ai_proxy_limits_partial_and_absent" {
+  state_key = "proxy_limits_partial"
+  command   = plan
+  variables {
+    enable_bedrock_ai      = true
+    bedrock_ai_region      = "us-east-1"
+    studio_ai_proxy_limits = { max_event_bytes = 4194304, max_response_bytes = 8388608 }
+  }
+  assert {
+    condition     = length(keys(local.runtime_settings_document.StudioAiProxy)) == 2 && local.runtime_settings_document.StudioAiProxy.MaxEventBytes == 4194304 && local.runtime_settings_document.StudioAiProxy.MaxResponseBytes == 8388608
+    error_message = "Only the set limits are published; unset limits keep the server defaults."
+  }
+}
+
+run "studio_ai_proxy_limits_without_bedrock_emit_nothing" {
+  command = plan
+  variables {
+    studio_ai_proxy_limits = { max_prompt_characters = 400000 }
+  }
+  assert {
+    condition     = length(local.bedrock_ai_environment) == 0 && !contains(keys(local.runtime_settings_document), "StudioAiProxy")
+    error_message = "Without Bedrock the proxy is off and no limit is published."
+  }
+}
+
+run "studio_ai_proxy_limits_reject_out_of_range" {
+  command = plan
+  variables {
+    enable_bedrock_ai      = true
+    studio_ai_proxy_limits = { max_prompt_characters = 600000 }
+  }
+  expect_failures = [var.studio_ai_proxy_limits]
+}
 run "reject_model_wildcard" {
   command = plan
   variables { bedrock_ai_model = "anthropic.*" }

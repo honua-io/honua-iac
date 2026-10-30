@@ -12,6 +12,7 @@ module "honua" {
   bedrock_ai_region             = var.bedrock_ai_region
   bedrock_ai_max_tokens         = var.bedrock_ai_max_tokens
   bedrock_ai_timeout_seconds    = var.bedrock_ai_timeout_seconds
+  studio_ai_proxy_limits        = var.studio_ai_proxy_limits
 
   environment                         = var.environment
   name_prefix                         = var.name_prefix
