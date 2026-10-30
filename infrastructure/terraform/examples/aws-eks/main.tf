@@ -65,6 +65,12 @@ module "eks" {
   public_base_url                = var.public_base_url
   subject_alternative_names      = var.subject_alternative_names
   ingress_load_balancer_hostname = var.ingress_load_balancer_hostname
+
+  enable_bedrock_ai          = var.enable_bedrock_ai
+  bedrock_ai_model           = var.bedrock_ai_model
+  bedrock_ai_region          = var.bedrock_ai_region
+  bedrock_ai_max_tokens      = var.bedrock_ai_max_tokens
+  bedrock_ai_timeout_seconds = var.bedrock_ai_timeout_seconds
 }
 
 output "cluster_name" {

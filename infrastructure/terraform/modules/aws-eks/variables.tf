@@ -669,3 +669,59 @@ variable "redis_keep_alive_seconds" {
     error_message = "redis_keep_alive_seconds must be a whole number from 1 to 300."
   }
 }
+
+variable "enable_bedrock_ai" {
+  description = "Grant the EKS server workload role bedrock:InvokeModel and InvokeModelWithResponseStream for one configured model, and publish the Studio AI disclosure for that model. Off by default. The GP job role is not granted invoke."
+  type        = bool
+  default     = false
+}
+
+variable "bedrock_ai_model" {
+  description = "Bedrock model id the server uses. Defaults to the shipped cross-region Claude Sonnet 4.6 profile. Claude Opus 5.5, Claude Sonnet 5.5, GPT-6.1 Sol and GPT-6.1 Terra are the same shape: a us. profile whose foundation model is granted in us-east-1, us-east-2 and us-west-2. The IAM grant is only this model's profile and foundation-model ARNs."
+  type        = string
+  default     = "us.anthropic.claude-sonnet-4-6"
+
+  validation {
+    condition     = can(regex("^(us[.])?(anthropic[.]claude-[a-z0-9-]+(-v[0-9]+:[0-9]+)?|openai[.]gpt-[a-z0-9.-]+)$", var.bedrock_ai_model))
+    error_message = "Pin an exact Claude or OpenAI GPT Bedrock model id or us. inference profile; wildcards and arbitrary ARN grants are forbidden."
+  }
+}
+
+variable "bedrock_ai_region" {
+  description = "AWS region the server invokes Bedrock in. Defaults to us-west-2, matching aws-ecs."
+  type        = string
+  default     = "us-west-2"
+}
+
+variable "bedrock_ai_max_tokens" {
+  description = "Max output tokens for Bedrock AI generation."
+  type        = number
+  default     = 4096
+
+  validation {
+    condition     = var.bedrock_ai_max_tokens >= 256 && var.bedrock_ai_max_tokens <= 32768
+    error_message = "bedrock_ai_max_tokens must be between 256 and 32768."
+  }
+}
+
+variable "bedrock_ai_timeout_seconds" {
+  description = "Per-request timeout for Bedrock AI generation."
+  type        = number
+  default     = 120
+
+  validation {
+    condition     = var.bedrock_ai_timeout_seconds >= 5 && var.bedrock_ai_timeout_seconds <= 300
+    error_message = "bedrock_ai_timeout_seconds must be between 5 and 300."
+  }
+}
+
+variable "bedrock_ai_data_classification" {
+  description = "Operator-asserted classification of the data this deployment's Studio may send to Bedrock. Enabling Bedrock approves exactly the configured model and region for studio-chat at this classification."
+  type        = string
+  default     = "unclassified"
+
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9-]{0,63}$", var.bedrock_ai_data_classification))
+    error_message = "bedrock_ai_data_classification must be a lowercase identifier (letters, digits, hyphens; at most 64 characters)."
+  }
+}

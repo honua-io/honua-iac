@@ -162,3 +162,18 @@ run "ga_cell_redis_off_second_apply_with_load_balancer" {
     error_message = "The second apply points the cell domain at the chart's load balancer."
   }
 }
+
+run "bedrock_opus_reaches_the_server_environment" {
+  command = plan
+
+  variables {
+    enable_bedrock_ai = true
+    bedrock_ai_region = "us-east-1"
+    bedrock_ai_model  = "us.anthropic.claude-opus-5-5"
+  }
+
+  assert {
+    condition     = output.chart_config_env["StudioAiProxy__Disclosure__Approvals__0__Model"] == "us.anthropic.claude-opus-5-5" && output.chart_config_env["StudioAiProxy__Providers__bedrock__Region"] == "us-east-1" && output.honua_server_environment["WorkflowGeneration__Providers__bedrock__Model"] == "us.anthropic.claude-opus-5-5"
+    error_message = "The example root must pass Opus 5.5 and its region through to the server environment."
+  }
+}

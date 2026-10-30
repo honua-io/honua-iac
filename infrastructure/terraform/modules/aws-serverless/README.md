@@ -182,7 +182,7 @@ module "honua" {
 | `pro_license_key_id` | `honuademo2026q2` | Hyphen-free license keyId as relabeled in the envelope; used to build the legal env var name `Licensing__TrustedKeys__<keyId>`. |
 | `pro_license_trusted_public_key` | `""` | Ed25519 public key (`base64url:` prefixed) that verifies the license signature. Required when `enable_pro_license`. |
 | `enable_bedrock_ai` | false | Grant the Lambda role `bedrock:InvokeModel`/`InvokeModelWithResponseStream` for the configured Claude model and route the AI studio (WorkflowGeneration) flows to Amazon Bedrock. |
-| `bedrock_ai_model` | `us.anthropic.claude-sonnet-4-5-20250929-v1:0` | Bedrock model id for the AI studio flows (cross-region Claude Sonnet 4.5 inference profile). |
+| `bedrock_ai_model` | `us.anthropic.claude-sonnet-4-6` | Bedrock model id for the AI studio flows. Default is the shipped Claude Sonnet 4.6 profile. Opus 5.5, Sonnet 5.5, GPT-6.1 Sol and GPT-6.1 Terra use the same `us.` profile shape. |
 | `bedrock_ai_region` | `us-west-2` | Region the server invokes Bedrock in. |
 | `studio_ai_proxy_limits` | `null` | Optional `max_prompt_characters`, `max_request_bytes`, `max_event_bytes`, `max_response_bytes`. Published as `StudioAiProxy` in the runtime settings document only when Bedrock is enabled and the field is set. Null fields keep the server defaults. |
 | `enable_amazon_location_geocoding` | false | Provision an Amazon Location place index, grant the Lambda role `geo:Search*`/`DescribePlaceIndex` on it, and route `Geocoding:DefaultProvider` to `amazon-location` (Nominatim explicitly disabled). |
@@ -483,17 +483,22 @@ options that read them (ADR-0076, #3255). The server authenticates via the AWS c
 `AccessDenied`.
 
 The default model is the **cross-region inference profile**
-`us.anthropic.claude-sonnet-4-5-20250929-v1:0`. Invoking through an inference
+`us.anthropic.claude-sonnet-4-6`. Invoking through an inference
 profile requires both the **inference-profile ARN** (in `bedrock_ai_region`) and
 the underlying **foundation-model ARNs** in every member region the `us.` profile
 routes to (`us-east-1`/`us-east-2`/`us-west-2`), so the grant covers all four:
 
 ```
-arn:aws:bedrock:us-west-2:<account>:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0
-arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0
-arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0
-arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0
+arn:aws:bedrock:us-west-2:<account>:inference-profile/us.anthropic.claude-sonnet-4-6
+arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-6
+arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-6
+arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-6
 ```
+
+Claude Opus 5.5 (`us.anthropic.claude-opus-5-5`), Claude Sonnet 5.5
+(`us.anthropic.claude-sonnet-5-5`), GPT-6.1 Sol (`us.openai.gpt-6.1-sol`) and
+GPT-6.1 Terra (`us.openai.gpt-6.1-terra`) use that same four-ARN shape. The
+module grants only the configured id.
 
 ## Geocoding on Amazon Location Service
 

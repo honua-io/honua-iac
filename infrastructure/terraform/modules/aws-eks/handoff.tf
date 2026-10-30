@@ -95,6 +95,7 @@ locals {
     local.public_base_url_environment,
     local.hsts_environment,
     local.db_pool_sizing_environment,
+    local.bedrock_ai_environment,
   )
 
   # honua_server_environment: the complete environment, with the generated

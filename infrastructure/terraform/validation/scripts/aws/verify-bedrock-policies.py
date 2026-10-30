@@ -21,12 +21,29 @@ if not policies:
     raise ValueError('No rendered Bedrock policy; use terraform test -json -verbose')
 results = []
 for run, policy in policies.items():
+    document = json.loads(policy)
+    granted = []
+    for statement in document.get('Statement', []):
+        if statement.get('Effect') != 'Allow':
+            continue
+        actions = statement.get('Action', [])
+        actions = [actions] if isinstance(actions, str) else actions
+        if 'bedrock:InvokeModel' not in actions:
+            continue
+        resource = statement.get('Resource', [])
+        granted.extend(resource if isinstance(resource, list) else [resource])
+    if not granted:
+        raise ValueError(f'{run} rendered no bedrock:InvokeModel resources')
+    denied = 'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-not-in-allowlist'
+    if denied in granted:
+        raise ValueError(f'{run} grants the negative-control model')
     targets = [
-        ('bedrock:InvokeModel', 'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0', 'allowed'),
-        ('bedrock:InvokeModelWithResponseStream', 'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0', 'allowed'),
-        ('bedrock:InvokeModel', 'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0', 'implicitDeny'),
-        ('bedrock:CreateModelCustomizationJob', '*', 'implicitDeny'),
+        (action, resource, 'allowed')
+        for resource in granted
+        for action in ('bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream')
     ]
+    targets.append(('bedrock:InvokeModel', denied, 'implicitDeny'))
+    targets.append(('bedrock:CreateModelCustomizationJob', '*', 'implicitDeny'))
     for action, resource, expected in targets:
         payload = dict(PolicyInputList=[policy], ActionNames=[action], ResourceArns=[resource])
         for delay in [0, 10, 30, 60, 120, 60]:
