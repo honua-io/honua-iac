@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 import argparse
+from collections import defaultdict
 import json
 import subprocess
 import time
@@ -78,7 +79,7 @@ def load_runs(path: Path) -> dict[str, dict]:
         if not line.strip():
             continue
         event = json.loads(line)
-        if event.get("type") != "test_plan":
+        if event.get("type") != "test_plan" or event.get("@testfile") != "tests/topology.tftest.hcl":
             continue
         name = event.get("@testrun")
         changes = event.get("test_plan", {}).get("output_changes", {})
@@ -128,7 +129,7 @@ def main() -> int:
 
     for run, output in sorted(runs.items()):
         selected = set(output["deploy_identity_contract"]["manifests"])
-        policies = [output["deployment_policy_json"], output["deployment_workload_policy_json"]]
+        policies = [output["deployment_policy_json"], output["deployment_workload_policy_json"], *output["deployment_extra_policy_json"].values()]
         pass_services = sorted({
             service
             for manifest_id in selected
@@ -158,13 +159,10 @@ def main() -> int:
                 granted.update(statement["actions"])
 
         def granted_action(action: str) -> bool:
-            if action in granted:
-                return True
-            return any(pattern.endswith("*") and action.startswith(pattern[:-1]) for pattern in granted)
+            return action in granted
 
         # Another module's sample action is out of topology only when this
-        # shape does not grant it. EKS and ECS both provision load balancers,
-        # so elasticloadbalancing:CreateLoadBalancer is in topology for both.
+        # shape does not grant it.
         for manifest_id, body in sorted(files.items()):
             if manifest_id in selected or manifest_id == "iam-workload":
                 continue
@@ -174,6 +172,13 @@ def main() -> int:
                 add(run, f"deny-outside-{manifest_id}-{action}", action, "*", "implicitDeny", {})
 
         add(run, "deny-create-user", "iam:CreateUser", f"arn:aws:iam::{ACCOUNT}:user/escalation", "explicitDeny", {})
+        add(run, "allow-bounded-trust-update", "iam:UpdateAssumeRolePolicy", WORKLOAD_ROLE,
+            "allowed", {"iam:PermissionsBoundary": BOUNDARY})
+        add(run, "deny-unbounded-trust-update", "iam:UpdateAssumeRolePolicy", WORKLOAD_ROLE,
+            "implicitDeny", {})
+        for index in output["deployment_extra_policy_json"]:
+            add(run, f"deny-mutate-extra-policy-{index}", "iam:CreatePolicyVersion",
+                f"arn:aws:iam::{ACCOUNT}:policy/honua-prod-deploy-{index}", "explicitDeny", {})
         add(run, "deny-state-object", "s3:GetObject", STATE_OBJECT, "explicitDeny", {})
         add(
             run,
@@ -194,21 +199,35 @@ def main() -> int:
         # Stash the policy list on the case via the run map. evaluate looks it up.
         output["_policies"] = policies
 
-    def evaluate(fixture):
-        run, name, action, resource, expected, context = fixture
+    # IAM can evaluate multiple actions for the same resource and context in
+    # one request. Keep each batch small so responses remain within one page.
+    groups = defaultdict(list)
+    for fixture in cases:
+        run, _, _, resource, _, context = fixture
+        groups[(run, resource, json.dumps(context, sort_keys=True))].append(fixture)
+    batches = []
+    for fixtures in groups.values():
+        for offset in range(0, len(fixtures), 25):
+            batches.append(fixtures[offset:offset + 25])
+
+    def evaluate(fixtures):
+        run, _, _, resource, _, context = fixtures[0]
         payload = {
-            "ActionNames": [action],
+            "ActionNames": sorted({fixture[2] for fixture in fixtures}),
             "ResourceArns": [resource],
             "ContextEntries": context_entries(context),
             "PolicyInputList": runs[run]["_policies"],
         }
-        actual = aws(payload)["EvaluationResults"][0]["EvalDecision"]
-        receipt = {"run": run, "case": name, "action": action, "expected": expected, "actual": actual}
-        print(f"{run}/{name}: {actual}", flush=True)
-        return receipt
+        decisions = {item["EvalActionName"].lower(): item["EvalDecision"] for item in aws(payload)["EvaluationResults"]}
+        receipts = []
+        for run, name, action, _, expected, _ in fixtures:
+            actual = decisions[action.lower()]
+            receipts.append({"run": run, "case": name, "action": action, "expected": expected, "actual": actual})
+            print(f"{run}/{name}: {actual}", flush=True)
+        return receipts
 
     with ThreadPoolExecutor(max_workers=4) as pool:
-        receipts = list(pool.map(evaluate, cases))
+        receipts = [receipt for group in pool.map(evaluate, batches) for receipt in group]
     args.receipt.parent.mkdir(parents=True, exist_ok=True)
     args.receipt.write_text(json.dumps({"source": str(args.terraform_test_jsonl), "cases": receipts}, indent=2) + "\n", encoding="utf-8")
     failures = [item for item in receipts if item["expected"] != item["actual"]]

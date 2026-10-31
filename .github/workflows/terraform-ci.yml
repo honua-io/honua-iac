@@ -337,7 +337,9 @@ jobs:
       # Confirms every committed deploy-identity manifest still covers the
       # resource types its module declares.
       - name: Deploy identity manifest coverage
-        run: python3 infrastructure/terraform/validation/scripts/aws/generate-deploy-identity-manifests.py --check
+        run: |
+          python3 infrastructure/terraform/validation/scripts/aws/test_deploy_identity_manifest_actions.py
+          python3 infrastructure/terraform/validation/scripts/aws/generate-deploy-identity-manifests.py --check
 
       - name: Lambda secret-policy publication order contract
         run: python3 infrastructure/terraform/validation/scripts/shared/test-lambda-secret-policy-order.py

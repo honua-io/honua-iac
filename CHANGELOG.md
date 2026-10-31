@@ -14,6 +14,15 @@ module input/output contracts may still change.
 
 ## Unreleased
 
+## v0.6.1
+
+### Fixed
+
+- `bootstrap/aws-exec-identity` emits exact IAM actions for each topology so
+  deploy identity consumers can load the contract. Managed policies are split
+  to stay within IAM limits while retaining regional and identity safeguards
+  (#358).
+
 ### Changed
 
 - Relicensed the repository from Elastic License 2.0 to the Fair Core License 1.0, ALv2 Future License (FCL-1.0-ALv2), the same license as Honua Server and Collect. Operators may use, modify and run the modules to deploy their own Honua estates; competing use needs a separate agreement; each version converts to Apache-2.0 two years after release. Distribution stays Git source at a SemVer tag.

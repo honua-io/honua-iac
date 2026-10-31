@@ -24,7 +24,10 @@
         "iam:DeleteRolePolicy",
         "iam:DetachRolePolicy",
         "iam:PutRolePermissionsBoundary",
-        "iam:PutRolePolicy"
+        "iam:PutRolePolicy",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:UpdateRole",
+        "iam:UpdateRoleDescription"
       ]
     },
     {
@@ -50,7 +53,9 @@
         "iam:ListAttachedRolePolicies",
         "iam:ListInstanceProfilesForRole",
         "iam:ListPolicyVersions",
+        "iam:ListPolicyTags",
         "iam:ListRolePolicies",
+        "iam:ListRoleTags",
         "iam:ListRoles",
         "iam:TagPolicy",
         "iam:TagRole",

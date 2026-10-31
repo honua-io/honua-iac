@@ -33,6 +33,11 @@ output "deployment_workload_policy_json" {
   value       = data.aws_iam_policy_document.deployment_workload.json
 }
 
+output "deployment_extra_policy_json" {
+  description = "Additional region-scoped deployment managed policies, keyed by partition index."
+  value       = { for key, document in data.aws_iam_policy_document.deployment_extra : key => document.json }
+}
+
 output "execution_identity_contract" {
   description = "Evidence-safe execution identity contract: role separation, federation references, and session bounds. No token, credential, or secret is emitted."
   value       = local.execution_identity_contract

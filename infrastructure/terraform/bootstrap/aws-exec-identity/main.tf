@@ -101,6 +101,9 @@ locals {
   region_actions = sort(distinct(flatten([
     for manifest in local.selected_manifests : manifest.region_actions
   ])))
+  # Keep each managed document under IAM's 6,144-character limit. Actions are
+  # sorted before chunking, so the partition is deterministic for a topology.
+  region_action_chunks = chunklist(local.region_actions, 100)
   global_actions = sort(distinct(flatten([
     for manifest in local.selected_manifests : manifest.global_actions
   ])))
@@ -343,7 +346,7 @@ data "aws_iam_policy_document" "deployment" {
   statement {
     sid       = "ProvisionStackResources"
     effect    = "Allow"
-    actions   = local.region_actions
+    actions   = local.region_action_chunks[0]
     resources = ["*"]
 
     condition {
@@ -364,6 +367,29 @@ data "aws_iam_policy_document" "deployment" {
       effect    = "Allow"
       actions   = local.global_actions
       resources = ["*"]
+    }
+  }
+}
+
+data "aws_iam_policy_document" "deployment_extra" {
+  #checkov:skip=CKV_AWS_356: Provisioning APIs require wildcard resources; the region condition bounds them.
+  #checkov:skip=CKV_AWS_110: Provisioning requires create and delete operations.
+  #checkov:skip=CKV_AWS_111: Provisioning requires write operations.
+  #checkov:skip=CKV_AWS_107: Secret creation is required to provision managed secrets.
+  #checkov:skip=CKV_AWS_108: Network and logging operations are required to provision the stack.
+  #checkov:skip=CKV_AWS_109: Role administration is constrained in the workload policy.
+  for_each = { for index, actions in local.region_action_chunks : tostring(index) => actions if index > 0 }
+
+  statement {
+    sid       = "ProvisionStackResources"
+    effect    = "Allow"
+    actions   = each.value
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
     }
   }
 }
@@ -523,15 +549,18 @@ data "aws_iam_policy_document" "deployment_workload" {
       "iam:DeleteRolePolicy",
       "iam:DetachRolePolicy",
       "iam:PutRolePolicy",
+      "iam:UpdateAssumeRolePolicy",
+      "iam:UpdateRole",
+      "iam:UpdateRoleDescription",
     ]
-    resources = compact([
+    resources = compact(concat([
       local.deployment_role_arn,
       local.deployment_policy_arn,
       local.deployment_workload_policy_arn,
       local.workload_boundary_arn,
       var.backend_access_role_arn,
       var.backend_access_policy_arn,
-    ])
+    ], [for index in range(1, length(local.region_action_chunks)) : "arn:${local.partition}:iam::${local.account_id}:policy/${local.name}-deploy-${index}"]))
   }
 
   statement {
@@ -620,6 +649,10 @@ locals {
       for statement in jsondecode(data.aws_iam_policy_document.deployment_workload.json).Statement :
       statement.Effect == "Allow" ? try(tolist(statement.Action), [statement.Action]) : []
     ]),
+    flatten([for document in values(data.aws_iam_policy_document.deployment_extra) : flatten([
+      for statement in jsondecode(document.json).Statement :
+      statement.Effect == "Allow" ? try(tolist(statement.Action), [statement.Action]) : []
+    ])]),
   )))
 
   deploy_actions_by_service = {
@@ -662,6 +695,7 @@ locals {
     }
     role_arn           = local.deployment_role_arn
     role_name          = "${local.name}-deploy"
+    policy_arns        = concat([local.deployment_policy_arn, local.deployment_workload_policy_arn], [for index in range(1, length(local.region_action_chunks)) : "arn:${local.partition}:iam::${local.account_id}:policy/${local.name}-deploy-${index}"])
     assume             = "Assume ${local.deployment_role_arn} with a short-lived STS session (sts:AssumeRole or sts:AssumeRoleWithWebIdentity). The agent does not need IAM-admin and cannot grant itself actions outside this contract."
     actions_by_service = local.deploy_actions_by_service
     cannot             = local.deploy_identity_cannot
@@ -669,6 +703,7 @@ locals {
     policy_sizes = {
       deployment             = local.deployment_policy_size
       deployment_workload    = local.deployment_workload_policy_size
+      deployment_extra       = { for key, document in data.aws_iam_policy_document.deployment_extra : key => length(replace(replace(replace(document.json, " ", ""), "\n", ""), "\t", "")) }
       managed_policy_limit   = 6144
       inline_aggregate_limit = 10240
       inline_policies        = 0
@@ -702,6 +737,27 @@ resource "aws_iam_policy" "deployment" {
 resource "aws_iam_role_policy_attachment" "deployment" {
   role       = aws_iam_role.deployment.name
   policy_arn = aws_iam_policy.deployment.arn
+}
+
+resource "aws_iam_policy" "deployment_extra" {
+  for_each    = data.aws_iam_policy_document.deployment_extra
+  name        = "${local.name}-deploy-${each.key}"
+  description = "Additional region-scoped infrastructure deployment permissions."
+  policy      = each.value.json
+  tags        = local.tags
+
+  lifecycle {
+    precondition {
+      condition     = length(replace(replace(replace(each.value.json, " ", ""), "\n", ""), "\t", "")) <= 6144
+      error_message = "An additional deployment managed policy exceeds the 6144-character IAM quota."
+    }
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "deployment_extra" {
+  for_each   = aws_iam_policy.deployment_extra
+  role       = aws_iam_role.deployment.name
+  policy_arn = each.value.arn
 }
 
 resource "aws_iam_policy" "deployment_workload" {
