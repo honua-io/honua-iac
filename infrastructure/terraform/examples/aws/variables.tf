@@ -579,7 +579,7 @@ variable "studio_ai_proxy_limits" {
 variable "console_image" {
   description = "Digest-pinned Console image; used when console is configured."
   type        = string
-  default     = "ghcr.io/honua-io/honua-console@sha256:6612319d53ed9d3fab1a62848b6402d4340f57c227296003614ac88fe48de4f3"
+  default     = "ghcr.io/honua-io/honua-console@sha256:14f6fd9bb72183807294dda59758dc196210dadd8939a21608e71bb3a96898e4"
   validation {
     condition     = can(regex("^[^[:space:]@]+@sha256:[0-9a-f]{64}$", var.console_image))
     error_message = "console_image must be pinned by sha256 digest."

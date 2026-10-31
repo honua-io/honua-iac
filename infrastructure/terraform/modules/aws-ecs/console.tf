@@ -22,6 +22,14 @@ variable "console" {
     error_message = "All Console images must be pinned by sha256 digest."
   }
   validation {
+    condition = var.console == null ? true : !contains([
+      "6612319d53ed9d3fab1a62848b6402d4340f57c227296003614ac88fe48de4f3",
+      "68e5b93c4fa7473ce824aeceb3f1e45d3c464e7fec507fb906944c16d5dd3e51",
+      "bdd6ddcb297df1aadce7ced075f131e927ef638ad210c3420caa4387f753b965"
+    ], try(split("@sha256:", var.console.image)[1], ""))
+    error_message = "This Console image predates hosted server-session identity binding; use a qualified newer image."
+  }
+  validation {
     condition = var.console == null ? true : (
       can(regex("^arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+-[A-Za-z0-9]{6}$", var.console.cookie_secret_arn)) &&
       can(regex("^[A-Za-z0-9.-]+$", var.console.email_domain)) &&

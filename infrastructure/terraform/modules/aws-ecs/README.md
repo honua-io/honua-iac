@@ -1009,6 +1009,8 @@ client must register both `https://<hostname>/oauth2/callback` and
 roles. Store the edge's cookie encryption secret in Secrets Manager and provide
 its exact ARN; do not put the secret in Terraform variables. Supply digest-pinned,
 architecture-compatible Console, oauth2-proxy (7.8 compatible) and nginx images.
+Console must include hosted server-session identity binding (revision a73b0f0 or later);
+the older release-manifest candidate is rejected because it lacks that protection.
 The nginx image must include `/bin/sh` and nginx. The example AWS root supplies
 its Console image default separately as `console_image`.
 
