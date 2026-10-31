@@ -162,11 +162,14 @@ remaining work.
 `custom_domain`, `waf`, and `gp_batch` default to false. The deployment policy
 is the union of `manifests/*.json` for that shape, assembled by
 `infrastructure/terraform/validation/scripts/aws/generate-deploy-identity-manifests.py`.
-Service actions are the curated allows from the long-lived templates, split so
+Service actions are exact IAM actions, split so
 ElastiCache, ACM, Route 53, WAFv2, and Batch are absent unless the matching
 flag is on. `gp_batch` covers every Batch action `modules/aws-serverless`
 uses, including custom-code batch. IAM administration stays in
 `manifests/iam-workload.json` so it is not copied into every service statement.
+The provider-resource and AWS service authorization references used for the
+inventory are in [ACTION-REFERENCES.md](ACTION-REFERENCES.md). The manifest
+check rejects wildcard action names.
 
 The same denials as before stay on the role: state substrate, long-lived
 credentials, passing the deployment or backend role, mutating the deployment
@@ -178,7 +181,9 @@ profile) add only the API calls those resources make.
 
 `deploy_identity_contract` is what a customer-facing agent shows: topology,
 role ARN, actions by service, and what the role cannot do. It carries no
-token or credential. The agent never needs IAM-admin.
+token or credential. It also lists the managed-policy ARNs and document sizes.
+The regional actions are split across managed policies to fit IAM's document
+size limit; each retains the region condition. The agent never needs IAM-admin.
 
 A release cell (Lambda, Redis, GP batch, no custom domain, no WAF) is proved
 by an administrator applying this root, then the release session assuming only

@@ -50,12 +50,17 @@
         "iam:ListAttachedRolePolicies",
         "iam:ListInstanceProfilesForRole",
         "iam:ListPolicyVersions",
+        "iam:ListPolicyTags",
         "iam:ListRolePolicies",
+        "iam:ListRoleTags",
         "iam:ListRoles",
         "iam:TagPolicy",
         "iam:TagRole",
         "iam:UntagPolicy",
-        "iam:UntagRole"
+        "iam:UntagRole",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:UpdateRole",
+        "iam:UpdateRoleDescription"
       ]
     },
     {
