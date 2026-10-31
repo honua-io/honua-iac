@@ -851,11 +851,11 @@ def manifest_action_set(manifest: dict, shared_iam: set[str]) -> set[str]:
 
 
 def wildcard_action_problems(manifest: dict) -> list[str]:
-    """Reject IAM action patterns, including in on-disk manifests checked for drift."""
+    """Reject patterns and malformed IAM actions, including in on-disk manifests."""
     return [
-        f"{manifest['id']}: wildcard action {action} is not allowed"
+        f"{manifest['id']}: action {action} must be an exact IAM action"
         for action in sorted(manifest_action_set(manifest, set()) | set(manifest.get("simulate_allow", [])))
-        if '*' in action or '?' in action
+        if not re.fullmatch(r"[a-z0-9-]+:[A-Za-z0-9]+", action)
     ]
 
 

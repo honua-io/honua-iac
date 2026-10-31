@@ -20,6 +20,11 @@ class WildcardActionTests(unittest.TestCase):
         }
         self.assertEqual(len(module.wildcard_action_problems(manifest)), 4)
 
+    def test_rejects_malformed_actions(self):
+        manifest = {"id": "test", "region_actions": ["ecs:", "ecs:Create_Cluster"],
+                    "global_actions": [], "iam_statements": []}
+        self.assertEqual(len(module.wildcard_action_problems(manifest)), 2)
+
     def test_accepts_exact_actions(self):
         manifest = {
             "id": "test",
