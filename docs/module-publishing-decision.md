@@ -1,7 +1,7 @@
 ---
 type: concept
 title: "Why modules are not on the Terraform Registry"
-description: "The recorded decision: modules are distributed by Git source at a SemVer tag because the Elastic License 2.0 blocks the public registry, and relicensing is out of scope."
+description: "The recorded decision: modules are distributed by Git source at a SemVer tag because the FCL-1.0-ALv2 source-available license is not an open-source license as the public registry requires."
 resource: "https://github.com/honua-io/honua-iac/tree/trunk/infrastructure/terraform/modules"
 tags: [decision, licensing, registry]
 ---
@@ -17,7 +17,7 @@ This document is the recorded decision.
 
 The recommendation below is **adopted**. Modules are distributed via **Git
 source at a SemVer tag**, not the public Terraform Registry. The public registry
-is blocked by the Elastic License 2.0 (see
+is blocked by the Fair Core License (FCL-1.0-ALv2) (see
 [Why not the public Terraform Registry](#why-not-the-public-terraform-registry));
 publishing there would require relicensing, which is out of scope.
 
@@ -62,7 +62,7 @@ module "honua" {
 
 ### Why not the public Terraform Registry
 
-The repository is licensed under Elastic License 2.0 (ELv2). The public
+The repository is licensed under Fair Core License 1.0, ALv2 Future License (FCL-1.0-ALv2). The public
 Terraform Registry requires an OSI-approved open-source license, so the public
 registry channel is blocked unless the modules are relicensed. Relicensing is
 out of scope for this ticket.
@@ -178,7 +178,7 @@ accidentally invite external dependencies on it.
   becomes the copy-paste path.
 - Provider version constraints (`required_version = ">= 1.5, < 2.0"` and the
   AWS / azurerm constraints in each module's `versions.tf`) stay as they are.
-- License notice: ELv2 still applies to consumers who pull modules via Git
+- License notice: FCL-1.0-ALv2 still applies to consumers who pull modules via Git
   source. The operator-deployment guide will call this out explicitly when the
   publishing rollout ships.
 
@@ -194,7 +194,7 @@ The follow-up work the decision called for has mostly landed on `trunk`:
   "Pin to a release" section; Tier 3 module READMEs carry the internal-only
   notice.
 - [Deploy Honua as a platform operator](operator-deployment.md) has a
-  "Consuming modules at a pinned version" section with the ELv2 callout.
+  "Consuming modules at a pinned version" section with the FCL-1.0-ALv2 callout.
 - `v0.1.0` is tagged. Releases are still cut by hand; a tag-triggered release
   workflow has not been added.
 

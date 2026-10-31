@@ -14,7 +14,7 @@ operationalizes the decision in
 ## Distribution channel
 
 Modules ship via **Git source at a SemVer tag**. The Honua repositories are
-licensed under the Elastic License 2.0 (ELv2); the public Terraform Registry
+licensed under the Fair Core License 1.0, ALv2 Future License (FCL-1.0-ALv2); the public Terraform Registry
 requires an OSI-approved open-source license, so the public registry channel is
 not available unless the modules are relicensed (out of scope). Git source gives
 external consumers a real version pin with no extra infrastructure.

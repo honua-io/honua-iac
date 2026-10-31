@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) Honua. All rights reserved.
-# Licensed under the Elastic License 2.0. See LICENSE in the project root.
+# Licensed under the Fair Core License 1.0, ALv2 Future License (FCL-1.0-ALv2). See LICENSE in the project root.
 
 """Exercise the actual local-exec shell with isolated interpreter candidates."""
 

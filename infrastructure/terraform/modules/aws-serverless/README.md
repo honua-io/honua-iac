@@ -42,7 +42,7 @@ and [container-image signing limitation](https://docs.aws.amazon.com/lambda/late
 ## Pin to a release
 
 For a versioned, external pin, consume this module by Git source at a SemVer tag
-instead of a relative path. (The Honua repos are ELv2-licensed, so the public
+instead of a relative path. (The Honua repos are FCL-1.0-ALv2-licensed, so the public
 Terraform Registry is not used — see
 [`docs/module-versioning.md`](../../../../docs/module-versioning.md).)
 
