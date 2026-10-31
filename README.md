@@ -10,6 +10,12 @@ Current infrastructure capabilities are summarized in [docs/features/README.md](
 
 ## Deploy Honua (operator path)
 
+Use Terraform `>= 1.5, < 2.0` (1.10 or later for S3 native locking).
+For the governed AWS path, use honua-iac `v0.6.1` with honua-devops
+`v2026.1.2`; see the [governed deployment steps](docs/operator-deployment.md#governed-aws-deployment-remote-state--short-lived-identity)
+for state, backend identity, and topology-bound deployment identity bootstrap.
+The workflow below is for a disposable development cell.
+
 1. Choose a target stack. The qualified 2026.1 targets are the two AWS stacks.
    Studio, mixed ECS+Batch, EKS, multi-tenancy, and Helm are outside that
    scope. Azure is preview and is not qualified.
