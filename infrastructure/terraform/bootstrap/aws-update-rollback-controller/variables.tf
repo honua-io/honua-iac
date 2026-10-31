@@ -35,3 +35,16 @@ variable "lambda_function_prefixes" {
   type        = list(string)
   default     = ["honuar", "honuan"]
 }
+
+variable "restore_name_prefixes" {
+  description = "Cell name prefixes the controller may restore inside. Each prefix ends with a hyphen so it cannot match a sibling such as honua-certrun. Empty grants no restore and keeps the cert/demo deny."
+  type        = list(string)
+  default     = ["honua-cert-"]
+  validation {
+    condition = alltrue([
+      for prefix in var.restore_name_prefixes :
+      can(regex("^[a-z][a-z0-9-]{0,30}$", prefix)) && endswith(prefix, "-") && !startswith(prefix, "honua-certrun")
+    ])
+    error_message = "Each restore prefix must be a lowercase identifier ending in a hyphen, and must not be honua-certrun."
+  }
+}
