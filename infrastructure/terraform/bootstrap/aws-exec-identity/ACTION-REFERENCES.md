@@ -2,7 +2,7 @@
 
 The action inventories cover the Terraform AWS provider resources listed in the manifests, including nested registry modules. The provider implementation is the source for lifecycle and tag calls; AWS maps API operations to IAM actions, which do not always have the same name. Recheck both when changing a resource or provider version.
 
-Provider implementation: [AWS provider v5.100.0](https://github.com/hashicorp/terraform-provider-aws/tree/v5.100.0/internal/service). The ECS and serverless lock files also select [AWS provider v6.61.0](https://github.com/hashicorp/terraform-provider-aws/tree/v6.61.0/internal/service); review lifecycle differences when upgrading.
+Provider implementation: [AWS provider v5.100.0](https://github.com/hashicorp/terraform-provider-aws/tree/v5.100.0/internal/service). The ECS lock file selects [AWS provider v6.61.0](https://github.com/hashicorp/terraform-provider-aws/tree/v6.61.0/internal/service), and serverless selects [v6.50.0](https://github.com/hashicorp/terraform-provider-aws/tree/v6.50.0/internal/service). Review lifecycle differences when upgrading.
 
 ## AWS service authorization references
 
