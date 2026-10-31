@@ -998,3 +998,26 @@ settings, including colon, case and standard .NET environment-prefix variants.
 readback of the deployed issuer and secret version. Native SCIM capability and
 issuer validation remain runtime prerequisites. This carrier does not enable
 licensing or change the existing `Licensing__Mode=Disabled` default.
+
+### Console and Studio on ECS
+
+Set `console` to deploy a single Console task behind an OIDC edge on the same
+HTTPS hostname as the server. Set `generic_oidc`, `operator_bearer`, and a
+public HTTPS origin (`public_base_url` or `domain_name`) as well. The OIDC
+client must register both `https://<hostname>/oauth2/callback` and
+`https://<hostname>/admin/auth/callback`. Grant the operators appropriate server
+roles. Store the edge's cookie encryption secret in Secrets Manager and provide
+its exact ARN; do not put the secret in Terraform variables. Supply digest-pinned,
+architecture-compatible Console, oauth2-proxy (7.8 compatible) and nginx images.
+The nginx image must include `/bin/sh` and nginx. The example AWS root supplies
+its Console image default separately as `console_image`.
+
+The edge authenticates against the same issuer as the server, sends the OIDC
+subject to Console, and requires the configured email domain. A loopback-only
+header filter removes the edge access token; Console exchanges its independent
+server OIDC session for a server-issued operator bearer. This avoids a shared
+admin key and binds the server session to the edge issuer and subject. The ALB
+routes Console paths, including the server callback, before the server rollout
+rule. The Console task keeps in-memory sessions and runs one replica, so a restart
+requires operators to sign in again. Qualify the complete OIDC and Studio
+journey after deployment; a Terraform plan alone does not establish it.

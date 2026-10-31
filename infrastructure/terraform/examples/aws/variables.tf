@@ -575,3 +575,27 @@ variable "studio_ai_proxy_limits" {
     error_message = "studio_ai_proxy_limits: max_prompt_characters 1000-500000; byte limits 1 KiB-16 MiB (response up to 32 MiB)."
   }
 }
+
+variable "console_image" {
+  description = "Digest-pinned Console image; used when console is configured."
+  type        = string
+  default     = "ghcr.io/honua-io/honua-console@sha256:6612319d53ed9d3fab1a62848b6402d4340f57c227296003614ac88fe48de4f3"
+  validation {
+    condition     = can(regex("^[^[:space:]@]+@sha256:[0-9a-f]{64}$", var.console_image))
+    error_message = "console_image must be pinned by sha256 digest."
+  }
+}
+
+variable "console" {
+  description = "Production Console OIDC edge configuration; null disables Console. Secret values remain in Secrets Manager."
+  type = object({
+    oauth2_proxy_image    = string
+    header_filter_image   = string
+    cookie_secret_arn     = string
+    cookie_secret_kms_arn = optional(string, "")
+    email_domain          = string
+    cpu                   = optional(number, 512)
+    memory                = optional(number, 1024)
+  })
+  default = null
+}

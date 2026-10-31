@@ -15,6 +15,7 @@ module "honua" {
 
   permissions_boundary_arn   = var.permissions_boundary_arn
   source                     = "../../modules/aws-ecs"
+  console                    = var.console == null ? null : merge(var.console, { image = var.console_image })
   enable_bedrock_ai          = var.enable_bedrock_ai
   bedrock_ai_model           = var.bedrock_ai_model
   studio_ai_proxy_limits     = var.studio_ai_proxy_limits
