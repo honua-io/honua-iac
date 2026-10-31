@@ -197,6 +197,8 @@ run "eks" {
       && !contains(keys(output.deploy_identity_contract.actions_by_service), "ecs")
       && !contains(keys(output.deploy_identity_contract.actions_by_service), "lambda")
       && !contains(keys(output.deploy_identity_contract.actions_by_service), "elasticache")
+      && !contains(output.deploy_identity_contract.actions_by_service["elasticloadbalancing"], "elasticloadbalancing:CreateLoadBalancer")
+      && !contains(keys(output.deploy_identity_contract.actions_by_service), "cloudwatch")
       && toset(flatten([one([
         for statement in jsondecode(data.aws_iam_policy_document.deployment_workload.json).Statement : statement
         if statement.Sid == "PassWorkloadRoles"
@@ -255,6 +257,7 @@ run "lambda_without_redis" {
       && !contains(keys(output.deploy_identity_contract.actions_by_service), "eks")
       && !contains(keys(output.deploy_identity_contract.actions_by_service), "ecs")
       && !contains(keys(output.deploy_identity_contract.actions_by_service), "batch")
+      && !contains(keys(output.deploy_identity_contract.actions_by_service), "s3")
       && length(replace(replace(replace(data.aws_iam_policy_document.deployment.json, " ", ""), "\n", ""), "\t", "")) <= 6144
       && length(replace(replace(replace(data.aws_iam_policy_document.deployment_workload.json, " ", ""), "\n", ""), "\t", "")) <= 6144
     )

@@ -162,8 +162,7 @@ def main() -> int:
             return action in granted
 
         # Another module's sample action is out of topology only when this
-        # shape does not grant it. EKS and ECS both provision load balancers,
-        # so elasticloadbalancing:CreateLoadBalancer is in topology for both.
+        # shape does not grant it.
         for manifest_id, body in sorted(files.items()):
             if manifest_id in selected or manifest_id == "iam-workload":
                 continue

@@ -879,6 +879,16 @@ def build() -> tuple[dict[str, dict], list[str]]:
                 continue
             if service == "autoscaling":
                 continue
+            # The Lambda module only refers to operator-provided buckets in
+            # workload policies; Terraform declares no S3 resources there.
+            if service == "s3" and manifest_id == "aws-serverless":
+                continue
+            if service == "cloudwatch" and manifest_id == "aws-eks":
+                continue
+            # EKS ingress is created by its Kubernetes controller. The deploy
+            # role only needs the health reads used by optional ASGs below.
+            if service == "elasticloadbalancing" and manifest_id == "aws-eks":
+                continue
             # API Gateway TagResource authorizes PATCH/POST/PUT, already
             # present; apigateway:TagResource is not an IAM action.
             if action == "apigateway:TagResource":
@@ -900,7 +910,7 @@ def build() -> tuple[dict[str, dict], list[str]]:
         compute_service = {"aws-ecs": "ecs", "aws-eks": "eks", "aws-serverless": "lambda"}[manifest_id]
         text_actions.extend(f"{compute_service}:{action}" for action in COMPUTE_EXACT_ACTIONS[compute_service])
         text_actions.extend(f"ec2:{action}" for action in EC2_VPC_ADDITIONAL_ACTIONS)
-        if manifest_id in {"aws-ecs", "aws-serverless"}:
+        if manifest_id == "aws-ecs":
             text_actions.extend(f"s3:{action}" for action in S3_BUCKET_ACTIONS)
         text_actions.extend(f"rds:{action}" for action in RDS_COMMON_ACTIONS | (RDS_PROXY_ACTIONS if manifest_id == "aws-serverless" else set()))
         if manifest_id == "aws-eks":
