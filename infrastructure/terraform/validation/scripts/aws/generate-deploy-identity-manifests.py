@@ -38,6 +38,36 @@ FEATURE_SERVICES = {
     "waf": {"wafv2"},
     "gp-batch": {"batch"},
 }
+
+# Provider lifecycle and tag calls for these feature resources. See:
+# https://docs.aws.amazon.com/service-authorization/latest/reference/list_elasticache.html
+# https://docs.aws.amazon.com/service-authorization/latest/reference/list_batch.html
+# https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/elasticache_replication_group
+# https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/elasticache_subnet_group
+# https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/batch_compute_environment
+# https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/batch_job_queue
+# https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/batch_job_definition
+FEATURE_EXACT_ACTIONS = {
+    "redis": [
+        "elasticache:AddTagsToResource", "elasticache:RemoveTagsFromResource",
+        "elasticache:ListTagsForResource", "elasticache:CreateCacheSubnetGroup",
+        "elasticache:DeleteCacheSubnetGroup", "elasticache:DescribeCacheSubnetGroups",
+        "elasticache:ModifyCacheSubnetGroup", "elasticache:CreateReplicationGroup",
+        "elasticache:DeleteReplicationGroup", "elasticache:DescribeReplicationGroups",
+        "elasticache:DescribeCacheClusters", "elasticache:ModifyReplicationGroup",
+        "elasticache:ModifyReplicationGroupShardConfiguration",
+        "elasticache:IncreaseReplicaCount", "elasticache:DecreaseReplicaCount",
+        "elasticache:DisassociateGlobalReplicationGroup",
+    ],
+    "gp-batch": [
+        "batch:CreateComputeEnvironment", "batch:DeleteComputeEnvironment",
+        "batch:DescribeComputeEnvironments", "batch:UpdateComputeEnvironment",
+        "batch:CreateJobQueue", "batch:DeleteJobQueue", "batch:DescribeJobQueues",
+        "batch:UpdateJobQueue", "batch:RegisterJobDefinition",
+        "batch:DeregisterJobDefinition", "batch:DescribeJobDefinitions",
+        "batch:TagResource", "batch:UntagResource",
+    ],
+}
 GLOBAL_SERVICES = {"route53"}
 
 # Longest prefix wins. The service is the IAM prefix, which is what "has
@@ -618,10 +648,8 @@ def build() -> tuple[dict[str, dict], list[str]]:
         body["pass_role_services"] = list(spec["pass_role_services"])
         body["service_linked_roles"] = list(spec["service_linked_roles"])
         body["attachable_policies"] = list(spec["attachable_policies"])
-        add_actions(
-            body,
-            curated_actions(spec["sids_by_template"], FEATURE_SERVICES[feature]),
-        )
+        add_actions(body, FEATURE_EXACT_ACTIONS.get(feature) or
+                    curated_actions(spec["sids_by_template"], FEATURE_SERVICES[feature]))
         manifests[feature] = body
 
     problems: list[str] = []

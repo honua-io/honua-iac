@@ -74,6 +74,8 @@ run "ecs_with_redis" {
   assert {
     condition = (
       contains(output.deploy_identity_contract.actions_by_service["elasticache"], "elasticache:CreateReplicationGroup")
+      && contains(output.deploy_identity_contract.actions_by_service["elasticache"], "elasticache:DescribeReplicationGroups")
+      && alltrue([for action in output.deploy_identity_contract.actions_by_service["elasticache"] : !strcontains(action, "*") && !strcontains(action, "?")])
       && !contains(keys(output.deploy_identity_contract.actions_by_service), "eks")
       && !contains(keys(output.deploy_identity_contract.actions_by_service), "wafv2")
       && !contains(keys(output.deploy_identity_contract.actions_by_service), "batch")
@@ -262,6 +264,8 @@ run "lambda_release_cell" {
     condition = (
       contains(keys(output.deploy_identity_contract.actions_by_service), "elasticache")
       && contains(keys(output.deploy_identity_contract.actions_by_service), "batch")
+      && contains(output.deploy_identity_contract.actions_by_service["batch"], "batch:DescribeJobDefinitions")
+      && alltrue([for action in output.deploy_identity_contract.actions_by_service["batch"] : !strcontains(action, "*") && !strcontains(action, "?")])
       && contains(output.deploy_identity_contract.actions_by_service["lambda"], "lambda:Create*")
       && !contains(keys(output.deploy_identity_contract.actions_by_service), "eks")
       && !contains(keys(output.deploy_identity_contract.actions_by_service), "wafv2")
