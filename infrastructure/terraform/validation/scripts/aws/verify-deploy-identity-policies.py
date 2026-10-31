@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 import argparse
+from collections import defaultdict
 import json
 import subprocess
 import time
@@ -199,21 +200,35 @@ def main() -> int:
         # Stash the policy list on the case via the run map. evaluate looks it up.
         output["_policies"] = policies
 
-    def evaluate(fixture):
-        run, name, action, resource, expected, context = fixture
+    # IAM can evaluate multiple actions for the same resource and context in
+    # one request. Keep each batch small so responses remain within one page.
+    groups = defaultdict(list)
+    for fixture in cases:
+        run, _, _, resource, _, context = fixture
+        groups[(run, resource, json.dumps(context, sort_keys=True))].append(fixture)
+    batches = []
+    for fixtures in groups.values():
+        for offset in range(0, len(fixtures), 25):
+            batches.append(fixtures[offset:offset + 25])
+
+    def evaluate(fixtures):
+        run, _, _, resource, _, context = fixtures[0]
         payload = {
-            "ActionNames": [action],
+            "ActionNames": sorted({fixture[2] for fixture in fixtures}),
             "ResourceArns": [resource],
             "ContextEntries": context_entries(context),
             "PolicyInputList": runs[run]["_policies"],
         }
-        actual = aws(payload)["EvaluationResults"][0]["EvalDecision"]
-        receipt = {"run": run, "case": name, "action": action, "expected": expected, "actual": actual}
-        print(f"{run}/{name}: {actual}", flush=True)
-        return receipt
+        decisions = {item["EvalActionName"].lower(): item["EvalDecision"] for item in aws(payload)["EvaluationResults"]}
+        receipts = []
+        for run, name, action, _, expected, _ in fixtures:
+            actual = decisions[action.lower()]
+            receipts.append({"run": run, "case": name, "action": action, "expected": expected, "actual": actual})
+            print(f"{run}/{name}: {actual}", flush=True)
+        return receipts
 
     with ThreadPoolExecutor(max_workers=4) as pool:
-        receipts = list(pool.map(evaluate, cases))
+        receipts = [receipt for group in pool.map(evaluate, batches) for receipt in group]
     args.receipt.parent.mkdir(parents=True, exist_ok=True)
     args.receipt.write_text(json.dumps({"source": str(args.terraform_test_jsonl), "cases": receipts}, indent=2) + "\n", encoding="utf-8")
     failures = [item for item in receipts if item["expected"] != item["actual"]]
