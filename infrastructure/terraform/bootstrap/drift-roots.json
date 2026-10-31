@@ -35,7 +35,8 @@
           "arn:aws:bedrock:us-west-2::foundation-model/openai.gpt-6.1-terra"
         ],
         "runtime_operation_key_ring_certificate_secret_arns": ["arn:aws:secretsmanager:us-east-1:{account_id}:secret:honua-release/cert/operation-key-ring-zDn618"],
-        "runtime_audit_chain_key_secret_arns": ["arn:aws:secretsmanager:us-east-1:{account_id}:secret:honua-release/cert/audit-chain-key-RLtpME"]
+        "runtime_audit_chain_key_secret_arns": ["arn:aws:secretsmanager:us-east-1:{account_id}:secret:honua-release/cert/audit-chain-key-RLtpME"],
+        "cert_demo_hosted_zone_id": "Z089181827C9GKIKHXUTT"
       }
     },
     "aws-update-rollback-controller": {
