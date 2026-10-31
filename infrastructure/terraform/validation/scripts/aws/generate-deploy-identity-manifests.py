@@ -68,6 +68,40 @@ FEATURE_EXACT_ACTIONS = {
         "batch:TagResource", "batch:UntagResource",
     ],
 }
+
+# Resource lifecycle operations from the provider implementation and the
+# corresponding AWS service authorization references:
+# https://docs.aws.amazon.com/service-authorization/latest/reference/list_ecs.html
+# https://docs.aws.amazon.com/service-authorization/latest/reference/list_eks.html
+# https://docs.aws.amazon.com/service-authorization/latest/reference/list_lambda.html
+COMPUTE_EXACT_ACTIONS = {
+    "ecs": [
+        "CreateCluster", "DeleteCluster", "DescribeClusters", "UpdateCluster",
+        "CreateService", "DeleteService", "DescribeServices", "UpdateService",
+        "RegisterTaskDefinition", "DeregisterTaskDefinition", "DescribeTaskDefinition",
+        "ListTagsForResource", "TagResource", "UntagResource",
+    ],
+    "eks": [
+        "CreateAccessEntry", "DeleteAccessEntry", "DescribeAccessEntry", "UpdateAccessEntry",
+        "AssociateAccessPolicy", "DisassociateAccessPolicy", "ListAssociatedAccessPolicies",
+        "CreateAddon", "DeleteAddon", "DescribeAddon", "UpdateAddon", "DescribeUpdate",
+        "AssociateEncryptionConfig", "CreateCluster", "DeleteCluster", "DescribeCluster",
+        "UpdateClusterConfig", "UpdateClusterVersion", "CreateFargateProfile",
+        "DeleteFargateProfile", "DescribeFargateProfile", "AssociateIdentityProviderConfig",
+        "DescribeIdentityProviderConfig", "DisassociateIdentityProviderConfig", "CreateNodegroup",
+        "DeleteNodegroup", "DescribeNodegroup", "UpdateNodegroupConfig", "UpdateNodegroupVersion",
+        "CreatePodIdentityAssociation", "DeletePodIdentityAssociation", "DescribePodIdentityAssociation",
+        "UpdatePodIdentityAssociation", "ListTagsForResource", "TagResource", "UntagResource",
+    ],
+    "lambda": [
+        "CreateAlias", "DeleteAlias", "GetAlias", "UpdateAlias", "CreateFunction",
+        "DeleteFunction", "GetFunction", "GetFunctionConfiguration", "UpdateFunctionCode",
+        "UpdateFunctionConfiguration", "DeleteFunctionCodeSigningConfig", "GetFunctionCodeSigningConfig",
+        "PutFunctionCodeSigningConfig", "DeleteFunctionConcurrency", "GetFunctionConcurrency",
+        "PutFunctionConcurrency", "ListVersionsByFunction", "PublishVersion", "InvokeFunction",
+        "AddPermission", "GetPolicy", "RemovePermission", "TagResource", "UntagResource", "ListTags",
+    ],
+}
 GLOBAL_SERVICES = {"route53"}
 
 # Longest prefix wins. The service is the IAM prefix, which is what "has
@@ -614,6 +648,15 @@ def manifest_action_set(manifest: dict, shared_iam: set[str]) -> set[str]:
     return actions
 
 
+def wildcard_action_problems(manifest: dict) -> list[str]:
+    """Reject IAM action patterns, including in on-disk manifests checked for drift."""
+    return [
+        f"{manifest['id']}: wildcard action {action} is not allowed"
+        for action in sorted(manifest_action_set(manifest, set()))
+        if '*' in action or '?' in action
+    ]
+
+
 def build() -> tuple[dict[str, dict], list[str]]:
     schema = provider_resource_types()
     shared_iam = {action for statement in IAM_WORKLOAD_STATEMENTS for action in statement["actions"]}
@@ -638,7 +681,11 @@ def build() -> tuple[dict[str, dict], list[str]]:
             service = action.split(":", 1)[0]
             if any(service in group for group in FEATURE_SERVICES.values()):
                 continue
+            if service in COMPUTE_EXACT_ACTIONS and ('*' in action or '?' in action):
+                continue
             text_actions.append(action)
+        compute_service = {"aws-ecs": "ecs", "aws-eks": "eks", "aws-serverless": "lambda"}[manifest_id]
+        text_actions.extend(f"{compute_service}:{action}" for action in COMPUTE_EXACT_ACTIONS[compute_service])
         add_actions(body, text_actions)
         module_types[manifest_id] = module_resource_types(spec["module"])
         manifests[manifest_id] = body
@@ -730,6 +777,11 @@ def main() -> int:
     args = parser.parse_args()
 
     manifests, problems = build()
+    for body in manifests.values():
+        problems.extend(wildcard_action_problems(body))
+    if args.check:
+        for path in MANIFEST_DIR.glob("*.json"):
+            problems.extend(wildcard_action_problems(json.loads(path.read_text(encoding="utf-8"))))
     if problems:
         for problem in problems:
             print(f"::error::{problem}", file=sys.stderr)
