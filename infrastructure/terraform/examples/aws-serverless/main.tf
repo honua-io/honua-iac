@@ -5,6 +5,7 @@ provider "aws" {
 module "honua" {
   transcript_signing            = var.transcript_signing
   permissions_boundary_arn      = var.permissions_boundary_arn
+  product_release_executor      = var.product_release_executor
   use_batch_service_linked_role = var.use_batch_service_linked_role
   source                        = "../../modules/aws-serverless"
   enable_bedrock_ai             = var.enable_bedrock_ai

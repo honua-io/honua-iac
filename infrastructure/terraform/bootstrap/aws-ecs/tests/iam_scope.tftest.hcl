@@ -136,6 +136,25 @@ run "iam_is_prefix_scoped_and_bounded" {
     ])
     error_message = "The workload boundary must exclude IAM, Organizations and role assumption."
   }
+
+  assert {
+    condition = one([
+      for statement in jsondecode(data.aws_iam_policy_document.workload_boundary.json).Statement :
+      flatten([statement.Action]) if try(statement.Sid, "") == "PassWorkloadRolesToEcsTasks"
+    ]) == ["iam:PassRole"]
+    error_message = "The workload boundary may allow only iam:PassRole, and only from the PassWorkloadRolesToEcsTasks statement."
+  }
+
+  assert {
+    condition = one([
+      for statement in jsondecode(data.aws_iam_policy_document.workload_boundary.json).Statement :
+      statement.Condition.StringEquals["iam:PassedToService"] if try(statement.Sid, "") == "PassWorkloadRolesToEcsTasks"
+      ]) == "ecs-tasks.amazonaws.com" && one([
+      for statement in jsondecode(data.aws_iam_policy_document.workload_boundary.json).Statement :
+      flatten([statement.Resource]) if try(statement.Sid, "") == "PassWorkloadRolesToEcsTasks"
+    ]) == ["arn:aws:iam::123456789012:role/honuaecs*"]
+    error_message = "Workload PassRole is a ceiling for role/honuaecs* passed only to ecs-tasks.amazonaws.com."
+  }
 }
 
 run "rejects_wildcard_workload_prefix" {

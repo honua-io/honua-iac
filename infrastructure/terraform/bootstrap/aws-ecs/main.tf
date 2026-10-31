@@ -425,6 +425,23 @@ data "aws_iam_policy_document" "workload_boundary" {
     ]
     resources = ["*"]
   }
+
+  # The ceiling above excludes every iam action, which also blocks iam:PassRole.
+  # RegisterTaskDefinition from the cell task role needs to pass that cell's task
+  # and execution roles to ecs-tasks.amazonaws.com. This statement is only the
+  # ceiling: identity policies still name the two role ARNs, and policy ARNs are
+  # not passable.
+  statement {
+    sid       = "PassWorkloadRolesToEcsTasks"
+    effect    = "Allow"
+    actions   = ["iam:PassRole"]
+    resources = ["${local.iam_arn_prefix}:role/${var.workload_name_prefix}*"]
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["ecs-tasks.amazonaws.com"]
+    }
+  }
 }
 
 resource "aws_iam_policy" "workload_boundary" {
