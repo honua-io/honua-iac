@@ -1366,18 +1366,18 @@ variable "amazon_location_place_index_name" {
 }
 
 variable "amazon_location_data_source" {
-  description = "Upstream data provider for the Amazon Location place index: Esri or Here. Determines the results' data licensing/attribution (Esri or HERE, not OpenStreetMap/Nominatim) and Amazon Location's per-request pricing for that provider."
+  description = "Upstream data provider for the Amazon Location place index. Determines the results' licensing/attribution and Amazon Location's per-request pricing."
   type        = string
-  default     = "Esri"
+  default     = "Here"
 
   validation {
-    condition     = contains(["Esri", "Here"], var.amazon_location_data_source)
-    error_message = "amazon_location_data_source must be \"Esri\" or \"Here\"."
+    condition     = var.amazon_location_data_source == "Here"
+    error_message = "amazon_location_data_source must be \"Here\"."
   }
 }
 
 variable "amazon_location_intended_use" {
-  description = "Amazon Location place index DataSourceConfiguration.IntendedUse. \"SingleUse\" (default) permits real-time geocoding/reverse-geocoding without storing or caching results — matches Esri/HERE's terms for ad hoc lookups and is the right choice for the demo's live GeocodeServer proxy. \"Storage\" is required only if results are persisted (e.g. bulk geocode-and-save workflows), and costs more per request."
+  description = "Amazon Location place index DataSourceConfiguration.IntendedUse. \"SingleUse\" (default) permits real-time geocoding/reverse-geocoding without storing or caching results and is the right choice for the demo's live geocoding proxy. \"Storage\" is required only if results are persisted (e.g. bulk geocode-and-save workflows), and costs more per request."
   type        = string
   default     = "SingleUse"
 

@@ -53,7 +53,7 @@ run "entries_render_as_indexed_variables_in_list_order" {
   command = plan
 
   variables {
-    request_secret_reference_allowed_environment_variables         = ["HONUA_IMPORT_ARCGIS_TOKEN"]
+    request_secret_reference_allowed_environment_variables         = ["HONUA_IMPORT_TOKEN"]
     request_secret_reference_allowed_environment_variable_prefixes = ["HONUA_IMPORT_"]
     request_secret_reference_allowed_secret_reference_prefixes     = ["azure:keyvault:honua-imports:", "azure:keyvault:honua-connections:"]
   }
@@ -63,7 +63,7 @@ run "entries_render_as_indexed_variables_in_list_order" {
       for entry in azurerm_container_app.this.template[0].container[0].env :
       entry.name => entry.value if startswith(entry.name, "Security__RequestSecretReferences__")
       } == {
-      Security__RequestSecretReferences__AllowedEnvironmentVariables__0        = "HONUA_IMPORT_ARCGIS_TOKEN"
+      Security__RequestSecretReferences__AllowedEnvironmentVariables__0        = "HONUA_IMPORT_TOKEN"
       Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__0 = "HONUA_IMPORT_"
       # checkov:skip=CKV_SECRET_6: Configuration key names and placeholder reference prefixes, not credentials.
       Security__RequestSecretReferences__AllowedSecretReferencePrefixes__0 = "azure:keyvault:honua-imports:"

@@ -22,7 +22,7 @@ groups:
           runbook: "docs/devops/runbooks/high-error-rate.md"
 
       # GeoServices/OGC handlers can return HTTP 200 with an in-band error
-      # envelope (e.g. an Esri `{"error":{...}}` body), so a status-code-only
+      # envelope (for example, a `{"error":{...}}` body), so a status-code-only
       # 5xx rule is blind to them. These rules alert on the server-emitted
       # honua_geoservices_error_total counter instead.
       - alert: HonuaGeoServicesErrorRate

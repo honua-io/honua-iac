@@ -134,7 +134,7 @@ run "entries_render_as_indexed_variables_in_list_order" {
   command = apply
 
   variables {
-    request_secret_reference_allowed_environment_variables         = ["HONUA_IMPORT_ARCGIS_TOKEN"]
+    request_secret_reference_allowed_environment_variables         = ["HONUA_IMPORT_TOKEN"]
     request_secret_reference_allowed_environment_variable_prefixes = ["HONUA_IMPORT_"]
     request_secret_reference_allowed_secret_reference_prefixes     = ["aws:secretsmanager:honua/imports/", "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:honua/connections/"]
   }
@@ -143,7 +143,7 @@ run "entries_render_as_indexed_variables_in_list_order" {
     condition = {
       for key, value in local.lambda_environment : key => value if startswith(key, "Security__RequestSecretReferences__")
       } == {
-      Security__RequestSecretReferences__AllowedEnvironmentVariables__0        = "HONUA_IMPORT_ARCGIS_TOKEN"
+      Security__RequestSecretReferences__AllowedEnvironmentVariables__0        = "HONUA_IMPORT_TOKEN"
       Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__0 = "HONUA_IMPORT_"
       # checkov:skip=CKV_SECRET_6: Configuration key names and placeholder reference prefixes, not credentials.
       Security__RequestSecretReferences__AllowedSecretReferencePrefixes__0 = "aws:secretsmanager:honua/imports/"
@@ -275,7 +275,7 @@ run "allowlisted_environment_values_travel_to_the_geoprocessing_batch_job" {
     additional_env = {
       # checkov:skip=CKV_SECRET_6: Synthetic environment names and placeholder values, not credentials.
       IMPORT_TOKEN_EXACT        = "exact-value"
-      HONUA_IMPORT_ARCGIS       = "prefixed-value"
+      HONUA_IMPORT           = "prefixed-value"
       HONUA_IMPORT_Section__Key = "binds-configuration"
       UNRELATED_SETTING         = "not-allowlisted"
     }
@@ -285,10 +285,10 @@ run "allowlisted_environment_values_travel_to_the_geoprocessing_batch_job" {
   assert {
     condition = {
       for entry in jsondecode(aws_batch_job_definition.gp["s"].container_properties).environment :
-      entry.name => entry.value if contains(["IMPORT_TOKEN_EXACT", "HONUA_IMPORT_ARCGIS", "HONUA_IMPORT_Section__Key", "UNRELATED_SETTING"], entry.name)
+      entry.name => entry.value if contains(["IMPORT_TOKEN_EXACT", "HONUA_IMPORT", "HONUA_IMPORT_Section__Key", "UNRELATED_SETTING"], entry.name)
       } == {
       IMPORT_TOKEN_EXACT  = "exact-value"
-      HONUA_IMPORT_ARCGIS = "prefixed-value"
+      HONUA_IMPORT       = "prefixed-value"
     }
     error_message = "The geoprocessing job must receive exactly the additional_env values the environment allowlist permits."
   }

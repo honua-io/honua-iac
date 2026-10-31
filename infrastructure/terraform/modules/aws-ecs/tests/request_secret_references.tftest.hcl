@@ -120,7 +120,7 @@ run "entries_render_as_indexed_variables_in_list_order" {
   command = plan
 
   variables {
-    request_secret_reference_allowed_environment_variables         = ["HONUA_IMPORT_ARCGIS_TOKEN"]
+    request_secret_reference_allowed_environment_variables         = ["HONUA_IMPORT_TOKEN"]
     request_secret_reference_allowed_environment_variable_prefixes = ["HONUA_IMPORT_"]
     request_secret_reference_allowed_secret_reference_prefixes     = ["aws:secretsmanager:honua/imports/", "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:honua/connections/"]
   }
@@ -129,7 +129,7 @@ run "entries_render_as_indexed_variables_in_list_order" {
     condition = {
       for entry in local.primary_container_environment : entry.name => entry.value if startswith(entry.name, "Security__RequestSecretReferences__")
       } == {
-      Security__RequestSecretReferences__AllowedEnvironmentVariables__0        = "HONUA_IMPORT_ARCGIS_TOKEN"
+      Security__RequestSecretReferences__AllowedEnvironmentVariables__0        = "HONUA_IMPORT_TOKEN"
       Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__0 = "HONUA_IMPORT_"
       # checkov:skip=CKV_SECRET_6: Configuration key names and placeholder reference prefixes, not credentials.
       Security__RequestSecretReferences__AllowedSecretReferencePrefixes__0 = "aws:secretsmanager:honua/imports/"
@@ -143,7 +143,7 @@ run "entries_render_as_indexed_variables_in_list_order" {
     condition = {
       for entry in local.canary_container_environment : entry.name => entry.value if startswith(entry.name, "Security__RequestSecretReferences__")
       } == {
-      Security__RequestSecretReferences__AllowedEnvironmentVariables__0        = "HONUA_IMPORT_ARCGIS_TOKEN"
+      Security__RequestSecretReferences__AllowedEnvironmentVariables__0        = "HONUA_IMPORT_TOKEN"
       Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__0 = "HONUA_IMPORT_"
       # checkov:skip=CKV_SECRET_6: Configuration key names and placeholder reference prefixes, not credentials.
       Security__RequestSecretReferences__AllowedSecretReferencePrefixes__0 = "aws:secretsmanager:honua/imports/"
