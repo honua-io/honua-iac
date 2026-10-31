@@ -1021,3 +1021,9 @@ routes Console paths, including the server callback, before the server rollout
 rule. The Console task keeps in-memory sessions and runs one replica, so a restart
 requires operators to sign in again. Qualify the complete OIDC and Studio
 journey after deployment; a Terraform plan alone does not establish it.
+
+Console reaches the server API through the public HTTPS origin. For restricted
+ALB ingress, include the Console subnet's NAT gateway public egress addresses
+in `allow_https_ingress_cidrs`, and ensure the subnet can reach the public origin
+and the OIDC issuer over HTTPS. Register both callback URIs before enabling this
+service.
