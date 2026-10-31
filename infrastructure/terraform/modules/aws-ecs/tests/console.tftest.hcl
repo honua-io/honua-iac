@@ -121,7 +121,7 @@ run "console_routes_and_auth" {
     }
   }
   assert {
-    condition     = length(aws_lb_listener_rule.console) == 8 && contains(local.console_paths[1], "/admin/auth/callback")
+    condition     = length(aws_lb_listener_rule.console) == length(local.console_paths) && alltrue([for paths in local.console_paths : length(paths) <= 3]) && contains(flatten(local.console_paths), "/admin/auth/callback")
     error_message = "Console routes and server callback must reach the edge."
   }
   assert {

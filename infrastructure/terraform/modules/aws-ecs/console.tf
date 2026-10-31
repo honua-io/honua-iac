@@ -33,7 +33,7 @@ variable "console" {
 
 locals {
   console_enabled = var.console != null
-  console_paths = [
+  console_paths = chunklist(flatten([
     ["/", "/studio*", "/catalog*", "/operate*"],
     ["/share*", "/auth/*", "/admin/auth/callback", "/oauth2/*"],
     ["/_framework/*", "/_content/*", "/_studio/*", "/js/*"],
@@ -42,7 +42,7 @@ locals {
     ["/map-proxy/*", "/scene-proxy/*", "/api/studio/*", "/api/agent-workspace*"],
     ["/api/processes/*", "/setup/*", "/not-found", "/version.json"],
     ["/fonts/*", "/images/*", "/css/*"]
-  ]
+  ]), 3)
 }
 
 resource "terraform_data" "console" {
