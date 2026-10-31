@@ -1,0 +1,44 @@
+{
+  "id": "custom-domain",
+  "kind": "feature",
+  "module": null,
+  "note": "",
+  "region_actions": [
+    "acm:AddTagsToCertificate",
+    "acm:DeleteCertificate",
+    "acm:DescribeCertificate",
+    "acm:ListCertificates",
+    "acm:ListTagsForCertificate",
+    "acm:RemoveTagsFromCertificate",
+    "acm:RequestCertificate"
+  ],
+  "global_actions": [
+    "route53:ChangeResourceRecordSets",
+    "route53:GetChange",
+    "route53:GetHostedZone",
+    "route53:ListHostedZones",
+    "route53:ListResourceRecordSets",
+    "route53:ListTagsForResource"
+  ],
+  "pass_role_services": [],
+  "service_linked_roles": [
+    "ops.apigateway.amazonaws.com"
+  ],
+  "attachable_policies": [],
+  "iam_statements": [
+    {
+      "sid": "None",
+      "resource_kind": null,
+      "actions": []
+    }
+  ],
+  "covers": [
+    "aws_acm_certificate",
+    "aws_acm_certificate_validation",
+    "aws_route53_record"
+  ],
+  "simulate_allow": [
+    "acm:RequestCertificate",
+    "route53:ChangeResourceRecordSets"
+  ]
+}

@@ -56,6 +56,8 @@ variables {
   oidc_provider_url = "https://token.actions.githubusercontent.com"
   oidc_subjects     = ["repo:honua-io/honua-release:environment:terraform-live"]
 
+  topology = { compute = "lambda" }
+
   enable_approval_mac_key      = true
   approval_signer_role_names   = ["honua-release-approver"]
   approval_verifier_role_names = ["honua-release-cell-provision"]

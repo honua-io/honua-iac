@@ -38,6 +38,7 @@ variables {
   oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
   oidc_provider_url = "https://token.actions.githubusercontent.com"
   oidc_subjects     = ["repo:honua-io/honua-iac:environment:prod"]
+  topology          = { compute = "ecs" }
 }
 
 run "created_roles_require_the_boundary" {
@@ -76,25 +77,30 @@ run "created_roles_require_the_boundary" {
     condition = !can(one([
       for statement in jsondecode(data.aws_iam_policy_document.deployment_workload.json).Statement : statement
       if statement.Sid == "CreateServiceLinkedRoles"
-      ]).Condition.StringEquals["iam:PermissionsBoundary"]) && contains(flatten([one([
+      ]).Condition.StringEquals["iam:PermissionsBoundary"]) && toset(flatten([one([
         for statement in jsondecode(data.aws_iam_policy_document.deployment_workload.json).Statement : statement
         if statement.Sid == "CreateServiceLinkedRoles"
-    ]).Condition.StringEquals["iam:AWSServiceName"]]), "batch.amazonaws.com")
-    error_message = "Service-linked roles are a separate statement and cannot carry this boundary."
+      ]).Condition.StringEquals["iam:AWSServiceName"]])) == toset([
+      "ecs.amazonaws.com",
+      "ecs.application-autoscaling.amazonaws.com",
+      "elasticloadbalancing.amazonaws.com",
+      "rds.amazonaws.com",
+    ])
+    error_message = "Service-linked roles are a separate statement, cannot carry this boundary, and follow the ECS topology."
   }
 
   assert {
     condition = (
       one([
         for statement in jsondecode(data.aws_iam_policy_document.deployment_workload.json).Statement : statement
-        if statement.Sid == "PassWorkloadRolesToEcsOnly"
+        if statement.Sid == "PassWorkloadRoles"
       ]).Condition.StringEquals["iam:PassedToService"] == "ecs-tasks.amazonaws.com"
       && !can(one([
         for statement in jsondecode(data.aws_iam_policy_document.deployment_workload.json).Statement : statement
-        if statement.Sid == "PassWorkloadRolesToEcsOnly"
+        if statement.Sid == "PassWorkloadRoles"
       ]).Condition.StringEquals["iam:PermissionsBoundary"])
     )
-    error_message = "PassRole must be limited to ecs-tasks. IAM does not evaluate iam:PermissionsBoundary on PassRole."
+    error_message = "PassRole must be limited to ecs-tasks for an ECS topology. IAM does not evaluate iam:PermissionsBoundary on PassRole."
   }
 
   assert {

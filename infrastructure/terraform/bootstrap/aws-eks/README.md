@@ -19,6 +19,14 @@
 > a hard `false`, its `release_posture` output names the certified alternative,
 > and every principal it creates is tagged
 > `HonuaReleasePosture=unsupported-local-only`.
+>
+> **Deprecated for new cells.** The allow-list below is now a manifest consumed
+> by [`bootstrap/aws-exec-identity`](../aws-exec-identity/README.md). An
+> administrator applies that root with `topology.compute = "eks"` and the
+> feature flags the cell needs (`redis`, `custom_domain`, `waf`). The agent
+> assumes only the short-lived role that apply creates and never needs
+> IAM-admin. Do not create this IAM user for a shared or release account.
+> This template stays so an existing local account can still plan.
 
 Creates a least-privilege IAM user and policy for running the
 `modules/aws-eks` Terraform module.

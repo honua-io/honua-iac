@@ -1,0 +1,42 @@
+{
+  "id": "redis",
+  "kind": "feature",
+  "module": null,
+  "note": "",
+  "region_actions": [
+    "elasticache:AddTagsToResource",
+    "elasticache:Create*",
+    "elasticache:CreateCacheSubnetGroup",
+    "elasticache:CreateReplicationGroup",
+    "elasticache:Delete*",
+    "elasticache:DeleteCacheSubnetGroup",
+    "elasticache:DeleteReplicationGroup",
+    "elasticache:Describe*",
+    "elasticache:List*",
+    "elasticache:ListTagsForResource",
+    "elasticache:Modify*",
+    "elasticache:ModifyCacheSubnetGroup",
+    "elasticache:ModifyReplicationGroup",
+    "elasticache:RemoveTagsFromResource"
+  ],
+  "global_actions": [],
+  "pass_role_services": [],
+  "service_linked_roles": [
+    "elasticache.amazonaws.com"
+  ],
+  "attachable_policies": [],
+  "iam_statements": [
+    {
+      "sid": "None",
+      "resource_kind": null,
+      "actions": []
+    }
+  ],
+  "covers": [
+    "aws_elasticache_replication_group",
+    "aws_elasticache_subnet_group"
+  ],
+  "simulate_allow": [
+    "elasticache:CreateReplicationGroup"
+  ]
+}

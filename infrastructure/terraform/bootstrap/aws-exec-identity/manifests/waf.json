@@ -1,0 +1,34 @@
+{
+  "id": "waf",
+  "kind": "feature",
+  "module": null,
+  "note": "",
+  "region_actions": [
+    "wafv2:AssociateWebACL",
+    "wafv2:CreateWebACL",
+    "wafv2:DeleteWebACL",
+    "wafv2:DisassociateWebACL",
+    "wafv2:GetWebACL",
+    "wafv2:ListWebACLs",
+    "wafv2:TagResource",
+    "wafv2:UntagResource",
+    "wafv2:UpdateWebACL"
+  ],
+  "global_actions": [],
+  "pass_role_services": [],
+  "service_linked_roles": [],
+  "attachable_policies": [],
+  "iam_statements": [
+    {
+      "sid": "None",
+      "resource_kind": null,
+      "actions": []
+    }
+  ],
+  "covers": [
+    "aws_wafv2_web_acl_association"
+  ],
+  "simulate_allow": [
+    "wafv2:CreateWebACL"
+  ]
+}
