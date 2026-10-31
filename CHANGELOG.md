@@ -14,6 +14,26 @@ module input/output contracts may still change.
 
 ## Unreleased
 
+## v0.6.0
+
+Release for the 2026.1-rc.2 cut. This pre-1.0 minor release changes the
+bootstrap deployment identity contract; callers must provide the required
+`topology` input. Its optional feature flags default to false (#349).
+
+### Changed
+
+- `bootstrap/aws-exec-identity`: select ECS, EKS, or Lambda and explicitly
+  enable Redis, custom domains, WAF, and GP Batch as needed. The deployment
+  role combines the corresponding least-privilege action manifests; the
+  `deploy_identity_contract` output describes its grants (#349).
+
+### Added
+
+- `aws-eval-docker-hosts`: an isolated root for ephemeral Docker evaluation
+  hosts with encrypted disks, IMDSv2, SSH-only ingress and a creation-anchored
+  expiry tag. Operators must destroy the stack after use; the existing
+  validation reaper does not manage these hosts (#352).
+
 ## v0.5.0
 
 Release for the 2026.1-rc.2 cut, containing #336, #339 and #340–#347. This is a pre-1.0 minor release
