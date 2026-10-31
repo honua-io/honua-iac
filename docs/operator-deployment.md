@@ -11,7 +11,7 @@ This guide is for platform operators deploying Honua into their own cloud subscr
 
 ## Prerequisites
 
-- Terraform 1.5 or later (every root pins `>= 1.5, < 2.0`; the AWS release lane's S3 native state lock needs 1.10 or later, see [Plan and state lineage](operator-state.md))
+- Terraform `>= 1.5, < 2.0` (the AWS release lane's S3 native state lock needs 1.10 or later, see [Plan and state lineage](operator-state.md))
 - Cloud credentials configured locally
 - Container image accessible from target runtime
 - Strong admin and database passwords
@@ -101,6 +101,10 @@ credentials your shell happens to hold, and a plan that is regenerated at apply
 time. That is fine for an account you own and will delete. It is **not** the path
 for anything shared, long-lived, or release-bound.
 
+Use the immutable honua-iac `v0.6.1` release for the coordinated
+honua-devops `v2026.1.2` path. It provides operator-contract v2 and exact
+deploy-identity actions; the DevOps loader refuses wildcard actions.
+
 For those, three things change:
 
 1. **Remote state, created separately.** Apply `bootstrap/aws-tfstate` on its own,
@@ -110,7 +114,11 @@ For those, three things change:
    (backend access) and `bootstrap/aws-exec-identity` (infrastructure deployment).
    No IAM user, no access key. The shell that runs the exact-plan wrappers must
    already be the deployment role, and `backend.tf` must assume a different
-   backend-access role. The role's policy is exactly the approved `topology`;
+   backend-access role. Supply the state bucket and backend role outputs and the
+   approved topology to the identity bootstrap; export its `deploy_identity_contract`
+   for the trusted operator launcher and configure the workload permissions
+   boundary as described in the [bootstrap guide](../infrastructure/terraform/bootstrap/aws-exec-identity/README.md).
+   The role's policy is exactly the approved `topology`;
    the agent that assumes it cannot widen that policy and does not need
    IAM-admin. `bootstrap/aws-ecs`, `bootstrap/aws-serverless`, and
    `bootstrap/aws-eks` create long-lived IAM users and are local-only and
@@ -190,7 +198,7 @@ Operators who template their own root module (instead of using the in-repo
 
 ```hcl
 module "honua" {
-  source = "git::https://github.com/honua-io/honua-iac.git//infrastructure/terraform/modules/aws-ecs?ref=v0.3.0"
+  source = "git::https://github.com/honua-io/honua-iac.git//infrastructure/terraform/modules/aws-ecs?ref=v0.6.1"
   connection_encryption_master_key = null # New deployments only; upgrades must supply the current key
   # ...module inputs...
 }
