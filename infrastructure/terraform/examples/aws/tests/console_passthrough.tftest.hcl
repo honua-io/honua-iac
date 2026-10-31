@@ -164,6 +164,10 @@ run "console_enabled_on_customer_origin" {
     }
   }
   assert {
+    condition     = var.console_image == "ghcr.io/honua-io/honua-console@sha256:a34b0fc8b8b50762d026122a057787a95711de61412cf5595d7620cfb81d75f4"
+    error_message = "The AWS example must use the rc.2 Console image by default."
+  }
+  assert {
     condition     = output.honua_url == "https://cell.example.com"
     error_message = "Console must be deployable alongside the server on the configured origin."
   }
