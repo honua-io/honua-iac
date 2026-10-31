@@ -18,10 +18,10 @@
 # Geocoding:Providers:AmazonLocation:UseIamRole is true (the default) — no
 # access keys needed.
 #
-# Data-source note: results come from Esri (or HERE) via Amazon Location, NOT
-# OpenStreetMap/Nominatim. Coverage, address formatting, and attribution
-# requirements differ (Esri/HERE terms of use apply); this is a full provider
-# swap, not a drop-in replacement with identical results.
+# Results come from the provider configured for the Amazon Location place
+# index. Coverage, address formatting, and attribution requirements vary by
+# provider; this is a full provider swap, not a drop-in replacement with
+# identical results.
 #
 # Toggled off by default so existing deploys are unchanged unless an operator
 # opts in.
@@ -65,7 +65,7 @@ locals {
 # The place index itself. SingleUse (default) matches a live query-only
 # GeocodeServer proxy that does not persist results; switch to "Storage" only
 # if a future workflow saves/caches geocode results server-side (changes
-# Esri/HERE per-request pricing).
+# selected-provider per-request pricing).
 resource "aws_location_place_index" "geocoding" {
   count = local.amazon_location_geocoding_enabled ? 1 : 0
 

@@ -187,7 +187,7 @@ module "honua" {
 | `studio_ai_proxy_limits` | `null` | Optional `max_prompt_characters`, `max_request_bytes`, `max_event_bytes`, `max_response_bytes`. Published as `StudioAiProxy` in the runtime settings document only when Bedrock is enabled and the field is set. Null fields keep the server defaults. |
 | `enable_amazon_location_geocoding` | false | Provision an Amazon Location place index, grant the Lambda role `geo:Search*`/`DescribePlaceIndex` on it, and route `Geocoding:DefaultProvider` to `amazon-location` (Nominatim explicitly disabled). |
 | `amazon_location_place_index_name` | `""` (→ `<name_prefix>-<environment>-geocode`) | Name of the Amazon Location place index. |
-| `amazon_location_data_source` | `Esri` | Upstream data provider for the place index (`Esri` or `Here` — not OpenStreetMap). |
+| `amazon_location_data_source` | `Here` | Upstream data provider configured for the place index. |
 | `amazon_location_intended_use` | `SingleUse` | `SingleUse` (no result storage) or `Storage`. |
 | `request_secret_reference_allowed_environment_variables` | `[]` | Exact environment variable names a request may name as `env:NAME`. Rendered as `Security__RequestSecretReferences__AllowedEnvironmentVariables__<n>`. |
 | `request_secret_reference_allowed_environment_variable_prefixes` | `[]` | Environment variable name prefixes a request may name as `env:NAME` (never matches a name containing `__`). Rendered as `Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__<n>`. |
@@ -547,11 +547,10 @@ latency on any Amazon Location error (e.g. a misconfigured place index). This
 module sets `Geocoding__Providers__Nominatim__Enabled=false` so an
 Amazon-Location-side failure fails fast instead of hanging twice.
 
-**Data source note:** results come from **Esri** (default) or **HERE**, not
-OpenStreetMap — this is a full provider swap. `amazon_location_intended_use`
-defaults to `SingleUse` (real-time lookups, no result storage/caching),
-matching a live GeocodeServer proxy; use `Storage` only if a workflow persists
-geocode results.
+**Data source note:** results come from the provider configured for the Amazon
+Location place index. `amazon_location_intended_use` defaults to `SingleUse`
+(real-time lookups, no result storage/caching); use `Storage` only if a workflow
+persists geocode results.
 
 **Cost** (`us-west-2`, approximate, in addition to the VPC interface endpoint
 the calling root provisions): the place index itself has no idle charge — you
@@ -569,7 +568,6 @@ module "honua" {
   # ...
   enable_amazon_location_geocoding = true
   amazon_location_place_index_name = "honua-demo-demo-geocode"
-  amazon_location_data_source       = "Esri"
 }
 ```
 
