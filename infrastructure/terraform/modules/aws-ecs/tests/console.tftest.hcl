@@ -125,11 +125,12 @@ run "console_routes_and_auth" {
     error_message = "Console routes and server callback must reach the edge."
   }
   assert {
-    condition     = length(jsondecode(aws_ecs_task_definition.console[0].container_definitions)) == 3 && jsondecode(aws_ecs_task_definition.console[0].container_definitions)[0].environment[1].value == "https://cell.example.com"
+    condition     = length(jsondecode(aws_ecs_task_definition.console[0].container_definitions)) == 3 && contains([for e in jsondecode(aws_ecs_task_definition.console[0].container_definitions)[0].environment : "${e.name}=${e.value}"], "HONUA_SERVER_BASE_URL=https://cell.example.com")
     error_message = "Console must bind to the public server origin behind the identity edge."
   }
   assert {
     condition = alltrue([
+      contains([for e in jsondecode(aws_ecs_task_definition.console[0].container_definitions)[0].environment : "${e.name}=${e.value}"], "Studio__EmbedJsStudio=true"),
       contains([for e in jsondecode(aws_ecs_task_definition.console[0].container_definitions)[0].environment : "${e.name}=${e.value}"], "Honua__Console__Auth__Mode=EdgeForwarded"),
       contains([for e in jsondecode(aws_ecs_task_definition.console[0].container_definitions)[0].environment : "${e.name}=${e.value}"], "Honua__Console__Auth__EdgeForwarded__ServerSessionIssuer=https://issuer.example.com"),
       strcontains(jsondecode(aws_ecs_task_definition.console[0].container_definitions)[1].command[0], "proxy_set_header X-Forwarded-Access-Token"),

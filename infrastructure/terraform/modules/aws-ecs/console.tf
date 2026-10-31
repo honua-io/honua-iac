@@ -136,6 +136,7 @@ resource "aws_ecs_task_definition" "console" {
       name = "console", image = var.console.image, essential = true,
       environment = [
         { name = "ASPNETCORE_URLS", value = "http://127.0.0.1:8081" },
+        { name = "Studio__EmbedJsStudio", value = "true" },
         { name = "HONUA_SERVER_BASE_URL", value = local.public_base_url },
         { name = "Honua__Console__Auth__Mode", value = "EdgeForwarded" },
         { name = "Honua__Console__Auth__EdgeForwarded__ServerSessionIssuer", value = try(var.generic_oidc.authority, "") }
