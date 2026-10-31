@@ -1,6 +1,8 @@
 # Opt-in grants for the product release executor running as this function's execution role.
-# Republishes the current image and moves the alias. It does not change configuration or secrets,
-# and it does not assume the standing update-rollback controller.
+# Image publish uses UpdateFunctionCode. A governed restart sets only the function Description
+# (UpdateFunctionConfiguration) so PublishVersion creates a new revision of the same image and
+# configuration; the product refuses every other configuration change before that write.
+# It does not read or write secrets and it does not assume the standing update-rollback controller.
 variable "product_release_executor" {
   description = "Attach the product release executor policy to this cell's Lambda execution role. Default false. The release session sets this; a product lane must not apply it."
   type        = bool
@@ -23,6 +25,7 @@ resource "aws_iam_role_policy" "product_release_executor" {
           "lambda:GetFunctionConfiguration",
           "lambda:GetAlias",
           "lambda:UpdateFunctionCode",
+          "lambda:UpdateFunctionConfiguration",
           "lambda:PublishVersion",
           "lambda:UpdateAlias",
         ]
