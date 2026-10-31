@@ -14,6 +14,11 @@ module input/output contracts may still change.
 
 ## Unreleased
 
+## v0.5.0
+
+Release for the 2026.1-rc.2 cut, containing #336, #339 and #340–#347. This is a pre-1.0 minor release
+because it adds optional module inputs. Review the GP role upgrade note below before applying.
+
 ### Changed
 
 - `aws-eks`: the `<name>-gp-job` workload role again reads only the database, master key, optional Redis
@@ -41,6 +46,22 @@ module input/output contracts may still change.
   (honua-iac#282). Null adds nothing. honua-release already passes this object when the pinned root
   declares it (honua-release#1061); ECS emits the same object as environment variables and shipped in
   v0.4.4 (honua-iac#333).
+
+### Fixed
+
+- `aws-eks`: emit HSTS when the Service load balancer terminates TLS (#339).
+
+### Release-cell bootstrap
+
+- Grant `cert.demo.honua.io` record changes to the release cells, attach the grants as managed policies,
+  and record the applied zone in the drift plan (#342, #345, #346).
+- Grant the configured latest Bedrock models from the cell invoke policies (#344).
+- Request Bedrock Opus 5.5 and Sonnet 5.5 TPM quotas; document that this account requires AWS Support
+  for those quota increases (#343, #347). This release does not imply those increases were granted.
+
+## Earlier changes since v0.3.0
+
+### Added
 
 - `examples/aws-serverless`: `rds_proxy_idle_client_timeout_seconds` (default 600, unchanged), passed to
   the proxy. Frozen Lambda environments keep their client connections, and a pinned connection is
