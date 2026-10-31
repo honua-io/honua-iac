@@ -23,6 +23,7 @@ module "honua" {
   bedrock_ai_timeout_seconds = var.bedrock_ai_timeout_seconds
 
   deployment_safety                        = var.deployment_safety
+  product_release_executor                 = var.product_release_executor
   deploy_control_plane                     = var.deploy_control_plane
   migration_safety                         = var.migration_safety
   migration_task                           = var.migration_task
