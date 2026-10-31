@@ -37,11 +37,11 @@ locals {
     ["/", "/studio*", "/catalog*", "/operate*"],
     ["/share*", "/auth/*", "/admin/auth/callback", "/oauth2/*"],
     ["/_framework/*", "/_content/*", "/_studio/*", "/js/*"],
-    ["/app.css*", "/favicon*", "/_blazor*", "/maps/*"],
+    ["/app*", "/favicon*", "/_blazor*", "/maps/*"],
     ["/embed/*", "/environments*", "/approvals*", "/inbox*"],
     ["/map-proxy/*", "/scene-proxy/*", "/api/studio/*", "/api/agent-workspace*"],
     ["/api/processes/*", "/setup/*", "/not-found", "/version.json"],
-    ["/fonts/*", "/images/*"]
+    ["/fonts/*", "/images/*", "/css/*"]
   ]
 }
 
