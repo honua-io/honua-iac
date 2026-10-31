@@ -323,6 +323,17 @@ resource "aws_security_group" "alb" {
     cidr_blocks = [local.vpc_cidr_block]
   }
 
+  dynamic "egress" {
+    for_each = local.console_enabled ? [1] : []
+    content {
+      description = "ALB to Console edge"
+      from_port   = 4180
+      to_port     = 4180
+      protocol    = "tcp"
+      cidr_blocks = [local.vpc_cidr_block]
+    }
+  }
+
   lifecycle {
     precondition {
       condition = (
@@ -397,6 +408,17 @@ resource "aws_security_group" "ecs" {
     to_port         = var.container_port
     protocol        = "tcp"
     security_groups = [aws_security_group.alb.id]
+  }
+
+  dynamic "ingress" {
+    for_each = local.console_enabled ? [1] : []
+    content {
+      description     = "ALB to Console edge"
+      from_port       = 4180
+      to_port         = 4180
+      protocol        = "tcp"
+      security_groups = [aws_security_group.alb.id]
+    }
   }
 
   egress {

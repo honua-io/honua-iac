@@ -13,8 +13,18 @@ module "honua" {
   audit_chain_key_secret_arn                        = var.audit_chain_key_secret_arn
   audit_chain_key_secret_kms_key_arn                = var.audit_chain_key_secret_kms_key_arn
 
-  permissions_boundary_arn   = var.permissions_boundary_arn
-  source                     = "../../modules/aws-ecs"
+  permissions_boundary_arn = var.permissions_boundary_arn
+  source                   = "../../modules/aws-ecs"
+  console = var.console == null ? null : {
+    image                 = var.console_image
+    oauth2_proxy_image    = var.console.oauth2_proxy_image
+    header_filter_image   = var.console.header_filter_image
+    cookie_secret_arn     = var.console.cookie_secret_arn
+    cookie_secret_kms_arn = var.console.cookie_secret_kms_arn
+    email_domain          = var.console.email_domain
+    cpu                   = var.console.cpu
+    memory                = var.console.memory
+  }
   enable_bedrock_ai          = var.enable_bedrock_ai
   bedrock_ai_model           = var.bedrock_ai_model
   studio_ai_proxy_limits     = var.studio_ai_proxy_limits
