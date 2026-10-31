@@ -103,6 +103,8 @@ locals {
     "secretsmanager:GetResourcePolicy",
     "secretsmanager:ListSecrets",
     "secretsmanager:ListSecretVersionIds",
+    "servicequotas:Get*",
+    "servicequotas:List*",
     "sns:GetSubscriptionAttributes",
     "sns:GetTopicAttributes",
     "sns:ListSubscriptionsByTopic",
