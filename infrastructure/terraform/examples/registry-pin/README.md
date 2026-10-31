@@ -4,7 +4,7 @@ Demonstrates consuming a published Honua module by **Git source at a SemVer
 tag** — the distribution channel chosen in
 [`docs/module-publishing-decision.md`](../../../../docs/module-publishing-decision.md).
 This is the form the `honua.io` site snippet points at, instead of the public
-Terraform Registry (which is unavailable under the Elastic License 2.0).
+Terraform Registry (which is unavailable under the Fair Core License (FCL-1.0-ALv2)).
 
 This example is intentionally minimal: it pins the `aws-ecs` module at a tag and
 passes the required inputs. It is the external-consumer contract, kept separate

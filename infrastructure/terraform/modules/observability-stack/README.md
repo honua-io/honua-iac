@@ -10,7 +10,7 @@ base platform can run without self-hosted observability components.
 This is a **Tier 2 add-on**: it is published alongside the Tier 1 runtime
 modules, but its contract may move faster, so expect more frequent minor bumps.
 For a versioned, external pin, consume it by Git source at a SemVer tag. (The
-Honua repos are ELv2-licensed, so the public Terraform Registry is not used —
+Honua repos are FCL-1.0-ALv2-licensed, so the public Terraform Registry is not used —
 see [`docs/module-versioning.md`](../../../../docs/module-versioning.md).)
 
 ```hcl

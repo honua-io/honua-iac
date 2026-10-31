@@ -14,6 +14,10 @@ module input/output contracts may still change.
 
 ## Unreleased
 
+### Changed
+
+- Relicensed the repository from Elastic License 2.0 to the Fair Core License 1.0, ALv2 Future License (FCL-1.0-ALv2), the same license as Honua Server and Collect. Operators may use, modify and run the modules to deploy their own Honua estates; competing use needs a separate agreement; each version converts to Apache-2.0 two years after release. Distribution stays Git source at a SemVer tag.
+
 ## v0.6.0
 
 Release for the 2026.1-rc.2 cut. This pre-1.0 minor release changes the

@@ -203,8 +203,8 @@ ready-to-copy example lives at
 `infrastructure/terraform/examples/registry-pin/`.
 
 Modules are not published to the public Terraform Registry: the Honua repos are
-licensed under the Elastic License 2.0 (ELv2), which the public registry does
-not permit. ELv2 still applies to consumers who pull modules via Git source. See
+licensed under the Fair Core License 1.0, ALv2 Future License (FCL-1.0-ALv2), which the public registry does
+not permit. FCL-1.0-ALv2 still applies to consumers who pull modules via Git source. See
 [`module-versioning.md`](module-versioning.md) and
 [`module-publishing-decision.md`](module-publishing-decision.md) for the full
 distribution policy.
