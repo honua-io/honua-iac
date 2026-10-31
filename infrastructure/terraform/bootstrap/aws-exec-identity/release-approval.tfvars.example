@@ -27,4 +27,12 @@ approval_signer_role_names = ["honua-release-approver"]
 approval_verifier_role_names = ["honua-release-cell-provision"]
 
 # Plus the inputs this root always needs (state_bucket_arn, trust_mode and its
-# federation inputs); see README.md.
+# federation inputs, and topology); see README.md. The qualified release cell
+# is Lambda with Redis and GP batch. custom_domain and waf stay off.
+topology = {
+  compute       = "lambda"
+  redis         = true
+  custom_domain = false
+  waf           = false
+  gp_batch      = true
+}

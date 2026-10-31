@@ -28,7 +28,9 @@ The deployment role is **explicitly denied**:
   the deployer or as the state reader.
 
 It may pass the task execution and application runtime roles, by name prefix,
-and only to `ecs-tasks.amazonaws.com`.
+and only to the services for the approved topology: `ecs-tasks.amazonaws.com`
+for ECS; `ec2`, `eks`, and `pods.eks` for EKS; `lambda`, `rds`, and
+`scheduler` for Lambda, plus `batch` and `ecs-tasks` when `gp_batch` is on.
 
 Resource preconditions fail the plan when the supplied role ARNs are not three
 distinct roles, or when the selected `trust_mode` is missing its federation
@@ -43,15 +45,17 @@ terraform -chdir=bootstrap/aws-tfstate apply -var='bucket_name=...'
 # 2. backend access role
 terraform -chdir=bootstrap/aws-terraform-oidc apply
 
-# 3. this root
+# 3. this root. topology is required. There is no full-grant default.
 terraform -chdir=bootstrap/aws-exec-identity apply \
   -var='oidc_provider_arn=arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com' \
   -var='oidc_provider_url=https://token.actions.githubusercontent.com' \
   -var='oidc_subjects=["repo:honua-io/honua-iac:environment:prod"]' \
   -var='state_bucket_arn=arn:aws:s3:::honua-tfstate-prod' \
-  -var='backend_access_role_arn=arn:aws:iam::123456789012:role/honua-terraform-backend'
+  -var='backend_access_role_arn=arn:aws:iam::123456789012:role/honua-terraform-backend' \
+  -var='topology={compute="ecs",redis=true,custom_domain=false,waf=false,gp_batch=false}'
 
 terraform -chdir=bootstrap/aws-exec-identity output -json execution_identity_contract
+terraform -chdir=bootstrap/aws-exec-identity output -json deploy_identity_contract
 ```
 
 For an SSO-based operator session set `trust_mode = "sso"` and list the
@@ -152,6 +156,47 @@ contract it carries no key material. A successful plan or validate implies no
 live AWS qualification — a live `GenerateMac`/`VerifyMac` proof is honua-devops#175's
 remaining work.
 
+## Topology
+
+`topology` is required. `compute` is `ecs`, `eks`, or `lambda`. `redis`,
+`custom_domain`, `waf`, and `gp_batch` default to false. The deployment policy
+is the union of `manifests/*.json` for that shape, assembled by
+`infrastructure/terraform/validation/scripts/aws/generate-deploy-identity-manifests.py`.
+Service actions are the curated allows from the long-lived templates, split so
+ElastiCache, ACM, Route 53, WAFv2, and Batch are absent unless the matching
+flag is on. `gp_batch` covers every Batch action `modules/aws-serverless`
+uses, including custom-code batch. IAM administration stays in
+`manifests/iam-workload.json` so it is not copied into every service statement.
+
+The same denials as before stay on the role: state substrate, long-lived
+credentials, passing the deployment or backend role, mutating the deployment
+identity, and removing a permissions boundary. Trust is still short-lived
+OIDC and SSO only. Name prefix, region, and the workload permissions boundary
+are unchanged. Optional resources inside the nested VPC and EKS modules
+(a Redshift subnet group, Karpenter's queue, a hybrid-node Roles Anywhere
+profile) add only the API calls those resources make.
+
+`deploy_identity_contract` is what a customer-facing agent shows: topology,
+role ARN, actions by service, and what the role cannot do. It carries no
+token or credential. The agent never needs IAM-admin.
+
+A release cell (Lambda, Redis, GP batch, no custom domain, no WAF) is proved
+by an administrator applying this root, then the release session assuming only
+that role and applying `examples/aws-cert`. Do not put the role in a provider
+`assume_role` block.
+
+```bash
+terraform -chdir=infrastructure/terraform/bootstrap/aws-exec-identity init
+terraform -chdir=infrastructure/terraform/bootstrap/aws-exec-identity apply \
+  -var='trust_mode=oidc' \
+  -var='oidc_provider_arn=<REPLACE_WITH_OIDC_PROVIDER_ARN>' \
+  -var='oidc_provider_url=https://token.actions.githubusercontent.com' \
+  -var='oidc_subjects=["<REPLACE_WITH_EXACT_OIDC_SUBJECT>"]' \
+  -var='state_bucket_arn=<REPLACE_WITH_STATE_BUCKET_ARN>' \
+  -var='backend_access_role_arn=<REPLACE_WITH_BACKEND_ACCESS_ROLE_ARN>' \
+  -var='topology={compute="lambda",redis=true,custom_domain=false,waf=false,gp_batch=true}'
+```
+
 ## Evidence
 
 `execution_identity_contract` and its digest carry account, partition, region,
@@ -163,12 +208,13 @@ the release lane can assert on.
 `workload_permissions_boundary_arn` is the ceiling for roles this identity
 creates. Workload modules already accept `permissions_boundary_arn`. Pass this
 output there. Without it, CreateRole and AttachRolePolicy are denied.
-PassRole is limited to ecs-tasks.amazonaws.com and the workload role prefix.
+PassRole is limited to the topology's services and the workload role prefix.
 IAM does not evaluate iam:PermissionsBoundary on PassRole, so that condition
 is not on the allow. The boundary is a ceiling: the role's own policy still
 scopes the grant. Service-linked roles are created separately and cannot
 carry this boundary. Role administration is a second managed policy so neither
-document exceeds the managed-policy size quota.
+document exceeds the 6144-character managed-policy quota. This root attaches
+no inline policy, so the 10240-character inline aggregate does not apply.
 
 Terraform validation is the supported local check. A successful plan or validate
 implies no live AWS qualification; that gate is honua-iac#118.

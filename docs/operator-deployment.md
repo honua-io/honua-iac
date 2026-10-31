@@ -110,7 +110,9 @@ For those, three things change:
    (backend access) and `bootstrap/aws-exec-identity` (infrastructure deployment).
    No IAM user, no access key. The shell that runs the exact-plan wrappers must
    already be the deployment role, and `backend.tf` must assume a different
-   backend-access role. `bootstrap/aws-ecs`, `bootstrap/aws-serverless`, and
+   backend-access role. The role's policy is exactly the approved `topology`;
+   the agent that assumes it cannot widen that policy and does not need
+   IAM-admin. `bootstrap/aws-ecs`, `bootstrap/aws-serverless`, and
    `bootstrap/aws-eks` create long-lived IAM users and are local-only and
    unsupported for release.
 3. **One exact saved plan.** Produce the plan and its approval digest once, then

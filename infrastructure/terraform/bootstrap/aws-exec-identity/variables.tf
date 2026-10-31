@@ -16,6 +16,33 @@ variable "environment" {
   default     = "prod"
 }
 
+variable "topology" {
+  description = <<-EOT
+    Approved cell shape. The deployment role's allow-list is the union of the
+    action manifests for this shape. There is no full-grant default: name the
+    compute platform, and set each optional feature the cell will actually use.
+
+    compute       "ecs", "eks", or "lambda".
+    redis         ElastiCache. Off leaves every elasticache action out.
+    custom_domain ACM and Route 53 for a customer hostname. Off leaves both out.
+    waf           WAFv2 web ACLs. Off leaves every wafv2 action out.
+    gp_batch      AWS Batch for the serverless module, including custom-code
+                  batch resources. Off leaves every batch action out.
+  EOT
+  type = object({
+    compute       = string
+    redis         = optional(bool, false)
+    custom_domain = optional(bool, false)
+    waf           = optional(bool, false)
+    gp_batch      = optional(bool, false)
+  })
+
+  validation {
+    condition     = contains(["ecs", "eks", "lambda"], var.topology.compute)
+    error_message = "topology.compute must be one of: ecs, eks, lambda."
+  }
+}
+
 variable "trust_mode" {
   description = <<-EOT
     How the deployment role is reached.

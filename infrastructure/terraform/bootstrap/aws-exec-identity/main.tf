@@ -10,10 +10,11 @@
 #   2. INFRA DEPLOYMENT created here. Provisions the stack. Explicitly DENIED all
 #                       access to the state substrate and denied any ability to
 #                       mint a long-lived IAM credential.
-#   3. TASK EXECUTION   pulls images and fetches secrets for ECS. Created by
-#                       modules/aws-ecs. Passable by the deployment role, by name
-#                       prefix, only to ecs-tasks.amazonaws.com.
-#   4. APP RUNTIME      the application's own identity. Created by modules/aws-ecs.
+#   3. TASK EXECUTION   pulls images and fetches secrets. Created by the module
+#                       for the approved topology. Passable by the deployment
+#                       role, by name prefix, only to the services that topology
+#                       selects (ecs-tasks, EKS node/pod identity, or Lambda).
+#   4. APP RUNTIME      the application's own identity. Created by the same module.
 #
 # Terraform reaches (1) through the S3 backend's own `assume_role` block. The
 # process credential is already (2), so the provider must not assume a second
@@ -30,9 +31,14 @@ locals {
   name = "${var.name_prefix}-${var.environment}"
 
   tags = merge({
-    ManagedBy   = "terraform"
-    Purpose     = "honua-governed-execution-identity"
-    Environment = var.environment
+    ManagedBy                 = "terraform"
+    Purpose                   = "honua-governed-execution-identity"
+    Environment               = var.environment
+    HonuaTopologyCompute      = var.topology.compute
+    HonuaTopologyRedis        = var.topology.redis ? "true" : "false"
+    HonuaTopologyCustomDomain = var.topology.custom_domain ? "true" : "false"
+    HonuaTopologyWaf          = var.topology.waf ? "true" : "false"
+    HonuaTopologyGpBatch      = var.topology.gp_batch ? "true" : "false"
   }, var.tags)
 
   partition  = data.aws_partition.current.partition
@@ -55,16 +61,95 @@ locals {
   workload_boundary_name = "${local.name}-workload-boundary"
   workload_boundary_arn  = "arn:${local.partition}:iam::${local.account_id}:policy/${local.workload_boundary_name}"
 
-  # Managed policies the stack modules attach to workload roles, plus policies
-  # this root's name prefix owns. AdministratorAccess is not in the list.
-  attachable_policy_arns = [
-    "arn:${local.partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
-    "arn:${local.partition}:iam::aws:policy/service-role/AWSBatchServiceRole",
-    "arn:${local.partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
-    "arn:${local.partition}:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
-    "arn:${local.partition}:iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy",
-    "arn:${local.partition}:iam::${local.account_id}:policy/${var.name_prefix}*",
+  # One file per module and per optional feature. The names are literals so
+  # file() is known at plan time. Schemas match, so the values form one map.
+  manifest_names = [
+    "iam-workload",
+    "aws-ecs",
+    "aws-eks",
+    "aws-serverless",
+    "redis",
+    "custom-domain",
+    "waf",
+    "gp-batch",
   ]
+
+  manifests = {
+    for name in local.manifest_names :
+    name => jsondecode(file("${path.module}/manifests/${name}.json"))
+  }
+
+  topology_compute_manifest = {
+    ecs    = "aws-ecs"
+    eks    = "aws-eks"
+    lambda = "aws-serverless"
+  }
+
+  # iam-workload is always selected. There is no full-grant default: a feature
+  # that was not approved contributes no actions, no service-linked role, and
+  # no attachable AWS managed policy.
+  topology_manifest_ids = concat(
+    ["iam-workload", local.topology_compute_manifest[var.topology.compute]],
+    var.topology.redis ? ["redis"] : [],
+    var.topology.custom_domain ? ["custom-domain"] : [],
+    var.topology.waf ? ["waf"] : [],
+    var.topology.gp_batch ? ["gp-batch"] : [],
+  )
+
+  selected_manifests = [for id in local.topology_manifest_ids : local.manifests[id]]
+
+  region_actions = sort(distinct(flatten([
+    for manifest in local.selected_manifests : manifest.region_actions
+  ])))
+  global_actions = sort(distinct(flatten([
+    for manifest in local.selected_manifests : manifest.global_actions
+  ])))
+  pass_role_services = sort(distinct(flatten([
+    for manifest in local.selected_manifests : manifest.pass_role_services
+  ])))
+  service_linked_roles = sort(distinct(flatten([
+    for manifest in local.selected_manifests : manifest.service_linked_roles
+  ])))
+  attachable_policy_suffixes = sort(distinct(flatten([
+    for manifest in local.selected_manifests : manifest.attachable_policies
+  ])))
+
+  # Shared IAM allows. Conditions (name prefix, boundary, service list) stay in
+  # this file so the policy gate can still see them as literal statements.
+  iam_statement_actions = {
+    for statement in local.manifests["iam-workload"].iam_statements :
+    statement.sid => statement.actions
+    if length(statement.actions) > 0
+  }
+
+  # Instance profiles and the EKS OIDC provider are name-prefix scoped. The
+  # placeholder statement (sid None, no actions) is ignored.
+  extra_iam_statements = merge([
+    for manifest in local.selected_manifests : {
+      for statement in manifest.iam_statements :
+      statement.sid => statement
+      if statement.resource_kind != null && length(statement.actions) > 0
+    }
+  ]...)
+
+  extra_iam_resources = {
+    "instance-profile"  = "arn:${local.partition}:iam::${local.account_id}:instance-profile/${var.name_prefix}*"
+    "eks-oidc-provider" = "arn:${local.partition}:iam::${local.account_id}:oidc-provider/oidc.eks.${var.aws_region}.amazonaws.com/id/*"
+  }
+
+  manifest_allow_actions = sort(distinct(concat(
+    local.region_actions,
+    local.global_actions,
+    flatten(values(local.iam_statement_actions)),
+    flatten([for statement in values(local.extra_iam_statements) : statement.actions]),
+  )))
+
+  # AWS managed policies the selected modules attach, plus policies this root's
+  # name prefix owns. AdministratorAccess is not in any manifest.
+  attachable_policy_arns = concat(
+    [for suffix in local.attachable_policy_suffixes : "arn:${local.partition}:iam::aws:policy/${suffix}"],
+    ["arn:${local.partition}:iam::${local.account_id}:policy/${var.name_prefix}*"],
+  )
 
   passable_role_arns = distinct(compact([
     "arn:${local.partition}:iam::${local.account_id}:role/${var.task_execution_role_name_prefix}*",
@@ -256,125 +341,9 @@ data "aws_iam_policy_document" "deployment" {
   #checkov:skip=CKV_AWS_108: Networking and logging actions are required to provision the stack.
   #checkov:skip=CKV_AWS_109: Role management is required for the task roles; user/key management is explicitly denied.
   statement {
-    sid    = "ProvisionStackResources"
-    effect = "Allow"
-    actions = [
-      "acm:AddTagsToCertificate",
-      "acm:DeleteCertificate",
-      "acm:DescribeCertificate",
-      "acm:ListCertificates",
-      "acm:RemoveTagsFromCertificate",
-      "acm:RequestCertificate",
-      "application-autoscaling:DeleteScalingPolicy",
-      "application-autoscaling:DeregisterScalableTarget",
-      "application-autoscaling:Describe*",
-      "application-autoscaling:ListTagsForResource",
-      "application-autoscaling:PutScalingPolicy",
-      "application-autoscaling:RegisterScalableTarget",
-      "application-autoscaling:TagResource",
-      "application-autoscaling:UntagResource",
-      "ec2:AllocateAddress",
-      "ec2:AssociateRouteTable",
-      "ec2:AttachInternetGateway",
-      "ec2:AuthorizeSecurityGroupEgress",
-      "ec2:AuthorizeSecurityGroupIngress",
-      "ec2:Create*",
-      "ec2:Delete*",
-      "ec2:Describe*",
-      "ec2:DetachInternetGateway",
-      "ec2:DisassociateRouteTable",
-      "ec2:Modify*",
-      "ec2:ReleaseAddress",
-      "ec2:ReplaceRoute",
-      "ec2:RevokeSecurityGroupEgress",
-      "ec2:RevokeSecurityGroupIngress",
-      "eks:DescribeAddon",
-      "eks:DescribeCluster",
-      "eks:DescribePodIdentityAssociation",
-      "ecs:Create*",
-      "ecs:Delete*",
-      "ecs:DeregisterTaskDefinition",
-      "ecs:Describe*",
-      "ecs:List*",
-      "ecs:RegisterTaskDefinition",
-      "ecs:TagResource",
-      "ecs:UntagResource",
-      "ecs:Update*",
-      "elasticache:AddTagsToResource",
-      "elasticache:Create*",
-      "elasticache:Delete*",
-      "elasticache:Describe*",
-      "elasticache:List*",
-      "elasticache:Modify*",
-      "elasticache:RemoveTagsFromResource",
-      "elasticloadbalancing:AddTags",
-      "elasticloadbalancing:Create*",
-      "elasticloadbalancing:Delete*",
-      "elasticloadbalancing:DeregisterTargets",
-      "elasticloadbalancing:Describe*",
-      "elasticloadbalancing:Modify*",
-      "elasticloadbalancing:RegisterTargets",
-      "elasticloadbalancing:RemoveTags",
-      "elasticloadbalancing:Set*",
-      "kms:CreateAlias",
-      "kms:CreateKey",
-      "kms:Decrypt",
-      "kms:DeleteAlias",
-      "kms:Describe*",
-      "kms:EnableKeyRotation",
-      "kms:Encrypt",
-      "kms:GenerateDataKey*",
-      "kms:GetKeyPolicy",
-      "kms:GetKeyRotationStatus",
-      "kms:ListAliases",
-      "kms:ListResourceTags",
-      "kms:PutKeyPolicy",
-      "kms:ScheduleKeyDeletion",
-      "kms:TagResource",
-      "kms:UntagResource",
-      "logs:Create*",
-      "logs:Delete*",
-      "logs:Describe*",
-      "logs:ListTagsForResource",
-      "logs:PutRetentionPolicy",
-      "logs:TagLogGroup",
-      "logs:UntagLogGroup",
-      "rds:AddTagsToResource",
-      "rds:Create*",
-      "rds:Delete*",
-      "rds:Describe*",
-      "rds:ListTagsForResource",
-      "rds:Modify*",
-      "rds:RemoveTagsFromResource",
-      "s3:CreateBucket",
-      "s3:DeleteBucket",
-      "s3:DeleteObject",
-      "s3:Get*",
-      "s3:List*",
-      "s3:PutBucket*",
-      "s3:PutEncryptionConfiguration",
-      "s3:PutObject",
-      "secretsmanager:CreateSecret",
-      "secretsmanager:DeleteSecret",
-      "secretsmanager:DescribeSecret",
-      "secretsmanager:GetResourcePolicy",
-      "secretsmanager:GetSecretValue",
-      "secretsmanager:ListSecrets",
-      "secretsmanager:PutSecretValue",
-      "secretsmanager:RestoreSecret",
-      "secretsmanager:TagResource",
-      "secretsmanager:UntagResource",
-      "secretsmanager:UpdateSecret",
-      "wafv2:AssociateWebACL",
-      "wafv2:CreateWebACL",
-      "wafv2:DeleteWebACL",
-      "wafv2:DisassociateWebACL",
-      "wafv2:GetWebACL",
-      "wafv2:ListWebACLs",
-      "wafv2:TagResource",
-      "wafv2:UntagResource",
-      "wafv2:UpdateWebACL",
-    ]
+    sid       = "ProvisionStackResources"
+    effect    = "Allow"
+    actions   = local.region_actions
     resources = ["*"]
 
     condition {
@@ -384,23 +353,19 @@ data "aws_iam_policy_document" "deployment" {
     }
   }
 
-  # Route53 uses a global endpoint, so aws:RequestedRegion cannot match the
-  # cell region outside us-east-1. Keep its existing actions in a separate
-  # statement and add the exact hosted-zone read needed by the native root.
-  statement {
-    sid    = "ManageHostedZoneRecords"
-    effect = "Allow"
-    actions = [
-      "route53:ChangeResourceRecordSets",
-      "route53:GetChange",
-      "route53:GetHostedZone",
-      "route53:ListHostedZones",
-      "route53:ListResourceRecordSets",
-      "route53:ListTagsForResource",
-    ]
-    resources = ["*"]
-  }
+  # Route 53 uses a global endpoint, so aws:RequestedRegion cannot match the
+  # cell region outside us-east-1. The statement exists only when the approved
+  # topology includes a custom domain.
+  dynamic "statement" {
+    for_each = length(local.global_actions) > 0 ? [1] : []
 
+    content {
+      sid       = "ManageHostedZoneRecords"
+      effect    = "Allow"
+      actions   = local.global_actions
+      resources = ["*"]
+    }
+  }
 }
 
 # Role administration is its own managed policy. The deployment document is
@@ -411,15 +376,9 @@ data "aws_iam_policy_document" "deployment_workload" {
   # condition key is absent on service-linked roles, so those are a separate
   # statement below.
   statement {
-    sid    = "CreateBoundedWorkloadRoles"
-    effect = "Allow"
-    actions = [
-      "iam:CreateRole",
-      "iam:DeleteRolePolicy",
-      "iam:DetachRolePolicy",
-      "iam:PutRolePermissionsBoundary",
-      "iam:PutRolePolicy",
-    ]
+    sid     = "CreateBoundedWorkloadRoles"
+    effect  = "Allow"
+    actions = local.iam_statement_actions["CreateBoundedWorkloadRoles"]
     resources = [
       "arn:${local.partition}:iam::${local.account_id}:role/${var.name_prefix}*",
     ]
@@ -434,7 +393,7 @@ data "aws_iam_policy_document" "deployment_workload" {
   statement {
     sid       = "AttachBoundedWorkloadPolicies"
     effect    = "Allow"
-    actions   = ["iam:AttachRolePolicy"]
+    actions   = local.iam_statement_actions["AttachBoundedWorkloadPolicies"]
     resources = ["arn:${local.partition}:iam::${local.account_id}:role/${var.name_prefix}*"]
 
     condition {
@@ -451,28 +410,9 @@ data "aws_iam_policy_document" "deployment_workload" {
   }
 
   statement {
-    sid    = "ManageWorkloadRoles"
-    effect = "Allow"
-    actions = [
-      "iam:CreatePolicy",
-      "iam:CreatePolicyVersion",
-      "iam:DeletePolicy",
-      "iam:DeletePolicyVersion",
-      "iam:DeleteRole",
-      "iam:GetPolicy",
-      "iam:GetPolicyVersion",
-      "iam:GetRole",
-      "iam:GetRolePolicy",
-      "iam:ListAttachedRolePolicies",
-      "iam:ListInstanceProfilesForRole",
-      "iam:ListPolicyVersions",
-      "iam:ListRolePolicies",
-      "iam:ListRoles",
-      "iam:TagPolicy",
-      "iam:TagRole",
-      "iam:UntagPolicy",
-      "iam:UntagRole",
-    ]
+    sid     = "ManageWorkloadRoles"
+    effect  = "Allow"
+    actions = local.iam_statement_actions["ManageWorkloadRoles"]
     resources = [
       "arn:${local.partition}:iam::${local.account_id}:role/${var.name_prefix}*",
       "arn:${local.partition}:iam::${local.account_id}:policy/${var.name_prefix}*",
@@ -482,35 +422,37 @@ data "aws_iam_policy_document" "deployment_workload" {
   statement {
     sid       = "CreateServiceLinkedRoles"
     effect    = "Allow"
-    actions   = ["iam:CreateServiceLinkedRole"]
+    actions   = local.iam_statement_actions["CreateServiceLinkedRoles"]
     resources = ["arn:${local.partition}:iam::${local.account_id}:role/aws-service-role/*"]
 
     condition {
       test     = "StringEquals"
       variable = "iam:AWSServiceName"
-      values = [
-        "batch.amazonaws.com",
-        "ecs.amazonaws.com",
-        "ecs.application-autoscaling.amazonaws.com",
-        "elasticache.amazonaws.com",
-        "elasticloadbalancing.amazonaws.com",
-        "rds.amazonaws.com",
-      ]
+      values   = local.service_linked_roles
     }
   }
 
   statement {
-    sid    = "PassWorkloadRolesToEcsOnly"
-    effect = "Allow"
-    actions = [
-      "iam:PassRole",
-    ]
+    sid       = "PassWorkloadRoles"
+    effect    = "Allow"
+    actions   = local.iam_statement_actions["PassWorkloadRoles"]
     resources = local.passable_role_arns
 
     condition {
       test     = "StringEquals"
       variable = "iam:PassedToService"
-      values   = ["ecs-tasks.amazonaws.com"]
+      values   = local.pass_role_services
+    }
+  }
+
+  dynamic "statement" {
+    for_each = local.extra_iam_statements
+
+    content {
+      sid       = statement.value.sid
+      effect    = "Allow"
+      actions   = statement.value.actions
+      resources = [local.extra_iam_resources[statement.value.resource_kind]]
     }
   }
 
@@ -665,6 +607,77 @@ data "aws_iam_policy_document" "workload_boundary" {
   }
 }
 
+locals {
+  deployment_policy_size          = length(replace(replace(replace(data.aws_iam_policy_document.deployment.json, " ", ""), "\n", ""), "\t", ""))
+  deployment_workload_policy_size = length(replace(replace(replace(data.aws_iam_policy_document.deployment_workload.json, " ", ""), "\n", ""), "\t", ""))
+
+  rendered_allow_actions = sort(distinct(concat(
+    flatten([
+      for statement in jsondecode(data.aws_iam_policy_document.deployment.json).Statement :
+      statement.Effect == "Allow" ? try(tolist(statement.Action), [statement.Action]) : []
+    ]),
+    flatten([
+      for statement in jsondecode(data.aws_iam_policy_document.deployment_workload.json).Statement :
+      statement.Effect == "Allow" ? try(tolist(statement.Action), [statement.Action]) : []
+    ]),
+  )))
+
+  deploy_actions_by_service = {
+    for service in distinct([for action in local.manifest_allow_actions : split(":", action)[0]]) :
+    service => sort([
+      for action in local.manifest_allow_actions : action
+      if split(":", action)[0] == service
+    ])
+  }
+
+  # What a customer-facing agent can say this role cannot do. Feature lines
+  # appear only for flags that are off, so the sentence matches the policy.
+  deploy_identity_cannot = concat(
+    [
+      "Read or write the Terraform state bucket or lock table.",
+      "Create an IAM user, access key, login profile, or service-specific credential.",
+      "Pass the deployment role or the backend access role to a service.",
+      "Mutate the deployment role, its policies, or the workload permissions boundary.",
+      "Delete a permissions boundary.",
+      "Call an action that is not listed in actions_by_service. This role is not an IAM administrator, and the agent that assumes it cannot widen it.",
+    ],
+    var.topology.redis ? [] : ["Manage ElastiCache. redis is not part of the approved topology."],
+    var.topology.custom_domain ? [] : ["Manage ACM certificates or Route 53 records. custom_domain is not part of the approved topology."],
+    var.topology.waf ? [] : ["Manage WAFv2 web ACLs. waf is not part of the approved topology."],
+    var.topology.gp_batch ? [] : ["Manage AWS Batch, including custom-code batch resources. gp_batch is not part of the approved topology."],
+    var.topology.compute == "ecs" ? [] : ["Provision an ECS cluster or service. compute is ${var.topology.compute}."],
+    var.topology.compute == "eks" ? [] : ["Provision EKS. compute is ${var.topology.compute}."],
+    var.topology.compute == "lambda" ? [] : ["Provision Lambda. compute is ${var.topology.compute}."],
+  )
+
+  deploy_identity_contract = {
+    schema_version = "v1"
+    kind           = "honua.iac.deploy-identity"
+    topology = {
+      compute       = var.topology.compute
+      redis         = var.topology.redis
+      custom_domain = var.topology.custom_domain
+      waf           = var.topology.waf
+      gp_batch      = var.topology.gp_batch
+    }
+    role_arn           = local.deployment_role_arn
+    role_name          = "${local.name}-deploy"
+    assume             = "Assume ${local.deployment_role_arn} with a short-lived STS session (sts:AssumeRole or sts:AssumeRoleWithWebIdentity). The agent does not need IAM-admin and cannot grant itself actions outside this contract."
+    actions_by_service = local.deploy_actions_by_service
+    cannot             = local.deploy_identity_cannot
+    batch_scope        = var.topology.gp_batch ? "gp_batch grants every Batch action modules/aws-serverless uses, including custom-code batch resources." : null
+    policy_sizes = {
+      deployment             = local.deployment_policy_size
+      deployment_workload    = local.deployment_workload_policy_size
+      managed_policy_limit   = 6144
+      inline_aggregate_limit = 10240
+      inline_policies        = 0
+    }
+    manifests      = local.topology_manifest_ids
+    evidence_scope = "non-secret-identity-references"
+  }
+}
+
 resource "aws_iam_policy" "workload_boundary" {
   name        = local.workload_boundary_name
   description = "Permissions boundary required on every role created by the certified deployment role."
@@ -674,9 +687,16 @@ resource "aws_iam_policy" "workload_boundary" {
 
 resource "aws_iam_policy" "deployment" {
   name        = "${local.name}-deploy"
-  description = "Least-privilege Honua infrastructure deployment permissions with state-substrate and long-lived-credential denials."
+  description = "Least-privilege Honua infrastructure deployment permissions for the approved topology, with state-substrate and long-lived-credential denials."
   policy      = data.aws_iam_policy_document.deployment.json
   tags        = local.tags
+
+  lifecycle {
+    precondition {
+      condition     = local.deployment_policy_size <= 6144
+      error_message = "Deployment policy is ${local.deployment_policy_size} non-whitespace characters. The managed-policy quota is 6144. Split the document before applying."
+    }
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "deployment" {
@@ -686,9 +706,38 @@ resource "aws_iam_role_policy_attachment" "deployment" {
 
 resource "aws_iam_policy" "deployment_workload" {
   name        = "${local.name}-deploy-workload"
-  description = "Role-administration grants for the certified deployment role, split so each managed policy stays inside the size quota."
+  description = "Role-administration grants for the certified deployment role, split so each managed policy stays inside the size quota. These are managed policies: the 10240-character inline aggregate does not apply, and this root attaches no inline policy."
   policy      = data.aws_iam_policy_document.deployment_workload.json
   tags        = local.tags
+
+  lifecycle {
+    precondition {
+      condition     = local.deployment_workload_policy_size <= 6144
+      error_message = "Deployment workload policy is ${local.deployment_workload_policy_size} non-whitespace characters. The managed-policy quota is 6144."
+    }
+
+    # A mocked policy document (approval-mac tests) is an empty statement list.
+    # A real document is checked against the selected manifests.
+    precondition {
+      condition = (
+        length(local.rendered_allow_actions) == 0
+        || toset(local.rendered_allow_actions) == toset(local.manifest_allow_actions)
+      )
+      error_message = "Rendered deployment allows drifted from the selected topology manifests."
+    }
+
+    precondition {
+      condition     = length(local.pass_role_services) > 0 && length(local.service_linked_roles) > 0 && length(local.region_actions) > 0
+      error_message = "The approved topology produced an empty PassRole, service-linked role, or regional action list."
+    }
+
+    precondition {
+      condition = !anytrue([
+        for arn in local.attachable_policy_arns : strcontains(arn, "AdministratorAccess")
+      ])
+      error_message = "The deployment role must not be able to attach AdministratorAccess."
+    }
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "deployment_workload" {

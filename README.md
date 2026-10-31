@@ -35,6 +35,26 @@ terraform -chdir=infrastructure/terraform/examples/aws apply \
 Detailed guide: [docs/operator-deployment.md](docs/operator-deployment.md).
 Preset contract: [docs/deployment-presets.md](docs/deployment-presets.md).
 
+## Agent deploy identity (AWS)
+
+Once the cell shape is known, Terraform runs as a least-privilege, short-lived
+role. The agent does not need IAM-admin, and it cannot widen that role.
+
+1. The agent proposes a topology: `compute` of `ecs`, `eks`, or `lambda`, plus
+   the optional flags `redis`, `custom_domain`, `waf`, and `gp_batch`.
+2. An administrator approves that shape and applies `bootstrap/aws-exec-identity`
+   with it. This is the only step that needs an identity allowed to create the
+   deployment role.
+3. The agent assumes only the role this root created
+   (`deploy_identity_contract.role_arn`). The session is short-lived STS.
+4. The agent applies the cell with that session. The role's allow-list is the
+   union of the action manifests for the approved topology, and nothing else.
+
+`deploy_identity_contract` is the document the agent can show: the topology,
+the role ARN, the exact actions by service, and what the role cannot do
+(state bucket, long-lived credentials, passing itself, and every feature that
+was not approved).
+
 ## Operator contract (automation handoff)
 
 Certified stacks emit `deployment_contract`, `validation_contract`, and

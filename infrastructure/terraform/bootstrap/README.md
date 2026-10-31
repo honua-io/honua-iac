@@ -9,10 +9,14 @@ for AWS vs Azure.
 - `aws-serverless` — IAM user + policy for Lambda/API Gateway style deployments.
 - `aws-eks` — IAM user + policy for the EKS module.
 
-The three AWS IAM-user templates are local-only. Their IAM grants are confined
-to the deployed stack's name prefix, every role they create must carry the
-workload permissions boundary they emit, and `iam:PassRole` is limited to the
-services each stack uses. See each template's `README.md` ("IAM scope").
+The three AWS IAM-user templates are local-only and deprecated for new cells.
+Use [`aws-exec-identity`](aws-exec-identity/README.md) with a `topology` object
+instead: an administrator applies that short-lived role, and the agent assumes
+only that role. Their IAM grants stay confined to the deployed stack's name
+prefix, every role they create must carry the workload permissions boundary
+they emit, and `iam:PassRole` is limited to the services each stack uses. See
+each template's `README.md` ("IAM scope"). Do not delete the templates; existing
+local accounts still plan with them.
 - `azure-aca` — Azure AD service principal + custom role for Azure Container Apps.
 - `azure-functions` — Azure AD service principal + custom role for Azure Functions.
 
@@ -31,9 +35,11 @@ services each stack uses. See each template's `README.md` ("IAM scope").
   Terraform-vs-PIM automation boundary.
 
 > These are least-privilege *starting points* scoped to the services used by each template,
-> including database (RDS/Postgres) and Redis where applicable. If you disable optional
-> features (WAF, Route53, ACM, etc.) you can remove the related permissions. If you add new
-> components, expand the policy accordingly.
+> including database (RDS/Postgres) and Redis where applicable. The certified
+> `aws-exec-identity` role drops ElastiCache, ACM, Route 53, WAFv2, and Batch
+> unless the approved `topology` turns that feature on. Do not hand-edit those
+> actions out of the long-lived templates for a release account; apply the
+> short-lived role with the matching flags instead.
 
 ## Usage
 Each template is a standalone Terraform project. Example:

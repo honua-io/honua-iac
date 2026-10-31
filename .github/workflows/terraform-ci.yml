@@ -332,6 +332,12 @@ jobs:
             echo "::endgroup::"
           done
 
+      # Needs the provider schema and the nested modules those inits installed.
+      # Confirms every committed deploy-identity manifest still covers the
+      # resource types its module declares.
+      - name: Deploy identity manifest coverage
+        run: python3 infrastructure/terraform/validation/scripts/aws/generate-deploy-identity-manifests.py --check
+
       - name: Lambda secret-policy publication order contract
         run: python3 infrastructure/terraform/validation/scripts/shared/test-lambda-secret-policy-order.py
 

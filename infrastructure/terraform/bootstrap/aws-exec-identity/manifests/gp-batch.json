@@ -1,0 +1,48 @@
+{
+  "id": "gp-batch",
+  "kind": "feature",
+  "module": null,
+  "note": "",
+  "region_actions": [
+    "batch:CreateComputeEnvironment",
+    "batch:CreateJobQueue",
+    "batch:DeleteComputeEnvironment",
+    "batch:DeleteJobQueue",
+    "batch:DeregisterJobDefinition",
+    "batch:Describe*",
+    "batch:List*",
+    "batch:RegisterJobDefinition",
+    "batch:TagResource",
+    "batch:UntagResource",
+    "batch:UpdateComputeEnvironment",
+    "batch:UpdateJobQueue"
+  ],
+  "global_actions": [],
+  "pass_role_services": [
+    "batch.amazonaws.com",
+    "ecs-tasks.amazonaws.com"
+  ],
+  "service_linked_roles": [
+    "batch.amazonaws.com",
+    "ecs.amazonaws.com"
+  ],
+  "attachable_policies": [
+    "service-role/AWSBatchServiceRole",
+    "service-role/AmazonECSTaskExecutionRolePolicy"
+  ],
+  "iam_statements": [
+    {
+      "sid": "None",
+      "resource_kind": null,
+      "actions": []
+    }
+  ],
+  "covers": [
+    "aws_batch_compute_environment",
+    "aws_batch_job_definition",
+    "aws_batch_job_queue"
+  ],
+  "simulate_allow": [
+    "batch:CreateComputeEnvironment"
+  ]
+}

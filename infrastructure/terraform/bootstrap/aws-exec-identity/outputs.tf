@@ -18,6 +18,21 @@ output "workload_permissions_boundary_arn" {
   value       = aws_iam_policy.workload_boundary.arn
 }
 
+output "deploy_identity_contract" {
+  description = "Topology, role ARN, allow-list by service, and what this role cannot do. A customer-facing agent can show this. It carries no token, credential, or secret."
+  value       = local.deploy_identity_contract
+}
+
+output "deployment_policy_json" {
+  description = "Rendered deployment managed policy. Tests and the IAM simulator read it. It is not a secret."
+  value       = data.aws_iam_policy_document.deployment.json
+}
+
+output "deployment_workload_policy_json" {
+  description = "Rendered workload-administration managed policy, including the separation denies."
+  value       = data.aws_iam_policy_document.deployment_workload.json
+}
+
 output "execution_identity_contract" {
   description = "Evidence-safe execution identity contract: role separation, federation references, and session bounds. No token, credential, or secret is emitted."
   value       = local.execution_identity_contract
