@@ -153,3 +153,17 @@ run "console_rejects_missing_identity" {
   }
   expect_failures = [terraform_data.console]
 }
+
+run "reject_old_unbound_console_image" {
+  command = plan
+  variables {
+    console = {
+      image               = "ghcr.io/honua-io/honua-console@sha256:6612319d53ed9d3fab1a62848b6402d4340f57c227296003614ac88fe48de4f3"
+      oauth2_proxy_image  = "example.com/oauth@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      header_filter_image = "example.com/nginx@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      cookie_secret_arn   = "arn:aws:secretsmanager:us-east-1:123456789012:secret:cookie-AbC123"
+      email_domain        = "example.com"
+    }
+  }
+  expect_failures = [var.console]
+}
