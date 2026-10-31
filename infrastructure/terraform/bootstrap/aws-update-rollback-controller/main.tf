@@ -35,9 +35,45 @@ locals {
     "arn:aws:elasticloadbalancing:${var.region}:${local.account_id}:listener-rule/app/${prefix}*",
   ]])
   secret_arns = [for prefix in var.restore_name_prefixes : "arn:aws:secretsmanager:${var.region}:${local.account_id}:secret:${prefix}*"]
+  # These ceilings deny every action. A typed statement list cannot mix Resource
+  # and NotResource, and the policy gate rejects a wildcard written as an actions
+  # list. jsonencode Action = "*" is the ceiling this controller already used.
+  never_standing_blanket = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "NeverStandingResources"
+      Effect    = "Deny"
+      Action    = "*"
+      Resource  = "*"
+      Condition = { StringEquals = { "aws:ResourceTag/Environment" = ["cert", "demo"] } }
+    }]
+  })
+  never_standing_except_cell = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid         = "NeverStandingResources"
+      Effect      = "Deny"
+      Action      = "*"
+      NotResource = local.restore_arns
+      Condition   = { StringEquals = { "aws:ResourceTag/Environment" = ["cert", "demo"] } }
+    }]
+  })
+  never_standing_policy = local.has_restore ? local.never_standing_except_cell : local.never_standing_blanket
+  region_ceiling = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "CertificationRegionOnly"
+      Effect    = "Deny"
+      Action    = "*"
+      Resource  = "*"
+      Condition = { StringNotEquals = { "aws:RequestedRegion" = var.region } }
+    }]
+  })
 }
 
 data "aws_iam_policy_document" "boundary" {
+  source_policy_documents = [local.never_standing_policy]
+
   statement {
     sid = "EcsAlbRollout"
     actions = [
@@ -117,39 +153,11 @@ data "aws_iam_policy_document" "boundary" {
     ]
     resources = ["*"]
   }
-
-  dynamic "statement" {
-    for_each = local.has_restore ? [] : [1]
-    content {
-      sid       = "NeverStandingResources"
-      effect    = "Deny"
-      actions   = ["*"]
-      resources = ["*"]
-      condition {
-        test     = "StringEquals"
-        variable = "aws:ResourceTag/Environment"
-        values   = ["cert", "demo"]
-      }
-    }
-  }
-
-  dynamic "statement" {
-    for_each = local.has_restore ? [1] : []
-    content {
-      sid           = "NeverStandingResources"
-      effect        = "Deny"
-      actions       = ["*"]
-      not_resources = local.restore_arns
-      condition {
-        test     = "StringEquals"
-        variable = "aws:ResourceTag/Environment"
-        values   = ["cert", "demo"]
-      }
-    }
-  }
 }
 
 data "aws_iam_policy_document" "floor" {
+  source_policy_documents = [local.region_ceiling]
+
   statement {
     sid = "CellLambdaAliasSwitch"
     actions = [
@@ -223,18 +231,6 @@ data "aws_iam_policy_document" "floor" {
       "secretsmanager:DeleteSecret",
     ]
     resources = ["*"]
-  }
-
-  statement {
-    sid       = "CertificationRegionOnly"
-    effect    = "Deny"
-    actions   = ["*"]
-    resources = ["*"]
-    condition {
-      test     = "StringNotEquals"
-      variable = "aws:RequestedRegion"
-      values   = [var.region]
-    }
   }
 }
 
