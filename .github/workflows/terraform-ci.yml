@@ -448,6 +448,7 @@ jobs:
           terraform -chdir=infrastructure/terraform/bootstrap/aws-exec-identity test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-bedrock-quotas test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-ecs test -no-color
+          terraform -chdir=infrastructure/terraform/bootstrap/aws-update-rollback-controller test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-serverless test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-eks test -no-color
           terraform -chdir=infrastructure/terraform/components/aws-github-oidc test -no-color

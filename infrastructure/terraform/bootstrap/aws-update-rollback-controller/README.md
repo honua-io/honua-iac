@@ -14,8 +14,10 @@ What it grants:
   (ecs:UpdateService on the canary service, ModifyRule on the protected listener rule) and
   removes it on destroy. This root does not own that grant.
 - **Permissions boundary** (`<name>-boundary`): caps every inline policy at ECS/ALB rollout,
-  Lambda alias switching and CloudWatch reads, and denies `Environment=cert|demo` resources.
-  It exists because `honua-release-cicd` may put inline policies on this role.
+  Lambda alias switching, CloudWatch reads, and restore of `restore_name_prefixes`. It denies
+  `Environment=cert|demo` resources except those prefix ARNs, and denies RDS and secret
+  deletion. An empty `restore_name_prefixes` keeps the blanket cert/demo deny and grants no
+  restore. It exists because `honua-release-cicd` may put inline policies on this role.
 
 The role and boundary live outside the `honuar*`/`honuan*`/`honuaeks*` cell namespaces, so no
 cell or the reaper can own them.
@@ -27,10 +29,13 @@ moved from a tracked partial `backend "s3" {}` block to `backend.tf.example`
 (AGENTS.md; honua-iac#320). An existing working directory needs
 `terraform init -reconfigure` once; the state itself does not move.
 
+The release session applies this. Do not apply it from a product lane.
+
 ```sh
+cd infrastructure/terraform/bootstrap/aws-update-rollback-controller
 sed 's/REPLACE_WITH_STATE_BUCKET_NAME/honua-tfstate-585192672263/' backend.tf.example > backend.tf
 terraform init -reconfigure
-terraform plan -out=controller.tfplan
+terraform plan -var='restore_name_prefixes=["honua-cert-"]' -out=controller.tfplan
 terraform apply controller.tfplan
 ```
 
