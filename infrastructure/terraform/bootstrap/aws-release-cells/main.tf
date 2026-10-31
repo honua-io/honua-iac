@@ -103,9 +103,17 @@ locals {
       local.guardrails,
     )
   }) }
+  # The cert demo grants are a managed policy per lane, not inline: with them the provision
+  # role's inline policies exceed IAM's 10,240-byte aggregate quota. lane_policies keeps the
+  # full effective policy for the simulator.
+  cert_demo_policies = var.cert_demo_hosted_zone_id == "" ? {} : {
+    provision = jsonencode({ Version = "2012-10-17", Statement = jsondecode(local.cert_demo_provision) })
+    reaper    = jsonencode({ Version = "2012-10-17", Statement = jsondecode(local.cert_demo_reaper) })
+  }
+  cert_demo_sids = toset([for statement in concat(jsondecode(local.cert_demo_provision), jsondecode(local.cert_demo_reaper)) : statement.Sid])
   grant_policies = { for lane, policy in local.lane_policies : lane => jsonencode({
     Version   = "2012-10-17"
-    Statement = [for statement in jsondecode(policy).Statement : statement if statement.Effect == "Allow"]
+    Statement = [for statement in jsondecode(policy).Statement : statement if statement.Effect == "Allow" && !contains(local.cert_demo_sids, statement.Sid)]
   }) }
   guardrail_policy = jsonencode({ Version = "2012-10-17", Statement = local.guardrails })
   runtime_boundary = jsonencode({
@@ -206,6 +214,16 @@ resource "aws_iam_role_policy_attachment" "guardrails" {
   for_each   = local.lane_policies
   role       = aws_iam_role.cell[each.key].name
   policy_arn = aws_iam_policy.guardrails.arn
+}
+resource "aws_iam_policy" "cert_demo" {
+  for_each = local.cert_demo_policies
+  name     = "${var.name}-cert-demo-${each.key}"
+  policy   = each.value
+}
+resource "aws_iam_role_policy_attachment" "cert_demo" {
+  for_each   = local.cert_demo_policies
+  role       = aws_iam_role.cell[each.key].name
+  policy_arn = aws_iam_policy.cert_demo[each.key].arn
 }
 data "aws_vpc" "workload" {
   for_each = var.workload_vpc_arns

@@ -264,6 +264,10 @@ run "cert_demo_zone_absent_by_default" {
     ])
     error_message = "An empty cert demo zone must grant no DNS, certificate, or API Gateway domain permissions."
   }
+  assert {
+    condition     = length(local.cert_demo_policies) == 0
+    error_message = "An empty cert demo zone must create no cert demo managed policy."
+  }
 }
 
 run "cert_demo_zone_scopes_records_certificates_and_domain_names" {
@@ -273,35 +277,47 @@ run "cert_demo_zone_scopes_records_certificates_and_domain_names" {
   }
   assert {
     condition = (
-      one([for statement in jsondecode(local.grant_policies.provision).Statement : statement if statement.Sid == "ChangeCertDemoRecords"]).Resource == "arn:aws:route53:::hostedzone/Z089181827C9GKIKHXUTT" &&
-      one([for statement in jsondecode(local.grant_policies.provision).Statement : statement if statement.Sid == "ChangeCertDemoRecords"]).Condition["ForAllValues:StringLike"]["route53:ChangeResourceRecordSetsNormalizedRecordNames"] == ["*.cert.demo.honua.io"] &&
-      one([for statement in jsondecode(local.grant_policies.provision).Statement : statement if statement.Sid == "ChangeCertDemoRecords"]).Condition.Null["route53:ChangeResourceRecordSetsNormalizedRecordNames"] == "false" &&
-      one([for statement in jsondecode(local.grant_policies.reaper).Statement : statement if statement.Sid == "ChangeCertDemoRecords"]).Resource == "arn:aws:route53:::hostedzone/Z089181827C9GKIKHXUTT" &&
-      !strcontains(local.grant_policies.mirror, "route53:") &&
-      !strcontains(local.grant_policies.provision, "demo.honua.io.") &&
-      !can(one([for statement in jsondecode(local.grant_policies.provision).Statement : statement if statement.Sid == "ChangeCertDemoRecords"]).Condition.StringEquals["aws:ResourceTag/Environment"]) &&
+      one([for statement in jsondecode(local.cert_demo_policies.provision).Statement : statement if statement.Sid == "ChangeCertDemoRecords"]).Resource == "arn:aws:route53:::hostedzone/Z089181827C9GKIKHXUTT" &&
+      one([for statement in jsondecode(local.cert_demo_policies.provision).Statement : statement if statement.Sid == "ChangeCertDemoRecords"]).Condition["ForAllValues:StringLike"]["route53:ChangeResourceRecordSetsNormalizedRecordNames"] == ["*.cert.demo.honua.io"] &&
+      one([for statement in jsondecode(local.cert_demo_policies.provision).Statement : statement if statement.Sid == "ChangeCertDemoRecords"]).Condition.Null["route53:ChangeResourceRecordSetsNormalizedRecordNames"] == "false" &&
+      one([for statement in jsondecode(local.cert_demo_policies.reaper).Statement : statement if statement.Sid == "ChangeCertDemoRecords"]).Resource == "arn:aws:route53:::hostedzone/Z089181827C9GKIKHXUTT" &&
+      !contains(keys(local.cert_demo_policies), "mirror") &&
+      alltrue([for lane in ["provision", "reaper", "mirror"] : !strcontains(local.grant_policies[lane], "route53:")]) &&
+      !strcontains(local.cert_demo_policies.provision, "demo.honua.io.") &&
+      !can(one([for statement in jsondecode(local.cert_demo_policies.provision).Statement : statement if statement.Sid == "ChangeCertDemoRecords"]).Condition.StringEquals["aws:ResourceTag/Environment"]) &&
       contains(one([for statement in jsondecode(local.lane_policies.provision).Statement : statement if statement.Sid == "CertificationRegionOnly"]).NotAction, "route53:ChangeResourceRecordSets")
     )
     error_message = "DNS changes must be the one hosted zone and only *.cert.demo.honua.io. Route 53 is not tag-scoped, and its record API is exempt from the regional deny."
   }
   assert {
     condition = (
-      contains(one([for statement in jsondecode(local.grant_policies.provision).Statement : statement if statement.Sid == "RequestCellCertificate"]).Action, "acm:RequestCertificate") &&
-      one([for statement in jsondecode(local.grant_policies.provision).Statement : statement if statement.Sid == "RequestCellCertificate"]).Condition.StringEquals["aws:RequestTag/Owner"] == "release-cell" &&
-      one([for statement in jsondecode(local.grant_policies.reaper).Statement : statement if statement.Sid == "DeleteCellCertificate"]).Condition.StringEquals["aws:ResourceTag/Owner"] == "release-cell"
+      contains(one([for statement in jsondecode(local.cert_demo_policies.provision).Statement : statement if statement.Sid == "RequestCellCertificate"]).Action, "acm:RequestCertificate") &&
+      one([for statement in jsondecode(local.cert_demo_policies.provision).Statement : statement if statement.Sid == "RequestCellCertificate"]).Condition.StringEquals["aws:RequestTag/Owner"] == "release-cell" &&
+      one([for statement in jsondecode(local.cert_demo_policies.reaper).Statement : statement if statement.Sid == "DeleteCellCertificate"]).Condition.StringEquals["aws:ResourceTag/Owner"] == "release-cell"
     )
     error_message = "Certificate grants must stay on cell request and resource tags."
   }
   assert {
     condition = (
-      one([for statement in jsondecode(local.grant_policies.provision).Statement : statement if statement.Sid == "CreateCellDomainName"]).Resource == "arn:aws:apigateway:us-east-1::/domainnames" &&
-      contains(tolist(one([for statement in jsondecode(local.grant_policies.reaper).Statement : statement if statement.Sid == "DeleteCellDomainName"]).Action), "apigateway:DELETE")
+      one([for statement in jsondecode(local.cert_demo_policies.provision).Statement : statement if statement.Sid == "CreateCellDomainName"]).Resource == "arn:aws:apigateway:us-east-1::/domainnames" &&
+      contains(tolist(one([for statement in jsondecode(local.cert_demo_policies.reaper).Statement : statement if statement.Sid == "DeleteCellDomainName"]).Action), "apigateway:DELETE")
     )
     error_message = "API Gateway domain grants must be domain-name resources, not the whole API."
   }
   assert {
-    condition     = alltrue([for policy in values(local.grant_policies) : length(policy) <= 10240])
-    error_message = "Cert demo statements must still fit the inline grant quota. Lengths: ${length(local.grant_policies.provision)} ${length(local.grant_policies.reaper)} ${length(local.grant_policies.mirror)}."
+    condition     = alltrue([for policy in values(local.cert_demo_policies) : length(policy) <= 6144])
+    error_message = "Each cert demo managed policy must fit the 6,144-byte managed policy quota."
+  }
+  assert {
+    condition = alltrue([for lane in ["provision", "reaper", "mirror"] :
+      length([for statement in jsondecode(local.grant_policies[lane]).Statement : statement if contains(local.cert_demo_sids, statement.Sid)]) == 0 &&
+      length(local.grant_policies[lane]) <= 9216
+    ])
+    error_message = "Cert demo statements must stay out of the inline grant, which needs headroom under IAM's 10,240-byte aggregate inline quota (the provision role also holds the approval verifier). Lengths: ${length(local.grant_policies.provision)} ${length(local.grant_policies.reaper)} ${length(local.grant_policies.mirror)}."
+  }
+  assert {
+    condition     = aws_iam_role_policy_attachment.cert_demo["provision"].role == "honua-release-cell-provision" && aws_iam_role_policy_attachment.cert_demo["reaper"].role == "honua-release-cell-reaper"
+    error_message = "The cert demo managed policies attach to the provision and reaper roles only."
   }
 }
 
