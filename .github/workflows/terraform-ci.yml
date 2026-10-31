@@ -30,6 +30,8 @@ on:
       - 'scripts/new-terraform-lineage-contract.ps1'
       - 'scripts/terraform-exact-plan.sh'
       - 'scripts/terraform-exact-apply.sh'
+      - 'scripts/lib/exact-apply-prewrite-v2.py'
+      - 'scripts/tests/test_exact_apply_prewrite_v2.py'
       - 'scripts/terraform-backend-identity.sh'
       - 'scripts/lib/tf-exec-contract.sh'
       - 'scripts/smoke-customer-dist.sh'
@@ -89,6 +91,8 @@ on:
       - 'scripts/new-terraform-lineage-contract.ps1'
       - 'scripts/terraform-exact-plan.sh'
       - 'scripts/terraform-exact-apply.sh'
+      - 'scripts/lib/exact-apply-prewrite-v2.py'
+      - 'scripts/tests/test_exact_apply_prewrite_v2.py'
       - 'scripts/terraform-backend-identity.sh'
       - 'scripts/lib/tf-exec-contract.sh'
       - 'scripts/smoke-customer-dist.sh'
@@ -567,6 +571,9 @@ jobs:
       - name: Governed execution substrate regression test (fail-closed matrix)
         shell: bash
         run: ./infrastructure/terraform/validation/scripts/shared/test-terraform-exact-plan.sh
+
+      - name: Protected host exact-apply prewrite socket contract (offline)
+        run: python3 scripts/tests/test_exact_apply_prewrite_v2.py
 
       - name: Run Terraform policy gate script
         shell: bash
