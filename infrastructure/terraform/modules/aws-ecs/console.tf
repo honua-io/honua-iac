@@ -78,6 +78,7 @@ resource "aws_iam_role_policy" "console_secrets" {
   ]) })
 }
 resource "aws_lb_target_group" "console" {
+  #checkov:skip=CKV_AWS_378: TLS terminates at the ALB; the edge target uses HTTP within the VPC, matching the server target.
   count       = local.console_enabled ? 1 : 0
   name        = substr("${local.name}-console", 0, 32)
   port        = 4180
