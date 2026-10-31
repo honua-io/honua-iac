@@ -164,7 +164,8 @@ is the union of `manifests/*.json` for that shape, assembled by
 `infrastructure/terraform/validation/scripts/aws/generate-deploy-identity-manifests.py`.
 Service actions are exact IAM actions, split so
 ElastiCache, ACM, Route 53, WAFv2, and Batch are absent unless the matching
-flag is on. `gp_batch` covers every Batch action `modules/aws-serverless`
+flag is on. `waf` permits associating an existing web ACL with an ECS load
+balancer; it does not grant creation of web ACLs. `gp_batch` covers every Batch action `modules/aws-serverless`
 uses, including custom-code batch. IAM administration stays in
 `manifests/iam-workload.json` so it is not copied into every service statement.
 The provider-resource and AWS service authorization references used for the

@@ -4,15 +4,13 @@
   "module": null,
   "note": "",
   "region_actions": [
+    "elasticloadbalancing:CreateWebACLAssociation",
+    "elasticloadbalancing:DeleteWebACLAssociation",
+    "elasticloadbalancing:GetLoadBalancerWebACL",
+    "elasticloadbalancing:SetWebAcl",
     "wafv2:AssociateWebACL",
-    "wafv2:CreateWebACL",
-    "wafv2:DeleteWebACL",
     "wafv2:DisassociateWebACL",
-    "wafv2:GetWebACL",
-    "wafv2:ListWebACLs",
-    "wafv2:TagResource",
-    "wafv2:UntagResource",
-    "wafv2:UpdateWebACL"
+    "wafv2:GetWebACLForResource"
   ],
   "global_actions": [],
   "pass_role_services": [],
@@ -29,6 +27,8 @@
     "aws_wafv2_web_acl_association"
   ],
   "simulate_allow": [
-    "wafv2:CreateWebACL"
+    "wafv2:AssociateWebACL",
+    "elasticloadbalancing:CreateWebACLAssociation",
+    "elasticloadbalancing:GetLoadBalancerWebACL"
   ]
 }

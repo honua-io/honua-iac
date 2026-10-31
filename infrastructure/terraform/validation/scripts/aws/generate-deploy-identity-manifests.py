@@ -65,7 +65,14 @@ FEATURE_EXACT_ACTIONS = {
         "batch:CreateJobQueue", "batch:DeleteJobQueue", "batch:DescribeJobQueues",
         "batch:UpdateJobQueue", "batch:RegisterJobDefinition",
         "batch:DeregisterJobDefinition", "batch:DescribeJobDefinitions",
-        "batch:TagResource", "batch:UntagResource",
+        "batch:ListTagsForResource", "batch:TagResource", "batch:UntagResource",
+    ],
+    # The ECS module associates an operator-provided ACL; it does not create it.
+    # https://docs.aws.amazon.com/service-authorization/latest/reference/list_wafv2.html
+    "waf": [
+        "wafv2:AssociateWebACL", "wafv2:DisassociateWebACL", "wafv2:GetWebACLForResource",
+        "elasticloadbalancing:CreateWebACLAssociation", "elasticloadbalancing:DeleteWebACLAssociation",
+        "elasticloadbalancing:GetLoadBalancerWebACL", "elasticloadbalancing:SetWebAcl",
     ],
 }
 
@@ -330,6 +337,7 @@ PREFIX_SERVICE = sorted(
 # Additional lifecycle actions for resource types. The generator adds them to
 # the manifest that owns the resource type.
 EXACT_ACTIONS = {
+    "aws_acm_certificate": ["acm:UpdateCertificateOptions"],
     "aws_cloudwatch_log_group": [
         "logs:AssociateKmsKey", "logs:DisassociateKmsKey", "logs:ListTagsForResource",
         "logs:PutLogGroupDeletionProtection", "logs:TagResource", "logs:UntagResource",
@@ -339,7 +347,7 @@ EXACT_ACTIONS = {
     ],
     "aws_eip": ["ec2:GetIpamPoolAllocations"],
     "aws_vpc": ["ec2:GetIpamPoolAllocations"],
-    "aws_ecr_repository": ["ecr:PutImageTagMutability"],
+    "aws_ecr_repository": ["ecr:ListTagsForResource", "ecr:PutImageTagMutability"],
     "aws_kms_alias": ["kms:UpdateAlias"],
     "aws_kms_key": ["kms:DisableKey", "kms:DisableKeyRotation", "kms:EnableKey", "kms:UpdateKeyDescription"],
     "aws_kms_external_key": ["kms:GetParametersForImport", "kms:ImportKeyMaterial"],
@@ -518,7 +526,7 @@ SIMULATE = {
     "aws-serverless": ["lambda:CreateFunction", "lambda:UpdateFunctionCode", "apigateway:POST"],
     "redis": ["elasticache:CreateReplicationGroup"],
     "custom-domain": ["acm:RequestCertificate", "route53:ChangeResourceRecordSets"],
-    "waf": ["wafv2:CreateWebACL"],
+    "waf": ["wafv2:AssociateWebACL", "elasticloadbalancing:CreateWebACLAssociation", "elasticloadbalancing:GetLoadBalancerWebACL"],
     "gp-batch": ["batch:CreateComputeEnvironment"],
     "iam-workload": ["iam:CreateRole", "iam:PassRole"],
 }

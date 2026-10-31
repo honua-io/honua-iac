@@ -289,6 +289,7 @@ run "lambda_with_domain" {
   assert {
     condition = (
       contains(output.deploy_identity_contract.actions_by_service["acm"], "acm:RequestCertificate")
+      && contains(output.deploy_identity_contract.actions_by_service["acm"], "acm:UpdateCertificateOptions")
       && contains(output.deploy_identity_contract.actions_by_service["acm"], "acm:ListTagsForCertificate")
       && contains(output.deploy_identity_contract.actions_by_service["route53"], "route53:GetHostedZone")
       && contains(output.deploy_identity_contract.actions_by_service["route53"], "route53:ListHostedZones")
@@ -336,6 +337,8 @@ run "lambda_release_cell" {
     condition = (
       contains(keys(output.deploy_identity_contract.actions_by_service), "elasticache")
       && contains(keys(output.deploy_identity_contract.actions_by_service), "batch")
+      && contains(output.deploy_identity_contract.actions_by_service["batch"], "batch:ListTagsForResource")
+      && contains(output.deploy_identity_contract.actions_by_service["ecr"], "ecr:ListTagsForResource")
       && contains(output.deploy_identity_contract.actions_by_service["batch"], "batch:DescribeJobDefinitions")
       && alltrue([for action in output.deploy_identity_contract.actions_by_service["batch"] : !strcontains(action, "*") && !strcontains(action, "?")])
       && contains(output.deploy_identity_contract.actions_by_service["lambda"], "lambda:CreateFunction")
@@ -361,7 +364,7 @@ run "ecs_all_features" {
     condition = alltrue(concat(
       [output.deploy_identity_contract.policy_sizes.deployment <= 6144, output.deploy_identity_contract.policy_sizes.deployment_workload <= 6144],
       [for size in values(output.deploy_identity_contract.policy_sizes.deployment_extra) : size <= 6144],
-    )) && length(output.deploy_identity_contract.policy_arns) <= 10
+    )) && length(output.deploy_identity_contract.policy_arns) <= 10 && contains(output.deploy_identity_contract.actions_by_service["wafv2"], "wafv2:AssociateWebACL") && !contains(output.deploy_identity_contract.actions_by_service["wafv2"], "wafv2:CreateWebACL")
     error_message = "All ECS managed policies must fit IAM document and role attachment limits."
   }
 }

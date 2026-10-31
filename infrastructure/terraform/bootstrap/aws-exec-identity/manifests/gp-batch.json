@@ -12,6 +12,7 @@
     "batch:DescribeComputeEnvironments",
     "batch:DescribeJobDefinitions",
     "batch:DescribeJobQueues",
+    "batch:ListTagsForResource",
     "batch:RegisterJobDefinition",
     "batch:TagResource",
     "batch:UntagResource",

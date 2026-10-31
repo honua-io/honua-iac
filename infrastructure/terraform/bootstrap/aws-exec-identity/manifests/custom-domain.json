@@ -10,7 +10,8 @@
     "acm:ListCertificates",
     "acm:ListTagsForCertificate",
     "acm:RemoveTagsFromCertificate",
-    "acm:RequestCertificate"
+    "acm:RequestCertificate",
+    "acm:UpdateCertificateOptions"
   ],
   "global_actions": [
     "route53:ChangeResourceRecordSets",
