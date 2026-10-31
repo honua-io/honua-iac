@@ -636,6 +636,9 @@ IAM_WORKLOAD_STATEMENTS = [
             "iam:DetachRolePolicy",
             "iam:PutRolePermissionsBoundary",
             "iam:PutRolePolicy",
+            "iam:UpdateAssumeRolePolicy",
+            "iam:UpdateRole",
+            "iam:UpdateRoleDescription",
         ],
     },
     {
@@ -667,9 +670,6 @@ IAM_WORKLOAD_STATEMENTS = [
             "iam:TagRole",
             "iam:UntagPolicy",
             "iam:UntagRole",
-            "iam:UpdateAssumeRolePolicy",
-            "iam:UpdateRole",
-            "iam:UpdateRoleDescription",
         ],
     },
     {

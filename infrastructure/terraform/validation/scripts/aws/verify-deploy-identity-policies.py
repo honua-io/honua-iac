@@ -172,6 +172,10 @@ def main() -> int:
                 add(run, f"deny-outside-{manifest_id}-{action}", action, "*", "implicitDeny", {})
 
         add(run, "deny-create-user", "iam:CreateUser", f"arn:aws:iam::{ACCOUNT}:user/escalation", "explicitDeny", {})
+        add(run, "allow-bounded-trust-update", "iam:UpdateAssumeRolePolicy", WORKLOAD_ROLE,
+            "allowed", {"iam:PermissionsBoundary": BOUNDARY})
+        add(run, "deny-unbounded-trust-update", "iam:UpdateAssumeRolePolicy", WORKLOAD_ROLE,
+            "implicitDeny", {})
         for index in output["deployment_extra_policy_json"]:
             add(run, f"deny-mutate-extra-policy-{index}", "iam:CreatePolicyVersion",
                 f"arn:aws:iam::{ACCOUNT}:policy/honua-prod-deploy-{index}", "explicitDeny", {})

@@ -24,7 +24,10 @@
         "iam:DeleteRolePolicy",
         "iam:DetachRolePolicy",
         "iam:PutRolePermissionsBoundary",
-        "iam:PutRolePolicy"
+        "iam:PutRolePolicy",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:UpdateRole",
+        "iam:UpdateRoleDescription"
       ]
     },
     {
@@ -57,10 +60,7 @@
         "iam:TagPolicy",
         "iam:TagRole",
         "iam:UntagPolicy",
-        "iam:UntagRole",
-        "iam:UpdateAssumeRolePolicy",
-        "iam:UpdateRole",
-        "iam:UpdateRoleDescription"
+        "iam:UntagRole"
       ]
     },
     {
