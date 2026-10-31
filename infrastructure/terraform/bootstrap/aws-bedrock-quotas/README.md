@@ -24,3 +24,5 @@ terraform apply
 ```
 
 Applying files a Service Quotas increase request, and AWS may hold it for review. Check `terraform output requests`, or Service Quotas → Amazon Bedrock in the console. Model access is a separate one-time step: send one message to the model in the Bedrock playground.
+
+**Account 585192672263 (2026-10-31):** this root can't raise these quotas there. The applied value of all four is 0, which is an account-level override below the AWS defaults (30,000,000 for Opus 5.5 and 6,000,000 for Sonnet 5.5). `RequestServiceQuotaIncrease` refuses any value at or below the default (`IllegalArgumentException: You must provide a quota value greater than the default quota value`), so neither 2,000,000 nor the default can be requested. Only AWS Support can lift the override; the request goes on the account's Bedrock support case, citing the four quota codes. The root is applied with both inputs at 0 (unmanaged) and empty state, and drift-roots.json records it that way. Once Support restores the defaults, which already exceed the sizing above, no apply is needed.

@@ -5,7 +5,7 @@
     "aws-bedrock-quotas": {
       "applied": true,
       "state_key": "bootstrap/aws-bedrock-quotas/terraform.tfstate",
-      "vars": {}
+      "vars": { "opus_5_5_tokens_per_minute": 0, "sonnet_5_5_tokens_per_minute": 0 }
     },
     "aws-demo-deploy": {
       "applied": true,
