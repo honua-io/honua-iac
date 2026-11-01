@@ -40,3 +40,13 @@ variable "ttl_hours" {
     error_message = "ttl_hours must be a positive integer."
   }
 }
+
+variable "bedrock_model_ids" {
+  description = "Bedrock foundation model IDs the hosts may invoke, for the Studio assistant's stack-side credentials (e.g. anthropic.claude-sonnet-4-6). Empty (the default) gives the hosts no instance profile at all."
+  type        = list(string)
+  default     = []
+  validation {
+    condition     = alltrue([for id in var.bedrock_model_ids : can(regex("^[a-z0-9-]+\\.[a-z0-9.:-]+$", id)) && !strcontains(id, "*")])
+    error_message = "bedrock_model_ids must be exact model IDs without wildcards."
+  }
+}
