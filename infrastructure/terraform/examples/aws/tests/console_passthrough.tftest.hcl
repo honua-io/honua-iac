@@ -164,7 +164,7 @@ run "console_enabled_on_customer_origin" {
     }
   }
   assert {
-    condition     = var.console_image == "ghcr.io/honua-io/honua-console@sha256:b74dfd7ccfd30744e87021b852f287cb81c266b40051ef860314dab33fde2e54"
+    condition     = var.console_image == "ghcr.io/honua-io/honua-console@sha256:8b81678ebddb3ccc2c0eeb0c196334733b3dc75ade8d91b7b5eb846d36c97b24"
     error_message = "The AWS example must use the rc.2 Console image by default."
   }
   assert {
