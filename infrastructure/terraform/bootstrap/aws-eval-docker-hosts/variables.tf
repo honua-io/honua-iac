@@ -50,3 +50,9 @@ variable "bedrock_model_ids" {
     error_message = "bedrock_model_ids must be exact model IDs without wildcards."
   }
 }
+
+variable "intra_group_ssh" {
+  description = "Allow SSH between hosts in this group, so one host can act as the controller (self-hosted runner) driving the others. Default false."
+  type        = bool
+  default     = false
+}

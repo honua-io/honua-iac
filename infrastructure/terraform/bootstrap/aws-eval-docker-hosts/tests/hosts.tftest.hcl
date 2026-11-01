@@ -67,3 +67,12 @@ run "reject_wildcard_model" {
   variables { bedrock_model_ids = ["anthropic.*"] }
   expect_failures = [var.bedrock_model_ids]
 }
+
+run "intra_group_ssh_only_when_opted_in" {
+  command = plan
+  variables { intra_group_ssh = true }
+  assert {
+    condition     = length([for r in aws_security_group.eval.ingress : r if r.self == true && r.from_port == 22 && r.to_port == 22]) == 1
+    error_message = "With intra_group_ssh, hosts in the group may SSH to each other on port 22 only."
+  }
+}
