@@ -29,3 +29,37 @@ run "reject_world_ssh" {
   variables { allowed_ssh_cidrs = ["0.0.0.0/0"] }
   expect_failures = [var.allowed_ssh_cidrs]
 }
+
+run "bedrock_invoke_only_when_opted_in" {
+  command = apply
+  variables { bedrock_model_ids = ["anthropic.claude-sonnet-4-6"] }
+  override_data {
+    target = data.aws_caller_identity.current[0]
+    values = { account_id = "123456789012" }
+  }
+  override_data {
+    target = data.aws_iam_policy_document.bedrock_invoke[0]
+    values = { json = "{}" }
+  }
+  override_data {
+    target = data.aws_iam_policy_document.bedrock_assume[0]
+    values = { json = "{}" }
+  }
+  assert {
+    condition     = length(aws_iam_instance_profile.bedrock) == 1 && alltrue([for host in aws_instance.eval : host.iam_instance_profile == aws_iam_instance_profile.bedrock[0].name])
+    error_message = "With bedrock_model_ids set, every host gets the invoke-only profile."
+  }
+  assert {
+    condition = (
+      toset(data.aws_iam_policy_document.bedrock_invoke[0].statement[0].actions) == toset(["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]) &&
+      alltrue([for r in data.aws_iam_policy_document.bedrock_invoke[0].statement[0].resources : !strcontains(r, "*::foundation-model/*") && !endswith(r, "/*")])
+    )
+    error_message = "The Bedrock policy allows only invoke actions on the exact listed models."
+  }
+}
+
+run "reject_wildcard_model" {
+  command = plan
+  variables { bedrock_model_ids = ["anthropic.*"] }
+  expect_failures = [var.bedrock_model_ids]
+}

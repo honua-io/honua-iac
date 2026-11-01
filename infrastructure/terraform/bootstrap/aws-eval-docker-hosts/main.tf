@@ -77,7 +77,7 @@ resource "aws_instance" "eval" {
   vpc_security_group_ids      = [aws_security_group.eval.id]
   associate_public_ip_address = true
   key_name                    = aws_key_pair.eval.key_name
-  iam_instance_profile        = ""
+  iam_instance_profile        = length(var.bedrock_model_ids) > 0 ? aws_iam_instance_profile.bedrock[0].name : ""
   user_data                   = file("${path.module}/install-docker.sh")
   user_data_replace_on_change = true
   metadata_options {
@@ -91,4 +91,53 @@ resource "aws_instance" "eval" {
     tags        = local.tags
   }
   tags = merge(local.tags, { Name = "honua-ai-arc-eval-${count.index + 1}" })
+}
+
+# Opt-in, invoke-only Bedrock access for the stack running on the host (the Studio
+# assistant's server-side credentials). The model process never receives it.
+data "aws_caller_identity" "current" {
+  count = length(var.bedrock_model_ids) > 0 ? 1 : 0
+}
+
+data "aws_iam_policy_document" "bedrock_assume" {
+  count = length(var.bedrock_model_ids) > 0 ? 1 : 0
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.amazonaws.com"]
+    }
+  }
+}
+
+data "aws_iam_policy_document" "bedrock_invoke" {
+  count = length(var.bedrock_model_ids) > 0 ? 1 : 0
+  statement {
+    actions = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
+    resources = concat(
+      [for id in var.bedrock_model_ids : "arn:aws:bedrock:*::foundation-model/${id}"],
+      [for id in var.bedrock_model_ids : "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current[0].account_id}:inference-profile/us.${id}"],
+    )
+  }
+}
+
+resource "aws_iam_role" "bedrock" {
+  count              = length(var.bedrock_model_ids) > 0 ? 1 : 0
+  name_prefix        = "honua-ai-arc-eval-bedrock-"
+  assume_role_policy = data.aws_iam_policy_document.bedrock_assume[0].json
+  tags               = local.tags
+}
+
+resource "aws_iam_role_policy" "bedrock" {
+  count  = length(var.bedrock_model_ids) > 0 ? 1 : 0
+  name   = "bedrock-invoke"
+  role   = aws_iam_role.bedrock[0].id
+  policy = data.aws_iam_policy_document.bedrock_invoke[0].json
+}
+
+resource "aws_iam_instance_profile" "bedrock" {
+  count       = length(var.bedrock_model_ids) > 0 ? 1 : 0
+  name_prefix = "honua-ai-arc-eval-bedrock-"
+  role        = aws_iam_role.bedrock[0].name
+  tags        = local.tags
 }
