@@ -83,6 +83,9 @@ resource "aws_instance" "eval" {
   metadata_options {
     http_endpoint = "enabled"
     http_tokens   = "required"
+    # Containers on the Docker bridge are one hop further from IMDS; only the
+    # opt-in Bedrock profile needs them to reach it.
+    http_put_response_hop_limit = length(var.bedrock_model_ids) > 0 ? 2 : 1
   }
   root_block_device {
     encrypted   = true

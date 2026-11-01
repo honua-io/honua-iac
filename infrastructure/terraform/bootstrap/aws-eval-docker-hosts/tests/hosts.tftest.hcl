@@ -50,6 +50,10 @@ run "bedrock_invoke_only_when_opted_in" {
     error_message = "With bedrock_model_ids set, every host gets the invoke-only profile."
   }
   assert {
+    condition     = alltrue([for host in aws_instance.eval : host.metadata_options[0].http_tokens == "required" && host.metadata_options[0].http_put_response_hop_limit == 2])
+    error_message = "Opted-in hosts keep IMDSv2 required and allow one container hop."
+  }
+  assert {
     condition = (
       toset(data.aws_iam_policy_document.bedrock_invoke[0].statement[0].actions) == toset(["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]) &&
       alltrue([for r in data.aws_iam_policy_document.bedrock_invoke[0].statement[0].resources : !strcontains(r, "*::foundation-model/*") && !endswith(r, "/*")])
