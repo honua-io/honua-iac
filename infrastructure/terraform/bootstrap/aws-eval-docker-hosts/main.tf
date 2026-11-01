@@ -56,6 +56,16 @@ resource "aws_security_group" "eval" {
     protocol    = "tcp"
     cidr_blocks = sort(tolist(var.allowed_ssh_cidrs))
   }
+  dynamic "ingress" {
+    for_each = var.intra_group_ssh ? [1] : []
+    content {
+      description = "SSH between evaluation hosts (a controller host drives the others)"
+      from_port   = 22
+      to_port     = 22
+      protocol    = "tcp"
+      self        = true
+    }
+  }
   egress {
     from_port   = 0
     to_port     = 0
