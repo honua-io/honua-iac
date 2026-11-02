@@ -771,9 +771,15 @@ variable "redis_port" {
 }
 
 variable "health_check_path" {
-  description = "Path used by the ALB for health checks."
+  description = "Path used by the ALB and the container health check."
   type        = string
   default     = "/healthz/ready"
+
+  validation {
+    # Sent as the HTTP request target: it must be a path, with no whitespace or control characters.
+    condition     = can(regex("^/[^[:space:][:cntrl:]]*$", var.health_check_path))
+    error_message = "health_check_path must start with / and contain no whitespace or control characters."
+  }
 }
 
 variable "log_retention_days" {

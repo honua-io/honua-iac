@@ -245,7 +245,10 @@ locals {
     }
   }
   container_health_check = {
-    command     = ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:${var.container_port}${var.health_check_path} || exit 1"]
+    # The server image ships bash but no wget or curl (honua-server#6798). Probe /dev/tcp the way the
+    # product's own docker-compose.yml does. The path is a positional argument ($1): never shell text and
+    # never part of the printf format, so any legal URI survives. Only an exact 200 status code passes.
+    command     = ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/${var.container_port} && printf 'GET %s HTTP/1.0\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n' \"$1\" >&3 && IFS=' ' read -r proto code rest <&3 && [ \"$code\" = 200 ]", "honua-health", var.health_check_path]
     interval    = 30
     timeout     = 5
     retries     = 3
