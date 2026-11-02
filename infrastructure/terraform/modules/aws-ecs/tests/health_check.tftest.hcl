@@ -106,10 +106,31 @@ run "health_check_uses_the_image_probe_not_wget" {
       jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command[0] == "CMD" &&
       jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command[1] == "bash" &&
       strcontains(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command[3], "exec 3<>/dev/tcp/127.0.0.1/") &&
-      strcontains(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command[3], "*' 200 '*) exit 0") &&
+      strcontains(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command[3], "printf 'GET %s HTTP/1.0") &&
+      strcontains(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command[3], "p='/healthz/ready';") &&
+      strcontains(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command[3], "[ \"$code\" = 200 ]") &&
       !strcontains(join(" ", jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command), "wget") &&
       !strcontains(join(" ", jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command), "curl")
     )
     error_message = "The server health check must use the image's bash /dev/tcp probe; the image has no wget or curl."
   }
+}
+
+run "health_check_keeps_an_encoded_query_out_of_the_format" {
+  command = apply
+  variables {
+    health_check_path = "/healthz/ready?check=a%20b%2F"
+  }
+  assert {
+    condition     = strcontains(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command[3], "p='/healthz/ready?check=a%20b%2F';")
+    error_message = "An encoded query must be passed as the printf argument, unchanged."
+  }
+}
+
+run "health_check_path_rejects_shell_quotes" {
+  command = plan
+  variables {
+    health_check_path = "/healthz/ready'; true; '"
+  }
+  expect_failures = [var.health_check_path]
 }

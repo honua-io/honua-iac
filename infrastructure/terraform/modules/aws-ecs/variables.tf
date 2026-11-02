@@ -771,9 +771,15 @@ variable "redis_port" {
 }
 
 variable "health_check_path" {
-  description = "Path used by the ALB for health checks."
+  description = "Path used by the ALB and the container health check."
   type        = string
   default     = "/healthz/ready"
+
+  validation {
+    # Embedded in the container probe as a single-quoted shell literal: URL characters only.
+    condition     = can(regex("^/[A-Za-z0-9._~!$&()*+,;=:@%/?-]*$", var.health_check_path))
+    error_message = "health_check_path must start with / and contain only URL path and query characters (no quotes, spaces or backslashes)."
+  }
 }
 
 variable "log_retention_days" {
