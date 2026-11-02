@@ -776,9 +776,9 @@ variable "health_check_path" {
   default     = "/healthz/ready"
 
   validation {
-    # Embedded in the container probe as a single-quoted shell literal: URL characters only.
-    condition     = can(regex("^/[A-Za-z0-9._~!$&()*+,;=:@%/?-]*$", var.health_check_path))
-    error_message = "health_check_path must start with / and contain only URL path and query characters (no quotes, spaces or backslashes)."
+    # Sent as the HTTP request target: it must be a path, with no whitespace or control characters.
+    condition     = can(regex("^/[^[:space:][:cntrl:]]*$", var.health_check_path))
+    error_message = "health_check_path must start with / and contain no whitespace or control characters."
   }
 }
 

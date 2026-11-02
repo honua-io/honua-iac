@@ -107,7 +107,7 @@ run "health_check_uses_the_image_probe_not_wget" {
       jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command[1] == "bash" &&
       strcontains(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command[3], "exec 3<>/dev/tcp/127.0.0.1/") &&
       strcontains(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command[3], "printf 'GET %s HTTP/1.0") &&
-      strcontains(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command[3], "p='/healthz/ready';") &&
+      jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command[5] == "/healthz/ready" &&
       strcontains(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command[3], "[ \"$code\" = 200 ]") &&
       !strcontains(join(" ", jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command), "wget") &&
       !strcontains(join(" ", jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command), "curl")
@@ -122,15 +122,26 @@ run "health_check_keeps_an_encoded_query_out_of_the_format" {
     health_check_path = "/healthz/ready?check=a%20b%2F"
   }
   assert {
-    condition     = strcontains(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command[3], "p='/healthz/ready?check=a%20b%2F';")
+    condition     = jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command[5] == "/healthz/ready?check=a%20b%2F"
     error_message = "An encoded query must be passed as the printf argument, unchanged."
   }
 }
 
-run "health_check_path_rejects_shell_quotes" {
+run "health_check_accepts_an_apostrophe_path" {
+  command = apply
+  variables {
+    health_check_path = "/healthz/ready?owner=O'Reilly&x=$HOME"
+  }
+  assert {
+    condition     = jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command[5] == "/healthz/ready?owner=O'Reilly&x=$HOME"
+    error_message = "Legal URI characters, including apostrophes and $, must pass through as the positional argument unchanged."
+  }
+}
+
+run "health_check_path_rejects_whitespace" {
   command = plan
   variables {
-    health_check_path = "/healthz/ready'; true; '"
+    health_check_path = "/healthz/ready HTTP/1.1"
   }
   expect_failures = [var.health_check_path]
 }
