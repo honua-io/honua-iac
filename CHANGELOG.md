@@ -14,6 +14,19 @@ module input/output contracts may still change.
 
 ## Unreleased
 
+## v0.6.4
+
+Patch release for the 2026.1-rc.2 redo.
+
+### Added
+
+- `examples/aws` and `examples/aws-serverless`: optional `layer_publishing_materialization_timeout_seconds`
+  (number, default `null`, whole seconds 1–3600). When set, the root renders honua-server's
+  `LayerPublishing__MaterializationTimeoutSeconds` through its `additional_env`; `null` renders nothing and
+  keeps the server default (300 s). This is the documented workaround for the 2026.1-rc.2 known issue where
+  publishing a very large layer can exceed the default budget (honua-server#6917); set `600`. Modules and
+  their reserved-key validation are unchanged.
+
 ## v0.6.1
 
 ### Fixed

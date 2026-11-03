@@ -109,11 +109,7 @@ module "honua" {
   generic_oidc    = var.generic_oidc
   operator_bearer = var.operator_bearer
 
-  additional_env = {
-    HONUA_SERVE_ADMIN_UI    = "true"
-    HONUA_ADMIN_UI          = "true"
-    HostValidation__Enabled = "false"
-  }
+  additional_env = local.server_additional_env
 }
 
 # The ALB admits only in-VPC traffic unless an ingress list is set. With both
@@ -130,4 +126,19 @@ check "alb_reachable_from_outside_vpc" {
     )
     error_message = "allow_http_ingress_cidrs and allow_https_ingress_cidrs are both empty and no certificate is configured (alb_certificate_arn, or domain_name + route53_zone_id): the ALB admits only in-VPC traffic, so the service is unreachable from outside the VPC. Set allow_http_ingress_cidrs (for example your runner or office CIDR) or configure HTTPS if that is not intended."
   }
+}
+
+locals {
+  # The root's fixed server settings plus the optional layer-publish budget
+  # (layer_publishing_materialization_timeout_seconds; honua-server#6917). Null sets nothing.
+  server_additional_env = merge(
+    {
+      HONUA_SERVE_ADMIN_UI    = "true"
+      HONUA_ADMIN_UI          = "true"
+      HostValidation__Enabled = "false"
+    },
+    var.layer_publishing_materialization_timeout_seconds == null ? {} : {
+      LayerPublishing__MaterializationTimeoutSeconds = tostring(var.layer_publishing_materialization_timeout_seconds)
+    },
+  )
 }
