@@ -145,6 +145,7 @@ Studio content, and a non-admin gets HTTP 403 from routes such as
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `import_background_job_threshold_bytes` | `null` | Upload size in bytes above which honua-server runs an import as a background job instead of inline. Rendered as `Import__Limits__BackgroundJobThresholdBytes` on the API Lambda and the GP Batch job definitions (not on the control-plane event functions, which serve no uploads); `null` renders nothing and keeps the server default (100 MiB). Must be a whole number greater than 0. Adds about 57 bytes to each Lambda environment. The release harness sets `67108864` (64 MiB) on Redis-on cells so the S10 large-import fixture has a background window under the 100 MiB staging cap. |
+| `layer_publishing_materialization_timeout_seconds` | `null` | Budget, in whole seconds (1–3600), for the canonical snapshot copy a layer publish makes; rendered as `LayerPublishing__MaterializationTimeoutSeconds` through the root's `additional_env` on the server processes. `null` renders nothing and keeps honua-server's default (300 s). Adds about 50 bytes to each Lambda environment when set. **Known issue (2026.1-rc.2, honua-server#6917):** publishing a very large layer (about 300,000 features or more) can exceed the default budget and fail; set `600`. |
 
 ## Shared file storage (background imports on GP Batch)
 

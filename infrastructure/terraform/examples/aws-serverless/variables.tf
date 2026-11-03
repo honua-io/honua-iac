@@ -598,3 +598,15 @@ variable "file_storage_aws_s3_key_prefix" {
   type        = string
   default     = "honua"
 }
+
+variable "layer_publishing_materialization_timeout_seconds" {
+  description = "Optional budget, in whole seconds, for the canonical snapshot copy a layer publish makes (honua-server LayerPublishing__MaterializationTimeoutSeconds, docs/reference/configuration/environment-variables.md; the server default is 300 when unset; valid 1-3600). Known issue in 2026.1-rc.2 (honua-server#6917): publishing a very large layer (about 300,000+ features) can exceed the default 300 s budget; set 600 to raise it. Null (default) sets nothing and keeps the server default."
+  type        = number
+  nullable    = true
+  default     = null
+
+  validation {
+    condition     = var.layer_publishing_materialization_timeout_seconds == null || try(floor(var.layer_publishing_materialization_timeout_seconds) == var.layer_publishing_materialization_timeout_seconds && var.layer_publishing_materialization_timeout_seconds >= 1 && var.layer_publishing_materialization_timeout_seconds <= 3600, false)
+    error_message = "layer_publishing_materialization_timeout_seconds must be null or a whole number of seconds from 1 to 3600 (honua-server's documented range)."
+  }
+}

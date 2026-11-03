@@ -113,10 +113,7 @@ module "honua" {
 
   oidc_static_jwt = var.oidc_static_jwt
 
-  additional_env = {
-    HONUA_SERVE_ADMIN_UI = "true"
-    HONUA_ADMIN_UI       = "true"
-  }
+  additional_env = local.server_additional_env
 }
 
 output "dashboard_name" {
@@ -395,4 +392,18 @@ output "migrate_guidance" {
 output "gp_batch_prior_definitions_retained" {
   description = "Whether this stack retains prior Batch revisions; explicit cleanup is required after the rollback window."
   value       = module.honua.gp_batch_prior_definitions_retained
+}
+
+locals {
+  # The root's fixed server settings plus the optional layer-publish budget
+  # (layer_publishing_materialization_timeout_seconds; honua-server#6917). Null sets nothing.
+  server_additional_env = merge(
+    {
+      HONUA_SERVE_ADMIN_UI = "true"
+      HONUA_ADMIN_UI       = "true"
+    },
+    var.layer_publishing_materialization_timeout_seconds == null ? {} : {
+      LayerPublishing__MaterializationTimeoutSeconds = tostring(var.layer_publishing_materialization_timeout_seconds)
+    },
+  )
 }
