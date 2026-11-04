@@ -26,7 +26,7 @@ jobs:
   standing-cert-encryption-controls:
     name: Standing certification encrypted packet controls (synthetic keys)
     needs: changes
-    if: needs.changes.outputs.relevant == 'true'
+    if: ${{ !cancelled() && needs.changes.outputs.relevant != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -43,7 +43,7 @@ jobs:
   standing-cert-plan-controls:
     name: Standing certification private plan controls (offline)
     needs: changes
-    if: needs.changes.outputs.relevant == 'true'
+    if: ${{ !cancelled() && needs.changes.outputs.relevant != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -55,7 +55,7 @@ jobs:
   terraform-1-5-validate:
     name: Terraform 1.5 Floor Validate
     needs: changes
-    if: needs.changes.outputs.relevant == 'true'
+    if: ${{ !cancelled() && needs.changes.outputs.relevant != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -110,7 +110,7 @@ jobs:
   static-validate:
     name: Static Terraform Validate
     needs: changes
-    if: needs.changes.outputs.relevant == 'true'
+    if: ${{ !cancelled() && needs.changes.outputs.relevant != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
