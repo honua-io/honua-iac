@@ -2,121 +2,9 @@ name: Terraform CI
 
 on:
   pull_request:
-    paths:
-      - 'infrastructure/terraform/**'
-      - 'release/aws-cert-plan-recipient.json'
-      - 'release/aws-cert-reviewed-modules.json'
-      - 'release/aws-cert-reviewed-bootstrap.json'
-      - 'release/component-versions.json'
-      - 'scripts/run-aws-terraform-integration.sh'
-      - 'scripts/run-azure-terraform-integration.sh'
-      - 'scripts/run-aks-terraform-integration.sh'
-      - 'scripts/run-eks-terraform-integration.sh'
-      - 'scripts/run-k8s-terraform-integration.sh'
-      - 'scripts/run-terraform-drift-detection.sh'
-      - 'scripts/terraform-policy-gate.sh'
-      - 'scripts/validate-operator-contract.sh'
-      - 'scripts/test-operator-contract.sh'
-      - 'scripts/check-marketplace-paths.sh'
-      - 'scripts/check-tfvars-examples.sh'
-      - 'scripts/bootstrap-gh-vars.sh'
-      - 'scripts/check-backend-examples.sh'
-      - 'scripts/bootstrap-drift-roots.py'
-      - 'scripts/terraform-plan-report.py'
-      - '.github/workflows/bootstrap-drift-plan.yml'
-      - 'scripts/check-terraform-roots.py'
-      - 'scripts/check-terraform-tags.py'
-      - 'scripts/package-customer-dist.sh'
-      - 'scripts/new-terraform-lineage-contract.ps1'
-      - 'scripts/terraform-exact-plan.sh'
-      - 'scripts/terraform-exact-apply.sh'
-      - 'scripts/terraform-backend-identity.sh'
-      - 'scripts/lib/tf-exec-contract.sh'
-      - 'scripts/smoke-customer-dist.sh'
-      - 'scripts/capture-dr-drill-evidence.sh'
-      - 'scripts/capture-runbook-evidence.sh'
-      - 'scripts/tf-pass-secrets.sh'
-      - 'scripts/lib/tf-secret-catalog.sh'
-      - 'scripts/tf-secrets.local.example.sh'
-      - 'scripts/write-cloud-demo-smoke-env-summary.mjs'
-      - 'docs/devops/terraform-validation.md'
-      - 'docs/devops/aws-deployment-safety.md'
-      - 'docs/devops/terraform-exact-plan-contract.md'
-      - 'docs/devops/backup-restore-runbook.md'
-      - 'docs/devops/failover-drill-runbook.md'
-      - 'docs/devops/manual-cloud-runbook-validation.md'
-      - 'docs/devops/dr-evidence-template.json'
-      - 'docs/devops/cloud-runbook-evidence-template.json'
-      - 'docs/devops/examples/**'
-      - 'docs/operator-deployment.md'
-      - 'docs/operator-contract.md'
-      - 'docs/operator-state.md'
-      - '.github/workflows/cloud-demo-smoke.yml'
-      - '.github/workflows/terraform-ci.yml'
-      - '.github/workflows/terraform-manual-validation.yml'
-      - '.github/workflows/terraform-validation-infra-reaper.yml'
-      - '.github/workflows/terraform-validation-iam-sweeper.yml'
-      - '.github/workflows/release-cell-inventory-policy.yml'
-      - 'tests/workflows/**'
   push:
     branches:
       - trunk
-    paths:
-      - 'infrastructure/terraform/**'
-      - 'release/aws-cert-plan-recipient.json'
-      - 'release/aws-cert-reviewed-modules.json'
-      - 'release/aws-cert-reviewed-bootstrap.json'
-      - 'release/component-versions.json'
-      - 'scripts/run-aws-terraform-integration.sh'
-      - 'scripts/run-azure-terraform-integration.sh'
-      - 'scripts/run-aks-terraform-integration.sh'
-      - 'scripts/run-eks-terraform-integration.sh'
-      - 'scripts/run-k8s-terraform-integration.sh'
-      - 'scripts/run-terraform-drift-detection.sh'
-      - 'scripts/terraform-policy-gate.sh'
-      - 'scripts/validate-operator-contract.sh'
-      - 'scripts/test-operator-contract.sh'
-      - 'scripts/check-marketplace-paths.sh'
-      - 'scripts/check-tfvars-examples.sh'
-      - 'scripts/bootstrap-gh-vars.sh'
-      - 'scripts/check-backend-examples.sh'
-      - 'scripts/bootstrap-drift-roots.py'
-      - 'scripts/terraform-plan-report.py'
-      - '.github/workflows/bootstrap-drift-plan.yml'
-      - 'scripts/check-terraform-roots.py'
-      - 'scripts/check-terraform-tags.py'
-      - 'scripts/package-customer-dist.sh'
-      - 'scripts/new-terraform-lineage-contract.ps1'
-      - 'scripts/terraform-exact-plan.sh'
-      - 'scripts/terraform-exact-apply.sh'
-      - 'scripts/terraform-backend-identity.sh'
-      - 'scripts/lib/tf-exec-contract.sh'
-      - 'scripts/smoke-customer-dist.sh'
-      - 'scripts/capture-dr-drill-evidence.sh'
-      - 'scripts/capture-runbook-evidence.sh'
-      - 'scripts/tf-pass-secrets.sh'
-      - 'scripts/lib/tf-secret-catalog.sh'
-      - 'scripts/tf-secrets.local.example.sh'
-      - 'scripts/write-cloud-demo-smoke-env-summary.mjs'
-      - 'docs/devops/terraform-validation.md'
-      - 'docs/devops/aws-deployment-safety.md'
-      - 'docs/devops/terraform-exact-plan-contract.md'
-      - 'docs/devops/backup-restore-runbook.md'
-      - 'docs/devops/failover-drill-runbook.md'
-      - 'docs/devops/manual-cloud-runbook-validation.md'
-      - 'docs/devops/dr-evidence-template.json'
-      - 'docs/devops/cloud-runbook-evidence-template.json'
-      - 'docs/devops/examples/**'
-      - 'docs/operator-deployment.md'
-      - 'docs/operator-contract.md'
-      - 'docs/operator-state.md'
-      - '.github/workflows/cloud-demo-smoke.yml'
-      - '.github/workflows/terraform-ci.yml'
-      - '.github/workflows/terraform-manual-validation.yml'
-      - '.github/workflows/terraform-validation-infra-reaper.yml'
-      - '.github/workflows/terraform-validation-iam-sweeper.yml'
-      - '.github/workflows/release-cell-inventory-policy.yml'
-      - 'tests/workflows/**'
 
 permissions:
   contents: read
@@ -130,8 +18,15 @@ env:
   TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform.d/plugin-cache
 
 jobs:
+  changes:
+    uses: honua-io/.github/.github/workflows/relevant-changes.yml@59eaa6c5bd779ab6b66f51319f1792e36c49484e # v1.2.0
+    with:
+      patterns-file: .github/ci-paths/terraform-ci.txt
+
   standing-cert-encryption-controls:
     name: Standing certification encrypted packet controls (synthetic keys)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.relevant != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -147,6 +42,8 @@ jobs:
 
   standing-cert-plan-controls:
     name: Standing certification private plan controls (offline)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.relevant != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -157,6 +54,8 @@ jobs:
 
   terraform-1-5-validate:
     name: Terraform 1.5 Floor Validate
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.relevant != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -210,6 +109,8 @@ jobs:
 
   static-validate:
     name: Static Terraform Validate
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.relevant != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
