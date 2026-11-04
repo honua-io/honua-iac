@@ -1342,7 +1342,6 @@ variable "studio_ai_proxy_limits" {
   }
 }
 
-# ---------------------------------------------------------------------------
 # Amazon Location Service geocoding — replaces an external Nominatim provider
 # for VPCs with no NAT/internet-gateway egress (honua-server#2948). Off by
 # default. When enabled, the module provisions an Amazon Location place index,
@@ -1351,7 +1350,6 @@ variable "studio_ai_proxy_limits" {
 # reached over AWS's private network via a VPC interface endpoint
 # (com.amazonaws.<region>.geo) — see the calling example root for that
 # endpoint (regional, VPC-specific, so it is not provisioned here).
-# ---------------------------------------------------------------------------
 
 variable "enable_amazon_location_geocoding" {
   description = "Provision an Amazon Location place index and grant the Lambda role geo:SearchPlaceIndexForText / geo:SearchPlaceIndexForPosition / geo:SearchPlaceIndexForSuggestions / geo:DescribePlaceIndex on it, and route Geocoding__DefaultProvider to amazon-location (Nominatim is explicitly disabled to avoid a double network-timeout failover hazard in no-NAT VPCs). Off by default so existing deploys are unchanged. The caller must separately provision a VPC interface endpoint for com.amazonaws.<region>.geo if the Lambda has no general internet egress (see the aws-demo example's vpc-endpoints.tf for the pattern)."

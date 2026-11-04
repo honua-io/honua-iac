@@ -32,12 +32,10 @@ variable "purpose" {
   default     = "github-oidc-federation"
 }
 
-# ---------------------------------------------------------------------------
 # OIDC provider. AWS no longer requires an accurate thumbprint for the GitHub
 # OIDC provider (it validates the JWKS against a trusted root CA), but the
 # provider still requires the field, so the long-standing GitHub Actions
 # intermediate-cert thumbprint is supplied as a stable, well-known value.
-# ---------------------------------------------------------------------------
 
 variable "create_oidc_provider" {
   description = "Create the token.actions.githubusercontent.com OIDC provider. Set false if the AWS account already has one (only one provider per issuer URL is allowed per account) and pass its ARN via existing_oidc_provider_arn instead."
@@ -57,14 +55,12 @@ variable "github_oidc_thumbprints" {
   default     = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
 }
 
-# ---------------------------------------------------------------------------
 # Trust scoping. The role trust policy authorizes ONLY tokens whose `sub`
 # EXACTLY equals one of the computed subjects (StringEquals, no wildcards).
 # Default: repo:<github_owner>/<github_repository>:ref:<github_oidc_ref>, i.e.
 # the protected trunk branch of the honua-server repo. Set
 # github_oidc_environment (or github_oidc_subjects) to pin to a GitHub
 # Environment instead, e.g. repo:honua-io/honua-server:environment:cert.
-# ---------------------------------------------------------------------------
 
 variable "github_owner" {
   description = "GitHub org/owner that owns the repo allowed to assume the role."
@@ -145,11 +141,9 @@ variable "max_session_duration_seconds" {
   }
 }
 
-# ---------------------------------------------------------------------------
 # Permission scoping. The role's inline policy is scoped by Resource/Condition
 # to the honua-cert-* surface the cert workflow exercises. ARNs are derived
 # from the inputs below so the cert stack can pass the exact resources it owns.
-# ---------------------------------------------------------------------------
 
 variable "resource_name_prefix" {
   description = "The honua-cert-* naming prefix the cert resources use (name_prefix-environment). Batch/Lambda/log ARNs are scoped with this prefix wildcard."
@@ -187,10 +181,8 @@ variable "jobdef_lifecycle_name_prefix" {
   default     = ""
 }
 
-# ---------------------------------------------------------------------------
 # Optional hosted-pilot foundation bootstrap executor role
 # (honua-iac .github/workflows/hosted-pilot-bootstrap.yml). See main.tf.
-# ---------------------------------------------------------------------------
 
 variable "hosted_pilot_bootstrap_role_enabled" {
   description = "Create the OIDC role assumed by honua-iac's hosted-pilot-bootstrap.yml `bootstrap` job. Set its role_arn output as the HONUA_AWS_HOSTED_PILOT_BOOTSTRAP_ROLE_ARN repository variable."

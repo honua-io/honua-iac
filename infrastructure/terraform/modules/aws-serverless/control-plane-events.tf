@@ -125,12 +125,10 @@ locals {
   })
 }
 
-# ---------------------------------------------------------------------------
 # IAM — reconcile/backstop Lambda execution role.
 # Mirrors aws_iam_role.lambda (basic + VPC execution managed policies) and grants
 # the same Secrets Manager reads the API host needs so DI composes identically,
 # plus batch:DescribeJobs so the batch-event handler can observe job state.
-# ---------------------------------------------------------------------------
 
 resource "aws_iam_role" "control_plane_events" {
   permissions_boundary = var.permissions_boundary_arn
@@ -232,9 +230,7 @@ resource "aws_iam_role_policy" "control_plane_events_request_secret_references" 
   })
 }
 
-# ---------------------------------------------------------------------------
 # CloudWatch log groups for the reconcile/backstop Lambdas.
-# ---------------------------------------------------------------------------
 
 #checkov:skip=CKV_AWS_158: Log-group KMS integration is optional and supplied by the deployment environment.
 #checkov:skip=CKV_AWS_338: Retention period is caller-configurable; demo environments intentionally use shorter retention to manage cost.
@@ -258,11 +254,9 @@ resource "aws_cloudwatch_log_group" "control_plane_backstop" {
   tags              = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # Reconcile Lambda — the EventBridge "Batch Job State Change" target
 # (HONUA_CONTROL_PLANE_LAMBDA_HANDLER=batch-event). Same image, VPC, security
 # group, and DI env as the API Lambda so it can reach Redis + Postgres.
-# ---------------------------------------------------------------------------
 
 #checkov:skip=CKV_AWS_50: X-Ray tracing is optional and can be enabled by the deployment environment.
 #checkov:skip=CKV_AWS_116: DLQ wiring is environment-specific and not required for every deployment target.
@@ -334,11 +328,9 @@ resource "aws_lambda_function" "control_plane_reconcile" {
   tags = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # Backstop Lambda — the EventBridge Scheduler (rate(2 minutes)) target
 # (HONUA_CONTROL_PLANE_LAMBDA_HANDLER=backstop). Identical wiring to the
 # reconcile Lambda except for the handler selector.
-# ---------------------------------------------------------------------------
 
 #checkov:skip=CKV_AWS_50: X-Ray tracing is optional and can be enabled by the deployment environment.
 #checkov:skip=CKV_AWS_116: DLQ wiring is environment-specific and not required for every deployment target.
@@ -410,14 +402,12 @@ resource "aws_lambda_function" "control_plane_backstop" {
   tags = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # Scheduled-tick Lambda (Phase 3) — the EventBridge Scheduler target for the
 # PERIODIC (bucket-b) control-plane ticks
 # (HONUA_CONTROL_PLANE_LAMBDA_HANDLER=scheduled-tick). Same image, VPC, security
 # group, and DI env as the reconcile/backstop Lambdas; the tick KIND is supplied
 # per-schedule as the invocation input rather than baked into the function, so a
 # single function serves every tick kind.
-# ---------------------------------------------------------------------------
 
 #checkov:skip=CKV_AWS_158: Log-group KMS integration is optional and supplied by the deployment environment.
 #checkov:skip=CKV_AWS_338: Retention period is caller-configurable; demo environments intentionally use shorter retention to manage cost.
@@ -500,9 +490,7 @@ resource "aws_lambda_function" "control_plane_tick" {
   tags = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # EventBridge rule — Batch job state changes -> reconcile Lambda.
-# ---------------------------------------------------------------------------
 
 resource "aws_cloudwatch_event_rule" "control_plane_batch_state_change" {
   count       = local.control_plane_events_enabled ? 1 : 0
@@ -533,11 +521,9 @@ resource "aws_lambda_permission" "control_plane_events_bridge" {
   source_arn    = aws_cloudwatch_event_rule.control_plane_batch_state_change[0].arn
 }
 
-# ---------------------------------------------------------------------------
 # EventBridge Scheduler — every ~2 minutes -> backstop Lambda.
 # Scheduler targets require a role_arn; the role may only invoke the backstop
 # Lambda (least-privilege).
-# ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "control_plane_scheduler_assume" {
   count = local.control_plane_events_enabled ? 1 : 0
@@ -614,7 +600,6 @@ resource "aws_scheduler_schedule" "control_plane_backstop" {
   }
 }
 
-# ---------------------------------------------------------------------------
 # EventBridge Scheduler — PERIODIC (bucket-b) control-plane ticks (Phase 3).
 # One schedule per tick KIND, all in a single scheduler group, each invoking the
 # scheduled-tick Lambda with { "kind": "<ScheduledTickKind>" } as input. The
@@ -622,7 +607,6 @@ resource "aws_scheduler_schedule" "control_plane_backstop" {
 # IScheduledTickDispatcher. Cadences come from
 # var.control_plane_scheduled_tick_schedules (defaults mirror the in-process
 # timer intervals). Reuses the same scheduler role + image as the backstop path.
-# ---------------------------------------------------------------------------
 
 resource "aws_scheduler_schedule_group" "control_plane" {
   count = local.control_plane_events_enabled ? 1 : 0
@@ -661,7 +645,6 @@ resource "aws_scheduler_schedule" "control_plane_tick" {
   }
 }
 
-# ---------------------------------------------------------------------------
 # Asynchronous invocation settings. With reserved concurrency, an invocation
 # beyond the ceiling is throttled; Lambda keeps the asynchronous event and
 # retries it (throttle retries do not count against maximum_retry_attempts)
@@ -669,7 +652,6 @@ resource "aws_scheduler_schedule" "control_plane_tick" {
 # and idempotent, so one older than its window is dropped rather than queued
 # behind newer ones. The reconcile function keeps Lambda's defaults (6 hours,
 # 2 retries): a Batch state change is not repeated by a schedule.
-# ---------------------------------------------------------------------------
 
 resource "aws_lambda_function_event_invoke_config" "control_plane_tick" {
   count                        = local.control_plane_events_enabled ? 1 : 0

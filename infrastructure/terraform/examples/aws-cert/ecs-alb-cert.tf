@@ -65,9 +65,7 @@ locals {
   }
 }
 
-# ---------------------------------------------------------------------------
 # ECS cluster (Fargate only — no standing EC2 capacity).
-# ---------------------------------------------------------------------------
 
 resource "aws_ecs_cluster" "cert_cutover" {
   count = local.ecs_alb_enabled ? 1 : 0
@@ -92,10 +90,8 @@ resource "aws_cloudwatch_log_group" "cert_cutover" {
   tags              = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # Task execution role — ECR pull (public image needs none, but the AWS-managed
 # policy also grants CloudWatch Logs writes the awslogs driver requires).
-# ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "cert_cutover_assume" {
   count = local.ecs_alb_enabled ? 1 : 0
@@ -143,9 +139,7 @@ resource "aws_iam_role_policy" "cert_cutover_execution_secrets" {
   policy = data.aws_iam_policy_document.cert_cutover_execution_secrets[0].json
 }
 
-# ---------------------------------------------------------------------------
 # Security groups — internal ALB fronting the Fargate tasks.
-# ---------------------------------------------------------------------------
 
 resource "aws_security_group" "cert_cutover_alb" {
   #checkov:skip=CKV2_AWS_5: Attached to the internal cert ALB (aws_lb.cert_cutover).
@@ -235,9 +229,7 @@ resource "aws_security_group_rule" "cert_cutover_ecs_from_alb" {
   source_security_group_id = aws_security_group.cert_cutover_alb[0].id
 }
 
-# ---------------------------------------------------------------------------
 # Internal ALB + weighted listener across the stable/canary target groups.
-# ---------------------------------------------------------------------------
 
 resource "aws_lb" "cert_cutover" {
   #checkov:skip=CKV2_AWS_28: Internal-only cert ALB (not internet-facing); a WAF web ACL is not warranted for the control-plane certification cell.
@@ -340,9 +332,7 @@ resource "aws_lb_listener" "cert_cutover" {
   tags = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # Smallest Fargate task (0.25 vCPU / 512 MB) running the public nginx image.
-# ---------------------------------------------------------------------------
 
 resource "aws_ecs_task_definition" "cert_cutover" {
   lifecycle {
@@ -394,10 +384,8 @@ resource "aws_ecs_task_definition" "cert_cutover" {
   tags = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # One ECS service attached to BOTH target groups (dual load_balancer blocks) so
 # both always carry the same healthy tasks — the weight-shift is pure ALB.
-# ---------------------------------------------------------------------------
 
 resource "aws_ecs_service" "cert_cutover" {
   count           = local.ecs_alb_enabled ? 1 : 0

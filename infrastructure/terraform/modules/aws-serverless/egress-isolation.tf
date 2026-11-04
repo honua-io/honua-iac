@@ -64,7 +64,6 @@ data "aws_route_table" "egress_isolation_existing" {
   subnet_id = local.private_subnets[count.index]
 }
 
-# ---------------------------------------------------------------------------
 # AWS CodeArtifact — pull-through dependency cache.
 #
 # A CodeArtifact DOMAIN plus two pull-through repositories: one fronting public
@@ -76,7 +75,6 @@ data "aws_route_table" "egress_isolation_existing" {
 #     does not break a later restore).
 # Assets are served from CodeArtifact's S3 store, reached via the S3 GATEWAY
 # endpoint below.
-# ---------------------------------------------------------------------------
 
 #checkov:skip=CKV_AWS_362: SSE-S3 / AWS-managed encryption is acceptable for the dependency-cache domain; a customer-managed KMS CMK is not required for public pull-through packages.
 resource "aws_codeartifact_domain" "customcode" {
@@ -111,7 +109,6 @@ resource "aws_codeartifact_repository" "nuget" {
   tags = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # VPC endpoints for CodeArtifact + STS + S3.
 #
 # CodeArtifact needs two INTERFACE endpoints (api + repositories), STS needs an
@@ -123,7 +120,6 @@ resource "aws_codeartifact_repository" "nuget" {
 # A dedicated endpoint security group (aws_security_group.customcode_endpoints)
 # permits 443 from inside the VPC. Both phase security groups egress 443 to THIS
 # SG so the only HTTPS the tasks can reach are these endpoints.
-# ---------------------------------------------------------------------------
 
 #checkov:skip=CKV2_AWS_5: Attached to the CodeArtifact / STS interface VPC endpoints below.
 resource "aws_security_group" "customcode_endpoints" {
@@ -218,7 +214,6 @@ resource "aws_vpc_endpoint" "customcode_s3" {
   tags = merge(local.tags, { Name = "${local.egress_isolation_name}-s3" })
 }
 
-# ---------------------------------------------------------------------------
 # PHASE 1 security group — PROVISIONING (dependency restore).
 #
 # Egress posture (dependency egress LIVES HERE, and ONLY here):
@@ -232,7 +227,6 @@ resource "aws_vpc_endpoint" "customcode_s3" {
 #     (operators that restore purely from CodeArtifact leave it empty; those that
 #     need git-sourced deps set the GitHub IP ranges explicitly). This is the
 #     documented residual-risk boundary — see the docs file.
-# ---------------------------------------------------------------------------
 
 #checkov:skip=CKV2_AWS_5: Attached to the provisioning Batch job definition / compute path.
 resource "aws_security_group" "batch_provisioning" {
@@ -275,7 +269,6 @@ resource "aws_security_group" "batch_provisioning" {
   tags = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # PHASE 2 security group — EXECUTION (runs user custom code).
 #
 # Egress posture (NO dependency-registry / open-internet egress):
@@ -286,7 +279,6 @@ resource "aws_security_group" "batch_provisioning" {
 #     the provisioning job wrote; read/write job I/O).
 #   - 5432 to the VPC for the DB.
 #   NO PyPI, NO GitHub, NO 0.0.0.0/0. User code cannot reach the open internet.
-# ---------------------------------------------------------------------------
 
 #checkov:skip=CKV2_AWS_5: Attached to the execution Batch job definition / compute path.
 resource "aws_security_group" "batch_execution" {
@@ -336,14 +328,12 @@ resource "aws_security_group_rule" "rds_from_batch_execution" {
   source_security_group_id = aws_security_group.batch_execution[0].id
 }
 
-# ---------------------------------------------------------------------------
 # IAM — dependency restore only.
 #
 # The provisioning job restores packages. It must not hold the platform
 # database, admin, or master-key secrets that aws_iam_role.batch_job carries,
 # and it has no path to PostgreSQL. The execution phase is the spatial GP job
 # definition, which still uses batch_job because that phase reads the database.
-# ---------------------------------------------------------------------------
 
 resource "aws_iam_role" "egress_isolation_job" {
   count                = local.egress_isolation_enabled ? 1 : 0
@@ -418,7 +408,6 @@ resource "aws_iam_role_policy" "batch_job_codeartifact" {
   })
 }
 
-# ---------------------------------------------------------------------------
 # PROVISIONING job-definition family.
 #
 # A separate Batch job definition per size tier that runs under the PROVISIONING
@@ -436,7 +425,6 @@ resource "aws_iam_role_policy" "batch_job_codeartifact" {
 # CodeArtifact + endpoints + IAM + this provisioning job-def now, and DOCUMENT the
 # compute-environment / orchestration handoff (see the docs file). The
 # provisioning compute environment is added behind the same flag below.
-# ---------------------------------------------------------------------------
 
 resource "aws_batch_job_definition" "gp_provisioning" {
   for_each = local.egress_isolation_enabled ? local.gp_batch_tiers : {}
@@ -525,7 +513,6 @@ resource "aws_batch_job_definition" "gp_provisioning" {
   tags = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # PROVISIONING + EXECUTION compute environments (separate SGs per phase).
 #
 # Fargate one-ENI/task means SG is fixed per task, so the two phases run on two
@@ -534,7 +521,6 @@ resource "aws_batch_job_definition" "gp_provisioning" {
 # zero like the MVP CE; nothing is billed between jobs. The orchestrator routes
 # the restore job to the provisioning queue and the user-code job to the
 # execution queue.
-# ---------------------------------------------------------------------------
 
 resource "aws_batch_compute_environment" "gp_provisioning" {
   count = local.egress_isolation_enabled ? 1 : 0

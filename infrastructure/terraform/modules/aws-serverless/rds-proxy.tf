@@ -1,4 +1,3 @@
-# ---------------------------------------------------------------------------
 # Amazon RDS Proxy in front of the module-managed PostgreSQL (opt-in).
 #
 # Every warm API Lambda environment, every warm control-plane event Lambda and
@@ -74,7 +73,6 @@
 # tenant set_config calls. Those pins last only until the client disconnects;
 # the proxy's ceiling, borrow queue and idle-client reaping still bound the
 # database.
-# ---------------------------------------------------------------------------
 
 locals {
   # The proxy fronts only the module-managed instance. existing_db_connection_string
