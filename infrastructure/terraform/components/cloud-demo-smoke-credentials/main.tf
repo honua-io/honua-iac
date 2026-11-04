@@ -47,11 +47,9 @@ resource "azurerm_resource_group" "this" {
   tags     = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # Smoke identity (OIDC-federated; no client secret).
 # The scheduled GitHub Actions smoke assumes this identity via azure/login and
 # reads the demo credentials from the vault below.
-# ---------------------------------------------------------------------------
 
 resource "azurerm_user_assigned_identity" "smoke" {
   name                = "${local.name}-smoke-identity"
@@ -69,9 +67,7 @@ resource "azurerm_federated_identity_credential" "smoke" {
   subject             = var.github_oidc_subject
 }
 
-# ---------------------------------------------------------------------------
 # Key Vault — the managed secret store (REQ-002).
-# ---------------------------------------------------------------------------
 
 #checkov:skip=CKV_AZURE_189: Demo smoke credential store; runner reaches the data plane over the public endpoint gated by network ACLs (key_vault_ip_rules), not a private endpoint.
 #checkov:skip=CKV2_AZURE_32: Private endpoint not used for this demo credential vault; access is gated by network ACLs + the federated smoke identity.
@@ -124,12 +120,10 @@ resource "azurerm_key_vault_access_policy" "smoke" {
   ]
 }
 
-# ---------------------------------------------------------------------------
 # Secret SLOTS. Values are placeholders that the operator overwrites out of
 # band (az keyvault secret set ...). Terraform manages the slot + metadata, and
 # ignores subsequent value drift so a credential rotation does not show as a
 # Terraform change (rotation is operational, not a code change — see README).
-# ---------------------------------------------------------------------------
 
 # Read-only smoke credentials (always provisioned).
 resource "azurerm_key_vault_secret" "read_api_key" {

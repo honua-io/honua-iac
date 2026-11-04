@@ -59,10 +59,8 @@ resource "random_id" "bucket_suffix" {
   byte_length = 4
 }
 
-# ---------------------------------------------------------------------------
 # Cert S3 artifact bucket — GP inputs/outputs + certification evidence.
 # Private; reached only by the GP job role and the OIDC cert role.
-# ---------------------------------------------------------------------------
 
 resource "aws_s3_bucket" "cert_artifacts" {
   #checkov:skip=CKV_AWS_18: Access logging omitted for the ephemeral certification artifact bucket; not justified for a short-lived cert environment.
@@ -126,9 +124,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "cert_artifacts" {
   }
 }
 
-# ---------------------------------------------------------------------------
 # Honua serverless module — GP-over-Batch enabled (durable tiered substrate).
-# ---------------------------------------------------------------------------
 
 module "honua" {
   transcript_signing       = var.transcript_signing
@@ -236,11 +232,9 @@ module "honua" {
   tags = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # GitHub Actions -> AWS OIDC federation for the dispatched cert workflow.
 # Scoped by `sub` to the cert repo/environment; permissions scoped to the
 # honua-cert-* surface (this stack's bucket + Batch + the GP job role).
-# ---------------------------------------------------------------------------
 
 module "github_oidc" {
   source = "../../components/aws-github-oidc"
@@ -286,9 +280,7 @@ module "github_oidc" {
   tags = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # Budget guardrail — monthly cost ceiling + SNS notification.
-# ---------------------------------------------------------------------------
 
 resource "aws_sns_topic" "budget" {
   #checkov:skip=CKV_AWS_26: SNS encryption-at-rest (KMS) omitted; the topic carries only AWS Budgets cost-threshold alerts (no sensitive payload) and KMS would block the budgets.amazonaws.com publish without extra key-policy wiring.

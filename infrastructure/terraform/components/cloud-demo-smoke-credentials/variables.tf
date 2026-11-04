@@ -32,10 +32,8 @@ variable "tags" {
   default     = {}
 }
 
-# ---------------------------------------------------------------------------
 # Key Vault hardening. Defaults are fail-safe (no public network, RBAC-able);
 # the operator opens only what the runner needs (its egress IP / OIDC subject).
-# ---------------------------------------------------------------------------
 
 variable "key_vault_purge_protection_enabled" {
   description = "Enable Key Vault purge protection. Recommended true for credential stores."
@@ -73,12 +71,10 @@ variable "key_vault_ip_rules" {
   default     = []
 }
 
-# ---------------------------------------------------------------------------
 # OIDC federation for the scheduled GitHub Actions smoke.
 # The smoke logs in to Azure with azure/login@v2 (federated, NO client secret)
 # and reads the demo credentials from this vault, then exports them as the
 # HONUA_CLOUD_DEMO_* env the merged .github/workflows/cloud-demo-smoke.yml uses.
-# ---------------------------------------------------------------------------
 
 variable "github_owner" {
   description = "GitHub org/owner that runs the scheduled smoke workflow."
@@ -103,10 +99,8 @@ variable "github_oidc_subject" {
   default     = "repo:honua-io/honua-iac:ref:refs/heads/trunk"
 }
 
-# ---------------------------------------------------------------------------
 # Seeded service wiring that the smoke needs but that is NOT secret. These map
 # 1:1 onto honua-sdk-js/examples/cloud-demo-services.json globalEnv / profiles.
-# ---------------------------------------------------------------------------
 
 variable "cloud_demo_base_url" {
   description = "Public base URL of the seeded Honua Cloud demo API (HONUA_CLOUD_DEMO_BASE_URL)."

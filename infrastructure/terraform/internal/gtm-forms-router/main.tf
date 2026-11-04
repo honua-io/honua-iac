@@ -11,11 +11,9 @@ locals {
   function_name = var.name_prefix
 }
 
-# ---------------------------------------------------------------------------
 # Attio API key secret. Terraform owns the container only; the real value is
 # set out of band with `aws secretsmanager put-secret-value` and never lives
 # in state or VCS.
-# ---------------------------------------------------------------------------
 
 resource "aws_secretsmanager_secret" "attio_api_key" {
   name        = var.attio_secret_name
@@ -32,12 +30,10 @@ resource "aws_secretsmanager_secret_version" "attio_api_key_placeholder" {
   }
 }
 
-# ---------------------------------------------------------------------------
 # Loops.so API key secret. Same out-of-band pattern as the Attio key: Terraform
 # owns the container and a placeholder only; the real value is set with
 # `aws secretsmanager put-secret-value` and never lives in state or VCS. Leaving
 # the placeholder in place disables the Loops code path at runtime.
-# ---------------------------------------------------------------------------
 
 resource "aws_secretsmanager_secret" "loops_api_key" {
   name        = var.loops_secret_name
@@ -54,9 +50,7 @@ resource "aws_secretsmanager_secret_version" "loops_api_key_placeholder" {
   }
 }
 
-# ---------------------------------------------------------------------------
 # Lambda execution role
-# ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "lambda_assume" {
   statement {
@@ -99,9 +93,7 @@ resource "aws_iam_role_policy" "forms_router" {
   policy = data.aws_iam_policy_document.forms_router.json
 }
 
-# ---------------------------------------------------------------------------
 # Lambda function + URL
-# ---------------------------------------------------------------------------
 
 resource "aws_cloudwatch_log_group" "forms_router" {
   name              = "/aws/lambda/${local.function_name}"

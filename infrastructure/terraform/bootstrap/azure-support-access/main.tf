@@ -5,7 +5,6 @@ locals {
   break_glass_role_name = "${var.name_prefix} Support Break-Glass"
 }
 
-# ---------------------------------------------------------------------------
 # Observe role: read-only diagnostics across Honua runtime targets.
 #
 # Azure RBAC distinguishes management-plane "Actions" (control-plane reads on
@@ -15,7 +14,6 @@ locals {
 # diagnostics genuinely need (log query, metrics). It explicitly grants NO
 # Key Vault secret/key/certificate DataActions, so support can inspect Key
 # Vault metadata but can never read a secret value.
-# ---------------------------------------------------------------------------
 resource "azurerm_role_definition" "observe" {
   name        = local.observe_role_name
   scope       = var.scope
@@ -85,7 +83,6 @@ resource "azurerm_role_definition" "observe" {
   assignable_scopes = [var.scope]
 }
 
-# ---------------------------------------------------------------------------
 # Break-glass role: explicit, ticket-scoped remediation. Narrower than the
 # built-in Contributor / Owner roles:
 # - inherits all observe reads
@@ -102,7 +99,6 @@ resource "azurerm_role_definition" "observe" {
 # Time-bounding is delivered operationally via Entra PIM eligibility (see
 # README) rather than a standing assignment; this definition is the ceiling
 # that a PIM activation grants for the duration of an approved ticket.
-# ---------------------------------------------------------------------------
 resource "azurerm_role_definition" "break_glass" {
   name        = local.break_glass_role_name
   scope       = var.scope
@@ -208,7 +204,6 @@ resource "azurerm_role_definition" "break_glass" {
   assignable_scopes = [var.scope]
 }
 
-# ---------------------------------------------------------------------------
 # Assignments
 #
 # Observe: a standing read-only assignment is acceptable (read-only is safe and
@@ -219,7 +214,6 @@ resource "azurerm_role_definition" "break_glass" {
 # (an operational step Terraform cannot fully provision). create_break_glass_
 # assignment=true is an escape hatch for tenants without PIM and accepts a
 # standing assignment you must revoke manually after each incident.
-# ---------------------------------------------------------------------------
 resource "azurerm_role_assignment" "observe" {
   for_each = var.create_observe_assignment ? toset(var.observe_principal_object_ids) : toset([])
 

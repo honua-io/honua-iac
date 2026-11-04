@@ -40,12 +40,10 @@ locals {
   deploy_control_create_sts = local.deploy_control_endpoints_enabled && !local.egress_isolation_enabled
 }
 
-# ---------------------------------------------------------------------------
 # IAM — let the deploy backend manage this function's alias (ALWAYS).
 #
 # Scoped to THIS function (unqualified + qualified ARNs). Never Action="*";
 # least-privilege to the alias read/update calls the backend actually makes.
-# ---------------------------------------------------------------------------
 resource "aws_iam_role_policy" "lambda_deploy_control" {
   name = "${local.name}-lambda-deploy-control"
   role = aws_iam_role.lambda.id
@@ -71,9 +69,7 @@ resource "aws_iam_role_policy" "lambda_deploy_control" {
   })
 }
 
-# ---------------------------------------------------------------------------
 # Interface VPC endpoints (no-NAT only).
-# ---------------------------------------------------------------------------
 #checkov:skip=CKV2_AWS_5: Attached to the deploy-control interface VPC endpoints below.
 resource "aws_security_group" "deploy_control_endpoints" {
   count = local.deploy_control_endpoints_enabled ? 1 : 0

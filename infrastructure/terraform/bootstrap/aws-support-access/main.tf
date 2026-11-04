@@ -3,9 +3,7 @@ locals {
   break_glass_role_name = "${var.name_prefix}SupportBreakGlassRole"
 }
 
-# ---------------------------------------------------------------------------
 # Trust policies (who may assume the roles, and under what guardrails)
-# ---------------------------------------------------------------------------
 # Both roles are assumed cross-account by Honua support principals. There are
 # no IAM users and no long-lived access keys: access is always a short-lived
 # STS session gated by an ExternalId (confused-deputy guard) and, optionally,
@@ -121,12 +119,10 @@ data "aws_iam_policy_document" "break_glass_trust" {
   }
 }
 
-# ---------------------------------------------------------------------------
 # Observe role: read-only diagnostics across Honua runtime targets.
 # Every action is a Describe/Get/List style read. No mutations, and explicitly
 # no reading of secret *values* (only secrets metadata) so diagnostics cannot
 # exfiltrate credentials.
-# ---------------------------------------------------------------------------
 data "aws_iam_policy_document" "observe" {
   statement {
     sid    = "HonuaObserveReadOnly"
@@ -198,7 +194,6 @@ data "aws_iam_policy_document" "observe" {
   }
 }
 
-# ---------------------------------------------------------------------------
 # Break-glass role: explicit, short-lived remediation. Narrower than admin:
 # - no IAM/Organizations/account mutation
 # - no secret value reads or writes
@@ -207,7 +202,6 @@ data "aws_iam_policy_document" "observe" {
 #   adjust scaling, toggle networking rules, rotate tasks, manage log retention.
 # It deliberately inherits the observe permissions too so an operator does not
 # have to juggle two sessions while remediating.
-# ---------------------------------------------------------------------------
 data "aws_iam_policy_document" "break_glass" {
   source_policy_documents = [data.aws_iam_policy_document.observe.json]
 
@@ -334,11 +328,9 @@ data "aws_iam_policy_document" "break_glass" {
   }
 }
 
-# ---------------------------------------------------------------------------
 # Permissions boundary: hard ceiling that the break-glass role can never
 # exceed even if its inline policy is later widened. Denies IAM/Org/account
 # escalation and secret-value reads outright.
-# ---------------------------------------------------------------------------
 data "aws_iam_policy_document" "break_glass_boundary" {
   statement {
     sid    = "AllowScopedOperations"
@@ -416,9 +408,7 @@ resource "aws_iam_policy" "break_glass_boundary" {
   tags        = var.tags
 }
 
-# ---------------------------------------------------------------------------
 # Roles
-# ---------------------------------------------------------------------------
 resource "aws_iam_role" "observe" {
   name                 = local.observe_role_name
   description          = "Read-only Honua support diagnostics role (cross-account, ExternalId-gated)."

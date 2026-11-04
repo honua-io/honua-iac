@@ -85,7 +85,6 @@ locals {
   }
 }
 
-# ---------------------------------------------------------------------------
 # The MAC key.
 #
 # The two guards below are lifecycle preconditions, not `check` blocks. This
@@ -93,7 +92,6 @@ locals {
 # assertion is a WARNING: the plan still succeeds and the apply still runs. The
 # properties asserted here are the security property the key exists to create,
 # so they have to be a hard stop.
-# ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "approval_mac_key" {
   count = local.approval_mac_enabled ? 1 : 0
@@ -212,9 +210,7 @@ resource "aws_kms_alias" "approval_mac" {
   target_key_id = aws_kms_key.approval_mac[0].key_id
 }
 
-# ---------------------------------------------------------------------------
 # The two identity policies. One action each, scoped to this one key.
-# ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "approval_mac_generate" {
   count = local.approval_mac_enabled ? 1 : 0

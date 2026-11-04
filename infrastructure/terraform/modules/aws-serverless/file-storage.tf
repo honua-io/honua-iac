@@ -1,4 +1,3 @@
-# ---------------------------------------------------------------------------
 # Shared file storage on S3 (file_storage_provider = "AwsS3").
 #
 # honua-server dispatches a background file import to the durable runner, which
@@ -24,7 +23,6 @@
 # only and never opens FileStorage, so it gets neither the environment nor the
 # grant; the custom-code job definitions (customcode-batch.tf) keep their empty
 # environment by design.
-# ---------------------------------------------------------------------------
 
 locals {
   file_storage_bucket_arn = "arn:${split(":", data.aws_caller_identity.current.arn)[1]}:s3:::${var.file_storage_aws_s3_bucket_name}"

@@ -106,11 +106,9 @@ locals {
 
 }
 
-# ---------------------------------------------------------------------------
 # IAM — custom-code Fargate task EXECUTION role (pulls the image, writes logs).
 # Separate from the GP execution role. Same managed policy surface (ECR pull +
 # CloudWatch Logs) — this role is the infra launcher, not user-code trust.
-# ---------------------------------------------------------------------------
 
 resource "aws_iam_role" "customcode_execution" {
   permissions_boundary = var.permissions_boundary_arn
@@ -126,12 +124,10 @@ resource "aws_iam_role_policy_attachment" "customcode_execution_ecs" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-# ---------------------------------------------------------------------------
 # Custom-code tasks have NO task role or cloud credentials. Their only data/output
 # authority is a job/attempt-bound Honua callback token. The provider execution role
 # above is used by Fargate for image pull/logs and is never exposed to user code.
 # Fargate is required: an EC2 instance metadata role would reintroduce ambient IAM.
-# ---------------------------------------------------------------------------
 
 # Security group — CONSTRAINED egress allowlist (NOT open 0.0.0.0/0).
 # Untrusted user code reaches ONLY the operator-supplied destination allowlist:
@@ -140,7 +136,6 @@ resource "aws_iam_role_policy_attachment" "customcode_execution_ecs" {
 # group. Full two-phase egress isolation (deps-on / run-off) is a Beta hardening
 # (Phase 3); the SCOPED HONUA_JOB_TOKEN is the primary T1/T2 boundary, this
 # allowlist is defense-in-depth.
-# ---------------------------------------------------------------------------
 
 #checkov:skip=CKV2_AWS_5: Security group is attached to Batch Fargate tasks via the custom-code compute environment.
 resource "aws_security_group" "customcode_batch" {
@@ -186,9 +181,7 @@ resource "aws_security_group" "customcode_batch" {
   tags = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # CloudWatch log group for custom-code job containers (separate stream).
-# ---------------------------------------------------------------------------
 
 #checkov:skip=CKV_AWS_158: Log-group KMS integration is optional and supplied by the deployment environment.
 #checkov:skip=CKV_AWS_338: Retention period is caller-configurable; demo environments intentionally use shorter retention to manage cost.
@@ -201,12 +194,10 @@ resource "aws_cloudwatch_log_group" "customcode_batch" {
   tags              = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # Batch compute environment — Fargate Spot, scale-to-zero. Reuses the GP Batch
 # SERVICE role (orchestration only; carries no user-code trust) but its OWN
 # constrained security group and a SEPARATE compute environment + queue so
 # custom-code never shares a queue with trusted GP jobs.
-# ---------------------------------------------------------------------------
 
 resource "aws_batch_compute_environment" "customcode" {
   count = local.customcode_batch_enabled ? 1 : 0
@@ -230,9 +221,7 @@ resource "aws_batch_compute_environment" "customcode" {
   }
 }
 
-# ---------------------------------------------------------------------------
 # Batch job queue bound to the custom-code Fargate Spot compute environment.
-# ---------------------------------------------------------------------------
 
 resource "aws_batch_job_queue" "customcode" {
   count = local.customcode_batch_enabled ? 1 : 0
@@ -249,7 +238,6 @@ resource "aws_batch_job_queue" "customcode" {
   tags = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # Job-definition POOL for the custom-code (untrusted) container — one job-def
 # per {runtime}.{tier} (customcode-python-{s,m,l,xl}, customcode-dotnet-{s,m,l,xl}).
 #
@@ -261,7 +249,6 @@ resource "aws_batch_job_queue" "customcode" {
 # ...) are applied by the server at SubmitJob time as container overrides — NONE
 # of which are templated here. The security posture is identical across runtimes
 # because it is sourced from the SAME credential-free Fargate/SG/log configuration, not redefined per family.
-# ---------------------------------------------------------------------------
 
 resource "aws_batch_job_definition" "customcode" {
   lifecycle {
@@ -334,11 +321,9 @@ resource "aws_batch_job_definition" "customcode" {
   tags = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # IAM — allow the Lambda (server) role to drive custom-code Batch jobs, scoped
 # to the custom-code queue + job definitions ONLY. Mirrors the GP submit policy
 # but on the separate custom-code queue.
-# ---------------------------------------------------------------------------
 
 resource "aws_iam_role_policy" "lambda_customcode_submit" {
   count = local.customcode_batch_enabled ? 1 : 0
@@ -375,12 +360,10 @@ resource "aws_iam_role_policy" "lambda_customcode_submit" {
   })
 }
 
-# ---------------------------------------------------------------------------
 # Dedicated worker-customcode-python ECR repository (optional). Mirrors the
 # worker-gdal repo in batch.tf: scan-on-push, KMS (AWS-managed key), an
 # image-count lifecycle cap, a stable name so an operator can pre-create + push
 # before flipping the flag on.
-# ---------------------------------------------------------------------------
 
 resource "aws_ecr_repository" "worker_customcode" {
   count                = var.create_worker_customcode_repo ? 1 : 0
@@ -425,13 +408,11 @@ resource "aws_ecr_lifecycle_policy" "worker_customcode" {
   })
 }
 
-# ---------------------------------------------------------------------------
 # Dedicated worker-customcode-dotnet ECR repository (optional). The .NET sibling
 # of the worker-customcode-python repo above (honua-server #2196's
 # worker-customcode-dotnet image). Same posture: scan-on-push, KMS (AWS-managed
 # key), an image-count lifecycle cap, a stable name so an operator can
 # pre-create + push before flipping the flag on.
-# ---------------------------------------------------------------------------
 
 resource "aws_ecr_repository" "worker_customcode_dotnet" {
   count                = var.create_worker_customcode_dotnet_repo ? 1 : 0

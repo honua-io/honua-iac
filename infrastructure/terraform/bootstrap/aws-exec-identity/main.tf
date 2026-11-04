@@ -233,10 +233,8 @@ locals {
   }
 }
 
-# ---------------------------------------------------------------------------
 # Trust policy. Web identity, already-federated principals, or both. Never a
 # long-lived IAM user.
-# ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "deployment_trust" {
   dynamic "statement" {
@@ -330,11 +328,9 @@ resource "aws_iam_role" "deployment" {
   }
 }
 
-# ---------------------------------------------------------------------------
 # Deployment permissions. Region-scoped allows, plus the three denials that keep
 # this role inside its lane: no state substrate, no long-lived credentials, no
 # passing the privileged roles.
-# ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "deployment" {
   #checkov:skip=CKV_AWS_356: Several provisioning APIs (ec2/elb/ecs describe, tag) have no resource-level scoping; the region condition plus explicit denials bound them.

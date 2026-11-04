@@ -31,14 +31,12 @@ locals {
   worker_etl_repo_name = "${local.name}-worker-etl"
 }
 
-# ---------------------------------------------------------------------------
 # Dedicated worker-etl ECR repository (optional).
 # Gives the heavyweight GDAL/PDAL/PROJ ETL worker image its own lifecycle,
 # decoupled from the Honua Lambda image and the worker-gdal image. Off by
 # default (create_worker_etl_repo = false). Scan-on-push is enabled; encryption
 # uses KMS with the AWS-managed ECR key (no external CMK dependency); a lifecycle
 # policy caps retained images.
-# ---------------------------------------------------------------------------
 
 resource "aws_ecr_repository" "worker_etl" {
   count                = var.create_worker_etl_repo ? 1 : 0

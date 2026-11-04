@@ -186,7 +186,6 @@ resource "aws_s3_bucket_policy" "state_transport" {
   }
 }
 
-# ---------------------------------------------------------------------------
 # Locking primitive.
 #
 # The certified default is S3 native locking (`use_lockfile = true`), which
@@ -194,7 +193,6 @@ resource "aws_s3_bucket_policy" "state_transport" {
 # versioned, public-access-blocked bucket as the state it guards. DynamoDB
 # remains available for operators pinned below 1.10, and `both` exists only to
 # make the migration between them a two-step, no-downtime change.
-# ---------------------------------------------------------------------------
 
 resource "aws_dynamodb_table" "lock" {
   count = local.create_lock_table ? 1 : 0
@@ -223,7 +221,6 @@ resource "aws_dynamodb_table" "lock" {
   }
 }
 
-# ---------------------------------------------------------------------------
 # Least-privilege backend access policy.
 #
 # This is the ONLY grant a Terraform executor needs against the state
@@ -233,7 +230,6 @@ resource "aws_dynamodb_table" "lock" {
 # administration, no access to other keys, and no ability to disable versioning,
 # encryption, or the public-access block. Attach it to the deployment identity's
 # BACKEND role -- never to the infrastructure deployment role.
-# ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "backend_access" {
   count = var.create_backend_access_policy ? 1 : 0

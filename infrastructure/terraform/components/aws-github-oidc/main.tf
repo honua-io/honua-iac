@@ -58,9 +58,7 @@ check "existing_provider_when_not_creating" {
   }
 }
 
-# ---------------------------------------------------------------------------
 # OIDC provider for GitHub Actions.
-# ---------------------------------------------------------------------------
 
 resource "aws_iam_openid_connect_provider" "github" {
   count = var.create_oidc_provider ? 1 : 0
@@ -72,11 +70,9 @@ resource "aws_iam_openid_connect_provider" "github" {
   tags = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # Assume-role trust policy — web identity federation scoped to the OIDC
 # provider, the sts.amazonaws.com audience, and the exact repo/ref or
 # repo/environment `sub` values.
-# ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "trust" {
   statement {
@@ -109,9 +105,7 @@ resource "aws_iam_role" "github_actions" {
   tags                 = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # Permission policy — least-privilege, scoped to the honua-cert-* surface.
-# ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "permissions" {
   # Submit GP Batch jobs against the STANDING pool. SubmitJob requires BOTH the
@@ -351,7 +345,6 @@ moved {
   to   = aws_iam_role_policy.permissions[0]
 }
 
-# ---------------------------------------------------------------------------
 # Optional: honua-iac hosted-pilot foundation bootstrap executor
 # (.github/workflows/hosted-pilot-bootstrap.yml, job `bootstrap`). Replaces the
 # static AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY repository secrets with a
@@ -365,7 +358,6 @@ moved {
 #
 # This component does not invent the executor's permissions: the operator
 # attaches the reviewed policy the static-key principal held today.
-# ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "hosted_pilot_bootstrap_trust" {
   count = var.hosted_pilot_bootstrap_role_enabled ? 1 : 0

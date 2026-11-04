@@ -61,9 +61,7 @@ locals {
   worker_gdal_repo_name = "${local.name}-worker-gdal"
 }
 
-# ---------------------------------------------------------------------------
 # IAM — Batch service role (orchestrates the compute environment)
-# ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "batch_service_assume" {
   count = local.gp_batch_enabled ? 1 : 0
@@ -90,9 +88,7 @@ resource "aws_iam_role_policy_attachment" "batch_service" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole"
 }
 
-# ---------------------------------------------------------------------------
 # IAM — Fargate task execution role (pulls the image, writes logs)
-# ---------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "batch_execution_assume" {
   count = local.gp_batch_enabled ? 1 : 0
@@ -122,11 +118,9 @@ resource "aws_iam_role_policy_attachment" "batch_execution_ecs" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-# ---------------------------------------------------------------------------
 # IAM — Job (task) role: the running GP container's own permissions.
 # Mirrors how the Lambda reaches the DB (Secrets Manager connection string)
 # and, when FileStorage is on S3, the data bucket. Scoped least-privilege.
-# ---------------------------------------------------------------------------
 
 locals {
   # An allowlisted env:NAME reference resolves from the process environment, and
@@ -229,11 +223,9 @@ resource "aws_iam_role_policy" "batch_job_s3" {
   })
 }
 
-# ---------------------------------------------------------------------------
 # Security group — egress only (DB + Redis + HTTPS for ECR/Secrets/S3).
 # The GP container needs the same DB and Redis reach as the Lambda; ingress to
 # RDS is granted below, ingress to module-managed Redis on aws_security_group.redis.
-# ---------------------------------------------------------------------------
 
 #checkov:skip=CKV2_AWS_5: Security group is attached to Batch Fargate tasks via the compute environment.
 resource "aws_security_group" "batch" {
@@ -298,9 +290,7 @@ resource "aws_security_group_rule" "rds_from_batch" {
   source_security_group_id = aws_security_group.batch[0].id
 }
 
-# ---------------------------------------------------------------------------
 # CloudWatch log group for GP job containers.
-# ---------------------------------------------------------------------------
 
 #checkov:skip=CKV_AWS_158: Log-group KMS integration is optional and supplied by the deployment environment.
 #checkov:skip=CKV_AWS_338: Retention period is caller-configurable; demo environments intentionally use shorter retention to manage cost.
@@ -313,9 +303,7 @@ resource "aws_cloudwatch_log_group" "batch" {
   tags              = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # Batch compute environment — Fargate Spot, scale-to-zero.
-# ---------------------------------------------------------------------------
 
 resource "aws_batch_compute_environment" "gp" {
   count = local.gp_batch_enabled ? 1 : 0
@@ -348,9 +336,7 @@ resource "aws_batch_compute_environment" "gp" {
   }
 }
 
-# ---------------------------------------------------------------------------
 # Batch job queue bound to the Fargate Spot compute environment.
-# ---------------------------------------------------------------------------
 
 resource "aws_batch_job_queue" "gp" {
   count = local.gp_batch_enabled ? 1 : 0
@@ -367,7 +353,6 @@ resource "aws_batch_job_queue" "gp" {
   tags = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # Job-definition size POOL for the geoprocessing container.
 #
 # A fixed pool of job definitions (gp-s / gp-m / gp-l / gp-xl) that differ ONLY
@@ -378,7 +363,6 @@ resource "aws_batch_job_queue" "gp" {
 # submit overrides. for_each over local.gp_batch_tiers mints the pool from one
 # block. The server selects a tier per job by its disk floor and submits against
 # that tier's job-definition ARN (see the gp_job_definition_arns output).
-# ---------------------------------------------------------------------------
 
 resource "aws_batch_job_definition" "gp" {
   for_each = local.gp_batch_tiers
@@ -532,11 +516,9 @@ resource "aws_batch_job_definition" "gp" {
   tags = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # IAM — allow the Lambda execution role to drive Batch jobs (least-privilege,
 # scoped to this queue + job definition). The server's AwsBatchComputeBackend
 # calls SubmitJob / DescribeJobs / TerminateJob.
-# ---------------------------------------------------------------------------
 
 resource "aws_iam_role_policy" "lambda_batch_submit" {
   count = local.gp_batch_enabled ? 1 : 0
@@ -577,7 +559,6 @@ resource "aws_iam_role_policy" "lambda_batch_submit" {
   })
 }
 
-# ---------------------------------------------------------------------------
 # Dedicated worker-gdal ECR repository (optional).
 # Gives the GP/GDAL worker image its own lifecycle, decoupled from the Honua
 # Lambda image. Off by default (create_worker_gdal_repo = false) because GP
@@ -585,7 +566,6 @@ resource "aws_iam_role_policy" "lambda_batch_submit" {
 # is stable regardless of the flag so an operator can pre-create + push, then
 # flip the flag on. Scan-on-push is enabled; encryption uses AES256 (no
 # external KMS key dependency); a lifecycle policy caps retained images.
-# ---------------------------------------------------------------------------
 
 resource "aws_ecr_repository" "worker_gdal" {
   count                = var.create_worker_gdal_repo ? 1 : 0

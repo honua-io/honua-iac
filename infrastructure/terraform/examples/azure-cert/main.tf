@@ -35,12 +35,10 @@ locals {
   }, var.tags)
 }
 
-# ---------------------------------------------------------------------------
 # Azure GP substrate — SINGLE-POOL scale-to-zero (durable cert substrate).
 # The honua-devops gp runtime adapter consumes the exported endpoints/ids as
 # opaque config — it does NOT re-apply terraform per job. Only substrate-level
 # inputs (VM size, ACR, node priority) are forwarded.
-# ---------------------------------------------------------------------------
 
 module "azure_gp" {
   source = "../../modules/azure-gp"
@@ -61,13 +59,11 @@ module "azure_gp" {
   tags = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # GitHub Actions -> Azure OIDC federation for the dispatched cert workflow.
 # Copied from components/cloud-demo-smoke-credentials: a user-assigned identity
 # + a federated credential (issuer token.actions.githubusercontent.com, audience
 # api://AzureADTokenExchange) scoped by `sub` to the cert repo/environment. The
 # workflow assumes it via azure/login@v2 — no client secret committed anywhere.
-# ---------------------------------------------------------------------------
 
 resource "azurerm_user_assigned_identity" "cert" {
   name                = "${local.name}-cert-identity"
@@ -85,10 +81,8 @@ resource "azurerm_federated_identity_credential" "cert" {
   subject             = var.github_oidc_subject
 }
 
-# ---------------------------------------------------------------------------
 # Role assignments the cert identity needs to drive the GP substrate.
 # Least-privilege, scoped to this stack's resources (NOT subscription-wide).
-# ---------------------------------------------------------------------------
 
 # Submit / observe / terminate Batch jobs on the cert Batch account.
 resource "azurerm_role_assignment" "cert_batch_contributor" {

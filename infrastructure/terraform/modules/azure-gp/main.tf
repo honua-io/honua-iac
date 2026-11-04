@@ -55,7 +55,6 @@ locals {
   # The single GP pool id (the server reads this as azure.batch.pool_id).
   gp_pool_id = "${local.name}-gp"
 
-  # ---------------------------------------------------------------------------
   # Autoscale formula — scale-to-zero on idle, scale-up on pending tasks.
   #
   # Azure Batch evaluates this on gp_pool_autoscale_evaluation_interval. It is the
@@ -73,7 +72,6 @@ locals {
   #     is reclaimed on scale-down (no mid-task node kill from autoscale).
   # The target is assigned to either the low-priority or the dedicated node knob
   # depending on gp_pool_use_low_priority; the other knob is pinned to 0.
-  # ---------------------------------------------------------------------------
   autoscale_target_var = var.gp_pool_use_low_priority ? "$TargetLowPriorityNodes" : "$TargetDedicatedNodes"
   autoscale_zero_var   = var.gp_pool_use_low_priority ? "$TargetDedicatedNodes" : "$TargetLowPriorityNodes"
 
@@ -111,11 +109,9 @@ resource "azurerm_resource_group" "this" {
   tags     = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # Task identity (the IAM job-role equivalent). The pool runs under this
 # user-assigned identity; tasks inherit it for ACR pull, blob writes, and the
 # optional Key Vault read.
-# ---------------------------------------------------------------------------
 
 resource "azurerm_user_assigned_identity" "gp_task" {
   count               = local.count_flag
@@ -125,12 +121,10 @@ resource "azurerm_user_assigned_identity" "gp_task" {
   tags                = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # Worker-gdal Azure Container Registry (the ECR equivalent, optional).
 # Off by default (create_worker_gdal_acr = false). Name is deterministic so an
 # operator can pre-create + push, then flip the flag on. Admin user disabled —
 # the pool authenticates via its managed identity (AcrPull below).
-# ---------------------------------------------------------------------------
 
 #checkov:skip=CKV_AZURE_139: Public network access stays enabled so scale-to-zero Batch nodes (no fixed egress IP / private endpoint in the MVP) can pull the worker image; pulls are gated by the pool identity's AcrPull grant (admin user disabled).
 #checkov:skip=CKV_AZURE_163: Vulnerability scanning (Defender for Containers) is a subscription-level capability operators enable separately, not a registry resource attribute.
@@ -169,11 +163,9 @@ resource "azurerm_role_assignment" "gp_task_acr_pull" {
   principal_id         = azurerm_user_assigned_identity.gp_task[0].principal_id
 }
 
-# ---------------------------------------------------------------------------
 # Storage account + blob container for GP task output staging. The server
 # already uploads task output here; the container URL is surfaced as
 # azure.storage.output_container_url.
-# ---------------------------------------------------------------------------
 
 #checkov:skip=CKV_AZURE_43: False positive — the account name is computed via substr(replace(lower(...))) to enforce the 3-24 lowercase-alphanumeric rule, which checkov's static regex cannot evaluate; the rule is satisfied at apply time.
 #checkov:skip=CKV_AZURE_33: Queue logging is not required for the GP output blob store (no queues used); operators can layer it on.
@@ -244,12 +236,10 @@ resource "azurerm_role_assignment" "gp_task_kv_read" {
   principal_id         = azurerm_user_assigned_identity.gp_task[0].principal_id
 }
 
-# ---------------------------------------------------------------------------
 # Batch account — the control surface. Its account_endpoint is the data-plane
 # URL the server reads as azure.batch.account_url. Pool-allocation in the Batch
 # service (default) so the account does not pin a subscription quota; the pool
 # autoscales to zero.
-# ---------------------------------------------------------------------------
 
 #checkov:skip=CKV_AZURE_76: Customer-managed-key (Key Vault) encryption is omitted for the cost-default cert/demo substrate; the Batch account holds no durable sensitive data (per-job task params are runtime SubmitTask inputs, output staging is the separate AAD-RBAC blob store) and uses Microsoft-managed encryption at rest. CMK requires a dedicated Key Vault + key + identity wiring an operator can layer on for a hardened deploy.
 resource "azurerm_batch_account" "gp" {
@@ -262,14 +252,12 @@ resource "azurerm_batch_account" "gp" {
   tags                 = local.tags
 }
 
-# ---------------------------------------------------------------------------
 # The single GP pool — container-capable, autoscaling scale-to-zero.
 #
 # target_dedicated_nodes / target_low_priority_nodes are NOT set because
 # auto_scale owns the node targets (terraform fixing them conflicts with
 # autoscale). The container_configuration + node_agent_sku_id make this a
 # container host; the start_task logs the node into ACR via the pool identity.
-# ---------------------------------------------------------------------------
 
 resource "azurerm_batch_pool" "gp" {
   count               = local.count_flag
