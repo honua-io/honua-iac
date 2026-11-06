@@ -1,0 +1,19 @@
+{
+  "roots": [
+    ".gitattributes",
+    ".github/",
+    ".gitignore",
+    ".trivyignore.yaml",
+    "AGENTS.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md",
+    "certification/",
+    "docs/",
+    "infrastructure/",
+    "release/",
+    "scripts/",
+    "tests/"
+  ],
+  "gate_inputs": {}
+}
