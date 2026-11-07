@@ -8,7 +8,7 @@
       "vars": { "opus_5_5_tokens_per_minute": 0, "sonnet_5_5_tokens_per_minute": 0 }
     },
     "aws-demo-deploy": {
-      "applied": true,
+      "applied": false,
       "state_key": "bootstrap/aws-demo-deploy/terraform.tfstate",
       "vars": {
         "oidc_provider_arn": "arn:aws:iam::{account_id}:oidc-provider/token.actions.githubusercontent.com",
