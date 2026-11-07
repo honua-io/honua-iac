@@ -606,7 +606,7 @@ provider_lock_digest() {
 # --- one-time claim ----------------------------------------------------------
 #
 # One plan, one lock holder, one apply. The claim directory is created with
-# mkdir (atomic) so a second concurrent executor loses the race deterministically
+# an exclusive filesystem call so a second concurrent executor loses the race
 # instead of both entering apply. A completed claim leaves a receipt marker so a
 # replayed plan is refused rather than re-applied.
 
@@ -620,7 +620,7 @@ claim_acquire() {
   local claim_dir="$1"
   local reclaim_after="${2:-0}"
 
-  if mkdir "$claim_dir" 2>/dev/null; then
+  if python3 -c 'import os, sys; os.mkdir(sys.argv[1])' "$claim_dir" 2>/dev/null; then
     printf '%s\n' "$(utc_now)" >"$claim_dir/acquired"
     printf '%s\n' "$$" >"$claim_dir/executor_pid"
     printf '%s\n' "${HONUA_IAC_EXECUTOR_ID:-host-$(hostname)-pid-$$}" >"$claim_dir/executor_id"
