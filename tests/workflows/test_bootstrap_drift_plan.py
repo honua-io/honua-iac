@@ -76,6 +76,95 @@ class NeverGreenWhileSkipped(unittest.TestCase):
         self.assertNotIn('cat "$RUNNER_TEMP/plan.txt"', plan)
 
 
+
+FAKE_AWS = r"""#!/bin/bash
+case "$1 $2" in
+  "s3api head-object")
+    case "$FAKE_HEAD" in
+      found) exit 0 ;;
+      missing) echo 'An error occurred (404) when calling the HeadObject operation: Not Found' >&2; exit 254 ;;
+      *) echo 'An error occurred (403) when calling the HeadObject operation: Forbidden' >&2; exit 254 ;;
+    esac ;;
+  "s3 cp")
+    case "$FAKE_GET" in
+      empty) echo '{"version": 4, "resources": []}' ;;
+      populated) echo '{"version": 4, "resources": [{"type": "aws_instance"}]}' ;;
+      invalid) echo 'not json' ;;
+      empty-then-fail) echo '{"version": 4, "resources": []}'; exit 1 ;;
+      *) echo 'download failed: AccessDenied' >&2; exit 1 ;;
+    esac ;;
+esac
+"""
+
+MISSING_JQ = "#!/bin/bash\necho 'jq: command not found' >&2\nexit 127\n"
+
+
+class NotAppliedRootState(unittest.TestCase):
+    """A not-applied root is clean only with no state object or a state object holding no resources."""
+
+    def classify(self, head, get='empty', jq_missing=False):
+        with tempfile.TemporaryDirectory() as work:
+            work = Path(work)
+            bin_dir = work / 'bin'
+            bin_dir.mkdir()
+            (bin_dir / 'aws').write_text(FAKE_AWS)
+            (bin_dir / 'aws').chmod(0o755)
+            if jq_missing:
+                (bin_dir / 'jq').write_text(MISSING_JQ)
+                (bin_dir / 'jq').chmod(0o755)
+            (work / 'scripts').symlink_to(ROOT / 'scripts')
+            env = {
+                'PATH': f"{bin_dir}:{os.environ['PATH']}",
+                'ROOT': 'aws-eval-docker-hosts',
+                'STATE_BUCKET': 'state-bucket',
+                'FAKE_HEAD': head,
+                'FAKE_GET': get,
+                'GITHUB_SERVER_URL': 'https://github.com',
+                'GITHUB_REPOSITORY': 'honua-io/honua-iac',
+                'GITHUB_RUN_ID': '1',
+            }
+            for name in ('Start the report', 'Never-applied root has no state'):
+                result = subprocess.run(['bash', '-c', step('plan', name)['run']], env=env, cwd=work,
+                                        capture_output=True, text=True)
+                if result.returncode != 0:
+                    break
+            status = (work / 'drift-report' / 'aws-eval-docker-hosts.status').read_text().strip()
+            return result.returncode, status
+
+    def test_no_state_object_is_clean(self):
+        self.assertEqual(self.classify('missing'), (0, 'clean'))
+
+    def test_state_without_resources_is_clean(self):
+        self.assertEqual(self.classify('found', 'empty'), (0, 'clean'))
+
+    def test_state_with_resources_is_drift(self):
+        self.assertEqual(self.classify('found', 'populated'), (1, 'drift'))
+
+    def test_unreadable_state_metadata_is_an_error(self):
+        code, status = self.classify('denied')
+        self.assertNotEqual(code, 0)
+        self.assertEqual(status, 'error')
+
+    def test_state_that_cannot_be_downloaded_is_an_error(self):
+        code, status = self.classify('found', 'denied')
+        self.assertNotEqual(code, 0)
+        self.assertEqual(status, 'error')
+
+    def test_failed_download_is_an_error_even_when_it_printed_an_empty_state(self):
+        code, status = self.classify('found', 'empty-then-fail')
+        self.assertNotEqual(code, 0)
+        self.assertEqual(status, 'error')
+
+    def test_state_that_is_not_json_is_an_error(self):
+        code, status = self.classify('found', 'invalid')
+        self.assertNotEqual(code, 0)
+        self.assertEqual(status, 'error')
+
+    def test_missing_jq_is_an_error(self):
+        code, status = self.classify('found', 'empty', jq_missing=True)
+        self.assertNotEqual(code, 0)
+        self.assertEqual(status, 'error')
+
 class RootCoverage(unittest.TestCase):
     def test_every_bootstrap_root_is_listed(self):
         self.assertEqual(roots.problems(roots.load_manifest()), [])

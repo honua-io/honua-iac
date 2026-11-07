@@ -241,7 +241,7 @@ data "aws_iam_policy_document" "floor" {
 # keeps the blanket deny and grants no restore.
 resource "aws_iam_policy" "boundary" {
   name        = "${var.name}-boundary"
-  description = "Ceiling for the update/rollback controller role: ECS/ALB rollout, Lambda alias switch, CloudWatch reads, and prefix-scoped restore."
+  description = "Ceiling for the update/rollback controller role: ECS/ALB rollout, Lambda alias switch, CloudWatch reads."
   policy      = data.aws_iam_policy_document.boundary.json
   tags = {
     Owner     = "release-standing"
