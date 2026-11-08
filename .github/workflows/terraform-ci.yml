@@ -180,6 +180,7 @@ jobs:
             "infrastructure/terraform/bootstrap/aws-tfstate"
             "infrastructure/terraform/bootstrap/aws-terraform-oidc"
             "infrastructure/terraform/bootstrap/aws-eval-docker-hosts"
+            "infrastructure/terraform/bootstrap/aws-build-host"
             "infrastructure/terraform/bootstrap/aws-release-cells"
             "infrastructure/terraform/bootstrap/aws-validation-reaper"
             "infrastructure/terraform/bootstrap/aws-drift-plan"

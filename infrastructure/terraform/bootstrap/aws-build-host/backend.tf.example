@@ -1,0 +1,11 @@
+# Remote state for the lane build host. Copy to backend.tf (gitignored) and replace the
+# bucket placeholder with the account's state bucket from bootstrap/aws-tfstate.
+terraform {
+  backend "s3" {
+    bucket       = "REPLACE_WITH_STATE_BUCKET_NAME"
+    key          = "bootstrap/aws-build-host/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
+  }
+}
