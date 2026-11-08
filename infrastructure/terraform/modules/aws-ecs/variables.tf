@@ -787,7 +787,7 @@ variable "health_check_command" {
 }
 
 variable "health_check_port" {
-  description = "HONUA_HEALTH_PORT for the native probe. Null uses container_port when a health check command is supplied."
+  description = "HONUA_HEALTH_PORT for a custom probe; requires health_check_command. Null uses container_port."
   type        = number
   default     = null
 
@@ -798,7 +798,7 @@ variable "health_check_port" {
 }
 
 variable "health_check_path" {
-  description = "Path used by the ALB and the container health check."
+  description = "Path used by the ALB health check and the default container probe."
   type        = string
   default     = "/healthz/ready"
 

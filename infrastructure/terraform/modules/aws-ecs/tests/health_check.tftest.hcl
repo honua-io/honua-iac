@@ -212,27 +212,50 @@ run "reject_blank_executable" {
   expect_failures = [var.health_check_command]
 }
 
-run "reject_null_executable" {
+run "reject_null_argument" {
   command = plan
-  variables { health_check_command = ["CMD", null] }
+  variables { health_check_command = ["CMD", "/app/honua-healthcheck", null] }
   expect_failures = [var.health_check_command]
 }
 
 run "reject_zero_port" {
   command = plan
-  variables { health_check_port = 0 }
+  variables {
+    health_check_command = ["CMD", "/app/honua-healthcheck"]
+    health_check_port    = 0
+  }
   expect_failures = [var.health_check_port]
 }
 
 run "reject_out_of_range_port" {
   command = plan
-  variables { health_check_port = 65536 }
+  variables {
+    health_check_command = ["CMD", "/app/honua-healthcheck"]
+    health_check_port    = 65536
+  }
   expect_failures = [var.health_check_port]
 }
 
 run "reject_fractional_port" {
   command = plan
-  variables { health_check_port = 8080.5 }
+  variables {
+    health_check_command = ["CMD", "/app/honua-healthcheck"]
+    health_check_port    = 8080.5
+  }
   expect_failures = [var.health_check_port]
 }
 
+run "reject_port_without_custom_command" {
+  command = plan
+  variables { health_check_port = 9090 }
+  expect_failures = [aws_ecs_task_definition.this]
+}
+
+run "custom_shell_command_is_preserved" {
+  command = plan
+  variables { health_check_command = ["CMD-SHELL", "true"] }
+  assert {
+    condition     = jsonencode(local.container_health_check.command) == jsonencode(["CMD-SHELL", "true"])
+    error_message = "Custom shell commands must be preserved when explicitly selected for a compatible image."
+  }
+}

@@ -1040,7 +1040,7 @@ health_check_command = ["CMD", "/app/honua-healthcheck", "--ready"]
 ```
 
 The module sets `HONUA_HEALTH_PORT` to `container_port` for a custom probe. Set
-`health_check_port` to override it. Both primary and canary tasks receive the same
+`health_check_port` to override it; setting a port requires a custom command. Both primary and canary tasks receive the same
 command and port; the typed port wins over additional environment entries.
 `health_check_path` continues to control the ALB path and the default Bash probe.
 The native executable probes `/healthz/ready` with `--ready`, or `/healthz/live`

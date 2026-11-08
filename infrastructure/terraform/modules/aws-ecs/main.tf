@@ -164,7 +164,7 @@ locals {
   import_limits_environment = var.import_background_job_threshold_bytes == null ? {} : {
     Import__Limits__BackgroundJobThresholdBytes = tostring(var.import_background_job_threshold_bytes)
   }
-  health_check_environment = var.health_check_command == null && var.health_check_port == null ? {} : {
+  health_check_environment = var.health_check_command == null ? {} : {
     HONUA_HEALTH_PORT = tostring(coalesce(var.health_check_port, var.container_port))
   }
   runtime_environment = merge({
@@ -248,6 +248,7 @@ locals {
     }
   }
   container_health_check = {
+    # Older images ship Bash without wget or curl.
     # Keep the legacy request path in a positional argument so URI characters cannot become shell syntax.
     command     = var.health_check_command == null ? ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/${var.container_port} && printf 'GET %s HTTP/1.0\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n' \"$1\" >&3 && IFS=' ' read -r proto code rest <&3 && [ \"$code\" = 200 ]", "honua-health", var.health_check_path] : var.health_check_command
     interval    = 30
@@ -1270,6 +1271,13 @@ resource "aws_secretsmanager_secret_version" "redis_connection" {
 }
 
 resource "aws_ecs_task_definition" "this" {
+  lifecycle {
+    precondition {
+      condition     = var.health_check_port == null || var.health_check_command != null
+      error_message = "health_check_port requires health_check_command; the default Bash probe uses container_port."
+    }
+  }
+
   # Keep the registered revision usable by the provider rollback actuator.
   skip_destroy             = true
   family                   = "${local.name}-task"
