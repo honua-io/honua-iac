@@ -145,3 +145,94 @@ run "health_check_path_rejects_whitespace" {
   }
   expect_failures = [var.health_check_path]
 }
+
+run "legacy_probe_default" {
+  command = plan
+  assert {
+    condition     = local.container_health_check.command[0] == "CMD" && local.container_health_check.command[1] == "bash" && local.container_health_check.command[5] == "/healthz/ready"
+    error_message = "Existing images must retain the current Bash readiness probe by default."
+  }
+  assert {
+    condition     = length([for entry in local.primary_container_environment : entry if entry.name == "HONUA_HEALTH_PORT"]) == 0
+    error_message = "The default must preserve the existing container environment."
+  }
+}
+
+run "native_probe_custom_port" {
+  command = apply
+  variables {
+    health_check_command  = ["CMD", "/app/honua-healthcheck", "--ready"]
+    health_check_port     = 9090
+    additional_env        = { HONUA_HEALTH_PORT = "1" }
+    canary_additional_env = { HONUA_HEALTH_PORT = "2" }
+  }
+  assert {
+    condition     = jsonencode(jsondecode(aws_ecs_task_definition.this.container_definitions)[0].healthCheck.command) == jsonencode(["CMD", "/app/honua-healthcheck", "--ready"])
+    error_message = "The task definition must execute the native probe directly without a shell."
+  }
+  assert {
+    condition     = alltrue([for environment in [local.primary_container_environment, local.canary_container_environment] : one([for entry in environment : entry.value if entry.name == "HONUA_HEALTH_PORT"]) == "9090"])
+    error_message = "The typed health port must win exactly once in both task environments."
+  }
+}
+
+run "native_probe_uses_container_port" {
+  command = plan
+  variables {
+    health_check_command = ["CMD", "/app/honua-healthcheck"]
+    container_port       = 8181
+  }
+  assert {
+    condition     = one([for entry in local.primary_container_environment : entry.value if entry.name == "HONUA_HEALTH_PORT"]) == "8181"
+    error_message = "The native probe must use container_port when health_check_port is omitted."
+  }
+}
+
+run "reject_empty_command" {
+  command = plan
+  variables { health_check_command = [] }
+  expect_failures = [var.health_check_command]
+}
+
+run "reject_missing_executable" {
+  command = plan
+  variables { health_check_command = ["CMD"] }
+  expect_failures = [var.health_check_command]
+}
+
+run "reject_invalid_prefix" {
+  command = plan
+  variables { health_check_command = ["SHELL", "probe"] }
+  expect_failures = [var.health_check_command]
+}
+
+run "reject_blank_executable" {
+  command = plan
+  variables { health_check_command = ["CMD", " "] }
+  expect_failures = [var.health_check_command]
+}
+
+run "reject_null_executable" {
+  command = plan
+  variables { health_check_command = ["CMD", null] }
+  expect_failures = [var.health_check_command]
+}
+
+run "reject_zero_port" {
+  command = plan
+  variables { health_check_port = 0 }
+  expect_failures = [var.health_check_port]
+}
+
+run "reject_out_of_range_port" {
+  command = plan
+  variables { health_check_port = 65536 }
+  expect_failures = [var.health_check_port]
+}
+
+run "reject_fractional_port" {
+  command = plan
+  variables { health_check_port = 8080.5 }
+  expect_failures = [var.health_check_port]
+}
+
