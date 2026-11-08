@@ -611,3 +611,15 @@ variable "layer_publishing_materialization_timeout_seconds" {
     error_message = "layer_publishing_materialization_timeout_seconds must be null or a whole number of seconds from 1 to 3600 (honua-server's documented range)."
   }
 }
+
+variable "health_check_command" {
+  description = "Container health check command passed to aws-ecs; null retains its legacy Bash probe."
+  type        = list(string)
+  default     = null
+}
+
+variable "health_check_port" {
+  description = "HONUA_HEALTH_PORT passed to aws-ecs for a custom probe; null uses container_port."
+  type        = number
+  default     = null
+}
