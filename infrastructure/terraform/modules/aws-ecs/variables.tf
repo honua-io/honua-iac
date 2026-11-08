@@ -770,6 +770,33 @@ variable "redis_port" {
   default     = 6379
 }
 
+variable "health_check_command" {
+  description = "Container health check command. Null retains the legacy Bash probe; shell-free images use [\"CMD\", \"/app/honua-healthcheck\", \"--ready\"]."
+  type        = list(string)
+  default     = null
+
+  validation {
+    condition = var.health_check_command == null ? true : try(
+      length(var.health_check_command) >= 2 &&
+      contains(["CMD", "CMD-SHELL"], var.health_check_command[0]) &&
+      trimspace(var.health_check_command[1]) != "" &&
+      alltrue([for argument in var.health_check_command : argument != null]), false
+    )
+    error_message = "health_check_command must begin with CMD or CMD-SHELL, followed by a nonempty executable or shell command, without null arguments."
+  }
+}
+
+variable "health_check_port" {
+  description = "HONUA_HEALTH_PORT for the native probe. Null uses container_port when a health check command is supplied."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.health_check_port == null ? true : var.health_check_port >= 1 && var.health_check_port <= 65535 && floor(var.health_check_port) == var.health_check_port
+    error_message = "health_check_port must be a whole number from 1 to 65535."
+  }
+}
+
 variable "health_check_path" {
   description = "Path used by the ALB and the container health check."
   type        = string
