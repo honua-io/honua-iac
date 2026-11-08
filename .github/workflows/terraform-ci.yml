@@ -345,6 +345,7 @@ jobs:
         run: |
           set -euo pipefail
           terraform -chdir=infrastructure/terraform/bootstrap/aws-eval-docker-hosts test -no-color
+          terraform -chdir=infrastructure/terraform/bootstrap/aws-build-host test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-release-cells test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-validation-reaper test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-drift-plan test -no-color

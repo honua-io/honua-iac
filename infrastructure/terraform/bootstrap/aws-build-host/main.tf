@@ -83,7 +83,7 @@ resource "aws_instance" "build" {
   associate_public_ip_address = true
   key_name                    = aws_key_pair.build.key_name
   ebs_optimized               = true
-  user_data                   = file("${path.module}/install-build-tools.sh")
+  user_data                   = join("\n", [file("${path.module}/../shared/install-docker.sh"), file("${path.module}/install-build-tools.sh")])
   user_data_replace_on_change = true
 
   instance_market_options {
@@ -114,6 +114,9 @@ resource "aws_instance" "build" {
   lifecycle {
     ignore_changes = [ami]
   }
+
+  # The installer downloads packages at boot, so outbound routing must exist first.
+  depends_on = [aws_route_table_association.build]
 }
 
 resource "aws_cloudwatch_metric_alarm" "idle_stop" {
@@ -175,12 +178,8 @@ resource "aws_scheduler_schedule" "nightly_stop" {
   }
 }
 
-# Budgets can only filter on activated cost allocation tags.
-resource "aws_ce_cost_allocation_tag" "owner" {
-  tag_key = "Owner"
-  status  = "Active"
-}
-
+# Email alert on EC2 compute cost. Budgets data lags several hours, so this is a warning,
+# not a stop: the idle and nightly stops above are what bound the bill.
 resource "aws_budgets_budget" "build_host" {
   name         = "${local.name}-monthly"
   budget_type  = "COST"
@@ -188,69 +187,21 @@ resource "aws_budgets_budget" "build_host" {
   limit_unit   = "USD"
   time_unit    = "MONTHLY"
   cost_filter {
-    name   = "TagKeyValue"
-    values = ["user:Owner$${local.tags.Owner}"]
+    name   = "Service"
+    values = ["Amazon Elastic Compute Cloud - Compute"]
   }
-  depends_on = [aws_ce_cost_allocation_tag.owner]
-}
-
-data "aws_iam_policy_document" "budgets_assume" {
-  statement {
-    actions = ["sts:AssumeRole"]
-    principals {
-      type        = "Service"
-      identifiers = ["budgets.amazonaws.com"]
-    }
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 80
+    threshold_type             = "PERCENTAGE"
+    notification_type          = "ACTUAL"
+    subscriber_email_addresses = [var.budget_alert_email]
   }
-}
-
-data "aws_iam_policy_document" "budgets_stop" {
-  statement {
-    actions   = ["ec2:StopInstances"]
-    resources = [aws_instance.build.arn]
-  }
-  statement {
-    actions   = ["ssm:StartAutomationExecution"]
-    resources = ["arn:aws:ssm:${var.region}::automation-definition/AWS-StopEC2Instance:*"]
-  }
-  statement {
-    # DescribeInstanceStatus does not support resource-level permissions.
-    actions   = ["ec2:DescribeInstanceStatus"]
-    resources = ["*"]
-  }
-}
-
-resource "aws_iam_role" "budgets" {
-  name_prefix        = "${local.name}-cap-"
-  assume_role_policy = data.aws_iam_policy_document.budgets_assume.json
-  tags               = local.tags
-}
-
-resource "aws_iam_role_policy" "budgets" {
-  name   = "stop-build-host-at-cap"
-  role   = aws_iam_role.budgets.id
-  policy = data.aws_iam_policy_document.budgets_stop.json
-}
-
-resource "aws_budgets_budget_action" "stop_at_cap" {
-  budget_name        = aws_budgets_budget.build_host.name
-  action_type        = "RUN_SSM_DOCUMENTS"
-  approval_model     = "AUTOMATIC"
-  notification_type  = "ACTUAL"
-  execution_role_arn = aws_iam_role.budgets.arn
-  action_threshold {
-    action_threshold_type  = "PERCENTAGE"
-    action_threshold_value = 100
-  }
-  definition {
-    ssm_action_definition {
-      action_sub_type = "STOP_EC2_INSTANCES"
-      instance_ids    = [aws_instance.build.id]
-      region          = var.region
-    }
-  }
-  subscriber {
-    address           = var.budget_alert_email
-    subscription_type = "EMAIL"
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 100
+    threshold_type             = "PERCENTAGE"
+    notification_type          = "FORECASTED"
+    subscriber_email_addresses = [var.budget_alert_email]
   }
 }

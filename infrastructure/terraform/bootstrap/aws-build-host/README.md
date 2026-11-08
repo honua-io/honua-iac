@@ -9,11 +9,10 @@ Cost controls, all in this root:
 - **Idle stop:** a CloudWatch alarm stops the host after `idle_stop_minutes` (default 30)
   of average CPU below `idle_cpu_percent`.
 - **Nightly stop:** an EventBridge Scheduler schedule stops it unconditionally
-  (default 02:00 America/Los_Angeles).
-- **Monthly cap:** an AWS Budgets action stops it automatically when the cost tagged
-  `Owner=lane-builds` reaches `monthly_budget_usd` (default 75) and emails
-  `budget_alert_email`. The root activates the `Owner` cost allocation tag that the
-  budget filters on; tagged cost appears in Budgets about a day later.
+  (default 03:00 America/Los_Angeles; 02:00 is skipped on the spring daylight-saving day).
+- **Cost alerts:** an AWS Budget on EC2 compute cost emails `budget_alert_email` at 80% of
+  `monthly_budget_usd` (default 75) actual and 100% forecast. Budgets data lags several
+  hours, so alerts warn; the two stops above are what bound the bill.
 
 A stopped host costs only its disk. Starting it again is an operational action on this
 managed instance (`aws ec2 start-instances`), not a configuration change.

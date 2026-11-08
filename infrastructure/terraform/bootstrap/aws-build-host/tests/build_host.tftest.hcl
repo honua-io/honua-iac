@@ -21,14 +21,6 @@ override_data {
   target = data.aws_iam_policy_document.scheduler_stop
   values = { json = "{\"Version\":\"2012-10-17\",\"Statement\":[]}" }
 }
-override_data {
-  target = data.aws_iam_policy_document.budgets_assume
-  values = { json = "{\"Version\":\"2012-10-17\",\"Statement\":[]}" }
-}
-override_data {
-  target = data.aws_iam_policy_document.budgets_stop
-  values = { json = "{\"Version\":\"2012-10-17\",\"Statement\":[]}" }
-}
 
 run "spot_host_that_stops_itself" {
   command = apply
@@ -37,7 +29,7 @@ run "spot_host_that_stops_itself" {
     error_message = "The build host must be a persistent spot instance that stops on interruption."
   }
   assert {
-    condition     = one(aws_instance.build.metadata_options).http_tokens == "required" && try(aws_instance.build.iam_instance_profile, "") == "" || aws_instance.build.iam_instance_profile == null
+    condition     = one(aws_instance.build.metadata_options).http_tokens == "required" && (aws_instance.build.iam_instance_profile == null || aws_instance.build.iam_instance_profile == "")
     error_message = "The build host must require IMDSv2 and carry no instance profile."
   }
   assert {
@@ -45,16 +37,20 @@ run "spot_host_that_stops_itself" {
     error_message = "An idle alarm must stop the host after 30 minutes."
   }
   assert {
-    condition     = aws_budgets_budget_action.stop_at_cap.approval_model == "AUTOMATIC" && one(one(aws_budgets_budget_action.stop_at_cap.definition).ssm_action_definition).action_sub_type == "STOP_EC2_INSTANCES" && aws_budgets_budget.build_host.limit_amount == "75"
-    error_message = "A budget action must stop the host automatically at the monthly cap."
+    condition     = aws_scheduler_schedule.nightly_stop.schedule_expression == "cron(0 3 * * ? *)" && aws_scheduler_schedule.nightly_stop.schedule_expression_timezone == "America/Los_Angeles" && one(aws_scheduler_schedule.nightly_stop.target).arn == "arn:aws:scheduler:::aws-sdk:ec2:stopInstances" && contains(jsondecode(one(aws_scheduler_schedule.nightly_stop.target).input).InstanceIds, aws_instance.build.id)
+    error_message = "A nightly schedule at 03:00 Pacific must call StopInstances for the build host."
   }
   assert {
-    condition     = aws_scheduler_schedule.nightly_stop.schedule_expression_timezone == "America/Los_Angeles"
-    error_message = "A nightly schedule must stop the host."
+    condition     = one(aws_budgets_budget.build_host.cost_filter).name == "Service" && contains(one(aws_budgets_budget.build_host.cost_filter).values, "Amazon Elastic Compute Cloud - Compute") && length(aws_budgets_budget.build_host.notification) == 2
+    error_message = "EC2 compute cost must raise budget email alerts."
   }
   assert {
     condition     = length(aws_security_group.build.ingress) == 1 && one(aws_security_group.build.ingress).cidr_blocks == tolist(["192.0.2.1/32"]) && one(aws_security_group.build.ingress).from_port == 22
     error_message = "Only configured SSH ingress is allowed."
+  }
+  assert {
+    condition     = startswith(aws_instance.build.user_data, "#!/bin/bash") && strcontains(aws_instance.build.user_data, "apt_retry install -y git")
+    error_message = "User data must be the shared Docker installer followed by the build tools."
   }
 }
 

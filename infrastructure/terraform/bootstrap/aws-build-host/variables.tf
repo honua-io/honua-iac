@@ -55,9 +55,9 @@ variable "idle_cpu_percent" {
 }
 
 variable "nightly_stop_cron" {
-  description = "EventBridge Scheduler cron expression for the unconditional nightly stop, evaluated in nightly_stop_timezone."
+  description = "EventBridge Scheduler cron expression for the unconditional nightly stop, evaluated in nightly_stop_timezone. Avoid 02:00 local, which does not exist on the spring daylight-saving change."
   type        = string
-  default     = "cron(0 2 * * ? *)"
+  default     = "cron(0 3 * * ? *)"
 }
 
 variable "nightly_stop_timezone" {
@@ -66,13 +66,13 @@ variable "nightly_stop_timezone" {
 }
 
 variable "monthly_budget_usd" {
-  description = "Hard monthly cap for this host's tagged cost. At 100% of actual spend an AWS Budgets action stops the host."
+  description = "Monthly EC2 compute cost that triggers email alerts (80% actual, 100% forecast). Alerts lag several hours and do not stop the host."
   type        = number
   default     = 75
 }
 
 variable "budget_alert_email" {
-  description = "Email that AWS Budgets notifies when the cap action runs."
+  description = "Email that receives the EC2 cost alerts."
   type        = string
   validation {
     condition     = can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.budget_alert_email))
