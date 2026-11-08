@@ -37,8 +37,8 @@ run "spot_host_that_stops_itself" {
     error_message = "An idle alarm must stop the host after 30 minutes."
   }
   assert {
-    condition     = aws_scheduler_schedule.nightly_stop.schedule_expression == "cron(0 3 * * ? *)" && aws_scheduler_schedule.nightly_stop.schedule_expression_timezone == "America/Los_Angeles" && one(aws_scheduler_schedule.nightly_stop.target).arn == "arn:aws:scheduler:::aws-sdk:ec2:stopInstances" && contains(jsondecode(one(aws_scheduler_schedule.nightly_stop.target).input).InstanceIds, aws_instance.build.id)
-    error_message = "A nightly schedule at 03:00 Pacific must call StopInstances for the build host."
+    condition     = aws_scheduler_schedule.nightly_stop.state == "DISABLED" && aws_scheduler_schedule.nightly_stop.schedule_expression == "cron(0 3 * * ? *)" && aws_scheduler_schedule.nightly_stop.schedule_expression_timezone == "America/Los_Angeles" && one(aws_scheduler_schedule.nightly_stop.target).arn == "arn:aws:scheduler:::aws-sdk:ec2:stopInstances" && contains(jsondecode(one(aws_scheduler_schedule.nightly_stop.target).input).InstanceIds, aws_instance.build.id)
+    error_message = "The nightly stop must default to disabled and, when enabled, call StopInstances for the build host at 03:00 Pacific."
   }
   assert {
     condition     = one(aws_budgets_budget.build_host.cost_filter).name == "Service" && contains(one(aws_budgets_budget.build_host.cost_filter).values, "Amazon Elastic Compute Cloud - Compute") && length(aws_budgets_budget.build_host.notification) == 2
