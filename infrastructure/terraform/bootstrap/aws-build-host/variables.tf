@@ -54,6 +54,12 @@ variable "idle_cpu_percent" {
   default = 5
 }
 
+variable "nightly_stop_enabled" {
+  description = "Stop the host unconditionally every night. Off by default: lanes build overnight, and a scheduled stop interrupts running builds. The idle stop already ends billing when the host is unused."
+  type        = bool
+  default     = false
+}
+
 variable "nightly_stop_cron" {
   description = "EventBridge Scheduler cron expression for the unconditional nightly stop, evaluated in nightly_stop_timezone. Avoid 02:00 local, which does not exist on the spring daylight-saving change."
   type        = string

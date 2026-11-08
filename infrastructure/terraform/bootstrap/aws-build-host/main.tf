@@ -165,6 +165,7 @@ resource "aws_iam_role_policy" "scheduler" {
 }
 
 resource "aws_scheduler_schedule" "nightly_stop" {
+  state                        = var.nightly_stop_enabled ? "ENABLED" : "DISABLED"
   name                         = "${local.name}-nightly-stop"
   schedule_expression          = var.nightly_stop_cron
   schedule_expression_timezone = var.nightly_stop_timezone
