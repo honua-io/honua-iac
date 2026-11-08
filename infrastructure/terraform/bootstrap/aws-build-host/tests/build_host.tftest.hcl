@@ -38,7 +38,7 @@ run "spot_host_that_stops_itself" {
   }
   assert {
     condition     = aws_scheduler_schedule.nightly_stop.state == "DISABLED" && aws_scheduler_schedule.nightly_stop.schedule_expression == "cron(0 3 * * ? *)" && aws_scheduler_schedule.nightly_stop.schedule_expression_timezone == "America/Los_Angeles" && one(aws_scheduler_schedule.nightly_stop.target).arn == "arn:aws:scheduler:::aws-sdk:ec2:stopInstances" && contains(jsondecode(one(aws_scheduler_schedule.nightly_stop.target).input).InstanceIds, aws_instance.build.id)
-    error_message = "The nightly stop must default to disabled and, when enabled, call StopInstances for the build host at 03:00 Pacific."
+    error_message = "The nightly stop must default to disabled, scheduled for 03:00 Pacific against the build host."
   }
   assert {
     condition     = one(aws_budgets_budget.build_host.cost_filter).name == "Service" && contains(one(aws_budgets_budget.build_host.cost_filter).values, "Amazon Elastic Compute Cloud - Compute") && length(aws_budgets_budget.build_host.notification) == 2
@@ -51,6 +51,15 @@ run "spot_host_that_stops_itself" {
   assert {
     condition     = startswith(aws_instance.build.user_data, "#!/bin/bash") && strcontains(aws_instance.build.user_data, "apt_retry install -y git")
     error_message = "User data must be the shared Docker installer followed by the build tools."
+  }
+}
+
+run "nightly_stop_when_enabled" {
+  command   = apply
+  variables { nightly_stop_enabled = true }
+  assert {
+    condition     = aws_scheduler_schedule.nightly_stop.state == "ENABLED" && one(aws_scheduler_schedule.nightly_stop.target).arn == "arn:aws:scheduler:::aws-sdk:ec2:stopInstances" && contains(jsondecode(one(aws_scheduler_schedule.nightly_stop.target).input).InstanceIds, aws_instance.build.id)
+    error_message = "Enabling the nightly stop must schedule StopInstances for the build host."
   }
 }
 
