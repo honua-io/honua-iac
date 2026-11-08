@@ -55,7 +55,7 @@ run "spot_host_that_stops_itself" {
 }
 
 run "nightly_stop_when_enabled" {
-  command   = apply
+  command = apply
   variables { nightly_stop_enabled = true }
   assert {
     condition     = aws_scheduler_schedule.nightly_stop.state == "ENABLED" && one(aws_scheduler_schedule.nightly_stop.target).arn == "arn:aws:scheduler:::aws-sdk:ec2:stopInstances" && contains(jsondecode(one(aws_scheduler_schedule.nightly_stop.target).input).InstanceIds, aws_instance.build.id)
