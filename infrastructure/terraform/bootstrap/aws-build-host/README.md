@@ -10,7 +10,7 @@ and available capacity; there is no On-Demand fallback or capacity rebalance sur
 
 Choose `region` by current Spot prices before deployment and set it explicitly.
 The region default is an example, not the expected deployment. The backend region
-is configured separately in `backend.tf`. The type list replaces `instance_type`.
+is configured separately in `backend.tf`.
 
 Cost controls:
 
@@ -30,8 +30,9 @@ Interrupted instances are replaced while desired capacity is one. Each new host
 gets a fresh encrypted gp3 root disk, so NuGet/npm/container caches must warm up.
 Idle termination deletes that disk. At capacity zero, no build instance or root
 disk remains billed. Terraform ignores subsequent desired-capacity changes, so
-an apply does not wake an idle group. The former CPU-only stop alarm and
-`idle_cpu_percent` input are removed; build activity governs the idle decision.
+an apply does not wake an idle group. The timer is installed before network
+bootstrap and uses only Python standard-library modules, so a failed package
+download does not disable idle shutdown.
 
 ## Wake and discover from remote build tooling
 

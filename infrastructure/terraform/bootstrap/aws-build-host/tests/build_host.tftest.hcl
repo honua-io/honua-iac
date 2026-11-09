@@ -26,6 +26,14 @@ override_data {
 run "spot_host_that_stops_itself" {
   command = apply
   assert {
+    condition     = length(regexall("(?s)systemctl enable --now honua-build-host-idle-stop.timer.*curl -fsSL", base64decode(aws_launch_template.build.user_data))) == 1
+    error_message = "The dependency-free idle timer must be enabled before network bootstrap."
+  }
+  assert {
+    condition     = aws_subnet.build["eu-north-1c"].cidr_block == "10.88.18.0/24"
+    error_message = "Zone c must keep a stable subnet regardless of which other zones are available."
+  }
+  assert {
     condition     = aws_autoscaling_group.build.min_size == 0 && aws_autoscaling_group.build.max_size == 1 && aws_autoscaling_group.build.desired_capacity == 1
     error_message = "The group must support zero or one build host."
   }
@@ -58,8 +66,8 @@ run "spot_host_that_stops_itself" {
     error_message = "Stable discovery tags must propagate to replacement instances."
   }
   assert {
-    condition     = strcontains(base64decode(aws_launch_template.build.user_data), "python3-boto3") && strcontains(base64decode(aws_launch_template.build.user_data), "fonts-dejavu-core libatomic1 xmlstarlet skopeo clang zlib1g-dev")
-    error_message = "Replacement hosts need the idle-stop SDK and native build/runtime dependencies."
+    condition     = strcontains(base64decode(aws_launch_template.build.user_data), "fonts-dejavu-core libatomic1 xmlstarlet skopeo clang zlib1g-dev")
+    error_message = "Replacement hosts need the native build/runtime dependencies."
   }
   assert {
     condition     = one(aws_budgets_budget.build_host.cost_filter).name == "Service" && contains(one(aws_budgets_budget.build_host.cost_filter).values, "Amazon Elastic Compute Cloud - Compute") && length(aws_budgets_budget.build_host.notification) == 2
@@ -100,5 +108,17 @@ run "configured_idle_window" {
   assert {
     condition     = strcontains(base64decode(aws_launch_template.build.user_data), base64encode(jsonencode({ region = var.region, group = "honua-lane-build-host", idle_seconds = 600 })))
     error_message = "The activity timer must receive the configured idle window and fleet identity."
+  }
+}
+
+run "zone_subnets_do_not_shift" {
+  command = apply
+  override_data {
+    target = data.aws_availability_zones.build
+    values = { names = ["eu-north-1b", "eu-north-1c"] }
+  }
+  assert {
+    condition     = aws_subnet.build["eu-north-1c"].cidr_block == "10.88.18.0/24"
+    error_message = "Removing another zone must not renumber the remaining subnets."
   }
 }

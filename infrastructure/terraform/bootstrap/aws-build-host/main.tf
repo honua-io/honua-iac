@@ -32,7 +32,7 @@ resource "aws_vpc" "build" {
 resource "aws_subnet" "build" {
   for_each                = toset(data.aws_availability_zones.build.names)
   vpc_id                  = aws_vpc.build.id
-  cidr_block              = cidrsubnet(aws_vpc.build.cidr_block, 8, index(sort(data.aws_availability_zones.build.names), each.key) + 16)
+  cidr_block              = cidrsubnet(aws_vpc.build.cidr_block, 8, index(split("", "abcdefghijklmnopqrstuvwxyz"), substr(each.key, -1, 1)) + 16)
   availability_zone       = each.key
   map_public_ip_on_launch = true
   tags                    = local.tags
@@ -91,8 +91,10 @@ resource "aws_launch_template" "build" {
   key_name      = aws_key_pair.build.key_name
   ebs_optimized = true
   user_data = base64encode(join("\n", [
-    file("${path.module}/../shared/install-docker.sh"),
+    "#!/bin/bash\nset -euo pipefail",
     "echo '${base64encode(jsonencode({ region = var.region, group = local.name, idle_seconds = var.idle_stop_minutes * 60 }))}' | base64 -d > /etc/honua-build-host.json",
+    file("${path.module}/install-idle-stop.sh"),
+    file("${path.module}/../shared/install-docker.sh"),
     file("${path.module}/install-build-tools.sh")
   ]))
   iam_instance_profile { name = aws_iam_instance_profile.build.name }

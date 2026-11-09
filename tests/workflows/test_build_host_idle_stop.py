@@ -1,6 +1,9 @@
 """Exercise the installed idle-stop program without host or cloud operations."""
 
+from datetime import datetime, timezone
 import importlib.util
+import io
+import json
 from pathlib import Path
 import re
 import subprocess
@@ -9,7 +12,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[2]
-INSTALLER = ROOT / "infrastructure/terraform/bootstrap/aws-build-host/install-build-tools.sh"
+INSTALLER = ROOT / "infrastructure/terraform/bootstrap/aws-build-host/install-idle-stop.sh"
 
 
 class BuildHostIdleStopTests(unittest.TestCase):
@@ -32,10 +35,11 @@ class BuildHostIdleStopTests(unittest.TestCase):
         self.program.LAST_ACTIVE = root / "last_active"
         self.program.CONFIG = root / "config.json"
         self.program.CONFIG.write_text('{"region":"eu-north-1","group":"honua-lane-build-host","idle_seconds":1800}')
-        self.client = Mock()
-        sdk = patch.dict("sys.modules", {"boto3": Mock(client=Mock(return_value=self.client))})
-        sdk.start()
-        self.addCleanup(sdk.stop)
+        self.real_scale_to_zero = self.program.scale_to_zero
+        self.scale_down = Mock()
+        scaler = patch.object(self.program, "scale_to_zero", self.scale_down)
+        scaler.start()
+        self.addCleanup(scaler.stop)
         self.rows = ""
         self.commands = []
         clock = patch.object(self.program.time, "monotonic", return_value=1800)
@@ -49,16 +53,47 @@ class BuildHostIdleStopTests(unittest.TestCase):
         self.commands.append(argv)
         return subprocess.CompletedProcess(argv, 0, stdout=self.rows)
 
+    def test_scale_down_uses_imdsv2_and_valid_sigv4(self):
+        credentials = {"AccessKeyId": "EXAMPLEACCESS", "SecretAccessKey": "example-secret",
+                       "Token": "example-token"}
+        responses = [io.BytesIO(b"metadata-token"), io.BytesIO(b"host-role"),
+                     io.BytesIO(json.dumps(credentials).encode()), io.BytesIO(b"")]
+        with patch.object(self.program, "urlopen", side_effect=responses) as request, \
+                patch.object(self.program, "datetime") as clock:
+            clock.now.return_value = datetime(2026, 11, 9, 17, 30, tzinfo=timezone.utc)
+            self.real_scale_to_zero({"region": "eu-north-1", "group": "honua-lane-build-host"})
+        calls = request.call_args_list
+        self.assertEqual(len(calls), 4)
+        self.assertEqual(calls[0].args[0].get_method(), "PUT")
+        self.assertEqual(calls[0].args[0].full_url, "http://169.254.169.254/latest/api/token")
+        self.assertEqual(calls[1].args[0].get_header("X-aws-ec2-metadata-token"), "metadata-token")
+        self.assertTrue(calls[2].args[0].full_url.endswith("/host-role"))
+        signed = calls[3].args[0]
+        self.assertEqual(signed.full_url, "https://autoscaling.eu-north-1.amazonaws.com/")
+        self.assertEqual(signed.get_method(), "POST")
+        self.assertIn(b"DesiredCapacity=0", signed.data)
+        # Independent fixture from botocore SigV4Auth with these synthetic credentials.
+        self.assertEqual(signed.get_header("Authorization"),
+                         "AWS4-HMAC-SHA256 Credential=EXAMPLEACCESS/20261109/eu-north-1/autoscaling/aws4_request, "
+                         "SignedHeaders=content-type;host;x-amz-date;x-amz-security-token, "
+                         "Signature=837de2ccc71cc2f254b13e4b12c401bf6b2adffc561215c1de3f657be8606fe7")
+        self.assertEqual(calls[3].kwargs["timeout"], 15)
+
+    def test_metadata_failure_never_sends_scale_request(self):
+        with patch.object(self.program, "urlopen", side_effect=OSError("metadata unavailable")) as request:
+            with self.assertRaises(OSError):
+                self.real_scale_to_zero({"region": "eu-north-1", "group": "honua-lane-build-host"})
+        self.assertEqual(request.call_count, 1)
+
     def test_idle_fleet_scales_to_zero(self):
         self.program.main()
-        self.client.set_desired_capacity.assert_called_once_with(
-            AutoScalingGroupName="honua-lane-build-host", DesiredCapacity=0,
-            HonorCooldown=False,
+        self.scale_down.assert_called_once_with(
+            {"region": "eu-north-1", "group": "honua-lane-build-host", "idle_seconds": 1800},
         )
         self.assertFalse(any(command[0] == "shutdown" for command in self.commands))
 
     def test_failed_scale_down_does_not_shutdown_ec2(self):
-        self.client.set_desired_capacity.side_effect = RuntimeError("API unavailable")
+        self.scale_down.side_effect = RuntimeError("API unavailable")
         with self.assertRaises(RuntimeError):
             self.program.main()
         self.assertFalse(any(command[0] == "shutdown" for command in self.commands))
@@ -70,11 +105,7 @@ class BuildHostIdleStopTests(unittest.TestCase):
         self.assertEqual(len(self.scale_downs()), 1)
 
     def scale_downs(self):
-        return self.client.set_desired_capacity.call_args_list
-
-    def test_idle_host_stops_at_thirty_minutes(self):
-        self.program.main()
-        self.assertEqual(len(self.scale_downs()), 1)
+        return self.scale_down.call_args_list
 
     def test_recent_job_gets_the_full_idle_window(self):
         self.program.LAST_ACTIVE.write_text("1")
@@ -100,7 +131,7 @@ class BuildHostIdleStopTests(unittest.TestCase):
             with self.subTest(command=command):
                 self.program.LAST_ACTIVE.unlink(missing_ok=True)
                 self.commands.clear()
-                self.client.reset_mock()
+                self.scale_down.reset_mock()
                 self.rows = f"4000 docker {command}\n"
                 self.program.main()
                 self.assertEqual(self.scale_downs(), [])
