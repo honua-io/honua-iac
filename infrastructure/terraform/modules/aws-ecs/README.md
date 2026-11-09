@@ -1029,3 +1029,20 @@ ALB ingress, include the Console subnet's NAT gateway public egress addresses
 in `allow_https_ingress_cidrs`, and ensure the subnet can reach the public origin
 and the OIDC issuer over HTTPS. Register both callback URIs before enabling this
 service.
+
+## Container health probes
+
+The default retains the Bash readiness probe for existing images. For a shell-free
+image that includes `/app/honua-healthcheck`, select its executable explicitly:
+
+```hcl
+health_check_command = ["CMD", "/app/honua-healthcheck", "--ready"]
+```
+
+The module sets `HONUA_HEALTH_PORT` to `container_port` for a custom probe. Set
+`health_check_port` to override it; setting a port requires a custom command. Both primary and canary tasks receive the same
+command and port; the typed port wins over additional environment entries.
+`health_check_path` continues to control the ALB path and the default Bash probe.
+The native executable probes `/healthz/ready` with `--ready`, or `/healthz/live`
+without it; it does not read `health_check_path`. Older images lack this executable,
+so change the command only when deploying a compatible image.
