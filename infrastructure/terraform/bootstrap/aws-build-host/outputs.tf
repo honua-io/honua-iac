@@ -1,10 +1,12 @@
-output "instance_id" { value = aws_instance.build.id }
-output "ssh_config" {
-  description = "Append to your SSH configuration and set IdentityFile. The public address changes after each stop and start; refresh it with aws ec2 describe-instances."
-  value       = <<-EOT
-    Host honua-build
-      HostName ${aws_instance.build.public_dns}
-      User ubuntu
-      IdentitiesOnly yes
-  EOT
+output "autoscaling_group_name" {
+  description = "Set desired capacity to one to wake the build host, zero to stop it."
+  value       = aws_autoscaling_group.build.name
+}
+
+output "instance_lookup_filters" {
+  description = "Stable EC2 filters for the current host; poll running instances and refresh the SSH address after replacement."
+  value = [
+    { Name = "tag:aws:autoscaling:groupName", Values = [aws_autoscaling_group.build.name] },
+    { Name = "instance-state-name", Values = ["running"] }
+  ]
 }

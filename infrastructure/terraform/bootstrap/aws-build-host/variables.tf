@@ -1,12 +1,7 @@
 variable "region" {
-  type    = string
-  default = "us-east-1"
-}
-
-variable "instance_type" {
-  description = "amd64 instance type for the build host. Compute-optimised; 16 vCPU and 32 GiB fit one full .NET server build and test run."
+  description = "Example region; select the deployment region by current spot price and set it explicitly."
   type        = string
-  default     = "c7i.4xlarge"
+  default     = "us-east-1"
 }
 
 variable "root_volume_gib" {
@@ -40,18 +35,13 @@ variable "ssh_public_key" {
 }
 
 variable "idle_stop_minutes" {
-  description = "Stop the host after this many minutes with average CPU below idle_cpu_percent."
+  description = "Scale the group to zero after this many minutes without observed build activity."
   type        = number
   default     = 30
   validation {
     condition     = var.idle_stop_minutes >= 10 && var.idle_stop_minutes % 5 == 0
     error_message = "idle_stop_minutes must be a multiple of 5 and at least 10."
   }
-}
-
-variable "idle_cpu_percent" {
-  type    = number
-  default = 5
 }
 
 variable "nightly_stop_enabled" {
