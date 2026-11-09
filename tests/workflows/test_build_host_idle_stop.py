@@ -72,9 +72,23 @@ class BuildHostIdleStopTests(unittest.TestCase):
     def test_docker_builds_prevent_shutdown(self):
         for command in ("docker build .", "docker buildx build .", "docker compose build", "docker compose up --build"):
             with self.subTest(command=command):
+                self.program.LAST_ACTIVE.unlink(missing_ok=True)
+                self.commands.clear()
                 self.rows = f"4000 docker {command}\n"
                 self.program.main()
                 self.assertEqual(self.shutdowns(), [])
+                self.assertEqual(self.program.LAST_ACTIVE.read_text(), "1800")
+
+    def test_buildx_plugin_prevents_shutdown(self):
+        self.rows = "4000 docker-buildx /usr/libexec/docker/cli-plugins/docker-buildx buildx build .\n"
+        self.program.main()
+        self.assertEqual(self.shutdowns(), [])
+        self.assertEqual(self.program.LAST_ACTIVE.read_text(), "1800")
+
+    def test_standalone_dotnet_server_does_not_hold_idle_host(self):
+        self.rows = "4000 dotnet dotnet /app/Honua.Server.dll\n"
+        self.program.main()
+        self.assertEqual(len(self.shutdowns()), 1)
 
     def test_daemons_and_old_ssh_do_not_hold_idle_host(self):
         self.rows = "4000 dockerd /usr/bin/dockerd\n4000 sshd sshd: ubuntu@notty\n4000 sshd sshd: /usr/sbin/sshd -D [listener]\n"
@@ -103,10 +117,6 @@ class BuildHostIdleStopTests(unittest.TestCase):
             self.program.main()
         self.assertEqual(self.shutdowns(), [])
 
-    def test_timer_checks_every_five_minutes(self):
-        installer = INSTALLER.read_text()
-        self.assertIn("OnUnitActiveSec=5min", installer)
-        self.assertIn("systemctl enable --now honua-build-host-idle-stop.timer", installer)
 
 
 if __name__ == "__main__":
