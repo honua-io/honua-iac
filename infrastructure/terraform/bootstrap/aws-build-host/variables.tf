@@ -4,12 +4,6 @@ variable "region" {
   default     = "us-east-1"
 }
 
-variable "instance_type" {
-  description = "Example amd64 instance type; select a 16-vCPU type by current spot price and set it explicitly."
-  type        = string
-  default     = "c7i.4xlarge"
-}
-
 variable "root_volume_gib" {
   description = "Build disk size. Server builds and test containers write tens of GiB per run."
   type        = number
@@ -41,18 +35,13 @@ variable "ssh_public_key" {
 }
 
 variable "idle_stop_minutes" {
-  description = "Stop the host after this many minutes with average CPU below idle_cpu_percent."
+  description = "Scale the group to zero after this many minutes without observed build activity."
   type        = number
   default     = 30
   validation {
     condition     = var.idle_stop_minutes >= 10 && var.idle_stop_minutes % 5 == 0
     error_message = "idle_stop_minutes must be a multiple of 5 and at least 10."
   }
-}
-
-variable "idle_cpu_percent" {
-  type    = number
-  default = 5
 }
 
 variable "nightly_stop_enabled" {
