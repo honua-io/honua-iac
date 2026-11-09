@@ -24,3 +24,10 @@ root-equivalent access on the host.
 
 Copy `backend.tf.example` to `backend.tf`, replace the bucket placeholder and initialise.
 After the first apply, set this root to `applied=true` in `bootstrap/drift-roots.json`.
+
+The installed `honua-build-host-idle-stop.timer` checks every five minutes. The
+host stops after thirty minutes without observed remote job markers or running
+.NET/Docker builds, provided no SSH session is younger than thirty minutes. It
+keeps its disk and starts again through the remote build tooling. Failed process
+inspection leaves it running. The installation is part of user data; applying
+changed user data replaces the instance, so coordinate rollout with the host owner.
