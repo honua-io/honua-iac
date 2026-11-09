@@ -439,6 +439,9 @@ jobs:
         shell: bash
         run: python3 infrastructure/terraform/validation/scripts/shared/test-certification-oidc.py
 
+      - name: Build host idle-stop decision contract
+        run: python3 tests/workflows/test_build_host_idle_stop.py
+
       - name: Scheduled cleanup role precondition contract
         shell: bash
         run: python3 tests/workflows/test_cleanup_role_precondition.py

@@ -49,6 +49,10 @@ run "spot_host_that_stops_itself" {
     error_message = "Only configured SSH ingress is allowed."
   }
   assert {
+    condition     = strcontains(aws_instance.build.user_data, "OnUnitActiveSec=5min") && strcontains(aws_instance.build.user_data, "systemctl enable --now honua-build-host-idle-stop.timer") && strcontains(aws_instance.build.user_data, "ExecStart=/usr/local/sbin/honua-build-host-idle-stop")
+    error_message = "User data must install and enable the five-minute idle-stop timer."
+  }
+  assert {
     condition     = startswith(aws_instance.build.user_data, "#!/bin/bash") && strcontains(aws_instance.build.user_data, "apt_retry install -y git")
     error_message = "User data must be the shared Docker installer followed by the build tools."
   }
