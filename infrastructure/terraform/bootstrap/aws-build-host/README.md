@@ -1,8 +1,13 @@
 # Lane build host
 
-One on-demand Ubuntu 24.04 build host for agent lanes whose local disk cannot sustain
+One Ubuntu 24.04 build host for agent lanes whose local disk cannot sustain
 .NET server builds. It is a persistent spot instance: when AWS reclaims capacity it stops
 and keeps its disk, so NuGet, npm and container caches survive.
+
+Choose `region` and an amd64 `instance_type` with 16 vCPUs by current spot price
+before deployment. The variable defaults are examples, not the expected deployment.
+Set both values explicitly in the operator configuration; compare prices again when
+replacing the host. The backend region is configured separately in `backend.tf`.
 
 Cost controls, all in this root:
 

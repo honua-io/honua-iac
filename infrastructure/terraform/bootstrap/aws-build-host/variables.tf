@@ -1,10 +1,11 @@
 variable "region" {
-  type    = string
-  default = "us-east-1"
+  description = "Example region; select the deployment region by current spot price and set it explicitly."
+  type        = string
+  default     = "us-east-1"
 }
 
 variable "instance_type" {
-  description = "amd64 instance type for the build host. Compute-optimised; 16 vCPU and 32 GiB fit one full .NET server build and test run."
+  description = "Example amd64 instance type; select a 16-vCPU type by current spot price and set it explicitly."
   type        = string
   default     = "c7i.4xlarge"
 }
