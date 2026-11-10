@@ -83,7 +83,9 @@ remove_offline_runners() {
     [[ "$(jq '.runners | length' <<< "$response")" -eq 100 ]] || break
     page=$((page + 1))
   done
-  for id in "${ids[@]}"; do delete_runner "$id"; done
+  for id in "${ids[@]}"; do
+    delete_runner "$id" || echo "Could not remove offline runner ${id}; continuing boot cleanup." >&2
+  done
 }
 mode="${1:?registration mode required}"
 case "$mode" in
@@ -134,7 +136,8 @@ case "$mode" in
     install -d -o "$user" -g "$user" -m 0700 "/run/honua-gate-runner/${index}"
     github "${secrets}/runner-auth" -X POST -d "$request" "https://api.github.com/orgs/$(setting org)/actions/runners/generate-jitconfig" |
       jq -e '{id: .runner.id, encoded_jit_config}' > "${secrets}/registration.json"
-    jq -er '.id | numbers' "${secrets}/registration.json" > "$state"
+    id="$(jq -er '.id | numbers' "${secrets}/registration.json")"
+    printf '%s\n' "$id" > "$state"
     jq -er .encoded_jit_config "${secrets}/registration.json" |
       install -o "$user" -g "$user" -m 0400 /dev/stdin "/run/honua-gate-runner/${index}/jitconfig"
     ;;
@@ -271,7 +274,7 @@ cat > /etc/systemd/system/honua-gate-runner@.service <<'SERVICE'
 [Unit]
 Description=Ephemeral PR Gate runner %i
 Wants=network-online.target
-Requires=honua-gate-runner-prune.service
+Wants=honua-gate-runner-prune.service
 After=network-online.target honua-gate-runner-prune.service
 StartLimitIntervalSec=0
 
@@ -300,7 +303,6 @@ cat > /etc/systemd/system/honua-gate-runner-prune.service <<'SERVICE'
 Description=Remove abandoned offline build-host runner registrations
 Wants=network-online.target
 After=network-online.target
-Before=honua-gate-runner@1.service
 
 [Service]
 Type=oneshot

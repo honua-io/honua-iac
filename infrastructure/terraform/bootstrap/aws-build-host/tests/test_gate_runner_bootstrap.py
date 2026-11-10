@@ -126,7 +126,7 @@ class RunnerRegistrationTests(unittest.TestCase):
         self.bin.mkdir()
         (self.bin / "jq").symlink_to(shutil.which("jq"))
         self.config = self.root / "config.json"
-        self.config.write_text(json.dumps({"org": "test-org", "group": "gate"}))
+        self.config.write_text(json.dumps({"org": "test-org", "group": "gate", "labels": ["honua-build"]}))
         self.log = self.root / "requests"
         self.state = self.root / "state"
         self.state.mkdir()
@@ -137,6 +137,10 @@ class RunnerRegistrationTests(unittest.TestCase):
         body = body[:start] + 'secrets="$TEST_ROOT"; group_id=42\n' + body[end:]
         body = body.replace('/etc/honua-gate-runner.json', str(self.config))
         body = body.replace('/run/honua-gate-runner-state', str(self.state))
+        body = body.replace('/run/honua-gate-runner/', str(self.root / 'runtime') + '/')
+        install = self.bin / "install"
+        install.write_text('#!/bin/bash\nargs=(); while (($#)); do case "$1" in -o|-g) shift 2;; *) args+=("$1"); shift;; esac; done\nexec /usr/bin/install "${args[@]}"\n')
+        install.chmod(0o755)
         self.script = self.root / "registration.sh"
         self.script.write_text(body)
         curl = self.bin / "curl"
@@ -149,6 +153,13 @@ with (root / 'requests').open('a') as log: log.write(url + '\n')
 if '-X' in args and args[args.index('-X') + 1] == 'DELETE':
     print(os.environ.get('DELETE_STATUS', '204'), end='')
     sys.exit(0)
+if url.endswith('/latest/api/token'):
+    print('token'); sys.exit(0)
+if url.endswith('/latest/meta-data/instance-id'):
+    print('i-abc123'); sys.exit(0)
+if url.endswith('/generate-jitconfig'):
+    print(json.dumps({'runner': {'id': json.loads(os.environ.get('RUNNER_ID', '123'))},
+                      'encoded_jit_config': 'test-jit'})); sys.exit(0)
 page = url.rsplit('page=', 1)[-1]
 print((root / ('page-' + page)).read_text())
 """)
@@ -185,6 +196,25 @@ print((root / ('page-' + page)).read_text())
         self.assertIn('page=2', requests[1])
         self.assertEqual(len(requests), 4)
         self.assertTrue(requests[-1].endswith('/101'))
+
+    def test_prune_delete_failure_does_not_block_other_cleanup(self):
+        self.page(1, [self.runner(1), self.runner(2)])
+        result, requests = self.run_script('prune', DELETE_STATUS='422')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(requests[-1].endswith('/2'))
+        self.assertIn('Could not remove offline runner', result.stderr)
+
+    def test_register_records_id_and_installs_jitconfig(self):
+        result, requests = self.run_script('register')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.state / '1').read_text(), '123\n')
+        self.assertEqual((self.root / 'runtime/1/jitconfig').read_text(), 'test-jit\n')
+        self.assertTrue(requests[-1].endswith('/generate-jitconfig'))
+
+    def test_register_rejects_missing_numeric_id_without_state(self):
+        result, _ = self.run_script('register', RUNNER_ID='null')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.state / '1').exists())
 
     def test_remove_recorded_id_and_clear_state(self):
         (self.state / '1').write_text('123')
@@ -247,7 +277,8 @@ class SpotNoticeTests(unittest.TestCase):
 
     def test_service_wires_boot_cleanup_and_privileged_exit_cleanup(self):
         text = INSTALLER.read_text()
-        self.assertIn("Requires=honua-gate-runner-prune.service", text)
+        self.assertIn("Wants=honua-gate-runner-prune.service", text)
+        self.assertNotIn("Requires=honua-gate-runner-prune.service", text)
         self.assertIn("After=network-online.target honua-gate-runner-prune.service", text)
         self.assertIn("ExecStopPost=+/usr/local/sbin/honua-gate-runner-registration remove %i", text)
 
