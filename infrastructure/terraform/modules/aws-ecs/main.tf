@@ -1237,13 +1237,15 @@ module "rds" {
 
   # Enforce server-side TLS so the database rejects non-SSL connections,
   # matching the require_secure_transport posture of the Azure data stack and
-  # the shared aws-data module.
+  # the shared aws-data module. PostgreSQL 15 and later already default
+  # rds.force_ssl to 1 and report it as pending-reboot, so immediate would show
+  # the same in-place update on every plan.
   create_db_parameter_group = true
   parameters = [
     {
       name         = "rds.force_ssl"
       value        = "1"
-      apply_method = "immediate"
+      apply_method = "pending-reboot"
     }
   ]
 

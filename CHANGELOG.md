@@ -37,6 +37,11 @@ module input/output contracts may still change.
 - `aws-ecs`: a canary and a controller-owned rollout rule are allowed behind CloudFront; both require the
   distribution's origin secret.
 
+### Fixed
+
+- `aws-ecs`: `rds.force_ssl` is set with `apply_method = "pending-reboot"`. On PostgreSQL 15 and later the
+  previous `immediate` showed the same parameter group update on every plan.
+
 ## v0.6.4
 
 Patch release for the 2026.1-rc.2 redo.
