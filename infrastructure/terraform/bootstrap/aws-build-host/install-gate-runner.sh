@@ -123,9 +123,16 @@ register_for_one_job() {
   github "${secrets}/runner-auth" -X DELETE https://api.github.com/installation/token > /dev/null || true
 }
 
+check_prerequisites() {
+  # Unlike runuser/PAM, setpriv preserves the service's open-file limit.
+  setpriv --reuid "$uid" --regid "$(id -g "$user")" --init-groups \
+    env HOME="$home" /bin/bash -c '. /etc/honua-gate-runner-env; exec /usr/local/bin/honua-gate-runner-check'
+}
+
 end_previous_job
 restore_pristine_home
 block_instance_metadata
+check_prerequisites
 register_for_one_job
 PREPARE
 
@@ -137,6 +144,13 @@ jit_file="/run/honua-gate-runner/$1/jitconfig"
 ACTIONS_RUNNER_INPUT_JITCONFIG="$(< "$jit_file")"
 export ACTIONS_RUNNER_INPUT_JITCONFIG
 rm -f "$jit_file"
+. /etc/honua-gate-runner-env
+/usr/local/bin/honua-gate-runner-check
+cd "${HOME}/runner"
+exec ./run.sh
+RUN
+
+cat > /etc/honua-gate-runner-env <<'ENVIRONMENT'
 # These paths are private, writable, and reset with the home after every job.
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 export DOCKER_HOST="unix://${XDG_RUNTIME_DIR}/docker.sock"
@@ -144,10 +158,8 @@ export DOTNET_INSTALL_DIR="${HOME}/.dotnet" DOTNET_ROOT="${HOME}/.dotnet"
 export RUNNER_TOOL_CACHE="${HOME}/.cache/toolcache" AGENT_TOOLSDIRECTORY="${HOME}/.cache/toolcache"
 export PATH="${HOME}/.venv/bin:${HOME}/.dotnet:${HOME}/.local/bin:${PATH}"
 export LANG=C.UTF-8 LC_ALL=C.UTF-8 TZ=UTC DOTNET_CLI_TELEMETRY_OPTOUT=1
-/usr/local/bin/honua-gate-runner-check
-cd "${HOME}/runner"
-exec ./run.sh
-RUN
+ENVIRONMENT
+chmod 0644 /etc/honua-gate-runner-env
 
 # Fail before advertising readiness when a replacement image lacks workflow prerequisites.
 cat > /usr/local/bin/honua-gate-runner-check <<'CHECK'

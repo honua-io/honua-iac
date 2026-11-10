@@ -155,7 +155,7 @@ conditional public installation proof in honua-server's PR Gate workflow.
 | Checkout, admission, classification, scope and retry scripts | Bash, git, gh, jq, curl, OpenSSL, coreutils (including timeout, sha256sum, base64, realpath), findutils, grep, sed, awk, procps and util-linux. Ubuntu/base installers provide these; the runner installer adds gh from GitHub's signed official apt repository. |
 | Python admission fixtures, certification/CITE contracts, scope planners, managed artifact packing and generated indexes | Python 3 with its standard library (including venv, unittest, sqlite3, ssl, tarfile and compression modules); pip and `PyYAML>=6,<7` for `okf-requirements.txt`. Distro python3-venv/pip/yaml plus a private venv with system-site-packages keep pip installs off the system interpreter. |
 | Markdown command policy | PowerShell 7 from Microsoft's official Ubuntu repository; it runs in both lean-gate and the docs-only exit. |
-| Managed builds, format, generators and tests | setup-dotnet installs the workflow/global.json SDK into `$HOME/.dotnet`; DOTNET_INSTALL_DIR/DOTNET_ROOT and PATH point there. Existing native dependencies include ICU, OpenSSL, zlib, fontconfig/DejaVu and libatomic; the runner dependency installer completes the runtime prerequisites. |
+| Managed builds, format, generators and tests | setup-dotnet installs the workflow/global.json SDK into writable storage: `$HOME/.dotnet` by default; setup-dotnet-ci overrides this with `$RUNNER_TEMP/honua-managed-sdk/<sdk>` for managed artifacts. Existing native dependencies include ICU, OpenSSL, zlib, fontconfig/DejaVu and libatomic; the runner dependency installer completes the runtime prerequisites. |
 | Testcontainers PostGIS, boot/migration smoke, public installation proof | Docker engine/CLI, buildx and Compose from Docker's official apt repository. Each runner uses its own rootless daemon through DOCKER_HOST/XDG_RUNTIME_DIR; host PostgreSQL/psql is unnecessary because psql runs inside the image. |
 | Managed artifact npm dependencies | Host Node 24 and npm from NodeSource's official 24.x repository. The managed action declares Node >=24. JavaScript actions also use the runner distribution's bundled Node runtime. Enabling runners upgrades the base image's Node 22 to 24. |
 | SDK/Python downloads, caches and artifact archives | tar, gzip, xz, zip, unzip and zstd; curl and CA certificates. RUNNER_TOOL_CACHE/AGENT_TOOLSDIRECTORY point to `$HOME/.cache/toolcache`, allowing setup-python's conditional Python 3.11 installation without privileged writes. The installation proof creates its own SDK venv. |
@@ -167,7 +167,8 @@ it grants no privileges to these accounts. GitHub/AWS CLIs used by the hosted
 registration/heartbeat service uses the existing AWS CLI; jobs cannot access
 its credential or instance metadata.
 
-Before starting Runner.Listener, `honua-gate-runner-check` verifies required
+Before GitHub registration and again before starting Runner.Listener,
+`honua-gate-runner-check` verifies required
 executables, Node/PowerShell/PyYAML compatibility, writable SDK/tool caches,
 locale/time/open-file limits, and rootless Docker/buildx/Compose. A failing image
 cannot advertise idle readiness. Each pristine home template is root-owned and
