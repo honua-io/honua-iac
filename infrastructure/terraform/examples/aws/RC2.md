@@ -11,7 +11,8 @@ ElastiCache, Secrets Manager, CloudWatch logs, HTTPS ALB and guarded autoscaling
 This preset adds private-network PostGIS initialization and a static Console.
 
 Use `bootstrap/aws-exec-identity` with the regenerated ECS manifest from this
-revision. It includes CloudFront distribution, origin access control and function
+revision with `topology.static_console=true` (and `compute="ecs"`, `redis=true`,
+`custom_domain=true`). The static Console feature manifest includes CloudFront distribution, origin access control and function
 lifecycle actions in a global statement without a regional condition. The older
 `bootstrap/aws-ecs` identity lacks these permissions and is unsupported for this
 preset. The account owner provisions the deployment identity before a live plan;

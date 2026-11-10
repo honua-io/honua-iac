@@ -117,6 +117,10 @@ run "actual_managed_admin_secret_version" {
     error_message = "Bootstrap readback must expose the actual immutable managed version ID, never password content."
   }
   assert {
+    condition     = alltrue([for container in jsondecode(aws_ecs_task_definition.this.container_definitions) : !can(container.dependsOn) && !can(container.startTimeout)])
+    error_message = "Existing stacks must keep task definitions unchanged when PostGIS bootstrap is absent."
+  }
+  assert {
     condition     = length([for secret in jsondecode(aws_ecs_task_definition.this.container_definitions)[0].secrets : secret if secret.name == "HONUA_ADMIN_PASSWORD" && secret.valueFrom == output.admin_password_secret_arn]) == 1
     error_message = "Existing Server credential injection must retain its original base ARN behavior."
   }
@@ -124,6 +128,18 @@ run "actual_managed_admin_secret_version" {
 
 run "static_console_private_origins" {
   command = apply
+  override_resource {
+    target          = aws_acm_certificate.this[0]
+    override_during = plan
+    values = {
+      domain_validation_options = [{
+        domain_name           = "maps.example.com"
+        resource_record_name  = "_test.maps.example.com"
+        resource_record_type  = "CNAME"
+        resource_record_value = "_test.acm-validations.aws."
+      }]
+    }
+  }
   variables {
     existing_db_endpoint                      = ""
     existing_db_connection_string             = ""
@@ -132,6 +148,7 @@ run "static_console_private_origins" {
     redis_node_type                           = "cache.t4g.micro"
     operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:key-ring-AbC123"
     domain_name                               = "maps.example.com"
+    route53_zone_id                           = "Z00000000000000000000"
     alb_certificate_arn                       = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
     alb_enable_http_redirect                  = false
     enable_postgis                            = false
@@ -142,6 +159,10 @@ run "static_console_private_origins" {
     postgis_bootstrap_image           = "docker.io/library/postgres@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     file_storage_provider             = "AwsS3"
     file_storage_aws_s3_create_bucket = true
+  }
+  assert {
+    condition     = aws_route53_record.service_alias[0].alias[0].name == aws_cloudfront_distribution.console[0].domain_name && aws_route53_record.service_alias[0].alias[0].zone_id == aws_cloudfront_distribution.console[0].hosted_zone_id
+    error_message = "The stable service alias must target CloudFront when static Console is enabled."
   }
   assert {
     condition = alltrue([for origin in aws_cloudfront_distribution.console[0].origin :
@@ -169,7 +190,7 @@ run "static_console_private_origins" {
     error_message = "One-shot migrations must wait for the same private PostGIS bootstrap as the service."
   }
   assert {
-    condition     = aws_lb.this.xff_header_processing_mode == "preserve" && alltrue([for origin in aws_cloudfront_distribution.console[0].origin : origin.custom_origin_config[0].origin_read_timeout == 60 if origin.origin_id == "api"])
+    condition     = aws_lb.this.xff_header_processing_mode == "preserve" && alltrue([for origin in aws_cloudfront_distribution.console[0].origin : origin.custom_origin_config[0].origin_read_timeout == 60 && origin.custom_origin_config[0].origin_keepalive_timeout < 60 if origin.origin_id == "api"])
     error_message = "The edge topology must preserve CloudFront's rightmost viewer IP and the ALB's 60-second API response window."
   }
   assert {

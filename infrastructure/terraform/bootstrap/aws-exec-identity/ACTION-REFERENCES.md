@@ -165,3 +165,5 @@ Provider implementation: [AWS provider v5.100.0](https://github.com/hashicorp/te
 - [aws_vpn_gateway_attachment](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpn_gateway_attachment)
 - [aws_vpn_gateway_route_propagation](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpn_gateway_route_propagation)
 - [aws_wafv2_web_acl_association](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/wafv2_web_acl_association)
+
+The static Console feature also reads `aws_ec2_managed_prefix_list`: the AWS provider v5 lookup uses `ec2:DescribeManagedPrefixLists` and `ec2:GetManagedPrefixListEntries`. These read actions are selected only with the static Console feature. See [EC2 managed prefix list IAM actions](https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonec2.html).

@@ -190,7 +190,7 @@ resource "aws_cloudfront_distribution" "console" {
       http_port                = 80
       https_port               = 443
       origin_read_timeout      = 60
-      origin_keepalive_timeout = 60
+      origin_keepalive_timeout = 55
       origin_protocol_policy   = "https-only"
       origin_ssl_protocols     = ["TLSv1.2"]
     }

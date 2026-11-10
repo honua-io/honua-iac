@@ -31,14 +31,15 @@ locals {
   name = "${var.name_prefix}-${var.environment}"
 
   tags = merge({
-    ManagedBy                 = "terraform"
-    Purpose                   = "honua-governed-execution-identity"
-    Environment               = var.environment
-    HonuaTopologyCompute      = var.topology.compute
-    HonuaTopologyRedis        = var.topology.redis ? "true" : "false"
-    HonuaTopologyCustomDomain = var.topology.custom_domain ? "true" : "false"
-    HonuaTopologyWaf          = var.topology.waf ? "true" : "false"
-    HonuaTopologyGpBatch      = var.topology.gp_batch ? "true" : "false"
+    ManagedBy                  = "terraform"
+    Purpose                    = "honua-governed-execution-identity"
+    Environment                = var.environment
+    HonuaTopologyStaticConsole = var.topology.static_console ? "true" : "false"
+    HonuaTopologyCompute       = var.topology.compute
+    HonuaTopologyRedis         = var.topology.redis ? "true" : "false"
+    HonuaTopologyCustomDomain  = var.topology.custom_domain ? "true" : "false"
+    HonuaTopologyWaf           = var.topology.waf ? "true" : "false"
+    HonuaTopologyGpBatch       = var.topology.gp_batch ? "true" : "false"
   }, var.tags)
 
   partition  = data.aws_partition.current.partition
@@ -68,6 +69,7 @@ locals {
     "aws-ecs",
     "aws-eks",
     "aws-serverless",
+    "static-console",
     "redis",
     "custom-domain",
     "waf",
@@ -90,6 +92,7 @@ locals {
   # no attachable AWS managed policy.
   topology_manifest_ids = concat(
     ["iam-workload", local.topology_compute_manifest[var.topology.compute]],
+    var.topology.static_console ? ["static-console"] : [],
     var.topology.redis ? ["redis"] : [],
     var.topology.custom_domain ? ["custom-domain"] : [],
     var.topology.waf ? ["waf"] : [],
@@ -358,7 +361,7 @@ data "aws_iam_policy_document" "deployment" {
     for_each = length(local.global_actions) > 0 ? [1] : []
 
     content {
-      sid       = "ManageHostedZoneRecords"
+      sid       = "ManageGlobalServices"
       effect    = "Allow"
       actions   = local.global_actions
       resources = ["*"]
@@ -669,6 +672,7 @@ locals {
       "Delete a permissions boundary.",
       "Call an action that is not listed in actions_by_service. This role is not an IAM administrator, and the agent that assumes it cannot widen it.",
     ],
+    var.topology.static_console ? [] : ["Manage CloudFront. static_console is not part of the approved topology."],
     var.topology.redis ? [] : ["Manage ElastiCache. redis is not part of the approved topology."],
     var.topology.custom_domain ? [] : ["Manage ACM certificates or Route 53 records. custom_domain is not part of the approved topology."],
     var.topology.waf ? [] : ["Manage WAFv2 web ACLs. waf is not part of the approved topology."],
@@ -682,11 +686,12 @@ locals {
     schema_version = "v1"
     kind           = "honua.iac.deploy-identity"
     topology = {
-      compute       = var.topology.compute
-      redis         = var.topology.redis
-      custom_domain = var.topology.custom_domain
-      waf           = var.topology.waf
-      gp_batch      = var.topology.gp_batch
+      compute        = var.topology.compute
+      static_console = var.topology.static_console
+      redis          = var.topology.redis
+      custom_domain  = var.topology.custom_domain
+      waf            = var.topology.waf
+      gp_batch       = var.topology.gp_batch
     }
     role_arn           = local.deployment_role_arn
     role_name          = "${local.name}-deploy"

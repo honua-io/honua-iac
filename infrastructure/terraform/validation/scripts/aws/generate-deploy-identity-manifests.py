@@ -33,6 +33,7 @@ MANIFEST_DIR = BOOTSTRAP / "aws-exec-identity" / "manifests"
 EXEC_ROOT = BOOTSTRAP / "aws-exec-identity"
 
 FEATURE_SERVICES = {
+    "static-console": {"cloudfront"},
     "redis": {"elasticache"},
     "custom-domain": {"acm", "route53"},
     "waf": {"wafv2"},
@@ -539,6 +540,7 @@ IAM_STATEMENT_KIND = {
 
 # Representative concrete actions for IAM simulation.
 SIMULATE = {
+    "static-console": ["cloudfront:CreateDistributionWithTags"],
     "aws-ecs": ["ecs:CreateCluster", "ecs:RegisterTaskDefinition", "elasticloadbalancing:CreateLoadBalancer"],
     "aws-eks": ["eks:CreateCluster", "eks:DescribeCluster", "autoscaling:CreateAutoScalingGroup"],
     "aws-serverless": ["lambda:CreateFunction", "lambda:UpdateFunctionCode", "apigateway:POST"],
@@ -606,6 +608,12 @@ MODULE_SPECS = {
 }
 
 FEATURE_SPECS = {
+    "static-console": {
+        "sids_by_template": {},
+        "pass_role_services": [],
+        "service_linked_roles": [],
+        "attachable_policies": [],
+    },
     "redis": {
         "sids_by_template": {
             BOOTSTRAP / "aws-ecs" / "main.tf": ["EcsCoreInfra"],
@@ -953,6 +961,9 @@ def build() -> tuple[dict[str, dict], list[str]]:
         body["attachable_policies"] = list(spec["attachable_policies"])
         add_actions(body, FEATURE_EXACT_ACTIONS.get(feature) or
                     curated_actions(spec["sids_by_template"], FEATURE_SERVICES[feature]))
+        if feature == "static-console":
+            # aws_ec2_managed_prefix_list reads both APIs (AWS provider v5).
+            add_actions(body, ["ec2:DescribeManagedPrefixLists", "ec2:GetManagedPrefixListEntries"])
         manifests[feature] = body
 
     problems: list[str] = []
