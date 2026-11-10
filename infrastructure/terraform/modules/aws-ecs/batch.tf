@@ -8,6 +8,10 @@ locals {
     ControlPlane__ExecutionWorkloads__0__WorkloadName               = "GP Batch"
     ControlPlane__ExecutionWorkloads__0__TargetKind                 = "AwsBatch"
     ControlPlane__ExecutionWorkloads__0__Backend                    = "honua-aws-batch"
+    ControlPlane__ExecutionWorkloads__0__RuntimeProfile             = "native"
+    ControlPlane__ExecutionWorkloads__1__WorkloadId                 = "gp-local"
+    ControlPlane__ExecutionWorkloads__1__Backend                    = "local"
+    ControlPlane__ExecutionWorkloads__1__Kind                       = "Geoprocessing"
     ControlPlane__ExecutionWorkloads__0__Kind                       = "Geoprocessing"
     ControlPlane__ExecutionWorkloads__0__ArtifactReference          = var.gp_batch.image
     ControlPlane__ExecutionWorkloads__0__ParameterEntries__0__Key   = "batch.job_queue_arn"
@@ -54,7 +58,7 @@ resource "aws_security_group" "gp_batch" {
 }
 
 resource "aws_security_group_rule" "gp_batch_external_database" {
-  count                    = local.gp_batch_enabled && local.db_use_existing ? 1 : 0
+  count                    = local.gp_batch_enabled && local.db_use_existing && try(var.gp_batch.database_security_group_id != null, false) ? 1 : 0
   type                     = "ingress"
   description              = "PostgreSQL from GP Batch workers"
   security_group_id        = var.gp_batch.database_security_group_id
@@ -102,11 +106,11 @@ resource "aws_iam_role_policy" "gp_batch_execution_secret" {
 resource "aws_iam_role_policy" "gp_batch_job" {
   count = local.gp_batch_enabled ? 1 : 0
   role  = aws_iam_role.gp_batch_job[0].id
-  policy = jsonencode({ Version = "2012-10-17", Statement = concat(local.gp_batch_secret_statements, [
+  policy = jsonencode({ Version = "2012-10-17", Statement = [
     { Effect = "Allow", Action = ["s3:GetBucketLocation"], Resource = [local.gp_batch_bucket_arn] },
     { Effect = "Allow", Action = ["s3:ListBucket"], Resource = [local.gp_batch_bucket_arn], Condition = { StringLike = { "s3:prefix" = [local.gp_batch_prefix, "${local.gp_batch_prefix}/*"] } } },
     { Effect = "Allow", Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"], Resource = ["${local.gp_batch_bucket_arn}/${local.gp_batch_prefix}/*"] }
-  ]) })
+  ] })
 }
 
 resource "aws_iam_role_policy" "gp_batch_submit" {
@@ -114,7 +118,7 @@ resource "aws_iam_role_policy" "gp_batch_submit" {
   role  = aws_iam_role.task.id
   policy = jsonencode({ Version = "2012-10-17", Statement = [
     { Effect = "Allow", Action = ["batch:SubmitJob"], Resource = [aws_batch_job_queue.gp[0].arn, aws_batch_job_definition.gp[0].arn] },
-    # DescribeJobs/ListJobs lack resource-level IAM support; cancellation uses job ARNs.
+    # DescribeJobs/ListJobs lack resource-level IAM support.
     { Effect = "Allow", Action = ["batch:DescribeJobs", "batch:ListJobs"], Resource = ["*"] },
     { Effect = "Allow", Action = ["batch:CancelJob", "batch:TerminateJob"], Resource = ["arn:${data.aws_partition.current.partition}:batch:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:job/*"] }
   ] })
@@ -172,7 +176,7 @@ resource "aws_batch_job_definition" "gp" {
     secrets                      = [{ name = "ConnectionStrings__DefaultConnection", valueFrom = aws_secretsmanager_secret.db_connection.arn }]
     environment = [
       { name = "Licensing__Mode", value = "Disabled" },
-      { name = "JobStore__WorkerMaxPoolSize", value = "2" },
+      { name = "Jobs__Store__WorkerMaxPoolSize", value = "2" },
       { name = "FileStorage__Provider", value = "AwsS3" },
       { name = "FileStorage__AwsS3__BucketName", value = local.file_storage_bucket_name },
       { name = "FileStorage__AwsS3__Region", value = local.file_storage_aws_s3_region },

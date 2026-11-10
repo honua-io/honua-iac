@@ -157,8 +157,20 @@ run "private_fargate_workers" {
     error_message = "The server Batch policy must contain only the five authorized actions."
   }
   assert {
-    condition     = jsondecode(aws_iam_role_policy.gp_batch_job[0].policy).Statement[3].Condition.StringLike["s3:prefix"] == ["honua/gp", "honua/gp/*"] && jsondecode(aws_iam_role_policy.gp_batch_job[0].policy).Statement[4].Resource[0] == "arn:aws:s3:::test-files/honua/gp/*"
+    condition     = jsondecode(aws_iam_role_policy.gp_batch_job[0].policy).Statement[1].Condition.StringLike["s3:prefix"] == ["honua/gp", "honua/gp/*"] && jsondecode(aws_iam_role_policy.gp_batch_job[0].policy).Statement[2].Resource[0] == "arn:aws:s3:::test-files/honua/gp/*"
     error_message = "Worker list/object access must stay within the configured file prefix."
+  }
+  assert {
+    condition     = local.gp_batch_environment.ControlPlane__ExecutionWorkloads__0__RuntimeProfile == "native" && local.gp_batch_environment.ControlPlane__ExecutionWorkloads__1__Backend == "local" && local.gp_batch_environment.ControlPlane__ExecutionWorkloads__1__Kind == "Geoprocessing"
+    error_message = "Native GP must route to Batch while managed GP remains local."
+  }
+  assert {
+    condition     = alltrue([for s in jsondecode(aws_iam_role_policy.gp_batch_job[0].policy).Statement : alltrue([for a in s.Action : startswith(a, "s3:")])])
+    error_message = "The job role must have only S3 permissions; ECS injects the database secret."
+  }
+  assert {
+    condition     = contains(jsondecode(aws_batch_job_definition.gp[0].container_properties).environment, { name = "Jobs__Store__WorkerMaxPoolSize", value = "2" }) && jsondecode(aws_batch_job_definition.gp[0].container_properties).networkConfiguration.assignPublicIp == "DISABLED" && jsondecode(aws_batch_job_definition.gp[0].container_properties).secrets[0].name == "ConnectionStrings__DefaultConnection"
+    error_message = "Workers require the actual two-connection pool setting, private networking and database secret injection."
   }
   assert {
     condition     = local.db_pool_inputs.other_connections == 8
@@ -183,4 +195,15 @@ run "rejects_unpinned_worker" {
     file_storage_aws_s3_key_prefix  = "honua/gp"
   }
   expect_failures = [var.gp_batch]
+}
+
+run "requires_external_database_security_group" {
+  command = plan
+  variables {
+    gp_batch                        = { image = "worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+    file_storage_provider           = "AwsS3"
+    file_storage_aws_s3_bucket_name = "test-files"
+    file_storage_aws_s3_key_prefix  = "honua/gp"
+  }
+  expect_failures = [terraform_data.gp_batch_validation]
 }

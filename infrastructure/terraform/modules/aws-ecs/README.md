@@ -1084,7 +1084,7 @@ so change the command only when deploying a compatible image.
 
 ### Optional geoprocessing on AWS Batch
 
-`gp_batch = null` (default) creates no Batch resources. To run heavy GP remotely:
+`gp_batch = null` (default) creates no Batch resources. To run heavy GP remotely with the PostgreSQL substrate and no Redis:
 
 ```hcl
 redis_enabled = false
@@ -1115,10 +1115,11 @@ Batch injects `ConnectionStrings__DefaultConnection` from the same database secr
 used by ECS. Workers use the PostgreSQL store to claim their assigned job and
 persist progress, logs and completion; no Redis connection or HTTP listener is
 needed. The Batch backend supplies the operation/attempt environment at submission.
+The worker disables licensing checks because the server enforces licensing at submission.
 S3 settings enable shared file access for workloads that need it. The worker job
-role can access only the database secret and the configured file prefix. The
+role can access only the configured file prefix. The
 execution role can pull the image, emit logs and decrypt that secret. Both roles
-inherit `permissions_boundary_arn`. `JobStore__WorkerMaxPoolSize=2` reserves two database connections each
+inherit `permissions_boundary_arn`. `Jobs__Store__WorkerMaxPoolSize=2` reserves two database connections each
 in the connection budget. Apply database schema migrations before submitting jobs.
 
 For a module-managed database, its security group admits workers on TCP 5432.
@@ -1128,10 +1129,11 @@ in another Terraform root. Routing and the supplied connection string must reach
 that database from the private subnets.
 
 The module configures `ControlPlane__ExecutionWorkloads__0__*` with `TargetKind=AwsBatch`,
-`Backend=honua-aws-batch`, `Kind=Geoprocessing`, and `ParameterEntries` keys
+`Backend=honua-aws-batch`, `Kind=Geoprocessing`, `RuntimeProfile=native`, and `ParameterEntries` keys
 `batch.job_queue_arn` and `batch.job_definition_arn`. Workload slot 0 is reserved
-for Batch when enabled. `ControlPlane__TriggerMode=Poll` selects the ECS host's
-execution reconciler: it calls Batch DescribeJobs and updates the durable job
+for Batch when enabled; slot 1 retains local managed GP execution.
+`ControlPlane__TriggerMode=Poll` explicitly retains the default polling mode. The ECS host's
+execution reconciler it calls Batch DescribeJobs and updates the durable job
 store. Long-lived hosts also run the scheduled backstop; EventBridge and Lambda
 are unnecessary. See honua-server `Startup/ControlPlaneReconcileRegistration.cs`,
 `Honua.Jobs/Features/ControlPlane/ExecutionJobReconciler.cs`, and
