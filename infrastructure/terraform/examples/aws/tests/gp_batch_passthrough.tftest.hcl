@@ -140,6 +140,21 @@ run "batch_disabled_by_default" {
 
 run "batch_passthrough" {
   command = plan
+  override_resource {
+    override_during = plan
+    target          = module.honua.aws_batch_job_queue.gp[0]
+    values          = { arn = "arn:aws:batch:us-east-1:123456789012:job-queue/test-gp" }
+  }
+  override_resource {
+    override_during = plan
+    target          = module.honua.aws_batch_job_definition.gp[0]
+    values          = { arn = "arn:aws:batch:us-east-1:123456789012:job-definition/test-gp:1" }
+  }
+  override_resource {
+    override_during = plan
+    target          = module.honua.aws_security_group.gp_batch[0]
+    values          = { id = "sg-00000000000000001" }
+  }
   variables {
     gp_batch = {
       image                      = "worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
