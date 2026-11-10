@@ -151,7 +151,7 @@ resource "aws_autoscaling_group" "build" {
         version            = aws_launch_template.build.latest_version
       }
       dynamic "override" {
-        for_each = toset(["c6i.4xlarge", "c7i.4xlarge", "m6i.4xlarge", "m7i.4xlarge", "c6a.4xlarge", "m6a.4xlarge"])
+        for_each = toset(["c6i.8xlarge", "c7i.8xlarge", "m6i.8xlarge", "m7i.8xlarge", "c6a.8xlarge", "m6a.8xlarge"])
         content { instance_type = override.value }
       }
     }
