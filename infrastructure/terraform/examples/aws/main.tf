@@ -141,9 +141,8 @@ check "alb_reachable_from_outside_vpc" {
 }
 
 locals {
-  # Operator-supplied settings first, so the root's fixed server settings and the
-  # optional layer-publish budget (layer_publishing_materialization_timeout_seconds;
-  # honua-server#6917) win over them. Null sets nothing.
+  # Operator-supplied settings come first so the root's fixed server settings and
+  # the optional layer-publish budget override them. A null value sets nothing.
   server_additional_env = merge(
     var.additional_env,
     {
