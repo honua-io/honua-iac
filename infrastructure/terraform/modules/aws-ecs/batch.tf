@@ -31,15 +31,23 @@ resource "terraform_data" "gp_batch_validation" {
 }
 
 resource "aws_security_group" "gp_batch" {
+  #checkov:skip=CKV2_AWS_5: Attached to Batch Fargate tasks through the compute environment.
   count       = local.gp_batch_enabled ? 1 : 0
   name_prefix = "${local.name}-gp-"
   description = "Private GP Batch workers"
   vpc_id      = local.vpc_id
   egress {
-    description = "Database and HTTPS services via private subnet routing"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
+    description = "HTTPS services via private subnet routing"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  egress {
+    description = "PostgreSQL via private subnet routing"
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
   tags = local.tags
