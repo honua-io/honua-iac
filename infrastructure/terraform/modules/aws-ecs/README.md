@@ -1133,7 +1133,7 @@ The module configures `ControlPlane__ExecutionWorkloads__0__*` with `TargetKind=
 `batch.job_queue_arn` and `batch.job_definition_arn`. Workload slot 0 is reserved
 for Batch when enabled; slot 1 retains local managed GP execution.
 `ControlPlane__TriggerMode=Poll` explicitly retains the default polling mode. The ECS host's
-execution reconciler it calls Batch DescribeJobs and updates the durable job
+execution reconciler calls Batch DescribeJobs and updates the durable job
 store. Long-lived hosts also run the scheduled backstop; EventBridge and Lambda
 are unnecessary. See honua-server `Startup/ControlPlaneReconcileRegistration.cs`,
 `Honua.Jobs/Features/ControlPlane/ExecutionJobReconciler.cs`, and
