@@ -25,7 +25,7 @@ locals {
   db_use_existing       = var.existing_db_endpoint != "" && var.existing_db_connection_string != ""
   use_managed_cert      = var.domain_name != "" && var.route53_zone_id != ""
   use_https             = var.alb_certificate_arn != "" || local.use_managed_cert
-  create_domain_alias   = var.domain_alias_record_enabled && var.domain_name != "" && var.route53_zone_id != ""
+  create_domain_alias   = var.static_console == null && var.domain_alias_record_enabled && var.domain_name != "" && var.route53_zone_id != ""
   use_custom_domain     = var.domain_name != "" && local.use_https
   service_host          = local.use_custom_domain ? var.domain_name : aws_lb.this.dns_name
   service_scheme        = local.use_https ? "https" : "http"
@@ -45,7 +45,7 @@ locals {
   multi_replica_enabled = var.desired_count > 1 || var.max_capacity > 1 || (local.canary_enabled && var.canary_desired_count > 0)
   shared_file_storage_configured = (
     var.file_storage_provider == "AwsS3" &&
-    trimspace(var.file_storage_aws_s3_bucket_name) != ""
+    (var.file_storage_aws_s3_create_bucket || trimspace(var.file_storage_aws_s3_bucket_name) != "")
   )
   multi_node_topology_ready = (
     var.deployment_mode == "MultiNode" &&
@@ -171,7 +171,7 @@ locals {
     Deployment__Mode      = var.deployment_mode
     FileStorage__Provider = var.file_storage_provider
     }, var.file_storage_provider == "AwsS3" ? {
-    FileStorage__AwsS3__BucketName = var.file_storage_aws_s3_bucket_name
+    FileStorage__AwsS3__BucketName = local.file_storage_bucket_name
     FileStorage__AwsS3__Region     = local.file_storage_aws_s3_region
     FileStorage__AwsS3__KeyPrefix  = var.file_storage_aws_s3_key_prefix
   } : {}, local.licensing_environment, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.transcript_signing_environment, local.cors_environment, local.alb_tls_environment, local.public_base_url_environment, local.import_limits_environment, local.health_check_environment, local.oidc_static_environment, local.browser_auth_environment, local.scim_environment, local.migration_safety_environment, local.migration_task_serving_environment, local.deploy_control_plane_environment)
@@ -312,11 +312,12 @@ resource "aws_security_group" "alb" {
   dynamic "ingress" {
     for_each = local.use_https ? [1] : []
     content {
-      description = "HTTPS ingress"
-      from_port   = 443
-      to_port     = 443
-      protocol    = "tcp"
-      cidr_blocks = local.https_ingress_cidrs
+      description     = "HTTPS ingress"
+      from_port       = 443
+      to_port         = 443
+      protocol        = "tcp"
+      cidr_blocks     = var.static_console == null ? local.https_ingress_cidrs : []
+      prefix_list_ids = var.static_console == null ? [] : [data.aws_ec2_managed_prefix_list.cloudfront[0].id]
     }
   }
 
@@ -775,7 +776,7 @@ resource "aws_lb_listener" "https" {
   certificate_arn   = local.certificate_arn
 
   dynamic "default_action" {
-    for_each = local.canary_enabled ? [1] : []
+    for_each = local.canary_enabled && var.static_console == null ? [1] : []
     content {
       type = "forward"
 
@@ -794,10 +795,38 @@ resource "aws_lb_listener" "https" {
   }
 
   dynamic "default_action" {
-    for_each = local.canary_enabled ? [] : [1]
+    for_each = local.canary_enabled || var.static_console != null ? [] : [1]
     content {
       type             = "forward"
       target_group_arn = aws_lb_target_group.this.arn
+    }
+  }
+  dynamic "default_action" {
+    for_each = var.static_console == null ? [] : [1]
+    content {
+      type = "fixed-response"
+      fixed_response {
+        content_type = "text/plain"
+        status_code  = "403"
+        message_body = "Forbidden"
+      }
+    }
+  }
+
+}
+
+resource "aws_lb_listener_rule" "cloudfront" {
+  count        = var.static_console != null && local.use_https ? 1 : 0
+  listener_arn = aws_lb_listener.https[0].arn
+  priority     = 1
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.this.arn
+  }
+  condition {
+    http_header {
+      http_header_name = "X-Honua-Origin"
+      values           = [random_password.cloudfront_origin[0].result]
     }
   }
 }
@@ -945,7 +974,7 @@ resource "aws_iam_role_policy" "file_storage_s3" {
           "s3:ListBucket",
           "s3:ListBucketMultipartUploads"
         ]
-        Resource = ["arn:${data.aws_partition.current.partition}:s3:::${var.file_storage_aws_s3_bucket_name}"]
+        Resource = ["arn:${data.aws_partition.current.partition}:s3:::${local.file_storage_bucket_name}"]
       },
       {
         Effect = "Allow"
@@ -956,7 +985,7 @@ resource "aws_iam_role_policy" "file_storage_s3" {
           "s3:ListMultipartUploadParts",
           "s3:PutObject"
         ]
-        Resource = ["arn:${data.aws_partition.current.partition}:s3:::${var.file_storage_aws_s3_bucket_name}/*"]
+        Resource = ["arn:${data.aws_partition.current.partition}:s3:::${local.file_storage_bucket_name}/*"]
       }
     ]
   })
@@ -974,6 +1003,7 @@ resource "aws_iam_policy" "secrets" {
         Action = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
         Resource = compact([
           aws_secretsmanager_secret.db_connection.arn,
+          var.postgis_bootstrap_image == null ? null : aws_secretsmanager_secret.postgis_password[0].arn,
           aws_secretsmanager_secret.admin_password.arn,
           aws_secretsmanager_secret.master_key.arn,
           var.ai_provider_secret_arn != "" ? var.ai_provider_secret_arn : null,
@@ -1293,7 +1323,7 @@ resource "aws_ecs_task_definition" "this" {
     cpu_architecture        = upper(var.task_cpu_architecture)
   }
 
-  container_definitions = jsonencode([
+  container_definitions = jsonencode(concat(local.postgis_bootstrap_containers, [
     {
       name      = "honua"
       image     = var.image
@@ -1309,11 +1339,14 @@ resource "aws_ecs_task_definition" "this" {
       secrets          = local.container_secrets
       logConfiguration = local.container_log_configuration
       healthCheck      = local.container_health_check
+      dependsOn        = local.postgis_bootstrap_dependencies
+      startTimeout     = 120
     }
-  ])
+  ]))
 
   depends_on = [
     aws_secretsmanager_secret_version.db_connection,
+    aws_secretsmanager_secret_version.postgis_password,
     aws_secretsmanager_secret_version.admin_password,
     aws_secretsmanager_secret_version.master_key,
     aws_secretsmanager_secret_version.redis_connection,
@@ -1340,7 +1373,7 @@ resource "aws_ecs_task_definition" "canary" {
     cpu_architecture        = upper(var.task_cpu_architecture)
   }
 
-  container_definitions = jsonencode([
+  container_definitions = jsonencode(concat(local.postgis_bootstrap_containers, [
     {
       name      = "honua"
       image     = local.effective_canary_image
@@ -1356,11 +1389,14 @@ resource "aws_ecs_task_definition" "canary" {
       secrets          = local.container_secrets
       logConfiguration = local.container_log_configuration
       healthCheck      = local.container_health_check
+      dependsOn        = local.postgis_bootstrap_dependencies
+      startTimeout     = 120
     }
-  ])
+  ]))
 
   depends_on = [
     aws_secretsmanager_secret_version.db_connection,
+    aws_secretsmanager_secret_version.postgis_password,
     aws_secretsmanager_secret_version.admin_password,
     aws_secretsmanager_secret_version.master_key,
     aws_secretsmanager_secret_version.redis_connection,
@@ -1517,7 +1553,7 @@ data "aws_iam_policy_document" "ecs_task_assume" {
 }
 
 resource "null_resource" "enable_postgis" {
-  count = var.enable_postgis && !local.db_use_existing ? 1 : 0
+  count = var.enable_postgis && var.postgis_bootstrap_image == null && !local.db_use_existing ? 1 : 0
 
   lifecycle {
     precondition {

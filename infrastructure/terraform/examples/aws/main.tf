@@ -7,6 +7,11 @@ provider "aws" {
 }
 
 module "honua" {
+  static_console                                    = var.static_console
+  postgis_bootstrap_image                           = var.postgis_bootstrap_image
+  file_storage_aws_s3_create_bucket                 = var.file_storage_aws_s3_create_bucket
+  redis_node_type                                   = var.redis_node_type
+  db_engine_version                                 = var.db_engine_version
   transcript_signing                                = var.transcript_signing
   operation_key_ring_certificate_secret_arn         = var.operation_key_ring_certificate_secret_arn
   operation_key_ring_certificate_secret_kms_key_arn = var.operation_key_ring_certificate_secret_kms_key_arn
@@ -135,8 +140,8 @@ locals {
   # (layer_publishing_materialization_timeout_seconds; honua-server#6917). Null sets nothing.
   server_additional_env = merge(
     {
-      HONUA_SERVE_ADMIN_UI    = "true"
-      HONUA_ADMIN_UI          = "true"
+      HONUA_SERVE_ADMIN_UI    = var.static_console == null ? "true" : "false"
+      HONUA_ADMIN_UI          = var.static_console == null ? "true" : "false"
       HostValidation__Enabled = "false"
     },
     var.layer_publishing_materialization_timeout_seconds == null ? {} : {

@@ -92,3 +92,7 @@ The optional `transcript_signing` input passes the approved signer identity and
 existing secret reference to the runtime module. It is disabled by default. See
 [the signing guide](../../../../docs/devops/aws-transcript-signing.md) before
 configuring protected inputs or approving a deployment.
+
+## rc.2 Fargate deployment
+
+See [RC2.md](RC2.md) for the static Console, private PostGIS bootstrap, customer-run upgrade and rollback procedure, cost estimate, and validation gate.
