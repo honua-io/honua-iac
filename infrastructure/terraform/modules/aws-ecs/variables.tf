@@ -100,6 +100,17 @@ variable "max_capacity" {
   default     = 1
 }
 
+variable "autoscaling_requests_per_target" {
+  description = "Average load-balancer requests per task per minute that request-count target tracking holds, alongside the CPU policy. Null (default) scales on CPU only."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.autoscaling_requests_per_target == null ? true : var.autoscaling_requests_per_target > 0
+    error_message = "autoscaling_requests_per_target must be greater than 0."
+  }
+}
+
 variable "deployment_mode" {
   description = "Honua deployment mode. MultiNode is required whenever ECS can run more than one server task."
   type        = string

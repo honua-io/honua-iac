@@ -339,13 +339,17 @@ PREFIX_SERVICE = sorted(
 # Additional lifecycle actions for resource types. The generator adds them to
 # the manifest that owns the resource type.
 EXACT_ACTIONS = {
-    # Global endpoint lifecycle calls for the static Console edge.
+    # Global endpoint lifecycle calls for the CloudFront distribution.
     # https://docs.aws.amazon.com/service-authorization/latest/reference/list_cloudfront.html
     "aws_cloudfront_distribution": [
         "cloudfront:CreateDistribution", "cloudfront:CreateDistributionWithTags",
         "cloudfront:GetDistribution", "cloudfront:GetDistributionConfig",
         "cloudfront:UpdateDistribution", "cloudfront:DeleteDistribution",
         "cloudfront:ListTagsForResource", "cloudfront:TagResource", "cloudfront:UntagResource",
+    ],
+    "aws_cloudfront_cache_policy": [
+        "cloudfront:CreateCachePolicy", "cloudfront:GetCachePolicy", "cloudfront:GetCachePolicyConfig",
+        "cloudfront:UpdateCachePolicy", "cloudfront:DeleteCachePolicy",
     ],
     "aws_cloudfront_origin_access_control": [
         "cloudfront:CreateOriginAccessControl", "cloudfront:GetOriginAccessControl",

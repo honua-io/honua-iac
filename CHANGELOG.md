@@ -14,6 +14,26 @@ module input/output contracts may still change.
 
 ## Unreleased
 
+### Added
+
+- `aws-ecs`: optional `cdn` input. One CloudFront distribution on `domain_name` fronts the load balancer as
+  the deployment's shared cache: cache policies with minimum and default lifetime 0 (origin `Cache-Control`
+  decides), credentials and all query parameters in the cache key, caching disabled on admin and sign-in
+  paths, compression, HTTP/3, no edge error caching, an AAAA alias and optional access logs. The task role
+  may invalidate this distribution only and the server receives `SharedCache__CloudFront__DistributionId`.
+  New `cdn` output.
+- `aws-ecs`: optional `autoscaling_requests_per_target` (request-count target tracking beside CPU).
+- `examples/aws`: `cdn`, `autoscaling_requests_per_target` and `db_instance_class` inputs; `cdn` and
+  `db_connection_budget` outputs. The rc.2 preset runs two to six tasks on `db.t4g.medium`.
+
+### Changed
+
+- `aws-ecs`: `static_console` shares the `cdn` distribution. `aws_cloudfront_distribution.console` moved to
+  `aws_cloudfront_distribution.cdn` (a `moved` block keeps existing stacks in place), and its default
+  behavior now caches what the server marks public instead of nothing.
+- `aws-ecs`: a canary and a controller-owned rollout rule are allowed behind CloudFront; both require the
+  distribution's origin secret.
+
 ## v0.6.4
 
 Patch release for the 2026.1-rc.2 redo.

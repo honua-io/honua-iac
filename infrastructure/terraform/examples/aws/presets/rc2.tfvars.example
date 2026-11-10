@@ -2,9 +2,13 @@
 # Copy terraform.tfvars.example first, fill customer inputs, and supply verified
 # server and PostgreSQL client digests separately. Never use the illustrative pins.
 environment = "prod"
-deployment_mode = "SingleInstance"
-desired_count = 1
-max_capacity = 1
+deployment_mode = "MultiNode"
+# desired_count is the minimum task count. Raise it before an expected surge and
+# apply; lower it afterwards. max_capacity bounds the database pool per task.
+desired_count = 2
+max_capacity = 6
+autoscaling_requests_per_target = 600
+db_instance_class = "db.t4g.medium"
 redis_enabled = true
 redis_node_type = "cache.t4g.micro"
 canary_enabled = false
@@ -17,6 +21,7 @@ enable_postgis = true
 alb_enable_http_redirect = false
 allow_http_ingress_cidrs = []
 # Customer tfvars must set domain_name, regional alb_certificate_arn and:
-# static_console = { viewer_certificate_arn = <us-east-1 ACM ARN>, bundle_version = <verified release version> }
+# cdn = { viewer_certificate_arn = <us-east-1 ACM ARN> }
+# static_console = { viewer_certificate_arn = <the same ARN>, bundle_version = <verified release version> }
 # postgis_bootstrap_image = <verified PostgreSQL client registry/repository@sha256:digest>
 # Use an image containing psql, matching task_cpu_architecture. No database daemon runs in ECS.
