@@ -164,6 +164,9 @@ locals {
   import_limits_environment = var.import_background_job_threshold_bytes == null ? {} : {
     Import__Limits__BackgroundJobThresholdBytes = tostring(var.import_background_job_threshold_bytes)
   }
+  health_check_environment = var.health_check_command == null ? {} : {
+    HONUA_HEALTH_PORT = tostring(coalesce(var.health_check_port, var.container_port))
+  }
   runtime_environment = merge({
     Deployment__Mode      = var.deployment_mode
     FileStorage__Provider = var.file_storage_provider
@@ -171,7 +174,7 @@ locals {
     FileStorage__AwsS3__BucketName = var.file_storage_aws_s3_bucket_name
     FileStorage__AwsS3__Region     = local.file_storage_aws_s3_region
     FileStorage__AwsS3__KeyPrefix  = var.file_storage_aws_s3_key_prefix
-  } : {}, local.licensing_environment, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.transcript_signing_environment, local.cors_environment, local.alb_tls_environment, local.public_base_url_environment, local.import_limits_environment, local.oidc_static_environment, local.browser_auth_environment, local.scim_environment, local.migration_safety_environment, local.migration_task_serving_environment, local.deploy_control_plane_environment)
+  } : {}, local.licensing_environment, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.transcript_signing_environment, local.cors_environment, local.alb_tls_environment, local.public_base_url_environment, local.import_limits_environment, local.health_check_environment, local.oidc_static_environment, local.browser_auth_environment, local.scim_environment, local.migration_safety_environment, local.migration_task_serving_environment, local.deploy_control_plane_environment)
   primary_container_environment = [
     for key, value in merge(local.db_pool_sizing_environment, { for key, value in var.additional_env : key => value if var.platform_release == null || !startswith(lower(replace(key, ":", "__")), "controlplane__platformrelease__") }, local.runtime_environment, local.platform_release_environment.primary) : {
       name  = key
@@ -245,10 +248,9 @@ locals {
     }
   }
   container_health_check = {
-    # The server image ships bash but no wget or curl (honua-server#6798). Probe /dev/tcp the way the
-    # product's own docker-compose.yml does. The path is a positional argument ($1): never shell text and
-    # never part of the printf format, so any legal URI survives. Only an exact 200 status code passes.
-    command     = ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/${var.container_port} && printf 'GET %s HTTP/1.0\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n' \"$1\" >&3 && IFS=' ' read -r proto code rest <&3 && [ \"$code\" = 200 ]", "honua-health", var.health_check_path]
+    # Older images ship Bash without wget or curl.
+    # Keep the legacy request path in a positional argument so URI characters cannot become shell syntax.
+    command     = var.health_check_command == null ? ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/${var.container_port} && printf 'GET %s HTTP/1.0\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n' \"$1\" >&3 && IFS=' ' read -r proto code rest <&3 && [ \"$code\" = 200 ]", "honua-health", var.health_check_path] : var.health_check_command
     interval    = 30
     timeout     = 5
     retries     = 3
@@ -1269,6 +1271,13 @@ resource "aws_secretsmanager_secret_version" "redis_connection" {
 }
 
 resource "aws_ecs_task_definition" "this" {
+  lifecycle {
+    precondition {
+      condition     = var.health_check_port == null || var.health_check_command != null
+      error_message = "health_check_port requires health_check_command; the default Bash probe uses container_port."
+    }
+  }
+
   # Keep the registered revision usable by the provider rollback actuator.
   skip_destroy             = true
   family                   = "${local.name}-task"

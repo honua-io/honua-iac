@@ -15,6 +15,8 @@ module "honua" {
 
   permissions_boundary_arn = var.permissions_boundary_arn
   source                   = "../../modules/aws-ecs"
+  health_check_command     = var.health_check_command
+  health_check_port        = var.health_check_port
   console = var.console == null ? null : {
     image                 = var.console_image
     oauth2_proxy_image    = var.console.oauth2_proxy_image

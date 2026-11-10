@@ -88,7 +88,7 @@ resource "aws_instance" "eval" {
   associate_public_ip_address = true
   key_name                    = aws_key_pair.eval.key_name
   iam_instance_profile        = length(var.bedrock_model_ids) > 0 ? aws_iam_instance_profile.bedrock[0].name : ""
-  user_data                   = file("${path.module}/install-docker.sh")
+  user_data                   = file("${path.module}/../shared/install-docker.sh")
   user_data_replace_on_change = true
   metadata_options {
     http_endpoint = "enabled"

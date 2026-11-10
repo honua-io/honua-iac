@@ -180,6 +180,7 @@ jobs:
             "infrastructure/terraform/bootstrap/aws-tfstate"
             "infrastructure/terraform/bootstrap/aws-terraform-oidc"
             "infrastructure/terraform/bootstrap/aws-eval-docker-hosts"
+            "infrastructure/terraform/bootstrap/aws-build-host"
             "infrastructure/terraform/bootstrap/aws-release-cells"
             "infrastructure/terraform/bootstrap/aws-validation-reaper"
             "infrastructure/terraform/bootstrap/aws-drift-plan"
@@ -344,6 +345,7 @@ jobs:
         run: |
           set -euo pipefail
           terraform -chdir=infrastructure/terraform/bootstrap/aws-eval-docker-hosts test -no-color
+          terraform -chdir=infrastructure/terraform/bootstrap/aws-build-host test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-release-cells test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-validation-reaper test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-drift-plan test -no-color
@@ -436,6 +438,9 @@ jobs:
       - name: Certification OIDC credential contract
         shell: bash
         run: python3 infrastructure/terraform/validation/scripts/shared/test-certification-oidc.py
+
+      - name: Build host idle-stop decision contract
+        run: python3 tests/workflows/test_build_host_idle_stop.py
 
       - name: Scheduled cleanup role precondition contract
         shell: bash

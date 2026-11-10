@@ -716,6 +716,24 @@ mkdir -p "$CASE/artifacts/honua.tfplan.claim"
 run_apply "$CASE" --allow-unqualified
 expect_refusal "apply: refuses a concurrent claim on the same plan" "concurrent-claim"
 
+CASE="$(apply_case idempotent-directory-utility)"
+mkdir -p "$CASE/artifacts/honua.tfplan.claim" "$CASE/claim-tools"
+cat >"$CASE/claim-tools/mkdir" <<'EOF'
+#!/usr/bin/env bash
+exec /usr/bin/mkdir -p "$@"
+EOF
+chmod +x "$CASE/claim-tools/mkdir"
+PATH="$CASE/claim-tools:$PATH" FAKE_TF_MUTATION_LOG="$CASE/processes" \
+  run_apply "$CASE" --allow-unqualified
+expect_refusal "apply: an idempotent directory utility cannot admit an existing claim" "concurrent-claim"
+if [[ -e "$CASE/processes" ]]; then
+  echo "[FAIL] an existing claim started a mutation" >&2
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+else
+  echo "[PASS] an existing claim starts no mutation"
+  PASS_COUNT=$((PASS_COUNT + 1))
+fi
+
 CASE="$(apply_case replay)"
 mkdir -p "$CASE/artifacts/honua.tfplan.claim"
 echo "2026-01-01T00:00:00Z" >"$CASE/artifacts/honua.tfplan.claim/completed"

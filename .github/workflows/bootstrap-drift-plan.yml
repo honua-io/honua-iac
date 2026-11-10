@@ -7,12 +7,13 @@ name: Bootstrap Drift Plan
 # aws-release-cells) were found with no remote state, and live IAM had drifted
 # from trunk unseen. infrastructure/terraform/bootstrap/drift-roots.json lists
 # every root under bootstrap/: applied roots are planned against their state
-# with their recorded inputs; the others must still have no state object.
+# with their recorded inputs; the others must have no state object, or (for a
+# destroyed root) a state object that holds no resources.
 # scripts/bootstrap-drift-roots.py fails CI when a root is not listed.
 #
 # Result contract:
-#   - any change in any applied root, or state appearing for a root recorded as
-#     never applied                                 -> RED, and the issue
+#   - any change in any applied root, or resources in the state of a root
+#     recorded as not applied                                 -> RED, and the issue
 #     "Terraform drift: bootstrap roots do not match trunk" is opened or updated;
 #   - the plan could not run (role unset, AccessDenied, error) -> RED;
 #   - everything clean                              -> green; an open drift
@@ -126,6 +127,12 @@ jobs:
           set -euo pipefail
           key="$(python3 scripts/bootstrap-drift-roots.py --get "$ROOT" state_key)"
           if aws s3api head-object --bucket "$STATE_BUCKET" --key "$key" >/dev/null 2>head.err; then
+            resources="$(aws s3 cp "s3://$STATE_BUCKET/$key" - | jq '.resources | length')"
+            if [[ "$resources" == "0" ]]; then
+              printf 'clean\n' > "drift-report/$ROOT.status"
+              printf '### bootstrap/%s: destroyed, state holds no resources\n' "$ROOT" > "drift-report/$ROOT.md"
+              exit 0
+            fi
             echo "::error::state object $key exists, but drift-roots.json records $ROOT as never applied. Mark it applied (with its inputs) in the same PR that applies it."
             printf 'drift\n' > "drift-report/$ROOT.status"
             printf '### bootstrap/%s: CHANGES\n\nRecorded as never applied, but `%s` exists.\n' "$ROOT" "$key" > "drift-report/$ROOT.md"
