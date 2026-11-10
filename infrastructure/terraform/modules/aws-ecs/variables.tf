@@ -746,7 +746,7 @@ variable "operation_key_ring_certificate_secret_arn" {
 }
 
 variable "shared_state_backend" {
-  description = "Where server tasks keep the state they share. redis (default) requires Redis before more than one task may run. postgres declares that the deployed server release keeps that state in PostgreSQL (honua-server#6809), so more than one task may run with shared S3 and no Redis; it sets no server configuration."
+  description = "Where server tasks keep the state they share. redis (default) requires Redis before more than one task may run. postgres declares that the deployed server release keeps that state in PostgreSQL, so more than one task may run with shared S3 and no Redis; it sets no server configuration."
   type        = string
   default     = "redis"
 

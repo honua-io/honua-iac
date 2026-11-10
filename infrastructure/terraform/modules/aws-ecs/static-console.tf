@@ -45,7 +45,7 @@ resource "terraform_data" "static_console_validation" {
       error_message = "CloudFront (cdn or static_console) requires a custom HTTPS domain, no legacy Console, no public ingress override, and HTTP redirect disabled."
     }
     precondition {
-      condition     = var.cdn == null || var.static_console == null || var.cdn.viewer_certificate_arn == var.static_console.viewer_certificate_arn
+      condition     = var.cdn == null || var.static_console == null ? true : var.cdn.viewer_certificate_arn == var.static_console.viewer_certificate_arn
       error_message = "cdn and static_console share one distribution: give both the same viewer_certificate_arn."
     }
     precondition {
