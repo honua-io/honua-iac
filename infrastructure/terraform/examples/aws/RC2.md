@@ -6,13 +6,16 @@ and operates the AWS account. Support does not require account credentials,
 IAM access, or an inbound support connection. Marketplace listing work is separate.
 
 The existing module already provides new or existing VPC selection, private
-Fargate tasks, encrypted RDS PostgreSQL, backups, encrypted authenticated
+Fargate tasks, encrypted RDS PostgreSQL, backups, optional encrypted authenticated
 ElastiCache, Secrets Manager, CloudWatch logs, HTTPS ALB and guarded autoscaling.
-This preset adds private-network PostGIS initialization and a static Console.
+This preset adds private-network PostGIS initialization, a CloudFront distribution
+that is the deployment's shared cache, and a static Console on that distribution.
 
 Use `bootstrap/aws-exec-identity` with the regenerated ECS manifest from this
-revision with `topology.static_console=true` (and `compute="ecs"`, `redis=true`,
-`custom_domain=true`). The static Console feature manifest includes CloudFront distribution, origin access control and function
+revision with `topology.static_console=true` (and `compute="ecs"`, `redis=false`,
+`custom_domain=true`). `topology.static_console=true` is the switch for every
+CloudFront permission, with or without a Console: its feature manifest includes
+CloudFront distribution, cache policy, origin access control and function
 lifecycle actions in a global statement without a regional condition. The older
 `bootstrap/aws-ecs` identity lacks these permissions and is unsupported for this
 preset. The account owner provisions the deployment identity before a live plan;
@@ -34,10 +37,11 @@ customer inputs in `terraform.tfvars`:
 - `postgis_bootstrap_image`: verified digest of a PostgreSQL client image containing
   `psql`, compatible with the task architecture. The release gate must verify this
   dependency too. Illustrative digests in examples are never deployable pins.
-- `domain_name`, the regional `alb_certificate_arn`, and `static_console` with
-  `viewer_certificate_arn` (ACM **us-east-1**, covering the same domain) and
-  `bundle_version` (verified Console release version). Both certificates must be
-  issued before deployment. Set `route53_zone_id` for managed DNS or create an
+- `domain_name`, the regional `alb_certificate_arn`, `cdn` with
+  `viewer_certificate_arn` (ACM **us-east-1**, covering the same domain), and
+  `static_console` with the same `viewer_certificate_arn` and `bundle_version`
+  (verified Console release version). Both certificates must be issued before
+  deployment. `cdn` alone deploys the distribution without a Console. Set `route53_zone_id` for managed DNS or create an
   external alias/CNAME to the output distribution domain after bundle validation.
 - Strong admin credentials and an independent connection-encryption master key
   (null generates one only for a new installation); customer-owned operation-key
@@ -48,11 +52,12 @@ customer inputs in `terraform.tfvars`:
   outbound NAT or equivalent endpoints for image pulls, logging and secrets.
   Otherwise the module creates the VPC with a single NAT gateway.
 
-CloudFront serves the single HTTPS domain. `/console` redirects to `/console/`;
+CloudFront serves the single HTTPS domain over HTTP/2 and HTTP/3, IPv4 and IPv6
+(A and AAAA alias records). `/console` redirects to `/console/`;
 `/console/*` reads a versioned private S3 origin through origin access control.
 Extensionless Console routes resolve to `/console/index.html`; missing assets
 remain errors. Other paths forward all methods, cookies, headers and query
-parameters to ALB without response caching. Origin TLS uses the viewer Host
+parameters to ALB. Origin TLS uses the viewer Host
 header and matching regional certificate. ALB accepts CloudFront's managed prefix
 list and a private origin header; other requests receive 403. Port 80 is closed.
 The prefix list consumes 55 security-group rules; ensure the account quota permits it.
@@ -73,13 +78,74 @@ full TLS authentication. A verified client image with the RDS CA and `verify-ful
 is required to remove this limitation. The database master user currently initializes extensions and runs Honua;
 separating a restricted runtime database role remains an operator hardening step.
 
-RDS is private, encrypted, 20 GiB initially, PostgreSQL 15, `db.t3.micro`, with
-production backups retained seven days. Redis OSS 7 uses `cache.t4g.micro`,
-private ECS-only ingress, encryption at rest/in transit and an AUTH token in a
-Secrets Manager connection secret. One Fargate task uses 0.5 vCPU/1 GiB.
-Shared uploads use a private versioned S3 bucket even at one task. Scale with
-`deployment_mode = "MultiNode"`, desired count 1 and max capacity N; the module
-requires both Redis and shared S3 before allowing more than one replica.
+RDS is private, encrypted, 20 GiB initially, PostgreSQL 15, `db.t4g.medium`, with
+production backups retained seven days. Each Fargate task uses 0.5 vCPU/1 GiB.
+Shared uploads use a private versioned S3 bucket. The preset runs
+`deployment_mode = "MultiNode"` with `shared_state_backend = "postgres"` and no
+Redis: the tasks share state through PostgreSQL and S3. This needs a server
+release that keeps its shared state in PostgreSQL (honua-server#6809); the
+module cannot check the release. For an earlier release set
+`shared_state_backend = "redis"`, `redis_enabled = true` and
+`topology.redis=true`, which adds an encrypted, authenticated ElastiCache node
+(about 12–18 USD a month) and requires the operation key-ring certificate.
+
+## Shared cache
+
+CloudFront is the only shared cache. Every cache policy has minimum and default
+lifetime 0 and maximum one year, so a response is stored only when the server's
+`Cache-Control` allows it, for as long as it says. The server sends `private,
+no-store` unless a response is provably public, including on errors.
+
+| Paths | Origin | Caching |
+| --- | --- | --- |
+| `*/admin`, `*/admin/*`, `/sharing/rest/generateToken*`, `/sharing/rest/oauth2/*`, `/oauth/*`, `/signin-oidc*`, `/saml/*`, `/scim/*`, `/mcp*`, `/hubs/*` | ALB | Disabled |
+| `/console/_framework/*` | Console bucket | Object `Cache-Control` decides |
+| `/console`, `/console/*` | Console bucket | Disabled |
+| Everything else | ALB | Server `Cache-Control` decides, GET and HEAD only |
+
+The cache key of the last row holds every query parameter, the credential headers
+(`Authorization`, `X-API-Key`, `X-Esri-Authorization`, `X-Honua-Embed-Key`,
+`X-Honua-Token`, `X-Honua-Tenant`), the admin session cookies and the
+representation headers (`Origin`, `Accept`, `Accept-Language`, `Prefer`); these
+fill CloudFront's ten-header limit. A request carrying `X-Honua-Job-Id`,
+`X-Forwarded-Client-Cert` or the canary header gets a cache key of its own from a
+viewer-request function, so it is never answered from the cache. A
+request with a credential therefore never shares an entry with an anonymous one,
+and the credential still reaches the server. The distribution does not use
+mutual TLS; a renamed forwarded-certificate header
+(`ClientCertificate:ForwardedCertificate:HeaderName`) is not keyed. Error statuses are not held at the
+edge. Responses are compressed with Gzip or Brotli. Exports and job results are
+presigned S3 links and do not pass through CloudFront.
+
+The task role may create and read invalidations on this distribution only, and
+the server receives its id as `SharedCache__CloudFront__DistributionId`. The
+server invalidates the affected paths when a layer, service or style is
+published, unpublished or secured, and `/*` when a rollout or rollback completes.
+Until the deployed server release sends `s-maxage`, almost nothing is stored.
+
+Set `cdn.access_logs` to an existing bucket that accepts CloudFront standard-log
+delivery to record edge requests; cookies are not logged.
+
+## Capacity and surges
+
+The preset runs at least two tasks and scales to six on CPU (70%) and on request
+count (`autoscaling_requests_per_target`, requests per task per minute).
+`desired_count` is the minimum: before an expected surge raise that one variable
+and apply, then lower it afterwards. `max_capacity` bounds the per-task database
+pool, because every task that can exist holds its pools; the preset's
+`db.t4g.medium` gives 11 connections per pool at six tasks. Read the
+`db_connection_budget` output after changing either value; the plan fails when
+the worst case exceeds the database's usable connections.
+
+## Canary rollouts
+
+A canary works behind CloudFront. The rule that admits CloudFront forwards with
+the configured primary and canary weights, and the forced-route header
+(`canary_header_name`) reaches the canary through CloudFront for verification;
+forced requests are never answered from the cache. While weights are split,
+a public response can come from either release, and a cached one is served to
+everyone until it expires. When promotion or rollback completes the server
+invalidates `/*`; confirm that invalidation finished before judging the result.
 
 ## Console publication
 
@@ -96,8 +162,11 @@ ID and URL. A customer operator uploads the **contents** of the published bundle
 to `<bundle_version>/console/` in that bucket, including `index.html`, runtime
 configuration, WASM/framework files and compressed assets with their correct
 Content-Type/Content-Encoding metadata. This is a private bucket, never a website
-endpoint. The edge currently disables caching for both origins to avoid stale
-runtime configuration and mixed bundle versions. No invalidation is necessary.
+endpoint. The entry document, runtime configuration and every file outside
+`_framework/` are never cached at the edge. Files under `_framework/` are cached
+only when uploaded with `Cache-Control`: set `public, max-age=31536000, immutable`
+on files whose name contains a content hash, and nothing on the rest, because the
+same name serves different bytes after `bundle_version` changes.
 
 On a first deployment publish the bundle and validate the distribution before
 sending customer traffic or enabling external DNS. A managed Route53 alias is
@@ -167,8 +236,10 @@ terraform fmt -check -recursive infrastructure/terraform
 terraform fmt -check -recursive docs/devops/examples
 terraform -chdir=infrastructure/terraform/modules/aws-ecs init -backend=false
 terraform -chdir=infrastructure/terraform/modules/aws-ecs validate
-terraform -chdir=infrastructure/terraform/modules/aws-ecs test -filter=tests/admin_secret_version.tftest.hcl
+terraform -chdir=infrastructure/terraform/modules/aws-ecs test -filter=tests/admin_secret_version.tftest.hcl -filter=tests/cdn.tftest.hcl
+terraform -chdir=infrastructure/terraform/examples/aws test -test-directory=preset-tests -var-file=presets/rc2.tfvars.example
 node infrastructure/terraform/modules/aws-ecs/scripts/console-router.test.cjs
+node infrastructure/terraform/modules/aws-ecs/scripts/cache-bypass-marker.test.cjs
 HONUA_TERRAFORM_POLICY_STRICT=true ./infrastructure/terraform/validation/scripts/shared/terraform-policy-gate.sh
 ```
 
@@ -186,18 +257,18 @@ redacted plan summary and exact source/image/bundle identity as gate evidence.
 
 ## Estimated cost and live-test teardown
 
-Planning allowance for us-east-1, on-demand Linux x86, 730 hours/month, one task:
+Planning allowance for us-east-1, on-demand Linux x86, 730 hours/month, at the
+two-task minimum:
 
 | Component | Approximate USD/month |
 | --- | ---: |
-| Fargate 0.5 vCPU / 1 GiB | 18 |
-| RDS micro plus 20 GiB storage | 18–23 |
-| ElastiCache micro | 12–18 |
+| Two Fargate tasks, 0.5 vCPU / 1 GiB each | 36 |
+| RDS `db.t4g.medium` plus 20 GiB storage | 50–55 |
 | Single NAT gateway | 33 |
 | ALB before capacity charges | 17 |
 | Public IPv4 addresses (two ALB, one NAT) | 11 |
 | Secrets/KMS, S3, small logs and CloudFront allowance | 8–20 |
-| **Planning total** | **117–140 (about 0.16–0.20/hour)** |
+| **Planning total** | **155–172 (about 0.21–0.24/hour)** |
 
 This is an estimate, not a quote. Traffic, NAT processing, CloudFront requests and
 transfer, ALB capacity, snapshots, retained logs and taxes are extra. Recalculate
@@ -212,7 +283,7 @@ RDS/Redis sizing and availability must be reviewed under load.
 Request a time-boxed three-hour live test only after static checks pass: allow
 about **$1 runtime plus retained storage/snapshot charges**, with a reviewed
 account/region budget. Main obtains founder approval and runs through the IaC
-runner. Verify fresh deployment, PostGIS, Redis readiness, Console login/routes,
+runner. Verify fresh deployment, PostGIS, two ready tasks, Console login/routes, cached and uncached responses through CloudFront,
 image and Console update, compatible rollback and customer diagnostic collection.
 Do not mark release-certified until those receipts pass.
 
@@ -220,7 +291,10 @@ Teardown: preserve customer data/required receipts first; review a destroy plan.
 Explicitly disable ALB/RDS deletion protection in a reviewed update, then destroy
 the disposable stack. Versioned Console and data buckets deliberately refuse
 implicit deletion: the customer must export needed objects and explicitly delete
-all versions/delete markers before bucket removal. Retain/export any required
+all versions/delete markers before bucket removal. A disposable stack may instead
+apply `file_storage_aws_s3_force_destroy = true` before destroy, which lets Terraform
+delete the file storage bucket with its contents; the Console bucket has no such
+switch. Retain/export any required
 RDS final snapshot; delete disposable snapshots only after approval. Check for
 remaining NAT/EIP, ALB, RDS, ElastiCache, CloudFront, buckets, logs and secrets;
 record every retained resource and its continuing charge. Never destroy a

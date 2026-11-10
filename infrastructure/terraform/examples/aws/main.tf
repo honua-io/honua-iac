@@ -7,9 +7,14 @@ provider "aws" {
 }
 
 module "honua" {
+  cdn                                               = var.cdn
+  autoscaling_requests_per_target                   = var.autoscaling_requests_per_target
+  db_instance_class                                 = var.db_instance_class
+  shared_state_backend                              = var.shared_state_backend
   static_console                                    = var.static_console
   postgis_bootstrap_image                           = var.postgis_bootstrap_image
   file_storage_aws_s3_create_bucket                 = var.file_storage_aws_s3_create_bucket
+  file_storage_aws_s3_force_destroy                 = var.file_storage_aws_s3_force_destroy
   redis_node_type                                   = var.redis_node_type
   db_engine_version                                 = var.db_engine_version
   transcript_signing                                = var.transcript_signing
@@ -136,9 +141,10 @@ check "alb_reachable_from_outside_vpc" {
 }
 
 locals {
-  # The root's fixed server settings plus the optional layer-publish budget
-  # (layer_publishing_materialization_timeout_seconds; honua-server#6917). Null sets nothing.
+  # Operator-supplied settings come first so the root's fixed server settings and
+  # the optional layer-publish budget override them. A null value sets nothing.
   server_additional_env = merge(
+    var.additional_env,
     {
       HONUA_SERVE_ADMIN_UI    = var.static_console == null ? "true" : "false"
       HONUA_ADMIN_UI          = var.static_console == null ? "true" : "false"

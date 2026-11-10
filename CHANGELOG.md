@@ -14,6 +14,38 @@ module input/output contracts may still change.
 
 ## Unreleased
 
+### Added
+
+- `aws-ecs`: optional `cdn` input. One CloudFront distribution on `domain_name` fronts the load balancer as
+  the deployment's shared cache: cache policies with minimum and default lifetime 0 (origin `Cache-Control`
+  decides), credentials and all query parameters in the cache key, caching disabled on admin and sign-in
+  paths, compression, HTTP/3, no edge error caching, an AAAA alias and optional access logs. The task role
+  may invalidate this distribution only and the server receives `SharedCache__CloudFront__DistributionId`.
+  New `cdn` output.
+- `aws-ecs`: optional `autoscaling_requests_per_target` (request-count target tracking beside CPU).
+- `aws-ecs`: `shared_state_backend` (`redis` default, or `postgres`). `postgres` satisfies the multi-task,
+  autoscaling and canary preconditions with shared S3 and no Redis, for server releases that keep shared
+  state in PostgreSQL (honua-server#6809). The rc.2 preset uses it with `redis_enabled = false`.
+- `examples/aws`: `cdn`, `autoscaling_requests_per_target` and `db_instance_class` inputs; `cdn` and
+  `db_connection_budget` outputs. The rc.2 preset runs two to six tasks on `db.t4g.medium`.
+- `examples/aws`: `additional_env` passes extra server environment variables to the module; the root's
+  fixed settings win.
+- `aws-ecs`, `examples/aws`: `file_storage_aws_s3_force_destroy` (default false) lets destroy remove the
+  created file storage bucket with its contents, for disposable stacks. The Console bucket has no such switch.
+
+### Changed
+
+- `aws-ecs`: `static_console` shares the `cdn` distribution. `aws_cloudfront_distribution.console` moved to
+  `aws_cloudfront_distribution.cdn` (a `moved` block keeps existing stacks in place), and its default
+  behavior now caches what the server marks public instead of nothing.
+- `aws-ecs`: a canary and a controller-owned rollout rule are allowed behind CloudFront; both require the
+  distribution's origin secret.
+
+### Fixed
+
+- `aws-ecs`: `rds.force_ssl` is set with `apply_method = "pending-reboot"`. On PostgreSQL 15 and later the
+  previous `immediate` showed the same parameter group update on every plan.
+
 ## v0.6.4
 
 Patch release for the 2026.1-rc.2 redo.

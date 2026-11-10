@@ -1,84 +1,5 @@
 mock_provider "aws" {
-  mock_data "aws_availability_zones" {
-    defaults = {
-      names = ["us-east-1a", "us-east-1b", "us-east-1c"]
-    }
-  }
-
-  mock_data "aws_region" {
-    defaults = {
-      id     = "us-east-1"
-      name   = "us-east-1"
-      region = "us-east-1"
-    }
-  }
-
-  mock_data "aws_caller_identity" {
-    defaults = {
-      account_id = "123456789012"
-      arn        = "arn:aws:iam::123456789012:user/terraform-test"
-      user_id    = "AIDATEST"
-    }
-  }
-
-  mock_data "aws_elb_service_account" {
-    defaults = {
-      arn = "arn:aws:iam::127311923021:root"
-      id  = "127311923021"
-    }
-  }
-
-  mock_data "aws_partition" {
-    defaults = {
-      dns_suffix         = "amazonaws.com"
-      id                 = "aws"
-      partition          = "aws"
-      reverse_dns_prefix = "com.amazonaws"
-    }
-  }
-
-  mock_data "aws_iam_policy_document" {
-    defaults = {
-      json          = "{\"Version\":\"2012-10-17\",\"Statement\":[]}"
-      minified_json = "{\"Version\":\"2012-10-17\",\"Statement\":[]}"
-    }
-  }
-
-  mock_resource "aws_cloudfront_function" {
-    defaults = {
-      arn = "arn:aws:cloudfront::123456789012:function/honua-console"
-    }
-  }
-
-  mock_resource "aws_lb" {
-    defaults = {
-      arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/honua-test/0000000000000000"
-    }
-  }
-
-  mock_resource "aws_lb_target_group" {
-    defaults = {
-      arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/honua-test/0000000000000000"
-    }
-  }
-
-  mock_resource "aws_lb_listener" {
-    defaults = {
-      arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/honua-test/0000000000000000/1111111111111111"
-    }
-  }
-
-  mock_resource "aws_iam_policy" {
-    defaults = {
-      arn = "arn:aws:iam::123456789012:policy/honua-test"
-    }
-  }
-
-  mock_resource "aws_iam_role" {
-    defaults = {
-      arn = "arn:aws:iam::123456789012:role/honua-test"
-    }
-  }
+  source = "./tests/mocks/aws"
 }
 
 mock_provider "random" {
@@ -170,11 +91,15 @@ run "static_console_private_origins" {
     file_storage_aws_s3_create_bucket = true
   }
   assert {
-    condition     = aws_route53_record.service_alias[0].alias[0].name == aws_cloudfront_distribution.console[0].domain_name && aws_route53_record.service_alias[0].alias[0].zone_id == aws_cloudfront_distribution.console[0].hosted_zone_id
+    condition     = aws_route53_record.service_alias[0].alias[0].name == aws_cloudfront_distribution.cdn[0].domain_name && aws_route53_record.service_alias[0].alias[0].zone_id == aws_cloudfront_distribution.cdn[0].hosted_zone_id
     error_message = "The stable service alias must target CloudFront when static Console is enabled."
   }
   assert {
-    condition = alltrue([for origin in aws_cloudfront_distribution.console[0].origin :
+    condition     = aws_route53_record.service_alias[0].type == "A" && aws_route53_record.service_alias_ipv6[0].type == "AAAA" && aws_route53_record.service_alias_ipv6[0].alias[0].name == aws_cloudfront_distribution.cdn[0].domain_name && aws_route53_record.service_alias_ipv6[0].alias[0].zone_id == aws_cloudfront_distribution.cdn[0].hosted_zone_id
+    error_message = "Both address families must resolve to the distribution."
+  }
+  assert {
+    condition = alltrue([for origin in aws_cloudfront_distribution.cdn[0].origin :
       one(origin.custom_header).value == one(one(one(aws_lb_listener_rule.cloudfront[0].condition).http_header).values)
       if origin.origin_id == "api"
     ])
@@ -182,7 +107,7 @@ run "static_console_private_origins" {
   }
   assert {
     condition = alltrue([for statement in data.aws_iam_policy_document.deployment_bucket["console"].statement :
-      one(statement.condition).variable == "AWS:SourceArn" && one(one(statement.condition).values) == aws_cloudfront_distribution.console[0].arn
+      one(statement.condition).variable == "AWS:SourceArn" && one(one(statement.condition).values) == aws_cloudfront_distribution.cdn[0].arn
       if statement.sid == "CloudFrontReadOnly"
     ]) && aws_cloudfront_origin_access_control.console[0].signing_behavior == "always"
     error_message = "Console OAC reads must be signed and restricted to this exact distribution."
@@ -199,16 +124,16 @@ run "static_console_private_origins" {
     error_message = "One-shot migrations must wait for the same private PostGIS bootstrap as the service."
   }
   assert {
-    condition     = aws_lb.this.xff_header_processing_mode == "preserve" && alltrue([for origin in aws_cloudfront_distribution.console[0].origin : origin.custom_origin_config[0].origin_read_timeout == 60 && origin.custom_origin_config[0].origin_keepalive_timeout < 60 if origin.origin_id == "api"])
+    condition     = aws_lb.this.xff_header_processing_mode == "preserve" && alltrue([for origin in aws_cloudfront_distribution.cdn[0].origin : origin.custom_origin_config[0].origin_read_timeout == 60 && origin.custom_origin_config[0].origin_keepalive_timeout < 60 if origin.origin_id == "api"])
     error_message = "The edge topology must preserve CloudFront's rightmost viewer IP and the ALB's 60-second API response window."
   }
   assert {
-    condition     = aws_cloudfront_distribution.console[0].default_cache_behavior[0].target_origin_id == "api" && aws_cloudfront_distribution.console[0].default_cache_behavior[0].cache_policy_id == "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
-    error_message = "API requests must go to ALB without CloudFront response caching."
+    condition     = aws_cloudfront_distribution.cdn[0].default_cache_behavior[0].target_origin_id == "api" && aws_cloudfront_distribution.cdn[0].default_cache_behavior[0].cache_policy_id == aws_cloudfront_cache_policy.api[0].id && aws_cloudfront_cache_policy.api[0].min_ttl == 0 && aws_cloudfront_cache_policy.api[0].default_ttl == 0
+    error_message = "API requests go to ALB, and CloudFront stores a response only when the origin's Cache-Control allows it."
   }
   assert {
-    condition     = toset([for behavior in aws_cloudfront_distribution.console[0].ordered_cache_behavior : behavior.path_pattern]) == toset(["/console", "/console/*"])
-    error_message = "Only Console paths may select the private S3 origin."
+    condition     = toset([for behavior in aws_cloudfront_distribution.cdn[0].ordered_cache_behavior : behavior.path_pattern if behavior.target_origin_id == "console"]) == toset(["/console", "/console/*", "/console/_framework/*"]) && alltrue([for behavior in aws_cloudfront_distribution.cdn[0].ordered_cache_behavior : behavior.cache_policy_id == "4135ea2d-6df8-44a3-9df3-4b5a84be39ad" if behavior.target_origin_id == "api"])
+    error_message = "Only Console paths may select the private S3 origin, and every other ordered path is uncached."
   }
   assert {
     condition     = aws_lb_listener.https[0].default_action[0].type == "fixed-response" && length(aws_lb_listener_rule.cloudfront) == 1 && length(aws_security_group.alb.ingress) == 1

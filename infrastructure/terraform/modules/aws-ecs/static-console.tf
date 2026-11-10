@@ -21,6 +21,12 @@ variable "file_storage_aws_s3_create_bucket" {
   default     = false
 }
 
+variable "file_storage_aws_s3_force_destroy" {
+  description = "Let destroy delete the created file storage bucket together with every object and version in it. For disposable stacks only; the default refuses to delete a bucket that holds data."
+  type        = bool
+  default     = false
+}
+
 locals {
   deployment_bucket_names = merge(
     var.static_console == null ? {} : { console = "console" },
@@ -32,11 +38,19 @@ locals {
 resource "terraform_data" "static_console_validation" {
   lifecycle {
     precondition {
-      condition = var.static_console == null || (
-        local.use_https && var.domain_name != "" && !local.canary_enabled && var.console == null &&
+      condition = !local.cdn_enabled || (
+        local.use_https && var.domain_name != "" && var.console == null &&
         !var.alb_enable_http_redirect && length(var.allow_http_ingress_cidrs) == 0 && length(var.allow_public_ingress_cidrs) == 0
       )
-      error_message = "Static Console requires a custom HTTPS domain, no canary or legacy Console, no public ingress override, and HTTP redirect disabled."
+      error_message = "CloudFront (cdn or static_console) requires a custom HTTPS domain, no legacy Console, no public ingress override, and HTTP redirect disabled."
+    }
+    precondition {
+      condition     = var.cdn == null || var.static_console == null ? true : var.cdn.viewer_certificate_arn == var.static_console.viewer_certificate_arn
+      error_message = "cdn and static_console share one distribution: give both the same viewer_certificate_arn."
+    }
+    precondition {
+      condition     = !local.cdn_enabled || !local.canary_enabled || var.canary_listener_rule_priority < 50000
+      error_message = "With CloudFront and a canary, canary_listener_rule_priority must be below 50000 so the rule that admits CloudFront can follow it."
     }
     precondition {
       condition     = !var.file_storage_aws_s3_create_bucket || (var.file_storage_provider == "AwsS3" && var.file_storage_aws_s3_bucket_name == "")
@@ -53,7 +67,7 @@ resource "aws_s3_bucket" "deployment" {
   #checkov:skip=CKV2_AWS_61: Version deletion is deliberately manual to preserve rollback artifacts and customer data.
   for_each      = local.deployment_bucket_names
   bucket_prefix = "honua-${each.key}-"
-  force_destroy = false
+  force_destroy = each.key == "files" && var.file_storage_aws_s3_force_destroy
   tags          = local.tags
 }
 
@@ -118,7 +132,7 @@ data "aws_iam_policy_document" "deployment_bucket" {
       condition {
         test     = "StringEquals"
         variable = "AWS:SourceArn"
-        values   = [aws_cloudfront_distribution.console[0].arn]
+        values   = [aws_cloudfront_distribution.cdn[0].arn]
       }
     }
   }
@@ -131,12 +145,12 @@ resource "aws_s3_bucket_policy" "deployment" {
 }
 
 data "aws_ec2_managed_prefix_list" "cloudfront" {
-  count = var.static_console == null ? 0 : 1
+  count = local.cdn_enabled ? 1 : 0
   name  = "com.amazonaws.global.cloudfront.origin-facing"
 }
 
 resource "random_password" "cloudfront_origin" {
-  count   = var.static_console == null ? 0 : 1
+  count   = local.cdn_enabled ? 1 : 0
   length  = 48
   special = false
 }
@@ -157,86 +171,13 @@ resource "aws_cloudfront_function" "console_router" {
   code    = file("${path.module}/scripts/console-router.js")
 }
 
-resource "aws_cloudfront_distribution" "console" {
-  #checkov:skip=CKV2_AWS_32: Console CSP must be validated against the published WASM bundle; managed security headers are applied at the edge.
-  #checkov:skip=CKV_AWS_305: Root belongs to the API; a default root object would rewrite API requests.
-  #checkov:skip=CKV2_AWS_47: Optional customer-managed WAF rules are outside this preview stack.
-  #checkov:skip=CKV_AWS_68: WAF is optional for a customer-owned preview; supply web_acl_id for production.
-  #checkov:skip=CKV_AWS_86: Distribution access logging is an account-owner retention and privacy decision.
-  #checkov:skip=CKV_AWS_310: Origin failover requires a second independently deployed region.
-  #checkov:skip=CKV_AWS_374: Preview has no paid WAF subscription requirement.
-  count               = var.static_console == null ? 0 : 1
-  enabled             = true
-  is_ipv6_enabled     = true
-  wait_for_deployment = true
-  aliases             = [var.domain_name]
-  web_acl_id          = var.static_console.web_acl_id
-  price_class         = "PriceClass_100"
-
-  origin {
-    origin_id                = "console"
-    domain_name              = aws_s3_bucket.deployment["console"].bucket_regional_domain_name
-    origin_path              = "/${var.static_console.bundle_version}"
-    origin_access_control_id = aws_cloudfront_origin_access_control.console[0].id
-  }
-  origin {
-    origin_id   = "api"
-    domain_name = aws_lb.this.dns_name
-    custom_header {
-      name  = "X-Honua-Origin"
-      value = random_password.cloudfront_origin[0].result
-    }
-    custom_origin_config {
-      http_port                = 80
-      https_port               = 443
-      origin_read_timeout      = 60
-      origin_keepalive_timeout = 55
-      origin_protocol_policy   = "https-only"
-      origin_ssl_protocols     = ["TLSv1.2"]
-    }
-  }
-  default_cache_behavior {
-    target_origin_id         = "api"
-    viewer_protocol_policy   = "redirect-to-https"
-    allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"]
-    cached_methods           = ["GET", "HEAD"]
-    cache_policy_id          = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
-    origin_request_policy_id = "216adef6-5c7f-47e4-b989-5492eafa07d3"
-  }
-  dynamic "ordered_cache_behavior" {
-    for_each = ["/console", "/console/*"]
-    content {
-      path_pattern               = ordered_cache_behavior.value
-      target_origin_id           = "console"
-      viewer_protocol_policy     = "redirect-to-https"
-      allowed_methods            = ["GET", "HEAD", "OPTIONS"]
-      cached_methods             = ["GET", "HEAD"]
-      cache_policy_id            = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
-      response_headers_policy_id = "67f7725c-6f97-4210-82d7-5512b31e9d03"
-      function_association {
-        event_type   = "viewer-request"
-        function_arn = aws_cloudfront_function.console_router[0].arn
-      }
-    }
-  }
-  restrictions {
-    geo_restriction { restriction_type = "none" }
-  }
-  viewer_certificate {
-    acm_certificate_arn      = var.static_console.viewer_certificate_arn
-    ssl_support_method       = "sni-only"
-    minimum_protocol_version = "TLSv1.2_2021"
-  }
-  tags = local.tags
-}
-
 output "static_console" {
   description = "Bundle upload target and same-origin distribution. Upload <version>/console/* before directing customer traffic here."
   value = var.static_console == null ? null : {
     bucket              = aws_s3_bucket.deployment["console"].id
     bundle_prefix       = "${var.static_console.bundle_version}/console/"
-    distribution_id     = aws_cloudfront_distribution.console[0].id
-    distribution_domain = aws_cloudfront_distribution.console[0].domain_name
+    distribution_id     = aws_cloudfront_distribution.cdn[0].id
+    distribution_domain = aws_cloudfront_distribution.cdn[0].domain_name
     url                 = "https://${var.domain_name}/console/"
   }
 }
