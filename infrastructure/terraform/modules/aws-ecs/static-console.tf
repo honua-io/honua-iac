@@ -87,29 +87,47 @@ resource "aws_s3_bucket_ownership_controls" "deployment" {
   rule { object_ownership = "BucketOwnerEnforced" }
 }
 
+data "aws_iam_policy_document" "deployment_bucket" {
+  for_each = local.deployment_bucket_names
+  statement {
+    sid       = "DenyInsecureTransport"
+    effect    = "Deny"
+    actions   = ["s3:*"]
+    resources = [aws_s3_bucket.deployment[each.key].arn, "${aws_s3_bucket.deployment[each.key].arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+  dynamic "statement" {
+    for_each = each.key == "console" ? [1] : []
+    content {
+      sid       = "CloudFrontReadOnly"
+      effect    = "Allow"
+      actions   = ["s3:GetObject"]
+      resources = ["${aws_s3_bucket.deployment[each.key].arn}/*"]
+      principals {
+        type        = "Service"
+        identifiers = ["cloudfront.amazonaws.com"]
+      }
+      condition {
+        test     = "StringEquals"
+        variable = "AWS:SourceArn"
+        values   = [aws_cloudfront_distribution.console[0].arn]
+      }
+    }
+  }
+}
+
 resource "aws_s3_bucket_policy" "deployment" {
   for_each = local.deployment_bucket_names
   bucket   = aws_s3_bucket.deployment[each.key].id
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = concat([
-      {
-        Sid       = "DenyInsecureTransport"
-        Effect    = "Deny"
-        Principal = "*"
-        Action    = "s3:*"
-        Resource  = [aws_s3_bucket.deployment[each.key].arn, "${aws_s3_bucket.deployment[each.key].arn}/*"]
-        Condition = { Bool = { "aws:SecureTransport" = "false" } }
-      }
-      ], each.key == "console" ? [{
-        Sid       = "CloudFrontReadOnly"
-        Effect    = "Allow"
-        Principal = { Service = "cloudfront.amazonaws.com" }
-        Action    = "s3:GetObject"
-        Resource  = "${aws_s3_bucket.deployment[each.key].arn}/*"
-        Condition = { StringEquals = { "AWS:SourceArn" = aws_cloudfront_distribution.console[0].arn } }
-    }] : [])
-  })
+  policy   = data.aws_iam_policy_document.deployment_bucket[each.key].json
 }
 
 data "aws_ec2_managed_prefix_list" "cloudfront" {
