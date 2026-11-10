@@ -264,6 +264,39 @@ run "postgres_shared_state_runs_two_tasks_without_redis" {
   }
 }
 
+run "created_file_bucket_refuses_destroy_with_data_unless_asked" {
+  command = plan
+
+  variables {
+    file_storage_provider             = "AwsS3"
+    file_storage_aws_s3_create_bucket = true
+  }
+
+  assert {
+    condition     = aws_s3_bucket.deployment["files"].force_destroy == false
+    error_message = "A created file storage bucket must refuse to be destroyed with data in it by default."
+  }
+}
+
+run "disposable_stack_may_destroy_its_file_bucket_with_data" {
+  command = plan
+
+  variables {
+    file_storage_provider             = "AwsS3"
+    file_storage_aws_s3_create_bucket = true
+    file_storage_aws_s3_force_destroy = true
+    static_console = {
+      viewer_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
+      bundle_version         = "2026.1.0"
+    }
+  }
+
+  assert {
+    condition     = aws_s3_bucket.deployment["files"].force_destroy == true && aws_s3_bucket.deployment["console"].force_destroy == false
+    error_message = "file_storage_aws_s3_force_destroy must apply to the file storage bucket only, never to the Console bucket."
+  }
+}
+
 run "redis_shared_state_still_requires_redis_for_two_tasks" {
   command = plan
 

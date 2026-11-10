@@ -291,7 +291,10 @@ Teardown: preserve customer data/required receipts first; review a destroy plan.
 Explicitly disable ALB/RDS deletion protection in a reviewed update, then destroy
 the disposable stack. Versioned Console and data buckets deliberately refuse
 implicit deletion: the customer must export needed objects and explicitly delete
-all versions/delete markers before bucket removal. Retain/export any required
+all versions/delete markers before bucket removal. A disposable stack may instead
+apply `file_storage_aws_s3_force_destroy = true` before destroy, which lets Terraform
+delete the file storage bucket with its contents; the Console bucket has no such
+switch. Retain/export any required
 RDS final snapshot; delete disposable snapshots only after approval. Check for
 remaining NAT/EIP, ALB, RDS, ElastiCache, CloudFront, buckets, logs and secrets;
 record every retained resource and its continuing charge. Never destroy a

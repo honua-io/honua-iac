@@ -28,6 +28,8 @@ module input/output contracts may still change.
   state in PostgreSQL (honua-server#6809). The rc.2 preset uses it with `redis_enabled = false`.
 - `examples/aws`: `cdn`, `autoscaling_requests_per_target` and `db_instance_class` inputs; `cdn` and
   `db_connection_budget` outputs. The rc.2 preset runs two to six tasks on `db.t4g.medium`.
+- `aws-ecs`, `examples/aws`: `file_storage_aws_s3_force_destroy` (default false) lets destroy remove the
+  created file storage bucket with its contents, for disposable stacks. The Console bucket has no such switch.
 
 ### Changed
 

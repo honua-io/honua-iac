@@ -14,6 +14,7 @@ module "honua" {
   static_console                                    = var.static_console
   postgis_bootstrap_image                           = var.postgis_bootstrap_image
   file_storage_aws_s3_create_bucket                 = var.file_storage_aws_s3_create_bucket
+  file_storage_aws_s3_force_destroy                 = var.file_storage_aws_s3_force_destroy
   redis_node_type                                   = var.redis_node_type
   db_engine_version                                 = var.db_engine_version
   transcript_signing                                = var.transcript_signing

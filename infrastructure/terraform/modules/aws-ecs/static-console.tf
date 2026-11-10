@@ -21,6 +21,12 @@ variable "file_storage_aws_s3_create_bucket" {
   default     = false
 }
 
+variable "file_storage_aws_s3_force_destroy" {
+  description = "Let destroy delete the created file storage bucket together with every object and version in it. For disposable stacks only; the default refuses to delete a bucket that holds data."
+  type        = bool
+  default     = false
+}
+
 locals {
   deployment_bucket_names = merge(
     var.static_console == null ? {} : { console = "console" },
@@ -61,7 +67,7 @@ resource "aws_s3_bucket" "deployment" {
   #checkov:skip=CKV2_AWS_61: Version deletion is deliberately manual to preserve rollback artifacts and customer data.
   for_each      = local.deployment_bucket_names
   bucket_prefix = "honua-${each.key}-"
-  force_destroy = false
+  force_destroy = each.key == "files" && var.file_storage_aws_s3_force_destroy
   tags          = local.tags
 }
 

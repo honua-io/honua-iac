@@ -46,6 +46,12 @@ variable "file_storage_aws_s3_create_bucket" {
   default     = false
 }
 
+variable "file_storage_aws_s3_force_destroy" {
+  description = "Let destroy delete the created file storage bucket together with every object and version in it. For disposable stacks only."
+  type        = bool
+  default     = false
+}
+
 variable "postgis_bootstrap_image" {
   description = "Optional immutable PostgreSQL client image (psql entrypoint) for in-VPC PostGIS initialization before every server/migrator start. Null preserves the runner-based enable_postgis behavior."
   type        = string
