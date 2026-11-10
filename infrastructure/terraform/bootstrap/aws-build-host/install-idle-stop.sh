@@ -26,6 +26,8 @@ def processes():
 
 def has_build(rows):
     for _, command, args in rows:
+        if command == "Runner.Worker":
+            return True
         if command == "dotnet" and re.search(r"\b(build|test|publish|pack|restore|msbuild|vstest)\b|MSBuild\.dll", args):
             return True
         if command in {"docker", "docker-buildx", "docker-compose", "buildctl"} and re.search(r"\b(build|bake)\b", args):

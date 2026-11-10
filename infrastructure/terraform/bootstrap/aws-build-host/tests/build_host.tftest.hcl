@@ -122,3 +122,44 @@ run "zone_subnets_do_not_shift" {
     error_message = "Removing another zone must not renumber the remaining subnets."
   }
 }
+
+run "gate_runner_off_by_default" {
+  command = apply
+  assert {
+    condition     = length(aws_iam_role.gate_runner_wake) == 0 && length(aws_ssm_parameter.gate_runner_app) == 0 && length(aws_iam_role_policy.gate_runner_host) == 0 && !strcontains(base64decode(aws_launch_template.build.user_data), "honua-gate-runner") && !strcontains(base64decode(aws_launch_template.build.user_data), "gunzip")
+    error_message = "Without gate_runner_enabled the host must not register runners or gain registration access."
+  }
+  assert {
+    condition     = strcontains(base64decode(aws_launch_template.build.user_data), "if command == \"Runner.Worker\":")
+    error_message = "A running gate job must count as build activity for the idle stop."
+  }
+}
+
+run "gate_runner_enabled" {
+  command = apply
+  variables { gate_runner_enabled = true }
+  assert {
+    condition     = strcontains(base64decode(aws_launch_template.build.user_data), base64gzip(file("install-gate-runner.sh"))) && strcontains(base64decode(aws_launch_template.build.user_data), base64encode(jsonencode(local.gate_runner_host_config)))
+    error_message = "The enabled host must install the runner services with their configuration."
+  }
+  assert {
+    condition     = length(base64decode(aws_launch_template.build.user_data)) <= 16384
+    error_message = "EC2 user data must stay within 16 KiB."
+  }
+  assert {
+    condition     = jsondecode(aws_iam_role.gate_runner_wake[0].assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:honua-io/honua-server:pull_request" && jsondecode(aws_iam_role.gate_runner_wake[0].assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:aud"] == "sts.amazonaws.com"
+    error_message = "Only honua-server pull_request workflows may assume the wake role."
+  }
+  assert {
+    condition     = toset([for statement in jsondecode(aws_iam_role_policy.gate_runner_wake[0].policy).Statement : statement.Action]) == toset(["autoscaling:DescribeAutoScalingGroups", "autoscaling:SetDesiredCapacity", "ssm:GetParameter"]) && contains([for statement in jsondecode(aws_iam_role_policy.gate_runner_wake[0].policy).Statement : statement.Resource if statement.Action == "autoscaling:SetDesiredCapacity"], aws_autoscaling_group.build.arn)
+    error_message = "The wake role may only read the group and heartbeat and set this group's capacity."
+  }
+  assert {
+    condition     = toset([for statement in jsondecode(aws_iam_role_policy.gate_runner_host[0].policy).Statement : "${statement.Action}=${statement.Resource}"]) == toset(["ssm:GetParameter=${aws_ssm_parameter.gate_runner_app[0].arn}", "ssm:PutParameter=${aws_ssm_parameter.gate_runner_heartbeat[0].arn}"])
+    error_message = "The host may only read the App credential and write its heartbeat."
+  }
+  assert {
+    condition     = aws_ssm_parameter.gate_runner_app[0].type == "SecureString" && aws_ssm_parameter.gate_runner_app[0].value == "unset"
+    error_message = "Terraform creates only an encrypted placeholder for the App credential."
+  }
+}

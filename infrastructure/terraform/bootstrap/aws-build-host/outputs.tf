@@ -10,3 +10,9 @@ output "instance_lookup_filters" {
     { Name = "instance-state-name", Values = ["running"] }
   ]
 }
+
+output "gate_runner_wake_role_arn" {
+  description = "Role the PR Gate assumes to wake the host; store it as the honua-server secret HONUA_PR_GATE_WAKE_ROLE_ARN without printing it."
+  value       = var.gate_runner_enabled ? aws_iam_role.gate_runner_wake[0].arn : null
+  sensitive   = true
+}

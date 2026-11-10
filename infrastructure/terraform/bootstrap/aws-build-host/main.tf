@@ -90,13 +90,17 @@ resource "aws_launch_template" "build" {
   image_id      = data.aws_ssm_parameter.ubuntu.value
   key_name      = aws_key_pair.build.key_name
   ebs_optimized = true
-  user_data = base64encode(join("\n", [
+  user_data = base64encode(join("\n", concat([
     "#!/bin/bash\nset -euo pipefail",
     "echo '${base64encode(jsonencode({ region = var.region, group = local.name, idle_seconds = var.idle_stop_minutes * 60 }))}' | base64 -d > /etc/honua-build-host.json",
     file("${path.module}/install-idle-stop.sh"),
     file("${path.module}/../shared/install-docker.sh"),
     file("${path.module}/install-build-tools.sh")
-  ]))
+    ], var.gate_runner_enabled ? [
+    "(umask 077 && echo '${base64encode(jsonencode(local.gate_runner_host_config))}' | base64 -d > /etc/honua-gate-runner.json)",
+    # Compressed and sourced to keep user data under the 16 KiB EC2 limit with apt_retry in scope.
+    "source <(base64 -d <<< '${base64gzip(file("${path.module}/install-gate-runner.sh"))}' | gunzip)"
+  ] : [])))
   iam_instance_profile { name = aws_iam_instance_profile.build.name }
   network_interfaces {
     associate_public_ip_address = true

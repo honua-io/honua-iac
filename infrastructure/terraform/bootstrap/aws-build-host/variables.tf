@@ -75,3 +75,49 @@ variable "budget_alert_email" {
     error_message = "Supply an email address."
   }
 }
+
+variable "gate_runner_enabled" {
+  description = "Register ephemeral GitHub Actions runners for the honua-server PR Gate on this host. Requires the GitHub App credential in the gate runner parameter and the organization runner group described in the README."
+  type        = bool
+  default     = false
+}
+
+variable "gate_runner_repository" {
+  description = "The only repository whose pull_request workflows may assume the wake role; its owner is the organization the runners register with."
+  type        = string
+  default     = "honua-io/honua-server"
+  validation {
+    condition     = can(regex("^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$", var.gate_runner_repository))
+    error_message = "Use owner/repository."
+  }
+}
+
+variable "gate_runner_count" {
+  description = "Concurrent gate jobs on the host, each in its own unprivileged account and resource slice."
+  type        = number
+  default     = 2
+  validation {
+    condition     = var.gate_runner_count >= 1 && var.gate_runner_count <= 4
+    error_message = "gate_runner_count must be between 1 and 4."
+  }
+}
+
+variable "gate_runner_cpu_quota_percent" {
+  description = "CPU ceiling per gate runner, including its Docker containers (100 = one vCPU). The default leaves lane builds at least four vCPUs while two gate jobs run."
+  type        = number
+  default     = 600
+  validation {
+    condition     = var.gate_runner_cpu_quota_percent >= 100 && var.gate_runner_cpu_quota_percent <= 1600
+    error_message = "gate_runner_cpu_quota_percent must be between 100 and 1600."
+  }
+}
+
+variable "gate_runner_memory_max_gib" {
+  description = "Memory ceiling per gate runner, including its Docker containers."
+  type        = number
+  default     = 10
+  validation {
+    condition     = var.gate_runner_memory_max_gib >= 4 && var.gate_runner_memory_max_gib <= 24
+    error_message = "gate_runner_memory_max_gib must be between 4 and 24."
+  }
+}

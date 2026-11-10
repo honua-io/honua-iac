@@ -67,3 +67,76 @@ Coordinate downtime and shim discovery changes with the host owner before apply.
 Launch-template changes take effect on the next replacement; to roll out user
 data deliberately, scale to zero, wait for termination, then scale to one after
 active jobs drain. Terraform does not start a rolling refresh during builds.
+
+## PR Gate runners (off by default)
+
+`gate_runner_enabled = true` adds `gate_runner_count` (default 2) ephemeral GitHub
+Actions runners for the honua-server PR Gate. They are labelled
+`self-hosted, linux, x64, honua-build` and registered in the organization runner
+group `honua-server-gate`, which only `gate_runner_repository` can use.
+
+- **One job per registration.** Before each job a root-only service ends every
+  process of the runner account, deletes its home and temporary files, restores a
+  pristine home, starts a fresh rootless Docker daemon and requests a just-in-time
+  runner configuration that is valid for exactly one job. A job therefore inherits
+  no files, caches, images or processes from an earlier job.
+- **Isolation.** Each runner is its own account (`gate-runner-N`): no sudo, not in
+  the `docker` group, no access to `/home/ubuntu` (lane checkouts and SSH keys),
+  `NoNewPrivileges`, and other users' processes are hidden. Its containers run in
+  its own rootless Docker, so container root maps to an unprivileged subordinate
+  UID rather than host root. An `iptables` owner rule rejects instance metadata
+  (169.254.0.0/16, `fd00:ec2::254`) for the account and its rootless network stack,
+  so jobs cannot obtain the instance role.
+- **Resources.** Each runner and its containers share one slice capped at
+  `gate_runner_cpu_quota_percent` (default 600, six vCPUs) and
+  `gate_runner_memory_max_gib` (default 10). Two gate jobs at the cap leave lane
+  builds at least four vCPUs and 12 GiB.
+- **Registration credential.** The `/honua-lane-build-host/gate-runner/github-app`
+  SecureString holds `{"app_id": "...", "private_key": "..."}` for a GitHub App with
+  organization **Self-hosted runners: write**. Terraform creates it with the value
+  `unset` and ignores later values. Only root services on the host read it; each
+  registration requests an installation token narrowed to that one permission and
+  revokes it afterwards. Credentials are passed in root-only files, never in
+  process arguments.
+- **Wake and readiness.** Every 30 seconds the host writes its instance ID, a
+  timestamp and its idle runner count to `/honua-lane-build-host/gate-runner/heartbeat`.
+  The PR Gate assumes the output `gate_runner_wake_role_arn` by GitHub OIDC (only
+  `pull_request` runs of the repository). That role can describe Auto Scaling
+  groups, set this group's desired capacity and read the heartbeat, nothing else.
+  The gate wakes the group, uses the runners if the heartbeat from the in-service
+  instance is fresh and shows two idle runners within three minutes, and otherwise
+  runs on GitHub-hosted runners.
+- **Idle stop.** A running job (`Runner.Worker`) counts as build activity. Idle
+  runners waiting for work do not, so the host still stops after
+  `idle_stop_minutes` without jobs.
+
+One-time setup before enabling:
+
+1. Grant the GitHub App the organization permission **Self-hosted runners:
+   Read and write** and approve the installation's permission request.
+2. Create the runner group, limited to honua-server:
+
+   ```bash
+   repo_id=$(gh api repos/honua-io/honua-server --jq .id)
+   gh api -X POST orgs/honua-io/actions/runner-groups -f name=honua-server-gate \
+     -f visibility=selected -F allows_public_repositories=true \
+     -F "selected_repository_ids[]=${repo_id}"
+   ```
+
+3. Apply with `gate_runner_enabled = true`, then store the App credential (the
+   key never appears in arguments or output):
+
+   ```bash
+   umask 077
+   jq -n --arg app_id "$APP_ID" --rawfile private_key "$KEY_PEM" \
+     '{app_id: $app_id, private_key: $private_key}' > /tmp/gate-runner-app.json
+   aws ssm put-parameter --region "$BUILD_REGION" --overwrite --type SecureString \
+     --name /honua-lane-build-host/gate-runner/github-app \
+     --value file:///tmp/gate-runner-app.json > /dev/null
+   shred -u /tmp/gate-runner-app.json
+   ```
+
+4. Roll out the new launch template by scaling to zero and back to one (see above).
+
+The runner version and checksum are pinned in `gate-runner.tf`; ephemeral runners
+also self-update if GitHub requires a newer version before the pin is bumped.
