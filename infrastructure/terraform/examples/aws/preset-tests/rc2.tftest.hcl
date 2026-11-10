@@ -1,5 +1,5 @@
 # The rc.2 overlay itself, planned with mocked providers. Run with the preset:
-#   terraform test -var-file=presets/rc2.tfvars.example -filter=tests/rc2_preset.tftest.hcl
+#   terraform test -test-directory=preset-tests -var-file=presets/rc2.tfvars.example
 # Only customer inputs are set here, so every asserted value comes from the preset.
 
 mock_provider "aws" {

@@ -237,7 +237,7 @@ terraform fmt -check -recursive docs/devops/examples
 terraform -chdir=infrastructure/terraform/modules/aws-ecs init -backend=false
 terraform -chdir=infrastructure/terraform/modules/aws-ecs validate
 terraform -chdir=infrastructure/terraform/modules/aws-ecs test -filter=tests/admin_secret_version.tftest.hcl -filter=tests/cdn.tftest.hcl
-terraform -chdir=infrastructure/terraform/examples/aws test -var-file=presets/rc2.tfvars.example -filter=tests/rc2_preset.tftest.hcl
+terraform -chdir=infrastructure/terraform/examples/aws test -test-directory=preset-tests -var-file=presets/rc2.tfvars.example
 node infrastructure/terraform/modules/aws-ecs/scripts/console-router.test.cjs
 node infrastructure/terraform/modules/aws-ecs/scripts/cache-bypass-marker.test.cjs
 HONUA_TERRAFORM_POLICY_STRICT=true ./infrastructure/terraform/validation/scripts/shared/terraform-policy-gate.sh
