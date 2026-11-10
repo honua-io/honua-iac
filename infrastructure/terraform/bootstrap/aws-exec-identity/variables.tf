@@ -23,6 +23,7 @@ variable "topology" {
     compute platform, and set each optional feature the cell will actually use.
 
     compute       "ecs", "eks", or "lambda".
+    static_console CloudFront static Console (ECS only). Off leaves CloudFront out.
     redis         ElastiCache. Off leaves every elasticache action out.
     custom_domain ACM and Route 53 for a customer hostname. Off leaves both out.
     waf           WAFv2 web ACLs. Off leaves every wafv2 action out.
@@ -30,16 +31,21 @@ variable "topology" {
                   batch resources. Off leaves every batch action out.
   EOT
   type = object({
-    compute       = string
-    redis         = optional(bool, false)
-    custom_domain = optional(bool, false)
-    waf           = optional(bool, false)
-    gp_batch      = optional(bool, false)
+    compute        = string
+    static_console = optional(bool, false)
+    redis          = optional(bool, false)
+    custom_domain  = optional(bool, false)
+    waf            = optional(bool, false)
+    gp_batch       = optional(bool, false)
   })
 
   validation {
     condition     = contains(["ecs", "eks", "lambda"], var.topology.compute)
     error_message = "topology.compute must be one of: ecs, eks, lambda."
+  }
+  validation {
+    condition     = !var.topology.static_console || var.topology.compute == "ecs"
+    error_message = "static_console is supported only for compute=ecs."
   }
 }
 

@@ -33,6 +33,7 @@ MANIFEST_DIR = BOOTSTRAP / "aws-exec-identity" / "manifests"
 EXEC_ROOT = BOOTSTRAP / "aws-exec-identity"
 
 FEATURE_SERVICES = {
+    "static-console": {"cloudfront"},
     "redis": {"elasticache"},
     "custom-domain": {"acm", "route53"},
     "waf": {"wafv2"},
@@ -173,7 +174,7 @@ PATTERN_REPLACEMENTS = {
         "elasticloadbalancing:SetSecurityGroups", "elasticloadbalancing:SetSubnets",
     ],
 }
-GLOBAL_SERVICES = {"route53"}
+GLOBAL_SERVICES = {"route53", "cloudfront"}
 
 # Network operations are shared by the VPC and security group resources in all
 # three modules and their registry VPC module. See AWS provider resource docs
@@ -282,6 +283,7 @@ PREFIX_SERVICE = sorted(
         ("aws_lb_", "elasticloadbalancing"),
         ("aws_lb", "elasticloadbalancing"),
         ("aws_ecs_", "ecs"),
+        ("aws_cloudfront_", "cloudfront"),
         ("aws_eks_", "eks"),
         ("aws_lambda_", "lambda"),
         ("aws_batch_", "batch"),
@@ -337,6 +339,23 @@ PREFIX_SERVICE = sorted(
 # Additional lifecycle actions for resource types. The generator adds them to
 # the manifest that owns the resource type.
 EXACT_ACTIONS = {
+    # Global endpoint lifecycle calls for the static Console edge.
+    # https://docs.aws.amazon.com/service-authorization/latest/reference/list_cloudfront.html
+    "aws_cloudfront_distribution": [
+        "cloudfront:CreateDistribution", "cloudfront:CreateDistributionWithTags",
+        "cloudfront:GetDistribution", "cloudfront:GetDistributionConfig",
+        "cloudfront:UpdateDistribution", "cloudfront:DeleteDistribution",
+        "cloudfront:ListTagsForResource", "cloudfront:TagResource", "cloudfront:UntagResource",
+    ],
+    "aws_cloudfront_origin_access_control": [
+        "cloudfront:CreateOriginAccessControl", "cloudfront:GetOriginAccessControl",
+        "cloudfront:UpdateOriginAccessControl", "cloudfront:DeleteOriginAccessControl",
+    ],
+    "aws_cloudfront_function": [
+        "cloudfront:CreateFunction", "cloudfront:DescribeFunction", "cloudfront:GetFunction",
+        "cloudfront:UpdateFunction", "cloudfront:PublishFunction", "cloudfront:DeleteFunction",
+        "cloudfront:ListTagsForResource", "cloudfront:TagResource", "cloudfront:UntagResource",
+    ],
     "aws_acm_certificate": ["acm:UpdateCertificateOptions"],
     "aws_cloudwatch_log_group": [
         "logs:AssociateKmsKey", "logs:DisassociateKmsKey", "logs:ListTagsForResource",
@@ -521,6 +540,7 @@ IAM_STATEMENT_KIND = {
 
 # Representative concrete actions for IAM simulation.
 SIMULATE = {
+    "static-console": ["cloudfront:CreateDistributionWithTags"],
     "aws-ecs": ["ecs:CreateCluster", "ecs:RegisterTaskDefinition", "elasticloadbalancing:CreateLoadBalancer"],
     "aws-eks": ["eks:CreateCluster", "eks:DescribeCluster", "autoscaling:CreateAutoScalingGroup"],
     "aws-serverless": ["lambda:CreateFunction", "lambda:UpdateFunctionCode", "apigateway:POST"],
@@ -588,6 +608,12 @@ MODULE_SPECS = {
 }
 
 FEATURE_SPECS = {
+    "static-console": {
+        "sids_by_template": {},
+        "pass_role_services": [],
+        "service_linked_roles": [],
+        "attachable_policies": [],
+    },
     "redis": {
         "sids_by_template": {
             BOOTSTRAP / "aws-ecs" / "main.tf": ["EcsCoreInfra"],
@@ -935,6 +961,9 @@ def build() -> tuple[dict[str, dict], list[str]]:
         body["attachable_policies"] = list(spec["attachable_policies"])
         add_actions(body, FEATURE_EXACT_ACTIONS.get(feature) or
                     curated_actions(spec["sids_by_template"], FEATURE_SERVICES[feature]))
+        if feature == "static-console":
+            # aws_ec2_managed_prefix_list reads both APIs (AWS provider v5).
+            add_actions(body, ["ec2:DescribeManagedPrefixLists", "ec2:GetManagedPrefixListEntries"])
         manifests[feature] = body
 
     problems: list[str] = []

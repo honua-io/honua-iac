@@ -1,0 +1,49 @@
+{
+  "id": "static-console",
+  "kind": "feature",
+  "module": null,
+  "note": "",
+  "region_actions": [
+    "ec2:DescribeManagedPrefixLists",
+    "ec2:GetManagedPrefixListEntries"
+  ],
+  "global_actions": [
+    "cloudfront:CreateDistribution",
+    "cloudfront:CreateDistributionWithTags",
+    "cloudfront:CreateFunction",
+    "cloudfront:CreateOriginAccessControl",
+    "cloudfront:DeleteDistribution",
+    "cloudfront:DeleteFunction",
+    "cloudfront:DeleteOriginAccessControl",
+    "cloudfront:DescribeFunction",
+    "cloudfront:GetDistribution",
+    "cloudfront:GetDistributionConfig",
+    "cloudfront:GetFunction",
+    "cloudfront:GetOriginAccessControl",
+    "cloudfront:ListTagsForResource",
+    "cloudfront:PublishFunction",
+    "cloudfront:TagResource",
+    "cloudfront:UntagResource",
+    "cloudfront:UpdateDistribution",
+    "cloudfront:UpdateFunction",
+    "cloudfront:UpdateOriginAccessControl"
+  ],
+  "pass_role_services": [],
+  "service_linked_roles": [],
+  "attachable_policies": [],
+  "iam_statements": [
+    {
+      "sid": "None",
+      "resource_kind": null,
+      "actions": []
+    }
+  ],
+  "covers": [
+    "aws_cloudfront_distribution",
+    "aws_cloudfront_function",
+    "aws_cloudfront_origin_access_control"
+  ],
+  "simulate_allow": [
+    "cloudfront:CreateDistributionWithTags"
+  ]
+}
