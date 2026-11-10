@@ -90,7 +90,8 @@ group `honua-server-gate`, which only `gate_runner_repository` can use.
 - **Resources.** Each runner and its containers share one slice capped at
   `gate_runner_cpu_quota_percent` (default 600, six vCPUs) and
   `gate_runner_memory_max_gib` (default 10). Two gate jobs at the cap leave lane
-  builds at least four vCPUs and 12 GiB.
+  builds four vCPUs and roughly 10 GiB on a 16-vCPU, 32-GiB host, before
+  OS overhead. These are shared ceilings, not dedicated capacity reservations.
 - **Registration credential.** The `/honua-lane-build-host/gate-runner/github-app`
   SecureString holds `{"app_id": "...", "private_key": "..."}` for a GitHub App with
   organization **Self-hosted runners: write**. Terraform creates it with the value
@@ -140,3 +141,55 @@ One-time setup before enabling:
 
 The runner version and checksum are pinned in `gate-runner.tf`; ephemeral runners
 also self-update if GitHub requires a newer version before the pin is bumped.
+
+
+### PR Gate tool and environment contract
+
+The three selected jobs (`pr-gate`, `fast-tests`, `format`) use the same image.
+The dependency audit covers `lean-gate`, `format-check`, `managed-test-artifacts`,
+`setup-dotnet-ci`, their admission/generation/build/boot scripts, and the
+conditional public installation proof in honua-server's PR Gate workflow.
+
+| Consumer | Required tools and provisioning |
+| --- | --- |
+| Checkout, admission, classification, scope and retry scripts | Bash, git, gh, jq, curl, OpenSSL, coreutils (including timeout, sha256sum, base64, realpath), findutils, grep, sed, awk, procps and util-linux. Ubuntu/base installers provide these; the runner installer adds gh from GitHub's signed official apt repository. |
+| Python admission fixtures, certification/CITE contracts, scope planners, managed artifact packing and generated indexes | Python 3 with its standard library (including venv, unittest, sqlite3, ssl, tarfile and compression modules); pip and `PyYAML>=6,<7` for `okf-requirements.txt`. Distro python3-venv/pip/yaml plus a private venv with system-site-packages keep pip installs off the system interpreter. |
+| Markdown command policy | PowerShell 7 from Microsoft's official Ubuntu repository; it runs in both lean-gate and the docs-only exit. |
+| Managed builds, format, generators and tests | setup-dotnet installs the workflow/global.json SDK into `$HOME/.dotnet`; DOTNET_INSTALL_DIR/DOTNET_ROOT and PATH point there. Existing native dependencies include ICU, OpenSSL, zlib, fontconfig/DejaVu and libatomic; the runner dependency installer completes the runtime prerequisites. |
+| Testcontainers PostGIS, boot/migration smoke, public installation proof | Docker engine/CLI, buildx and Compose from Docker's official apt repository. Each runner uses its own rootless daemon through DOCKER_HOST/XDG_RUNTIME_DIR; host PostgreSQL/psql is unnecessary because psql runs inside the image. |
+| Managed artifact npm dependencies | Host Node 24 and npm from NodeSource's official 24.x repository. The managed action declares Node >=24. JavaScript actions also use the runner distribution's bundled Node runtime. Enabling runners upgrades the base image's Node 22 to 24. |
+| SDK/Python downloads, caches and artifact archives | tar, gzip, xz, zip, unzip and zstd; curl and CA certificates. RUNNER_TOOL_CACHE/AGENT_TOOLSDIRECTORY point to `$HOME/.cache/toolcache`, allowing setup-python's conditional Python 3.11 installation without privileged writes. The installation proof creates its own SDK venv. |
+| Locale, time and limits | locales/tzdata; LANG=LC_ALL=C.UTF-8, TZ=UTC, and a 65,536 soft / 524,288 hard open-file limit. Culture-specific tests set their own culture. No extra process-limit override is needed. |
+
+The workflow's hosted-image disk cleanup uses best-effort `sudo ... || true`;
+it grants no privileges to these accounts. GitHub/AWS CLIs used by the hosted
+`runner-select` job are separate from this image's job requirements. The root
+registration/heartbeat service uses the existing AWS CLI; jobs cannot access
+its credential or instance metadata.
+
+Before starting Runner.Listener, `honua-gate-runner-check` verifies required
+executables, Node/PowerShell/PyYAML compatibility, writable SDK/tool caches,
+locale/time/open-file limits, and rootless Docker/buildx/Compose. A failing image
+cannot advertise idle readiness. Each pristine home template is root-owned and
+stored beneath a root-only parent; restore explicitly transfers ownership of the
+copy to its unprivileged account. SDKs, Python installs and caches are disposable
+and reset with every job. No secrets are baked into the template.
+
+Validate locally without cloud access:
+
+```bash
+terraform fmt -check -recursive infrastructure/terraform
+terraform fmt -check -recursive docs/devops/examples
+terraform -chdir=infrastructure/terraform/bootstrap/aws-build-host validate -no-color
+terraform -chdir=infrastructure/terraform/bootstrap/aws-build-host test -no-color
+python3 -m unittest discover -s infrastructure/terraform/bootstrap/aws-build-host/tests -p 'test_*.py'
+```
+
+A passing local test does not prove a replacement image or workflow run. After
+the operator applies and replaces the drained host, verify both services stay
+ready, then enable the repository selector and record a normal non-skipped PR
+run's job conclusions, `i-` runner names, execution and queue times. Compare build
+10–14 minutes, fast tests 6–12 minutes and format 8–21 minutes before expanding
+the runner workload. Two six-CPU/10-GiB runners already permit 12 CPU/20 GiB;
+adding a third exceeds a 16-CPU/32-GiB host before three lane builds and the OS.
+Keep affected shards hosted pending measured co-load CPU/memory and queue time.

@@ -9,8 +9,17 @@ snap install aws-cli --classic
 . /etc/os-release
 curl -fsSL --retry 5 --retry-all-errors "https://packages.microsoft.com/config/ubuntu/${VERSION_ID}/packages-microsoft-prod.deb" -o /tmp/packages-microsoft-prod.deb
 dpkg -i /tmp/packages-microsoft-prod.deb
+# GitHub CLI's signed official repository supplies the admission checks' gh command.
+install -d -m 0755 /etc/apt/keyrings
+curl -fsSL --retry 5 --retry-all-errors https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+  -o /etc/apt/keyrings/githubcli-archive-keyring.gpg
+chmod 0644 /etc/apt/keyrings/githubcli-archive-keyring.gpg
+printf 'deb [arch=%s signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main\n' \
+  "$(dpkg --print-architecture)" > /etc/apt/sources.list.d/github-cli.list
+# Runner-enabled hosts need Node 24 for the managed artifact action's npm dependencies.
+curl -fsSL --retry 5 --retry-all-errors https://deb.nodesource.com/setup_24.x | bash -
 apt_retry update
-apt_retry install -y powershell uidmap slirp4netns dbus-user-session docker-ce-rootless-extras python3-pip python3-yaml
+apt_retry install -y gh nodejs zip zstd xz-utils locales tzdata powershell uidmap slirp4netns dbus-user-session docker-ce-rootless-extras python3-pip python3-yaml
 
 # Ubuntu 24.04 confines unprivileged user namespaces; rootless Docker needs this exception.
 cat > /etc/apparmor.d/usr.bin.rootlesskit <<'APPARMOR'
@@ -56,9 +65,8 @@ end_previous_job() {
 
 restore_pristine_home() {
   find "$home" -mindepth 1 -delete
-  rsync -a "/var/lib/honua-gate-runner/home-${index}/" "${home}/"
+  rsync -a --chown="${user}:${user}" "/var/lib/honua-gate-runner/home-${index}/" "${home}/"
   cp -a /opt/actions-runner "${home}/runner"
-  printf '%s\n' "DOCKER_HOST=unix:///run/user/${uid}/docker.sock" PIP_BREAK_SYSTEM_PACKAGES=1 > "${home}/runner/.env"
   chown -R "${user}:${user}" "${home}/runner"
   systemctl start "user@${uid}.service"
   for _ in $(seq 1 60); do
@@ -129,9 +137,40 @@ jit_file="/run/honua-gate-runner/$1/jitconfig"
 ACTIONS_RUNNER_INPUT_JITCONFIG="$(< "$jit_file")"
 export ACTIONS_RUNNER_INPUT_JITCONFIG
 rm -f "$jit_file"
+# These paths are private, writable, and reset with the home after every job.
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+export DOCKER_HOST="unix://${XDG_RUNTIME_DIR}/docker.sock"
+export DOTNET_INSTALL_DIR="${HOME}/.dotnet" DOTNET_ROOT="${HOME}/.dotnet"
+export RUNNER_TOOL_CACHE="${HOME}/.cache/toolcache" AGENT_TOOLSDIRECTORY="${HOME}/.cache/toolcache"
+export PATH="${HOME}/.venv/bin:${HOME}/.dotnet:${HOME}/.local/bin:${PATH}"
+export LANG=C.UTF-8 LC_ALL=C.UTF-8 TZ=UTC DOTNET_CLI_TELEMETRY_OPTOUT=1
+/usr/local/bin/honua-gate-runner-check
 cd "${HOME}/runner"
 exec ./run.sh
 RUN
+
+# Fail before advertising readiness when a replacement image lacks workflow prerequisites.
+cat > /usr/local/bin/honua-gate-runner-check <<'CHECK'
+#!/bin/bash
+set -euo pipefail
+for tool in gh jq python3 pwsh docker git zip unzip curl node npm tar gzip xz zstd timeout openssl; do
+  command -v "$tool" > /dev/null
+done
+node -e 'if (Number(process.versions.node.split(".")[0]) < 24) process.exit(1)'
+python3 -c 'import yaml; assert int(yaml.__version__.split(".")[0]) == 6'
+python3 -m pip install --dry-run --no-index 'PyYAML>=6,<7'
+pwsh -NoLogo -NoProfile -Command '$ErrorActionPreference="Stop"; if ($PSVersionTable.PSVersion.Major -lt 7) { exit 1 }'
+for directory in "$DOTNET_INSTALL_DIR" "$RUNNER_TOOL_CACHE"; do
+  [[ -d "$directory" && -w "$directory" ]]
+done
+[[ "$(locale charmap)" == UTF-8 ]]
+[[ "$(date +%Z)" == UTC ]]
+[[ "$(ulimit -n)" -ge 65536 ]]
+docker buildx version
+docker compose version
+docker info --format '{{json .SecurityOptions}}' | jq -e 'index("name=rootless") != null' > /dev/null
+CHECK
+chmod 0755 /usr/local/bin/honua-gate-runner-check
 
 cat > /usr/local/sbin/honua-gate-runner-heartbeat <<'HEARTBEAT'
 #!/bin/bash
@@ -170,6 +209,7 @@ Restart=always
 RestartSec=15
 TimeoutStartSec=5min
 KillMode=control-group
+LimitNOFILE=65536:524288
 NoNewPrivileges=yes
 ProtectSystem=full
 ProtectProc=invisible
@@ -201,7 +241,7 @@ AccuracySec=5s
 WantedBy=timers.target
 TIMER
 
-# Root-only parent: rsync -a gives each template its runner's ownership, which must stay unreachable.
+# Root-owned templates and a root-only parent prevent jobs from changing the next job's home.
 install -d -m 0700 /var/lib/honua-gate-runner
 for index in $(seq 1 "$(gate runner_count)"); do
   user="gate-runner-${index}"
@@ -215,8 +255,13 @@ for index in $(seq 1 "$(gate runner_count)"); do
   done
   runuser -u "$user" -- env "XDG_RUNTIME_DIR=/run/user/${uid}" "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus" \
     dockerd-rootless-setuptool.sh install > /dev/null
+  # Isolated pip installs avoid Ubuntu's externally-managed system Python (PEP 668).
+  # The distro PyYAML satisfies okf-requirements.txt inside this disposable venv.
+  runuser -u "$user" -- python3 -m venv --system-site-packages "/home/${user}/.venv"
+  install -d -o "$user" -g "$user" -m 0700 "/home/${user}/.dotnet" "/home/${user}/.cache/toolcache"
   install -d -m 0700 "/var/lib/honua-gate-runner/home-${index}"
   rsync -a --exclude .local/share/docker "/home/${user}/" "/var/lib/honua-gate-runner/home-${index}/"
+  chown -R root:root "/var/lib/honua-gate-runner/home-${index}"
 
   # The runner and its rootless Docker share the account's slice, so one ceiling covers both.
   install -d "/etc/systemd/system/user-${uid}.slice.d" "/etc/systemd/system/honua-gate-runner@${index}.service.d"
