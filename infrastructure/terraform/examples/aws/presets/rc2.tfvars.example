@@ -1,0 +1,22 @@
+# Non-secret rc.2 ECS overlay; see ../RC2.md. Not an apply-ready release lock.
+# Copy terraform.tfvars.example first, fill customer inputs, and supply verified
+# server and PostgreSQL client digests separately. Never use the illustrative pins.
+environment = "prod"
+deployment_mode = "SingleInstance"
+desired_count = 1
+max_capacity = 1
+redis_enabled = true
+redis_node_type = "cache.t4g.micro"
+canary_enabled = false
+file_storage_provider = "AwsS3"
+file_storage_aws_s3_create_bucket = true
+file_storage_aws_s3_bucket_name = ""
+file_storage_aws_s3_region = ""
+db_publicly_accessible = false
+enable_postgis = true
+alb_enable_http_redirect = false
+allow_http_ingress_cidrs = []
+# Customer tfvars must set domain_name, regional alb_certificate_arn and:
+# static_console = { viewer_certificate_arn = <us-east-1 ACM ARN>, bundle_version = <verified release version> }
+# postgis_bootstrap_image = <verified PostgreSQL client registry/repository@sha256:digest>
+# Use an image containing psql, matching task_cpu_architecture. No database daemon runs in ECS.

@@ -359,6 +359,7 @@ jobs:
           terraform -chdir=infrastructure/terraform/bootstrap/aws-eks test -no-color
           terraform -chdir=infrastructure/terraform/components/aws-github-oidc test -no-color
           terraform -chdir=infrastructure/terraform/modules/aws-ecs test -no-color
+          node infrastructure/terraform/modules/aws-ecs/scripts/console-router.test.cjs
           # The output check counts exactly the deployment-safety scenarios, so the
           # root's other test files run separately.
           terraform -chdir=infrastructure/terraform/examples/aws test -json -verbose -filter=tests/deployment_safety.tftest.hcl > "$RUNNER_TEMP/aws-safety-tests.jsonl"

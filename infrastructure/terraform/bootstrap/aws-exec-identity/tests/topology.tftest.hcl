@@ -44,6 +44,11 @@ run "ecs_with_redis" {
   command = plan
 
   assert {
+    condition     = !contains(keys(output.deploy_identity_contract.actions_by_service), "cloudfront") && !contains(output.deploy_identity_contract.actions_by_service["ec2"], "ec2:GetManagedPrefixListEntries")
+    error_message = "ECS without static_console must exclude CloudFront and its managed-prefix-list lookup."
+  }
+
+  assert {
     condition = alltrue(flatten([
       for actions in values(output.deploy_identity_contract.actions_by_service) : [
         for action in actions : !strcontains(action, "*") && !strcontains(action, "?")
@@ -358,7 +363,23 @@ run "lambda_release_cell" {
 run "ecs_all_features" {
   command = plan
   variables {
-    topology = { compute = "ecs", redis = true, custom_domain = true, waf = true, gp_batch = true }
+    topology = { compute = "ecs", static_console = true, redis = true, custom_domain = true, waf = true, gp_batch = true }
+  }
+  assert {
+    condition = contains(output.deploy_identity_contract.actions_by_service["cloudfront"], "cloudfront:CreateDistributionWithTags") && alltrue([
+      for statement in jsondecode(data.aws_iam_policy_document.deployment.json).Statement :
+      !can(statement.Condition) && contains(tolist(statement.Action), "cloudfront:CreateOriginAccessControl") && contains(tolist(statement.Action), "cloudfront:PublishFunction")
+      if statement.Sid == "ManageGlobalServices"
+      ]) && length([
+      for statement in jsondecode(data.aws_iam_policy_document.deployment.json).Statement : statement
+      if statement.Sid == "ManageGlobalServices"
+    ]) == 1
+    error_message = "ECS must authorize CloudFront lifecycle calls globally without a regional condition."
+  }
+
+  assert {
+    condition     = alltrue([for action in ["ec2:DescribeManagedPrefixLists", "ec2:GetManagedPrefixListEntries"] : contains(output.deploy_identity_contract.actions_by_service["ec2"], action)])
+    error_message = "Static Console planning must authorize both managed prefix list lookup APIs."
   }
   assert {
     condition = alltrue(concat(

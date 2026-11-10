@@ -2,6 +2,11 @@
 
 Provisions Honua Server on ECS/Fargate with an ALB, RDS PostgreSQL, optional ElastiCache Redis, and supporting infrastructure (VPC, secrets, logging). The module fails planning when ECS could run multiple Honua tasks without the required MultiNode, Redis, and shared S3 configuration.
 
+For the customer-owned deployment candidate with private-network PostGIS bootstrap,
+required Redis, and static Console behind same-domain CloudFront, use the
+[rc.2 operator guide](../../examples/aws/RC2.md) and its non-secret preset.
+Live deployment certification is a separate release gate.
+
 ## Pin to a release
 
 For a versioned, external pin, consume this module by Git source at a SemVer tag
