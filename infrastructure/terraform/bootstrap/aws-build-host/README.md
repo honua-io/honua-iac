@@ -80,6 +80,12 @@ group `honua-server-gate`, which only `gate_runner_repository` can use.
   pristine home, starts a fresh rootless Docker daemon and requests a just-in-time
   runner configuration that is valid for exactly one job. A job therefore inherits
   no files, caches, images or processes from an earlier job.
+- **Registration cleanup.** Before either runner starts on boot, a root service
+  removes offline, non-busy registrations with build-host names from this runner
+  group, including leftovers from abrupt termination. Each runner's root-owned
+  registration ID is removed after service exit, including shutdown. A five-second
+  IMDS spot-notice check stops both runners to deregister before interruption.
+  Other runner groups, online runners and unrelated names are left alone.
 - **Isolation.** Each runner is its own account (`gate-runner-N`): no sudo, not in
   the `docker` group, no access to `/home/ubuntu` (lane checkouts and SSH keys),
   `NoNewPrivileges`, and other users' processes are hidden. Its containers run in
@@ -89,9 +95,8 @@ group `honua-server-gate`, which only `gate_runner_repository` can use.
   so jobs cannot obtain the instance role.
 - **Resources.** Each runner and its containers share one slice capped at
   `gate_runner_cpu_quota_percent` (default 600, six vCPUs) and
-  `gate_runner_memory_max_gib` (default 10). Two gate jobs at the cap leave lane
-  builds four vCPUs and roughly 10 GiB on a 16-vCPU, 32-GiB host, before
-  OS overhead. These are shared ceilings, not dedicated capacity reservations.
+  `gate_runner_memory_max_gib` (default 10). Two gate jobs at the cap consume up to twelve vCPUs and 20 GiB, before
+  lane builds and OS overhead. These are shared ceilings, not dedicated capacity reservations.
 - **Registration credential.** The `/honua-lane-build-host/gate-runner/github-app`
   SecureString holds `{"app_id": "...", "private_key": "..."}` for a GitHub App with
   organization **Self-hosted runners: write**. Terraform creates it with the value

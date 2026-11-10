@@ -1,5 +1,6 @@
 """Exercise the real readiness script without installing tools or contacting Docker/AWS."""
 
+import json
 import os
 from pathlib import Path
 import re
@@ -93,7 +94,10 @@ esac
 
     def test_failed_readiness_prevents_registration(self):
         body = re.search(r"<<'PREPARE'\n(.*?)\nPREPARE\n", INSTALLER.read_text(), re.S).group(1)
-        sequence = body.rsplit("\nend_previous_job\n", 1)[1]
+        sequence = body.rsplit("\nend_previous_job\n", 1)[1].replace(
+            '/usr/local/sbin/honua-gate-runner-registration register "$index"',
+            "register_for_one_job",
+        )
         script = """set -euo pipefail
 restore_pristine_home() { :; }
 block_instance_metadata() { :; }
@@ -105,12 +109,147 @@ register_for_one_job() { echo REGISTERED; }
         self.assertNotIn("REGISTERED", result.stdout)
 
     def test_embedded_shell_scripts_parse(self):
-        bodies = re.findall(r"<<'(PREPARE|RUN|ENVIRONMENT|CHECK|HEARTBEAT)'\n(.*?)\n\1\n", INSTALLER.read_text(), re.S)
-        self.assertEqual(len(bodies), 5)
+        bodies = re.findall(r"<<'(PREPARE|RUN|ENVIRONMENT|CHECK|HEARTBEAT|REGISTRATION|SPOT)'\n(.*?)\n\1\n", INSTALLER.read_text(), re.S)
+        self.assertEqual(len(bodies), 7)
         for name, body in bodies:
             with self.subTest(script=name):
                 result = subprocess.run(["/bin/bash", "-n"], input=body, text=True, capture_output=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
+
+
+class RunnerRegistrationTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.bin = self.root / "bin"
+        self.bin.mkdir()
+        (self.bin / "jq").symlink_to(shutil.which("jq"))
+        self.config = self.root / "config.json"
+        self.config.write_text(json.dumps({"org": "test-org", "group": "gate"}))
+        self.log = self.root / "requests"
+        self.state = self.root / "state"
+        self.state.mkdir()
+        body = re.search(r"<<'REGISTRATION'\n(.*?)\nREGISTRATION\n", INSTALLER.read_text(), re.S).group(1)
+        # Authentication is unchanged; exercise lifecycle/API calls without live credentials.
+        start = body.index('secrets="$(mktemp')
+        end = body.index('\ncase "$mode" in', start)
+        body = body[:start] + 'secrets="$TEST_ROOT"; group_id=42\n' + body[end:]
+        body = body.replace('/etc/honua-gate-runner.json', str(self.config))
+        body = body.replace('/run/honua-gate-runner-state', str(self.state))
+        self.script = self.root / "registration.sh"
+        self.script.write_text(body)
+        curl = self.bin / "curl"
+        curl.write_text(r"""#!/usr/bin/python3
+import json, os, pathlib, sys
+args = sys.argv[1:]
+url = args[-1]
+root = pathlib.Path(os.environ['TEST_ROOT'])
+with (root / 'requests').open('a') as log: log.write(url + '\n')
+if '-X' in args and args[args.index('-X') + 1] == 'DELETE':
+    print(os.environ.get('DELETE_STATUS', '204'), end='')
+    sys.exit(0)
+page = url.rsplit('page=', 1)[-1]
+print((root / ('page-' + page)).read_text())
+""")
+        curl.chmod(0o755)
+
+    def runner(self, number, **overrides):
+        return dict(id=number, name=f"i-abc123-1-{number}", status="offline", busy=False, **overrides)
+
+    def run_script(self, mode, **overrides):
+        result = subprocess.run(
+            ["/bin/bash", str(self.script), mode, "1"],
+            env=dict(os.environ, PATH=f"{self.bin}:/usr/bin:/bin", TEST_ROOT=str(self.root), **overrides),
+            text=True, capture_output=True, timeout=10,
+        )
+        requests = self.log.read_text().splitlines() if self.log.exists() else []
+        return result, requests
+
+    def page(self, number, runners):
+        (self.root / f"page-{number}").write_text(json.dumps({"runners": runners}))
+
+    def test_prune_only_offline_owned_idle_runners_in_group(self):
+        self.page(1, [self.runner(1), dict(self.runner(2), status="online"),
+                      dict(self.runner(3), busy=True), dict(self.runner(4), name="other-runner")])
+        result, requests = self.run_script("prune")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('/runner-groups/42/runners?', requests[0])
+        self.assertEqual(requests[1:], ['https://api.github.com/orgs/test-org/actions/runners/1'])
+
+    def test_collects_all_pages_before_deletion(self):
+        self.page(1, [self.runner(1)] + [dict(self.runner(i), status="online") for i in range(2, 101)])
+        self.page(2, [self.runner(101)])
+        result, requests = self.run_script("prune")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('page=2', requests[1])
+        self.assertEqual(len(requests), 4)
+        self.assertTrue(requests[-1].endswith('/101'))
+
+    def test_remove_recorded_id_and_clear_state(self):
+        (self.state / '1').write_text('123')
+        result, requests = self.run_script('remove')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(requests[-1].endswith('/123'))
+        self.assertFalse((self.state / '1').exists())
+
+    def test_already_removed_registration_is_success(self):
+        (self.state / '1').write_text('123')
+        result, _ = self.run_script('remove', DELETE_STATUS='404')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.state / '1').exists())
+
+    def test_failed_delete_preserves_state_for_retry(self):
+        (self.state / '1').write_text('123')
+        result, _ = self.run_script('remove', DELETE_STATUS='403')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue((self.state / '1').exists())
+
+    def test_missing_registration_does_not_authenticate(self):
+        result, requests = self.run_script('remove')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(requests, [])
+
+
+class SpotNoticeTests(unittest.TestCase):
+    def run_notice(self, status):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            body = re.search(r"<<'SPOT'\n(.*?)\nSPOT\n", INSTALLER.read_text(), re.S).group(1)
+            (root / "notice").write_text(body)
+            for tool, script in {
+                "curl": '#!/bin/bash\nif [[ "$*" == *instance-action* ]]; then echo "$STATUS"; else echo token; fi\n',
+                "jq": '#!/bin/bash\necho 2\n',
+                "systemctl": '#!/bin/bash\necho "$*" >> "$CALLS"\n',
+            }.items():
+                path = root / tool
+                path.write_text(script)
+                path.chmod(0o755)
+            calls = root / "calls"
+            result = subprocess.run(["/bin/bash", str(root / "notice")],
+                                    env=dict(os.environ, PATH=f"{root}:/usr/bin:/bin",
+                                             STATUS=status, CALLS=str(calls)),
+                                    capture_output=True, text=True, timeout=10)
+            return result, calls.read_text().splitlines() if calls.exists() else []
+
+    def test_no_notice_keeps_runners_running(self):
+        result, calls = self.run_notice("404")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls, [])
+
+    def test_notice_stops_heartbeat_then_both_runners(self):
+        result, calls = self.run_notice("200")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls, [
+            "stop honua-gate-runner-heartbeat.timer honua-gate-runner-heartbeat.service",
+            "stop honua-gate-runner@1.service honua-gate-runner@2.service",
+        ])
+
+    def test_service_wires_boot_cleanup_and_privileged_exit_cleanup(self):
+        text = INSTALLER.read_text()
+        self.assertIn("Requires=honua-gate-runner-prune.service", text)
+        self.assertIn("After=network-online.target honua-gate-runner-prune.service", text)
+        self.assertIn("ExecStopPost=+/usr/local/sbin/honua-gate-runner-registration remove %i", text)
 
 
 if __name__ == "__main__":

@@ -42,6 +42,106 @@ install -d -m 0755 /opt/actions-runner
 tar -xzf "$runner_archive" -C /opt/actions-runner
 /opt/actions-runner/bin/installdependencies.sh
 
+cat > /usr/local/sbin/honua-gate-runner-registration <<'REGISTRATION'
+#!/bin/bash
+set -euo pipefail
+umask 077
+config=/etc/honua-gate-runner.json
+setting() { jq -r ".$1" "$config"; }
+base64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+github() {
+  curl -fsS --connect-timeout 5 --max-time 20 --retry 2 -H "@$1" \
+    -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' "${@:2}"
+}
+cleanup_credentials() {
+  if [[ -f "${secrets}/runner-auth" ]]; then
+    github "${secrets}/runner-auth" -X DELETE https://api.github.com/installation/token > /dev/null || true
+  fi
+  rm -rf "${secrets:?}"
+}
+# An ephemeral runner may already have removed itself after its job.
+delete_runner() {
+  local status
+  status="$(curl -sS --connect-timeout 5 --max-time 20 --retry 2 \
+    -H "@${secrets}/runner-auth" -H 'Accept: application/vnd.github+json' \
+    -H 'X-GitHub-Api-Version: 2022-11-28' -X DELETE -o /dev/null -w '%{http_code}' \
+    "https://api.github.com/orgs/$(setting org)/actions/runners/$1")"
+  [[ "$status" == 204 || "$status" == 404 ]]
+}
+remove_offline_runners() {
+  local page=1 response id selected
+  local ids=()
+  # Collect every page before deletion so shrinking pages cannot skip registrations.
+  while :; do
+    response="$(github "${secrets}/runner-auth" \
+      "https://api.github.com/orgs/$(setting org)/actions/runner-groups/${group_id}/runners?per_page=100&page=${page}")"
+    selected="$(jq -r '.runners[] | select(.status == "offline" and .busy == false) |
+      select(.name | test("^i-[0-9a-f]+-[0-9]+-[0-9]+$")) | .id' <<< "$response")"
+    while read -r id; do
+      [[ -z "$id" ]] || ids+=("$id")
+    done <<< "$selected"
+    [[ "$(jq '.runners | length' <<< "$response")" -eq 100 ]] || break
+    page=$((page + 1))
+  done
+  for id in "${ids[@]}"; do delete_runner "$id"; done
+}
+mode="${1:?registration mode required}"
+case "$mode" in
+  register|remove)
+    index="${2:?runner index required}"
+    [[ "$index" =~ ^[1-9][0-9]*$ ]]
+    state="/run/honua-gate-runner-state/${index}"
+    [[ "$mode" != remove || -f "$state" ]] || exit 0
+    ;;
+  prune) ;;
+  *) exit 2 ;;
+esac
+secrets="$(mktemp -d -p /run)"
+trap cleanup_credentials EXIT
+/snap/bin/aws ssm get-parameter --region "$(setting region)" --name "$(setting app_parameter)" \
+  --with-decryption --query Parameter.Value --output text > "${secrets}/app.json"
+jq -r .private_key "${secrets}/app.json" > "${secrets}/key.pem"
+header="$(printf '{"alg":"RS256","typ":"JWT"}' | base64url)"
+payload="$(jq -cn --arg app "$(jq -r .app_id "${secrets}/app.json")" --argjson now "$(date +%s)" \
+  '{iat: ($now - 60), exp: ($now + 540), iss: $app}' | base64url)"
+signature="$(printf '%s.%s' "$header" "$payload" | openssl dgst -sha256 -sign "${secrets}/key.pem" -binary | base64url)"
+printf 'Authorization: Bearer %s.%s.%s\n' "$header" "$payload" "$signature" > "${secrets}/app-auth"
+installation="$(github "${secrets}/app-auth" "https://api.github.com/orgs/$(setting org)/installation" | jq -r .id)"
+github "${secrets}/app-auth" -X POST -d '{"permissions":{"organization_self_hosted_runners":"write"}}' \
+  "https://api.github.com/app/installations/${installation}/access_tokens" |
+  jq -r '"Authorization: Bearer " + .token' > "${secrets}/runner-auth"
+group_id="$(github "${secrets}/runner-auth" "https://api.github.com/orgs/$(setting org)/actions/runner-groups?per_page=100" |
+  jq -r --arg name "$(setting group)" '.runner_groups[] | select(.name == $name) | .id')"
+[[ -n "$group_id" ]] || { echo "Runner group $(setting group) does not exist." >&2; exit 1; }
+
+case "$mode" in
+  prune) remove_offline_runners ;;
+  remove)
+    id="$(cat "$state")"
+    [[ "$id" =~ ^[0-9]+$ ]]
+    delete_runner "$id"
+    rm -f "$state"
+    ;;
+  register)
+    user="gate-runner-${index}"
+    install -d -m 0700 /run/honua-gate-runner-state
+
+    imds="$(curl -fsS -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' http://169.254.169.254/latest/api/token)"
+    instance="$(curl -fsS -H "X-aws-ec2-metadata-token: ${imds}" http://169.254.169.254/latest/meta-data/instance-id)"
+    request="$(jq -cn --arg name "${instance}-${index}-$(date +%s)" --argjson group "$group_id" \
+      --argjson labels "$(jq -c .labels "$config")" \
+      '{name: $name, runner_group_id: $group, labels: $labels, work_folder: "_work"}')"
+    install -d -o "$user" -g "$user" -m 0700 "/run/honua-gate-runner/${index}"
+    github "${secrets}/runner-auth" -X POST -d "$request" "https://api.github.com/orgs/$(setting org)/actions/runners/generate-jitconfig" |
+      jq -e '{id: .runner.id, encoded_jit_config}' > "${secrets}/registration.json"
+    jq -er '.id | numbers' "${secrets}/registration.json" > "$state"
+    jq -er .encoded_jit_config "${secrets}/registration.json" |
+      install -o "$user" -g "$user" -m 0400 /dev/stdin "/run/honua-gate-runner/${index}/jitconfig"
+    ;;
+esac
+REGISTRATION
+chmod 0700 /usr/local/sbin/honua-gate-runner-registration
+
 cat > /usr/local/sbin/honua-gate-runner-prepare <<'PREPARE'
 #!/bin/bash
 # Runs as root before each job of runner $1.
@@ -84,45 +184,6 @@ block_instance_metadata() {
   ip6tables -C "${rule6[@]}" 2>/dev/null || ip6tables -I "${rule6[@]}"
 }
 
-base64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
-
-github() {
-  curl -fsS --retry 3 -H "@$1" -H 'Accept: application/vnd.github+json' \
-    -H 'X-GitHub-Api-Version: 2022-11-28' "${@:2}"
-}
-
-# Credentials travel in root-only files, never in process arguments.
-register_for_one_job() {
-  local secrets credentials header payload signature installation group_id request imds instance
-  secrets="$(mktemp -d -p /run)"
-  trap 'rm -rf "$secrets"' RETURN
-  /snap/bin/aws ssm get-parameter --region "$(setting region)" --name "$(setting app_parameter)" \
-    --with-decryption --query Parameter.Value --output text > "${secrets}/app.json"
-  jq -r .private_key "${secrets}/app.json" > "${secrets}/key.pem"
-  header="$(printf '{"alg":"RS256","typ":"JWT"}' | base64url)"
-  payload="$(jq -cn --arg app "$(jq -r .app_id "${secrets}/app.json")" --argjson now "$(date +%s)" \
-    '{iat: ($now - 60), exp: ($now + 540), iss: $app}' | base64url)"
-  signature="$(printf '%s.%s' "$header" "$payload" | openssl dgst -sha256 -sign "${secrets}/key.pem" -binary | base64url)"
-  printf 'Authorization: Bearer %s.%s.%s\n' "$header" "$payload" "$signature" > "${secrets}/app-auth"
-  installation="$(github "${secrets}/app-auth" "https://api.github.com/orgs/$(setting org)/installation" | jq -r .id)"
-  github "${secrets}/app-auth" -X POST -d '{"permissions":{"organization_self_hosted_runners":"write"}}' \
-    "https://api.github.com/app/installations/${installation}/access_tokens" |
-    jq -r '"Authorization: Bearer " + .token' > "${secrets}/runner-auth"
-  group_id="$(github "${secrets}/runner-auth" "https://api.github.com/orgs/$(setting org)/actions/runner-groups?per_page=100" |
-    jq -r --arg name "$(setting group)" '.runner_groups[] | select(.name == $name) | .id')"
-  [[ -n "$group_id" ]] || { echo "Runner group $(setting group) does not exist." >&2; return 1; }
-
-  imds="$(curl -fsS -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' http://169.254.169.254/latest/api/token)"
-  instance="$(curl -fsS -H "X-aws-ec2-metadata-token: ${imds}" http://169.254.169.254/latest/meta-data/instance-id)"
-  request="$(jq -cn --arg name "${instance}-${index}-$(date +%s)" --argjson group "$group_id" \
-    --argjson labels "$(jq -c .labels "$config")" \
-    '{name: $name, runner_group_id: $group, labels: $labels, work_folder: "_work"}')"
-  install -d -o "$user" -g "$user" -m 0700 "/run/honua-gate-runner/${index}"
-  github "${secrets}/runner-auth" -X POST -d "$request" "https://api.github.com/orgs/$(setting org)/actions/runners/generate-jitconfig" |
-    jq -r .encoded_jit_config | install -o "$user" -g "$user" -m 0400 /dev/stdin "/run/honua-gate-runner/${index}/jitconfig"
-  github "${secrets}/runner-auth" -X DELETE https://api.github.com/installation/token > /dev/null || true
-}
-
 check_prerequisites() {
   # Unlike runuser/PAM, setpriv preserves the service's open-file limit.
   setpriv --reuid "$uid" --regid "$(id -g "$user")" --init-groups \
@@ -133,7 +194,7 @@ end_previous_job
 restore_pristine_home
 block_instance_metadata
 check_prerequisites
-register_for_one_job
+/usr/local/sbin/honua-gate-runner-registration register "$index"
 PREPARE
 
 cat > /usr/local/bin/honua-gate-runner-run <<'RUN'
@@ -210,13 +271,16 @@ cat > /etc/systemd/system/honua-gate-runner@.service <<'SERVICE'
 [Unit]
 Description=Ephemeral PR Gate runner %i
 Wants=network-online.target
-After=network-online.target
+Requires=honua-gate-runner-prune.service
+After=network-online.target honua-gate-runner-prune.service
 StartLimitIntervalSec=0
 
 [Service]
 User=gate-runner-%i
 ExecStartPre=+/usr/local/sbin/honua-gate-runner-prepare %i
 ExecStart=/usr/local/bin/honua-gate-runner-run %i
+ExecStopPost=+/usr/local/sbin/honua-gate-runner-registration remove %i
+TimeoutStopSec=45
 Restart=always
 RestartSec=15
 TimeoutStartSec=5min
@@ -230,6 +294,59 @@ InaccessiblePaths=-/home/ubuntu -/root
 [Install]
 WantedBy=multi-user.target
 SERVICE
+
+cat > /etc/systemd/system/honua-gate-runner-prune.service <<'SERVICE'
+[Unit]
+Description=Remove abandoned offline build-host runner registrations
+Wants=network-online.target
+After=network-online.target
+Before=honua-gate-runner@1.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/honua-gate-runner-registration prune
+TimeoutStartSec=5min
+SERVICE
+
+cat > /usr/local/sbin/honua-gate-runner-spot-notice <<'SPOT'
+#!/bin/bash
+set -euo pipefail
+imds="$(curl -fsS --connect-timeout 2 --max-time 5 -X PUT \
+  -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' http://169.254.169.254/latest/api/token)"
+status="$(curl -sS --connect-timeout 2 --max-time 5 -o /dev/null -w '%{http_code}' \
+  -H "X-aws-ec2-metadata-token: ${imds}" http://169.254.169.254/latest/meta-data/spot/instance-action)"
+[[ "$status" == 200 ]] || exit 0
+systemctl stop honua-gate-runner-heartbeat.timer honua-gate-runner-heartbeat.service
+units=()
+for index in $(seq 1 "$(jq -r .runner_count /etc/honua-gate-runner.json)"); do
+  units+=("honua-gate-runner@${index}.service")
+done
+systemctl stop "${units[@]}"
+SPOT
+chmod 0700 /usr/local/sbin/honua-gate-runner-spot-notice
+
+cat > /etc/systemd/system/honua-gate-runner-spot-notice.service <<'SERVICE'
+[Unit]
+Description=Deregister PR Gate runners on a spot interruption notice
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/honua-gate-runner-spot-notice
+SERVICE
+
+cat > /etc/systemd/system/honua-gate-runner-spot-notice.timer <<'TIMER'
+[Unit]
+Description=Check for a spot interruption notice every five seconds
+
+[Timer]
+OnBootSec=5s
+OnUnitActiveSec=5s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
+TIMER
 
 cat > /etc/systemd/system/honua-gate-runner-heartbeat.service <<'SERVICE'
 [Unit]
@@ -282,7 +399,7 @@ for index in $(seq 1 "$(gate runner_count)"); do
   printf '[Service]\nSlice=user-%s.slice\n' "$uid" > "/etc/systemd/system/honua-gate-runner@${index}.service.d/50-slice.conf"
 done
 systemctl daemon-reload
-systemctl enable --now honua-gate-runner-heartbeat.timer
+systemctl enable --now honua-gate-runner-heartbeat.timer honua-gate-runner-spot-notice.timer
 for index in $(seq 1 "$(gate runner_count)"); do
   systemctl enable --now --no-block "honua-gate-runner@${index}.service"
 done

@@ -38,12 +38,12 @@ run "spot_host_that_stops_itself" {
     error_message = "The group must support zero or one build host."
   }
   assert {
-    condition     = one(one(aws_autoscaling_group.build.mixed_instances_policy).instances_distribution).on_demand_base_capacity == 0 && one(one(aws_autoscaling_group.build.mixed_instances_policy).instances_distribution).on_demand_percentage_above_base_capacity == 0 && one(one(aws_autoscaling_group.build.mixed_instances_policy).instances_distribution).spot_allocation_strategy == "price-capacity-optimized"
-    error_message = "Only price-capacity-optimized Spot capacity is allowed."
+    condition     = one(one(aws_autoscaling_group.build.mixed_instances_policy).instances_distribution).on_demand_base_capacity == 0 && one(one(aws_autoscaling_group.build.mixed_instances_policy).instances_distribution).on_demand_percentage_above_base_capacity == 0 && one(one(aws_autoscaling_group.build.mixed_instances_policy).instances_distribution).spot_allocation_strategy == "capacity-optimized"
+    error_message = "Only capacity-optimized Spot capacity is allowed."
   }
   assert {
-    condition     = toset([for item in one(one(aws_autoscaling_group.build.mixed_instances_policy).launch_template).override : item.instance_type]) == toset(["c6i.4xlarge", "c7i.4xlarge", "m6i.4xlarge", "m7i.4xlarge", "c6a.4xlarge", "m6a.4xlarge", "c5.4xlarge"])
-    error_message = "All seven equivalent 16-vCPU types must be offered."
+    condition     = toset([for item in one(one(aws_autoscaling_group.build.mixed_instances_policy).launch_template).override : item.instance_type]) == toset(["c6i.8xlarge", "c7i.8xlarge", "m6i.8xlarge", "m7i.8xlarge", "c6a.8xlarge", "m6a.8xlarge", "c7a.8xlarge", "m7a.8xlarge", "r6i.8xlarge", "r7i.8xlarge", "c5.9xlarge", "m5.8xlarge", "c5a.8xlarge", "m5a.8xlarge", "c6in.8xlarge", "r6a.8xlarge"])
+    error_message = "All sixteen 32-or-more-vCPU replacement types must be offered."
   }
   assert {
     condition     = length(aws_subnet.build) == 3 && toset([for subnet in aws_subnet.build : subnet.availability_zone]) == toset(data.aws_availability_zones.build.names) && toset(aws_autoscaling_group.build.vpc_zone_identifier) == toset([for subnet in aws_subnet.build : subnet.id])
