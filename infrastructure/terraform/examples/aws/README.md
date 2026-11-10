@@ -96,3 +96,8 @@ configuring protected inputs or approving a deployment.
 ## rc.2 Fargate deployment
 
 See [RC2.md](RC2.md) for the static Console, private PostGIS bootstrap, customer-run upgrade and rollback procedure, cost estimate, and validation gate.
+
+## Geoprocessing workers
+
+Set `gp_batch` to enable private AWS Batch on Fargate. It defaults to null.
+See the [module worker configuration and enablement limitations](../../modules/aws-ecs/README.md#optional-geoprocessing-on-aws-batch) before enabling it.

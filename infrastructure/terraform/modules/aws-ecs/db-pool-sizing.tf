@@ -22,7 +22,7 @@ locals {
       + (var.migration_task ? 1 : 0)
     )
     pools_per_process  = var.db_pools_per_process
-    other_connections  = 0
+    other_connections  = local.gp_batch_enabled ? var.gp_batch.max_vcpus * 2 : 0
     safety_fraction    = var.db_connection_safety_fraction
     pool_size_override = var.db_pool_size_override != null ? var.db_pool_size_override : local.db_pool_additional_env_size
     fallback_pool_size = null

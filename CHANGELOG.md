@@ -16,6 +16,8 @@ module input/output contracts may still change.
 
 ### Added
 
+- Optional private AWS Batch Fargate geoprocessing workers for the ECS module and AWS example, with prefix-scoped storage access and PostgreSQL completion polling.
+
 - `aws-ecs`: optional `cdn` input. One CloudFront distribution on `domain_name` fronts the load balancer as
   the deployment's shared cache: cache policies with minimum and default lifetime 0 (origin `Cache-Control`
   decides), credentials and all query parameters in the cache key, caching disabled on admin and sign-in

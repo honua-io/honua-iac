@@ -1080,3 +1080,80 @@ command and port; the typed port wins over additional environment entries.
 The native executable probes `/healthz/ready` with `--ready`, or `/healthz/live`
 without it; it does not read `health_check_path`. Older images lack this executable,
 so change the command only when deploying a compatible image.
+
+
+### Optional geoprocessing on AWS Batch
+
+`gp_batch = null` (default) creates no Batch resources. To run heavy GP remotely:
+
+```hcl
+gp_batch = {
+  image       = "ghcr.io/honua-io/honua-worker-gdal@sha256:<64-hex-digest>"
+  max_vcpus   = 16
+  scratch_gib = 200
+  # Required only when existing_db_endpoint/connection_string are supplied:
+  # database_security_group_id = "sg-..."
+}
+file_storage_provider            = "AwsS3"
+file_storage_aws_s3_create_bucket = true
+file_storage_aws_s3_key_prefix    = "honua"
+```
+
+Use the dedicated GDAL worker image supporting the assigned single-job execution contract and
+PostgreSQL job substrate (honua-server PR #7245); its architecture must match
+`cpu_architecture` (default `X86_64`, also `ARM64`). Terraform does not build or
+publish the image. Batch uses on-demand Fargate in the service's private subnets,
+without public IPs. Provide NAT or private endpoints for image pulls, Secrets
+Manager, CloudWatch Logs and S3. The deploying identity must be able to create
+Batch's service-linked role on first use. The default job definition has 1 vCPU,
+2 GiB memory and 200 GiB scratch; the server supplies per-job CPU/memory overrides.
+`scratch_gib` accepts 21–200; SubmitJob cannot override disk size, so provision it
+for the largest admitted workload. `max_vcpus` limits aggregate worker capacity.
+
+Batch injects `ConnectionStrings__DefaultConnection` from the same database secret
+used by ECS. Workers use the PostgreSQL store to claim their assigned job and
+persist progress, logs and completion; no Redis connection or HTTP listener is
+needed. The Batch backend supplies the operation/attempt environment at submission.
+S3 settings enable shared file access for workloads that need it. The worker job
+role can access only the database secret and the configured file prefix. The
+execution role can pull the image, emit logs and decrypt that secret. Both roles
+inherit `permissions_boundary_arn`. `JobStore__WorkerMaxPoolSize=2` reserves two database connections each
+in the connection budget. Apply database schema migrations before submitting jobs.
+
+For a module-managed database, its security group admits workers on TCP 5432.
+For an external database supply `database_security_group_id`; this module adds a
+standalone ingress rule to it. Do not also manage that same rule with inline rules
+in another Terraform root. Routing and the supplied connection string must reach
+that database from the private subnets.
+
+The module configures `ControlPlane__ExecutionWorkloads__0__*` with `TargetKind=AwsBatch`,
+`Backend=honua-aws-batch`, `Kind=Geoprocessing`, and `ParameterEntries` keys
+`batch.job_queue_arn` and `batch.job_definition_arn`. Workload slot 0 is reserved
+for Batch when enabled. `ControlPlane__TriggerMode=Poll` selects the ECS host's
+execution reconciler: it calls Batch DescribeJobs and updates the durable job
+store. Long-lived hosts also run the scheduled backstop; EventBridge and Lambda
+are unnecessary. See honua-server `Startup/ControlPlaneReconcileRegistration.cs`,
+`Honua.Jobs/Features/ControlPlane/ExecutionJobReconciler.cs`, and
+`Honua.Cloud/Aws/Features/ControlPlane/AwsBatchComputeBackend.cs`.
+
+The server role grants only SubmitJob, DescribeJobs, ListJobs, CancelJob and
+TerminateJob. SubmitJob is scoped to this queue and revisioned definition.
+DescribeJobs and ListJobs require `Resource = "*"`; cancellation and termination
+use job ARNs within this account and region. AWS offers no queue condition for
+these job actions, so they cover other regional jobs in the account as well
+([AWS IAM reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_batch.html)).
+ListJobs recovers ambiguous submissions; CancelJob handles queued cancellation.
+Custom-code jobs additionally require DescribeJobDefinitions and are outside this
+worker profile; no additional Batch APIs are granted implicitly.
+
+| Input | Default | Meaning |
+| --- | --- | --- |
+| `gp_batch` | `null` | Enable by supplying the object above. |
+| `gp_batch.image` | required | Worker image pinned by SHA-256 digest. |
+| `gp_batch.max_vcpus` | `16` | Positive integer Fargate capacity limit. |
+| `gp_batch.scratch_gib` | `200` | Integer ephemeral disk size, 21–200 GiB. |
+| `gp_batch.cpu_architecture` | `X86_64` | Worker architecture. |
+| `gp_batch.database_security_group_id` | `null` | Required for an external database. |
+
+The `gp_batch` output contains the queue ARN, revisioned job-definition ARN and
+worker security group ID, or `null` when disabled.

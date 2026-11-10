@@ -7,6 +7,7 @@ provider "aws" {
 }
 
 module "honua" {
+  gp_batch                                          = var.gp_batch
   cdn                                               = var.cdn
   autoscaling_requests_per_target                   = var.autoscaling_requests_per_target
   db_instance_class                                 = var.db_instance_class

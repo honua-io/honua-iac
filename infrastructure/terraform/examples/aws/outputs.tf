@@ -91,3 +91,8 @@ output "redis_primary_endpoint" {
   value       = module.honua.redis_primary_endpoint
   sensitive   = true
 }
+
+output "gp_batch" {
+  description = "Optional Batch queue, definition and worker security group."
+  value       = module.honua.gp_batch
+}

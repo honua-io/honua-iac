@@ -116,3 +116,11 @@ tags = {
 
 # Optional private controller access to the module-managed database (TCP 5432 only).
 # db_additional_ingress_security_group_ids = ["sg-0123456789abcdef0"]
+
+# Optional heavy GP on private Fargate workers (requires shared AwsS3 storage).
+# gp_batch = {
+#   image = "ghcr.io/honua-io/honua-worker-gdal@sha256:<64-hex-digest>"
+#   max_vcpus = 16
+#   scratch_gib = 200
+#   database_security_group_id = "sg-..." # only for an existing database
+# }

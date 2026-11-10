@@ -623,3 +623,24 @@ variable "health_check_port" {
   type        = number
   default     = null
 }
+
+variable "gp_batch" {
+  description = "Optional private Fargate GP workers. Null disables Batch. Supply a PostgreSQL single-job worker image; external databases must admit the worker security group."
+  type = object({
+    image                      = string
+    max_vcpus                  = optional(number, 16)
+    scratch_gib                = optional(number, 200)
+    cpu_architecture           = optional(string, "X86_64")
+    database_security_group_id = optional(string)
+  })
+  default = null
+  validation {
+    condition = var.gp_batch == null ? true : (
+      can(regex("^.+@sha256:[0-9a-f]{64}$", var.gp_batch.image)) &&
+      var.gp_batch.max_vcpus >= 1 && floor(var.gp_batch.max_vcpus) == var.gp_batch.max_vcpus &&
+      var.gp_batch.scratch_gib >= 21 && var.gp_batch.scratch_gib <= 200 && floor(var.gp_batch.scratch_gib) == var.gp_batch.scratch_gib &&
+      contains(["X86_64", "ARM64"], var.gp_batch.cpu_architecture)
+    )
+    error_message = "gp_batch requires a digest-pinned image, positive integer max_vcpus, integer scratch_gib from 21 to 200, and X86_64 or ARM64."
+  }
+}
