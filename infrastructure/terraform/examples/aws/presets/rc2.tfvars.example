@@ -11,12 +11,11 @@ canary_enabled = false
 file_storage_provider = "AwsS3"
 file_storage_aws_s3_create_bucket = true
 file_storage_aws_s3_bucket_name = ""
-file_storage_aws_s3_region = "us-east-1"
+file_storage_aws_s3_region = ""
 db_publicly_accessible = false
 enable_postgis = true
 alb_enable_http_redirect = false
 allow_http_ingress_cidrs = []
-health_check_command = ["CMD", "wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8080/healthz/live"]
 # Customer tfvars must set domain_name, regional alb_certificate_arn and:
 # static_console = { viewer_certificate_arn = <us-east-1 ACM ARN>, bundle_version = <verified release version> }
 # postgis_bootstrap_image = <verified PostgreSQL client registry/repository@sha256:digest>

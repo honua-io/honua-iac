@@ -44,6 +44,18 @@ run "ecs_with_redis" {
   command = plan
 
   assert {
+    condition = contains(output.deploy_identity_contract.actions_by_service["cloudfront"], "cloudfront:CreateDistributionWithTags") && alltrue([
+      for statement in jsondecode(data.aws_iam_policy_document.deployment.json).Statement :
+      !can(statement.Condition) && contains(tolist(statement.Action), "cloudfront:CreateOriginAccessControl") && contains(tolist(statement.Action), "cloudfront:PublishFunction")
+      if statement.Sid == "ManageHostedZoneRecords"
+      ]) && length([
+      for statement in jsondecode(data.aws_iam_policy_document.deployment.json).Statement : statement
+      if statement.Sid == "ManageHostedZoneRecords"
+    ]) == 1
+    error_message = "ECS must authorize CloudFront lifecycle calls globally without a regional condition."
+  }
+
+  assert {
     condition = alltrue(flatten([
       for actions in values(output.deploy_identity_contract.actions_by_service) : [
         for action in actions : !strcontains(action, "*") && !strcontains(action, "?")

@@ -352,9 +352,8 @@ data "aws_iam_policy_document" "deployment" {
     }
   }
 
-  # Route 53 uses a global endpoint, so aws:RequestedRegion cannot match the
-  # cell region outside us-east-1. The statement exists only when the approved
-  # topology includes a custom domain.
+  # Route 53 and CloudFront use global endpoints. Keep their exact actions
+  # outside the regional condition; selected manifests determine inclusion.
   dynamic "statement" {
     for_each = length(local.global_actions) > 0 ? [1] : []
 

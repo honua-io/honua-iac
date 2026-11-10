@@ -22,7 +22,7 @@ variable "postgis_bootstrap_image" {
 
 variable "redis_node_type" {
   type        = string
-  default     = "cache.t4g.micro"
+  default     = "cache.t3.micro"
   description = "Managed ElastiCache node size."
 }
 variable "db_engine_version" {

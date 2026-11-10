@@ -9,6 +9,10 @@ variable "postgis_bootstrap_image" {
 }
 
 locals {
+  postgis_bootstrap_container_options = jsondecode(var.postgis_bootstrap_image == null ? "{}" : jsonencode({
+    dependsOn    = local.postgis_bootstrap_dependencies
+    startTimeout = 120
+  }))
   postgis_bootstrap_dependencies = var.postgis_bootstrap_image == null ? [] : [{ containerName = "postgis", condition = "SUCCESS" }]
   postgis_bootstrap_containers = var.postgis_bootstrap_image == null ? [] : [{
     name       = "postgis"

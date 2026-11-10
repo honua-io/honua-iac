@@ -187,10 +187,12 @@ resource "aws_cloudfront_distribution" "console" {
       value = random_password.cloudfront_origin[0].result
     }
     custom_origin_config {
-      http_port              = 80
-      https_port             = 443
-      origin_protocol_policy = "https-only"
-      origin_ssl_protocols   = ["TLSv1.2"]
+      http_port                = 80
+      https_port               = 443
+      origin_read_timeout      = 60
+      origin_keepalive_timeout = 60
+      origin_protocol_policy   = "https-only"
+      origin_ssl_protocols     = ["TLSv1.2"]
     }
   }
   default_cache_behavior {
@@ -226,18 +228,6 @@ resource "aws_cloudfront_distribution" "console" {
     minimum_protocol_version = "TLSv1.2_2021"
   }
   tags = local.tags
-}
-
-resource "aws_route53_record" "console" {
-  count   = var.static_console != null && var.domain_alias_record_enabled && var.route53_zone_id != "" ? 1 : 0
-  zone_id = var.route53_zone_id
-  name    = var.domain_name
-  type    = "A"
-  alias {
-    name                   = aws_cloudfront_distribution.console[0].domain_name
-    zone_id                = aws_cloudfront_distribution.console[0].hosted_zone_id
-    evaluate_target_health = false
-  }
 }
 
 output "static_console" {

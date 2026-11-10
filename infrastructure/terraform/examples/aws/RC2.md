@@ -10,6 +10,13 @@ Fargate tasks, encrypted RDS PostgreSQL, backups, encrypted authenticated
 ElastiCache, Secrets Manager, CloudWatch logs, HTTPS ALB and guarded autoscaling.
 This preset adds private-network PostGIS initialization and a static Console.
 
+Use `bootstrap/aws-exec-identity` with the regenerated ECS manifest from this
+revision. It includes CloudFront distribution, origin access control and function
+lifecycle actions in a global statement without a regional condition. The older
+`bootstrap/aws-ecs` identity lacks these permissions and is unsupported for this
+preset. The account owner provisions the deployment identity before a live plan;
+static policy tests do not establish that AWS will authorize every deployment call.
+
 ## Inputs and topology
 
 Copy `terraform.tfvars.example` to the ignored `terraform.tfvars`. Configure the
@@ -48,12 +55,21 @@ parameters to ALB without response caching. Origin TLS uses the viewer Host
 header and matching regional certificate. ALB accepts CloudFront's managed prefix
 list and a private origin header; other requests receive 403. Port 80 is closed.
 The prefix list consumes 55 security-group rules; ensure the account quota permits it.
+ALB preserves CloudFront’s X-Forwarded-For header, whose rightmost entry is the
+viewer IP appended by CloudFront; the server consumes that one trusted hop. This
+requires the prefix-list and private-header origin restrictions to stay enabled.
+The API origin response timeout is 60 seconds. Use asynchronous jobs for longer work.
+See [AWS header processing](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/x-forwarded-headers.html).
 
 The `postgis` task container connects privately to RDS over TLS, serializes
 `CREATE EXTENSION IF NOT EXISTS postgis` and `postgis_raster` using an advisory
 lock, then exits. Honua waits for SUCCESS before startup migrations run.
 Database credentials are injected from Secrets Manager, never embedded in the
-Console. The database master user currently initializes extensions and runs Honua;
+Console. The bootstrap client currently uses `sslmode=require`: traffic is encrypted but
+the RDS certificate identity is **not verified**. This is an explicit preview
+limitation for the account owner to assess before deployment; do not treat it as
+full TLS authentication. A verified client image with the RDS CA and `verify-full`
+is required to remove this limitation. The database master user currently initializes extensions and runs Honua;
 separating a restricted runtime database role remains an operator hardening step.
 
 RDS is private, encrypted, 20 GiB initially, PostgreSQL 15, `db.t3.micro`, with
@@ -89,6 +105,12 @@ an existing hostname already serves traffic. Verify `/console/`, a nested SPA
 route, a missing `.js` asset (must not return HTML), authenticated API calls,
 `/healthz/live`, `/healthz/ready`, and direct ALB denial. Test on the exact
 release images and bundle; record browser and API receipts without secrets.
+
+Enabling this topology on an existing ALB-only stack is not an in-place,
+zero-downtime cutover: the ALB restrictions change while CloudFront deploys. Use a
+parallel stack and a planned DNS cutover after validation, retaining the old stack
+for rollback. The managed DNS resource keeps its address when switching targets,
+but that does not make the application cutover atomic.
 
 ## Updates and rollback
 
@@ -144,7 +166,7 @@ terraform fmt -check -recursive infrastructure/terraform
 terraform fmt -check -recursive docs/devops/examples
 terraform -chdir=infrastructure/terraform/modules/aws-ecs init -backend=false
 terraform -chdir=infrastructure/terraform/modules/aws-ecs validate
-terraform -chdir=infrastructure/terraform/modules/aws-ecs test -filter=tests/static_console.tftest.hcl
+terraform -chdir=infrastructure/terraform/modules/aws-ecs test -filter=tests/admin_secret_version.tftest.hcl
 node infrastructure/terraform/modules/aws-ecs/scripts/console-router.test.cjs
 HONUA_TERRAFORM_POLICY_STRICT=true ./infrastructure/terraform/validation/scripts/shared/terraform-policy-gate.sh
 ```

@@ -25,7 +25,7 @@ locals {
   db_use_existing       = var.existing_db_endpoint != "" && var.existing_db_connection_string != ""
   use_managed_cert      = var.domain_name != "" && var.route53_zone_id != ""
   use_https             = var.alb_certificate_arn != "" || local.use_managed_cert
-  create_domain_alias   = var.static_console == null && var.domain_alias_record_enabled && var.domain_name != "" && var.route53_zone_id != ""
+  create_domain_alias   = var.domain_alias_record_enabled && var.domain_name != "" && var.route53_zone_id != ""
   use_custom_domain     = var.domain_name != "" && local.use_https
   service_host          = local.use_custom_domain ? var.domain_name : aws_lb.this.dns_name
   service_scheme        = local.use_https ? "https" : "http"
@@ -568,6 +568,7 @@ resource "aws_elasticache_replication_group" "redis" {
 
 #checkov:skip=CKV2_AWS_28: WAF association is optional via waf_web_acl_arn.
 resource "aws_lb" "this" {
+  xff_header_processing_mode = var.static_console == null ? "append" : "preserve"
   #checkov:skip=CKV2_AWS_76: WAF AMR configuration is managed via waf_web_acl_arn association.
   #checkov:skip=CKV2_AWS_20: HTTP redirect is conditional based on certificate availability.
   name                       = "${local.name}-alb"
@@ -637,8 +638,8 @@ resource "aws_route53_record" "service_alias" {
   type    = "A"
 
   alias {
-    name                   = aws_lb.this.dns_name
-    zone_id                = aws_lb.this.zone_id
+    name                   = var.static_console == null ? aws_lb.this.dns_name : aws_cloudfront_distribution.console[0].domain_name
+    zone_id                = var.static_console == null ? aws_lb.this.zone_id : aws_cloudfront_distribution.console[0].hosted_zone_id
     evaluate_target_health = false
   }
 }
@@ -1324,7 +1325,7 @@ resource "aws_ecs_task_definition" "this" {
   }
 
   container_definitions = jsonencode(concat(local.postgis_bootstrap_containers, [
-    {
+    merge({
       name      = "honua"
       image     = var.image
       essential = true
@@ -1339,9 +1340,8 @@ resource "aws_ecs_task_definition" "this" {
       secrets          = local.container_secrets
       logConfiguration = local.container_log_configuration
       healthCheck      = local.container_health_check
-      dependsOn        = local.postgis_bootstrap_dependencies
-      startTimeout     = 120
-    }
+
+    }, local.postgis_bootstrap_container_options)
   ]))
 
   depends_on = [
@@ -1374,7 +1374,7 @@ resource "aws_ecs_task_definition" "canary" {
   }
 
   container_definitions = jsonencode(concat(local.postgis_bootstrap_containers, [
-    {
+    merge({
       name      = "honua"
       image     = local.effective_canary_image
       essential = true
@@ -1389,9 +1389,8 @@ resource "aws_ecs_task_definition" "canary" {
       secrets          = local.container_secrets
       logConfiguration = local.container_log_configuration
       healthCheck      = local.container_health_check
-      dependsOn        = local.postgis_bootstrap_dependencies
-      startTimeout     = 120
-    }
+
+    }, local.postgis_bootstrap_container_options)
   ]))
 
   depends_on = [

@@ -294,7 +294,27 @@
     "secretsmanager:UpdateSecret",
     "secretsmanager:UpdateSecretVersionStage"
   ],
-  "global_actions": [],
+  "global_actions": [
+    "cloudfront:CreateDistribution",
+    "cloudfront:CreateDistributionWithTags",
+    "cloudfront:CreateFunction",
+    "cloudfront:CreateOriginAccessControl",
+    "cloudfront:DeleteDistribution",
+    "cloudfront:DeleteFunction",
+    "cloudfront:DeleteOriginAccessControl",
+    "cloudfront:DescribeFunction",
+    "cloudfront:GetDistribution",
+    "cloudfront:GetDistributionConfig",
+    "cloudfront:GetFunction",
+    "cloudfront:GetOriginAccessControl",
+    "cloudfront:ListTagsForResource",
+    "cloudfront:PublishFunction",
+    "cloudfront:TagResource",
+    "cloudfront:UntagResource",
+    "cloudfront:UpdateDistribution",
+    "cloudfront:UpdateFunction",
+    "cloudfront:UpdateOriginAccessControl"
+  ],
   "pass_role_services": [
     "ecs-tasks.amazonaws.com"
   ],
@@ -317,6 +337,9 @@
   "covers": [
     "aws_appautoscaling_policy",
     "aws_appautoscaling_target",
+    "aws_cloudfront_distribution",
+    "aws_cloudfront_function",
+    "aws_cloudfront_origin_access_control",
     "aws_cloudwatch_log_group",
     "aws_customer_gateway",
     "aws_db_instance",

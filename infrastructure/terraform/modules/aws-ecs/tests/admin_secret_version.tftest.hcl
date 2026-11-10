@@ -44,6 +44,12 @@ mock_provider "aws" {
     }
   }
 
+  mock_resource "aws_cloudfront_function" {
+    defaults = {
+      arn = "arn:aws:cloudfront::123456789012:function/honua-console"
+    }
+  }
+
   mock_resource "aws_lb" {
     defaults = {
       arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/honua-test/0000000000000000"
@@ -75,7 +81,11 @@ mock_provider "aws" {
   }
 }
 
-mock_provider "random" {}
+mock_provider "random" {
+  mock_resource "random_password" {
+    defaults = { result = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+  }
+}
 mock_provider "null" {}
 
 variables {
@@ -113,11 +123,13 @@ run "actual_managed_admin_secret_version" {
 }
 
 run "static_console_private_origins" {
-  command = plan
+  command = apply
   variables {
     existing_db_endpoint                      = ""
     existing_db_connection_string             = ""
+    migration_task                            = true
     redis_enabled                             = true
+    redis_node_type                           = "cache.t4g.micro"
     operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:key-ring-AbC123"
     domain_name                               = "maps.example.com"
     alb_certificate_arn                       = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
@@ -130,6 +142,35 @@ run "static_console_private_origins" {
     postgis_bootstrap_image           = "docker.io/library/postgres@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     file_storage_provider             = "AwsS3"
     file_storage_aws_s3_create_bucket = true
+  }
+  assert {
+    condition = alltrue([for origin in aws_cloudfront_distribution.console[0].origin :
+      one(origin.custom_header).value == one(one(one(aws_lb_listener_rule.cloudfront[0].condition).http_header).values)
+      if origin.origin_id == "api"
+    ])
+    error_message = "CloudFront must send the same private origin header required by the ALB listener."
+  }
+  assert {
+    condition = alltrue([for statement in data.aws_iam_policy_document.deployment_bucket["console"].statement :
+      one(statement.condition).variable == "AWS:SourceArn" && one(one(statement.condition).values) == aws_cloudfront_distribution.console[0].arn
+      if statement.sid == "CloudFrontReadOnly"
+    ]) && aws_cloudfront_origin_access_control.console[0].signing_behavior == "always"
+    error_message = "Console OAC reads must be signed and restricted to this exact distribution."
+  }
+  assert {
+    condition     = jsondecode(aws_iam_role_policy.file_storage_s3[0].policy).Statement[1].Resource[0] == "arn:aws:s3:::${aws_s3_bucket.deployment["files"].id}/*"
+    error_message = "Runtime object access must target the generated shared bucket."
+  }
+  assert {
+    condition = alltrue([for container in jsondecode(aws_ecs_task_definition.migrate[0].container_definitions) :
+      container.dependsOn[0].containerName == "postgis" && container.dependsOn[0].condition == "SUCCESS"
+      if container.name != "postgis"
+    ]) && length(jsondecode(aws_ecs_task_definition.migrate[0].container_definitions)) == 2
+    error_message = "One-shot migrations must wait for the same private PostGIS bootstrap as the service."
+  }
+  assert {
+    condition     = aws_lb.this.xff_header_processing_mode == "preserve" && alltrue([for origin in aws_cloudfront_distribution.console[0].origin : origin.custom_origin_config[0].origin_read_timeout == 60 if origin.origin_id == "api"])
+    error_message = "The edge topology must preserve CloudFront's rightmost viewer IP and the ALB's 60-second API response window."
   }
   assert {
     condition     = aws_cloudfront_distribution.console[0].default_cache_behavior[0].target_origin_id == "api" && aws_cloudfront_distribution.console[0].default_cache_behavior[0].cache_policy_id == "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"

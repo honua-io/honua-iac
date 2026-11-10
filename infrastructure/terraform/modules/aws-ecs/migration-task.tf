@@ -107,7 +107,7 @@ resource "aws_ecs_task_definition" "migrate" {
 
   # No port mappings or health check: the migrator starts no listener and exits.
   container_definitions = jsonencode(concat(local.postgis_bootstrap_containers, [
-    {
+    merge({
       name        = local.migration_task_container_name
       image       = local.migration_task_image
       essential   = true
@@ -123,10 +123,9 @@ resource "aws_ecs_task_definition" "migrate" {
       }
       # On SIGTERM the run stops before its next database step (exit 11); give
       # it the Fargate maximum to get there.
-      stopTimeout  = 120
-      dependsOn    = local.postgis_bootstrap_dependencies
-      startTimeout = 120
-    }
+      stopTimeout = 120
+
+    }, local.postgis_bootstrap_container_options)
   ]))
 
   depends_on = [

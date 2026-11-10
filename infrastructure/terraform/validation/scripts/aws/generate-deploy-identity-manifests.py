@@ -173,7 +173,7 @@ PATTERN_REPLACEMENTS = {
         "elasticloadbalancing:SetSecurityGroups", "elasticloadbalancing:SetSubnets",
     ],
 }
-GLOBAL_SERVICES = {"route53"}
+GLOBAL_SERVICES = {"route53", "cloudfront"}
 
 # Network operations are shared by the VPC and security group resources in all
 # three modules and their registry VPC module. See AWS provider resource docs
@@ -282,6 +282,7 @@ PREFIX_SERVICE = sorted(
         ("aws_lb_", "elasticloadbalancing"),
         ("aws_lb", "elasticloadbalancing"),
         ("aws_ecs_", "ecs"),
+        ("aws_cloudfront_", "cloudfront"),
         ("aws_eks_", "eks"),
         ("aws_lambda_", "lambda"),
         ("aws_batch_", "batch"),
@@ -337,6 +338,23 @@ PREFIX_SERVICE = sorted(
 # Additional lifecycle actions for resource types. The generator adds them to
 # the manifest that owns the resource type.
 EXACT_ACTIONS = {
+    # Global endpoint lifecycle calls for the static Console edge.
+    # https://docs.aws.amazon.com/service-authorization/latest/reference/list_cloudfront.html
+    "aws_cloudfront_distribution": [
+        "cloudfront:CreateDistribution", "cloudfront:CreateDistributionWithTags",
+        "cloudfront:GetDistribution", "cloudfront:GetDistributionConfig",
+        "cloudfront:UpdateDistribution", "cloudfront:DeleteDistribution",
+        "cloudfront:ListTagsForResource", "cloudfront:TagResource", "cloudfront:UntagResource",
+    ],
+    "aws_cloudfront_origin_access_control": [
+        "cloudfront:CreateOriginAccessControl", "cloudfront:GetOriginAccessControl",
+        "cloudfront:UpdateOriginAccessControl", "cloudfront:DeleteOriginAccessControl",
+    ],
+    "aws_cloudfront_function": [
+        "cloudfront:CreateFunction", "cloudfront:DescribeFunction", "cloudfront:GetFunction",
+        "cloudfront:UpdateFunction", "cloudfront:PublishFunction", "cloudfront:DeleteFunction",
+        "cloudfront:ListTagsForResource", "cloudfront:TagResource", "cloudfront:UntagResource",
+    ],
     "aws_acm_certificate": ["acm:UpdateCertificateOptions"],
     "aws_cloudwatch_log_group": [
         "logs:AssociateKmsKey", "logs:DisassociateKmsKey", "logs:ListTagsForResource",
