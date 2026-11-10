@@ -37,8 +37,8 @@ locals {
   cdn_managed_security_headers_policy_id   = "67f7725c-6f97-4210-82d7-5512b31e9d03"
 
   # The credential carriers and representation headers honua-server publishes for
-  # its CDN (honua-server#7249). A request that carries a credential never shares
-  # a cache entry with an anonymous request.
+  # its CDN. A request that carries a credential never shares a cache entry with
+  # an anonymous request.
   cdn_credential_headers = [
     "Authorization", "X-API-Key", "X-Esri-Authorization", "X-Honua-Embed-Key", "X-Honua-Token", "X-Honua-Tenant",
   ]

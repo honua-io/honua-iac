@@ -9,7 +9,7 @@ desired_count = 2
 max_capacity = 6
 autoscaling_requests_per_target = 600
 db_instance_class = "db.t4g.medium"
-# Needs a server release that keeps shared state in PostgreSQL (honua-server#6809).
+# Needs a server release that keeps shared state in PostgreSQL; see ../RC2.md.
 # For an earlier release set shared_state_backend = "redis" and redis_enabled = true.
 shared_state_backend = "postgres"
 redis_enabled = false

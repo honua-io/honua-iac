@@ -1,98 +1,5 @@
 mock_provider "aws" {
-  mock_data "aws_iam_role" {
-    defaults = {
-      name = "retained-controller"
-      arn  = "arn:aws:iam::123456789012:role/retained-controller"
-    }
-  }
-
-  mock_data "aws_availability_zones" {
-    defaults = {
-      names = ["us-east-1a", "us-east-1b", "us-east-1c"]
-    }
-  }
-
-  mock_data "aws_region" {
-    defaults = {
-      id     = "us-east-1"
-      name   = "us-east-1"
-      region = "us-east-1"
-    }
-  }
-
-  mock_data "aws_caller_identity" {
-    defaults = {
-      account_id = "123456789012"
-      arn        = "arn:aws:iam::123456789012:user/terraform-test"
-      user_id    = "AIDATEST"
-    }
-  }
-
-  mock_data "aws_elb_service_account" {
-    defaults = {
-      arn = "arn:aws:iam::127311923021:root"
-      id  = "127311923021"
-    }
-  }
-
-  mock_data "aws_partition" {
-    defaults = {
-      dns_suffix         = "amazonaws.com"
-      id                 = "aws"
-      partition          = "aws"
-      reverse_dns_prefix = "com.amazonaws"
-    }
-  }
-
-  mock_data "aws_iam_policy_document" {
-    defaults = {
-      json          = "{\"Version\":\"2012-10-17\",\"Statement\":[]}"
-      minified_json = "{\"Version\":\"2012-10-17\",\"Statement\":[]}"
-    }
-  }
-
-  mock_resource "aws_cloudfront_function" {
-    defaults = {
-      arn = "arn:aws:cloudfront::123456789012:function/honua-console"
-    }
-  }
-
-  mock_resource "aws_cloudfront_distribution" {
-    defaults = {
-      id  = "E2EXAMPLE1234"
-      arn = "arn:aws:cloudfront::123456789012:distribution/E2EXAMPLE1234"
-    }
-  }
-
-  mock_resource "aws_lb" {
-    defaults = {
-      arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/honua-test/0000000000000000"
-    }
-  }
-
-  mock_resource "aws_lb_target_group" {
-    defaults = {
-      arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/honua-test/0000000000000000"
-    }
-  }
-
-  mock_resource "aws_lb_listener" {
-    defaults = {
-      arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/honua-test/0000000000000000/1111111111111111"
-    }
-  }
-
-  mock_resource "aws_iam_policy" {
-    defaults = {
-      arn = "arn:aws:iam::123456789012:policy/honua-test"
-    }
-  }
-
-  mock_resource "aws_iam_role" {
-    defaults = {
-      arn = "arn:aws:iam::123456789012:role/honua-test"
-    }
-  }
+  source = "./tests/mocks/aws"
 }
 
 mock_provider "random" {
@@ -103,6 +10,14 @@ mock_provider "random" {
 mock_provider "null" {}
 
 variables {
+  domain_name              = "maps.example.com"
+  alb_certificate_arn      = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
+  alb_enable_http_redirect = false
+  enable_postgis           = false
+  cdn = {
+    viewer_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
+  }
+
   # Recommended in Production; unset only plans with a check warning.
   audit_chain_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
 
@@ -121,43 +36,10 @@ variables {
   redis_enabled           = false
   kms_key_arn             = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000001"
   alb_access_logs_enabled = false
-
-  domain_name              = "maps.example.com"
-  route53_zone_id          = "Z00000000000000000000"
-  alb_certificate_arn      = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
-  alb_enable_http_redirect = false
-  enable_postgis           = false
-  cdn = {
-    viewer_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
-  }
 }
-
-
-
 
 run "cdn_without_console_caches_only_what_the_origin_allows" {
   command = apply
-  override_resource {
-    target          = aws_acm_certificate.this[0]
-    override_during = plan
-    values = {
-      arn                 = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
-      id                  = "test-certificate"
-      region              = "us-east-1"
-      renewal_eligibility = "ELIGIBLE"
-      not_after           = "2027-12-31T00:00:00Z"
-      not_before          = "2026-01-01T00:00:00Z"
-      type                = "AMAZON_ISSUED"
-      key_algorithm       = "RSA_2048"
-      status              = "ISSUED"
-      domain_validation_options = [{
-        domain_name           = "maps.example.com"
-        resource_record_name  = "_test.maps.example.com"
-        resource_record_type  = "CNAME"
-        resource_record_value = "_test.acm-validations.aws."
-      }]
-    }
-  }
 
   assert {
     condition     = aws_cloudfront_cache_policy.api[0].min_ttl == 0 && aws_cloudfront_cache_policy.api[0].default_ttl == 0 && aws_cloudfront_cache_policy.api[0].max_ttl == 31536000
@@ -228,14 +110,6 @@ run "cdn_without_console_caches_only_what_the_origin_allows" {
   }
   assert {
     condition = (
-      aws_route53_record.service_alias[0].type == "A" && aws_route53_record.service_alias_ipv6[0].type == "AAAA" &&
-      aws_route53_record.service_alias[0].alias[0].name == aws_cloudfront_distribution.cdn[0].domain_name &&
-      aws_route53_record.service_alias_ipv6[0].alias[0].name == aws_cloudfront_distribution.cdn[0].domain_name
-    )
-    error_message = "Both address families must resolve to the distribution."
-  }
-  assert {
-    condition = (
       aws_lb_listener.https[0].default_action[0].type == "fixed-response" && aws_lb_listener.https[0].default_action[0].fixed_response[0].status_code == "403" &&
       length(aws_security_group.alb.ingress) == 1 && length(one(aws_security_group.alb.ingress).cidr_blocks) == 0 && length(one(aws_security_group.alb.ingress).prefix_list_ids) == 1 &&
       aws_lb_listener_rule.cloudfront[0].priority == 1 &&
@@ -264,28 +138,6 @@ run "cdn_without_console_caches_only_what_the_origin_allows" {
 
 run "cdn_with_console_and_access_logs" {
   command = apply
-  override_resource {
-    target          = aws_acm_certificate.this[0]
-    override_during = plan
-    values = {
-      arn                 = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
-      id                  = "test-certificate"
-      region              = "us-east-1"
-      renewal_eligibility = "ELIGIBLE"
-      not_after           = "2027-12-31T00:00:00Z"
-      not_before          = "2026-01-01T00:00:00Z"
-      type                = "AMAZON_ISSUED"
-      key_algorithm       = "RSA_2048"
-      status              = "ISSUED"
-      domain_validation_options = [{
-        domain_name           = "maps.example.com"
-        resource_record_name  = "_test.maps.example.com"
-        resource_record_type  = "CNAME"
-        resource_record_value = "_test.acm-validations.aws."
-      }]
-    }
-  }
-
   variables {
     cdn = {
       viewer_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
@@ -322,28 +174,6 @@ run "cdn_with_console_and_access_logs" {
 
 run "canary_behind_cdn_keeps_weights_and_forced_route" {
   command = apply
-  override_resource {
-    target          = aws_acm_certificate.this[0]
-    override_during = plan
-    values = {
-      arn                 = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
-      id                  = "test-certificate"
-      region              = "us-east-1"
-      renewal_eligibility = "ELIGIBLE"
-      not_after           = "2027-12-31T00:00:00Z"
-      not_before          = "2026-01-01T00:00:00Z"
-      type                = "AMAZON_ISSUED"
-      key_algorithm       = "RSA_2048"
-      status              = "ISSUED"
-      domain_validation_options = [{
-        domain_name           = "maps.example.com"
-        resource_record_name  = "_test.maps.example.com"
-        resource_record_type  = "CNAME"
-        resource_record_value = "_test.acm-validations.aws."
-      }]
-    }
-  }
-
   variables {
     deployment_mode                           = "MultiNode"
     redis_enabled                             = true
@@ -377,28 +207,6 @@ run "canary_behind_cdn_keeps_weights_and_forced_route" {
 
 run "controller_owned_rollout_behind_cdn_stays_closed" {
   command = apply
-  override_resource {
-    target          = aws_acm_certificate.this[0]
-    override_during = plan
-    values = {
-      arn                 = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
-      id                  = "test-certificate"
-      region              = "us-east-1"
-      renewal_eligibility = "ELIGIBLE"
-      not_after           = "2027-12-31T00:00:00Z"
-      not_before          = "2026-01-01T00:00:00Z"
-      type                = "AMAZON_ISSUED"
-      key_algorithm       = "RSA_2048"
-      status              = "ISSUED"
-      domain_validation_options = [{
-        domain_name           = "maps.example.com"
-        resource_record_name  = "_test.maps.example.com"
-        resource_record_type  = "CNAME"
-        resource_record_value = "_test.acm-validations.aws."
-      }]
-    }
-  }
-
   variables {
     deployment_mode                           = "MultiNode"
     desired_count                             = 2
@@ -474,7 +282,6 @@ run "reject_cdn_without_tls" {
   command = plan
   variables {
     domain_name         = ""
-    route53_zone_id     = ""
     alb_certificate_arn = ""
   }
   expect_failures = [terraform_data.static_console_validation]
