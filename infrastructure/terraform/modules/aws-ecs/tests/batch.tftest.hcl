@@ -1,4 +1,5 @@
 mock_provider "aws" {
+  override_during = plan
   mock_data "aws_availability_zones" {
     defaults = {
       names = ["us-east-1a", "us-east-1b", "us-east-1c"]
@@ -121,16 +122,19 @@ run "private_fargate_workers" {
     permissions_boundary_arn        = "arn:aws:iam::123456789012:policy/test-boundary"
   }
   override_resource {
-    target = aws_secretsmanager_secret.db_connection
-    values = { arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:test-db-AbC123" }
+    override_during = plan
+    target          = aws_secretsmanager_secret.db_connection
+    values          = { arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:test-db-AbC123" }
   }
   override_resource {
-    target = aws_batch_job_queue.gp[0]
-    values = { arn = "arn:aws:batch:us-east-1:123456789012:job-queue/test-gp" }
+    override_during = plan
+    target          = aws_batch_job_queue.gp[0]
+    values          = { arn = "arn:aws:batch:us-east-1:123456789012:job-queue/test-gp" }
   }
   override_resource {
-    target = aws_batch_job_definition.gp[0]
-    values = { arn = "arn:aws:batch:us-east-1:123456789012:job-definition/test-gp:1" }
+    override_during = plan
+    target          = aws_batch_job_definition.gp[0]
+    values          = { arn = "arn:aws:batch:us-east-1:123456789012:job-definition/test-gp:1" }
   }
   assert {
     condition     = aws_batch_compute_environment.gp[0].compute_resources[0].type == "FARGATE" && toset(aws_batch_compute_environment.gp[0].compute_resources[0].subnets) == toset(var.existing_private_subnet_ids)
@@ -165,7 +169,7 @@ run "private_fargate_workers" {
 run "requires_shared_files" {
   command = plan
   variables {
-    gp_batch = { image = "worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+    gp_batch = { image = "worker@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", database_security_group_id = "sg-0123456789abcdef0" }
   }
   expect_failures = [terraform_data.gp_batch_validation]
 }

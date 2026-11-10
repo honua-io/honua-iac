@@ -1087,6 +1087,7 @@ so change the command only when deploying a compatible image.
 `gp_batch = null` (default) creates no Batch resources. To run heavy GP remotely:
 
 ```hcl
+redis_enabled = false
 gp_batch = {
   image       = "ghcr.io/honua-io/honua-worker-gdal@sha256:<64-hex-digest>"
   max_vcpus   = 16
