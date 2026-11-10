@@ -141,9 +141,11 @@ check "alb_reachable_from_outside_vpc" {
 }
 
 locals {
-  # The root's fixed server settings plus the optional layer-publish budget
-  # (layer_publishing_materialization_timeout_seconds; honua-server#6917). Null sets nothing.
+  # Operator-supplied settings first, so the root's fixed server settings and the
+  # optional layer-publish budget (layer_publishing_materialization_timeout_seconds;
+  # honua-server#6917) win over them. Null sets nothing.
   server_additional_env = merge(
+    var.additional_env,
     {
       HONUA_SERVE_ADMIN_UI    = var.static_console == null ? "true" : "false"
       HONUA_ADMIN_UI          = var.static_console == null ? "true" : "false"

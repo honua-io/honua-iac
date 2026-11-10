@@ -208,3 +208,23 @@ run "fraction_is_rejected" {
 
   expect_failures = [var.layer_publishing_materialization_timeout_seconds]
 }
+
+run "operator_environment_reaches_the_server_without_replacing_fixed_settings" {
+  command = plan
+
+  variables {
+    additional_env = {
+      Geoprocessing__OutputStaging__Provider = "object-storage"
+      HostValidation__Enabled                = "true"
+    }
+  }
+
+  assert {
+    condition     = local.server_additional_env["Geoprocessing__OutputStaging__Provider"] == "object-storage"
+    error_message = "additional_env must reach the server environment."
+  }
+  assert {
+    condition     = local.server_additional_env["HostValidation__Enabled"] == "false"
+    error_message = "The root's fixed server settings must win over additional_env."
+  }
+}

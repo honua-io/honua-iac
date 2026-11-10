@@ -52,6 +52,13 @@ variable "file_storage_aws_s3_force_destroy" {
   default     = false
 }
 
+variable "additional_env" {
+  description = "Extra server environment variables, for settings this root has no input for (for example Geoprocessing__OutputStaging__*). The module rejects the keys it manages itself; never put secret values here."
+  type        = map(string)
+  default     = {}
+  nullable    = false
+}
+
 variable "postgis_bootstrap_image" {
   description = "Optional immutable PostgreSQL client image (psql entrypoint) for in-VPC PostGIS initialization before every server/migrator start. Null preserves the runner-based enable_postgis behavior."
   type        = string
