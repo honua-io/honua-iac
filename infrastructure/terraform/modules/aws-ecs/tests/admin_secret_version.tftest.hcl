@@ -132,6 +132,15 @@ run "static_console_private_origins" {
     target          = aws_acm_certificate.this[0]
     override_during = plan
     values = {
+      arn                 = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
+      id                  = "test-certificate"
+      region              = "us-east-1"
+      renewal_eligibility = "ELIGIBLE"
+      not_after           = "2027-12-31T00:00:00Z"
+      not_before          = "2026-01-01T00:00:00Z"
+      type                = "AMAZON_ISSUED"
+      key_algorithm       = "RSA_2048"
+      status              = "ISSUED"
       domain_validation_options = [{
         domain_name           = "maps.example.com"
         resource_record_name  = "_test.maps.example.com"
