@@ -6,13 +6,13 @@ and operates the AWS account. Support does not require account credentials,
 IAM access, or an inbound support connection. Marketplace listing work is separate.
 
 The existing module already provides new or existing VPC selection, private
-Fargate tasks, encrypted RDS PostgreSQL, backups, encrypted authenticated
+Fargate tasks, encrypted RDS PostgreSQL, backups, optional encrypted authenticated
 ElastiCache, Secrets Manager, CloudWatch logs, HTTPS ALB and guarded autoscaling.
 This preset adds private-network PostGIS initialization, a CloudFront distribution
 that is the deployment's shared cache, and a static Console on that distribution.
 
 Use `bootstrap/aws-exec-identity` with the regenerated ECS manifest from this
-revision with `topology.static_console=true` (and `compute="ecs"`, `redis=true`,
+revision with `topology.static_console=true` (and `compute="ecs"`, `redis=false`,
 `custom_domain=true`). `topology.static_console=true` is the switch for every
 CloudFront permission, with or without a Console: its feature manifest includes
 CloudFront distribution, cache policy, origin access control and function
@@ -79,12 +79,15 @@ is required to remove this limitation. The database master user currently initia
 separating a restricted runtime database role remains an operator hardening step.
 
 RDS is private, encrypted, 20 GiB initially, PostgreSQL 15, `db.t4g.medium`, with
-production backups retained seven days. Redis OSS 7 uses `cache.t4g.micro`,
-private ECS-only ingress, encryption at rest/in transit and an AUTH token in a
-Secrets Manager connection secret. Each Fargate task uses 0.5 vCPU/1 GiB.
+production backups retained seven days. Each Fargate task uses 0.5 vCPU/1 GiB.
 Shared uploads use a private versioned S3 bucket. The preset runs
-`deployment_mode = "MultiNode"`; the module
-requires both Redis and shared S3 before allowing more than one replica.
+`deployment_mode = "MultiNode"` with `shared_state_backend = "postgres"` and no
+Redis: the tasks share state through PostgreSQL and S3. This needs a server
+release that keeps its shared state in PostgreSQL (honua-server#6809); the
+module cannot check the release. For an earlier release set
+`shared_state_backend = "redis"`, `redis_enabled = true` and
+`topology.redis=true`, which adds an encrypted, authenticated ElastiCache node
+(about 12–18 USD a month) and requires the operation key-ring certificate.
 
 ## Shared cache
 
@@ -261,12 +264,11 @@ two-task minimum:
 | --- | ---: |
 | Two Fargate tasks, 0.5 vCPU / 1 GiB each | 36 |
 | RDS `db.t4g.medium` plus 20 GiB storage | 50–55 |
-| ElastiCache micro | 12–18 |
 | Single NAT gateway | 33 |
 | ALB before capacity charges | 17 |
 | Public IPv4 addresses (two ALB, one NAT) | 11 |
 | Secrets/KMS, S3, small logs and CloudFront allowance | 8–20 |
-| **Planning total** | **167–190 (about 0.23–0.26/hour)** |
+| **Planning total** | **155–172 (about 0.21–0.24/hour)** |
 
 This is an estimate, not a quote. Traffic, NAT processing, CloudFront requests and
 transfer, ALB capacity, snapshots, retained logs and taxes are extra. Recalculate
@@ -281,7 +283,7 @@ RDS/Redis sizing and availability must be reviewed under load.
 Request a time-boxed three-hour live test only after static checks pass: allow
 about **$1 runtime plus retained storage/snapshot charges**, with a reviewed
 account/region budget. Main obtains founder approval and runs through the IaC
-runner. Verify fresh deployment, PostGIS, Redis readiness, Console login/routes,
+runner. Verify fresh deployment, PostGIS, two ready tasks, Console login/routes, cached and uncached responses through CloudFront,
 image and Console update, compatible rollback and customer diagnostic collection.
 Do not mark release-certified until those receipts pass.
 

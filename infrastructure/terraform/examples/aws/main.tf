@@ -10,6 +10,7 @@ module "honua" {
   cdn                                               = var.cdn
   autoscaling_requests_per_target                   = var.autoscaling_requests_per_target
   db_instance_class                                 = var.db_instance_class
+  shared_state_backend                              = var.shared_state_backend
   static_console                                    = var.static_console
   postgis_bootstrap_image                           = var.postgis_bootstrap_image
   file_storage_aws_s3_create_bucket                 = var.file_storage_aws_s3_create_bucket

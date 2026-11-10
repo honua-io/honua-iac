@@ -101,7 +101,7 @@ resource "aws_lb_listener_rule" "protected_rollout" {
     ignore_changes = [action]
     precondition {
       condition     = local.canary_enabled && local.multi_node_topology_ready && var.desired_count >= 1 && var.canary_desired_count >= 1
-      error_message = "Native safety requires running stable and canary services, MultiNode, Redis and shared S3 storage."
+      error_message = "Native safety requires running stable and canary services, MultiNode, shared state (Redis, or shared_state_backend=postgres) and shared S3 storage."
     }
     precondition {
       condition     = var.canary_listener_rule_priority < 50000

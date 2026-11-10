@@ -28,6 +28,12 @@ variable "autoscaling_requests_per_target" {
   default     = null
 }
 
+variable "shared_state_backend" {
+  description = "redis (default) requires Redis before more than one task may run. postgres declares that the deployed server release keeps shared state in PostgreSQL, so more than one task may run without Redis."
+  type        = string
+  default     = "redis"
+}
+
 variable "db_instance_class" {
   description = "RDS instance class. It bounds the per-task database pool at the maximum task count; see the db_connection_budget output."
   type        = string

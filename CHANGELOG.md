@@ -23,6 +23,9 @@ module input/output contracts may still change.
   may invalidate this distribution only and the server receives `SharedCache__CloudFront__DistributionId`.
   New `cdn` output.
 - `aws-ecs`: optional `autoscaling_requests_per_target` (request-count target tracking beside CPU).
+- `aws-ecs`: `shared_state_backend` (`redis` default, or `postgres`). `postgres` satisfies the multi-task,
+  autoscaling and canary preconditions with shared S3 and no Redis, for server releases that keep shared
+  state in PostgreSQL (honua-server#6809). The rc.2 preset uses it with `redis_enabled = false`.
 - `examples/aws`: `cdn`, `autoscaling_requests_per_target` and `db_instance_class` inputs; `cdn` and
   `db_connection_budget` outputs. The rc.2 preset runs two to six tasks on `db.t4g.medium`.
 

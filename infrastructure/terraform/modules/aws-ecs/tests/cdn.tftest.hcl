@@ -428,6 +428,48 @@ run "controller_owned_rollout_behind_cdn_stays_closed" {
   }
 }
 
+run "postgres_shared_state_runs_two_tasks_without_redis" {
+  command = plan
+
+  variables {
+    shared_state_backend            = "postgres"
+    deployment_mode                 = "MultiNode"
+    desired_count                   = 2
+    max_capacity                    = 6
+    autoscaling_requests_per_target = 600
+    file_storage_provider           = "AwsS3"
+    file_storage_aws_s3_bucket_name = "honua-test-files"
+    canary_enabled                  = true
+  }
+
+  assert {
+    condition     = aws_appautoscaling_target.ecs.min_capacity == 2 && aws_appautoscaling_target.ecs.max_capacity == 6 && length(aws_ecs_service.canary) == 1
+    error_message = "PostgreSQL shared state must satisfy the multi-task, autoscaling and canary preconditions."
+  }
+  assert {
+    condition     = length(aws_elasticache_replication_group.redis) == 0 && length(aws_secretsmanager_secret.redis_connection) == 0 && !strcontains(aws_ecs_task_definition.this.container_definitions, "ConnectionStrings__redis")
+    error_message = "PostgreSQL shared state must not provision or reference Redis."
+  }
+  assert {
+    condition     = one(one(aws_appautoscaling_policy.requests[0].target_tracking_scaling_policy_configuration).predefined_metric_specification).predefined_metric_type == "ALBRequestCountPerTarget" && one(aws_appautoscaling_policy.requests[0].target_tracking_scaling_policy_configuration).target_value == 600
+    error_message = "Request-count target tracking must run alongside the CPU policy."
+  }
+}
+
+run "redis_shared_state_still_requires_redis_for_two_tasks" {
+  command = plan
+
+  variables {
+    deployment_mode                 = "MultiNode"
+    desired_count                   = 2
+    max_capacity                    = 2
+    file_storage_provider           = "AwsS3"
+    file_storage_aws_s3_bucket_name = "honua-test-files"
+  }
+
+  expect_failures = [aws_ecs_service.this]
+}
+
 run "reject_cdn_without_tls" {
   command = plan
   variables {

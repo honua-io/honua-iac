@@ -47,9 +47,10 @@ locals {
     var.file_storage_provider == "AwsS3" &&
     (var.file_storage_aws_s3_create_bucket || trimspace(var.file_storage_aws_s3_bucket_name) != "")
   )
+  shared_state_ready = var.shared_state_backend == "postgres" || local.redis_enabled
   multi_node_topology_ready = (
     var.deployment_mode == "MultiNode" &&
-    local.redis_enabled &&
+    local.shared_state_ready &&
     local.shared_file_storage_configured
   )
   file_storage_aws_s3_region = trimspace(var.file_storage_aws_s3_region) != "" ? var.file_storage_aws_s3_region : data.aws_region.current.region
@@ -369,7 +370,7 @@ resource "aws_security_group" "alb" {
 
     precondition {
       condition     = !local.safety_enabled || (local.canary_enabled && local.multi_node_topology_ready && var.desired_count >= 1)
-      error_message = "Native safety requires a running stable/canary MultiNode topology with Redis and shared S3."
+      error_message = "Native safety requires a running stable/canary MultiNode topology with shared state (Redis, or shared_state_backend=postgres) and shared S3."
     }
 
     precondition {
@@ -1468,12 +1469,12 @@ resource "aws_ecs_service" "this" {
 
     precondition {
       condition     = !local.multi_replica_enabled || local.multi_node_topology_ready
-      error_message = "ECS can run more than one Honua task only when deployment_mode is MultiNode, Redis is configured, and file_storage_provider is AwsS3 with an existing bucket name."
+      error_message = "ECS can run more than one Honua task only when deployment_mode is MultiNode, shared state is configured (Redis, or shared_state_backend=postgres), and file_storage_provider is AwsS3 with a bucket."
     }
 
     precondition {
       condition     = var.deployment_mode != "MultiNode" || local.multi_node_topology_ready
-      error_message = "deployment_mode=MultiNode requires Redis and shared AwsS3 file storage with file_storage_aws_s3_bucket_name set."
+      error_message = "deployment_mode=MultiNode requires shared state (Redis, or shared_state_backend=postgres) and shared AwsS3 file storage."
     }
 
     precondition {
@@ -1523,7 +1524,7 @@ resource "aws_ecs_service" "canary" {
   lifecycle {
     precondition {
       condition     = local.multi_node_topology_ready
-      error_message = "The canary ECS service requires deployment_mode=MultiNode, Redis, and shared AwsS3 file storage because it runs alongside the primary service."
+      error_message = "The canary ECS service requires deployment_mode=MultiNode, shared state (Redis, or shared_state_backend=postgres), and shared AwsS3 file storage because it runs alongside the primary service."
     }
   }
 
@@ -1545,7 +1546,7 @@ resource "aws_appautoscaling_target" "ecs" {
   lifecycle {
     precondition {
       condition     = var.max_capacity <= 1 || local.multi_node_topology_ready
-      error_message = "ECS auto-scaling above one task requires deployment_mode=MultiNode, Redis, and shared AwsS3 file storage."
+      error_message = "ECS auto-scaling above one task requires deployment_mode=MultiNode, shared state (Redis, or shared_state_backend=postgres), and shared AwsS3 file storage."
     }
   }
 }

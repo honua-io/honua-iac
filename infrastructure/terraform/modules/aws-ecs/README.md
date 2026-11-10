@@ -262,6 +262,12 @@ steps are in the [rc.2 operator guide](../../examples/aws/RC2.md#shared-cache).
 `autoscaling_requests_per_target` adds request-count target tracking beside the
 CPU policy.
 
+`shared_state_backend = "postgres"` lets more than one task, autoscaling and a
+canary run with shared S3 and no Redis. It declares that the deployed server
+release keeps its shared state in PostgreSQL (honua-server#6809); the module
+sets no server configuration for it and cannot check the release. The default,
+`redis`, keeps the Redis requirement.
+
 ## Key variables
 
 | Variable | Default | Description |
