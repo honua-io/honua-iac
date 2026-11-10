@@ -44,10 +44,14 @@ home="/home/${user}"
 config=/etc/honua-gate-runner.json
 setting() { jq -r ".$1" "$config"; }
 
+# Container users map to the account's subordinate UIDs, so their files count as the job's too.
 end_previous_job() {
+  local sub_start sub_count
   systemctl stop "user@${uid}.service"
   pkill -KILL -u "$user" || true
-  find /tmp /var/tmp /dev/shm -xdev -mindepth 1 -user "$user" -delete 2>/dev/null || true
+  IFS=: read -r _ sub_start sub_count < <(grep "^${user}:" /etc/subuid)
+  find /tmp /var/tmp /dev/shm -xdev -mindepth 1 \( -user "$user" -o \
+    \( -uid "+$((sub_start - 1))" -uid "-$((sub_start + sub_count))" \) \) -delete 2>/dev/null || true
 }
 
 restore_pristine_home() {
@@ -197,6 +201,8 @@ AccuracySec=5s
 WantedBy=timers.target
 TIMER
 
+# Root-only parent: rsync -a gives each template its runner's ownership, which must stay unreachable.
+install -d -m 0700 /var/lib/honua-gate-runner
 for index in $(seq 1 "$(gate runner_count)"); do
   user="gate-runner-${index}"
   useradd --create-home --shell /bin/bash "$user"
