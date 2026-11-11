@@ -12,7 +12,7 @@
       "state_key": "bootstrap/aws-build-host/terraform.tfstate"
     },
     "aws-ci-events": {
-      "applied": false,
+      "applied": true,
       "state_key": "bootstrap/aws-ci-events/terraform.tfstate"
     },
     "aws-lane-host": {
