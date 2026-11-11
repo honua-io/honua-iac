@@ -105,8 +105,9 @@ def normalize(event, p, delivery=None):
         login = ((item.get("user") or {}).get("login")) or ""
         if item.get("author_association") not in TRUSTED and not login.endswith("[bot]"):
             return None
-        if head.get("repo") and head["repo"].get("full_name") != p["repository"].get("full_name"):
-            return None
+        if event != "issue_comment" and (head.get("repo") or {}).get("full_name") != p["repository"].get("full_name"):
+            return None  # fork PR, or its fork was deleted (head.repo null): fail closed
+        # issue_comment carries no head repo: ci-dispatch checks isCrossRepository before acting.
         base["association"] = item.get("author_association")
     if event == "pull_request":
         if action not in PR_ACTIONS or (head.get("repo") or {}).get("full_name") != p["repository"].get("full_name"):

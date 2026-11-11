@@ -19,7 +19,7 @@ GitHub org webhook ──HTTPS──> Lambda function URL ──> SQS honua-ci-e
   heads only); `pull_request_review` submitted with changes requested or comments;
   `pull_request_review_comment` created; `pull_request_review_thread` unresolved; `issue_comment` created on a PR.
   Review and comment events are kept only from OWNER/MEMBER/COLLABORATOR authors or GitHub Apps (`[bot]`), and
-  never for fork PRs: a stranger's comment on a public repository must not start a fixer.
+  never for fork PRs (issue comments carry no head repo; ci-dispatch checks that before acting): a stranger's comment on a public repository must not start a fixer.
   Everything else gets 202 "dropped". A bad signature gets 401.
 - Queue and dead-letter queue keep messages 4 days; SSE on; the receiver's concurrency is capped at 20.
 - The lane host's instance role gets receive/delete on this queue only, through `ci_events_queue_arn` in
@@ -80,7 +80,8 @@ Unit tests: `python3 -m unittest discover -s lambda -p 'test_*.py'`; plan contra
 ## Rotate the secret
 
 GitHub does not retry failed deliveries, so rotate in this order (the receiver re-reads the parameter at most
-once a minute when a signature does not match, so the gap is seconds, not minutes):
+once a minute when a signature does not match; deliveries in the switch-over can still fail for up to about a
+minute, and GitHub does not retry them, so rotate in a quiet period):
 
 ```bash
 umask 077; openssl rand -hex 32 | tr -d '\n' > ~/honua-private/ci-events-webhook-secret

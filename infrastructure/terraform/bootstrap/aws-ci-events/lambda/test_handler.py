@@ -98,7 +98,8 @@ class Filtering(unittest.TestCase):
         self.assertEqual(call("pull_request", pr)[0]["body"], "dropped")
 
     def test_reviews_comments_threads(self):
-        pr = {"number": 7, "head": {"ref": "fix/x", "sha": "b" * 40}, "base": {"ref": "trunk"}}
+        pr = {"number": 7, "head": {"ref": "fix/x", "sha": "b" * 40, "repo": {"full_name": "honua-io/honua-server"}},
+              "base": {"ref": "trunk"}}
         rv = {"action": "submitted", "repository": REPO, "pull_request": pr,
               "review": {"id": 3, "state": "APPROVED", "user": {"login": "x"}, "author_association": "MEMBER"}}
         self.assertEqual(call("pull_request_review", rv)[0]["body"], "dropped")
@@ -143,6 +144,8 @@ class Filtering(unittest.TestCase):
         rc["comment"]["author_association"] = "MEMBER"
         self.assertEqual(call("pull_request_review_comment", rc)[0]["body"], "queued")
         pr["head"]["repo"] = {"full_name": "someone/fork"}
+        self.assertEqual(call("pull_request_review_comment", rc)[0]["body"], "dropped")
+        pr["head"]["repo"] = None  # deleted fork
         self.assertEqual(call("pull_request_review_comment", rc)[0]["body"], "dropped")
 
     def test_unknown_event_dropped(self):
