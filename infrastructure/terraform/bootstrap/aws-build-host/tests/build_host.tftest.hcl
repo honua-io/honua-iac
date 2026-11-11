@@ -42,7 +42,7 @@ run "spot_host_that_stops_itself" {
     error_message = "Only capacity-optimized Spot capacity is allowed."
   }
   assert {
-    condition     = toset([for item in one(one(aws_autoscaling_group.build.mixed_instances_policy).launch_template).override : item.instance_type]) == toset(["c6i.16xlarge", "c7i.16xlarge", "m6i.16xlarge", "m7i.16xlarge", "c6a.16xlarge", "m6a.16xlarge", "c7a.16xlarge", "m7a.16xlarge", "r6i.16xlarge", "r7i.16xlarge", "c5.18xlarge", "m5.16xlarge", "c5a.16xlarge", "m5a.16xlarge", "c6in.16xlarge", "r6a.16xlarge"])
+    condition     = toset([for item in one(one(aws_autoscaling_group.build.mixed_instances_policy).launch_template).override : item.instance_type]) == toset(["c6i.24xlarge", "c7i.24xlarge", "m6i.24xlarge", "m7i.24xlarge", "c6a.24xlarge", "m6a.24xlarge", "c7a.24xlarge", "m7a.24xlarge", "r6i.24xlarge", "r7i.24xlarge", "c5.24xlarge", "m5.24xlarge", "c5a.24xlarge", "m5a.24xlarge", "c6in.24xlarge", "r6a.24xlarge"])
     error_message = "All sixteen 32-or-more-vCPU replacement types must be offered."
   }
   assert {
