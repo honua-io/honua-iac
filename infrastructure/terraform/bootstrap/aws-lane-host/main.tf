@@ -20,6 +20,13 @@ locals {
   }
 }
 
+module "operator_access" {
+  source             = "../../components/operator-host-access"
+  allowed_ssh_cidrs  = var.allowed_ssh_cidrs
+  ssh_public_key     = var.ssh_public_key
+  budget_alert_email = var.budget_alert_email
+}
+
 data "aws_caller_identity" "current" {}
 
 data "aws_ssm_parameter" "ubuntu" {
@@ -69,7 +76,7 @@ resource "aws_security_group" "lanes" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = sort(tolist(var.allowed_ssh_cidrs))
+    cidr_blocks = module.operator_access.allowed_ssh_cidrs
   }
   egress {
     description = "Model APIs, Git hosting, package feeds and the build host"
@@ -83,7 +90,7 @@ resource "aws_security_group" "lanes" {
 
 resource "aws_key_pair" "lanes" {
   key_name_prefix = "${local.name}-"
-  public_key      = trimspace(var.ssh_public_key)
+  public_key      = module.operator_access.ssh_public_key
   tags            = local.tags
 }
 
@@ -234,13 +241,13 @@ resource "aws_budgets_budget" "lane_host" {
     threshold                  = 80
     threshold_type             = "PERCENTAGE"
     notification_type          = "ACTUAL"
-    subscriber_email_addresses = [var.budget_alert_email]
+    subscriber_email_addresses = [module.operator_access.budget_alert_email]
   }
   notification {
     comparison_operator        = "GREATER_THAN"
     threshold                  = 100
     threshold_type             = "PERCENTAGE"
     notification_type          = "FORECASTED"
-    subscriber_email_addresses = [var.budget_alert_email]
+    subscriber_email_addresses = [module.operator_access.budget_alert_email]
   }
 }
