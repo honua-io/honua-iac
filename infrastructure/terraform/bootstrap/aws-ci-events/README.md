@@ -18,6 +18,8 @@ GitHub org webhook ──HTTPS──> Lambda function URL ──> SQS honua-ci-e
   `status` failure/error/success; `pull_request` opened/reopened/synchronize/closed/ready_for_review (same-repo
   heads only); `pull_request_review` submitted with changes requested or comments;
   `pull_request_review_comment` created; `pull_request_review_thread` unresolved; `issue_comment` created on a PR.
+  Review and comment events are kept only from OWNER/MEMBER/COLLABORATOR authors or GitHub Apps (`[bot]`), and
+  never for fork PRs: a stranger's comment on a public repository must not start a fixer.
   Everything else gets 202 "dropped". A bad signature gets 401.
 - Queue and dead-letter queue keep messages 4 days; SSE on; the receiver's concurrency is capped at 20.
 - The lane host's instance role gets receive/delete on this queue only, through `ci_events_queue_arn` in
@@ -30,7 +32,7 @@ Unit tests: `python3 -m unittest discover -s lambda -p 'test_*.py'`; plan contra
 1. Secret (generated locally, never echoed):
 
    ```bash
-   umask 077; openssl rand -hex 32 > ~/honua-private/ci-events-webhook-secret
+   umask 077; openssl rand -hex 32 | tr -d '\n' > ~/honua-private/ci-events-webhook-secret
    aws ssm put-parameter --region eu-north-1 --type SecureString --overwrite \
      --name /honua/ci-events/webhook-secret --value "file://$HOME/honua-private/ci-events-webhook-secret"
    ```
@@ -66,7 +68,7 @@ Unit tests: `python3 -m unittest discover -s lambda -p 'test_*.py'`; plan contra
      name: "web", active: true,
      events: ["workflow_run","check_suite","check_run","pull_request","pull_request_review",
               "pull_request_review_comment","pull_request_review_thread","issue_comment","status"],
-     config: {url: $url, content_type: "json", insecure_ssl: "0", secret: ($secret | rtrimstr("\n"))}}' |
+     config: {url: $url, content_type: "json", insecure_ssl: "0", secret: $secret}}' |
      gh api orgs/honua-io/hooks --method POST --input - --jq '{id, active, events}'
    ```
 
@@ -77,5 +79,16 @@ Unit tests: `python3 -m unittest discover -s lambda -p 'test_*.py'`; plan contra
 
 ## Rotate the secret
 
-Write a new value to the parameter (step 1), then `gh api orgs/honua-io/hooks/<id>/config --method PATCH`
-with the same value. Deliveries fail with 401 for up to 5 minutes while the function's cache expires.
+GitHub does not retry failed deliveries, so rotate in this order (the receiver re-reads the parameter at most
+once a minute when a signature does not match, so the gap is seconds, not minutes):
+
+```bash
+umask 077; openssl rand -hex 32 | tr -d '\n' > ~/honua-private/ci-events-webhook-secret
+aws ssm put-parameter --region eu-north-1 --type SecureString --overwrite \
+  --name /honua/ci-events/webhook-secret --value "file://$HOME/honua-private/ci-events-webhook-secret"
+jq -n --arg url "$(terraform output -raw function_url)" --rawfile secret ~/honua-private/ci-events-webhook-secret \
+  '{url: $url, content_type: "json", insecure_ssl: "0", secret: $secret}' |
+  gh api orgs/honua-io/hooks/<id>/config --method PATCH --input - --jq .url
+```
+
+The secret is only ever read from the file, never placed on a command line.

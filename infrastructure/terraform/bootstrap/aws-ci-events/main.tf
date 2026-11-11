@@ -143,3 +143,13 @@ resource "aws_lambda_permission" "public_function_url" {
   principal              = "*"
   function_url_auth_type = "NONE"
 }
+
+# Since October 2025 a public function URL also needs lambda:InvokeFunction, scoped to calls that arrive
+# through the URL (without the condition any AWS account could invoke the function directly).
+resource "aws_lambda_permission" "public_function_url_invoke" {
+  statement_id             = "AllowGitHubWebhookInvokeViaUrl"
+  action                   = "lambda:InvokeFunction"
+  function_name            = aws_lambda_function.receiver.function_name
+  principal                = "*"
+  invoked_via_function_url = true
+}

@@ -8,6 +8,7 @@ Message shape (also produced by the lane host's polling shim):
    "mergeable": "MERGEABLE|CONFLICTING|UNKNOWN", "merge_state": "CLEAN|DIRTY|BEHIND|...", "merged": bool}
 """
 import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -18,6 +19,8 @@ RED = {"failure", "timed_out", "startup_failure", "action_required"}
 KEEP_CONCLUSIONS = RED | {"success"}
 PR_ACTIONS = {"opened", "reopened", "synchronize", "closed", "ready_for_review"}
 SECRET_TTL = 300
+REFETCH_AFTER_MISMATCH = 60
+TRUSTED = {"OWNER", "MEMBER", "COLLABORATOR"}
 
 _secret = {"value": None, "at": 0.0}
 _clients = {}
@@ -30,18 +33,20 @@ def client(name):
     return _clients[name]
 
 
-def secret():
-    if _secret["value"] is None or time.time() - _secret["at"] > SECRET_TTL:
+def secret(refresh=False):
+    """The webhook secret, cached; refresh=True re-reads it at most once a minute (rotation)."""
+    stale = time.time() - _secret["at"] > (REFETCH_AFTER_MISMATCH if refresh else SECRET_TTL)
+    if _secret["value"] is None or stale:
         resp = client("ssm").get_parameter(Name=os.environ["WEBHOOK_SECRET_PARAM"], WithDecryption=True)
-        _secret.update(value=resp["Parameter"]["Value"].encode(), at=time.time())
+        _secret.update(value=resp["Parameter"]["Value"].strip().encode(), at=time.time())
     return _secret["value"]
 
 
 def verify(body, signature, key):
     if not signature or not signature.startswith("sha256=") or not key:
         return False
-    expected = "sha256=" + hmac.new(key, body, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected, signature)
+    expected = ("sha256=" + hmac.new(key, body, hashlib.sha256).hexdigest()).encode()
+    return hmac.compare_digest(expected, signature.encode("utf-8", "replace"))
 
 
 def _pr_number(prs):
@@ -94,6 +99,15 @@ def normalize(event, p, delivery=None):
     head = pr.get("head") or {}
     pr_fields = {"pr": pr.get("number"), "branch": head.get("ref"), "sha": head.get("sha"),
                  "base": (pr.get("base") or {}).get("ref")}
+    if event in ("pull_request_review", "pull_request_review_comment", "pull_request_review_thread", "issue_comment"):
+        # A stranger's text must never reach a fixer: trusted authors or GitHub Apps only, never fork PRs.
+        item = p.get("review") or p.get("comment") or ((p.get("thread") or {}).get("comments") or [{}])[-1]
+        login = ((item.get("user") or {}).get("login")) or ""
+        if item.get("author_association") not in TRUSTED and not login.endswith("[bot]"):
+            return None
+        if head.get("repo") and head["repo"].get("full_name") != p["repository"].get("full_name"):
+            return None
+        base["association"] = item.get("author_association")
     if event == "pull_request":
         if action not in PR_ACTIONS or (head.get("repo") or {}).get("full_name") != p["repository"].get("full_name"):
             return None
@@ -136,10 +150,17 @@ def _response(code, text):
 def handler(event, context=None, send=None, key=None):
     headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
     body = event.get("body") or ""
-    raw = base64.b64decode(body) if event.get("isBase64Encoded") else body.encode()
     if (event.get("requestContext") or {}).get("http", {}).get("method", "POST") != "POST":
         return _response(405, "POST only")
-    if not verify(raw, headers.get("x-hub-signature-256"), key if key is not None else secret()):
+    try:
+        raw = base64.b64decode(body, validate=True) if event.get("isBase64Encoded") else body.encode()
+    except (binascii.Error, ValueError):
+        return _response(400, "bad body")
+    sig = headers.get("x-hub-signature-256")
+    ok = verify(raw, sig, key if key is not None else secret())
+    if not ok and key is None:
+        ok = verify(raw, sig, secret(refresh=True))  # the secret may just have been rotated
+    if not ok:
         return _response(401, "bad signature")
     name = headers.get("x-github-event", "")
     if name == "ping":

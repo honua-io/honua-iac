@@ -47,6 +47,11 @@ class Signature(unittest.TestCase):
         resp, sent = call("workflow_run", run(), b64=True)
         self.assertEqual((resp["statusCode"], len(sent)), (202, 1))
 
+    def test_non_ascii_signature_and_bad_base64(self):
+        self.assertFalse(h.verify(b"x", "sha256=\u00e9", KEY))
+        ev = {"headers": {}, "body": "!!notb64", "isBase64Encoded": True, "requestContext": {"http": {"method": "POST"}}}
+        self.assertEqual(h.handler(ev, key=KEY)["statusCode"], 400)
+
     def test_get_rejected(self):
         ev = {"headers": {}, "body": "", "requestContext": {"http": {"method": "GET"}}}
         self.assertEqual(h.handler(ev, key=KEY)["statusCode"], 405)
@@ -95,17 +100,18 @@ class Filtering(unittest.TestCase):
     def test_reviews_comments_threads(self):
         pr = {"number": 7, "head": {"ref": "fix/x", "sha": "b" * 40}, "base": {"ref": "trunk"}}
         rv = {"action": "submitted", "repository": REPO, "pull_request": pr,
-              "review": {"id": 3, "state": "APPROVED", "user": {"login": "x"}}}
+              "review": {"id": 3, "state": "APPROVED", "user": {"login": "x"}, "author_association": "MEMBER"}}
         self.assertEqual(call("pull_request_review", rv)[0]["body"], "dropped")
         rv["review"]["state"] = "CHANGES_REQUESTED"
         self.assertEqual(call("pull_request_review", rv)[1][0]["type"], "review")
         rc = {"action": "created", "repository": REPO, "pull_request": pr,
-              "comment": {"id": 11, "user": {"login": "chatgpt-codex-connector[bot]"}}}
+              "comment": {"id": 11, "user": {"login": "chatgpt-codex-connector[bot]"}, "author_association": "NONE"}}
         m = call("pull_request_review_comment", rc)[1][0]
         self.assertEqual((m["type"], m["comment_id"], m["actor"]), ("review_comment", 11, "chatgpt-codex-connector[bot]"))
         th = {"action": "resolved", "repository": REPO, "pull_request": pr, "thread": {"comments": [{"id": 1}]}}
         self.assertEqual(call("pull_request_review_thread", th)[0]["body"], "dropped")
-        ic = {"action": "created", "repository": REPO, "issue": {"number": 7}, "comment": {"id": 5, "user": {"login": "b"}}}
+        ic = {"action": "created", "repository": REPO, "issue": {"number": 7},
+              "comment": {"id": 5, "user": {"login": "b"}, "author_association": "COLLABORATOR"}}
         self.assertEqual(call("issue_comment", ic)[0]["body"], "dropped")  # an issue, not a PR
         ic["issue"]["pull_request"] = {"url": "x"}
         self.assertEqual(call("issue_comment", ic)[1][0]["pr"], 7)
@@ -119,11 +125,25 @@ class Filtering(unittest.TestCase):
         os.environ["IGNORE_SENDERS"] = "lane-account"
         try:
             ic = {"action": "created", "repository": REPO, "sender": {"login": "lane-account"},
-                  "issue": {"number": 7, "pull_request": {}}, "comment": {"id": 5, "user": {"login": "lane-account"}}}
+                  "issue": {"number": 7, "pull_request": {}},
+                  "comment": {"id": 5, "user": {"login": "lane-account"}, "author_association": "OWNER"}}
             self.assertEqual(call("issue_comment", ic)[0]["body"], "dropped")
             self.assertEqual(call("workflow_run", dict(run(), sender={"login": "lane-account"}))[0]["body"], "queued")
         finally:
             del os.environ["IGNORE_SENDERS"]
+
+    def test_untrusted_authors_and_fork_prs_dropped(self):
+        pr = {"number": 7, "head": {"ref": "x", "sha": "b" * 40, "repo": {"full_name": "honua-io/honua-server"}}}
+        ic = {"action": "created", "repository": REPO, "issue": {"number": 7, "pull_request": {}},
+              "comment": {"id": 5, "user": {"login": "stranger"}, "author_association": "NONE"}}
+        self.assertEqual(call("issue_comment", ic)[0]["body"], "dropped")
+        rc = {"action": "created", "repository": REPO, "pull_request": pr,
+              "comment": {"id": 6, "user": {"login": "stranger"}, "author_association": "CONTRIBUTOR"}}
+        self.assertEqual(call("pull_request_review_comment", rc)[0]["body"], "dropped")
+        rc["comment"]["author_association"] = "MEMBER"
+        self.assertEqual(call("pull_request_review_comment", rc)[0]["body"], "queued")
+        pr["head"]["repo"] = {"full_name": "someone/fork"}
+        self.assertEqual(call("pull_request_review_comment", rc)[0]["body"], "dropped")
 
     def test_unknown_event_dropped(self):
         self.assertEqual(call("push", {"repository": REPO})[0]["body"], "dropped")

@@ -58,6 +58,10 @@ run "receiver_queue_and_dead_letter" {
     error_message = "GitHub cannot sign AWS requests: the URL is public and the handler checks the HMAC."
   }
   assert {
+    condition     = aws_lambda_permission.public_function_url_invoke.action == "lambda:InvokeFunction" && aws_lambda_permission.public_function_url_invoke.invoked_via_function_url == true
+    error_message = "New function URLs also need InvokeFunction, limited to calls through the URL."
+  }
+  assert {
     condition     = aws_lambda_function.receiver.reserved_concurrent_executions == 20
     error_message = "Receiver concurrency is capped."
   }
