@@ -5,7 +5,14 @@
 gate_config=/etc/honua-gate-runner.json
 gate() { jq -r ".$1" "$gate_config"; }
 
-snap install aws-cli --classic
+# The snap store is sometimes unreachable at boot; retry, then fall back to the official AWS CLI bundle.
+aws_cli_ready=0
+for attempt in 1 2 3 4 5; do snap install aws-cli --classic && { aws_cli_ready=1; break; }; sleep 20; done
+if [ "$aws_cli_ready" = 0 ]; then
+  curl -fsSL --retry 5 --retry-all-errors "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o /tmp/awscliv2.zip
+  (cd /tmp && rm -rf aws && python3 -m zipfile -e awscliv2.zip . && chmod -R u+x aws && ./aws/install --bin-dir /usr/local/bin --update)
+  install -d /snap/bin && ln -sf /usr/local/bin/aws /snap/bin/aws
+fi
 . /etc/os-release
 curl -fsSL --retry 5 --retry-all-errors "https://packages.microsoft.com/config/ubuntu/${VERSION_ID}/packages-microsoft-prod.deb" -o /tmp/packages-microsoft-prod.deb
 dpkg -i /tmp/packages-microsoft-prod.deb
