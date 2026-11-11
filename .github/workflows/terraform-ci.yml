@@ -181,6 +181,7 @@ jobs:
             "infrastructure/terraform/bootstrap/aws-terraform-oidc"
             "infrastructure/terraform/bootstrap/aws-eval-docker-hosts"
             "infrastructure/terraform/bootstrap/aws-build-host"
+            "infrastructure/terraform/bootstrap/aws-lane-host"
             "infrastructure/terraform/bootstrap/aws-release-cells"
             "infrastructure/terraform/bootstrap/aws-validation-reaper"
             "infrastructure/terraform/bootstrap/aws-drift-plan"
@@ -219,6 +220,7 @@ jobs:
             "infrastructure/terraform/modules/observability-stack"
             "infrastructure/terraform/components/cloud-demo-smoke-credentials"
             "infrastructure/terraform/components/aws-github-oidc"
+            "infrastructure/terraform/components/operator-host-access"
             "infrastructure/terraform/internal/gtm-forms-router"
             "infrastructure/terraform/internal/aws-agent-controller"
             "infrastructure/terraform/internal/aws-agent-worker"
@@ -347,6 +349,8 @@ jobs:
           terraform -chdir=infrastructure/terraform/bootstrap/aws-eval-docker-hosts test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-build-host test -no-color
           python3 -m unittest discover -s infrastructure/terraform/bootstrap/aws-build-host/tests -p 'test_*.py'
+          terraform -chdir=infrastructure/terraform/bootstrap/aws-lane-host test -no-color
+          terraform -chdir=infrastructure/terraform/components/operator-host-access test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-release-cells test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-validation-reaper test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-drift-plan test -no-color
