@@ -7,6 +7,10 @@
       "state_key": "bootstrap/aws-bedrock-quotas/terraform.tfstate",
       "vars": { "opus_5_5_tokens_per_minute": 0, "sonnet_5_5_tokens_per_minute": 0 }
     },
+    "aws-ci-events": {
+      "applied": false,
+      "state_key": "bootstrap/aws-ci-events/terraform.tfstate"
+    },
     "aws-build-host": {
       "applied": false,
       "state_key": "bootstrap/aws-build-host/terraform.tfstate"

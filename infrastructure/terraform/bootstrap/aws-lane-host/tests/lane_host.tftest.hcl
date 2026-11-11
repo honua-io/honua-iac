@@ -60,3 +60,26 @@ run "build_host_rule_is_optional" {
     error_message = "Disabling build host access must add no rule to its security group."
   }
 }
+
+run "ci_events_queue_access_only_when_configured" {
+  command = plan
+  assert {
+    condition     = length(aws_iam_role_policy.ci_events) == 0
+    error_message = "No queue access unless ci_events_queue_arn is set."
+  }
+}
+
+run "ci_events_queue_access_is_receive_delete_on_one_queue" {
+  command = plan
+  variables {
+    ci_events_queue_arn = "arn:aws:sqs:eu-north-1:123456789012:honua-ci-events"
+  }
+  override_data {
+    target = data.aws_iam_policy_document.ci_events[0]
+    values = { json = "{\"Statement\":[{\"Action\":[\"sqs:ReceiveMessage\",\"sqs:DeleteMessage\",\"sqs:GetQueueAttributes\"],\"Resource\":\"arn:aws:sqs:eu-north-1:123456789012:honua-ci-events\"}]}" }
+  }
+  assert {
+    condition     = length(aws_iam_role_policy.ci_events) == 1 && aws_iam_role_policy.ci_events[0].name == "ci-events-consume"
+    error_message = "The lane host role gets the ci-events consume policy."
+  }
+}

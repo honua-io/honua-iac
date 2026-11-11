@@ -1,0 +1,81 @@
+# CI events receiver
+
+Delivers GitHub CI and review events to the lane host within seconds, so `ci-dispatch` (honua-skills
+`tools/lane/ci-events/`) can re-run an infrastructure failure, sync a PR with trunk, or start a one-shot
+fixer as soon as a check goes red.
+
+```text
+GitHub org webhook ──HTTPS──> Lambda function URL ──> SQS honua-ci-events ──long-poll──> ci-dispatch (lane host)
+                              verify X-Hub-Signature-256      │ 5 receives
+                              drop unneeded events            └──> SQS honua-ci-events-dlq
+                              compact JSON message
+```
+
+- Python 3.12, standard library plus the runtime's boto3; no packaged dependencies and no model calls.
+- The webhook secret lives only in SSM SecureString `/honua/ci-events/webhook-secret`; the function reads
+  it at run time (cached 5 minutes), so it never enters Terraform state.
+- Kept: `workflow_run` completed with failure/success; external (non-Actions) `check_run`/`check_suite`;
+  `status` failure/error/success; `pull_request` opened/reopened/synchronize/closed/ready_for_review (same-repo
+  heads only); `pull_request_review` submitted with changes requested or comments;
+  `pull_request_review_comment` created; `pull_request_review_thread` unresolved; `issue_comment` created on a PR.
+  Everything else gets 202 "dropped". A bad signature gets 401.
+- Queue and dead-letter queue keep messages 4 days; SSE on; the receiver's concurrency is capped at 20.
+- The lane host's instance role gets receive/delete on this queue only, through `ci_events_queue_arn` in
+  `bootstrap/aws-lane-host`.
+
+Unit tests: `python3 -m unittest discover -s lambda -p 'test_*.py'`; plan contract: `terraform test`.
+
+## Apply (operator workstation, eu-north-1)
+
+1. Secret (generated locally, never echoed):
+
+   ```bash
+   umask 077; openssl rand -hex 32 > ~/honua-private/ci-events-webhook-secret
+   aws ssm put-parameter --region eu-north-1 --type SecureString --overwrite \
+     --name /honua/ci-events/webhook-secret --value "file://$HOME/honua-private/ci-events-webhook-secret"
+   ```
+
+2. This root:
+
+   ```bash
+   cd infrastructure/terraform/bootstrap/aws-ci-events
+   cp backend.tf.example backend.tf      # set the state bucket
+   terraform init
+   terraform plan -out ci-events.plan
+   terraform apply ci-events.plan
+   terraform output -raw queue_url       # -> lane host: handoffs/grok-eval5/ci-events/queue-url
+   ```
+
+3. Lane host role (targeted, so nothing else in that root changes):
+
+   ```bash
+   cd ../aws-lane-host
+   terraform plan -target=aws_iam_role_policy.ci_events \
+     -var-file=<lane host tfvars from SSM /honua/lane-host/tfvars> \
+     -var "ci_events_queue_arn=$(terraform -chdir=../aws-ci-events output -raw queue_arn)" -out ci-events.plan
+   terraform apply ci-events.plan
+   ```
+
+   Add `ci_events_queue_arn` to the lane host tfvars in SSM so later full applies keep the policy.
+
+4. Organisation webhook (needs a token with `admin:org_hook`; the secret is read from the file, never printed):
+
+   ```bash
+   url=$(terraform -chdir=infrastructure/terraform/bootstrap/aws-ci-events output -raw function_url)
+   jq -n --arg url "$url" --rawfile secret ~/honua-private/ci-events-webhook-secret '{
+     name: "web", active: true,
+     events: ["workflow_run","check_suite","check_run","pull_request","pull_request_review",
+              "pull_request_review_comment","pull_request_review_thread","issue_comment","status"],
+     config: {url: $url, content_type: "json", insecure_ssl: "0", secret: ($secret | rtrimstr("\n"))}}' |
+     gh api orgs/honua-io/hooks --method POST --input - --jq '{id, active, events}'
+   ```
+
+   GitHub sends a `ping`; the receiver answers 200. `gh api orgs/honua-io/hooks/<id>/deliveries --jq '.[0:5][]|{event,status_code}'`
+   shows recent deliveries.
+
+5. Flip `aws-ci-events` to `"applied": true` in `../drift-roots.json` so the nightly drift plan covers it.
+
+## Rotate the secret
+
+Write a new value to the parameter (step 1), then `gh api orgs/honua-io/hooks/<id>/config --method PATCH`
+with the same value. Deliveries fail with 401 for up to 5 minutes while the function's cache expires.

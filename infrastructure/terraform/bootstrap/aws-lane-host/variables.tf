@@ -92,3 +92,9 @@ variable "budget_alert_email" {
   description = "Email that receives the cost alerts."
   type        = string
 }
+
+variable "ci_events_queue_arn" {
+  description = "ARN of the CI events queue (bootstrap/aws-ci-events output queue_arn). Empty: no queue access."
+  type        = string
+  default     = ""
+}
