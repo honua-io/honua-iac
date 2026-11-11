@@ -11,6 +11,10 @@
       "applied": false,
       "state_key": "bootstrap/aws-build-host/terraform.tfstate"
     },
+    "aws-lane-host": {
+      "applied": false,
+      "state_key": "bootstrap/aws-lane-host/terraform.tfstate"
+    },
     "aws-demo-deploy": {
       "applied": true,
       "state_key": "bootstrap/aws-demo-deploy/terraform.tfstate",
