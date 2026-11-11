@@ -143,7 +143,7 @@ resource "aws_autoscaling_group" "build" {
     instances_distribution {
       on_demand_base_capacity                  = 0
       on_demand_percentage_above_base_capacity = 0
-      spot_allocation_strategy                 = "price-capacity-optimized"
+      spot_allocation_strategy                 = "capacity-optimized"
     }
     launch_template {
       launch_template_specification {
@@ -151,7 +151,7 @@ resource "aws_autoscaling_group" "build" {
         version            = aws_launch_template.build.latest_version
       }
       dynamic "override" {
-        for_each = toset(["c6i.4xlarge", "c7i.4xlarge", "m6i.4xlarge", "m7i.4xlarge", "c6a.4xlarge", "m6a.4xlarge", "c5.4xlarge"])
+        for_each = toset(["c6i.24xlarge", "c7i.24xlarge", "m6i.24xlarge", "m7i.24xlarge", "c6a.24xlarge", "m6a.24xlarge", "c7a.24xlarge", "m7a.24xlarge", "r6i.24xlarge", "r7i.24xlarge", "c5.24xlarge", "m5.24xlarge", "c5a.24xlarge", "m5a.24xlarge", "c6in.24xlarge", "r6a.24xlarge"])
         content { instance_type = override.value }
       }
     }
