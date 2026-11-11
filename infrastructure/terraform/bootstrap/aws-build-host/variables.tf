@@ -7,7 +7,7 @@ variable "region" {
 variable "root_volume_gib" {
   description = "Build disk size. Server builds and test containers write tens of GiB per run."
   type        = number
-  default     = 300
+  default     = 500
   validation {
     condition     = var.root_volume_gib >= 100 && var.root_volume_gib <= 1000
     error_message = "root_volume_gib must be between 100 and 1000."
