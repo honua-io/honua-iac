@@ -47,9 +47,10 @@ locals {
     var.file_storage_provider == "AwsS3" &&
     (var.file_storage_aws_s3_create_bucket || trimspace(var.file_storage_aws_s3_bucket_name) != "")
   )
+  shared_state_ready = var.shared_state_backend == "postgres" || local.redis_enabled
   multi_node_topology_ready = (
     var.deployment_mode == "MultiNode" &&
-    local.redis_enabled &&
+    local.shared_state_ready &&
     local.shared_file_storage_configured
   )
   file_storage_aws_s3_region = trimspace(var.file_storage_aws_s3_region) != "" ? var.file_storage_aws_s3_region : data.aws_region.current.region
@@ -174,7 +175,7 @@ locals {
     FileStorage__AwsS3__BucketName = local.file_storage_bucket_name
     FileStorage__AwsS3__Region     = local.file_storage_aws_s3_region
     FileStorage__AwsS3__KeyPrefix  = var.file_storage_aws_s3_key_prefix
-  } : {}, local.licensing_environment, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.transcript_signing_environment, local.cors_environment, local.alb_tls_environment, local.public_base_url_environment, local.import_limits_environment, local.health_check_environment, local.oidc_static_environment, local.browser_auth_environment, local.scim_environment, local.migration_safety_environment, local.migration_task_serving_environment, local.deploy_control_plane_environment)
+  } : {}, local.licensing_environment, local.operations_policy_environment, local.studio_end_user_authorization_environment, local.request_secret_reference_environment, local.bedrock_ai_environment, local.transcript_signing_environment, local.cors_environment, local.alb_tls_environment, local.public_base_url_environment, local.import_limits_environment, local.cdn_environment, local.health_check_environment, local.oidc_static_environment, local.browser_auth_environment, local.scim_environment, local.migration_safety_environment, local.migration_task_serving_environment, local.deploy_control_plane_environment)
   primary_container_environment = [
     for key, value in merge(local.db_pool_sizing_environment, { for key, value in var.additional_env : key => value if var.platform_release == null || !startswith(lower(replace(key, ":", "__")), "controlplane__platformrelease__") }, local.runtime_environment, local.platform_release_environment.primary) : {
       name  = key
@@ -316,8 +317,8 @@ resource "aws_security_group" "alb" {
       from_port       = 443
       to_port         = 443
       protocol        = "tcp"
-      cidr_blocks     = var.static_console == null ? local.https_ingress_cidrs : []
-      prefix_list_ids = var.static_console == null ? [] : [data.aws_ec2_managed_prefix_list.cloudfront[0].id]
+      cidr_blocks     = !local.cdn_enabled ? local.https_ingress_cidrs : []
+      prefix_list_ids = !local.cdn_enabled ? [] : [data.aws_ec2_managed_prefix_list.cloudfront[0].id]
     }
   }
 
@@ -369,7 +370,7 @@ resource "aws_security_group" "alb" {
 
     precondition {
       condition     = !local.safety_enabled || (local.canary_enabled && local.multi_node_topology_ready && var.desired_count >= 1)
-      error_message = "Native safety requires a running stable/canary MultiNode topology with Redis and shared S3."
+      error_message = "Native safety requires a running stable/canary MultiNode topology with shared state (Redis, or shared_state_backend=postgres) and shared S3."
     }
 
     precondition {
@@ -568,7 +569,7 @@ resource "aws_elasticache_replication_group" "redis" {
 
 #checkov:skip=CKV2_AWS_28: WAF association is optional via waf_web_acl_arn.
 resource "aws_lb" "this" {
-  xff_header_processing_mode = var.static_console == null ? "append" : "preserve"
+  xff_header_processing_mode = !local.cdn_enabled ? "append" : "preserve"
   #checkov:skip=CKV2_AWS_76: WAF AMR configuration is managed via waf_web_acl_arn association.
   #checkov:skip=CKV2_AWS_20: HTTP redirect is conditional based on certificate availability.
   name                       = "${local.name}-alb"
@@ -638,8 +639,8 @@ resource "aws_route53_record" "service_alias" {
   type    = "A"
 
   alias {
-    name                   = var.static_console == null ? aws_lb.this.dns_name : aws_cloudfront_distribution.console[0].domain_name
-    zone_id                = var.static_console == null ? aws_lb.this.zone_id : aws_cloudfront_distribution.console[0].hosted_zone_id
+    name                   = !local.cdn_enabled ? aws_lb.this.dns_name : aws_cloudfront_distribution.cdn[0].domain_name
+    zone_id                = !local.cdn_enabled ? aws_lb.this.zone_id : aws_cloudfront_distribution.cdn[0].hosted_zone_id
     evaluate_target_health = false
   }
 }
@@ -777,7 +778,7 @@ resource "aws_lb_listener" "https" {
   certificate_arn   = local.certificate_arn
 
   dynamic "default_action" {
-    for_each = local.canary_enabled && var.static_console == null ? [1] : []
+    for_each = local.canary_enabled && !local.cdn_enabled ? [1] : []
     content {
       type = "forward"
 
@@ -796,14 +797,14 @@ resource "aws_lb_listener" "https" {
   }
 
   dynamic "default_action" {
-    for_each = local.canary_enabled || var.static_console != null ? [] : [1]
+    for_each = local.canary_enabled || local.cdn_enabled ? [] : [1]
     content {
       type             = "forward"
       target_group_arn = aws_lb_target_group.this.arn
     }
   }
   dynamic "default_action" {
-    for_each = var.static_console == null ? [] : [1]
+    for_each = !local.cdn_enabled ? [] : [1]
     content {
       type = "fixed-response"
       fixed_response {
@@ -816,13 +817,30 @@ resource "aws_lb_listener" "https" {
 
 }
 
+# Admits only requests that carry the distribution's origin secret. The forced
+# canary rule must be evaluated first, and the protected rollout rule replaces
+# this one when a controller owns the traffic weights.
 resource "aws_lb_listener_rule" "cloudfront" {
-  count        = var.static_console != null && local.use_https ? 1 : 0
+  count        = local.cdn_enabled && local.use_https && !local.protected_rollout_enabled ? 1 : 0
   listener_arn = aws_lb_listener.https[0].arn
-  priority     = 1
+  priority     = local.canary_enabled ? var.canary_listener_rule_priority + 1 : 1
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.this.arn
+    target_group_arn = local.canary_enabled ? null : aws_lb_target_group.this.arn
+
+    dynamic "forward" {
+      for_each = local.canary_enabled ? [1] : []
+      content {
+        target_group {
+          arn    = aws_lb_target_group.this.arn
+          weight = local.primary_weight
+        }
+        target_group {
+          arn    = aws_lb_target_group.canary[0].arn
+          weight = local.canary_weight
+        }
+      }
+    }
   }
   condition {
     http_header {
@@ -901,6 +919,15 @@ resource "aws_lb_listener_rule" "https_canary" {
     http_header {
       http_header_name = var.canary_header_name
       values           = [var.canary_header_value]
+    }
+  }
+  dynamic "condition" {
+    for_each = local.cdn_origin_secret_values
+    content {
+      http_header {
+        http_header_name = "X-Honua-Origin"
+        values           = [condition.value]
+      }
     }
   }
 }
@@ -1210,13 +1237,15 @@ module "rds" {
 
   # Enforce server-side TLS so the database rejects non-SSL connections,
   # matching the require_secure_transport posture of the Azure data stack and
-  # the shared aws-data module.
+  # the shared aws-data module. PostgreSQL 15 and later already default
+  # rds.force_ssl to 1 and report it as pending-reboot, so immediate would show
+  # the same in-place update on every plan.
   create_db_parameter_group = true
   parameters = [
     {
       name         = "rds.force_ssl"
       value        = "1"
-      apply_method = "immediate"
+      apply_method = "pending-reboot"
     }
   ]
 
@@ -1442,12 +1471,12 @@ resource "aws_ecs_service" "this" {
 
     precondition {
       condition     = !local.multi_replica_enabled || local.multi_node_topology_ready
-      error_message = "ECS can run more than one Honua task only when deployment_mode is MultiNode, Redis is configured, and file_storage_provider is AwsS3 with an existing bucket name."
+      error_message = "ECS can run more than one Honua task only when deployment_mode is MultiNode, shared state is configured (Redis, or shared_state_backend=postgres), and file_storage_provider is AwsS3 with a bucket."
     }
 
     precondition {
       condition     = var.deployment_mode != "MultiNode" || local.multi_node_topology_ready
-      error_message = "deployment_mode=MultiNode requires Redis and shared AwsS3 file storage with file_storage_aws_s3_bucket_name set."
+      error_message = "deployment_mode=MultiNode requires shared state (Redis, or shared_state_backend=postgres) and shared AwsS3 file storage."
     }
 
     precondition {
@@ -1497,7 +1526,7 @@ resource "aws_ecs_service" "canary" {
   lifecycle {
     precondition {
       condition     = local.multi_node_topology_ready
-      error_message = "The canary ECS service requires deployment_mode=MultiNode, Redis, and shared AwsS3 file storage because it runs alongside the primary service."
+      error_message = "The canary ECS service requires deployment_mode=MultiNode, shared state (Redis, or shared_state_backend=postgres), and shared AwsS3 file storage because it runs alongside the primary service."
     }
   }
 
@@ -1519,7 +1548,7 @@ resource "aws_appautoscaling_target" "ecs" {
   lifecycle {
     precondition {
       condition     = var.max_capacity <= 1 || local.multi_node_topology_ready
-      error_message = "ECS auto-scaling above one task requires deployment_mode=MultiNode, Redis, and shared AwsS3 file storage."
+      error_message = "ECS auto-scaling above one task requires deployment_mode=MultiNode, shared state (Redis, or shared_state_backend=postgres), and shared AwsS3 file storage."
     }
   }
 }
@@ -1536,6 +1565,25 @@ resource "aws_appautoscaling_policy" "cpu" {
       predefined_metric_type = "ECSServiceAverageCPUUtilization"
     }
     target_value       = 70.0
+    scale_in_cooldown  = 300
+    scale_out_cooldown = 60
+  }
+}
+
+resource "aws_appautoscaling_policy" "requests" {
+  count              = var.autoscaling_requests_per_target == null ? 0 : 1
+  name               = "${local.name}-request-scaling"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.ecs.resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs.service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ALBRequestCountPerTarget"
+      resource_label         = "${aws_lb.this.arn_suffix}/${aws_lb_target_group.this.arn_suffix}"
+    }
+    target_value       = var.autoscaling_requests_per_target
     scale_in_cooldown  = 300
     scale_out_cooldown = 60
   }

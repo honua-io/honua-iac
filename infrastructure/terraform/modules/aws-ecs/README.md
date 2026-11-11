@@ -3,7 +3,7 @@
 Provisions Honua Server on ECS/Fargate with an ALB, RDS PostgreSQL, optional ElastiCache Redis, and supporting infrastructure (VPC, secrets, logging). The module fails planning when ECS could run multiple Honua tasks without the required MultiNode, Redis, and shared S3 configuration.
 
 For the customer-owned deployment candidate with private-network PostGIS bootstrap,
-required Redis, and static Console behind same-domain CloudFront, use the
+required Redis, a CloudFront shared cache and a static Console on the same domain, use the
 [rc.2 operator guide](../../examples/aws/RC2.md) and its non-secret preset.
 Live deployment certification is a separate release gate.
 
@@ -238,6 +238,35 @@ The module does not provision Prometheus itself, but it exports recommended Honu
 - `control_plane_telemetry_prometheus_canary_job = "honua-canary"` when canary is enabled
 
 If your Prometheus scrape config uses different job names, override the corresponding `telemetry.prometheus.*` target parameters in Honua.
+
+## CloudFront shared cache
+
+`cdn = { viewer_certificate_arn = "<us-east-1 ACM ARN>" }` puts one CloudFront
+distribution on `domain_name` in front of the load balancer. `static_console`
+adds the Console paths to the same distribution, and still creates it when set
+alone. The load balancer then admits only CloudFront's managed prefix list and
+requests that carry the distribution's origin secret; a canary and a
+controller-owned rollout rule keep working and require the same secret.
+
+Cache policies have minimum and default lifetime 0, so the server's
+`Cache-Control` alone decides what is stored. Admin, sign-in, provisioning,
+agent and hub paths use the caching-disabled behavior; every other path is
+cached for GET and HEAD with all query parameters, the server's credential
+headers and cookies, and `Accept`, `Accept-Language`, `Prefer` and `Origin` in
+the cache key. A request carrying `X-Honua-Job-Id`, `X-Forwarded-Client-Cert`
+or the canary header gets a cache key of its own. Error statuses are not held at the edge. The task role may create
+and read invalidations on this distribution only, and the server receives
+`SharedCache__CloudFront__DistributionId`. The behavior table and the operator
+steps are in the [rc.2 operator guide](../../examples/aws/RC2.md#shared-cache).
+
+`autoscaling_requests_per_target` adds request-count target tracking beside the
+CPU policy.
+
+`shared_state_backend = "postgres"` lets more than one task, autoscaling and a
+canary run with shared S3 and no Redis. It declares that the deployed server
+release keeps its shared state in PostgreSQL (honua-server#6809); the module
+sets no server configuration for it and cannot check the release. The default,
+`redis`, keeps the Redis requirement.
 
 ## Key variables
 

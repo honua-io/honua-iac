@@ -89,15 +89,26 @@ variable "container_memory" {
 }
 
 variable "desired_count" {
-  description = "Minimum number of ECS tasks. Values greater than 1 require deployment_mode=MultiNode with Redis and shared S3 file storage."
+  description = "Minimum number of ECS tasks. Values greater than 1 require deployment_mode=MultiNode with shared state (Redis, or shared_state_backend=postgres) and shared S3 file storage."
   type        = number
   default     = 1
 }
 
 variable "max_capacity" {
-  description = "Maximum number of ECS tasks for auto-scaling. Values greater than 1 require deployment_mode=MultiNode with Redis and shared S3 file storage."
+  description = "Maximum number of ECS tasks for auto-scaling. Values greater than 1 require deployment_mode=MultiNode with shared state (Redis, or shared_state_backend=postgres) and shared S3 file storage."
   type        = number
   default     = 1
+}
+
+variable "autoscaling_requests_per_target" {
+  description = "Average load-balancer requests per task per minute that request-count target tracking holds, alongside the CPU policy. Null (default) scales on CPU only."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.autoscaling_requests_per_target == null ? true : var.autoscaling_requests_per_target > 0
+    error_message = "autoscaling_requests_per_target must be greater than 0."
+  }
 }
 
 variable "deployment_mode" {
@@ -731,6 +742,17 @@ variable "operation_key_ring_certificate_secret_arn" {
   validation {
     condition     = var.operation_key_ring_certificate_secret_arn == "" || can(regex("^arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[A-Za-z0-9/_+=.@-]+-[A-Za-z0-9]{6}$", var.operation_key_ring_certificate_secret_arn))
     error_message = "operation_key_ring_certificate_secret_arn must be a complete Secrets Manager secret ARN (including its six-character suffix), not PKCS#12 material, a wildcard, or a JSON-key selector."
+  }
+}
+
+variable "shared_state_backend" {
+  description = "Where server tasks keep the state they share. redis (default) requires Redis before more than one task may run. postgres declares that the deployed server release keeps that state in PostgreSQL, so more than one task may run with shared S3 and no Redis; it sets no server configuration."
+  type        = string
+  default     = "redis"
+
+  validation {
+    condition     = contains(["redis", "postgres"], var.shared_state_backend)
+    error_message = "shared_state_backend must be redis or postgres."
   }
 }
 

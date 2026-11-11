@@ -8,14 +8,18 @@
     "ec2:GetManagedPrefixListEntries"
   ],
   "global_actions": [
+    "cloudfront:CreateCachePolicy",
     "cloudfront:CreateDistribution",
     "cloudfront:CreateDistributionWithTags",
     "cloudfront:CreateFunction",
     "cloudfront:CreateOriginAccessControl",
+    "cloudfront:DeleteCachePolicy",
     "cloudfront:DeleteDistribution",
     "cloudfront:DeleteFunction",
     "cloudfront:DeleteOriginAccessControl",
     "cloudfront:DescribeFunction",
+    "cloudfront:GetCachePolicy",
+    "cloudfront:GetCachePolicyConfig",
     "cloudfront:GetDistribution",
     "cloudfront:GetDistributionConfig",
     "cloudfront:GetFunction",
@@ -24,6 +28,7 @@
     "cloudfront:PublishFunction",
     "cloudfront:TagResource",
     "cloudfront:UntagResource",
+    "cloudfront:UpdateCachePolicy",
     "cloudfront:UpdateDistribution",
     "cloudfront:UpdateFunction",
     "cloudfront:UpdateOriginAccessControl"
@@ -39,6 +44,7 @@
     }
   ],
   "covers": [
+    "aws_cloudfront_cache_policy",
     "aws_cloudfront_distribution",
     "aws_cloudfront_function",
     "aws_cloudfront_origin_access_control"

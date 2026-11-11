@@ -19,12 +19,13 @@
     "validated": [
       "us-east-1"
     ],
-    "notes": "Requires ECS Fargate, ALB, RDS PostgreSQL, and S3 support in the selected region."
+    "notes": "Requires ECS Fargate, ALB, RDS PostgreSQL, and S3 support in the selected region. The CloudFront viewer certificate is issued in us-east-1 whatever the deployment region."
   },
   "requiredPermissions": [
     "Provision and mutate VPC, subnets, route tables, security groups, and load balancers",
     "Provision ECS clusters, services, task definitions, autoscaling rules, and CloudWatch logs",
     "Provision RDS PostgreSQL, optional ElastiCache Redis, Secrets Manager secrets, KMS keys, and S3 buckets",
+    "Provision the CloudFront distribution, cache policies, functions and origin access control, and read the CloudFront managed prefix list",
     "Create and attach IAM roles and policies for runtime identities"
   ],
   "billableComponents": [
@@ -33,6 +34,7 @@
     "RDS PostgreSQL",
     "Optional ElastiCache Redis",
     "Optional S3 application storage",
+    "CloudFront requests, data transfer and invalidation paths",
     "CloudWatch Logs",
     "Secrets Manager and KMS"
   ],

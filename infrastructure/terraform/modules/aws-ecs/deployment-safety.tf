@@ -45,7 +45,12 @@ variable "deployment_safety" {
 }
 
 locals {
-  safety_enabled = var.deployment_safety != null
+  safety_enabled            = var.deployment_safety != null
+  protected_rollout_enabled = local.safety_enabled || (local.deploy_control_plane_enabled && local.canary_enabled)
+  # Empty without CloudFront. With it, every forwarding listener rule also
+  # requires the distribution's origin secret, or the rule would admit requests
+  # that bypass the cache and the edge firewall.
+  cdn_origin_secret_values = local.cdn_enabled ? [random_password.cloudfront_origin[0].result] : []
 }
 
 data "aws_iam_role" "recovery_controller" {
@@ -58,7 +63,7 @@ data "aws_iam_role" "recovery_controller" {
 resource "aws_lb_listener_rule" "protected_rollout" {
   # Shared by the external (deployment_safety) and in-service
   # (deploy_control_plane) controller topologies, which are mutually exclusive.
-  count        = local.safety_enabled || (local.deploy_control_plane_enabled && local.canary_enabled) ? 1 : 0
+  count        = local.protected_rollout_enabled ? 1 : 0
   listener_arn = local.use_https ? aws_lb_listener.https[0].arn : aws_lb_listener.http[0].arn
   priority     = 50000
 
@@ -81,13 +86,22 @@ resource "aws_lb_listener_rule" "protected_rollout" {
   condition {
     path_pattern { values = ["/*"] }
   }
+  dynamic "condition" {
+    for_each = local.cdn_origin_secret_values
+    content {
+      http_header {
+        http_header_name = "X-Honua-Origin"
+        values           = [condition.value]
+      }
+    }
+  }
 
   lifecycle {
     # After installation the canonical controller owns traffic weights.
     ignore_changes = [action]
     precondition {
       condition     = local.canary_enabled && local.multi_node_topology_ready && var.desired_count >= 1 && var.canary_desired_count >= 1
-      error_message = "Native safety requires running stable and canary services, MultiNode, Redis and shared S3 storage."
+      error_message = "Native safety requires running stable and canary services, MultiNode, shared state (Redis, or shared_state_backend=postgres) and shared S3 storage."
     }
     precondition {
       condition     = var.canary_listener_rule_priority < 50000
