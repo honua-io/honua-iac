@@ -8,6 +8,7 @@ Message shape (also produced by the lane host's polling shim):
    "mergeable": "MERGEABLE|CONFLICTING|UNKNOWN", "merge_state": "CLEAN|DIRTY|BEHIND|...", "merged": bool}
 """
 import base64
+import collections
 import binascii
 import hashlib
 import hmac
@@ -64,98 +65,108 @@ def _pr_number(prs):
     return prs[0]["number"] if prs else None
 
 
-def _workflow_run(base, p):
-    r = p["workflow_run"]
-    if base["action"] != "completed" or r.get("conclusion") not in KEEP_CONCLUSIONS:
+def _workflow_run(base, payload):
+    run = payload["workflow_run"]
+    if base["action"] != "completed" or run.get("conclusion") not in KEEP_CONCLUSIONS:
         return None
-    return dict(base, pr=_pr_number(r.get("pull_requests")), branch=r.get("head_branch"), sha=r.get("head_sha"),
-                check=r.get("name"), check_id=r.get("workflow_id"), run_id=r.get("id"),
-                conclusion=r.get("conclusion"), url=r.get("html_url"), at=r.get("updated_at"))
+    if (run.get("head_repository") or {}).get("full_name") != payload["repository"].get("full_name"):
+        return None  # fork run: its head_branch may be named like ours (even 'trunk'); fail closed
+    return dict(base, pr=_pr_number(run.get("pull_requests")), branch=run.get("head_branch"), sha=run.get("head_sha"),
+                check=run.get("name"), check_id=run.get("workflow_id"), run_id=run.get("id"),
+                conclusion=run.get("conclusion"), url=run.get("html_url"), at=run.get("updated_at"))
 
 
-def _external_check(base, p):
-    """check_run / check_suite from apps other than GitHub Actions (Actions checks arrive as workflow_run)."""
-    r = p[base["type"]]
-    app = r.get("app") or {}
-    if base["action"] != "completed" or app.get("slug") == "github-actions" or r.get("conclusion") not in KEEP_CONCLUSIONS:
+def _external_check(base, payload):
+    """check_item / check_suite from apps other than GitHub Actions (Actions checks arrive as workflow_item)."""
+    item = payload[base["type"]]
+    app = item.get("app") or {}
+    if (base["action"] != "completed" or app.get("slug") == "github-actions"
+            or item.get("conclusion") not in KEEP_CONCLUSIONS):
         return None
-    branch = r.get("head_branch") or (r.get("check_suite") or {}).get("head_branch")
-    return dict(base, pr=_pr_number(r.get("pull_requests")), branch=branch, sha=r.get("head_sha"),
-                check=r.get("name") or app.get("name"), check_id=None, run_id=None, conclusion=r.get("conclusion"),
-                url=r.get("html_url") or r.get("details_url"), at=r.get("completed_at") or r.get("updated_at"))
+    branch = item.get("head_branch") or (item.get("check_suite") or {}).get("head_branch")
+    return dict(base, pr=_pr_number(item.get("pull_requests")), branch=branch, sha=item.get("head_sha"),
+                check=item.get("name") or app.get("name"), check_id=None, run_id=None,
+                conclusion=item.get("conclusion"), url=item.get("html_url") or item.get("details_url"),
+                at=item.get("completed_at") or item.get("updated_at"))
 
 
-def _status(base, p):
-    state = p.get("state")
+def _status(base, payload):
+    state = payload.get("state")
     if state not in ("failure", "error", "success"):
         return None
-    branches = [b["name"] for b in p.get("branches") or []]
-    return dict(base, pr=None, branch=branches[0] if len(branches) == 1 else None, sha=p.get("sha"),
-                check=p.get("context"), check_id=None, run_id=None, conclusion=state, url=p.get("target_url"),
-                at=p.get("updated_at"))
+    branches = [b["name"] for b in payload.get("branches") or []]
+    return dict(base, pr=None, branch=branches[0] if len(branches) == 1 else None, sha=payload.get("sha"),
+                check=payload.get("context"), check_id=None, run_id=None, conclusion=state,
+                url=payload.get("target_url"),
+                at=payload.get("updated_at"))
 
 
-def _same_repo_head(p):
-    head = (p.get("pull_request") or {}).get("head") or {}
-    return (head.get("repo") or {}).get("full_name") == p["repository"].get("full_name")
+def _same_repo_head(payload):
+    head = (payload.get("pull_request") or {}).get("head") or {}
+    return (head.get("repo") or {}).get("full_name") == payload["repository"].get("full_name")
 
 
-def _pr_fields(p):
-    pr = p.get("pull_request") or {}
+def _pr_fields(payload):
+    pr = payload.get("pull_request") or {}
     head = pr.get("head") or {}
     return {"pr": pr.get("number"), "branch": head.get("ref"), "sha": head.get("sha"),
             "base": (pr.get("base") or {}).get("ref")}
 
 
-def _pull_request(base, p):
-    pr = p.get("pull_request") or {}
-    if base["action"] not in PR_ACTIONS or not _same_repo_head(p):
+def _pull_request(base, payload):
+    pr = payload.get("pull_request") or {}
+    if base["action"] not in PR_ACTIONS or not _same_repo_head(payload):
         return None
     mergeable = {True: "MERGEABLE", False: "CONFLICTING"}.get(pr.get("mergeable"), "UNKNOWN")
-    return dict(base, **_pr_fields(p), mergeable=mergeable, merge_state=(pr.get("mergeable_state") or "").upper() or None,
+    merge_state = (pr.get("mergeable_state") or "").upper() or None
+    return dict(base, **_pr_fields(payload), mergeable=mergeable, merge_state=merge_state,
                 merged=bool(pr.get("merged")), at=pr.get("updated_at"))
 
 
-def _trusted_author(p):
+def _trusted_author(payload):
     """A stranger's text must never reach a fixer: trusted authors or GitHub Apps only. Returns the association."""
-    item = p.get("review") or p.get("comment") or ((p.get("thread") or {}).get("comments") or [{}])[-1]
+    thread_last = ((payload.get("thread") or {}).get("comments") or [{}])[-1]
+    item = payload.get("review") or payload.get("comment") or thread_last
     login = ((item.get("user") or {}).get("login")) or ""
     association = item.get("author_association")
     return association if association in TRUSTED or login.endswith("[bot]") else None
 
 
-def _review(base, p):
-    review = p.get("review") or {}
+def _review(base, payload):
+    review = payload.get("review") or {}
     state = (review.get("state") or "").lower()
     if base["action"] != "submitted" or state not in ("changes_requested", "commented"):
         return None
-    return dict(base, **_pr_fields(p), type="review", review_state=state, comment_id=review.get("id"),
-                actor=(review.get("user") or {}).get("login"), url=review.get("html_url"), at=review.get("submitted_at"))
+    return dict(base, **_pr_fields(payload), type="review", review_state=state, comment_id=review.get("id"),
+                actor=(review.get("user") or {}).get("login"), url=review.get("html_url"),
+                at=review.get("submitted_at"))
 
 
-def _review_comment(base, p):
-    cm = p.get("comment") or {}
+def _review_comment(base, payload):
+    comment = payload.get("comment") or {}
     if base["action"] != "created":
         return None
-    return dict(base, **_pr_fields(p), type="review_comment", comment_id=cm.get("id"),
-                actor=(cm.get("user") or {}).get("login"), url=cm.get("html_url"), at=cm.get("created_at"))
+    return dict(base, **_pr_fields(payload), type="review_comment", comment_id=comment.get("id"),
+                actor=(comment.get("user") or {}).get("login"), url=comment.get("html_url"),
+                at=comment.get("created_at"))
 
 
-def _review_thread(base, p):
+def _review_thread(base, payload):
     if base["action"] != "unresolved":
         return None
-    last = ((p.get("thread") or {}).get("comments") or [{}])[-1]
-    return dict(base, **_pr_fields(p), type="review_comment", comment_id=last.get("id"), url=last.get("html_url"),
+    last = ((payload.get("thread") or {}).get("comments") or [{}])[-1]
+    return dict(base, **_pr_fields(payload), type="review_comment", comment_id=last.get("id"), url=last.get("html_url"),
                 at=last.get("updated_at"))
 
 
-def _issue_comment(base, p):
+def _issue_comment(base, payload):
     """Issue comments carry no head repo: ci-dispatch checks isCrossRepository before acting."""
-    issue, cm = p.get("issue") or {}, p.get("comment") or {}
+    issue, comment = payload.get("issue") or {}, payload.get("comment") or {}
     if base["action"] != "created" or not issue.get("pull_request"):
         return None
-    return dict(base, pr=issue.get("number"), branch=None, sha=None, comment_id=cm.get("id"),
-                actor=(cm.get("user") or {}).get("login"), url=cm.get("html_url"), at=cm.get("created_at"))
+    return dict(base, pr=issue.get("number"), branch=None, sha=None, comment_id=comment.get("id"),
+                actor=(comment.get("user") or {}).get("login"), url=comment.get("html_url"),
+                at=comment.get("created_at"))
 
 
 CI_EVENTS = {"workflow_run": _workflow_run, "check_run": _external_check, "check_suite": _external_check,
@@ -168,37 +179,41 @@ def _listed(variable):
     return [x for x in os.environ.get(variable, "").split(",") if x]
 
 
-def normalize(event, p, delivery=None):
+def normalize(event, payload, delivery=None):
     """Return the compact message for a GitHub event payload, or None when the dispatcher has no use for it."""
-    repo = (p.get("repository") or {}).get("name")
+    repo = (payload.get("repository") or {}).get("name")
     if not repo or (_listed("ALLOWED_REPOS") and repo not in _listed("ALLOWED_REPOS")):
         return None
-    base = {"v": 1, "src": "webhook", "id": delivery, "type": event, "action": p.get("action"), "repo": repo,
-            "default_branch": p["repository"].get("default_branch"), "actor": (p.get("sender") or {}).get("login")}
+    base = {"v": 1, "src": "webhook", "id": delivery, "type": event, "action": payload.get("action"), "repo": repo,
+            "default_branch": payload["repository"].get("default_branch"),
+            "actor": (payload.get("sender") or {}).get("login")}
     if event in CI_EVENTS:
-        return CI_EVENTS[event](base, p)
+        return CI_EVENTS[event](base, payload)
     if event not in TEXT_EVENTS or base["actor"] in _listed("IGNORE_SENDERS"):
         return None
-    association = _trusted_author(p)
-    if association is None or (event != "issue_comment" and not _same_repo_head(p)):
+    association = _trusted_author(payload)
+    if association is None or (event != "issue_comment" and not _same_repo_head(payload)):
         return None  # untrusted author, fork PR, or deleted fork (head.repo null): fail closed
-    return TEXT_EVENTS[event](dict(base, association=association), p)
+    return TEXT_EVENTS[event](dict(base, association=association), payload)
 
 
 def _response(code, text):
     return {"statusCode": code, "headers": {"content-type": "text/plain"}, "body": text}
 
 
+Deps = collections.namedtuple("Deps", "current rotated send")  # secret readers and the SQS sender
+
+
 def handler(event, context=None):
     """Lambda function URL entry point."""
-    return process(event, secret, rotated_secret, _send)
+    return process(event, Deps(secret, rotated_secret, _send))
 
 
-def _verified(raw, sig, current, rotated):
-    return verify(raw, sig, current()) or verify(raw, sig, rotated())
+def _verified(raw, sig, deps):
+    return verify(raw, sig, deps.current()) or verify(raw, sig, deps.rotated())
 
 
-def process(event, current, rotated, send):
+def process(event, deps):
     headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
     body = event.get("body") or ""
     if (event.get("requestContext") or {}).get("http", {}).get("method", "POST") != "POST":
@@ -208,7 +223,7 @@ def process(event, current, rotated, send):
     except (binascii.Error, ValueError):
         return _response(400, "bad body")
     sig = headers.get("x-hub-signature-256")
-    if not _verified(raw, sig, current, rotated):
+    if not _verified(raw, sig, deps):
         return _response(401, "bad signature")
     name = headers.get("x-github-event", "")
     if name == "ping":
@@ -221,7 +236,7 @@ def process(event, current, rotated, send):
     if msg is None:
         return _response(202, "dropped")
     msg = {k: v for k, v in msg.items() if v is not None}
-    send(json.dumps(msg, separators=(",", ":")))
+    deps.send(json.dumps(msg, separators=(",", ":")))
     return _response(202, "queued")
 
 

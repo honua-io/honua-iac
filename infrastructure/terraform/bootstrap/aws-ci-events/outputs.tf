@@ -4,7 +4,7 @@ output "function_url" {
 }
 
 output "queue_url" {
-  description = "Queue the lane host's ci-dispatch long-polls (write it to handoffs/grok-eval5/ci-events/queue-url there)."
+  description = "Queue the lane host's ci-dispatch long-polls (the dispatcher's queue-url file)."
   value       = aws_sqs_queue.events.url
 }
 

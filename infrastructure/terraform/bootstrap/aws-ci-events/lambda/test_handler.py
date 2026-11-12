@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import hmac
 import json
@@ -7,23 +8,24 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import handler as h  # noqa: E402
+import handler as receiver  # noqa: E402
+
 
 KEY = b"test-secret"
 REPO = {"name": "honua-server", "full_name": "honua-io/honua-server", "default_branch": "trunk"}
 
 
-def call(event_name, payload, key=KEY, sign_with=KEY, b64=False):
+def call(event_name, payload, options=None):
+    """options: key (receiver secret), sign_with (sender secret), encoding ("base64" or None)."""
+    opts = dict({"key": KEY, "sign_with": KEY, "encoding": None}, **(options or {}))
     raw = json.dumps(payload).encode()
-    sig = "sha256=" + hmac.new(sign_with, raw, hashlib.sha256).hexdigest()
+    sig = "sha256=" + hmac.new(opts["sign_with"], raw, hashlib.sha256).hexdigest()
     sent = []
-    body = raw.decode()
-    if b64:
-        import base64
-        body = base64.b64encode(raw).decode()
+    encoded = opts["encoding"] == "base64"
+    body = base64.b64encode(raw).decode() if encoded else raw.decode()
     ev = {"headers": {"X-Hub-Signature-256": sig, "X-GitHub-Event": event_name, "X-GitHub-Delivery": "d-1"},
-          "body": body, "isBase64Encoded": b64, "requestContext": {"http": {"method": "POST"}}}
-    resp = h.process(ev, lambda: key, lambda: b"", sent.append)
+          "body": body, "isBase64Encoded": encoded, "requestContext": {"http": {"method": "POST"}}}
+    resp = receiver.process(ev, receiver.Deps(lambda: opts["key"], lambda: b"", sent.append))
     return resp, [json.loads(s) for s in sent]
 
 
@@ -31,28 +33,29 @@ def run(conclusion="failure", action="completed", prs=None):
     return {"action": action, "repository": REPO, "sender": {"login": "github-actions[bot]"},
             "workflow_run": {"id": 9, "name": "PR Gate", "workflow_id": 55, "head_branch": "fix/x", "head_sha": "a" * 40,
                              "conclusion": conclusion, "html_url": "u", "updated_at": "2026-11-11T20:00:00Z",
-                             "pull_requests": prs if prs is not None else [{"number": 7}]}}
+                             "pull_requests": prs if prs is not None else [{"number": 7}],
+                             "head_repository": {"full_name": REPO["full_name"]}}}
 
 
 def process(ev):
-    return h.process(ev, lambda: KEY, lambda: b"", lambda body: None)
+    return receiver.process(ev, receiver.Deps(lambda: KEY, lambda: b"", lambda body: None))
 
 
 class Signature(unittest.TestCase):
     def test_bad_or_missing_signature_rejected(self):
-        resp, sent = call("workflow_run", run(), sign_with=b"wrong")
+        resp, sent = call("workflow_run", run(), {"sign_with": b"wrong"})
         self.assertEqual((resp["statusCode"], sent), (401, []))
-        self.assertFalse(h.verify(b"x", None, KEY))
-        self.assertFalse(h.verify(b"x", "sha1=abc", KEY))
-        self.assertFalse(h.verify(b"x", "sha256=" + hmac.new(KEY, b"x", hashlib.sha256).hexdigest(), b""))
+        self.assertFalse(receiver.verify(b"x", None, KEY))
+        self.assertFalse(receiver.verify(b"x", "sha1=abc", KEY))
+        self.assertFalse(receiver.verify(b"x", "sha256=" + hmac.new(KEY, b"x", hashlib.sha256).hexdigest(), b""))
 
     def test_ping_and_base64_body(self):
         self.assertEqual(call("ping", {"zen": "x"})[0]["statusCode"], 200)
-        resp, sent = call("workflow_run", run(), b64=True)
+        resp, sent = call("workflow_run", run(), {"encoding": "base64"})
         self.assertEqual((resp["statusCode"], len(sent)), (202, 1))
 
     def test_non_ascii_signature_and_bad_base64(self):
-        self.assertFalse(h.verify(b"x", "sha256=\u00e9", KEY))
+        self.assertFalse(receiver.verify(b"x", "sha256=\u00e9", KEY))
         ev = {"headers": {}, "body": "!!notb64", "isBase64Encoded": True, "requestContext": {"http": {"method": "POST"}}}
         self.assertEqual(process(ev)["statusCode"], 400)
 
@@ -62,7 +65,7 @@ class Signature(unittest.TestCase):
         ev = {"headers": {"X-Hub-Signature-256": sig, "X-GitHub-Event": "workflow_run"}, "body": raw.decode(),
               "requestContext": {"http": {"method": "POST"}}}
         sent = []
-        resp = h.process(ev, lambda: KEY, lambda: b"old", sent.append)
+        resp = receiver.process(ev, receiver.Deps(lambda: KEY, lambda: b"old", sent.append))
         self.assertEqual((resp["statusCode"], len(sent)), (202, 1))
 
     def test_get_rejected(self):
@@ -82,6 +85,11 @@ class Filtering(unittest.TestCase):
         self.assertEqual(call("workflow_run", run("cancelled"))[0]["body"], "dropped")
         self.assertEqual(call("workflow_run", run(action="requested"))[0]["body"], "dropped")
         self.assertNotIn("pr", call("workflow_run", run(prs=[]))[1][0])  # nulls are stripped
+
+    def test_fork_workflow_run_dropped(self):
+        fork = run(prs=[])
+        fork["workflow_run"].update(head_branch="trunk", head_repository={"full_name": "stranger/honua-server"})
+        self.assertEqual(call("workflow_run", fork)[1], [])
 
     def test_actions_check_runs_dropped_external_kept(self):
         cr = {"action": "completed", "repository": REPO, "check_run": {"name": "ext", "head_sha": "a" * 40,

@@ -14,7 +14,7 @@ GitHub org webhook ──HTTPS──> Lambda function URL ──> SQS honua-ci-e
 - Python 3.12, standard library plus the runtime's boto3; no packaged dependencies and no model calls.
 - The webhook secret lives only in SSM SecureString `/honua/ci-events/webhook-secret`; the function reads
   it at run time (cached 5 minutes), so it never enters Terraform state.
-- Kept: `workflow_run` completed with failure/success; external (non-Actions) `check_run`/`check_suite`;
+- Kept: `workflow_run` completed with failure, timed_out, startup_failure, action_required or success (fork runs dropped); external (non-Actions) `check_run`/`check_suite`;
   `status` failure/error/success; `pull_request` opened/reopened/synchronize/closed/ready_for_review (same-repo
   heads only); `pull_request_review` submitted with changes requested or comments;
   `pull_request_review_comment` created; `pull_request_review_thread` unresolved; `issue_comment` created on a PR.
@@ -45,7 +45,7 @@ Unit tests: `python3 -m unittest discover -s lambda -p 'test_*.py'`; plan contra
    terraform init
    terraform plan -out ci-events.plan
    terraform apply ci-events.plan
-   terraform output -raw queue_url       # -> lane host: handoffs/grok-eval5/ci-events/queue-url
+   terraform output -raw queue_url       # -> the dispatcher host's ci-events/queue-url
    ```
 
 3. Lane host role (targeted, so nothing else in that root changes):
@@ -75,7 +75,7 @@ Unit tests: `python3 -m unittest discover -s lambda -p 'test_*.py'`; plan contra
    GitHub sends a `ping`; the receiver answers 200. `gh api orgs/honua-io/hooks/<id>/deliveries --jq '.[0:5][]|{event,status_code}'`
    shows recent deliveries.
 
-5. Flip `aws-ci-events` to `"applied": true` in `../drift-roots.json` so the nightly drift plan covers it.
+5. Leave `aws-ci-events` at `"applied": false` in `../drift-roots.json` until the drift role (`aws-drift-plan`) also gets SQS, Lambda and CloudWatch Logs reads; then flip it so the nightly drift plan covers it.
 
 ## Rotate the secret
 
