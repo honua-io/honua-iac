@@ -56,11 +56,12 @@ run "config_records_daily_and_global_types_once" {
 run "alerts_reach_one_topic" {
   command = plan
   assert {
-    condition     = length(aws_cloudwatch_event_target.to_topic) == 2 && alltrue([for t in aws_cloudwatch_event_target.to_home_bus : t.region != "us-east-1"])
+    condition     = length(aws_cloudwatch_event_target.to_topic) == 4 && alltrue([for t in aws_cloudwatch_event_target.to_home_bus : t.region != "us-east-1"])
     error_message = "Home-Region rules publish to the topic; the other Regions forward to the home bus."
   }
   assert {
-    condition     = strcontains(aws_cloudwatch_event_rule.alert["eu-north-1/honua-audit-manual-change"].event_pattern, "*Terraform/*")
-    error_message = "The change alert ignores calls made by Terraform."
+    condition = alltrue([for key, rule in aws_cloudwatch_event_rule.alert :
+    strcontains(rule.event_pattern, "*Terraform/*") && length(rule.event_pattern) <= 2048 if strcontains(key, "-change-")])
+    error_message = "Every change rule ignores calls made by Terraform and fits EventBridge's 2048-character pattern limit."
   }
 }

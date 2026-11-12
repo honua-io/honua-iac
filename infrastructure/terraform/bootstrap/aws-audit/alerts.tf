@@ -3,8 +3,8 @@ locals {
   home_bus_arn       = "arn:${local.partition}:events:${var.home_region}:${local.account_id}:event-bus/default"
 
   # Calls made by Terraform, by CloudFormation, or by an AWS service on our behalf (its user agent,
-  # or a service-linked role session) are IaC or automation, not a hand change. A user agent can be forged: this is a change alert, and
-  # CloudTrail stays the record.
+  # or a service-linked role session) are IaC or automation, not a hand change. A user agent can
+  # be forged: this is a change alert, and CloudTrail stays the record.
   automation_user_agents = [
     "*Terraform/*",
     "cloudformation.amazonaws.com",
@@ -17,82 +17,96 @@ locals {
   name_prefixes = ["Create", "Delete", "Update", "Put", "Add", "Remove", "Publish", "Tag", "Untag"]
 
   # Configuration changes only. Start, stop, scaling and invalidation calls are how the hosts and
-  # pools run every day, and the heartbeat parameters are written every minute.
-  change_pattern = {
-    source        = ["aws.ec2", "aws.autoscaling", "aws.iam", "aws.s3", "aws.cloudfront", "aws.wafv2", "aws.ecs", "aws.rds", "aws.ssm", "aws.lambda"]
-    "detail-type" = ["AWS API Call via CloudTrail"]
-    detail = {
-      userAgent    = [{ "anything-but" = { wildcard = local.automation_user_agents } }]
-      userIdentity = { arn = [{ "anything-but" = { wildcard = "*:assumed-role/AWSServiceRoleFor*" } }, { exists = false }] }
-      "$or" = [
-        {
-          eventSource = ["ec2.amazonaws.com"]
-          eventName = [
-            "RunInstances", "TerminateInstances", "ModifyInstanceAttribute", "ModifyInstanceMetadataOptions",
-            "AssociateIamInstanceProfile", "ReplaceIamInstanceProfileAssociation",
-            "CreateSecurityGroup", "DeleteSecurityGroup", "ModifySecurityGroupRules",
-            "AuthorizeSecurityGroupIngress", "AuthorizeSecurityGroupEgress",
-            "RevokeSecurityGroupIngress", "RevokeSecurityGroupEgress",
-            "CreateVpc", "DeleteVpc", "ModifyVpcAttribute", "CreateSubnet", "DeleteSubnet", "ModifySubnetAttribute",
-            "CreateRoute", "DeleteRoute", "ReplaceRoute", "AttachInternetGateway", "DetachInternetGateway",
-            "AllocateAddress", "ReleaseAddress", "AssociateAddress", "DisassociateAddress",
-            "CreateLaunchTemplate", "CreateLaunchTemplateVersion", "ModifyLaunchTemplate", "DeleteLaunchTemplate",
-            "CreateTags", "DeleteTags",
-          ]
-        },
-        {
-          eventSource = ["autoscaling.amazonaws.com"]
-          eventName = [
-            "CreateAutoScalingGroup", "UpdateAutoScalingGroup", "DeleteAutoScalingGroup",
-            "PutScalingPolicy", "DeletePolicy", "PutScheduledUpdateGroupAction", "DeleteScheduledAction",
-            "PutLifecycleHook", "DeleteLifecycleHook", "StartInstanceRefresh",
-            "AttachInstances", "DetachInstances", "SuspendProcesses", "ResumeProcesses",
-            "CreateOrUpdateTags", "DeleteTags",
-          ]
-        },
-        { eventSource = ["iam.amazonaws.com"], eventName = [{ "anything-but" = { wildcard = ["Generate*", "CreateServiceLinkedRole"] } }] },
-        {
-          eventSource = ["s3.amazonaws.com"]
-          eventName = [
-            "CreateBucket", "DeleteBucket", "PutBucketPolicy", "DeleteBucketPolicy", "PutBucketAcl",
-            "PutBucketPublicAccessBlock", "DeleteBucketPublicAccessBlock", "PutBucketOwnershipControls",
-            "PutBucketEncryption", "DeleteBucketEncryption", "PutBucketVersioning",
-            "PutBucketLifecycle", "DeleteBucketLifecycle", "PutBucketReplication", "DeleteBucketReplication",
-          ]
-        },
-        {
-          eventSource = ["cloudfront.amazonaws.com"]
-          eventName   = [{ "anything-but" = ["CreateInvalidation", "CreateInvalidationForDistributionTenant"] }]
-        },
-        { eventSource = ["wafv2.amazonaws.com"] },
-        {
-          eventSource = ["ecs.amazonaws.com"]
-          eventName = [
-            "CreateCluster", "UpdateCluster", "UpdateClusterSettings", "DeleteCluster", "PutClusterCapacityProviders",
-            "CreateService", "UpdateService", "DeleteService",
-            "RegisterTaskDefinition", "DeregisterTaskDefinition", "DeleteTaskDefinitions",
-            "CreateCapacityProvider", "UpdateCapacityProvider", "DeleteCapacityProvider",
-            "PutAccountSetting", "TagResource", "UntagResource",
-          ]
-        },
-        {
-          eventSource = ["rds.amazonaws.com"]
-          eventName = [
-            { prefix = "Create" }, { prefix = "Delete" }, { prefix = "Modify" }, { prefix = "Restore" },
-            "AddTagsToResource", "RemoveTagsFromResource", "AddRoleToDBInstance", "RemoveRoleFromDBInstance",
-          ]
-        },
-        { eventSource = ["lambda.amazonaws.com"], eventName = [for p in local.name_prefixes : { prefix = p }] },
-        {
-          eventSource       = ["ssm.amazonaws.com"]
-          eventName         = ["PutParameter", "DeleteParameter"]
-          requestParameters = { name = [{ "anything-but" = { suffix = "/heartbeat" } }] }
-        },
-        {
-          eventSource = ["ssm.amazonaws.com"]
-          eventName   = ["DeleteParameters", "LabelParameterVersion", "AddTagsToResource", "RemoveTagsFromResource"]
-        },
-      ]
+  # pools run every day, and the heartbeat parameters are written every minute. EventBridge caps
+  # a pattern at 2048 characters, so the services are split across three rules.
+  change_branches = {
+    ec2 = [
+      {
+        eventSource = ["ec2.amazonaws.com"]
+        eventName = [
+          "RunInstances", "TerminateInstances", "ModifyInstanceAttribute", "ModifyInstanceMetadataOptions",
+          "AssociateIamInstanceProfile", "ReplaceIamInstanceProfileAssociation",
+          "CreateLaunchTemplate", "CreateLaunchTemplateVersion", "ModifyLaunchTemplate", "DeleteLaunchTemplate",
+          "CreateTags", "DeleteTags",
+        ]
+      },
+      {
+        eventSource = ["ec2.amazonaws.com"]
+        eventName = [
+          "CreateSecurityGroup", "DeleteSecurityGroup", "ModifySecurityGroupRules",
+          "AuthorizeSecurityGroupIngress", "AuthorizeSecurityGroupEgress",
+          "RevokeSecurityGroupIngress", "RevokeSecurityGroupEgress",
+          "CreateVpc", "DeleteVpc", "ModifyVpcAttribute", "CreateSubnet", "DeleteSubnet", "ModifySubnetAttribute",
+          "CreateRoute", "DeleteRoute", "ReplaceRoute", "AttachInternetGateway", "DetachInternetGateway",
+          "AllocateAddress", "ReleaseAddress", "AssociateAddress", "DisassociateAddress",
+        ]
+      },
+    ]
+    identity-storage = [
+      {
+        eventSource = ["autoscaling.amazonaws.com"]
+        eventName = [
+          "CreateAutoScalingGroup", "UpdateAutoScalingGroup", "DeleteAutoScalingGroup",
+          "PutScalingPolicy", "DeletePolicy", "PutScheduledUpdateGroupAction", "DeleteScheduledAction",
+          "PutLifecycleHook", "DeleteLifecycleHook", "StartInstanceRefresh",
+          "AttachInstances", "DetachInstances", "SuspendProcesses", "ResumeProcesses",
+          "CreateOrUpdateTags", "DeleteTags",
+        ]
+      },
+      { eventSource = ["iam.amazonaws.com"], eventName = [{ "anything-but" = { wildcard = ["Generate*", "CreateServiceLinkedRole"] } }] },
+      {
+        eventSource = ["s3.amazonaws.com"]
+        eventName = [
+          "CreateBucket", "DeleteBucket", "PutBucketPolicy", "DeleteBucketPolicy", "PutBucketAcl",
+          "PutBucketPublicAccessBlock", "DeleteBucketPublicAccessBlock", "PutBucketOwnershipControls",
+          "PutBucketEncryption", "DeleteBucketEncryption", "PutBucketVersioning",
+          "PutBucketLifecycle", "DeleteBucketLifecycle", "PutBucketReplication", "DeleteBucketReplication",
+        ]
+      },
+    ]
+    services = [
+      {
+        eventSource = ["cloudfront.amazonaws.com"]
+        eventName   = [{ "anything-but" = ["CreateInvalidation", "CreateInvalidationForDistributionTenant"] }]
+      },
+      { eventSource = ["wafv2.amazonaws.com"] },
+      {
+        eventSource = ["ecs.amazonaws.com"]
+        eventName = [
+          "CreateCluster", "UpdateCluster", "UpdateClusterSettings", "DeleteCluster", "PutClusterCapacityProviders",
+          "CreateService", "UpdateService", "DeleteService",
+          "RegisterTaskDefinition", "DeregisterTaskDefinition", "DeleteTaskDefinitions",
+          "CreateCapacityProvider", "UpdateCapacityProvider", "DeleteCapacityProvider",
+          "PutAccountSetting", "TagResource", "UntagResource",
+        ]
+      },
+      {
+        eventSource = ["rds.amazonaws.com"]
+        eventName = [
+          { prefix = "Create" }, { prefix = "Delete" }, { prefix = "Modify" }, { prefix = "Restore" },
+          "AddTagsToResource", "RemoveTagsFromResource", "AddRoleToDBInstance", "RemoveRoleFromDBInstance",
+        ]
+      },
+      { eventSource = ["lambda.amazonaws.com"], eventName = [for p in local.name_prefixes : { prefix = p }] },
+      {
+        eventSource       = ["ssm.amazonaws.com"]
+        eventName         = ["PutParameter", "DeleteParameter"]
+        requestParameters = { name = [{ "anything-but" = { suffix = "/heartbeat" } }] }
+      },
+      {
+        eventSource = ["ssm.amazonaws.com"]
+        eventName   = ["DeleteParameters", "LabelParameterVersion", "AddTagsToResource", "RemoveTagsFromResource"]
+      },
+    ]
+  }
+  change_patterns = {
+    for group, branches in local.change_branches : "${local.name}-change-${group}" => {
+      "detail-type" = ["AWS API Call via CloudTrail"]
+      detail = {
+        userAgent    = [{ "anything-but" = { wildcard = local.automation_user_agents } }]
+        userIdentity = { arn = [{ "anything-but" = { wildcard = "*:assumed-role/AWSServiceRoleFor*" } }, { exists = false }] }
+        "$or"        = branches
+      }
     }
   }
 
@@ -105,10 +119,7 @@ locals {
     }
   }
 
-  alert_rules = {
-    "${local.name}-manual-change" = local.change_pattern
-    "${local.name}-stack-drift"   = local.stack_drift_pattern
-  }
+  alert_rules = merge(local.change_patterns, { "${local.name}-stack-drift" = local.stack_drift_pattern })
   regional_alert_rules = {
     for pair in setproduct(keys(local.alert_rules), var.recorded_regions) : "${pair[1]}/${pair[0]}" => {
       region  = pair[1]

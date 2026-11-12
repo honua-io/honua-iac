@@ -9,7 +9,7 @@ what a resource looked like on a given day, and an email when something changes 
 | Audit bucket `honua-audit-<account>` | SSE-S3, versioned, public access blocked, ACLs disabled. The policy admits only CloudTrail (this trail) and Config (this account), denies object deletes and plain HTTP. Standard for 90 days, then Glacier Instant Retrieval (objects of 128 KB and up), expired after 365 days. |
 | AWS Config `honua-audit` | Recorder in us-east-1, eu-north-1 and us-west-2, DAILY recording, history and a daily snapshot under `config/`. IAM roles/policies/users and CloudFront are recorded in us-east-1 only. |
 | Config rule `cloudformation-stack-drift-detection-check` | us-east-1 and us-west-2, every 24 h and on stack change, through role `honua-audit-stack-drift` (control-plane reads only). |
-| Alerts | EventBridge rule `honua-audit-manual-change` (configuration-changing calls not made by Terraform, CloudFormation or an AWS service) and `honua-audit-stack-drift` (a stack turns NON_COMPLIANT). eu-north-1 and us-west-2 forward to the us-east-1 bus; SNS `honua-audit-alerts` emails the build host budget address. |
+| Alerts | EventBridge rules `honua-audit-change-{ec2,identity-storage,services}` (configuration-changing calls not made by Terraform, CloudFormation or an AWS service) and `honua-audit-stack-drift` (a stack turns NON_COMPLIANT). eu-north-1 and us-west-2 forward to the us-east-1 bus; SNS `honua-audit-alerts` emails the build host budget address. |
 | Budget `honua-audit-monthly` | Emails at 80% actual and 100% forecast of `monthly_budget_usd` (Config plus CloudTrail). |
 | `/honua/audit/alert-canary` | eu-north-1 parameter for testing the alert path. |
 
