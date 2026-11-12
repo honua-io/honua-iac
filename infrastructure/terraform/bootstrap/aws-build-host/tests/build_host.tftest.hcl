@@ -70,6 +70,10 @@ run "spot_host_that_stops_itself" {
     error_message = "Replacement hosts need the native build/runtime dependencies."
   }
   assert {
+    condition     = strcontains(base64decode(aws_launch_template.build.user_data), "apt_retry install -y libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 libcairo2 libcups2t64 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2")
+    error_message = "Replacement hosts need the Chromium system libraries that browser tests load."
+  }
+  assert {
     condition     = one(aws_budgets_budget.build_host.cost_filter).name == "Service" && contains(one(aws_budgets_budget.build_host.cost_filter).values, "Amazon Elastic Compute Cloud - Compute") && length(aws_budgets_budget.build_host.notification) == 2
     error_message = "EC2 compute cost must raise budget email alerts."
   }
