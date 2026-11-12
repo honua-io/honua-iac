@@ -8,6 +8,7 @@
     "installed-worker-slot": "honua.installed-worker-slot/v1"
   },
   "schemaVersions": {
+    "build-host-heavy-availability": "v1",
     "terraform-exact-plan": "v1",
     "terraform-exec-receipt": "v1",
     "terraform-plan-lineage": "v1",
