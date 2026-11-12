@@ -1,9 +1,13 @@
 # Appended after install-build-tools.sh when gate_runner_enabled is true.
-# Each PR Gate runner is an unprivileged account with its own rootless Docker. Before
-# every job it gets a pristine home, a fresh daemon, no route to instance metadata and
-# a just-in-time registration valid for exactly one job.
+# Each runner (PR Gate or heavy test shard) is an unprivileged account with its own rootless
+# Docker. Before every job it gets a pristine home, a fresh daemon, no route to instance
+# metadata and a just-in-time registration valid for exactly one job; after the job its
+# home is emptied. Rerunning this script on a provisioned host adds missing runners and
+# applies changed limits without restarting running ones.
 gate_config=/etc/honua-gate-runner.json
 gate() { jq -r ".$1" "$gate_config"; }
+
+install_prerequisites() {
 
 # The snap store is sometimes unreachable at boot; retry, then fall back to the official AWS CLI bundle.
 aws_cli_ready=0
@@ -48,6 +52,10 @@ echo "$(gate runner_sha256)  ${runner_archive}" | sha256sum --check --strict
 install -d -m 0755 /opt/actions-runner
 tar -xzf "$runner_archive" -C /opt/actions-runner
 /opt/actions-runner/bin/installdependencies.sh
+}
+if [[ "$(/opt/actions-runner/bin/Runner.Listener --version 2>/dev/null)" != "$(gate runner_version)" ]]; then
+  install_prerequisites
+fi
 
 cat > /usr/local/sbin/honua-gate-runner-registration <<'REGISTRATION'
 #!/bin/bash
@@ -75,8 +83,12 @@ delete_runner() {
     "https://api.github.com/orgs/$(setting org)/actions/runners/$1")"
   [[ "$status" == 204 || "$status" == 404 ]]
 }
+group_id_named() {
+  github "${secrets}/runner-auth" "https://api.github.com/orgs/$(setting org)/actions/runner-groups?per_page=100" |
+    jq -r --arg name "$1" '.runner_groups[] | select(.name == $name) | .id'
+}
 remove_offline_runners() {
-  local page=1 response id selected
+  local group_id="$1" page=1 response id selected
   local ids=()
   # Collect every page before deletion so shrinking pages cannot skip registrations.
   while :; do
@@ -119,12 +131,18 @@ installation="$(github "${secrets}/app-auth" "https://api.github.com/orgs/$(sett
 github "${secrets}/app-auth" -X POST -d '{"permissions":{"organization_self_hosted_runners":"write"}}' \
   "https://api.github.com/app/installations/${installation}/access_tokens" |
   jq -r '"Authorization: Bearer " + .token' > "${secrets}/runner-auth"
-group_id="$(github "${secrets}/runner-auth" "https://api.github.com/orgs/$(setting org)/actions/runner-groups?per_page=100" |
-  jq -r --arg name "$(setting group)" '.runner_groups[] | select(.name == $name) | .id')"
-[[ -n "$group_id" ]] || { echo "Runner group $(setting group) does not exist." >&2; exit 1; }
 
 case "$mode" in
-  prune) remove_offline_runners ;;
+  prune)
+    for group in $(jq -r '[.runners[].group] | unique | .[]' "$config"); do
+      group_id="$(group_id_named "$group")"
+      if [[ -n "$group_id" ]]; then
+        remove_offline_runners "$group_id"
+      else
+        echo "Runner group ${group} does not exist; nothing to prune." >&2
+      fi
+    done
+    ;;
   remove)
     id="$(cat "$state")"
     [[ "$id" =~ ^[0-9]+$ ]]
@@ -133,12 +151,16 @@ case "$mode" in
     ;;
   register)
     user="gate-runner-${index}"
+    runner="$(jq -c --argjson index "$index" '.runners[$index - 1]' "$config")"
+    group="$(jq -r .group <<< "$runner")"
+    group_id="$(group_id_named "$group")"
+    [[ -n "$group_id" ]] || { echo "Runner group ${group} does not exist." >&2; exit 1; }
     install -d -m 0700 /run/honua-gate-runner-state
 
     imds="$(curl -fsS -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' http://169.254.169.254/latest/api/token)"
     instance="$(curl -fsS -H "X-aws-ec2-metadata-token: ${imds}" http://169.254.169.254/latest/meta-data/instance-id)"
     request="$(jq -cn --arg name "${instance}-${index}-$(date +%s)" --argjson group "$group_id" \
-      --argjson labels "$(jq -c .labels "$config")" \
+      --argjson labels "$(jq -c .labels <<< "$runner")" \
       '{name: $name, runner_group_id: $group, labels: $labels, work_folder: "_work"}')"
     install -d -o "$user" -g "$user" -m 0700 "/run/honua-gate-runner/${index}"
     github "${secrets}/runner-auth" -X POST -d "$request" "https://api.github.com/orgs/$(setting org)/actions/runners/generate-jitconfig" |
@@ -154,7 +176,7 @@ chmod 0700 /usr/local/sbin/honua-gate-runner-registration
 
 cat > /usr/local/sbin/honua-gate-runner-prepare <<'PREPARE'
 #!/bin/bash
-# Runs as root before each job of runner $1.
+# Runs as root before each job of runner $1, and with --clean after it.
 set -euo pipefail
 index="$1"
 user="gate-runner-${index}"
@@ -194,6 +216,15 @@ block_instance_metadata() {
   ip6tables -C "${rule6[@]}" 2>/dev/null || ip6tables -I "${rule6[@]}"
 }
 
+require_free_disk() {
+  local free_gib
+  free_gib="$(df -BG --output=avail / | tail -1 | tr -dc 0-9)"
+  if (( free_gib < $(setting min_free_disk_gib) )); then
+    echo "Only ${free_gib} GiB free; runner ${index} waits for disk before taking a job." >&2
+    return 1
+  fi
+}
+
 check_prerequisites() {
   # Unlike runuser/PAM, setpriv preserves the service's open-file limit.
   setpriv --reuid "$uid" --regid "$(id -g "$user")" --init-groups \
@@ -201,6 +232,8 @@ check_prerequisites() {
 }
 
 end_previous_job
+[[ "${2:-}" != --clean ]] || { find "$home" -mindepth 1 -delete; exit 0; }
+require_free_disk
 restore_pristine_home
 block_instance_metadata
 check_prerequisites
@@ -257,14 +290,14 @@ chmod 0755 /usr/local/bin/honua-gate-runner-check
 
 cat > /usr/local/sbin/honua-gate-runner-heartbeat <<'HEARTBEAT'
 #!/bin/bash
-# Publishes this instance and its idle runner count for the PR Gate runner selection.
+# Publishes this instance and its idle PR Gate runner count for the PR Gate runner selection.
 set -euo pipefail
 config=/etc/honua-gate-runner.json
 setting() { jq -r ".$1" "$config"; }
 imds="$(curl -fsS -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' http://169.254.169.254/latest/api/token)"
 instance="$(curl -fsS -H "X-aws-ec2-metadata-token: ${imds}" http://169.254.169.254/latest/meta-data/instance-id)"
 idle=0
-for index in $(seq 1 "$(setting runner_count)"); do
+for index in $(jq -r '.runners | to_entries[] | select(.value.pool == "gate") | .key + 1' "$config"); do
   user="gate-runner-${index}"
   if pgrep -u "$user" -x Runner.Listener > /dev/null && ! pgrep -u "$user" -x Runner.Worker > /dev/null; then
     idle=$((idle + 1))
@@ -279,7 +312,7 @@ chmod 0755 /usr/local/bin/honua-gate-runner-run
 
 cat > /etc/systemd/system/honua-gate-runner@.service <<'SERVICE'
 [Unit]
-Description=Ephemeral PR Gate runner %i
+Description=Ephemeral build-host runner %i
 Wants=network-online.target
 Wants=honua-gate-runner-prune.service
 After=network-online.target honua-gate-runner-prune.service
@@ -290,6 +323,7 @@ User=gate-runner-%i
 ExecStartPre=+/usr/local/sbin/honua-gate-runner-prepare %i
 ExecStart=/usr/local/bin/honua-gate-runner-run %i
 ExecStopPost=+/usr/local/sbin/honua-gate-runner-registration remove %i
+ExecStopPost=+/usr/local/sbin/honua-gate-runner-prepare %i --clean
 TimeoutStopSec=45
 Restart=always
 RestartSec=15
@@ -337,7 +371,7 @@ chmod 0700 /usr/local/sbin/honua-gate-runner-spot-notice
 
 cat > /etc/systemd/system/honua-gate-runner-spot-notice.service <<'SERVICE'
 [Unit]
-Description=Deregister PR Gate runners on a spot interruption notice
+Description=Deregister build-host runners on a spot interruption notice
 
 [Service]
 Type=oneshot
@@ -381,8 +415,8 @@ TIMER
 
 # Root-owned templates and a root-only parent prevent jobs from changing the next job's home.
 install -d -m 0700 /var/lib/honua-gate-runner
-for index in $(seq 1 "$(gate runner_count)"); do
-  user="gate-runner-${index}"
+provision_account() {
+  local index="$1" user="gate-runner-$1" uid
   useradd --create-home --shell /bin/bash "$user"
   uid="$(id -u "$user")"
   chmod 0700 "/home/${user}"
@@ -400,10 +434,16 @@ for index in $(seq 1 "$(gate runner_count)"); do
   install -d -m 0700 "/var/lib/honua-gate-runner/home-${index}"
   rsync -a --exclude .local/share/docker "/home/${user}/" "/var/lib/honua-gate-runner/home-${index}/"
   chown -R root:root "/var/lib/honua-gate-runner/home-${index}"
+}
 
+for index in $(seq 1 "$(gate runner_count)"); do
+  user="gate-runner-${index}"
+  id -u "$user" > /dev/null 2>&1 || provision_account "$index"
+  uid="$(id -u "$user")"
   # The runner and its rootless Docker share the account's slice, so one ceiling covers both.
   install -d "/etc/systemd/system/user-${uid}.slice.d" "/etc/systemd/system/honua-gate-runner@${index}.service.d"
-  printf '[Slice]\nCPUQuota=%s%%\nMemoryMax=%sG\n' "$(gate cpu_quota_percent)" "$(gate memory_max_gib)" \
+  jq -r --argjson index "$index" '.runners[$index - 1] |
+    "[Slice]\nCPUQuota=\(.cpu_quota_percent)%\nMemoryMax=\(.memory_max_gib)G"' "$gate_config" \
     > "/etc/systemd/system/user-${uid}.slice.d/50-gate-runner.conf"
   printf '[Service]\nSlice=user-%s.slice\n' "$uid" > "/etc/systemd/system/honua-gate-runner@${index}.service.d/50-slice.conf"
 done
