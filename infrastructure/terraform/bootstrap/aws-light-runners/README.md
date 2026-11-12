@@ -11,6 +11,8 @@ The host reuses the build host's gate runner bootstrap
 - is an unprivileged account with its own rootless Docker and a CPU/memory slice
   (`runner_cpu_quota_percent`, `runner_memory_max_gib`);
 - gets a pristine home before every job;
+- uses its own dynamic published-port range within `20000-32287`, as described in
+  the [shared bootstrap](../aws-build-host/README.md#pr-gate-runners-off-by-default);
 - registers just in time for exactly one job through the GitHub App credential;
 - has no route to instance metadata, so jobs cannot use the host role.
 
