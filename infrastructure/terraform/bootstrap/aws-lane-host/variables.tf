@@ -98,3 +98,13 @@ variable "ci_events_queue_arn" {
   type        = string
   default     = ""
 }
+
+variable "idle_stop_minutes" {
+  description = "Stop after this many continuous idle minutes; active processes and configured work probes inhibit shutdown."
+  type        = number
+  default     = 30
+  validation {
+    condition     = var.idle_stop_minutes >= 10 && var.idle_stop_minutes <= 1440 && floor(var.idle_stop_minutes) == var.idle_stop_minutes
+    error_message = "idle_stop_minutes must be an integer between 10 and 1440."
+  }
+}

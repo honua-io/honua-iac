@@ -355,6 +355,7 @@ jobs:
           terraform -chdir=infrastructure/terraform/bootstrap/aws-build-host test -no-color
           python3 -m unittest discover -s infrastructure/terraform/bootstrap/aws-build-host/tests -p 'test_*.py'
           terraform -chdir=infrastructure/terraform/bootstrap/aws-lane-host test -no-color
+          python3 -m unittest discover -s infrastructure/terraform/bootstrap/aws-lane-host/tests -p 'test_*.py'
           terraform -chdir=infrastructure/terraform/bootstrap/aws-ci-events test -no-color
           python3 -m unittest discover -s infrastructure/terraform/bootstrap/aws-ci-events/lambda -p 'test_*.py'
           terraform -chdir=infrastructure/terraform/components/operator-host-access test -no-color

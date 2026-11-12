@@ -11,6 +11,8 @@ locals {
   # Budget usage types carry a region prefix; on-demand Linux compute is BoxUsage.
   usage_type_prefix = { "eu-north-1" = "EUN1-", "us-east-1" = "", "us-east-2" = "USE2-", "us-west-2" = "USW2-", "eu-west-1" = "EU-" }
   host_config = {
+    idle_seconds        = var.idle_stop_minutes * 60
+    activity_config     = "/home/ubuntu/lanes/idle-stop.json"
     region              = var.region
     parameter_prefix    = var.parameter_prefix
     data_volume_id      = aws_ebs_volume.lanes.id
@@ -119,8 +121,10 @@ resource "aws_instance" "lanes" {
   user_data_base64 = base64gzip(join("\n", [
     "#!/bin/bash\nset -euo pipefail",
     "echo '${base64encode(jsonencode(local.host_config))}' | base64 -d > /etc/honua-lane-host.json",
+    "echo '${base64encode(file("${path.module}/lane-idle-stop.py"))}' | base64 -d > /usr/local/sbin/honua-lane-idle-stop",
     file("${path.module}/../shared/install-docker.sh"),
     file("${path.module}/install-lane-host.sh"),
+    file("${path.module}/install-idle-stop.sh"),
   ]))
   metadata_options {
     http_endpoint               = "enabled"

@@ -29,6 +29,14 @@ override_data {
 run "on_demand_host_with_persistent_lane_volume" {
   command = plan
   assert {
+    condition     = aws_instance.lanes.instance_initiated_shutdown_behavior == "stop" && local.host_config.idle_seconds == 1800
+    error_message = "Idle shutdown must stop, never terminate, with a 30-minute default."
+  }
+  assert {
+    condition     = local.host_config.activity_config == "/home/ubuntu/lanes/idle-stop.json"
+    error_message = "Pending-work guards must survive replacement on the data volume."
+  }
+  assert {
     condition     = length(aws_instance.lanes.instance_market_options) == 0
     error_message = "Lanes run for hours; the host must be on-demand, never Spot."
   }
@@ -82,4 +90,10 @@ run "ci_events_queue_access_is_receive_delete_on_one_queue" {
     condition     = length(aws_iam_role_policy.ci_events) == 1 && aws_iam_role_policy.ci_events[0].name == "ci-events-consume"
     error_message = "The lane host role gets the ci-events consume policy."
   }
+}
+
+run "reject_too_short_idle_window" {
+  command = plan
+  variables { idle_stop_minutes = 1 }
+  expect_failures = [var.idle_stop_minutes]
 }
