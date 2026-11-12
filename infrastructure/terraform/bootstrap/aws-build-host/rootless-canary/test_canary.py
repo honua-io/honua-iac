@@ -99,7 +99,9 @@ class AdmissionTests(unittest.TestCase):
         pages = '[{"runners":[{"id":42,"name":"i-12345678-1-123"}]}]'
         with patch.dict(os.environ, GH_HOST='other.example'):
             with patch.object(admission, 'command', side_effect=[properties, pages]) as command:
-                with patch.object(admission, 'account_processes', return_value=[]):
+                with patch.object(admission, 'account_processes', return_value=[]), \
+                        patch.object(Path, 'exists', return_value=False), \
+                        patch.object(Path, 'is_symlink', return_value=False):
                     snapshot = host.snapshot()
         self.assertEqual([42], snapshot['registered'])
         self.assertEqual(call('gh', 'api', '--hostname', 'github.com', '--paginate', '--slurp',
