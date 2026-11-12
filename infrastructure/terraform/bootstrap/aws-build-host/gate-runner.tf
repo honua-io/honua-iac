@@ -6,18 +6,21 @@ locals {
   # Runner N is element N-1: PR Gate runners first, then heavy test-shard runners.
   build_host_runners = concat(
     [for _ in range(var.gate_runner_count) : {
-      pool              = "gate"
-      group             = "honua-server-gate"
-      labels            = ["self-hosted", "linux", "x64", "honua-build"]
-      cpu_quota_percent = var.gate_runner_cpu_quota_percent
-      memory_max_gib    = var.gate_runner_memory_max_gib
+      pool               = "gate"
+      service_containers = false
+      group              = "honua-server-gate"
+      labels             = ["self-hosted", "linux", "x64", "honua-build"]
+      cpu_quota_percent  = var.gate_runner_cpu_quota_percent
+      memory_max_gib     = var.gate_runner_memory_max_gib
     }],
     [for _ in range(var.heavy_runner_count) : {
-      pool              = "heavy"
-      group             = "honua-heavy"
-      labels            = ["self-hosted", "linux", "x64", "honua-heavy"]
-      cpu_quota_percent = var.heavy_runner_cpu_quota_percent
-      memory_max_gib    = var.heavy_runner_memory_max_gib
+      pool = "heavy"
+      # Service containers need /proc/1/cgroup, which ProtectProc=invisible hides.
+      service_containers = true
+      group              = "honua-heavy"
+      labels             = ["self-hosted", "linux", "x64", "honua-heavy"]
+      cpu_quota_percent  = var.heavy_runner_cpu_quota_percent
+      memory_max_gib     = var.heavy_runner_memory_max_gib
     }]
   )
   gate_runner_host_config = {

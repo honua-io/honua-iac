@@ -183,3 +183,12 @@ run "heavy_runners_follow_the_gate_runners" {
     error_message = "EC2 user data must stay within 16 KiB."
   }
 }
+
+run "only_heavy_runners_start_service_containers" {
+  command = apply
+  variables { gate_runner_enabled = true }
+  assert {
+    condition     = alltrue([for runner in local.build_host_runners : runner.service_containers == (runner.pool == "heavy")])
+    error_message = "Only heavy runners expose /proc/1/cgroup for service containers; PR Gate runners keep ProtectProc=invisible."
+  }
+}

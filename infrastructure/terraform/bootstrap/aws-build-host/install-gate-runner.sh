@@ -446,6 +446,13 @@ for index in $(seq 1 "$(gate runner_count)"); do
     "[Slice]\nCPUQuota=\(.cpu_quota_percent)%\nMemoryMax=\(.memory_max_gib)G"' "$gate_config" \
     > "/etc/systemd/system/user-${uid}.slice.d/50-gate-runner.conf"
   printf '[Service]\nSlice=user-%s.slice\n' "$uid" > "/etc/systemd/system/honua-gate-runner@${index}.service.d/50-slice.conf"
+  # The Actions runner reads /proc/1/cgroup before it starts service containers.
+  proc_dropin="/etc/systemd/system/honua-gate-runner@${index}.service.d/60-service-containers.conf"
+  if jq -e --argjson index "$index" '.runners[$index - 1].service_containers' "$gate_config" > /dev/null; then
+    printf '[Service]\nProtectProc=default\n' > "$proc_dropin"
+  else
+    rm -f "$proc_dropin"
+  fi
 done
 systemctl daemon-reload
 systemctl enable --now honua-gate-runner-heartbeat.timer honua-gate-runner-spot-notice.timer
