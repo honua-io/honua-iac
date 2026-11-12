@@ -57,6 +57,57 @@ if [[ "$(/opt/actions-runner/bin/Runner.Listener --version 2>/dev/null)" != "$(g
   install_prerequisites
 fi
 
+cat > /usr/local/bin/honua-gate-dockerd <<'DOCKERD'
+#!/bin/bash
+set -euo pipefail
+pool_first=20000
+ports_per_runner=768
+runner_limit=16
+pool_last=$((pool_first + ports_per_runner * runner_limit - 1))
+if [[ "${1:-}" == --check-host ]]; then
+  read -r first last < /proc/sys/net/ipv4/ip_local_port_range
+  if (( first <= pool_last && last >= pool_first )); then
+    echo "Host ephemeral ports overlap the runner pool ${pool_first}-${pool_last}." >&2
+    exit 1
+  fi
+  exit 0
+fi
+index="${HONUA_RUNNER_INDEX:-}"
+if [[ ! "$index" =~ ^([1-9]|1[0-6])$ || "${_DOCKERD_ROOTLESS_CHILD:-}" != 1 ]]; then
+  echo 'Expected a rootless child and runner index 1-16.' >&2
+  exit 1
+fi
+# The kernel denies this unprivileged user namespace access to host network sysctls.
+read -r inside_uid outside_uid mapped_count < /proc/self/uid_map
+if [[ "${DOCKERD_ROOTLESS_ROOTLESSKIT_DETACH_NETNS:-}" != false ||
+  "$inside_uid" != 0 || "$outside_uid" == 0 || "$mapped_count" != 1 ]]; then
+  echo 'Expected a rootless user mapping and attached child network namespace.' >&2
+  exit 1
+fi
+first=$((pool_first + (index - 1) * ports_per_runner))
+last=$((first + ports_per_runner - 1))
+sysctl -q -w "net.ipv4.ip_local_port_range=${first} ${last}"
+read -r actual_first actual_last < /proc/sys/net/ipv4/ip_local_port_range
+if [[ "$actual_first" != "$first" || "$actual_last" != "$last" ]]; then
+  echo "Runner port range was not applied: expected ${first}-${last}." >&2
+  exit 1
+fi
+exec /usr/bin/dockerd "$@"
+DOCKERD
+chmod 0755 /usr/local/bin/honua-gate-dockerd
+/usr/local/bin/honua-gate-dockerd --check-host
+
+configure_rootless_ports() {
+  local directory="$1/.config/systemd/user/docker.service.d"
+  install -d -m 0755 "$directory"
+  cat > "$directory/50-honua-ports.conf" <<PORTS
+[Service]
+Environment="DOCKERD=/usr/local/bin/honua-gate-dockerd"
+Environment="HONUA_RUNNER_INDEX=$2"
+Environment="DOCKERD_ROOTLESS_ROOTLESSKIT_DETACH_NETNS=false"
+PORTS
+}
+
 cat > /usr/local/sbin/honua-gate-runner-registration <<'REGISTRATION'
 #!/bin/bash
 set -euo pipefail
@@ -420,6 +471,8 @@ provision_account() {
   useradd --create-home --shell /bin/bash "$user"
   uid="$(id -u "$user")"
   chmod 0700 "/home/${user}"
+  configure_rootless_ports "/home/${user}" "$index"
+  chown -R "${user}:${user}" "/home/${user}/.config"
   loginctl enable-linger "$user"
   for _ in $(seq 1 30); do
     [[ -S "/run/user/${uid}/bus" ]] && break
@@ -439,6 +492,7 @@ provision_account() {
 for index in $(seq 1 "$(gate runner_count)"); do
   user="gate-runner-${index}"
   id -u "$user" > /dev/null 2>&1 || provision_account "$index"
+  configure_rootless_ports "/var/lib/honua-gate-runner/home-${index}" "$index"
   uid="$(id -u "$user")"
   # The runner and its rootless Docker share the account's slice, so one ceiling covers both.
   install -d "/etc/systemd/system/user-${uid}.slice.d" "/etc/systemd/system/honua-gate-runner@${index}.service.d"
