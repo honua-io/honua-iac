@@ -11,6 +11,11 @@
       "applied": false,
       "state_key": "bootstrap/aws-build-host/terraform.tfstate"
     },
+    "aws-light-runners": {
+      "applied": false,
+      "state_key": "bootstrap/aws-light-runners/terraform.tfstate",
+      "note": "Operator-applied like aws-build-host and aws-lane-host: inputs live in SSM /honua/gate-runners/tfvars and the App key is read ephemerally, so the nightly plan cannot reproduce them."
+    },
     "aws-lane-host": {
       "applied": false,
       "state_key": "bootstrap/aws-lane-host/terraform.tfstate"
