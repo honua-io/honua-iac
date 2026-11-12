@@ -8,7 +8,9 @@ name: Bootstrap Drift Plan
 # from trunk unseen. infrastructure/terraform/bootstrap/drift-roots.json lists
 # every root under bootstrap/: applied roots are planned against their state
 # with their recorded inputs; the others must have no state object, or (for a
-# destroyed root) a state object that holds no resources.
+# destroyed root) a state object that holds no resources. Operator roots keep
+# their inputs in SSM and need reads this role lacks: CI checks only that their
+# state exists, and scripts/bootstrap-drift-operator.sh plans them.
 # scripts/bootstrap-drift-roots.py fails CI when a root is not listed.
 #
 # Result contract:
@@ -144,15 +146,27 @@ jobs:
           printf 'clean\n' > "drift-report/$ROOT.status"
           printf '### bootstrap/%s: not applied, no state\n' "$ROOT" > "drift-report/$ROOT.md"
 
+      - name: Operator root has state (its plan runs on the operator's machine)
+        if: ${{ matrix.operator }}
+        run: |
+          set -euo pipefail
+          key="$(python3 scripts/bootstrap-drift-roots.py --get "$ROOT" state_key)"
+          if ! aws s3api head-object --bucket "$STATE_BUCKET" --key "$key" >/dev/null; then
+            echo "::error::$ROOT is recorded as operator-applied, but its state object $key cannot be read."
+            exit 1
+          fi
+          printf 'clean\n' > "drift-report/$ROOT.status"
+          printf '### bootstrap/%s: operator-applied, planned by scripts/bootstrap-drift-operator.sh\n' "$ROOT" > "drift-report/$ROOT.md"
+
       - name: Setup Terraform
-        if: ${{ matrix.applied }}
+        if: ${{ matrix.applied && !matrix.operator }}
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
           terraform_wrapper: false
 
       - name: terraform init (remote state, read)
-        if: ${{ matrix.applied }}
+        if: ${{ matrix.applied && !matrix.operator }}
         run: |
           set -euo pipefail
           key="$(python3 scripts/bootstrap-drift-roots.py --get "$ROOT" state_key)"
@@ -167,7 +181,7 @@ jobs:
             -backend-config="use_lockfile=true"
 
       - name: terraform plan (read-only, never applied)
-        if: ${{ matrix.applied }}
+        if: ${{ matrix.applied && !matrix.operator }}
         run: |
           set -euo pipefail
           python3 scripts/bootstrap-drift-roots.py --tfvars "$ROOT" "$ACCOUNT_ID" "$STATE_BUCKET" > "$RUNNER_TEMP/drift.tfvars.json"
@@ -183,7 +197,7 @@ jobs:
           fi
 
       - name: Classify and report
-        if: ${{ matrix.applied }}
+        if: ${{ matrix.applied && !matrix.operator }}
         run: |
           set -euo pipefail
           terraform -chdir="$ROOT_DIR" show -json "$RUNNER_TEMP/drift.tfplan" > "$RUNNER_TEMP/plan.json"

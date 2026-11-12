@@ -183,6 +183,7 @@ jobs:
             "infrastructure/terraform/bootstrap/aws-build-host"
             "infrastructure/terraform/bootstrap/aws-lane-host"
             "infrastructure/terraform/bootstrap/aws-ci-events"
+            "infrastructure/terraform/bootstrap/aws-audit"
             "infrastructure/terraform/bootstrap/aws-light-runners"
             "infrastructure/terraform/bootstrap/aws-release-cells"
             "infrastructure/terraform/bootstrap/aws-validation-reaper"
@@ -238,6 +239,8 @@ jobs:
             terraform -chdir="$root" validate -no-color
             echo "::endgroup::"
           done
+
+          terraform -chdir=infrastructure/terraform/bootstrap/aws-audit test -no-color
 
       # Needs the provider schema and the nested modules those inits installed.
       # Confirms every committed deploy-identity manifest still covers the

@@ -186,6 +186,24 @@ class RootCoverage(unittest.TestCase):
             manifest = {'state_key_prefix': 'bootstrap/', 'roots': {'aws-a': {'applied': True, 'vars': {}, 'state_key': 'demo/x.tfstate'}}}
             self.assertTrue(roots.problems(manifest, base))
 
+    def test_operator_root_needs_an_ssm_source_and_no_vars(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            (base / 'aws-a').mkdir()
+            (base / 'aws-a' / 'main.tf').write_text('')
+            entry = {'applied': True, 'state_key': 'bootstrap/aws-a/terraform.tfstate',
+                     'operator': {'tfvars_parameter': '/honua/a/tfvars', 'region': 'eu-north-1'}}
+            manifest = {'state_key_prefix': 'bootstrap/', 'roots': {'aws-a': entry}}
+            self.assertEqual(roots.problems(manifest, base), [])
+            for broken in ({'applied': False}, {'vars': {}}, {'operator': {'region': 'eu-north-1'}}):
+                manifest['roots']['aws-a'] = {**entry, **broken}
+                self.assertTrue(roots.problems(manifest, base), broken)
+
+    def test_operator_roots_are_never_planned_in_ci(self):
+        for name in ('Setup Terraform', 'terraform init', 'terraform plan', 'Classify and report'):
+            self.assertIn('!matrix.operator', step('plan', name)['if'])
+        self.assertEqual(step('plan', 'Operator root has state')['if'], '${{ matrix.operator }}')
+
     def test_inputs_render_account_and_bucket(self):
         rendered = roots.render(roots.load_manifest()['roots']['aws-drift-plan']['vars'], '123456789012', 'bucket-x')
         self.assertEqual(rendered['state_bucket_name'], 'bucket-x')
