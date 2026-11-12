@@ -23,7 +23,7 @@ def call(event_name, payload, key=KEY, sign_with=KEY, b64=False):
         body = base64.b64encode(raw).decode()
     ev = {"headers": {"X-Hub-Signature-256": sig, "X-GitHub-Event": event_name, "X-GitHub-Delivery": "d-1"},
           "body": body, "isBase64Encoded": b64, "requestContext": {"http": {"method": "POST"}}}
-    resp = h.handler(ev, send=sent.append, key=key)
+    resp = h.process(ev, lambda: key, lambda: b"", sent.append)
     return resp, [json.loads(s) for s in sent]
 
 
@@ -32,6 +32,10 @@ def run(conclusion="failure", action="completed", prs=None):
             "workflow_run": {"id": 9, "name": "PR Gate", "workflow_id": 55, "head_branch": "fix/x", "head_sha": "a" * 40,
                              "conclusion": conclusion, "html_url": "u", "updated_at": "2026-11-11T20:00:00Z",
                              "pull_requests": prs if prs is not None else [{"number": 7}]}}
+
+
+def process(ev):
+    return h.process(ev, lambda: KEY, lambda: b"", lambda body: None)
 
 
 class Signature(unittest.TestCase):
@@ -50,11 +54,20 @@ class Signature(unittest.TestCase):
     def test_non_ascii_signature_and_bad_base64(self):
         self.assertFalse(h.verify(b"x", "sha256=\u00e9", KEY))
         ev = {"headers": {}, "body": "!!notb64", "isBase64Encoded": True, "requestContext": {"http": {"method": "POST"}}}
-        self.assertEqual(h.handler(ev, key=KEY)["statusCode"], 400)
+        self.assertEqual(process(ev)["statusCode"], 400)
+
+    def test_rotated_secret_accepted(self):
+        raw = json.dumps(run()).encode()
+        sig = "sha256=" + hmac.new(b"old", raw, hashlib.sha256).hexdigest()
+        ev = {"headers": {"X-Hub-Signature-256": sig, "X-GitHub-Event": "workflow_run"}, "body": raw.decode(),
+              "requestContext": {"http": {"method": "POST"}}}
+        sent = []
+        resp = h.process(ev, lambda: KEY, lambda: b"old", sent.append)
+        self.assertEqual((resp["statusCode"], len(sent)), (202, 1))
 
     def test_get_rejected(self):
         ev = {"headers": {}, "body": "", "requestContext": {"http": {"method": "GET"}}}
-        self.assertEqual(h.handler(ev, key=KEY)["statusCode"], 405)
+        self.assertEqual(process(ev)["statusCode"], 405)
 
 
 class Filtering(unittest.TestCase):

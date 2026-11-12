@@ -189,7 +189,16 @@ def _response(code, text):
     return {"statusCode": code, "headers": {"content-type": "text/plain"}, "body": text}
 
 
-def handler(event, context=None, send=None, key=None):
+def handler(event, context=None):
+    """Lambda function URL entry point."""
+    return process(event, secret, rotated_secret, _send)
+
+
+def _verified(raw, sig, current, rotated):
+    return verify(raw, sig, current()) or verify(raw, sig, rotated())
+
+
+def process(event, current, rotated, send):
     headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
     body = event.get("body") or ""
     if (event.get("requestContext") or {}).get("http", {}).get("method", "POST") != "POST":
@@ -199,10 +208,7 @@ def handler(event, context=None, send=None, key=None):
     except (binascii.Error, ValueError):
         return _response(400, "bad body")
     sig = headers.get("x-hub-signature-256")
-    ok = verify(raw, sig, key if key is not None else secret())
-    if not ok and key is None:
-        ok = verify(raw, sig, rotated_secret())
-    if not ok:
+    if not _verified(raw, sig, current, rotated):
         return _response(401, "bad signature")
     name = headers.get("x-github-event", "")
     if name == "ping":
@@ -215,7 +221,7 @@ def handler(event, context=None, send=None, key=None):
     if msg is None:
         return _response(202, "dropped")
     msg = {k: v for k, v in msg.items() if v is not None}
-    (send or _send)(json.dumps(msg, separators=(",", ":")))
+    send(json.dumps(msg, separators=(",", ":")))
     return _response(202, "queued")
 
 
