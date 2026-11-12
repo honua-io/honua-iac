@@ -204,6 +204,24 @@ resource "aws_iam_role_policy" "lanes" {
   policy = data.aws_iam_policy_document.lanes.json
 }
 
+# ci-dispatch on this host long-polls the CI events queue (bootstrap/aws-ci-events) and deletes what it handled.
+# Receive and delete only, on that one queue; set ci_events_queue_arn from that root's queue_arn output.
+data "aws_iam_policy_document" "ci_events" {
+  count = var.ci_events_queue_arn == "" ? 0 : 1
+  statement {
+    sid       = "ConsumeCiEvents"
+    actions   = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"]
+    resources = [var.ci_events_queue_arn]
+  }
+}
+
+resource "aws_iam_role_policy" "ci_events" {
+  count  = var.ci_events_queue_arn == "" ? 0 : 1
+  name   = "ci-events-consume"
+  role   = aws_iam_role.lanes.id
+  policy = data.aws_iam_policy_document.ci_events[0].json
+}
+
 # The build host admits SSH only from listed CIDRs. This rule admits the lane host's fixed address;
 # list the same address in the build host's allowed_ssh_cidrs, or its next apply removes this rule.
 data "aws_security_group" "build_host" {

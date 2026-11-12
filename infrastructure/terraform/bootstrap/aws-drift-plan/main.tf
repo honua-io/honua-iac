@@ -111,15 +111,29 @@ locals {
     "sns:ListTagsForResource",
   ]
 
-  # The bootstrap roots in this account manage IAM only (aws-demo-deploy also
-  # looks up the demo's public hosted zone by name).
+  # The bootstrap roots in this account manage IAM (aws-demo-deploy also looks
+  # up the demo's public hosted zone by name; aws-ci-events adds an SQS queue,
+  # a Lambda function URL and its log group).
   bootstrap_control_plane_reads = [
     "iam:Get*",
     "iam:List*",
+    "lambda:GetFunction",
+    "lambda:GetFunctionCodeSigningConfig",
+    "lambda:GetFunctionConfiguration",
+    "lambda:GetFunctionUrlConfig",
+    "lambda:GetPolicy",
+    "lambda:ListTags",
+    "lambda:ListVersionsByFunction",
+    "logs:DescribeLogGroups",
+    "logs:ListTagsForResource",
+    "logs:ListTagsLogGroup",
     "route53:GetHostedZone",
     "route53:ListHostedZones",
     "route53:ListHostedZonesByName",
     "route53:ListTagsForResource",
+    "sqs:GetQueueAttributes",
+    "sqs:GetQueueUrl",
+    "sqs:ListQueueTags",
   ]
 
   state_object_actions = ["s3:GetObject"]
@@ -149,6 +163,7 @@ locals {
       reads       = concat(local.demo_control_plane_reads, local.s3_bucket_reads)
       object_arns = local.demo_readable_object_arns
       secrets     = true
+      lambda_env  = { region = var.demo_region, function_prefix = var.demo_function_name_prefix }
     }
     iac_bootstrap = {
       role_name   = "honua-iac-bootstrap-drift-gha"
@@ -160,6 +175,7 @@ locals {
       reads       = local.bootstrap_control_plane_reads
       object_arns = []
       secrets     = false
+      lambda_env  = { region = var.bootstrap_lambda_region, function_prefix = var.bootstrap_function_name_prefix }
     }
   }
 }
@@ -241,7 +257,8 @@ data "aws_iam_policy_document" "plan_only" {
   # every Lambda environment read back as null). The keys are the AWS managed
   # aws/secretsmanager and aws/lambda keys, whose key policies already allow any
   # account principal via the service, so IAM is the only gate. Each grant is
-  # bound to its service and to the demo's own secrets and functions through the
+  # bound to its service and to the role's own secrets and functions (each role's
+  # lambda_env: the demo's, or aws-ci-events' for the bootstrap role) through the
   # encryption context.
   dynamic "statement" {
     for_each = each.value.secrets ? [1] : []
@@ -264,21 +281,21 @@ data "aws_iam_policy_document" "plan_only" {
   }
 
   dynamic "statement" {
-    for_each = each.value.secrets ? [1] : []
+    for_each = each.value.lambda_env != null ? [1] : []
     content {
-      sid       = "DecryptDemoLambdaEnvironmentViaLambda"
+      sid       = "DecryptLambdaEnvironmentViaLambda"
       effect    = "Allow"
       actions   = ["kms:Decrypt"]
-      resources = ["arn:aws:kms:${var.demo_region}:${local.account_id}:key/*"]
+      resources = ["arn:aws:kms:${each.value.lambda_env.region}:${local.account_id}:key/*"]
       condition {
         test     = "StringEquals"
         variable = "kms:ViaService"
-        values   = ["lambda.${var.demo_region}.amazonaws.com"]
+        values   = ["lambda.${each.value.lambda_env.region}.amazonaws.com"]
       }
       condition {
         test     = "StringLike"
         variable = "kms:EncryptionContext:aws:lambda:FunctionArn"
-        values   = ["arn:aws:lambda:${var.demo_region}:${local.account_id}:function:${var.demo_function_name_prefix}*"]
+        values   = ["arn:aws:lambda:${each.value.lambda_env.region}:${local.account_id}:function:${each.value.lambda_env.function_prefix}*"]
       }
     }
   }
@@ -303,7 +320,8 @@ data "aws_iam_policy_document" "plan_only" {
       local.state_object_actions,
       local.lock_object_actions,
       length(each.value.object_arns) > 0 ? local.demo_object_reads : [],
-      each.value.secrets ? ["secretsmanager:GetSecretValue", "kms:Decrypt"] : [],
+      each.value.secrets ? ["secretsmanager:GetSecretValue"] : [],
+      each.value.secrets || each.value.lambda_env != null ? ["kms:Decrypt"] : [],
     ))
     resources = ["*"]
   }
@@ -311,9 +329,9 @@ data "aws_iam_policy_document" "plan_only" {
   # The AWS managed keys' policies allow Decrypt to every account principal via
   # their service, so an IAM Allow alone would not bound it: without these
   # denies the role could read any function's environment (lambda:Get* is
-  # account-wide). Decrypt stays limited to the demo's secrets and functions.
+  # account-wide). Decrypt stays limited to each role's own secrets and functions.
   dynamic "statement" {
-    for_each = each.value.secrets ? [1] : []
+    for_each = each.value.secrets || each.value.lambda_env != null ? [1] : []
     content {
       sid       = "DenyDecryptOutsideSecretsManagerAndLambda"
       effect    = "Deny"
@@ -322,7 +340,10 @@ data "aws_iam_policy_document" "plan_only" {
       condition {
         test     = "StringNotEquals"
         variable = "kms:ViaService"
-        values   = ["secretsmanager.${var.demo_region}.amazonaws.com", "lambda.${var.demo_region}.amazonaws.com"]
+        values = concat(
+          each.value.secrets ? ["secretsmanager.${var.demo_region}.amazonaws.com"] : [],
+          each.value.lambda_env != null ? ["lambda.${each.value.lambda_env.region}.amazonaws.com"] : [],
+        )
       }
     }
   }
@@ -348,7 +369,7 @@ data "aws_iam_policy_document" "plan_only" {
   }
 
   dynamic "statement" {
-    for_each = each.value.secrets ? [1] : []
+    for_each = each.value.lambda_env != null ? [1] : []
     content {
       sid       = "DenyDecryptOfOtherFunctionEnvironments"
       effect    = "Deny"
@@ -357,12 +378,12 @@ data "aws_iam_policy_document" "plan_only" {
       condition {
         test     = "StringEquals"
         variable = "kms:ViaService"
-        values   = ["lambda.${var.demo_region}.amazonaws.com"]
+        values   = ["lambda.${each.value.lambda_env.region}.amazonaws.com"]
       }
       condition {
         test     = "StringNotLike"
         variable = "kms:EncryptionContext:aws:lambda:FunctionArn"
-        values   = ["arn:aws:lambda:${var.demo_region}:${local.account_id}:function:${var.demo_function_name_prefix}*"]
+        values   = ["arn:aws:lambda:${each.value.lambda_env.region}:${local.account_id}:function:${each.value.lambda_env.function_prefix}*"]
       }
     }
   }

@@ -182,6 +182,7 @@ jobs:
             "infrastructure/terraform/bootstrap/aws-eval-docker-hosts"
             "infrastructure/terraform/bootstrap/aws-build-host"
             "infrastructure/terraform/bootstrap/aws-lane-host"
+            "infrastructure/terraform/bootstrap/aws-ci-events"
             "infrastructure/terraform/bootstrap/aws-light-runners"
             "infrastructure/terraform/bootstrap/aws-release-cells"
             "infrastructure/terraform/bootstrap/aws-validation-reaper"
@@ -351,6 +352,8 @@ jobs:
           terraform -chdir=infrastructure/terraform/bootstrap/aws-build-host test -no-color
           python3 -m unittest discover -s infrastructure/terraform/bootstrap/aws-build-host/tests -p 'test_*.py'
           terraform -chdir=infrastructure/terraform/bootstrap/aws-lane-host test -no-color
+          terraform -chdir=infrastructure/terraform/bootstrap/aws-ci-events test -no-color
+          python3 -m unittest discover -s infrastructure/terraform/bootstrap/aws-ci-events/lambda -p 'test_*.py'
           terraform -chdir=infrastructure/terraform/components/operator-host-access test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-release-cells test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-validation-reaper test -no-color

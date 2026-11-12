@@ -87,7 +87,7 @@ run "allows_are_reads_plus_lock_files" {
           for a in flatten([try(s.Action, [])]) :
           can(regex("^[a-z0-9-]+:(Get|List|Describe|View|GET)", a)) ||
           (contains(["s3:PutObject", "s3:DeleteObject"], a) && try(s.Sid, "") == "StateLockOnly") ||
-          (a == "kms:Decrypt" && contains(["DecryptManagedSecretsViaSecretsManager", "DecryptDemoLambdaEnvironmentViaLambda"], try(s.Sid, "")))
+          (a == "kms:Decrypt" && contains(["DecryptManagedSecretsViaSecretsManager", "DecryptLambdaEnvironmentViaLambda"], try(s.Sid, "")))
         ] if s.Effect == "Allow"
       ]
     ]))
@@ -213,7 +213,7 @@ run "demo_role_can_decrypt_only_through_its_services" {
   }
 
   assert {
-    condition = one([for s in jsondecode(data.aws_iam_policy_document.plan_only["demo_infra"].json).Statement : s if try(s.Sid, "") == "DecryptDemoLambdaEnvironmentViaLambda"]).Condition == {
+    condition = one([for s in jsondecode(data.aws_iam_policy_document.plan_only["demo_infra"].json).Statement : s if try(s.Sid, "") == "DecryptLambdaEnvironmentViaLambda"]).Condition == {
       StringEquals = { "kms:ViaService" = "lambda.us-west-2.amazonaws.com" }
       StringLike   = { "kms:EncryptionContext:aws:lambda:FunctionArn" = "arn:aws:lambda:us-west-2:123456789012:function:honua-demo-demo-*" }
     }
@@ -228,8 +228,33 @@ run "demo_role_can_decrypt_only_through_its_services" {
     error_message = "The managed keys' policies allow Decrypt to every account principal via their service; explicit denies must bound it to the demo's secrets and functions."
   }
 
+  # aws-ci-events: the receiver's Lambda environment reads back as null (drift every night) unless the
+  # bootstrap role may decrypt it; the grant is bound to Lambda in eu-north-1 and honua-ci-events* functions.
   assert {
-    condition     = !contains(flatten([one([for s in jsondecode(data.aws_iam_policy_document.plan_only["iac_bootstrap"].json).Statement : s if try(s.Sid, "") == "DenyEverythingElse"]).NotAction]), "kms:Decrypt")
-    error_message = "The bootstrap role reads no secrets and must keep kms:Decrypt denied."
+    condition = one([for s in jsondecode(data.aws_iam_policy_document.plan_only["iac_bootstrap"].json).Statement : s if try(s.Sid, "") == "DecryptLambdaEnvironmentViaLambda"]).Condition == {
+      StringEquals = { "kms:ViaService" = "lambda.eu-north-1.amazonaws.com" }
+      StringLike   = { "kms:EncryptionContext:aws:lambda:FunctionArn" = "arn:aws:lambda:eu-north-1:123456789012:function:honua-ci-events*" }
+    }
+    error_message = "The bootstrap role decrypts only honua-ci-events* Lambda environments, via Lambda in eu-north-1."
+  }
+
+  assert {
+    condition = alltrue([
+      for sid in ["DenyDecryptOutsideSecretsManagerAndLambda", "DenyDecryptOfOtherFunctionEnvironments"] :
+      length([for s in jsondecode(data.aws_iam_policy_document.plan_only["iac_bootstrap"].json).Statement : s if try(s.Sid, "") == sid && s.Effect == "Deny"]) == 1
+    ])
+    error_message = "The bootstrap role's kms:Decrypt must be bounded by explicit denies to Lambda and its own functions."
+  }
+
+  assert {
+    condition = one([for s in jsondecode(data.aws_iam_policy_document.plan_only["iac_bootstrap"].json).Statement : s if try(s.Sid, "") == "DenyDecryptOutsideSecretsManagerAndLambda"]).Condition == {
+      StringNotEquals = { "kms:ViaService" = "lambda.eu-north-1.amazonaws.com" }
+    }
+    error_message = "The bootstrap role reads no secrets: kms:Decrypt is denied outside Lambda."
+  }
+
+  assert {
+    condition     = length([for s in jsondecode(data.aws_iam_policy_document.plan_only["iac_bootstrap"].json).Statement : s if try(s.Sid, "") == "DenyDecryptOfOtherSecrets"]) == 0 && !contains(flatten([one([for s in jsondecode(data.aws_iam_policy_document.plan_only["iac_bootstrap"].json).Statement : s if try(s.Sid, "") == "DenyEverythingElse"]).NotAction]), "secretsmanager:GetSecretValue")
+    error_message = "The bootstrap role reads no secret values."
   }
 }

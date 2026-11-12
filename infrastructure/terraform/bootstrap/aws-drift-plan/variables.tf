@@ -113,6 +113,18 @@ variable "iac_bootstrap_oidc_subjects" {
   }
 }
 
+variable "bootstrap_lambda_region" {
+  description = "Region of the bootstrap roots' Lambda functions (aws-ci-events)."
+  type        = string
+  default     = "eu-north-1"
+}
+
+variable "bootstrap_function_name_prefix" {
+  description = "Name prefix of the bootstrap roots' Lambda functions. Refresh reads their environment, which Lambda decrypts with kms:Decrypt on the caller's behalf."
+  type        = string
+  default     = "honua-ci-events"
+}
+
 variable "bootstrap_state_key_prefix" {
   description = "State keys of the honua-iac bootstrap roots."
   type        = string
