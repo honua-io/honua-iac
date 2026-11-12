@@ -15,6 +15,15 @@ def render(raw):
     prefix = '''
 : "${HONUA_ROOTLESS_CANARY_CONFIG:?root-owned canary configuration required}"
 [ -z "${DOCKERD_ROOTLESS_ROOTLESSKIT_FLAGS:-}" ] || exit 1
+: "${DOCKERD_ROOTLESS_ROOTLESSKIT_STATE_DIR:=${XDG_RUNTIME_DIR:?}/dockerd-rootless}"
+case "$DOCKERD_ROOTLESS_ROOTLESSKIT_STATE_DIR" in
+  /run/user/*/dockerd-rootless) ;;
+  *) exit 1 ;;
+esac
+canary_runtime_uid=${DOCKERD_ROOTLESS_ROOTLESSKIT_STATE_DIR#/run/user/}
+canary_runtime_uid=${canary_runtime_uid%/dockerd-rootless}
+case "$canary_runtime_uid" in ''|*[!0-9]*) exit 1 ;; esac
+export DOCKERD_ROOTLESS_ROOTLESSKIT_STATE_DIR
 case "${_DOCKERD_ROOTLESS_CHILD:-}:${DOCKERD:-}" in
   :|1:/opt/honua-rootless-canary/dockerd-wrapper) ;;
   *) exit 1 ;;
@@ -30,6 +39,8 @@ export DOCKERD_ROOTLESS_ROOTLESSKIT_FLAGS=
 export DOCKERD=/opt/honua-rootless-canary/dockerd-wrapper
 '''
     source = source.replace('set -e -x\n', 'set -e\n' + prefix, 1)
+    source = source.replace('--state-dir=$DOCKERD_ROOTLESS_ROOTLESSKIT_STATE_DIR',
+                            '--state-dir="$DOCKERD_ROOTLESS_ROOTLESSKIT_STATE_DIR"', 1)
     marker = '\t[ "$_DOCKERD_ROOTLESS_CHILD" = 1 ]\n'
     source = source.replace(marker, marker + f'\tpython3 {GUARD}\n', 1)
     source = source.replace('\tnsenter -n"$netns" sysctl', f'\tpython3 {GUARD}\n\tnsenter -n"$netns" sysctl')

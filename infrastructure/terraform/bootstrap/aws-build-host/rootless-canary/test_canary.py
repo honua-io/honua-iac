@@ -91,6 +91,21 @@ class AdmissionTests(unittest.TestCase):
                 admission.drain(host, 2)
         self.assertTrue(host.excluded)
 
+    def test_snapshot_pins_registration_host_despite_cli_environment(self):
+        host = object.__new__(admission.Host)
+        host.unit, host.org, host.prefix = 'runner.service', 'honua-io', 'i-12345678-1-'
+        host.uid, host.subordinate, host.index = 1001, (200000, 65536), 1
+        properties = 'ActiveState=inactive\nMainPID=0\nJob=\nLoadState=masked'
+        pages = '[{"runners":[{"id":42,"name":"i-12345678-1-123"}]}]'
+        with patch.dict(os.environ, GH_HOST='other.example'):
+            with patch.object(admission, 'command', side_effect=[properties, pages]) as command:
+                with patch.object(admission, 'account_processes', return_value=[]):
+                    snapshot = host.snapshot()
+        self.assertEqual([42], snapshot['registered'])
+        self.assertEqual(call('gh', 'api', '--hostname', 'github.com', '--paginate', '--slurp',
+                              '/orgs/honua-io/actions/runners?per_page=100'),
+                         command.call_args_list[1])
+
     def test_exclusion_uses_no_stop_now_or_kill(self):
         host = object.__new__(admission.Host)
         host.unit = 'honua-gate-runner@1.service'
@@ -110,6 +125,32 @@ class StartupTests(unittest.TestCase):
         subprocess.run(['sh', '-n'], input=source, text=True, check=True)
         self.assertLess(source.index('python3 ' + prepare.GUARD), source.index('rm -f /run/docker'))
         self.assertEqual(3, source.count('python3 ' + prepare.GUARD))
+
+    def test_state_directory_injection_rejected_before_startup(self):
+        source = prepare.render(self.upstream)
+        for state in ('canary-state -- /usr/bin/true',
+                      '/run/user/1001/dockerd-rootless --detach-netns',
+                      '/run/user/../dockerd-rootless', '/tmp/canary',
+                      '/run/user/1001*/dockerd-rootless'):
+            environment = dict(os.environ, HONUA_ROOTLESS_CANARY_CONFIG='/missing',
+                               DOCKERD_ROOTLESS_ROOTLESSKIT_FLAGS='', DOCKERD='',
+                               DOCKERD_ROOTLESS_ROOTLESSKIT_STATE_DIR=state)
+            result = subprocess.run(['sh', '-s'], input=source, text=True, env=environment,
+                                    capture_output=True)
+            self.assertNotEqual(0, result.returncode)
+            self.assertEqual('', result.stdout)
+
+    def test_state_directory_is_constrained_and_quoted(self):
+        source = prepare.render(self.upstream)
+        self.assertIn('--state-dir="$DOCKERD_ROOTLESS_ROOTLESSKIT_STATE_DIR"', source)
+        prefix = source.split('export DOCKERD=/opt/honua-rootless-canary/dockerd-wrapper')[0]
+        environment = dict(os.environ, HONUA_ROOTLESS_CANARY_CONFIG='/missing',
+                           DOCKERD_ROOTLESS_ROOTLESSKIT_FLAGS='', DOCKERD='',
+                           DOCKERD_ROOTLESS_ROOTLESSKIT_STATE_DIR='', XDG_RUNTIME_DIR='/run/user/1001')
+        result = subprocess.run(['sh', '-s'], input=prefix + '\nprintf "%s" "$DOCKERD_ROOTLESS_ROOTLESSKIT_STATE_DIR"',
+                                text=True, env=environment, capture_output=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual('/run/user/1001/dockerd-rootless', result.stdout)
 
     def test_tampered_source_rejected(self):
         with self.assertRaises(ValueError):

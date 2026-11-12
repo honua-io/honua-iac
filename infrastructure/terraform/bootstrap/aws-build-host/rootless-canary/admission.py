@@ -63,7 +63,7 @@ class Host:
         properties = command('systemctl', 'show', self.unit,
                              '-p', 'ActiveState', '-p', 'MainPID', '-p', 'Job', '-p', 'LoadState')
         state = dict(line.split('=', 1) for line in properties.splitlines())
-        groups = json.loads(command('gh', 'api', '--paginate', '--slurp',
+        groups = json.loads(command('gh', 'api', '--hostname', 'github.com', '--paginate', '--slurp',
                                     f'/orgs/{self.org}/actions/runners?per_page=100'))
         registered = [r['id'] for page in groups for r in page['runners']
                       if r['name'].startswith(self.prefix)]

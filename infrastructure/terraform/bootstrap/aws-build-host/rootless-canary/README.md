@@ -137,3 +137,7 @@ Run via the existing build-host shim and durable lane-driver:
 infrastructure/terraform/bootstrap/aws-build-host/rootless-canary -p test_canary.py -v`.
 Tests use temporary files/mocked host operations; no host service or namespace
 changes occur. Independent exact-head review remains required separately.
+
+The generated startup constrains RootlessKit state to `/run/user/<numeric UID>/dockerd-rootless`
+and quotes the state-directory argument. The admission query pins `github.com` even
+when an operator shell exports a conflicting `GH_HOST`. Both have regression tests.
