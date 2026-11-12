@@ -12,9 +12,9 @@
       "state_key": "bootstrap/aws-build-host/terraform.tfstate"
     },
     "aws-ci-events": {
-      "applied": false,
+      "applied": true,
       "state_key": "bootstrap/aws-ci-events/terraform.tfstate",
-      "note": "Operator-applied (11 Nov). The drift role reads IAM and Route 53 only for bootstrap roots; this root also needs SQS, Lambda and CloudWatch Logs reads before the nightly plan can cover it."
+      "vars": {}
     },
     "aws-light-runners": {
       "applied": false,

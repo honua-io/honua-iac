@@ -111,15 +111,29 @@ locals {
     "sns:ListTagsForResource",
   ]
 
-  # The bootstrap roots in this account manage IAM only (aws-demo-deploy also
-  # looks up the demo's public hosted zone by name).
+  # The bootstrap roots in this account manage IAM (aws-demo-deploy also looks
+  # up the demo's public hosted zone by name; aws-ci-events adds an SQS queue,
+  # a Lambda function URL and its log group).
   bootstrap_control_plane_reads = [
     "iam:Get*",
     "iam:List*",
+    "lambda:GetFunction",
+    "lambda:GetFunctionCodeSigningConfig",
+    "lambda:GetFunctionConfiguration",
+    "lambda:GetFunctionUrlConfig",
+    "lambda:GetPolicy",
+    "lambda:ListTags",
+    "lambda:ListVersionsByFunction",
+    "logs:DescribeLogGroups",
+    "logs:ListTagsForResource",
+    "logs:ListTagsLogGroup",
     "route53:GetHostedZone",
     "route53:ListHostedZones",
     "route53:ListHostedZonesByName",
     "route53:ListTagsForResource",
+    "sqs:GetQueueAttributes",
+    "sqs:GetQueueUrl",
+    "sqs:ListQueueTags",
   ]
 
   state_object_actions = ["s3:GetObject"]

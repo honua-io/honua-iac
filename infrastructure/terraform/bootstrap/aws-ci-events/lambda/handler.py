@@ -77,13 +77,15 @@ def _workflow_run(base, payload):
 
 
 def _external_check(base, payload):
-    """check_item / check_suite from apps other than GitHub Actions (Actions checks arrive as workflow_item)."""
+    """check_run / check_suite from apps other than GitHub Actions (Actions checks arrive as workflow_run)."""
     item = payload[base["type"]]
     app = item.get("app") or {}
     if (base["action"] != "completed" or app.get("slug") == "github-actions"
             or item.get("conclusion") not in KEEP_CONCLUSIONS):
         return None
     branch = item.get("head_branch") or (item.get("check_suite") or {}).get("head_branch")
+    if not item.get("pull_requests") and branch != base["default_branch"]:
+        return None  # fork PR checks carry no PR and a fork branch name; ci-dispatch checks default-branch SHAs
     return dict(base, pr=_pr_number(item.get("pull_requests")), branch=branch, sha=item.get("head_sha"),
                 check=item.get("name") or app.get("name"), check_id=None, run_id=None,
                 conclusion=item.get("conclusion"), url=item.get("html_url") or item.get("details_url"),
@@ -123,10 +125,13 @@ def _pull_request(base, payload):
                 merged=bool(pr.get("merged")), at=pr.get("updated_at"))
 
 
+def _last_thread_comment(payload):
+    return ((payload.get("thread") or {}).get("comments") or [{}])[-1]
+
+
 def _trusted_author(payload):
     """A stranger's text must never reach a fixer: trusted authors or GitHub Apps only. Returns the association."""
-    thread_last = ((payload.get("thread") or {}).get("comments") or [{}])[-1]
-    item = payload.get("review") or payload.get("comment") or thread_last
+    item = payload.get("review") or payload.get("comment") or _last_thread_comment(payload)
     login = ((item.get("user") or {}).get("login")) or ""
     association = item.get("author_association")
     return association if association in TRUSTED or login.endswith("[bot]") else None
@@ -154,7 +159,7 @@ def _review_comment(base, payload):
 def _review_thread(base, payload):
     if base["action"] != "unresolved":
         return None
-    last = ((payload.get("thread") or {}).get("comments") or [{}])[-1]
+    last = _last_thread_comment(payload)
     return dict(base, **_pr_fields(payload), type="review_comment", comment_id=last.get("id"), url=last.get("html_url"),
                 at=last.get("updated_at"))
 
@@ -201,12 +206,12 @@ def _response(code, text):
     return {"statusCode": code, "headers": {"content-type": "text/plain"}, "body": text}
 
 
-Deps = collections.namedtuple("Deps", "current rotated send")  # secret readers and the SQS sender
+Dependencies = collections.namedtuple("Dependencies", "current rotated send")  # secret readers and the SQS sender
 
 
 def handler(event, context=None):
     """Lambda function URL entry point."""
-    return process(event, Deps(secret, rotated_secret, _send))
+    return process(event, Dependencies(secret, rotated_secret, _send))
 
 
 def _verified(raw, sig, deps):

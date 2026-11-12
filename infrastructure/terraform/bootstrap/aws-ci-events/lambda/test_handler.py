@@ -25,7 +25,7 @@ def call(event_name, payload, options=None):
     body = base64.b64encode(raw).decode() if encoded else raw.decode()
     ev = {"headers": {"X-Hub-Signature-256": sig, "X-GitHub-Event": event_name, "X-GitHub-Delivery": "d-1"},
           "body": body, "isBase64Encoded": encoded, "requestContext": {"http": {"method": "POST"}}}
-    resp = receiver.process(ev, receiver.Deps(lambda: opts["key"], lambda: b"", sent.append))
+    resp = receiver.process(ev, receiver.Dependencies(lambda: opts["key"], lambda: b"", sent.append))
     return resp, [json.loads(s) for s in sent]
 
 
@@ -38,7 +38,7 @@ def run(conclusion="failure", action="completed", prs=None):
 
 
 def process(ev):
-    return receiver.process(ev, receiver.Deps(lambda: KEY, lambda: b"", lambda body: None))
+    return receiver.process(ev, receiver.Dependencies(lambda: KEY, lambda: b"", lambda body: None))
 
 
 class Signature(unittest.TestCase):
@@ -65,7 +65,7 @@ class Signature(unittest.TestCase):
         ev = {"headers": {"X-Hub-Signature-256": sig, "X-GitHub-Event": "workflow_run"}, "body": raw.decode(),
               "requestContext": {"http": {"method": "POST"}}}
         sent = []
-        resp = receiver.process(ev, receiver.Deps(lambda: KEY, lambda: b"old", sent.append))
+        resp = receiver.process(ev, receiver.Dependencies(lambda: KEY, lambda: b"old", sent.append))
         self.assertEqual((resp["statusCode"], len(sent)), (202, 1))
 
     def test_get_rejected(self):
@@ -92,13 +92,17 @@ class Filtering(unittest.TestCase):
         self.assertEqual(call("workflow_run", fork)[1], [])
 
     def test_actions_check_runs_dropped_external_kept(self):
-        cr = {"action": "completed", "repository": REPO, "check_run": {"name": "ext", "head_sha": "a" * 40,
-              "conclusion": "failure", "app": {"slug": "github-actions"}, "pull_requests": [{"number": 7}],
-              "check_suite": {"head_branch": "fix/x"}}}
-        self.assertEqual(call("check_run", cr)[0]["body"], "dropped")
-        cr["check_run"]["app"] = {"slug": "codecov"}
-        resp, sent = call("check_run", cr)
+        check_run_event = {"action": "completed", "repository": REPO, "check_run": {"name": "ext", "head_sha": "a" * 40,
+                           "conclusion": "failure", "app": {"slug": "github-actions"}, "pull_requests": [{"number": 7}],
+                           "check_suite": {"head_branch": "fix/x"}}}
+        self.assertEqual(call("check_run", check_run_event)[0]["body"], "dropped")
+        check_run_event["check_run"]["app"] = {"slug": "codecov"}
+        resp, sent = call("check_run", check_run_event)
         self.assertEqual((sent[0]["check"], sent[0]["branch"]), ("ext", "fix/x"))
+        check_run_event["check_run"]["pull_requests"] = []  # a fork PR's external check: no PR, a fork branch name
+        self.assertEqual(call("check_run", check_run_event)[1], [])
+        check_run_event["check_run"]["check_suite"]["head_branch"] = "trunk"  # kept; ci-dispatch checks the SHA is on trunk
+        self.assertEqual(call("check_run", check_run_event)[1][0]["branch"], "trunk")
 
     def test_status(self):
         st = {"repository": REPO, "state": "pending", "sha": "a" * 40, "context": "ci/x", "branches": [{"name": "fix/x"}]}

@@ -75,7 +75,7 @@ Unit tests: `python3 -m unittest discover -s lambda -p 'test_*.py'`; plan contra
    GitHub sends a `ping`; the receiver answers 200. `gh api orgs/honua-io/hooks/<id>/deliveries --jq '.[0:5][]|{event,status_code}'`
    shows recent deliveries.
 
-5. Leave `aws-ci-events` at `"applied": false` in `../drift-roots.json` until the drift role (`aws-drift-plan`) also gets SQS, Lambda and CloudWatch Logs reads; then flip it so the nightly drift plan covers it.
+5. `aws-ci-events` is `"applied": true` in `../drift-roots.json`; the nightly drift plan reads it with the SQS, Lambda and CloudWatch Logs reads `aws-drift-plan` grants bootstrap roots (apply `aws-drift-plan` first).
 
 ## Rotate the secret
 
