@@ -148,6 +148,46 @@ The runner version and checksum are pinned in `gate-runner.tf`; ephemeral runner
 also self-update if GitHub requires a newer version before the pin is bumped.
 
 
+## Heavy test-shard runners
+
+With `gate_runner_enabled`, `heavy_runner_count` (default 8, at most 8) adds runners for honua-server's server
+test shards with the same machinery and isolation as the PR Gate runners. They are
+labelled `self-hosted, linux, x64, honua-heavy`, join the organization runner group
+`honua-heavy` (create it like `honua-server-gate` above, limited to honua-server),
+and are numbered after the gate runners (`gate-runner-3` onwards with two gate
+runners). Each runner slice is capped at `heavy_runner_cpu_quota_percent` (default
+800) and `heavy_runner_memory_max_gib` (default 16, a hosted runner's memory); eight
+runners at the defaults leave 32 of 96 vCPUs for lane builds. The heartbeat counts
+only gate runners, so heavy jobs never change the PR Gate's compute choice.
+
+- **Workspace cleanup.** When a job ends, the service stops the account's rootless
+  Docker and empties its home, including `runner/_work`, images and volumes. The
+  next start restores the pristine home before registering again.
+- **Disk guard.** Lane builds share the root volume. A runner registers for its next
+  job only while at least `runner_min_free_disk_gib` (default 40) is free, and
+  retries every 15 seconds otherwise.
+- **Routing.** honua-server sends part of its shard matrix to these runners when the
+  repository variable `HONUA_HEAVY_RUNNER` holds the runner JSON
+  (`{"group":"honua-heavy","labels":["honua-heavy"]}`); unset, every shard runs
+  hosted. Fork pull requests always run hosted.
+
+Rolling these runners out does not need a new host. The installer is idempotent:
+it skips prerequisites already installed for the pinned runner version, provisions
+only missing accounts and rewrites every runner's limits, so rerunning the applied
+launch template's runner bootstrap converges the running host without touching
+running jobs:
+
+```bash
+# After terraform apply, on the operator machine:
+aws ec2 describe-launch-template-versions --region "$BUILD_REGION" \
+  --launch-template-name "$(aws autoscaling describe-auto-scaling-groups --region "$BUILD_REGION" \
+    --auto-scaling-group-names honua-lane-build-host \
+    --query 'AutoScalingGroups[0].MixedInstancesPolicy.LaunchTemplate.LaunchTemplateSpecification.LaunchTemplateName' --output text)" \
+  --versions '$Latest' --query 'LaunchTemplateVersions[0].LaunchTemplateData.UserData' --output text |
+  base64 -d | sed -n "s/^source <(base64 -d <<< '\(.*\)' | gunzip)$/\1/p" | base64 -d | gunzip > runner-bootstrap.sh
+ssh ubuntu@"$BUILD_HOST" 'sudo bash -c "apt_retry() { apt-get \"\$@\"; }; set -euo pipefail; source /dev/stdin"' < runner-bootstrap.sh
+```
+
 ### PR Gate tool and environment contract
 
 The three selected jobs (`pr-gate`, `fast-tests`, `format`) use the same image.
@@ -196,6 +236,4 @@ the operator applies and replaces the drained host, verify both services stay
 ready, then enable the repository selector and record a normal non-skipped PR
 run's job conclusions, `i-` runner names, execution and queue times. Compare build
 10–14 minutes, fast tests 6–12 minutes and format 8–21 minutes before expanding
-the runner workload. Two six-CPU/10-GiB runners already permit 12 CPU/20 GiB;
-adding a third exceeds a 16-CPU/32-GiB host before three lane builds and the OS.
-Keep affected shards hosted pending measured co-load CPU/memory and queue time.
+the runner workload. Server test shards use the heavy runners above, not these.

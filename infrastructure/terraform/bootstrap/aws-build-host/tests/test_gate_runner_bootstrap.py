@@ -117,6 +117,10 @@ register_for_one_job() { echo REGISTERED; }
                 self.assertEqual(result.returncode, 0, result.stderr)
 
 
+def deletions(requests):
+    return [request for request in requests if '/actions/runners/' in request and 'generate-jitconfig' not in request]
+
+
 class RunnerRegistrationTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -126,7 +130,10 @@ class RunnerRegistrationTests(unittest.TestCase):
         self.bin.mkdir()
         (self.bin / "jq").symlink_to(shutil.which("jq"))
         self.config = self.root / "config.json"
-        self.config.write_text(json.dumps({"org": "test-org", "group": "gate", "labels": ["honua-build"]}))
+        self.config.write_text(json.dumps({"org": "test-org", "runners": [
+            {"pool": "gate", "group": "gate", "labels": ["honua-build"]},
+            {"pool": "heavy", "group": "heavy", "labels": ["honua-heavy"]},
+        ]}))
         self.log = self.root / "requests"
         self.state = self.root / "state"
         self.state.mkdir()
@@ -134,7 +141,10 @@ class RunnerRegistrationTests(unittest.TestCase):
         # Authentication is unchanged; exercise lifecycle/API calls without live credentials.
         start = body.index('secrets="$(mktemp')
         end = body.index('\ncase "$mode" in', start)
-        body = body[:start] + 'secrets="$TEST_ROOT"; group_id=42\n' + body[end:]
+        body = body[:start] + (
+            'secrets="$TEST_ROOT"\n'
+            'group_id_named() { case "$1" in gate) echo 42 ;; heavy) [[ -n "${NO_HEAVY_GROUP:-}" ]] || echo 43 ;; esac; }\n'
+        ) + body[end:]
         body = body.replace('/etc/honua-gate-runner.json', str(self.config))
         body = body.replace('/run/honua-gate-runner-state', str(self.state))
         body = body.replace('/run/honua-gate-runner/', str(self.root / 'runtime') + '/')
@@ -158,19 +168,20 @@ if url.endswith('/latest/api/token'):
 if url.endswith('/latest/meta-data/instance-id'):
     print('i-abc123'); sys.exit(0)
 if url.endswith('/generate-jitconfig'):
+    (root / 'jit-request').write_text(args[args.index('-d') + 1])
     print(json.dumps({'runner': {'id': json.loads(os.environ.get('RUNNER_ID', '123'))},
                       'encoded_jit_config': 'test-jit'})); sys.exit(0)
-page = url.rsplit('page=', 1)[-1]
-print((root / ('page-' + page)).read_text())
+page = root / (('heavy-page-' if '/runner-groups/43/' in url else 'page-') + url.rsplit('page=', 1)[-1])
+print(page.read_text() if page.exists() else '{"runners": []}')
 """)
         curl.chmod(0o755)
 
     def runner(self, number, **overrides):
         return dict(id=number, name=f"i-abc123-1-{number}", status="offline", busy=False, **overrides)
 
-    def run_script(self, mode, **overrides):
+    def run_script(self, mode, index="1", **overrides):
         result = subprocess.run(
-            ["/bin/bash", str(self.script), mode, "1"],
+            ["/bin/bash", str(self.script), mode, index],
             env=dict(os.environ, PATH=f"{self.bin}:/usr/bin:/bin", TEST_ROOT=str(self.root), **overrides),
             text=True, capture_output=True, timeout=10,
         )
@@ -186,7 +197,7 @@ print((root / ('page-' + page)).read_text())
         result, requests = self.run_script("prune")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('/runner-groups/42/runners?', requests[0])
-        self.assertEqual(requests[1:], ['https://api.github.com/orgs/test-org/actions/runners/1'])
+        self.assertEqual(deletions(requests), ['https://api.github.com/orgs/test-org/actions/runners/1'])
 
     def test_collects_all_pages_before_deletion(self):
         self.page(1, [self.runner(1)] + [dict(self.runner(i), status="online") for i in range(2, 101)])
@@ -194,14 +205,14 @@ print((root / ('page-' + page)).read_text())
         result, requests = self.run_script("prune")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('page=2', requests[1])
-        self.assertEqual(len(requests), 4)
-        self.assertTrue(requests[-1].endswith('/101'))
+        self.assertEqual(deletions(requests), ['https://api.github.com/orgs/test-org/actions/runners/1',
+                                               'https://api.github.com/orgs/test-org/actions/runners/101'])
 
     def test_prune_delete_failure_does_not_block_other_cleanup(self):
         self.page(1, [self.runner(1), self.runner(2)])
         result, requests = self.run_script('prune', DELETE_STATUS='422')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue(requests[-1].endswith('/2'))
+        self.assertTrue(deletions(requests)[-1].endswith('/2'))
         self.assertIn('Could not remove offline runner', result.stderr)
 
     def test_register_records_id_and_installs_jitconfig(self):
@@ -210,6 +221,36 @@ print((root / ('page-' + page)).read_text())
         self.assertEqual((self.state / '1').read_text(), '123\n')
         self.assertEqual((self.root / 'runtime/1/jitconfig').read_text(), 'test-jit\n')
         self.assertTrue(requests[-1].endswith('/generate-jitconfig'))
+
+    def test_register_uses_its_own_pool_group_and_labels(self):
+        result, _ = self.run_script('register', index="2")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        request = json.loads((self.root / 'jit-request').read_text())
+        self.assertEqual(request["runner_group_id"], 43)
+        self.assertEqual(request["labels"], ["honua-heavy"])
+        self.assertTrue(request["name"].startswith("i-abc123-2-"))
+
+    def test_register_fails_when_its_group_is_missing(self):
+        result, requests = self.run_script('register', index="2", NO_HEAVY_GROUP="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.state / '2').exists())
+        self.assertFalse(any(r.endswith('/generate-jitconfig') for r in requests))
+
+    def test_prune_covers_every_runner_group(self):
+        self.page(1, [self.runner(1)])
+        (self.root / "heavy-page-1").write_text(json.dumps({"runners": [self.runner(7)]}))
+        result, requests = self.run_script("prune")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(deletions(requests),
+                         ['https://api.github.com/orgs/test-org/actions/runners/1',
+                          'https://api.github.com/orgs/test-org/actions/runners/7'])
+
+    def test_prune_skips_a_missing_group_and_cleans_the_others(self):
+        self.page(1, [self.runner(1)])
+        result, requests = self.run_script("prune", NO_HEAVY_GROUP="1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Runner group heavy does not exist", result.stderr)
+        self.assertEqual(deletions(requests), ['https://api.github.com/orgs/test-org/actions/runners/1'])
 
     def test_register_rejects_missing_numeric_id_without_state(self):
         result, _ = self.run_script('register', RUNNER_ID='null')

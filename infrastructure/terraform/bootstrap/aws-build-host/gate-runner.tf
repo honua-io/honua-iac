@@ -1,21 +1,43 @@
-# Ephemeral PR Gate runners on the lane build host. Everything here is absent unless
-# gate_runner_enabled is true.
+# Ephemeral PR Gate and heavy test-shard runners on the lane build host. Everything here is
+# absent unless gate_runner_enabled is true.
 
 locals {
   gate_runner_count = var.gate_runner_enabled ? 1 : 0
+  # Runner N is element N-1: PR Gate runners first, then heavy test-shard runners.
+  build_host_runners = concat(
+    [for _ in range(var.gate_runner_count) : {
+      pool              = "gate"
+      group             = "honua-server-gate"
+      labels            = ["self-hosted", "linux", "x64", "honua-build"]
+      cpu_quota_percent = var.gate_runner_cpu_quota_percent
+      memory_max_gib    = var.gate_runner_memory_max_gib
+    }],
+    [for _ in range(var.heavy_runner_count) : {
+      pool              = "heavy"
+      group             = "honua-heavy"
+      labels            = ["self-hosted", "linux", "x64", "honua-heavy"]
+      cpu_quota_percent = var.heavy_runner_cpu_quota_percent
+      memory_max_gib    = var.heavy_runner_memory_max_gib
+    }]
+  )
   gate_runner_host_config = {
     region              = var.region
     org                 = split("/", var.gate_runner_repository)[0]
-    group               = "honua-server-gate"
-    labels              = ["self-hosted", "linux", "x64", "honua-build"]
-    runner_count        = var.gate_runner_count
-    cpu_quota_percent   = var.gate_runner_cpu_quota_percent
-    memory_max_gib      = var.gate_runner_memory_max_gib
+    runners             = local.build_host_runners
+    runner_count        = length(local.build_host_runners)
+    min_free_disk_gib   = var.runner_min_free_disk_gib
     runner_version      = "2.338.2"
     runner_sha256       = "baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40"
     app_parameter       = "/${local.name}/gate-runner/github-app"
     heartbeat_parameter = "/${local.name}/gate-runner/heartbeat"
   }
+  # Rerunning this on a provisioned host converges it without a replacement (see the README).
+  gate_runner_bootstrap = join("\n", [
+    "(umask 077 && cat > /etc/honua-gate-runner.json) <<'CONFIG'",
+    jsonencode(local.gate_runner_host_config),
+    "CONFIG",
+    file("${path.module}/install-gate-runner.sh")
+  ])
   github_oidc_host = "token.actions.githubusercontent.com"
 }
 

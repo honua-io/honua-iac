@@ -139,7 +139,7 @@ run "gate_runner_enabled" {
   command = apply
   variables { gate_runner_enabled = true }
   assert {
-    condition     = strcontains(base64decode(aws_launch_template.build.user_data), base64gzip(file("install-gate-runner.sh"))) && strcontains(base64decode(aws_launch_template.build.user_data), base64encode(jsonencode(local.gate_runner_host_config)))
+    condition     = strcontains(base64decode(aws_launch_template.build.user_data), base64gzip(local.gate_runner_bootstrap)) && strcontains(local.gate_runner_bootstrap, jsonencode(local.gate_runner_host_config)) && endswith(local.gate_runner_bootstrap, file("install-gate-runner.sh"))
     error_message = "The enabled host must install the runner services with their configuration."
   }
   assert {
@@ -161,5 +161,25 @@ run "gate_runner_enabled" {
   assert {
     condition     = aws_ssm_parameter.gate_runner_app[0].type == "SecureString" && aws_ssm_parameter.gate_runner_app[0].value == "unset"
     error_message = "Terraform creates only an encrypted placeholder for the App credential."
+  }
+}
+
+run "heavy_runners_follow_the_gate_runners" {
+  command = apply
+  variables {
+    gate_runner_enabled = true
+    heavy_runner_count  = 8
+  }
+  assert {
+    condition     = local.gate_runner_host_config.runner_count == 10 && [for runner in local.build_host_runners : runner.pool] == concat(["gate", "gate"], [for _ in range(8) : "heavy"])
+    error_message = "Runner N is element N-1: the PR Gate runners first, then the heavy runners."
+  }
+  assert {
+    condition     = alltrue([for runner in local.build_host_runners : runner.group == "honua-heavy" && contains(runner.labels, "honua-heavy") && !contains(runner.labels, "honua-build") && runner.cpu_quota_percent == 800 && runner.memory_max_gib == 16 if runner.pool == "heavy"])
+    error_message = "Heavy runners join only the honua-heavy group and label with eight vCPUs and 16 GiB each."
+  }
+  assert {
+    condition     = length(base64decode(aws_launch_template.build.user_data)) <= 16384
+    error_message = "EC2 user data must stay within 16 KiB."
   }
 }

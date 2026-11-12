@@ -121,3 +121,43 @@ variable "gate_runner_memory_max_gib" {
     error_message = "gate_runner_memory_max_gib must be between 4 and 24."
   }
 }
+
+variable "heavy_runner_count" {
+  description = "Ephemeral runners for honua-server heavy test shards (label honua-heavy, runner group honua-heavy), added only when gate_runner_enabled is true. Requires the runner group described in the README."
+  type        = number
+  default     = 8
+  validation {
+    condition     = var.heavy_runner_count >= 0 && var.heavy_runner_count <= 8
+    error_message = "heavy_runner_count must be between 0 and 8."
+  }
+}
+
+variable "heavy_runner_cpu_quota_percent" {
+  description = "CPU ceiling per heavy runner, including its Docker containers (100 = one vCPU). Eight runners at the default leave 32 of 96 vCPUs for lane builds."
+  type        = number
+  default     = 800
+  validation {
+    condition     = var.heavy_runner_cpu_quota_percent >= 100 && var.heavy_runner_cpu_quota_percent <= 1600
+    error_message = "heavy_runner_cpu_quota_percent must be between 100 and 1600."
+  }
+}
+
+variable "heavy_runner_memory_max_gib" {
+  description = "Memory ceiling per heavy runner, including its Docker containers. The default matches a GitHub-hosted runner."
+  type        = number
+  default     = 16
+  validation {
+    condition     = var.heavy_runner_memory_max_gib >= 4 && var.heavy_runner_memory_max_gib <= 24
+    error_message = "heavy_runner_memory_max_gib must be between 4 and 24."
+  }
+}
+
+variable "runner_min_free_disk_gib" {
+  description = "A runner takes its next job only while the root volume has at least this much free space; lane builds share the disk."
+  type        = number
+  default     = 40
+  validation {
+    condition     = var.runner_min_free_disk_gib >= 10 && var.runner_min_free_disk_gib <= 200
+    error_message = "runner_min_free_disk_gib must be between 10 and 200."
+  }
+}
