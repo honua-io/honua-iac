@@ -159,6 +159,10 @@ runners). Each runner slice is capped at `heavy_runner_cpu_quota_percent` (defau
 800) and `heavy_runner_memory_max_gib` (default 16, a hosted runner's memory); eight
 runners at the defaults leave 32 of 96 vCPUs for lane builds. The heartbeat counts
 only gate runners, so heavy jobs never change the PR Gate's compute choice.
+Heavy jobs start PostGIS as a service container. The Actions runner reads
+`/proc/1/cgroup` before it starts one, so heavy runners use `ProtectProc=default`:
+they can list other processes and their command lines, but other accounts'
+environments and memory stay unreadable, and `/home/ubuntu` stays inaccessible.
 
 - **Workspace cleanup.** When a job ends, the service stops the account's rootless
   Docker and empties its home, including `runner/_work`, images and volumes. The
