@@ -97,14 +97,14 @@ data "aws_iam_policy_document" "config_assume" {
 }
 
 # DetectStackDrift reads every resource in a stack with the caller's permissions, so the role gets
-# control-plane reads for the resource types our stacks use and nothing that returns data.
+# control-plane reads for the resource types our stacks use and nothing that returns data. Actions
+# without resource-level permissions (drift detection status, the Describe calls) take "*".
 data "aws_iam_policy_document" "stack_drift" {
   statement {
     sid = "DetectStackDrift"
     actions = [
       "cloudformation:DetectStackDrift",
       "cloudformation:DetectStackResourceDrift",
-      "cloudformation:DescribeStackDriftDetectionStatus",
       "cloudformation:DescribeStackResourceDrifts",
       "cloudformation:DescribeStacks",
       "cloudformation:DescribeStackResource",
@@ -118,6 +118,7 @@ data "aws_iam_policy_document" "stack_drift" {
   statement {
     sid = "ReadStackResources"
     actions = [
+      "cloudformation:DescribeStackDriftDetectionStatus",
       "acm:DescribeCertificate",
       "application-autoscaling:Describe*",
       "autoscaling:Describe*",

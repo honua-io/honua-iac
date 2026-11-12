@@ -8,7 +8,7 @@
 # roots do not match trunk". The issue lists addresses, actions and changed attribute names,
 # never values: the inputs hold emails, CIDRs and keys.
 #
-# Usage: scripts/bootstrap-drift-operator.sh [root ...]    (default: every operator root)
+# Usage: scripts/bootstrap-drift-operator.sh    (plans every operator root, so it may close the issue)
 # Exit: 0 clean, 2 drift, 1 a plan could not run.
 set -euo pipefail
 
@@ -34,7 +34,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if [[ $# -gt 0 ]]; then roots=("$@"); else mapfile -t roots < <(manifest --operator-roots); fi
+mapfile -t roots < <(manifest --operator-roots)
 
 result=0
 body="$work/body.md"
