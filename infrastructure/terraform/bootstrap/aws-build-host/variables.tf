@@ -115,7 +115,7 @@ variable "gate_runner_cpu_quota_percent" {
 variable "gate_runner_memory_max_gib" {
   description = "Memory ceiling per gate runner, including its Docker containers."
   type        = number
-  default     = 10
+  default     = 16
   validation {
     condition     = var.gate_runner_memory_max_gib >= 4 && var.gate_runner_memory_max_gib <= 24
     error_message = "gate_runner_memory_max_gib must be between 4 and 24."

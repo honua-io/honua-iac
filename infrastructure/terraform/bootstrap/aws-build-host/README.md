@@ -95,7 +95,7 @@ group `honua-server-gate`, which only `gate_runner_repository` can use.
   so jobs cannot obtain the instance role.
 - **Resources.** Each runner and its containers share one slice capped at
   `gate_runner_cpu_quota_percent` (default 600, six vCPUs) and
-  `gate_runner_memory_max_gib` (default 10). Two gate jobs at the cap consume up to twelve vCPUs and 20 GiB, before
+  `gate_runner_memory_max_gib` (default 16). Two gate jobs at the cap consume up to twelve vCPUs and 32 GiB, before
   lane builds and OS overhead. These are shared ceilings, not dedicated capacity reservations.
 - **Registration credential.** The `/honua-lane-build-host/gate-runner/github-app`
   SecureString holds `{"app_id": "...", "private_key": "..."}` for a GitHub App with
