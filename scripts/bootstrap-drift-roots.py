@@ -3,7 +3,8 @@
 
 Usage:
   scripts/bootstrap-drift-roots.py --check                 # every bootstrap root is listed, nothing else
-  scripts/bootstrap-drift-roots.py --matrix                # JSON matrix: [{"root", "applied"}]
+  scripts/bootstrap-drift-roots.py --matrix                # JSON matrix: [{"root", "applied", "operator"}]
+  scripts/bootstrap-drift-roots.py --operator-roots        # roots planned by scripts/bootstrap-drift-operator.sh
   scripts/bootstrap-drift-roots.py --get ROOT KEY          # one field (JSON unless a string)
   scripts/bootstrap-drift-roots.py --tfvars ROOT ACCOUNT BUCKET   # the root's inputs as tfvars JSON
 """
@@ -40,7 +41,13 @@ def problems(manifest: dict, base: Path = BOOTSTRAP) -> list[str]:
             found.append(f"drift-roots.json lists {name}, which is not a root under bootstrap/")
         if not entry.get("state_key", "").startswith(manifest["state_key_prefix"]):
             found.append(f"{name}: state_key must sit under {manifest['state_key_prefix']} (the drift role reads only that prefix)")
-        if entry.get("applied") and not isinstance(entry.get("vars"), dict):
+        operator = entry.get("operator")
+        if operator is not None:
+            if not entry.get("applied") or "vars" in entry:
+                found.append(f"{name}: an operator root is applied and takes its inputs from SSM, not vars")
+            if not (isinstance(operator, dict) and str(operator.get("tfvars_parameter", "")).startswith("/") and operator.get("region")):
+                found.append(f"{name}: operator needs tfvars_parameter (an SSM name) and region")
+        elif entry.get("applied") and not isinstance(entry.get("vars"), dict):
             found.append(f"{name}: applied roots need a vars object (may be empty)")
     return found
 
@@ -60,6 +67,7 @@ def main() -> int:
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--check", action="store_true")
     group.add_argument("--matrix", action="store_true")
+    group.add_argument("--operator-roots", action="store_true")
     group.add_argument("--get", nargs=2, metavar=("ROOT", "KEY"))
     group.add_argument("--tfvars", nargs=3, metavar=("ROOT", "ACCOUNT", "BUCKET"))
     args = parser.parse_args()
@@ -73,7 +81,12 @@ def main() -> int:
     if args.check:
         print("drift-roots.json covers: " + ", ".join(root_dirs()))
     elif args.matrix:
-        print(json.dumps([{"root": n, "applied": bool(e.get("applied"))} for n, e in sorted(manifest["roots"].items())]))
+        print(json.dumps([
+            {"root": n, "applied": bool(e.get("applied")), "operator": "operator" in e}
+            for n, e in sorted(manifest["roots"].items())
+        ]))
+    elif args.operator_roots:
+        print("\n".join(n for n, e in sorted(manifest["roots"].items()) if "operator" in e))
     elif args.get:
         value = manifest["roots"][args.get[0]].get(args.get[1], "")
         print(value if isinstance(value, str) else json.dumps(value))

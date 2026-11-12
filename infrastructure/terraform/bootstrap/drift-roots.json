@@ -1,5 +1,5 @@
 {
-  "comment": "Every root under infrastructure/terraform/bootstrap and how .github/workflows/bootstrap-drift-plan.yml treats it (honua-iac#320). scripts/bootstrap-drift-roots.py refuses an unlisted root. applied=true: planned nightly against its state with the inputs below ({account_id} and {state_bucket} are filled in at run time); any change is drift. applied=false: the job asserts that no state object exists under its key. A standing entry tolerates ONE exact provider artifact and must link the issue that removes it.",
+  "comment": "Every root under infrastructure/terraform/bootstrap and how .github/workflows/bootstrap-drift-plan.yml treats it (honua-iac#320). scripts/bootstrap-drift-roots.py refuses an unlisted root. applied=true: planned nightly against its state with the inputs below ({account_id} and {state_bucket} are filled in at run time); any change is drift. applied=false: the job asserts that no state object exists under its key. An operator entry (applied, inputs in SSM `tfvars_parameter`, plans needing reads the CI role lacks) is planned by scripts/bootstrap-drift-operator.sh with operator credentials; CI only checks that its state exists. A standing entry tolerates ONE exact provider artifact and must link the issue that removes it.",
   "state_key_prefix": "bootstrap/",
   "roots": {
     "aws-bedrock-quotas": {
@@ -7,9 +7,15 @@
       "state_key": "bootstrap/aws-bedrock-quotas/terraform.tfstate",
       "vars": { "opus_5_5_tokens_per_minute": 0, "sonnet_5_5_tokens_per_minute": 0 }
     },
+    "aws-audit": {
+      "applied": true,
+      "state_key": "bootstrap/aws-audit/terraform.tfstate",
+      "operator": { "tfvars_parameter": "/honua/audit/tfvars", "region": "eu-north-1" }
+    },
     "aws-build-host": {
-      "applied": false,
-      "state_key": "bootstrap/aws-build-host/terraform.tfstate"
+      "applied": true,
+      "state_key": "bootstrap/aws-build-host/terraform.tfstate",
+      "operator": { "tfvars_parameter": "/honua/build-host/tfvars", "region": "eu-north-1" }
     },
     "aws-ci-events": {
       "applied": true,
@@ -17,13 +23,14 @@
       "vars": {}
     },
     "aws-light-runners": {
-      "applied": false,
+      "applied": true,
       "state_key": "bootstrap/aws-light-runners/terraform.tfstate",
-      "note": "Operator-applied like aws-build-host and aws-lane-host: inputs live in SSM /honua/gate-runners/tfvars and the App key is read ephemerally, so the nightly plan cannot reproduce them."
+      "operator": { "tfvars_parameter": "/honua/gate-runners/tfvars", "region": "eu-north-1" }
     },
     "aws-lane-host": {
-      "applied": false,
-      "state_key": "bootstrap/aws-lane-host/terraform.tfstate"
+      "applied": true,
+      "state_key": "bootstrap/aws-lane-host/terraform.tfstate",
+      "operator": { "tfvars_parameter": "/honua/lane-host/tfvars", "region": "eu-north-1" }
     },
     "aws-demo-deploy": {
       "applied": true,
