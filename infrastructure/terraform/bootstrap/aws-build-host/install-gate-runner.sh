@@ -303,10 +303,16 @@ for index in $(jq -r '.runners | to_entries[] | select(.value.pool == "gate") | 
     idle=$((idle + 1))
   fi
 done
+heavy_worker_absent() {
+  local status=0
+  pgrep -u "$1" -x Runner.Worker > /dev/null || status=$?
+  [[ "$status" == 1 ]]
+}
 heavy_idle_count() {
   local indices index user count=0
   jq -e '
     .runners | select(type == "array" and length <= 10) |
+    select(all(.[]; .pool == "gate" or .pool == "heavy")) |
     map(select(.pool == "heavy")) |
     select(length > 0 and length <= 8) |
     select(all(.[]; (.labels | type) == "array" and (.labels | index("honua-heavy")) != null))
@@ -315,7 +321,7 @@ heavy_idle_count() {
   for index in $indices; do
     user="gate-runner-${index}"
     if systemctl is-active --quiet "honua-gate-runner@${index}.service" &&
-      pgrep -u "$user" -x Runner.Listener > /dev/null && ! pgrep -u "$user" -x Runner.Worker > /dev/null; then
+      pgrep -u "$user" -x Runner.Listener > /dev/null && heavy_worker_absent "$user"; then
       count=$((count + 1))
     fi
   done

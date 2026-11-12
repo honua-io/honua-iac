@@ -24,7 +24,7 @@ class HeavyHeartbeatTests(unittest.TestCase):
             env = dict(os.environ, PATH=f'{root}:{os.environ["PATH"]}',
                        LISTENERS=scenario.get('listeners', '1 2 3 4'),
                        WORKERS=scenario.get('workers', ''),
-                       OFFLINE=scenario.get('offline', ''), CAPTURE=str(root / 'payload.json'))
+                       OFFLINE=scenario.get('offline', ''), PROBE_ERRORS=scenario.get('probe_errors', ''), CAPTURE=str(root / 'payload.json'))
             subprocess.run(['bash'], input=script, env=env, text=True,
                                     capture_output=True, check=True)
             return json.loads((root / 'payload.json').read_text())
@@ -34,7 +34,7 @@ class HeavyHeartbeatTests(unittest.TestCase):
         stubs = {
             'curl': 'echo i-current',
             'systemctl': 'index="${3#honua-gate-runner@}"; index="${index%.service}"; [[ " $OFFLINE " != *" $index "* ]]',
-            'pgrep': 'index="${2#gate-runner-}"; values="$LISTENERS"; [[ "$4" != Runner.Worker ]] || values="$WORKERS"; [[ " $values " == *" $index "* ]]',
+            'pgrep': '[[ " $PROBE_ERRORS " != *" $4 "* ]] || exit 2; index="${2#gate-runner-}"; values="$LISTENERS"; [[ "$4" != Runner.Worker ]] || values="$WORKERS"; [[ " $values " == *" $index "* ]]',
             'aws': 'while (( $# )); do if [[ "$1" == --value ]]; then echo "$2" > "$CAPTURE"; break; fi; shift; done',
         }
         for name, body in stubs.items():
@@ -51,6 +51,10 @@ class HeavyHeartbeatTests(unittest.TestCase):
             ({'listeners': '1 2'}, 2, 0),
             ({'offline': '3 4'}, 2, 0),
             ({'workers': '3'}, 2, 1),
+            ({'probe_errors': 'Runner.Worker'}, 2, 0),
+            ({'probe_errors': 'Runner.Listener'}, 0, 0),
+            ({'runners': runners + [{'pool': 'unknown', 'labels': []}]}, 2, 0),
+            ({'runners': runners + [{'labels': []}]}, 2, 0),
             ({'runners': runners[:2]}, 2, 0),
             ({'runners': runners[:2] + [{'pool': 'heavy', 'labels': ['honua-build']}]}, 2, 0),
             ({'runners': runners[:2] + runners[2:] * 5}, 2, 0),
