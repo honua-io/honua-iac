@@ -215,7 +215,9 @@ Rolling these runners out does not need a new host. The installer is idempotent:
 it skips prerequisites already installed for the pinned runner version, provisions
 only missing accounts and rewrites every runner's limits, so rerunning the applied
 launch template's runner bootstrap converges the running host without touching
-running jobs:
+running jobs. Runner-enabled user data compresses Docker, build tools, and runner
+setup together to stay below EC2's 16 KiB limit. Extract only the runner section
+for a live convergence; the idle timer still installs before network bootstrap:
 
 ```bash
 # After terraform apply, on the operator machine:
@@ -224,7 +226,8 @@ aws ec2 describe-launch-template-versions --region "$BUILD_REGION" \
     --auto-scaling-group-names honua-lane-build-host \
     --query 'AutoScalingGroups[0].MixedInstancesPolicy.LaunchTemplate.LaunchTemplateSpecification.LaunchTemplateName' --output text)" \
   --versions '$Latest' --query 'LaunchTemplateVersions[0].LaunchTemplateData.UserData' --output text |
-  base64 -d | sed -n "s/^source <(base64 -d <<< '\(.*\)' | gunzip)$/\1/p" | base64 -d | gunzip > runner-bootstrap.sh
+  base64 -d | sed -n "s/^source <(base64 -d <<< '\(.*\)' | gunzip)$/\1/p" | base64 -d | gunzip |
+  sed -n '/^(umask 077 && cat > \/etc\/honua-gate-runner.json)/,$p' > runner-bootstrap.sh
 ssh ubuntu@"$BUILD_HOST" 'sudo bash -c "apt_retry() { apt-get \"\$@\"; }; set -euo pipefail; source /dev/stdin"' < runner-bootstrap.sh
 ```
 

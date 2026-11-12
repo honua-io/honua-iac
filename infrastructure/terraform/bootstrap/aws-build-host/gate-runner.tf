@@ -41,6 +41,11 @@ locals {
     "CONFIG",
     file("${path.module}/install-gate-runner.sh")
   ])
+  gate_runner_user_data = join("\n", [
+    file("${path.module}/../shared/install-docker.sh"),
+    file("${path.module}/install-build-tools.sh"),
+    local.gate_runner_bootstrap
+  ])
   github_oidc_host = "token.actions.githubusercontent.com"
 }
 

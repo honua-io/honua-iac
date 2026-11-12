@@ -139,7 +139,7 @@ run "gate_runner_enabled" {
   command = apply
   variables { gate_runner_enabled = true }
   assert {
-    condition     = strcontains(base64decode(aws_launch_template.build.user_data), base64gzip(local.gate_runner_bootstrap)) && strcontains(local.gate_runner_bootstrap, jsonencode(local.gate_runner_host_config)) && endswith(local.gate_runner_bootstrap, file("install-gate-runner.sh"))
+    condition     = strcontains(base64decode(aws_launch_template.build.user_data), "source <(base64 -d <<< '${base64gzip(local.gate_runner_user_data)}' | gunzip)") && local.gate_runner_user_data == join("\n", [file("../shared/install-docker.sh"), file("install-build-tools.sh"), local.gate_runner_bootstrap]) && strcontains(local.gate_runner_bootstrap, jsonencode(local.gate_runner_host_config)) && endswith(local.gate_runner_bootstrap, file("install-gate-runner.sh"))
     error_message = "The enabled host must install the runner services with their configuration."
   }
   assert {
