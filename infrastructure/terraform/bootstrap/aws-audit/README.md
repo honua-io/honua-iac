@@ -1,36 +1,33 @@
 # aws-audit
 
-Audit trail and configuration history for the Honua AWS account: who changed what and when,
-what a resource looked like on a given day, and an email when something changes outside IaC.
+Audit trail for the Honua AWS account: who changed what and when,
+and an email when something changes outside IaC.
 
 | Piece | What it does |
 |---|---|
 | CloudTrail `honua-audit` | One multi-Region trail: management events (read and write), log file validation. Delivered to the audit bucket under `cloudtrail/`. No data events, no Insights. |
-| Audit bucket `honua-audit-<account>` | SSE-S3, versioned, public access blocked, ACLs disabled. The policy admits only CloudTrail (this trail) and Config (this account), denies object deletes and plain HTTP. Standard for 90 days, then Glacier Instant Retrieval (objects of 128 KB and up), expired after 365 days. |
-| AWS Config `honua-audit` | Recorder in us-east-1, eu-north-1 and us-west-2, DAILY recording, history and a daily snapshot under `config/`. IAM roles/policies/users and CloudFront are recorded in us-east-1 only. |
-| Config rule `cloudformation-stack-drift-detection-check` | us-east-1 and us-west-2, every 24 h and on stack change, through role `honua-audit-stack-drift` (control-plane reads only). |
-| Alerts | EventBridge rules `honua-audit-change-{ec2,identity-storage,services}` (configuration-changing calls not made by Terraform, CloudFormation or an AWS service) and `honua-audit-stack-drift` (a stack turns NON_COMPLIANT). eu-north-1 and us-west-2 forward to the us-east-1 bus; SNS `honua-audit-alerts` emails the build host budget address. |
-| Budget `honua-audit-monthly` | Emails at 80% actual and 100% forecast of `monthly_budget_usd` (Config plus CloudTrail). |
+| Audit bucket `honua-audit-<account>` | SSE-S3, versioned, public access blocked, ACLs disabled. The policy admits CloudTrail (this trail) and legacy Config deliveries (this account), denies object deletes and plain HTTP. Standard for 90 days, then Glacier Instant Retrieval (objects of 128 KB and up), expired after 365 days. |
+| Alerts | EventBridge rules `honua-audit-change-{ec2,identity-storage,services}` (configuration-changing calls not made by Terraform, CloudFormation or an AWS service) and the legacy `honua-audit-stack-drift` listener. eu-north-1 and us-west-2 forward to the us-east-1 bus; SNS `honua-audit-alerts` emails the build host budget address. |
+| Budget `honua-audit-monthly` | Emails at 80% actual and 100% forecast of `monthly_budget_usd` (CloudTrail). |
 | `/honua/audit/alert-canary` | eu-north-1 parameter for testing the alert path. |
 
 SSE-S3 rather than KMS: the key would cost $1 a month plus a KMS request for every delivered file,
 and it buys nothing here. Access is held by the bucket policy, and log file validation detects
-tampering. AWS Config cannot record SSM parameters or Budgets: SSM parameter changes are in
-CloudTrail, and SSM keeps the last 100 versions of each parameter (`get-parameter-history`).
+tampering. SSM parameter changes are in CloudTrail, and SSM keeps the last 100 versions of
+each parameter (`get-parameter-history`).
+
+AWS Config recorders and stack-drift rules are disabled. Existing Config objects remain in the
+audit bucket until the retention policy expires them. The legacy Config bucket permissions and
+EventBridge listener remain; no Config recorder or rule produces new events.
 
 ## Cost (per month)
 
 | Component | Estimate |
 |---|---|
 | CloudTrail management events | $0 (first copy is free) |
-| S3: CloudTrail and Config objects, PUTs, storage | under $1 |
-| AWS Config, DAILY, $0.012 per changed resource per day | $5 to $65. Steady state is about 165 recorded resources, few changing daily. At rc.2 test volume, 55 to 180 resources change per day, mostly ephemeral release-cell and launch-test VPCs, security groups, roles and buckets. |
-| Stack drift rule, $0.001 per evaluation | under $0.50 (one evaluation per stack per day, plus one per stack change) |
+| S3: CloudTrail objects, PUTs, storage | under $1 |
 | EventBridge (AWS events and cross-Region forwarding), SNS email | under $0.10 |
 | Budget (no budget actions) | under $1 |
-
-The budget alarm is the backstop for the Config line. If it fires, drop the ephemeral types
-(Subnet, SecurityGroup, EIP) from us-west-2 first.
 
 ## Apply (operator)
 
@@ -68,8 +65,7 @@ needs a PR that drops the `DenyObjectDeletes` statement first; the bucket is nev
   read-only and opens or closes "Terraform drift: operator-applied bootstrap roots do not match
   trunk". Exit 0 means clean, 2 drift, 1 error.
 - CloudFormation stacks (Launch Stack hosting, test and qualification stacks, and the demo stack from
-  the rc.2 cut) use CloudFormation drift detection, never `terraform plan`. The Config rule emails
-  when a stack drifts. By hand:
+  the rc.2 cut) use CloudFormation drift detection, never `terraform plan`. By hand:
 
   ```bash
   id=$(aws cloudformation detect-stack-drift --region us-east-1 --stack-name honua-launch-stack-hosting --query StackDriftDetectionId --output text)
@@ -80,7 +76,7 @@ needs a PR that drops the `DenyObjectDeletes` statement first; the bucket is nev
 
   Change Launch Stack resources only through a change set: `create-change-set`, review it with
   `describe-change-set`, then `execute-change-set`. Never edit a stack's resources directly; that
-  is the drift this rule reports.
+  creates drift.
 
 ## Who changed X, and when
 
@@ -124,21 +120,6 @@ ORDER BY eventtime;
 ```
 
 Check a log file's integrity: `aws cloudtrail validate-logs --trail-arn <trail arn> --start-time <t>`.
-
-## What X looked like on day D
-
-```bash
-aws configservice get-resource-config-history --region eu-north-1 \
-  --resource-type AWS::EC2::SecurityGroup --resource-id sg-0123 \
-  --earlier-time 2026-11-01T00:00:00Z --later-time 2026-11-02T00:00:00Z \
-  --query 'configurationItems[].[configurationItemCaptureTime,configuration]'
-```
-
-Find a resource ID with `aws configservice list-discovered-resources --resource-type <type>`.
-Global types (IAM, CloudFront) are queried in us-east-1. The daily snapshot of every recorded
-resource is under `config/AWSLogs/<account>/Config/<region>/<yyyy>/<m>/<d>/ConfigSnapshot/`.
-To recover, write the known-good shape back into the owning IaC root and apply it. Never restore
-with the CLI.
 
 ## Test the alert path
 

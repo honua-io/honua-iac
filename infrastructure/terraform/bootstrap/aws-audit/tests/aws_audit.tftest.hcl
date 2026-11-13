@@ -11,9 +11,6 @@ mock_provider "aws" {
   mock_resource "aws_iam_role" {
     defaults = { arn = "arn:aws:iam::123456789012:role/mock" }
   }
-  mock_resource "aws_iam_service_linked_role" {
-    defaults = { arn = "arn:aws:iam::123456789012:role/aws-service-role/config.amazonaws.com/AWSServiceRoleForConfig" }
-  }
   mock_resource "aws_sns_topic" {
     defaults = { arn = "arn:aws:sns:us-east-1:123456789012:honua-audit-alerts" }
   }
@@ -32,24 +29,6 @@ run "trail_records_every_management_event_with_validation" {
     condition = (aws_cloudtrail.audit.is_multi_region_trail && aws_cloudtrail.audit.enable_log_file_validation
     && aws_cloudtrail.audit.event_selector[0].read_write_type == "All")
     error_message = "One multi-Region trail, read and write management events, log file validation on."
-  }
-}
-
-run "config_records_daily_and_global_types_once" {
-  command = plan
-  assert {
-    condition     = alltrue([for r in aws_config_configuration_recorder.audit : r.recording_mode[0].recording_frequency == "DAILY"])
-    error_message = "Every recorder uses DAILY recording."
-  }
-  assert {
-    condition = alltrue([for region, r in aws_config_configuration_recorder.audit :
-    contains(r.recording_group[0].resource_types, "AWS::IAM::Role") == (region == "us-east-1")])
-    error_message = "IAM and CloudFront are recorded in the home Region only."
-  }
-  assert {
-    condition = alltrue([for region, r in aws_config_configuration_recorder.audit :
-    contains(r.recording_group[0].resource_types, "AWS::CloudFormation::Stack") == contains(["us-east-1", "us-west-2"], region)])
-    error_message = "Stacks are recorded where the stack drift rule runs."
   }
 }
 
