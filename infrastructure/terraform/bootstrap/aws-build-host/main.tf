@@ -96,7 +96,7 @@ resource "aws_launch_template" "build" {
     file("${path.module}/install-idle-stop.sh")
     ], var.gate_runner_enabled ? [
     # Source the installers together so apt_retry remains in scope within the 16 KiB limit.
-    "source <(base64 -d <<< '${base64gzip(local.gate_runner_user_data)}' | gunzip)"
+    "source <(base64 -d <<< '${base64gzip(local.gated_build_bootstrap)}' | gunzip)"
     ] : [
     file("${path.module}/../shared/install-docker.sh"),
     file("${path.module}/install-build-tools.sh")
