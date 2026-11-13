@@ -354,9 +354,36 @@ for index in $(jq -r '.runners | to_entries[] | select(.value.pool == "gate") | 
     idle=$((idle + 1))
   fi
 done
+heavy_worker_absent() {
+  local status=0
+  pgrep -u "$1" -x Runner.Worker > /dev/null || status=$?
+  [[ "$status" == 1 ]]
+}
+heavy_idle_count() {
+  local indices index user count=0
+  jq -e '
+    .runners | select(type == "array" and length <= 10) |
+    select(all(.[]; .pool == "gate" or .pool == "heavy")) |
+    map(select(.pool == "heavy")) |
+    select(length > 0 and length <= 8) |
+    select(all(.[]; (.labels | type) == "array" and (.labels | index("honua-heavy")) != null))
+    | true' "$config" > /dev/null || { echo 0; return; }
+  indices="$(jq -r '.runners | to_entries[] | select(.value.pool == "heavy") | .key + 1' "$config")"
+  for index in $indices; do
+    user="gate-runner-${index}"
+    if systemctl is-active --quiet "honua-gate-runner@${index}.service" &&
+      pgrep -u "$user" -x Runner.Listener > /dev/null && heavy_worker_absent "$user"; then
+      count=$((count + 1))
+    fi
+  done
+  echo "$count"
+}
+heavy_idle="$(heavy_idle_count)"
 /snap/bin/aws ssm put-parameter --region "$(setting region)" --name "$(setting heartbeat_parameter)" \
   --type String --overwrite --value \
-  "$(jq -cn --arg instance "$instance" --argjson at "$(date +%s)" --argjson idle "$idle" '{instance: $instance, at: $at, idle: $idle}')" > /dev/null
+  "$(jq -cn --arg instance "$instance" --argjson at "$(date +%s)" --argjson idle "$idle" \
+    --argjson heavy_idle "$heavy_idle" \
+    '{instance: $instance, at: $at, idle: $idle, heavy: {version: 1, idle: $heavy_idle}}')" > /dev/null
 HEARTBEAT
 chmod 0700 /usr/local/sbin/honua-gate-runner-prepare /usr/local/sbin/honua-gate-runner-heartbeat
 chmod 0755 /usr/local/bin/honua-gate-runner-run

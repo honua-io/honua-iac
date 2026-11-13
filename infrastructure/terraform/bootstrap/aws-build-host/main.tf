@@ -92,12 +92,12 @@ resource "aws_launch_template" "build" {
   ebs_optimized = true
   user_data = base64encode(join("\n", concat([
     "#!/bin/bash\nset -euo pipefail",
-    "echo '${base64encode(jsonencode({ region = var.region, group = local.name, idle_seconds = var.idle_stop_minutes * 60 }))}' | base64 -d > /etc/honua-build-host.json",
-    var.gate_runner_enabled ? "source <(base64 -d <<< '${base64gzip(file("${path.module}/install-idle-stop.sh"))}' | gunzip)" : file("${path.module}/install-idle-stop.sh")
+    "echo '${base64encode(jsonencode({ region = var.region, group = local.name, idle_seconds = var.idle_stop_minutes * 60 }))}' | base64 -d > /etc/honua-build-host.json"
     ], var.gate_runner_enabled ? [
-    # Compress provisioning together; sourcing preserves apt_retry and startup order.
+    # Keep idle-stop first and apt_retry in scope within the 16 KiB limit.
     "source <(base64 -d <<< '${base64gzip(local.gated_build_bootstrap)}' | gunzip)"
     ] : [
+    file("${path.module}/install-idle-stop.sh"),
     file("${path.module}/../shared/install-docker.sh"),
     file("${path.module}/install-build-tools.sh")
   ])))

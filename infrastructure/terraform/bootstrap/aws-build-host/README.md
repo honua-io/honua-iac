@@ -158,6 +158,34 @@ The runner version and checksum are pinned in `gate-runner.tf`; ephemeral runner
 also self-update if GitHub requires a newer version before the pin is bumped.
 
 
+## Updating the heartbeat independently
+
+MAIN activates heartbeat changes after source review and normal PR gates. Do not
+rerun the bootstrap installer on a live host to update this one script: it also
+changes runner configuration, resource limits and services.
+
+1. Resolve the existing `honua-gate-runner-heartbeat.service` `ExecStart` and
+   inspect the current script, timer and configured runner pools. The deployed
+   target can be under `/usr/local/bin` even when bootstrap uses
+   `/usr/local/sbin`. Stop if the target is a symlink, is not root-owned, or the
+   existing gate-count loop differs from the reviewed source. Record its hash,
+   mode and service definition; retain a root-only backup outside the target.
+2. Extract only the `HEARTBEAT` heredoc from the reviewed full commit. Check it
+   with `bash -n`, compare the gate-count loop with the backup, and install a
+   root-owned mode-0700 temporary file alongside the existing target. Atomically
+   rename that file over the target. Preserve its path, service and timer,
+   credentials, instance configuration and all running runner services.
+3. Let the existing thirty-second timer publish normally. Read the existing SSM
+   parameter and verify the current instance, a nonfuture timestamp no older
+   than ninety seconds, unchanged gate-count semantics and version-1 heavy
+   availability matching configured, labelled, active idle heavy runners.
+   Validate busy-gate/idle-heavy and missing/stale proof with consumer fixtures;
+   do not dispatch extra CI or restart jobs to create those states.
+4. If verification fails, atomically restore the root-owned backup at the same
+   path and wait for the normal timer publication. Confirm the old gate payload
+   returns. The consumer must use hosted heavy runners when the additive field
+   is absent. Preserve both hashes, verification evidence and rollback receipt.
+
 ## Heavy test-shard runners
 
 With `gate_runner_enabled`, `heavy_runner_count` (default 8, at most 8) adds runners for honua-server's server
@@ -167,8 +195,16 @@ labelled `self-hosted, linux, x64, honua-heavy`, join the organization runner gr
 and are numbered after the gate runners (`gate-runner-3` onwards with two gate
 runners). Each runner slice is capped at `heavy_runner_cpu_quota_percent` (default
 800) and `heavy_runner_memory_max_gib` (default 16, a hosted runner's memory); eight
-runners at the defaults are ceilings, not reservations, on the 64-vCPU host. The heartbeat counts
-only gate runners, so heavy jobs never change the PR Gate's compute choice.
+runners at the defaults are ceilings, not reservations, on the 64-vCPU host. The heartbeat's existing `idle` field counts only gate runners, so heavy jobs
+never change the two-producer admission threshold. Its additive
+`heavy: {"version": 1, "idle": N}` field independently counts configured heavy
+runners with the `honua-heavy` label, an active runner service, a Listener and no
+Worker. Invalid pool definitions, more than eight heavy runners or more than ten
+total runners publish zero heavy availability. Consumers must validate the outer
+current instance and timestamp (at most 90 seconds old, never in the future),
+version 1 and an integer idle count from 1 through 8 before routing heavy work.
+Missing or rejected proof selects GitHub-hosted compute. This is availability
+observation, not slot reservation; concurrent runs can still queue.
 Heavy jobs start PostGIS as a service container. The Actions runner reads
 `/proc/1/cgroup` before it starts one, so heavy runners use `ProtectProc=default`:
 they can list other processes and their command lines, but other accounts'
@@ -189,7 +225,9 @@ Rolling these runners out does not need a new host. The installer is idempotent:
 it skips prerequisites already installed for the pinned runner version, provisions
 only missing accounts and rewrites every runner's limits, so rerunning the applied
 launch template's runner bootstrap converges the running host without touching
-running jobs:
+running jobs. Runner-enabled user data compresses Docker, build tools, and runner
+setup together to stay below EC2's 16 KiB limit. Extract only the runner section
+for a live convergence; the idle timer still installs before network bootstrap:
 
 ```bash
 # After terraform apply, on the operator machine:
@@ -198,7 +236,8 @@ aws ec2 describe-launch-template-versions --region "$BUILD_REGION" \
     --auto-scaling-group-names honua-lane-build-host \
     --query 'AutoScalingGroups[0].MixedInstancesPolicy.LaunchTemplate.LaunchTemplateSpecification.LaunchTemplateName' --output text)" \
   --versions '$Latest' --query 'LaunchTemplateVersions[0].LaunchTemplateData.UserData' --output text |
-  base64 -d | sed -n "s/^source <(base64 -d <<< '\(.*\)' | gunzip)$/\1/p" | base64 -d | gunzip > runner-bootstrap.sh
+  base64 -d | sed -n "s/^source <(base64 -d <<< '\(.*\)' | gunzip)$/\1/p" | base64 -d | gunzip |
+  sed -n '/^(umask 077 && cat > \/etc\/honua-gate-runner.json)/,$p' > runner-bootstrap.sh
 ssh ubuntu@"$BUILD_HOST" 'sudo bash -c "apt_retry() { apt-get \"\$@\"; }; set -euo pipefail; source /dev/stdin"' < runner-bootstrap.sh
 ```
 
