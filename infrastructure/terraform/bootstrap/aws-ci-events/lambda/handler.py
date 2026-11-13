@@ -5,7 +5,8 @@ Message shape (also produced by the lane host's polling shim):
   {"v": 1, "src": "webhook", "id": <delivery>, "type": ..., "action": ..., "repo": ..., "default_branch": ...,
    "pr": n|null, "branch": ..., "sha": ..., "base": ..., "check": ..., "check_id": ..., "run_id": ...,
    "conclusion": ..., "url": ..., "at": ..., "actor": ..., "comment_id": ..., "review_state": ...,
-   "mergeable": "MERGEABLE|CONFLICTING|UNKNOWN", "merge_state": "CLEAN|DIRTY|BEHIND|...", "merged": bool}
+   "mergeable": "MERGEABLE|CONFLICTING|UNKNOWN", "merge_state": "CLEAN|DIRTY|BEHIND|...", "merged": bool,
+   "run_status": ..., "run_attempt": ..., "run_event": ..., "workflow_path": ..., "created_at": ..., "started_at": ...}
 """
 import base64
 import collections
@@ -67,13 +68,16 @@ def _pr_number(prs):
 
 def _workflow_run(base, payload):
     run = payload["workflow_run"]
-    if base["action"] != "completed" or run.get("conclusion") not in KEEP_CONCLUSIONS:
+    if base["action"] not in {"requested", "in_progress", "completed"}:
         return None
     if (run.get("head_repository") or {}).get("full_name") != payload["repository"].get("full_name"):
         return None  # fork run: its head_branch may be named like ours (even 'trunk'); fail closed
     return dict(base, pr=_pr_number(run.get("pull_requests")), branch=run.get("head_branch"), sha=run.get("head_sha"),
                 check=run.get("name"), check_id=run.get("workflow_id"), run_id=run.get("id"),
-                conclusion=run.get("conclusion"), url=run.get("html_url"), at=run.get("updated_at"))
+                conclusion=run.get("conclusion") if base["action"] == "completed" else None,
+                url=run.get("html_url"), at=run.get("updated_at"),
+                run_status=run.get("status"), run_attempt=run.get("run_attempt"), run_event=run.get("event"),
+                workflow_path=run.get("path"), created_at=run.get("created_at"), started_at=run.get("run_started_at"))
 
 
 def _external_check(base, payload):

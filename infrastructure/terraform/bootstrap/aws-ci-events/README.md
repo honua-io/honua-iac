@@ -14,7 +14,7 @@ GitHub org webhook ──HTTPS──> Lambda function URL ──> SQS honua-ci-e
 - Python 3.12, standard library plus the runtime's boto3; no packaged dependencies and no model calls.
 - The webhook secret lives only in SSM SecureString `/honua/ci-events/webhook-secret`; the function reads
   it at run time (cached 5 minutes), so it never enters Terraform state.
-- Kept: `workflow_run` completed with failure, timed_out, startup_failure, action_required or success (fork runs dropped); external (non-Actions) `check_run`/`check_suite`;
+- Kept: `workflow_run` requested, in_progress and completed with any outcome (fork runs dropped); external (non-Actions) `check_run`/`check_suite`;
   `status` failure/error/success; `pull_request` opened/reopened/synchronize/closed/ready_for_review (same-repo
   heads only); `pull_request_review` submitted with changes requested or comments;
   `pull_request_review_comment` created; `pull_request_review_thread` unresolved; `issue_comment` created on a PR.
@@ -93,3 +93,35 @@ jq -n --arg url "$(terraform output -raw function_url)" --rawfile secret ~/honua
 ```
 
 The secret is only ever read from the file, never placed on a command line.
+
+## Workflow lifecycle evidence
+
+Workflow messages retain `run_status`, `run_attempt`, `run_event`, `workflow_path`,
+`created_at` and `started_at` when GitHub supplies them. Existing v1 fields stay
+compatible. Active messages omit `conclusion`; completed cancellations and skipped
+runs are retained so a later consumer can retire active observations. These events
+do not authorize a fixer, a workflow dispatch or a cancellation. The dispatcher
+continues routing failures and successes under its existing rules.
+
+The flow doctor's planned event ledger needs these messages before it can observe
+active trunk runs without polling. Missing fields and missed deliveries remain
+unknown. A run's path and trigger alone do not prove full-CI selection or a shared
+concurrency group; cancellation still requires exact run, jobs and concurrency
+validation. GitHub does not send the `requested` activity for reruns, so consumers
+must also handle `in_progress` with `run_attempt` and out-of-order delivery.
+See [GitHub workflow_run activity documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run).
+
+Deployment of this code remains an operator action. On the operator workstation,
+check out the merged commit, use the existing backend and private variables, then:
+
+```bash
+terraform -chdir=infrastructure/terraform/bootstrap/aws-ci-events init
+terraform -chdir=infrastructure/terraform/bootstrap/aws-ci-events plan -out=ci-events.plan
+terraform -chdir=infrastructure/terraform/bootstrap/aws-ci-events apply ci-events.plan
+```
+
+Review the saved plan before applying. No org webhook subscription change is
+needed: `workflow_run` is already subscribed. No new resources, role permissions,
+secret rotation or lane-host settings are required. Install the event-ledger
+consumer separately through its reviewed release; deploying this receiver alone
+does not complete or enable the doctor's blocking-run detector.
