@@ -143,7 +143,7 @@ run "gate_runner_enabled" {
     error_message = "Gate runner parent slices must allow 16 GiB while retaining six-vCPU ceilings."
   }
   assert {
-    condition     = strcontains(base64decode(aws_launch_template.build.user_data), base64gzip(local.gate_runner_bootstrap)) && strcontains(local.gate_runner_bootstrap, jsonencode(local.gate_runner_host_config)) && endswith(local.gate_runner_bootstrap, file("install-gate-runner.sh"))
+    condition     = strcontains(base64decode(aws_launch_template.build.user_data), base64gzip(local.gated_build_bootstrap)) && local.gated_build_bootstrap == join("\n", [file("../shared/install-docker.sh"), file("install-build-tools.sh"), local.gate_runner_bootstrap]) && strcontains(local.gate_runner_bootstrap, jsonencode(local.gate_runner_host_config)) && endswith(local.gate_runner_bootstrap, file("install-gate-runner.sh"))
     error_message = "The enabled host must install the runner services with their configuration."
   }
   assert {
@@ -165,6 +165,19 @@ run "gate_runner_enabled" {
   assert {
     condition     = aws_ssm_parameter.gate_runner_app[0].type == "SecureString" && aws_ssm_parameter.gate_runner_app[0].value == "unset"
     error_message = "Terraform creates only an encrypted placeholder for the App credential."
+  }
+}
+
+run "maximum_runner_pool_fits_user_data" {
+  command = apply
+  variables {
+    gate_runner_enabled = true
+    gate_runner_count   = 4
+    heavy_runner_count  = 8
+  }
+  assert {
+    condition     = local.gate_runner_host_config.runner_count == 12 && length(base64decode(aws_launch_template.build.user_data)) <= 16384
+    error_message = "The maximum supported runner pool must fit EC2's 16 KiB user-data limit."
   }
 }
 

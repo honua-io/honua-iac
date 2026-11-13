@@ -93,6 +93,17 @@ group `honua-server-gate`, which only `gate_runner_repository` can use.
   UID rather than host root. An `iptables` owner rule rejects instance metadata
   (169.254.0.0/16, `fd00:ec2::254`) for the account and its rootless network stack,
   so jobs cannot obtain the instance role.
+- **Published ports.** The shared installer assigns each runner a disjoint 768-port
+  dynamic range within `20000-32287` (up to 16 runners). Rootless Docker stays in
+  RootlessKit's attached child network namespace so its allocator reads that
+  runner's range. This prevents separate daemons from selecting the same dynamic
+  host port for service containers. Startup fails if the host ephemeral range
+  overlaps this pool; the host sysctl is never changed. Explicit fixed port
+  publications and other host listeners still require separate coordination.
+  The assignment lives in both the new account and its pristine reset template.
+  Updating the bootstrap source does not change existing hosts: activation needs
+  a separately approved maintenance rollout and a concurrent two-runner service
+  container canary before retrying blocked jobs.
 - **Resources.** Each runner and its containers share one slice capped at
   `gate_runner_cpu_quota_percent` (default 600, six vCPUs) and
   `gate_runner_memory_max_gib` (default 16). Two gate jobs at the cap consume up to twelve vCPUs and 32 GiB, before
