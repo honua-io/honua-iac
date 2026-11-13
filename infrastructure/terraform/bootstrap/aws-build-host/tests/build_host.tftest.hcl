@@ -70,6 +70,10 @@ run "spot_host_that_stops_itself" {
     error_message = "Replacement hosts need the native build/runtime dependencies."
   }
   assert {
+    condition     = strcontains(base64decode(aws_launch_template.build.user_data), "apt_retry install -y libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 libcairo2 libcups2t64 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2")
+    error_message = "Replacement hosts need the Chromium system libraries that browser tests load."
+  }
+  assert {
     condition     = one(aws_budgets_budget.build_host.cost_filter).name == "Service" && contains(one(aws_budgets_budget.build_host.cost_filter).values, "Amazon Elastic Compute Cloud - Compute") && length(aws_budgets_budget.build_host.notification) == 2
     error_message = "EC2 compute cost must raise budget email alerts."
   }
@@ -138,6 +142,10 @@ run "gate_runner_off_by_default" {
 run "gate_runner_enabled" {
   command = apply
   variables { gate_runner_enabled = true }
+  assert {
+    condition     = strcontains(base64decode(aws_launch_template.build.user_data), "source <(base64 -d <<< '${base64gzip(file("install-idle-stop.sh"))}' | gunzip)\nsource <(base64 -d <<< '${base64gzip(local.gated_build_bootstrap)}' | gunzip)")
+    error_message = "The compressed idle timer must be installed before network provisioning."
+  }
   assert {
     condition     = alltrue([for runner in local.build_host_runners : runner.memory_max_gib == 16 && runner.cpu_quota_percent == 600 if runner.pool == "gate"])
     error_message = "Gate runner parent slices must allow 16 GiB while retaining six-vCPU ceilings."
