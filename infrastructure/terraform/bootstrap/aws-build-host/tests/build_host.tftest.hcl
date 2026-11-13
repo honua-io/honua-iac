@@ -42,7 +42,7 @@ run "spot_host_that_stops_itself" {
     error_message = "Only capacity-optimized Spot capacity is allowed."
   }
   assert {
-    condition     = toset([for item in one(one(aws_autoscaling_group.build.mixed_instances_policy).launch_template).override : item.instance_type]) == toset(["c6i.24xlarge", "c7i.24xlarge", "m6i.24xlarge", "m7i.24xlarge", "c6a.24xlarge", "m6a.24xlarge", "c7a.24xlarge", "m7a.24xlarge", "r6i.24xlarge", "r7i.24xlarge", "c5.24xlarge", "m5.24xlarge", "c5a.24xlarge", "m5a.24xlarge", "c6in.24xlarge", "r6a.24xlarge"])
+    condition     = toset([for item in one(one(aws_autoscaling_group.build.mixed_instances_policy).launch_template).override : item.instance_type]) == toset(["c6i.16xlarge", "c7i.16xlarge", "c6a.16xlarge", "c7a.16xlarge", "c5a.16xlarge", "m6i.16xlarge", "m7i.16xlarge", "m6a.16xlarge", "m7a.16xlarge", "m5.16xlarge", "m5a.16xlarge", "r6i.16xlarge", "r6a.16xlarge"])
     error_message = "All sixteen 32-or-more-vCPU replacement types must be offered."
   }
   assert {
@@ -68,6 +68,10 @@ run "spot_host_that_stops_itself" {
   assert {
     condition     = strcontains(base64decode(aws_launch_template.build.user_data), "fonts-dejavu-core libatomic1 xmlstarlet skopeo clang zlib1g-dev")
     error_message = "Replacement hosts need the native build/runtime dependencies."
+  }
+  assert {
+    condition     = strcontains(base64decode(aws_launch_template.build.user_data), "apt_retry install -y libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 libcairo2 libcups2t64 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2")
+    error_message = "Replacement hosts need the Chromium system libraries that browser tests load."
   }
   assert {
     condition     = one(aws_budgets_budget.build_host.cost_filter).name == "Service" && contains(one(aws_budgets_budget.build_host.cost_filter).values, "Amazon Elastic Compute Cloud - Compute") && length(aws_budgets_budget.build_host.notification) == 2
@@ -138,6 +142,10 @@ run "gate_runner_off_by_default" {
 run "gate_runner_enabled" {
   command = apply
   variables { gate_runner_enabled = true }
+  assert {
+    condition     = alltrue([for runner in local.build_host_runners : runner.memory_max_gib == 16 && runner.cpu_quota_percent == 600 if runner.pool == "gate"])
+    error_message = "Gate runner parent slices must allow 16 GiB while retaining six-vCPU ceilings."
+  }
   assert {
     condition     = strcontains(base64decode(aws_launch_template.build.user_data), "source <(base64 -d <<< '${base64gzip(local.gated_build_bootstrap)}' | gunzip)") && local.gated_build_bootstrap == join("\n", [file("install-idle-stop.sh"), file("../shared/install-docker.sh"), file("install-build-tools.sh"), local.gate_runner_bootstrap]) && strcontains(local.gate_runner_bootstrap, jsonencode(local.gate_runner_host_config)) && endswith(local.gate_runner_bootstrap, file("install-gate-runner.sh"))
     error_message = "The enabled host must install the runner services with their configuration."

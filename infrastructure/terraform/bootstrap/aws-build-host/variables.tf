@@ -115,7 +115,7 @@ variable "gate_runner_cpu_quota_percent" {
 variable "gate_runner_memory_max_gib" {
   description = "Memory ceiling per gate runner, including its Docker containers."
   type        = number
-  default     = 10
+  default     = 16
   validation {
     condition     = var.gate_runner_memory_max_gib >= 4 && var.gate_runner_memory_max_gib <= 24
     error_message = "gate_runner_memory_max_gib must be between 4 and 24."
@@ -133,7 +133,7 @@ variable "heavy_runner_count" {
 }
 
 variable "heavy_runner_cpu_quota_percent" {
-  description = "CPU ceiling per heavy runner, including its Docker containers (100 = one vCPU). Eight runners at the default leave 32 of 96 vCPUs for lane builds."
+  description = "CPU ceiling per heavy runner, including its Docker containers (100 = one vCPU). Eight runners at the default are ceilings, not reservations: measured use on the 64-vCPU host stays well below them."
   type        = number
   default     = 800
   validation {
