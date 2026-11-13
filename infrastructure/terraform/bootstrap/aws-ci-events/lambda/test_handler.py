@@ -74,7 +74,7 @@ class Signature(unittest.TestCase):
 
 
 class Filtering(unittest.TestCase):
-    def test_workflow_run_red_and_green_kept_others_dropped(self):
+    def test_workflow_run_completed_keeps_all_outcomes(self):
         resp, sent = call("workflow_run", run())
         self.assertEqual(resp["body"], "queued")
         m = sent[0]
@@ -82,9 +82,37 @@ class Filtering(unittest.TestCase):
                           m["default_branch"], m["src"], m["id"]),
                          ("workflow_run", "honua-server", 7, "PR Gate", 55, 9, "failure", "trunk", "webhook", "d-1"))
         self.assertEqual(call("workflow_run", run("success"))[0]["body"], "queued")
-        self.assertEqual(call("workflow_run", run("cancelled"))[0]["body"], "dropped")
-        self.assertEqual(call("workflow_run", run(action="requested"))[0]["body"], "dropped")
+        for outcome in ("cancelled", "skipped", "neutral", "stale", None):
+            with self.subTest(outcome=outcome):
+                self.assertEqual(call("workflow_run", run(outcome))[0]["body"], "queued")
+        self.assertEqual(call("workflow_run", run(action="unknown"))[0]["body"], "dropped")
         self.assertNotIn("pr", call("workflow_run", run(prs=[]))[1][0])  # nulls are stripped
+
+    def test_workflow_lifecycle_metadata_and_attempts(self):
+        for action, status, attempt in (("requested", "queued", 1), ("in_progress", "in_progress", 2),
+                                        ("completed", "completed", 2)):
+            with self.subTest(action=action):
+                payload = run(action=action)
+                payload["workflow_run"].update(status=status, run_attempt=attempt, event="schedule",
+                                               path=".github/workflows/ci.yml",
+                                               created_at="2026-11-11T19:00:00Z",
+                                               run_started_at="2026-11-11T19:01:00Z")
+                msg = call("workflow_run", payload)[1][0]
+                self.assertEqual((msg["action"], msg["run_status"], msg["run_attempt"]), (action, status, attempt))
+                self.assertEqual((msg["run_event"], msg["workflow_path"]), ("schedule", ".github/workflows/ci.yml"))
+                self.assertEqual(msg["started_at"], "2026-11-11T19:01:00Z")
+                self.assertEqual(msg["created_at"], "2026-11-11T19:00:00Z")
+                self.assertEqual(msg["at"], "2026-11-11T20:00:00Z")
+                if action != "completed":
+                    self.assertNotIn("conclusion", msg)
+
+    def test_fork_lifecycle_and_missing_head_repository_dropped(self):
+        for action in ("requested", "in_progress", "completed"):
+            for head in ({"full_name": "stranger/honua-server"}, None, {}):
+                with self.subTest(action=action, head=head):
+                    payload = run(action=action)
+                    payload["workflow_run"].update(head_branch="trunk", head_repository=head)
+                    self.assertEqual(call("workflow_run", payload)[1], [])
 
     def test_fork_workflow_run_dropped(self):
         fork = run(prs=[])
