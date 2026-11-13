@@ -96,6 +96,28 @@ def _external_check(base, payload):
                 at=item.get("completed_at") or item.get("updated_at"))
 
 
+def _workflow_job(base, payload):
+    job = payload.get("workflow_job") or {}
+    action = base["action"]
+    labels = job.get("labels")
+    if (action not in {"queued", "in_progress", "completed"}
+            or any(type(job.get(key)) is not int or job[key] <= 0 for key in ("id", "run_id"))
+            or not isinstance(labels, list) or len(labels) > 32
+            or any(not isinstance(label, str) or not 0 < len(label) <= 100 for label in labels)):
+        return None
+    # Job payloads do not attest the head repository. Observe capacity only,
+    # including fork jobs using this repository's runners; never route a fixer.
+    at = job.get({"queued": "created_at", "in_progress": "started_at", "completed": "completed_at"}[action])
+    def text(key):
+        value = job.get(key)
+        return value[:300] if isinstance(value, str) else None
+    return dict(base, observation_only=True, job_id=job["id"], run_id=job["run_id"],
+                job_status=action, runner_labels=sorted(set(labels)), check=text("name"),
+                branch=text("head_branch"), sha=text("head_sha"), url=text("html_url"), at=at,
+                created_at=job.get("created_at"), started_at=job.get("started_at"),
+                conclusion=text("conclusion") if action == "completed" else None)
+
+
 def _status(base, payload):
     state = payload.get("state")
     if state not in ("failure", "error", "success"):
@@ -178,7 +200,8 @@ def _issue_comment(base, payload):
                 at=comment.get("created_at"))
 
 
-CI_EVENTS = {"workflow_run": _workflow_run, "check_run": _external_check, "check_suite": _external_check,
+CI_EVENTS = {"workflow_run": _workflow_run, "workflow_job": _workflow_job,
+             "check_run": _external_check, "check_suite": _external_check,
              "status": _status, "pull_request": _pull_request}
 TEXT_EVENTS = {"pull_request_review": _review, "pull_request_review_comment": _review_comment,
                "pull_request_review_thread": _review_thread, "issue_comment": _issue_comment}
