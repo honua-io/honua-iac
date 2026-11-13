@@ -2,10 +2,9 @@
 
 One Ubuntu 24.04 build host for agent lanes whose local disk cannot sustain
 .NET server builds. A Spot-only Auto Scaling group has minimum zero, maximum one,
-and initial desired capacity one. It offers c6i.4xlarge, c7i.4xlarge, m6i.4xlarge,
-m7i.4xlarge, c6a.4xlarge, m6a.4xlarge and c5.4xlarge across one public subnet per
-available regional availability zone. All options are amd64 with 16 vCPUs and at
-least 30 GiB RAM. The `price-capacity-optimized` strategy selects a pool by price
+and initial desired capacity one. It offers 64-vCPU (`*.16xlarge`) c, m and r instance types
+across one public subnet per available regional availability zone, all amd64 with at
+least 128 GiB RAM, on a gp3 root volume at 12,000 IOPS and 1,000 MiB/s. The `price-capacity-optimized` strategy selects a pool by price
 and available capacity; there is no On-Demand fallback or capacity rebalance surge.
 
 Choose `region` by current Spot prices before deployment and set it explicitly.
@@ -168,7 +167,7 @@ labelled `self-hosted, linux, x64, honua-heavy`, join the organization runner gr
 and are numbered after the gate runners (`gate-runner-3` onwards with two gate
 runners). Each runner slice is capped at `heavy_runner_cpu_quota_percent` (default
 800) and `heavy_runner_memory_max_gib` (default 16, a hosted runner's memory); eight
-runners at the defaults leave 32 of 96 vCPUs for lane builds. The heartbeat counts
+runners at the defaults are ceilings, not reservations, on the 64-vCPU host. The heartbeat counts
 only gate runners, so heavy jobs never change the PR Gate's compute choice.
 Heavy jobs start PostGIS as a service container. The Actions runner reads
 `/proc/1/cgroup` before it starts one, so heavy runners use `ProtectProc=default`:

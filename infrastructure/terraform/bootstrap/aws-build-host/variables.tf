@@ -133,7 +133,7 @@ variable "heavy_runner_count" {
 }
 
 variable "heavy_runner_cpu_quota_percent" {
-  description = "CPU ceiling per heavy runner, including its Docker containers (100 = one vCPU). Eight runners at the default leave 32 of 96 vCPUs for lane builds."
+  description = "CPU ceiling per heavy runner, including its Docker containers (100 = one vCPU). Eight runners at the default are ceilings, not reservations: measured use on the 64-vCPU host stays well below them."
   type        = number
   default     = 800
   validation {
