@@ -66,7 +66,7 @@ Unit tests: `python3 -m unittest discover -s lambda -p 'test_*.py'`; plan contra
    url=$(terraform -chdir=infrastructure/terraform/bootstrap/aws-ci-events output -raw function_url)
    jq -n --arg url "$url" --rawfile secret ~/honua-private/ci-events-webhook-secret '{
      name: "web", active: true,
-     events: ["workflow_run","check_suite","check_run","pull_request","pull_request_review",
+     events: ["workflow_run","workflow_job","check_suite","check_run","pull_request","pull_request_review",
               "pull_request_review_comment","pull_request_review_thread","issue_comment","status"],
      config: {url: $url, content_type: "json", insecure_ssl: "0", secret: $secret}}' |
      gh api orgs/honua-io/hooks --method POST --input - --jq '{id, active, events}'
@@ -125,3 +125,30 @@ needed: `workflow_run` is already subscribed. No new resources, role permissions
 secret rotation or lane-host settings are required. Install the event-ledger
 consumer separately through its reviewed release; deploying this receiver alone
 does not complete or enable the doctor's blocking-run detector.
+
+## Runner queue evidence
+
+`workflow_job` queued/in_progress/completed messages retain job and run IDs,
+requested runner labels, lifecycle timestamps and conclusion. Labels are bounded
+to 32 entries of 100 characters; steps and raw job payloads are omitted. The
+messages set `observation_only: true`: job payloads cannot attest a same-repository
+head, and must never authorize fixers, reruns, pushes or cancellation. Fork jobs
+are included as observations of capacity used in the webhook repository.
+
+These are partial observations, not a complete queue inventory. Missing deliveries,
+labels or lifecycle timestamps remain unknown. Queue age starts at the queued
+job's creation timestamp, never the parent workflow creation time. See
+[GitHub workflow_job events](https://docs.github.com/en/webhooks/webhook-events-and-payloads#workflow_job).
+
+After the reviewed consumer is installed and this receiver is applied using the
+saved-plan procedure above, main adds `workflow_job` to the existing org hook.
+This preserves every currently subscribed event and does not read or rotate the secret:
+
+```bash
+hook_id=<existing-ci-events-hook-id>
+gh api "orgs/honua-io/hooks/$hook_id" --jq '{events: ((.events + ["workflow_job"]) | unique)}' |
+  gh api "orgs/honua-io/hooks/$hook_id" --method PATCH --input - --jq '{id, active, events}'
+```
+
+The command needs `admin:org_hook` access. Runtime activation remains main-owned;
+receiver deployment alone does not make runner-queue telemetry available.

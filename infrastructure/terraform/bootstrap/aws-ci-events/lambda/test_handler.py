@@ -73,6 +73,50 @@ class Signature(unittest.TestCase):
         self.assertEqual(process(ev)["statusCode"], 405)
 
 
+class JobEvidence(unittest.TestCase):
+    def payload(self, action):
+        return dict(repository=REPO, action=action, workflow_job={
+            "id": 123, "run_id": 9, "name": "Shard", "head_branch": "fork-branch", "head_sha": "a" * 40,
+            "labels": ["self-hosted", "honua-heavy", "honua-heavy"], "status": action,
+            "created_at": "2026-11-11T19:00:00Z", "started_at": "2026-11-11T19:01:00Z",
+            "completed_at": "2026-11-11T20:00:00Z", "conclusion": "failure",
+            "steps": [{"name": "untrusted code"}]})
+
+    def test_signed_job_lifecycle_is_bounded_observation_only(self):
+        for action, at in (("queued", "19:00"), ("in_progress", "19:01"), ("completed", "20:00")):
+            with self.subTest(action=action):
+                resp, sent = call("workflow_job", self.payload(action))
+                self.assertEqual(resp["body"], "queued")
+                msg = sent[0]
+                self.assertEqual((msg["job_id"], msg["run_id"], msg["job_status"]), (123, 9, action))
+                self.assertEqual(msg["runner_labels"], ["honua-heavy", "self-hosted"])
+                self.assertTrue(msg["observation_only"])
+                self.assertEqual(msg["at"], f"2026-11-11T{at}:00Z")
+                self.assertNotIn("steps", msg)
+                self.assertNotIn("pr", msg)
+                if action != "completed":
+                    self.assertNotIn("conclusion", msg)
+        self.assertEqual(call("workflow_job", self.payload("waiting"))[1], [])
+
+    def test_invalid_identity_or_labels_dropped(self):
+        for key, values in {"id": [None, True, 0, "123"], "run_id": [-1, None],
+                            "labels": [None, "honua-heavy", [None], ["x" * 101], ["x"] * 33]}.items():
+            for value in values:
+                with self.subTest(key=key, value=value):
+                    payload = self.payload("queued")
+                    payload["workflow_job"][key] = value
+                    self.assertEqual(call("workflow_job", payload)[1], [])
+
+    def test_signature_and_repo_allowlist_apply_to_jobs(self):
+        payload = self.payload("queued")
+        self.assertEqual(call("workflow_job", payload, {"sign_with": b"wrong"})[0]["statusCode"], 401)
+        os.environ["ALLOWED_REPOS"] = "honua-console"
+        try:
+            self.assertEqual(call("workflow_job", payload)[1], [])
+        finally:
+            del os.environ["ALLOWED_REPOS"]
+
+
 class Filtering(unittest.TestCase):
     def test_workflow_run_completed_keeps_all_outcomes(self):
         resp, sent = call("workflow_run", run())
