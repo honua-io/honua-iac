@@ -34,9 +34,65 @@ run "lane_is_stack_only_and_workloads_are_bounded" {
     condition     = aws_cloudwatch_event_rule.nightly.schedule_expression == "cron(0 3 * * ? *)" && aws_lambda_function.reaper.environment[0].variables["SERVICE_ROLE_ARN"] == local.service_role_arn
     error_message = "The nightly reaper must delete through the same service role."
   }
+  assert {
+    condition     = length(aws_budgets_budget.shared) == 0 && length(local.region_controls) == 0 && length(local.shared_controls) == 0
+    error_message = "Default member-account behavior must remain unchanged."
+  }
 }
 run "wildcard_trust_is_rejected" {
   command = plan
   variables { lane_principal_arns = [format("arn:aws:iam::%s:role/*", format("%012d", 1))] }
   expect_failures = [var.lane_principal_arns]
+}
+run "shared_account_denies_and_alert_budget" {
+  command = plan
+  variables {
+    shared_account          = true
+    protected_state_buckets = ["synthetic-state"]
+    protected_ssm_paths     = ["/synthetic/gate"]
+    budget_alert_email      = "gate@example.invalid"
+  }
+  assert {
+    condition = alltrue([for policy in [aws_iam_role_policy.lane.policy, aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] : anytrue([
+      for statement in jsondecode(policy).Statement : try(statement.Sid == "DenyOtherRegions" && statement.Effect == "Deny" && statement.Condition.StringNotEquals["aws:RequestedRegion"] == "us-east-1" && toset(statement.NotAction) == toset(["iam:*", "route53:*", "cloudfront:*"]), false)
+    ])])
+    error_message = "All lane, service and workload identities must carry the region deny."
+  }
+  assert {
+    condition = alltrue([for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] : alltrue([
+      for sid in ["DenyOtherBuckets", "DenyState", "DenyPrivateParameters", "DenyNonGateChanges"] : anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == sid && statement.Effect == "Deny", false)])
+    ])])
+    error_message = "Service and workload identities must protect existing shared resources."
+  }
+  assert {
+    condition     = local.shared_controls[3].Condition.StringNotLikeIfExists["aws:ResourceTag/aws:cloudformation:stack-name"] == "honua-gate-*" && !contains(local.shared_controls[3].NotAction, "ec2:CreateTags") && !contains(local.shared_controls[3].NotAction, "route53:ChangeResourceRecordSets")
+    error_message = "Missing ownership tags must deny mutation, including retagging and shared DNS writes."
+  }
+  assert {
+    condition     = contains(local.shared_controls[1].Resource, "arn:aws:s3:::synthetic-state/*") && contains(local.shared_controls[2].Resource, format("arn:aws:ssm:us-east-1:%s:parameter/synthetic/gate", var.member_account_id))
+    error_message = "State objects and exact private SSM inputs need explicit protection."
+  }
+  assert {
+    condition     = length(aws_iam_policy.workload_boundary.policy) <= 6144 && length(aws_iam_role_policy.cloudformation.policy) <= 10240
+    error_message = "Generated policies must fit AWS managed and inline policy size limits."
+  }
+  assert {
+    condition     = local.stack_tag_controls[0].Effect == "Deny" && local.stack_tag_controls[0].Condition.StringNotEqualsIfExists["aws:RequestTag/HonuaGate"] == "true"
+    error_message = "Gate creation and updates must include the budget allocation tag."
+  }
+  assert {
+    condition = alltrue([for policy in [aws_iam_role_policy.lane.policy, aws_iam_policy.lane_boundary.policy] : anytrue([
+      for statement in jsondecode(policy).Statement : try(statement.Sid == "TagGateStacks" && statement.Effect == "Allow" && statement.Action == "cloudformation:TagResource" && statement.Resource == local.stack_arn && toset(statement.Condition.StringEquals["cloudformation:CreateAction"]) == toset(["CreateStack", "UpdateStack"]), false)
+    ])])
+    error_message = "Tagged stack creation and updates require tagging permission in both lane policies."
+  }
+  assert {
+    condition     = aws_budgets_budget.shared[0].limit_amount == "300" && one(aws_budgets_budget.shared[0].cost_filter).name == "TagKeyValue" && one(one(aws_budgets_budget.shared[0].cost_filter).values) == "user:HonuaGate$true" && one(aws_budgets_budget.shared[0].notification).threshold == 80
+    error_message = "Shared mode must budget only gate-tagged costs with an 80 percent alert."
+  }
+}
+run "shared_account_requires_private_protection_inputs" {
+  command = plan
+  variables { shared_account = true }
+  expect_failures = [var.protected_state_buckets, var.protected_ssm_paths, var.budget_alert_email]
 }
