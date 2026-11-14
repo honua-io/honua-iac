@@ -287,6 +287,7 @@ class SpotNoticeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             body = re.search(r"<<'SPOT'\n(.*?)\nSPOT\n", INSTALLER.read_text(), re.S).group(1)
+            body = body.replace("/run/honua-gate-runner-draining", str(root / "draining"))
             (root / "notice").write_text(body)
             for tool, script in {
                 "curl": '#!/bin/bash\nif [[ "$*" == *instance-action* ]]; then echo "$STATUS"; else echo token; fi\n',
