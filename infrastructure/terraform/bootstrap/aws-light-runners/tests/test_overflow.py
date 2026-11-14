@@ -18,11 +18,13 @@ class OverflowTests(unittest.TestCase):
         self.stub("df", 'printf "Filesystem 1024-blocks Used Available Capacity Mounted\\nmock 99999999 0 ${FREE_KIB:-99999999} 0%% /\\n"')
         self.stub("docker", 'echo "$*" >> "$HOME/docker.log"; if [[ "$1" == ps ]]; then echo "${CONTAINERS:-}"; fi; exit "${DOCKER_STATUS:-0}"')
         self.scripts = {}
-        for name in ("pre-pr-exec.sh", "pre-pr-session.sh"):
+        for name in ("pre-pr-admit.sh", "pre-pr-exec.sh", "pre-pr-session.sh"):
             text = (ROOT / name).read_text().replace(". /etc/honua-gate-runner-env", ":")
             text = text.replace("/run/honua-gate-runner-draining", str(self.home / "draining"))
+            text = text.replace("/usr/local/bin/honua-pre-pr-admit", str(self.home / "pre-pr-admit.sh"))
             target = self.home / name
             target.write_text(text)
+            target.chmod(0o755)
             self.scripts[name] = str(target)
 
     def stub(self, name, text):
@@ -88,6 +90,24 @@ class OverflowTests(unittest.TestCase):
         out, _ = session.communicate(timeout=5)
         self.assertEqual(session.returncode, 75)
         self.assertEqual(out, "")
+
+    def test_executor_rechecks_after_session_admission(self):
+        for reason in ("draining", "disk"):
+            with self.subTest(reason=reason):
+                session = self.session()
+                try:
+                    self.assertEqual(session.stdout.readline(), "HONUA_OVERFLOW_ADMITTED\n")
+                    if reason == "draining":
+                        (self.home / "draining").touch()
+                    else:
+                        self.env["FREE_KIB"] = "1024"
+                    result = self.execute("touch", str(self.home / "executed"))
+                    self.assertEqual(result.returncode, 75)
+                    self.assertFalse((self.home / "executed").exists())
+                finally:
+                    session.communicate(timeout=5)
+                    (self.home / "draining").unlink(missing_ok=True)
+                    self.env.pop("FREE_KIB", None)
 
     def test_workload_status_is_preserved_including_75(self):
         for status in (0, 1, 75):

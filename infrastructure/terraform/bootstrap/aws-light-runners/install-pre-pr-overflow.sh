@@ -69,4 +69,4 @@ SSHD
 /usr/sbin/sshd -t
 systemctl reload ssh
 
-chmod 0755 /usr/local/bin/honua-pre-pr-exec /usr/local/bin/honua-pre-pr-session
+chmod 0755 /usr/local/bin/honua-pre-pr-admit /usr/local/bin/honua-pre-pr-exec /usr/local/bin/honua-pre-pr-session

@@ -198,6 +198,9 @@ resource "aws_launch_template" "runners" {
       "(umask 077 && echo '${base64encode(jsonencode(local.runner_host_config))}' | base64 -d > /etc/honua-gate-runner.json)",
       file("${local.build_host}/install-gate-runner.sh"),
       var.pre_pr_overflow == null ? "" : join("\n", [
+        "cat > /usr/local/bin/honua-pre-pr-admit <<'HONUA_OVERFLOW_ADMISSION'",
+        file("${path.module}/pre-pr-admit.sh"),
+        "HONUA_OVERFLOW_ADMISSION",
         "cat > /usr/local/bin/honua-pre-pr-exec <<'HONUA_OVERFLOW_EXECUTOR'",
         file("${path.module}/pre-pr-exec.sh"),
         "HONUA_OVERFLOW_EXECUTOR",

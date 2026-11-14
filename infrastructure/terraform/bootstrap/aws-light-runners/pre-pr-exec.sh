@@ -4,9 +4,7 @@ set -euo pipefail
 . /etc/honua-gate-runner-env
 exec 9>"$HOME/.honua-overflow.lock"
 flock -n 9 || exit 75
-[[ ! -e /run/honua-gate-runner-draining ]] || exit 75
-free_kib="$(df -Pk "$HOME" | awk 'NR == 2 {print $4}')"
-(( free_kib >= 20 * 1024 * 1024 )) || exit 75
+/usr/local/bin/honua-pre-pr-admit
 export DOTNET_PROCESSOR_COUNT=4 HONUA_STAGE0_MAX_CPU_COUNT=4
 
 # A disconnected session can leave containers behind in this account's private daemon.
