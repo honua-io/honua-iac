@@ -117,6 +117,27 @@ mock_provider "aws" {
   }
 }
 
+override_resource {
+  target = aws_lambda_function.control_plane_tick[0]
+  values = {
+    arn = "arn:aws:lambda:us-east-1:123456789012:function:honua-tick"
+  }
+}
+
+override_resource {
+  target = aws_lambda_function.control_plane_backstop[0]
+  values = {
+    arn = "arn:aws:lambda:us-east-1:123456789012:function:honua-backstop"
+  }
+}
+
+override_resource {
+  target = aws_lambda_function.control_plane_reconcile[0]
+  values = {
+    arn = "arn:aws:lambda:us-east-1:123456789012:function:honua-reconcile"
+  }
+}
+
 mock_provider "random" {}
 mock_provider "null" {}
 
