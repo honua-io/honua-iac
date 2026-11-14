@@ -15,11 +15,16 @@ import sys
 root, version = Path(sys.argv[1]), sys.argv[2]
 major, minor, patch = version.split('.')
 band = f'{major}.{minor}.{int(patch) // 100 * 100}'
-manifest_root = root / 'sdk-manifests' / band
-sets = list((manifest_root / 'workloadsets').glob('*/microsoft.net.workloads.workloadset.json'))
+sets = list((root / 'sdk-manifests' / band / 'workloadsets').glob('*/microsoft.net.workloads.workloadset.json'))
 try:
     complete = (root / 'dotnet').is_file() and (root / 'sdk' / version / 'dotnet.dll').is_file()
-    complete &= bool(sets) and bool(list(manifest_root.glob('*/*/WorkloadManifest.json')))
+    inventory = json.loads((root / '.honua-sdk-manifests' / f'{version}.json').read_text())
+    complete &= isinstance(inventory, list) and bool(inventory)
+    for relative in inventory:
+        path = Path(relative)
+        if path.is_absolute() or '..' in path.parts or path.parts[0] != 'sdk-manifests':
+            sys.exit(1)
+        complete &= isinstance(json.loads((root / path).read_text()), dict)
     for workload_set in sets:
         for name, reference in json.loads(workload_set.read_text()).items():
             manifest_version, feature_band = reference.split('/')
@@ -37,6 +42,19 @@ staging=$(mktemp -d "$install_dir/.sdk-stage.XXXXXX")
 trap 'rm -rf "${staging:?}"' EXIT
 curl -fsSL --retry 5 --retry-all-errors https://dot.net/v1/dotnet-install.sh -o "$staging/install.sh"
 bash "$staging/install.sh" --version "$sdk_version" --install-dir "$staging/sdk" --no-path
+# Record the archive's own manifest layout: stock SDKs can ship loose manifests
+# in an earlier feature band and need not contain a workload set at all.
+python3 - "$staging/sdk" "$sdk_version" <<'PYINVENTORY'
+import json
+from pathlib import Path
+import sys
+root, version = Path(sys.argv[1]), sys.argv[2]
+inventory = sorted(str(p.relative_to(root)) for p in
+                   (root / 'sdk-manifests').rglob('WorkloadManifest.json'))
+receipt = root / '.honua-sdk-manifests' / f'{version}.json'
+receipt.parent.mkdir(parents=True, exist_ok=True)
+receipt.write_text(json.dumps(inventory))
+PYINVENTORY
 sdk_complete "$staging/sdk" || { echo "Downloaded SDK $sdk_version is incomplete" >&2; exit 1; }
 # Preserve files in use by running builds; fill missing versioned files only.
 cp -an "$staging/sdk/." "$install_dir/"

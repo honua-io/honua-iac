@@ -48,8 +48,8 @@ cp -a "$SDK_TEST_PAYLOAD/." "$2/"
                         SDK_TEST_LOG=str(self.log), SDK_TEST_INSTALLER=str(installer),
                         SDK_TEST_PAYLOAD=str(self.payload))
 
-    def launch(self):
-        return subprocess.Popen(['bash', str(SCRIPT), '11.0.100', str(self.target)], env=self.env)
+    def launch(self, version='11.0.100'):
+        return subprocess.Popen(['bash', str(SCRIPT), version, str(self.target)], env=self.env)
 
     def test_fresh_install_and_repeated_admission(self):
         self.assertEqual(0, self.launch().wait())
@@ -77,6 +77,25 @@ cp -a "$SDK_TEST_PAYLOAD/." "$2/"
         manifest.write_text('{')
         self.assertNotEqual(0, self.launch().wait())
         self.assertEqual('{', manifest.read_text())
+
+    def test_stock_archive_without_workload_set(self):
+        import shutil
+        shutil.rmtree(self.payload / 'sdk-manifests/11.0.100/workloadsets')
+        self.assertEqual(0, self.launch().wait())
+        missing = self.target / 'sdk-manifests/11.0.100/example.manifest/11.0.1/WorkloadManifest.json'
+        missing.unlink()
+        self.assertEqual(0, self.launch().wait())
+        self.assertTrue(missing.is_file())
+
+    def test_stock_net10_archive_uses_initial_manifest_band(self):
+        import shutil
+        (self.payload / 'sdk/11.0.100').rename(self.payload / 'sdk/10.0.404')
+        manifests = self.payload / 'sdk-manifests/11.0.100'
+        shutil.rmtree(manifests / 'workloadsets')
+        manifests.rename(self.payload / 'sdk-manifests/10.0.100')
+        self.assertEqual(0, self.launch('10.0.404').wait())
+        self.assertEqual(0, self.launch('10.0.404').wait())
+        self.assertEqual(['download'], self.log.read_text().splitlines())
 
     def test_incomplete_download_fails(self):
         (self.payload / 'sdk-manifests/11.0.100/example.manifest/11.0.1/WorkloadManifest.json').unlink()
