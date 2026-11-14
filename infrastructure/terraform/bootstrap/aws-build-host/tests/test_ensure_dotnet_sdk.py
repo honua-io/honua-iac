@@ -97,6 +97,13 @@ cp -a "$SDK_TEST_PAYLOAD/." "$2/"
         self.assertEqual(0, self.launch('10.0.404').wait())
         self.assertEqual(['download'], self.log.read_text().splitlines())
 
+    def test_sdk_json_comments_trailing_commas_and_string_literals(self):
+        manifest = self.payload / 'sdk-manifests/11.0.100/example.manifest/11.0.1/WorkloadManifest.json'
+        manifest.write_text('\ufeff{\n// SDK comment\n"url": "https://example.test/a,}",\n'
+                            '"description": "/* literal */", /* comment */ "packs": ["one",],}')
+        self.assertEqual(0, self.launch().wait())
+        self.assertEqual(0, self.launch().wait())
+
     def test_incomplete_download_fails(self):
         (self.payload / 'sdk-manifests/11.0.100/example.manifest/11.0.1/WorkloadManifest.json').unlink()
         self.assertNotEqual(0, self.launch().wait())

@@ -10,12 +10,23 @@ flock 9
 sdk_complete() {
   python3 - "${1:-$install_dir}" "$sdk_version" <<'PY'
 import json
+import re
 from pathlib import Path
 import sys
 root, version = Path(sys.argv[1]), sys.argv[2]
 major, minor, patch = version.split('.')
 band = f'{major}.{minor}.{int(patch) // 100 * 100}'
 sets = list((root / 'sdk-manifests' / band / 'workloadsets').glob('*/microsoft.net.workloads.workloadset.json'))
+def manifest_object(path):
+    # SDK manifests use JSON with comments and trailing commas. Keep string
+    # literals intact, including URLs and comment-like text inside descriptions.
+    literal = r'"(?:\\.|[^"\\])*"'
+    content = re.sub(literal + r'|//[^\n]*|/\*.*?\*/',
+                     lambda m: m[0] if m[0].startswith('"') else ' ',
+                     path.read_text(encoding='utf-8-sig'), flags=re.S)
+    content = re.sub(literal + r'|,\s*(?=[}\]])',
+                     lambda m: m[0] if m[0].startswith('"') else '', content)
+    return isinstance(json.loads(content), dict)
 try:
     complete = (root / 'dotnet').is_file() and (root / 'sdk' / version / 'dotnet.dll').is_file()
     inventory = json.loads((root / '.honua-sdk-manifests' / f'{version}.json').read_text())
@@ -24,12 +35,12 @@ try:
         path = Path(relative)
         if path.is_absolute() or '..' in path.parts or path.parts[0] != 'sdk-manifests':
             sys.exit(1)
-        complete &= isinstance(json.loads((root / path).read_text()), dict)
+        complete &= manifest_object(root / path)
     for workload_set in sets:
         for name, reference in json.loads(workload_set.read_text()).items():
             manifest_version, feature_band = reference.split('/')
             manifest = root / 'sdk-manifests' / feature_band / name.lower() / manifest_version / 'WorkloadManifest.json'
-            complete &= isinstance(json.loads(manifest.read_text()), dict)
+            complete &= manifest_object(manifest)
     sys.exit(0 if complete else 1)
 except (OSError, ValueError, TypeError):
     sys.exit(1)
