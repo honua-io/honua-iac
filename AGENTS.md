@@ -71,17 +71,11 @@ HONUA_TERRAFORM_POLICY_STRICT=true \
 Maintainer integration / drift validation (thin wrappers in `scripts/`
 that exec into `infrastructure/terraform/validation/scripts/`):
 
-```bash
-./scripts/run-aws-terraform-integration.sh
-./scripts/run-azure-terraform-integration.sh
-./scripts/run-eks-terraform-integration.sh
-./scripts/run-aks-terraform-integration.sh
-./scripts/run-k8s-terraform-integration.sh
-./scripts/run-terraform-drift-detection.sh
-```
+Use the `scripts/run-{aws,azure,eks,aks,k8s}-terraform-integration.sh` wrappers or
+`scripts/run-terraform-drift-detection.sh` for the authorized target.
 
-There is no dedicated unit-test suite; `terraform validate` + the policy gate
-are the test/lint surface.
+Static validation, policy gates and focused Terraform/build-host tests are defined in
+`.github/workflows/`; live integration and drift checks require explicit authorization.
 
 ## Architecture
 
@@ -115,8 +109,7 @@ scripts/        repo-root wrappers + gh secret/var bootstrap + tf-secrets helper
 docs/           operator-deployment.md, module-publishing-decision.md
   devops/       terraform-validation.md, examples/ (validated HCL snippets)
   features/     capability summary
-.github/workflows/  terraform-ci.yml, terraform-manual-validation.yml,
-                    cloud-demo-smoke.yml
+.github/workflows/  CI, validation, drift and deployment workflows
 ```
 
 ## Release declarations
@@ -149,18 +142,6 @@ docs/           operator-deployment.md, module-publishing-decision.md
 - Do not run `terraform apply` against real cloud accounts unless explicitly
   asked — applies create billable infrastructure.
 
-## Shared dev-environment rules (multi-agent WSL)
-
-This machine runs many agents concurrently (**Codex + Claude**, often via agentflow with multiple tabs/agents). To prevent host lockups and lost work, every agent MUST follow these:
-
-1. **Heavy builds/tests are throttled by a shared lock.** `dotnet` and `npm` are PATH-shimmed, so their build/test/publish/pack and ci/install/test/run-build/run-test subcommands automatically run under a global semaphore (default 1 concurrent, `HONUA_BUILD_SLOTS`). For other heavy tools, call the wrapper explicitly: `with-build-lock pytest ...`, `with-build-lock cargo build`, `with-build-lock make build`. The lock is shared across ALL of this user's processes (every Codex/Claude tab, agentflow children). Do not bypass it for compiles or test suites. Long-running servers (`dotnet run`, `npm run dev`) are intentionally NOT locked — never wrap those.
-
-2. **Commit and push when you finish a task** so your worktree can be reclaimed. An hourly job (`honua-clean`) removes a worktree ONLY when it is clean AND fully pushed (merged, remote-gone, or idle >=2d). Dirty or unpushed worktrees are NEVER touched — but uncommitted/unpushed work blocks reclamation and is at risk if the instance is reset. Build artifacts (bin/obj and untracked node_modules) are reclaimed automatically and safely.
-
-3. **Commit hygiene — no agent attribution.** Author every commit as the repo owner only (git identity: Mike McDougall <mike@honua.io>). Do **NOT** add any agent/tool attribution to commits: no `Co-Authored-By: Claude ...`, no `Co-Authored-By: Codex ...` (or other bot co-authors), and no "Generated with Claude Code" / "Generated with Codex" / "🤖" lines in the message or PR body. Write a plain, descriptive commit message and stop.
-
-4. **Agents outside this WSL environment (Windows Codex/Claude, other machines).** The build lock and worktree conventions above exist only inside WSL. If you are not running inside it: work from your own checkout and never edit the WSL working trees (e.g. via `\\wsl.localhost`) — git remotes are the only shared surface; claim an issue before starting (assign yourself or leave a claiming comment), because agents that cannot see each other's worktrees cannot avoid collisions any other way; and run at most one heavy build/test at a time, avoiding overlap with active WSL builds — no semaphore protects the host across environments.
-
 ## Review guidelines
 Reviews (people, Codex, Claude) judge the lines a PR adds or changes by Robert C. Martin's *Clean Code*
 and cite smell codes ([rubric](https://github.com/honua-io/.github/blob/main/clean-code/RUBRIC.md)). The
@@ -177,3 +158,20 @@ BLOCKING:
 
 WARNING: the rubric's other smells (N2-N7, G6-G36, T1-T9), e.g. G25 magic numbers or G12
 single-implementation interfaces.
+
+<!-- fleet:begin v3 sha256=4faeba041ae102508d105847af58b407641cbfdf1ae506488819a2ccdbe73e29 -->
+## Fleet rules (all Honua repos)
+
+Generated from the org fleet-rules source; do not edit this block. Start with org skill `honua-system-map`.
+
+1. Author commits as the repository owner's configured git identity. No AI attribution in commits or PR bodies.
+2. Use a separate worktree per task, off the default branch, on durable disk. Include current trunk before opening a PR. No shared-checkout edits or git stash; preserve work with commits.
+3. Run .NET builds and tests only through the approved remote build-host shims. Never fall back to a local build. See org skill `honua-build-host`.
+4. Commit and push completed work; keep existing branches, commits and worktrees until their retention rules permit cleanup.
+5. Claim work before starting, reread the issue and current lane rulings, and release the claim after completion. See org skill `honua-dev-loop`.
+6. Use a PR slot and bundle at least three issues, a plan row, or a permitted single-work reason. Current caps and exceptions come from current lane rulings.
+7. Target the default branch with the repository's PR template and conventional title. Never force-push or use an admin merge.
+8. Run pre-PR checks, obtain one independent review of the final head, and resolve every review thread. Merge on green required checks; arm auto-merge where enforced checks support it. See org skill `honua-pr-flow`.
+9. Read failed required-check logs and fix in one push. For red trunk, fix forward or revert within the repository's current ruling deadline; see org skills `honua-red-pr` and `honua-trunk-red`.
+10. Never commit secrets, deployment identifiers, private repository names or infrastructure details. Security findings belong in the private tracker. Archived repos get no issues or PRs; public instructions name org skills only.
+<!-- fleet:end -->
