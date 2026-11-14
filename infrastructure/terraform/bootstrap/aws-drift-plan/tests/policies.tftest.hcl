@@ -144,6 +144,45 @@ run "state_prefixes_are_disjoint" {
   }
 }
 
+run "demo_reads_only_managed_public_object_prefixes" {
+  command = plan
+
+  assert {
+    condition = toset(one([
+      for s in jsondecode(data.aws_iam_policy_document.plan_only["demo_infra"].json).Statement : s
+      if s.Sid == "ManagedObjectRead"
+      ]).Resource) == toset([
+      "arn:aws:s3:::honua-demo-data-123456789012/manifest/*",
+      "arn:aws:s3:::honua-demo-data-123456789012/demo-data/*",
+    ])
+    error_message = "Demo refresh must read the managed manifest and static-data prefixes without granting bucket-wide object access."
+  }
+
+  assert {
+    condition = length([
+      for s in jsondecode(data.aws_iam_policy_document.plan_only["iac_bootstrap"].json).Statement : s
+      if s.Sid == "ManagedObjectRead"
+    ]) == 0
+    error_message = "The bootstrap role must not receive demo object reads."
+  }
+}
+
+run "custom_object_reads_replace_defaults" {
+  command = plan
+
+  variables {
+    demo_readable_object_arns = ["arn:aws:s3:::custom-demo/public/descriptor.json"]
+  }
+
+  assert {
+    condition = one([
+      for s in jsondecode(data.aws_iam_policy_document.plan_only["demo_infra"].json).Statement : s
+      if s.Sid == "ManagedObjectRead"
+    ]).Resource == "arn:aws:s3:::custom-demo/public/descriptor.json"
+    error_message = "An explicit object allowlist must replace the default prefixes."
+  }
+}
+
 run "branch_subjects_are_refused" {
   command = plan
 

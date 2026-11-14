@@ -94,7 +94,7 @@ variable "demo_denied_secret_names" {
 }
 
 variable "demo_readable_object_arns" {
-  description = "S3 object ARNs the demo stacks manage as aws_s3_object (refresh issues HeadObject). Empty derives the published-manifest prefix of honua-demo-data-<account>."
+  description = "S3 object ARNs the demo stacks manage as aws_s3_object (refresh issues HeadObject). Empty derives the manifest/ and demo-data/ prefixes of honua-demo-data-<account>. A nonempty list replaces these defaults."
   type        = list(string)
   default     = []
 }
