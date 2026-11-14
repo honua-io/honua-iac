@@ -143,6 +143,7 @@ locals {
 
   demo_readable_object_arns = length(var.demo_readable_object_arns) > 0 ? var.demo_readable_object_arns : [
     "arn:aws:s3:::honua-demo-data-${local.account_id}/manifest/*",
+    "arn:aws:s3:::honua-demo-data-${local.account_id}/demo-data/*",
   ]
 
   demo_secret_arns = [
