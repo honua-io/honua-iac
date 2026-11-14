@@ -38,9 +38,9 @@ Actions: `batch:DescribeJob*`, `batch:DescribeServiceJob`.
 
 [cloudfront authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_cloudfront.html)
 
-Function code, distribution origin headers, custom response headers, keys and field-level encryption. Get* deliberately also restricts metadata. Distribution/function reads support tags; key/FLE/policy reads and the listed account-wide list APIs do not.
+Function code, distribution origin headers, custom response headers, keys and field-level encryption. Get* and List* deliberately also restrict metadata to keep the managed policy within its size quota. Distribution/function reads support tags; key/FLE/policy reads and the listed account-wide list APIs do not.
 
-Actions: `cloudfront:Get*`, `cloudfront:ListDistributions*`, `cloudfront:ListDistributionTenants*`, `cloudfront:ListStreamingDistributions`, `cloudfront:ListFieldLevelEncryption*`, `cloudfront:ListPublicKeys`, `cloudfront:ListKeyGroups`, `cloudfront:ListResponseHeadersPolicies`.
+Actions: `cloudfront:Get*`, `cloudfront:List*`.
 
 ## ec2
 
@@ -78,25 +78,25 @@ Actions: `ecr:GetAuthorizationToken`, `ecr:BatchGetImage`, `ecr:GetDownloadUrlFo
 
 [lambda authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_lambda.html)
 
-Function/layer code, environment variables and execution data. Get* deliberately also restricts metadata. Function reads support tags; GetLayerVersion and account-wide ListFunctions do not expose this ownership key. List APIs returning function configurations are included.
+Function/layer code, environment variables and execution data. Get* deliberately also restricts metadata. Function reads support tags; GetLayerVersion and account-wide ListFunctions do not expose this ownership key. List APIs returning function configurations and stored event-filter patterns are included. ListEventSourceMappings has no resource-tag condition. The broad Get*/List* patterns also restrict metadata and keep the managed policy within its size quota.
 
-Actions: `lambda:Get*`, `lambda:ListFunctions`, `lambda:ListVersionsByFunction`, `lambda:ListFunctionVersionsByCapacityProvider`, `lambda:ListWebFunction*`, `lambda:ListMicrovm*`, `lambda:ListNetworkConnector*`.
+Actions: `lambda:Get*`, `lambda:List*`.
 
 ## logs
 
 [logs authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_logs.html)
 
-Event contents, query results, samples, anomaly records, lookup tables, transformer constants and saved query text. Log-group reads support tags; DescribeAccountPolicies, DescribeQueries and DescribeQueryDefinitions have no resource-tag condition.
+Event contents, query results, samples, anomaly records, lookup tables, transformer constants and saved query text. Get* also restricts metadata to keep the managed policy within its size quota. Log-group reads support tags; DescribeAccountPolicies, DescribeQueries and DescribeQueryDefinitions have no resource-tag condition.
 
-Actions: `logs:GetLog*`, `logs:FilterLogEvents`, `logs:GetQueryResults`, `logs:StartQuery`, `logs:StartLiveTail`, `logs:ListAnomalies`, `logs:GetLookupTable`, `logs:GetTransformer`, `logs:DescribeAccountPolicies`, `logs:DescribeQueries`, `logs:DescribeQueryDefinitions`, `logs:GetScheduledQuery*`, `logs:ListScheduledQueries`.
+Actions: `logs:Get*`, `logs:FilterLogEvents`, `logs:StartQuery`, `logs:StartLiveTail`, `logs:ListAnomalies`, `logs:DescribeAccountPolicies`, `logs:DescribeQueries`, `logs:DescribeQueryDefinitions`, `logs:ListScheduledQueries`.
 
 ## rds
 
 [rds authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_rds.html)
 
-Database log contents and data-bearing copy/restore/export operations. Source resource authorization must expose the ownership tag. The separate rds-data and rds-db namespaces have no Allow.
+Database log contents, stored proxy initialization SQL (DescribeDBProxyTargetGroups), and data-bearing copy/restore/export operations. Proxy target-group reads support resource tags. Source resource authorization must expose the ownership tag. The separate rds-data and rds-db namespaces have no Allow.
 
-Actions: `rds:Download*`, `rds:Copy*`, `rds:Restore*`, `rds:StartExportTask`.
+Actions: `rds:DescribeDBProxyTargetGroups`, `rds:Download*`, `rds:Copy*`, `rds:Restore*`, `rds:StartExportTask`.
 
 ## route53
 
@@ -118,9 +118,9 @@ Actions: `secretsmanager:GetSecretValue`, `secretsmanager:BatchGetSecretValue`.
 
 [wafv2 authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_wafv2.html)
 
-Decrypted API keys and sampled HTTP request contents. GetSampledRequests supports tags; GetDecryptedAPIKey and ListAPIKeys do not expose this ownership key.
+Decrypted API keys, sampled HTTP request contents, and Web ACL custom response bodies and literal headers. Get* deliberately also restricts metadata. GetWebACL and GetSampledRequests support tags; GetDecryptedAPIKey and ListAPIKeys do not expose this ownership key.
 
-Actions: `wafv2:GetDecryptedAPIKey`, `wafv2:ListAPIKeys`, `wafv2:GetSampledRequests`.
+Actions: `wafv2:Get*`, `wafv2:ListAPIKeys`.
 
 ## Remaining allowed families
 
