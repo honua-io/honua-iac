@@ -91,3 +91,28 @@ variable "budget_alert_email" {
     error_message = "Supply an email address."
   }
 }
+
+variable "pre_pr_overflow" {
+  description = "Optional SSH access for one isolated pre-pr slot on the existing host. Supply an operator IPv4 CIDR and public key; reduce Actions runner limits to reserve 4 CPUs and 8 GiB."
+  type = object({
+    ssh_cidr       = string
+    ssh_public_key = string
+  })
+  default = null
+  validation {
+    condition = var.pre_pr_overflow == null ? true : (
+      can(cidrnetmask(var.pre_pr_overflow.ssh_cidr)) &&
+      try(tonumber(split("/", var.pre_pr_overflow.ssh_cidr)[1]) >= 24, false) &&
+      can(regex("^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256) [A-Za-z0-9+/=]+( [^\n]*)?$", var.pre_pr_overflow.ssh_public_key))
+    )
+    error_message = "Overflow requires an IPv4 CIDR of /24 or narrower and a single-line SSH public key."
+  }
+  validation {
+    condition = var.pre_pr_overflow == null ? true : (
+      var.runner_count <= 15 &&
+      var.runner_count * var.runner_cpu_quota_percent + 400 <= 3000 &&
+      var.runner_count * var.runner_memory_max_gib + 8 <= 62
+    )
+    error_message = "Reserve overflow's 4 CPUs/8 GiB plus at least 2 CPUs/2 GiB for the host; for default per-runner limits set runner_count to 10. Index 16 is reserved for overflow."
+  }
+}

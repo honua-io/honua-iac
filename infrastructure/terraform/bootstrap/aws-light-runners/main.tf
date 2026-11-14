@@ -19,6 +19,7 @@ locals {
     org                 = "honua-io"
     group               = var.runner_group
     labels              = ["self-hosted", "linux", "x64", "honua-light"]
+    pre_pr_overflow     = var.pre_pr_overflow
     runner_count        = var.runner_count
     cpu_quota_percent   = var.runner_cpu_quota_percent
     memory_max_gib      = var.runner_memory_max_gib
@@ -28,6 +29,13 @@ locals {
     heartbeat_parameter = local.heartbeat_parameter
   }
   build_host = "${path.module}/../aws-build-host"
+  overflow_toolchain = var.pre_pr_overflow == null ? "" : join("\n", [
+    "cat > /usr/local/bin/ensure-dotnet-sdk <<'HONUA_SDK_INSTALLER'",
+    file("${local.build_host}/ensure-dotnet-sdk.sh"),
+    "HONUA_SDK_INSTALLER",
+    "chmod 755 /usr/local/bin/ensure-dotnet-sdk",
+    file("${local.build_host}/install-build-tools.sh")
+  ])
 }
 
 data "aws_ssm_parameter" "ubuntu" {
@@ -78,11 +86,21 @@ resource "aws_route_table_association" "runners" {
   route_table_id = aws_route_table.runners.id
 }
 
-# No inbound rules: operators reach the host through SSM Session Manager.
+# SSH is opt-in and restricted to the overflow operator network.
 resource "aws_security_group" "runners" {
   name_prefix = "${local.name}-"
-  description = "Light runner host: no inbound, outbound to GitHub, package feeds and registries"
+  description = "Light runner host: optional restricted overflow SSH and outbound dependencies"
   vpc_id      = aws_vpc.runners.id
+  dynamic "ingress" {
+    for_each = var.pre_pr_overflow == null ? [] : [var.pre_pr_overflow]
+    content {
+      description = "Pre-pr overflow operator SSH"
+      from_port   = 22
+      to_port     = 22
+      protocol    = "tcp"
+      cidr_blocks = [ingress.value.ssh_cidr]
+    }
+  }
   egress {
     description = "GitHub, package feeds and container registries"
     from_port   = 0
@@ -172,11 +190,23 @@ resource "aws_launch_template" "runners" {
   ebs_optimized = true
   user_data = base64encode(join("\n", [
     "#!/bin/bash\nset -euo pipefail",
-    file("${local.build_host}/../shared/install-docker.sh"),
-    "apt_retry install -y git rsync python3 python3-venv unzip jq",
-    "(umask 077 && echo '${base64encode(jsonencode(local.runner_host_config))}' | base64 -d > /etc/honua-gate-runner.json)",
-    # Compressed and sourced to stay under the 16 KiB EC2 limit with apt_retry in scope.
-    "source <(base64 -d <<< '${base64gzip(file("${local.build_host}/install-gate-runner.sh"))}' | gunzip)"
+    # One compressed payload keeps the complete bootstrap below EC2's 16 KiB limit.
+    "source <(base64 -d <<< '${base64gzip(join("\n", [
+      file("${local.build_host}/../shared/install-docker.sh"),
+      "apt_retry install -y git rsync python3 python3-venv unzip jq",
+      local.overflow_toolchain,
+      "(umask 077 && echo '${base64encode(jsonencode(local.runner_host_config))}' | base64 -d > /etc/honua-gate-runner.json)",
+      file("${local.build_host}/install-gate-runner.sh"),
+      var.pre_pr_overflow == null ? "" : join("\n", [
+        "cat > /usr/local/bin/honua-pre-pr-exec <<'HONUA_OVERFLOW_EXECUTOR'",
+        file("${path.module}/pre-pr-exec.sh"),
+        "HONUA_OVERFLOW_EXECUTOR",
+        "cat > /usr/local/bin/honua-pre-pr-session <<'HONUA_OVERFLOW_SESSION'",
+        file("${path.module}/pre-pr-session.sh"),
+        "HONUA_OVERFLOW_SESSION",
+        file("${path.module}/install-pre-pr-overflow.sh")
+      ])
+    ]))}' | gunzip)"
   ]))
   iam_instance_profile { name = aws_iam_instance_profile.runners.name }
   network_interfaces {
@@ -231,6 +261,17 @@ resource "aws_autoscaling_group" "runners" {
       dynamic "override" {
         for_each = toset(var.instance_types)
         content { instance_type = override.value }
+      }
+    }
+  }
+  dynamic "instance_refresh" {
+    for_each = var.pre_pr_overflow == null ? [] : [var.pre_pr_overflow]
+    content {
+      strategy = "Rolling"
+      preferences {
+        min_healthy_percentage = 0
+        max_healthy_percentage = 100
+        skip_matching          = true
       }
     }
   }

@@ -245,11 +245,13 @@ jobs:
           terraform -chdir=infrastructure/terraform/bootstrap/aws-audit test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-gate-account test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-gate-runtime test -no-color
+          terraform -chdir=infrastructure/terraform/bootstrap/aws-light-runners test -no-color
 
       - name: Gate reaper and private configuration controls (offline)
         run: |
           python3 -m unittest discover -s infrastructure/terraform/bootstrap/aws-gate-runtime/reaper -v
           python3 -m unittest discover -s infrastructure/terraform/bootstrap/aws-gate-tools -v
+          python3 -m unittest discover -s infrastructure/terraform/bootstrap/aws-light-runners/tests -v
 
       # Needs the provider schema and the nested modules those inits installed.
       # Confirms every committed deploy-identity manifest still covers the
