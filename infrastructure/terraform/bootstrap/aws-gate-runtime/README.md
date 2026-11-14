@@ -72,9 +72,13 @@ stacks before granting access.
 Other existing-resource mutations require the immutable AWS-owned
 `aws:cloudformation:stack-name` resource tag to match `honua-gate-*`. A missing tag
 or unavailable condition key denies the request (`StringNotLikeIfExists` with
-Deny); tag-changing calls are not exempt. Read calls and enumerated resource
-allocation APIs are exempt; IAM PassRole remains restricted to gate role names
-and the allowed receiving services. The default member-account mode is unchanged.
+Deny); tag-changing calls are not exempt. Content-bearing reads use the same
+ownership deny in both the CloudFormation service policy and workload boundary.
+Metadata reads and enumerated resource allocation APIs remain exempt; IAM
+PassRole remains restricted to gate role names and the allowed receiving services.
+The default member-account mode is unchanged. See the
+[content-read audit](content-read-controls.md) for covered APIs and unsupported
+ownership conditions.
 
 AWS does not expose this resource tag for every action. In particular, Route 53
 record changes, untaggable CloudFront resources, Application Auto Scaling
@@ -91,7 +95,7 @@ They can allocate resources using existing dependencies (for example network
 subnets, clusters or load balancer parents). Service-linked roles are account-wide
 and outside workload permissions boundaries; service operations performed by
 those roles are not fenced by these policies. S3 ownership uses names rather
-than stack tags. Read access to the allowed service families is account-wide.
+than stack tags. Metadata access to the allowed service families is account-wide.
 Main must assess those shared-account limits, existing gate-prefixed names,
 service-linked roles, tag propagation and supported resource types before a live
 run. This identity is for reviewed gate templates; arbitrary untrusted templates

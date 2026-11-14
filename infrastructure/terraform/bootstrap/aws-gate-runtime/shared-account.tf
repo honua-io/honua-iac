@@ -60,6 +60,11 @@ locals {
         ]
       ]), ["s3:*"], local.shared_creation_actions)
       Condition = { StringNotLikeIfExists = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" } }
+    },
+    {
+      Sid       = "DenyNonGateContentReads", Effect = "Deny", Resource = "*"
+      Action    = local.shared_content_read_actions
+      Condition = { StringNotLikeIfExists = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" } }
     }
   ] : control if var.shared_account]
 }

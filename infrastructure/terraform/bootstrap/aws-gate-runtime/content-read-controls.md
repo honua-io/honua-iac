@@ -1,0 +1,133 @@
+# Shared-account content-read controls
+
+`DenyNonGateContentReads` applies to both generated service and workload policies
+only in shared-account mode. It denies the actions below unless AWS supplies
+`aws:ResourceTag/aws:cloudformation:stack-name` matching `honua-gate-*`.
+A missing key denies the request, including requests for a gate resource.
+Unsupported APIs require a reviewed policy adjustment, not a blanket exception.
+
+The list is conservative: wildcard families can include metadata operations.
+This is an offline policy audit against the linked AWS service authorization
+references. It does not establish live tag propagation or an AWS authorization pass.
+
+## acm
+
+[acm authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_acm.html)
+
+Certificates, exported private keys and ACME credentials. These actions expose resource tags.
+
+Actions: `acm:GetCertificate`, `acm:ExportCertificate`, `acm:GetAcmeExternalAccountBindingCredentials`.
+
+## backup
+
+[backup authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_backup.html)
+
+Restore metadata and recovery-point access; restore/copy operations also require ownership. Recovery-point APIs support tags; GetRestoreJobMetadata and GetRestoreTestingInferredMetadata do not expose this ownership key.
+
+Actions: `backup:GetRecoveryPoint*`, `backup:GetRestore*`, `backup:DescribeRecoveryPoint`, `backup:StartRestoreJob`, `backup:StartCopyJob`, `backup:Copy*`.
+
+## batch
+
+[batch authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_batch.html)
+
+Job definitions and jobs can contain commands and environment values. DescribeJobDefinitions, DescribeJobs and DescribeServiceJob have no resource-tag condition.
+
+Actions: `batch:DescribeJob*`, `batch:DescribeServiceJob`.
+
+## cloudfront
+
+[cloudfront authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_cloudfront.html)
+
+Function code, distribution origin headers, custom response headers, keys and field-level encryption. Get* deliberately also restricts metadata. Distribution/function reads support tags; key/FLE/policy reads and the listed account-wide list APIs do not.
+
+Actions: `cloudfront:Get*`, `cloudfront:ListDistributions*`, `cloudfront:ListDistributionTenants*`, `cloudfront:ListStreamingDistributions`, `cloudfront:ListFieldLevelEncryption*`, `cloudfront:ListPublicKeys`, `cloudfront:ListKeyGroups`, `cloudfront:ListResponseHeadersPolicies`.
+
+## ec2
+
+[ec2 authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_ec2.html)
+
+Console output/screenshots, passwords, launch-template/user-data, UEFI data, public keys and VPN configuration. Instance reads support tags; DescribeLaunchTemplateVersions and DescribeVpnConnections and DescribeKeyPairs cannot use this ownership key.
+
+Actions: `ec2:GetPasswordData`, `ec2:GetConsole*`, `ec2:GetLaunchTemplateData`, `ec2:GetInstanceUefiData`, `ec2:GetVpnConnectionDeviceSampleConfiguration`, `ec2:DescribeInstanceAttribute`, `ec2:DescribeKeyPairs`, `ec2:DescribeLaunchTemplateVersions`, `ec2:DescribeVpnConnections`.
+
+## ecs
+
+[ecs authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_ecs.html)
+
+Interactive command execution, task definitions and task/service/daemon revisions can expose commands and environment values. Tasks support tags; DescribeTaskDefinition has no resource-tag condition.
+
+Actions: `ecs:ExecuteCommand`, `ecs:DescribeTask*`, `ecs:DescribeServiceRevisions`, `ecs:DescribeDaemon*`.
+
+## elasticloadbalancing
+
+[ELB V2 authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_elbv2.html) and [classic ELB reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_elb.html)
+
+Trust-store certificate/revocation contents and listener/rule content, including fixed responses, plus classic load-balancer policy public keys. Trust-store reads support tags; DescribeListeners, DescribeRules and DescribeLoadBalancerPolicies do not expose this ownership key.
+
+Actions: `elasticloadbalancing:GetTrustStore*`, `elasticloadbalancing:DescribeRules`, `elasticloadbalancing:DescribeListeners`, `elasticloadbalancing:DescribeLoadBalancerPolicies`.
+
+## ecr
+
+[ecr authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_ecr.html)
+
+Registry credentials and image manifests/layers. Repository content reads support tags; GetAuthorizationToken has no resource-tag condition.
+
+Actions: `ecr:GetAuthorizationToken`, `ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer`.
+
+## lambda
+
+[lambda authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_lambda.html)
+
+Function/layer code, environment variables and execution data. Get* deliberately also restricts metadata. Function reads support tags; GetLayerVersion and account-wide ListFunctions do not expose this ownership key. List APIs returning function configurations are included.
+
+Actions: `lambda:Get*`, `lambda:ListFunctions`, `lambda:ListVersionsByFunction`, `lambda:ListFunctionVersionsByCapacityProvider`, `lambda:ListWebFunction*`, `lambda:ListMicrovm*`, `lambda:ListNetworkConnector*`.
+
+## logs
+
+[logs authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_logs.html)
+
+Event contents, query results, samples, anomaly records, lookup tables, transformer constants and saved query text. Log-group reads support tags; DescribeAccountPolicies, DescribeQueries and DescribeQueryDefinitions have no resource-tag condition.
+
+Actions: `logs:GetLog*`, `logs:FilterLogEvents`, `logs:GetQueryResults`, `logs:StartQuery`, `logs:StartLiveTail`, `logs:ListAnomalies`, `logs:GetLookupTable`, `logs:GetTransformer`, `logs:DescribeAccountPolicies`, `logs:DescribeQueries`, `logs:DescribeQueryDefinitions`, `logs:GetScheduledQuery*`, `logs:ListScheduledQueries`.
+
+## rds
+
+[rds authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_rds.html)
+
+Database log contents and data-bearing copy/restore/export operations. Source resource authorization must expose the ownership tag. The separate rds-data and rds-db namespaces have no Allow.
+
+Actions: `rds:Download*`, `rds:Copy*`, `rds:Restore*`, `rds:StartExportTask`.
+
+## route53
+
+[route53 authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_route53.html)
+
+TXT/other record contents and stored traffic-policy documents. These APIs do not expose the ownership key.
+
+Actions: `route53:ListResourceRecordSets`, `route53:GetTrafficPolicy`, `route53:ListTrafficPolicyVersions`.
+
+## secretsmanager
+
+[secretsmanager authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_secretsmanager.html)
+
+Secret values. GetSecretValue supports resource tags; BatchGetSecretValue cannot evaluate this key, so even gate batch reads are denied. Use per-secret GetSecretValue.
+
+Actions: `secretsmanager:GetSecretValue`, `secretsmanager:BatchGetSecretValue`.
+
+## wafv2
+
+[wafv2 authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_wafv2.html)
+
+Decrypted API keys and sampled HTTP request contents. GetSampledRequests supports tags; GetDecryptedAPIKey and ListAPIKeys do not expose this ownership key.
+
+Actions: `wafv2:GetDecryptedAPIKey`, `wafv2:ListAPIKeys`, `wafv2:GetSampledRequests`.
+
+## Remaining allowed families
+
+- [Application Auto Scaling](https://docs.aws.amazon.com/service-authorization/latest/reference/list_application-autoscaling.html): read/list/describe APIs expose scaling metadata and forecasts; no stored payload or credential read was identified.
+- [IAM](https://docs.aws.amazon.com/service-authorization/latest/reference/list_iam.html): service-role reads are already limited to gate role names; workload IAM permissions remain restricted to PassRole. There is no account-wide credential or policy-content read Allow.
+- S3 content is already restricted to the gate bucket prefix, with explicit protected-state denial. SSM is explicitly denied in full. No new exception is added for either.
+
+The mocked tests assert foreign/missing-tag secret denial and preservation of
+the single-secret gate-tag allow in both policies. AWS must still verify those
+decisions live, including batch and multi-resource behavior, before a gate pass.
