@@ -9,3 +9,7 @@ free_kib="$(df -Pk "$HOME" | awk 'NR == 2 {print $4}')"
 printf 'HONUA_OVERFLOW_ADMITTED\n'
 # The router holds stdin open until snapshot, sync, execution and copy-back finish.
 cat > /dev/null
+# If admission SSH disconnects first, preserve checkout ownership until any
+# already-running executor (including its container cleanup) has released its lock.
+exec 8>"$HOME/.honua-overflow.lock"
+flock 8

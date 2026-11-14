@@ -51,6 +51,30 @@ class OverflowTests(unittest.TestCase):
         self.assertEqual(third.returncode, 0)
         self.assertEqual(out, "HONUA_OVERFLOW_ADMITTED\n")
 
+    def test_disconnected_admission_waits_for_running_executor(self):
+        first = self.session()
+        workload = None
+        try:
+            self.assertEqual(first.stdout.readline(), "HONUA_OVERFLOW_ADMITTED\n")
+            workload = subprocess.Popen(
+                ["bash", self.scripts["pre-pr-exec.sh"], "bash", "-c", 'echo running; read -r release'],
+                env=self.env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            self.assertEqual(workload.stdout.readline(), "running\n")
+            first.stdin.close()
+            first.stdin = None
+            with self.assertRaises(subprocess.TimeoutExpired):
+                first.wait(timeout=0.2)
+            second = self.session()
+            out, _ = second.communicate(timeout=5)
+            self.assertEqual((second.returncode, out), (75, ""))
+        finally:
+            if workload is not None:
+                workload.communicate("release\n", timeout=5)
+            first.communicate(timeout=5)
+        third = self.session()
+        out, _ = third.communicate(timeout=5)
+        self.assertEqual((third.returncode, out), (0, "HONUA_OVERFLOW_ADMITTED\n"))
+
     def test_low_disk_refuses_before_admission(self):
         self.env["FREE_KIB"] = "1024"
         session = self.session()

@@ -94,7 +94,9 @@ The installed SDK/cache environment is loaded for every SSH command.
 
 1. Open a dedicated SSH connection running `/usr/local/bin/honua-pre-pr-session`.
    Keep its stdin open throughout snapshot, sync, execution and copy-back. This
-   holds a host-local session lock. Only the exact stdout line
+   holds a host-local session lock. If that connection closes while an executor
+   still runs, admission stays locked until execution and cleanup finish.
+   Only the exact stdout line
    `HONUA_OVERFLOW_ADMITTED` means admission succeeded. Busy, draining, and less
    than 20 GiB free refuse with exit 75 before printing that line.
 2. Sync the checkout using a separate SSH connection while holding admission.
