@@ -103,7 +103,7 @@ variable "gate_runner_count" {
 }
 
 variable "gate_runner_cpu_quota_percent" {
-  description = "CPU ceiling per gate runner, including its Docker containers (100 = one vCPU). The default leaves lane builds at least four vCPUs while two gate jobs run."
+  description = "CPU ceiling per gate runner, including its Docker containers (100 = one vCPU). Two default gate runners have a combined twelve-vCPU ceiling; account for the heavy pool and lane builds separately."
   type        = number
   default     = 600
   validation {

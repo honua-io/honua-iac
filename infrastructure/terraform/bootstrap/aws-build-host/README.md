@@ -290,3 +290,22 @@ ready, then enable the repository selector and record a normal non-skipped PR
 run's job conclusions, `i-` runner names, execution and queue times. Compare build
 10–14 minutes, fast tests 6–12 minutes and format 8–21 minutes before expanding
 the runner workload. Server test shards use the heavy runners above, not these.
+
+### Spot drain and CPU budget
+
+On the two-minute spot warning, the notice service creates a root-owned volatile
+`/run/honua-gate-runner-draining` marker before stopping heartbeat publication and
+all runner services together. Service conditions and checks before registration
+and listener startup prevent restarts from admitting more jobs. The marker lasts
+until reboot. Stopping the listeners sends GitHub's runner-shutdown signal;
+GitHub records interrupted jobs as failed, rather than transparently reassigning
+a running job. The honua-server full-CI shutdown observer requests one retry of
+those failed jobs after the attempt completes. Successful jobs are retained;
+product failures and second interruptions remain failures.
+
+The default eight heavy ceilings total 64 vCPUs (8 × 800%); the two gate ceilings
+add 12 vCPUs (2 × 600%). These independent ceilings permit 76 vCPUs of demand on
+the 64-vCPU host and guarantee no lane-build headroom. They are not reservations.
+Do not infer a reserved CPU budget from an idle heartbeat. Changing the ceilings
+requires Terraform configuration and the documented bootstrap rollout; this
+change does not apply infrastructure or silently change active job limits.
