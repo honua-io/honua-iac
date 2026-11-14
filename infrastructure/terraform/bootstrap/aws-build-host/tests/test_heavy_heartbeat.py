@@ -42,6 +42,12 @@ class HeavyHeartbeatTests(unittest.TestCase):
             path.write_text('#!/bin/bash\n' + body + '\n')
             path.chmod(0o755)
 
+    def test_light_pool_reports_idle_without_heavy_capacity(self):
+        payload = self.publish({'runners': [{'pool': 'light', 'labels': ['honua-light']}] * 12,
+                                'listeners': '1 2 12', 'workers': '2'})
+        self.assertEqual(payload['idle'], 2)
+        self.assertEqual(payload['heavy'], {'version': 1, 'idle': 0})
+
     def test_pool_observation_is_independent_and_fails_closed(self):
         runners = [{'pool': 'gate', 'labels': ['honua-build']}] * 2 + [
             {'pool': 'heavy', 'labels': ['honua-heavy']}] * 2

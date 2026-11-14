@@ -15,11 +15,21 @@ locals {
   app_parameter       = "/${local.name}/github-app"
   heartbeat_parameter = "/${local.name}/heartbeat"
   runner_host_config = {
-    region              = var.region
-    org                 = "honua-io"
-    group               = var.runner_group
-    labels              = ["self-hosted", "linux", "x64", "honua-light"]
-    pre_pr_overflow     = var.pre_pr_overflow
+    region            = var.region
+    org               = "honua-io"
+    group             = var.runner_group
+    labels            = ["self-hosted", "linux", "x64", "honua-light"]
+    pre_pr_overflow   = var.pre_pr_overflow
+    min_free_disk_gib = 40
+    runners = [for index in range(var.runner_count) : {
+      pool               = "light"
+      group              = var.runner_group
+      labels             = ["self-hosted", "linux", "x64", "honua-light"]
+      cpu_quota_percent  = var.runner_cpu_quota_percent
+      memory_max_gib     = var.runner_memory_max_gib
+      service_containers = true
+      light_overflow     = false
+    }]
     runner_count        = var.runner_count
     cpu_quota_percent   = var.runner_cpu_quota_percent
     memory_max_gib      = var.runner_memory_max_gib
@@ -36,6 +46,28 @@ locals {
     "chmod 755 /usr/local/bin/ensure-dotnet-sdk",
     file("${local.build_host}/install-build-tools.sh")
   ])
+  runner_bootstrap = join("\n", concat(["#!/bin/bash\nset -euo pipefail"], [
+    file("${local.build_host}/../shared/install-docker.sh"),
+    "apt_retry install -y git rsync python3 python3-venv unzip jq",
+    local.overflow_toolchain,
+    "(umask 077 && echo '${base64encode(jsonencode(local.runner_host_config))}' | base64 -d > /etc/honua-gate-runner.json)",
+    file("${local.build_host}/install-gate-runner.sh"),
+    var.pre_pr_overflow == null ? "" : join("\n", [
+      "cat > /usr/local/bin/honua-pre-pr-admit <<'HONUA_OVERFLOW_ADMISSION'",
+      file("${path.module}/pre-pr-admit.sh"),
+      "HONUA_OVERFLOW_ADMISSION",
+      "cat > /usr/local/bin/honua-pre-pr-exec <<'HONUA_OVERFLOW_EXECUTOR'",
+      file("${path.module}/pre-pr-exec.sh"),
+      "HONUA_OVERFLOW_EXECUTOR",
+      "cat > /usr/local/bin/honua-pre-pr-session <<'HONUA_OVERFLOW_SESSION'",
+      file("${path.module}/pre-pr-session.sh"),
+      "HONUA_OVERFLOW_SESSION",
+      file("${path.module}/install-pre-pr-overflow.sh")
+    ])
+  ]))
+  runner_user_data = base64gzip(local.runner_bootstrap)
+  user_data_bytes  = length(local.runner_user_data) * 3 / 4 - length(regexall("=", local.runner_user_data))
+
 }
 
 data "aws_ssm_parameter" "ubuntu" {
@@ -188,29 +220,7 @@ resource "aws_launch_template" "runners" {
   name_prefix   = "${local.name}-"
   image_id      = data.aws_ssm_parameter.ubuntu.value
   ebs_optimized = true
-  user_data = base64encode(join("\n", [
-    "#!/bin/bash\nset -euo pipefail",
-    # One compressed payload keeps the complete bootstrap below EC2's 16 KiB limit.
-    "source <(base64 -d <<< '${base64gzip(join("\n", [
-      file("${local.build_host}/../shared/install-docker.sh"),
-      "apt_retry install -y git rsync python3 python3-venv unzip jq",
-      local.overflow_toolchain,
-      "(umask 077 && echo '${base64encode(jsonencode(local.runner_host_config))}' | base64 -d > /etc/honua-gate-runner.json)",
-      file("${local.build_host}/install-gate-runner.sh"),
-      var.pre_pr_overflow == null ? "" : join("\n", [
-        "cat > /usr/local/bin/honua-pre-pr-admit <<'HONUA_OVERFLOW_ADMISSION'",
-        file("${path.module}/pre-pr-admit.sh"),
-        "HONUA_OVERFLOW_ADMISSION",
-        "cat > /usr/local/bin/honua-pre-pr-exec <<'HONUA_OVERFLOW_EXECUTOR'",
-        file("${path.module}/pre-pr-exec.sh"),
-        "HONUA_OVERFLOW_EXECUTOR",
-        "cat > /usr/local/bin/honua-pre-pr-session <<'HONUA_OVERFLOW_SESSION'",
-        file("${path.module}/pre-pr-session.sh"),
-        "HONUA_OVERFLOW_SESSION",
-        file("${path.module}/install-pre-pr-overflow.sh")
-      ])
-    ]))}' | gunzip)"
-  ]))
+  user_data     = local.runner_user_data
   iam_instance_profile { name = aws_iam_instance_profile.runners.name }
   network_interfaces {
     associate_public_ip_address = true

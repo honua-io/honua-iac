@@ -108,6 +108,24 @@ register_for_one_job() { echo REGISTERED; }
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn("REGISTERED", result.stdout)
 
+    def test_runner_temp_roots_do_not_share_fixed_test_directories(self):
+        body = re.search(r"<<'ENVIRONMENT'\n(.*?)\nENVIRONMENT\n", INSTALLER.read_text(), re.S).group(1)
+        roots = []
+        for index in (1, 2):
+            home = self.root / f"runner-{index}"
+            temporary = home / ".cache/tmp"
+            temporary.mkdir(parents=True, mode=0o700)
+            result = subprocess.run(
+                ["/bin/bash", "-c", body + "\nexec python3 -c 'import tempfile; print(tempfile.gettempdir())'"],
+                env=dict(os.environ, HOME=str(home)), capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            root = Path(result.stdout.strip())
+            self.assertEqual(root, temporary)
+            (root / "honua-compose-options").mkdir()
+            roots.append(root)
+        self.assertNotEqual(*roots)
+
     def test_embedded_shell_scripts_parse(self):
         bodies = re.findall(r"<<'(PREPARE|RUN|ENVIRONMENT|CHECK|HEARTBEAT|REGISTRATION|SPOT)'\n(.*?)\n\1\n", INSTALLER.read_text(), re.S)
         self.assertEqual(len(bodies), 7)
@@ -142,7 +160,7 @@ class RunnerRegistrationTests(unittest.TestCase):
         start = body.index('secrets="$(mktemp')
         end = body.index('\ncase "$mode" in', start)
         body = body[:start] + (
-            'secrets="$TEST_ROOT"\n'
+            'secrets="$TEST_ROOT"\ninstallation=1\n'
             'group_id_named() { case "$1" in gate) echo 42 ;; heavy) [[ -n "${NO_HEAVY_GROUP:-}" ]] || echo 43 ;; esac; }\n'
         ) + body[end:]
         body = body.replace('/etc/honua-gate-runner.json', str(self.config))
@@ -167,6 +185,20 @@ if url.endswith('/latest/api/token'):
     print('token'); sys.exit(0)
 if url.endswith('/latest/meta-data/instance-id'):
     print('i-abc123'); sys.exit(0)
+if '/access_tokens' in url:
+    if os.environ.get('QUEUE_DENIED'): sys.exit(22)
+    print('{"token":"test-queue-token"}'); sys.exit(0)
+if '/actions/runs?' in url:
+    print(json.dumps({'total_count': int(os.environ.get('RUN_COUNT', '1')),
+                      'workflow_runs': [{'id': 99}]})); sys.exit(0)
+if '/actions/runs/99/jobs?' in url:
+    if os.environ.get('QUEUE_FAILED'): sys.exit(22)
+    page = int(url.rsplit('page=', 1)[-1])
+    if os.environ.get('LATE_HEAVY') and page == 1:
+        print(json.dumps({'total_count':101, 'jobs':[{'status':'completed','labels':['honua-heavy']}]*100})); sys.exit(0)
+    labels = ['honua-heavy'] if os.environ.get('HEAVY_WAITING') or os.environ.get('LATE_HEAVY') else ['honua-light']
+    job = {} if os.environ.get('BAD_JOB') else {'status': os.environ.get('JOB_STATUS','queued'), 'labels': labels}
+    print(json.dumps({'total_count':101 if os.environ.get('LATE_HEAVY') else 1, 'jobs':[] if os.environ.get('EMPTY_JOBS') else [job]})); sys.exit(0)
 if url.endswith('/generate-jitconfig'):
     (root / 'jit-request').write_text(args[args.index('-d') + 1])
     print(json.dumps({'runner': {'id': json.loads(os.environ.get('RUNNER_ID', '123'))},
@@ -175,6 +207,44 @@ page = root / (('heavy-page-' if '/runner-groups/43/' in url else 'page-') + url
 print(page.read_text() if page.exists() else '{"runners": []}')
 """)
         curl.chmod(0o755)
+
+    def overflow_registration(self, overflow_indices=(2,), **overrides):
+        config = json.loads(self.config.read_text())
+        config['overflow_repository'] = 'test-org/server'
+        config['runners'][1]['light_overflow'] = 2 in overflow_indices
+        self.config.write_text(json.dumps(config))
+        result, requests = self.run_script('register', '2', **overrides)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads((self.root / 'jit-request').read_text())['labels'], requests
+
+    def test_clear_queue_adds_light_to_single_job_registration(self):
+        labels, requests = self.overflow_registration()
+        self.assertEqual(labels, ['honua-heavy', 'honua-light'])
+        self.assertTrue(any('status=in_progress' in url for url in requests))
+
+    def test_reserved_heavy_runner_never_reads_queue_or_adds_light(self):
+        labels, requests = self.overflow_registration(overflow_indices=())
+        self.assertEqual(labels, ['honua-heavy'])
+        self.assertFalse(any('/actions/runs?' in url for url in requests))
+
+    def test_queued_heavy_job_keeps_runner_heavy_only(self):
+        labels, _ = self.overflow_registration(HEAVY_WAITING='1')
+        self.assertEqual(labels, ['honua-heavy'])
+
+    def test_running_heavy_job_does_not_block_light_overflow(self):
+        labels, _ = self.overflow_registration(HEAVY_WAITING='1', JOB_STATUS='in_progress')
+        self.assertIn('honua-light', labels)
+
+    def test_second_job_page_heavy_queue_is_not_missed(self):
+        labels, requests = self.overflow_registration(LATE_HEAVY='1')
+        self.assertEqual(labels, ['honua-heavy'])
+        self.assertTrue(any('/jobs?' in url and 'page=2' in url for url in requests))
+
+    def test_queue_failure_is_closed_without_breaking_registration(self):
+        for error in ('QUEUE_DENIED', 'QUEUE_FAILED', 'BAD_JOB', 'EMPTY_JOBS', 'RUN_COUNT'):
+            with self.subTest(error=error):
+                labels, _ = self.overflow_registration(**{error:'1000' if error == 'RUN_COUNT' else '1'})
+                self.assertEqual(labels, ['honua-heavy'])
 
     def runner(self, number, **overrides):
         return dict(id=number, name=f"i-abc123-1-{number}", status="offline", busy=False, **overrides)
