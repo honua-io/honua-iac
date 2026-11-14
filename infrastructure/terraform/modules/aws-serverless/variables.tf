@@ -1487,7 +1487,7 @@ variable "control_plane_scheduled_tick_schedules" {
     always-on in-process timer; under Poll the server hosts the timers and these are inert (the whole
     block is gated on enable_control_plane_events). Defaults mirror the in-process timer cadences:
     WorkflowSchedule ~1min, JobReconciliation ~1min, TileCacheExpiry/Eviction a few minutes, the
-    cleanups hourly/30-min, DigestFlush a few minutes. Override per environment as needed.
+    cleanups hourly/30-min, DigestFlush a few minutes, OpsNotifications every minute. Override per environment as needed.
   EOT
   type        = map(string)
   default = {
@@ -1499,6 +1499,7 @@ variable "control_plane_scheduled_tick_schedules" {
     FileStorageCleanup   = "rate(1 hour)"
     TemporaryFileCleanup = "rate(30 minutes)"
     DigestFlush          = "rate(5 minutes)"
+    OpsNotifications     = "rate(1 minute)"
   }
 }
 
