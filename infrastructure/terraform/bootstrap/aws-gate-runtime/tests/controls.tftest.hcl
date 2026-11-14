@@ -27,6 +27,10 @@ run "lane_is_stack_only_and_workloads_are_bounded" {
     error_message = "Templates and workload code must be unable to modify the reaper."
   }
   assert {
+    condition     = contains(jsondecode(aws_iam_role_policy.cloudformation.policy).Statement[5].Condition.StringEquals["iam:AWSServiceName"], "ecs.application-autoscaling.amazonaws.com")
+    error_message = "A fresh account must permit creation of the ECS autoscaling service-linked role."
+  }
+  assert {
     condition     = aws_cloudwatch_event_rule.nightly.schedule_expression == "cron(0 3 * * ? *)" && aws_lambda_function.reaper.environment[0].variables["SERVICE_ROLE_ARN"] == local.service_role_arn
     error_message = "The nightly reaper must delete through the same service role."
   }
