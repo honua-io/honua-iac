@@ -87,12 +87,12 @@ terraform -chdir=infrastructure/terraform/examples/aws output -json > contract.j
 
 ## Module docs
 
-- `modules/aws-ecs/README.md`
-- `modules/azure-aca/README.md`
-- `modules/aws-serverless/README.md`
-- `modules/azure-functions/README.md`
-- `modules/aws-eks/README.md`
-- `modules/azure-aks/README.md`
+- [aws-ecs](infrastructure/terraform/modules/aws-ecs/README.md)
+- [azure-aca](infrastructure/terraform/modules/azure-aca/README.md)
+- [aws-serverless](infrastructure/terraform/modules/aws-serverless/README.md)
+- [azure-functions](infrastructure/terraform/modules/azure-functions/README.md)
+- [aws-eks](infrastructure/terraform/modules/aws-eks/README.md)
+- [azure-aks](infrastructure/terraform/modules/azure-aks/README.md)
 
 ## Validation and platform QA (maintainer path)
 
