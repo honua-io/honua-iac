@@ -27,3 +27,5 @@ scripts/tf-pass-insert.local.sh
 **/release_cell_retirement_override.tf.json
 # Only this reviewed nonsecret foundation input is versioned; no general tfvars exception.
 !certification/hosted-pilot/bootstrap/deployments/foss4g-images.tfvars.json
+
+**/terraform.tfvars.json
