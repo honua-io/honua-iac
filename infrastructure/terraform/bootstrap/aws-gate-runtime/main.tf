@@ -19,7 +19,7 @@ locals {
   }
   lane_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
+    Statement = concat([{
       Sid       = "GateStacksOnly", Effect = "Allow"
       Action    = ["cloudformation:CreateStack", "cloudformation:UpdateStack", "cloudformation:DeleteStack"]
       Resource  = local.stack_arn
@@ -33,7 +33,7 @@ locals {
       }, {
       Effect    = "Allow", Action = "iam:PassRole", Resource = local.service_role_arn
       Condition = { StringEquals = { "iam:PassedToService" = "cloudformation.amazonaws.com" } }
-    }]
+    }], local.region_controls, local.stack_tag_controls)
   })
 }
 resource "aws_iam_policy" "lane_boundary" {
@@ -58,14 +58,14 @@ resource "aws_iam_policy" "workload_boundary" {
   name = "HonuaGateWorkloadBoundary"
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [local.protected_controls, { Effect = "Allow", Action = local.workload_services, Resource = "*" }, {
+    Statement = concat([local.protected_controls, { Effect = "Allow", Action = local.workload_services, Resource = "*" }, {
       Effect    = "Allow", Action = "iam:PassRole", Resource = local.workload_roles
       Condition = { StringEquals = { "iam:PassedToService" = ["ecs-tasks.amazonaws.com", "batch.amazonaws.com", "backup.amazonaws.com", "lambda.amazonaws.com", "vpc-flow-logs.amazonaws.com"] } }
       }, {
       Effect = "Deny", NotAction = concat(local.workload_services, ["iam:PassRole"]), Resource = "*"
       }, {
       Effect = "Deny", Action = "iam:PassRole", NotResource = local.workload_roles
-    }]
+    }], local.region_controls, local.shared_controls)
   })
 }
 resource "aws_iam_role" "cloudformation" {
@@ -80,7 +80,7 @@ resource "aws_iam_role_policy" "cloudformation" {
   role = aws_iam_role.cloudformation.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [local.protected_controls, { Effect = "Allow", Action = local.workload_services, Resource = "*" }, {
+    Statement = concat([local.protected_controls, { Effect = "Allow", Action = local.workload_services, Resource = "*" }, {
       Effect    = "Allow", Action = "iam:CreateRole", Resource = local.workload_roles
       Condition = { ArnEquals = { "iam:PermissionsBoundary" = aws_iam_policy.workload_boundary.arn } }
       }, {
@@ -93,7 +93,7 @@ resource "aws_iam_role_policy" "cloudformation" {
       }, {
       Effect    = "Allow", Action = "iam:CreateServiceLinkedRole", Resource = "arn:aws:iam::${var.member_account_id}:role/aws-service-role/*"
       Condition = { StringEquals = { "iam:AWSServiceName" = ["ecs.amazonaws.com", "ecs.application-autoscaling.amazonaws.com", "elasticloadbalancing.amazonaws.com", "rds.amazonaws.com", "batch.amazonaws.com", "backup.amazonaws.com", "vpc-origin.cloudfront.amazonaws.com"] } }
-    }]
+    }], local.region_controls, local.shared_controls)
   })
 }
 output "lane_role_arn" {
