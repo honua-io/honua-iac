@@ -284,10 +284,12 @@ check_prerequisites() {
 
 end_previous_job
 [[ "${2:-}" != --clean ]] || { find "$home" -mindepth 1 -delete; exit 0; }
+[[ ! -e /run/honua-gate-runner-draining ]] || exit 1
 require_free_disk
 restore_pristine_home
 block_instance_metadata
 check_prerequisites
+[[ ! -e /run/honua-gate-runner-draining ]] || exit 1
 /usr/local/sbin/honua-gate-runner-registration register "$index"
 PREPARE
 
@@ -295,6 +297,7 @@ cat > /usr/local/bin/honua-gate-runner-run <<'RUN'
 #!/bin/bash
 # Starts runner $1 for the single job its just-in-time configuration registers.
 set -euo pipefail
+[[ ! -e /run/honua-gate-runner-draining ]] || exit 1
 jit_file="/run/honua-gate-runner/$1/jitconfig"
 ACTIONS_RUNNER_INPUT_JITCONFIG="$(< "$jit_file")"
 export ACTIONS_RUNNER_INPUT_JITCONFIG
@@ -395,6 +398,7 @@ Wants=network-online.target
 Wants=honua-gate-runner-prune.service
 After=network-online.target honua-gate-runner-prune.service
 StartLimitIntervalSec=0
+ConditionPathExists=!/run/honua-gate-runner-draining
 
 [Service]
 User=gate-runner-%i
@@ -438,7 +442,9 @@ imds="$(curl -fsS --connect-timeout 2 --max-time 5 -X PUT \
 status="$(curl -sS --connect-timeout 2 --max-time 5 -o /dev/null -w '%{http_code}' \
   -H "X-aws-ec2-metadata-token: ${imds}" http://169.254.169.254/latest/meta-data/spot/instance-action)"
 [[ "$status" == 200 ]] || exit 0
-systemctl stop honua-gate-runner-heartbeat.timer honua-gate-runner-heartbeat.service
+# Volatile until reboot: no runner may register again on this departing instance.
+install -m 0600 /dev/null /run/honua-gate-runner-draining
+systemctl stop honua-gate-runner-heartbeat.timer honua-gate-runner-heartbeat.service || true
 units=()
 for index in $(seq 1 "$(jq -r .runner_count /etc/honua-gate-runner.json)"); do
   units+=("honua-gate-runner@${index}.service")
@@ -472,6 +478,7 @@ TIMER
 cat > /etc/systemd/system/honua-gate-runner-heartbeat.service <<'SERVICE'
 [Unit]
 Description=Publish PR Gate runner readiness
+ConditionPathExists=!/run/honua-gate-runner-draining
 
 [Service]
 Type=oneshot
