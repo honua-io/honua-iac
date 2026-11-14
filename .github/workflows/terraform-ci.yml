@@ -183,6 +183,8 @@ jobs:
             "infrastructure/terraform/bootstrap/aws-build-host"
             "infrastructure/terraform/bootstrap/aws-lane-host"
             "infrastructure/terraform/bootstrap/aws-ci-events"
+            "infrastructure/terraform/bootstrap/aws-gate-account"
+            "infrastructure/terraform/bootstrap/aws-gate-runtime"
             "infrastructure/terraform/bootstrap/aws-audit"
             "infrastructure/terraform/bootstrap/aws-light-runners"
             "infrastructure/terraform/bootstrap/aws-release-cells"
@@ -241,6 +243,13 @@ jobs:
           done
 
           terraform -chdir=infrastructure/terraform/bootstrap/aws-audit test -no-color
+          terraform -chdir=infrastructure/terraform/bootstrap/aws-gate-account test -no-color
+          terraform -chdir=infrastructure/terraform/bootstrap/aws-gate-runtime test -no-color
+
+      - name: Gate reaper and private configuration controls (offline)
+        run: |
+          python3 -m unittest discover -s infrastructure/terraform/bootstrap/aws-gate-runtime/reaper -v
+          python3 -m unittest discover -s infrastructure/terraform/bootstrap/aws-gate-tools -v
 
       # Needs the provider schema and the nested modules those inits installed.
       # Confirms every committed deploy-identity manifest still covers the

@@ -2,6 +2,14 @@
   "comment": "Every root under infrastructure/terraform/bootstrap and how .github/workflows/bootstrap-drift-plan.yml treats it (honua-iac#320). scripts/bootstrap-drift-roots.py refuses an unlisted root. applied=true: planned nightly against its state with the inputs below ({account_id} and {state_bucket} are filled in at run time); any change is drift. applied=false: the job asserts that no state object exists under its key. An operator entry (applied, inputs in SSM `tfvars_parameter`, plans needing reads the CI role lacks) is planned by scripts/bootstrap-drift-operator.sh with operator credentials; CI only checks that its state exists. A standing entry tolerates ONE exact provider artifact and must link the issue that removes it.",
   "state_key_prefix": "bootstrap/",
   "roots": {
+    "aws-gate-account": {
+      "applied": false,
+      "state_key": "bootstrap/aws-gate-account/terraform.tfstate"
+    },
+    "aws-gate-runtime": {
+      "applied": false,
+      "state_key": "bootstrap/aws-gate-runtime/terraform.tfstate"
+    },
     "aws-bedrock-quotas": {
       "applied": true,
       "state_key": "bootstrap/aws-bedrock-quotas/terraform.tfstate",
