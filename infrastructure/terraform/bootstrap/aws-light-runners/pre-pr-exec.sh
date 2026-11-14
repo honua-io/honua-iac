@@ -20,7 +20,7 @@ clear_containers() {
 finish_session() {
   local status="$?"
   trap - EXIT
-  clear_containers || status=75
+  clear_containers || printf 'Overflow container cleanup failed; next execution will retry cleanup.\n' >&2
   exit "$status"
 }
 clear_containers || exit 75

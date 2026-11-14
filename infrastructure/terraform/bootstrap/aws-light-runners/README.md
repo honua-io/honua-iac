@@ -84,7 +84,7 @@ rootless Docker daemon. Caches begin cold and persist across sessions; they are
 never shared with Actions accounts. Its SSH sessions and containers share a
 4-CPU/8-GiB systemd user slice. The shared Docker network wrapper restricts
 published ports to index 16's range, `31520-32287`. Instance metadata is blocked
-for this account. Passwords, PTYs and SSH forwarding are disabled.
+for this account, with a boot service required before SSH and its user services. Passwords, PTYs and SSH forwarding are disabled.
 
 ### Router interface
 
@@ -109,7 +109,9 @@ The installed SDK/cache environment is loaded for every SSH command.
 
 The executor removes containers from this account's private daemon before and
 on exit from a command, under its execution lock. A disconnected session's
-leftovers are removed before the next execution. It never stops another
+leftovers are removed before the next execution. Cleanup errors are reported
+on stderr without replacing the workload exit status; failed pre-execution
+cleanup refuses a new workload. It never stops another
 account's containers and does not claim host-wide benchmark exclusivity.
 Do not use the overflow account for detached workloads. The router must keep
 its admission channel alive until execution and copy-back have completed.

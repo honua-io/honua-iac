@@ -111,6 +111,15 @@ class OverflowTests(unittest.TestCase):
         self.assertEqual(result.returncode, 75)
         self.assertFalse((self.home / "executed").exists())
 
+    def test_cleanup_failure_reports_separately_from_workload_status(self):
+        self.stub("docker", 'if [[ -e "$HOME/workload-finished" ]]; then exit 1; fi')
+        for status in (0, 1, 75):
+            with self.subTest(status=status):
+                (self.home / "workload-finished").unlink(missing_ok=True)
+                result = self.execute("bash", "-c", f'touch "$HOME/workload-finished"; exit {status}')
+                self.assertEqual(result.returncode, status)
+                self.assertIn("Overflow container cleanup failed", result.stderr)
+
     def test_wrong_account_refused(self):
         self.stub("id", "echo ubuntu")
         result = self.execute("true")
