@@ -147,7 +147,7 @@ run "gate_runner_enabled" {
     error_message = "Gate runner parent slices must allow 16 GiB while retaining six-vCPU ceilings."
   }
   assert {
-    condition     = strcontains(base64decode(aws_launch_template.build.user_data), "source <(base64 -d <<< '${base64gzip(local.gated_build_bootstrap)}' | gunzip)") && local.gated_build_bootstrap == join("\n", [file("install-idle-stop.sh"), file("../shared/install-docker.sh"), file("install-build-tools.sh"), local.gate_runner_bootstrap]) && strcontains(local.gate_runner_bootstrap, jsonencode(local.gate_runner_host_config)) && endswith(local.gate_runner_bootstrap, file("install-gate-runner.sh"))
+    condition     = strcontains(base64decode(aws_launch_template.build.user_data), "source <(base64 -d <<< '${base64gzip(local.gated_build_bootstrap)}' | gunzip)") && local.gated_build_bootstrap == join("\n", [file("install-idle-stop.sh"), file("../shared/install-docker.sh"), local.sdk_installer_bootstrap, file("install-build-tools.sh"), local.gate_runner_bootstrap]) && strcontains(local.gate_runner_bootstrap, jsonencode(local.gate_runner_host_config)) && endswith(local.gate_runner_bootstrap, file("install-gate-runner.sh"))
     error_message = "The enabled host must install the runner services with their configuration."
   }
   assert {

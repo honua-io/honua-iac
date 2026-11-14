@@ -44,6 +44,7 @@ locals {
   gated_build_bootstrap = join("\n", [
     file("${path.module}/install-idle-stop.sh"),
     file("${path.module}/../shared/install-docker.sh"),
+    local.sdk_installer_bootstrap,
     file("${path.module}/install-build-tools.sh"),
     local.gate_runner_bootstrap
   ])

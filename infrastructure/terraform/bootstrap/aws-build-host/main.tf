@@ -1,6 +1,12 @@
 provider "aws" { region = var.region }
 
 locals {
+  sdk_installer_bootstrap = join("\n", [
+    "cat > /usr/local/bin/ensure-dotnet-sdk <<'HONUA_SDK_INSTALLER'",
+    file("${path.module}/ensure-dotnet-sdk.sh"),
+    "HONUA_SDK_INSTALLER",
+    "chmod 755 /usr/local/bin/ensure-dotnet-sdk"
+  ])
   name = "honua-lane-build-host"
   tags = {
     Environment = "it"
@@ -99,6 +105,7 @@ resource "aws_launch_template" "build" {
     ] : [
     file("${path.module}/install-idle-stop.sh"),
     file("${path.module}/../shared/install-docker.sh"),
+    local.sdk_installer_bootstrap,
     file("${path.module}/install-build-tools.sh")
   ])))
   iam_instance_profile { name = aws_iam_instance_profile.build.name }
