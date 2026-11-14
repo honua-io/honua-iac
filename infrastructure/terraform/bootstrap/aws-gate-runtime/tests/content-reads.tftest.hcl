@@ -1,5 +1,6 @@
 mock_provider "aws" {
   override_during = plan
+  mock_resource "aws_iam_policy" { defaults = { arn = "arn:aws:iam::000000000002:policy/mock" } }
 }
 mock_provider "archive" {}
 
