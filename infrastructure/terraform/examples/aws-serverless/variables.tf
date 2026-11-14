@@ -376,6 +376,7 @@ variable "control_plane_scheduled_tick_schedules" {
     FileStorageCleanup   = "rate(1 hour)"
     TemporaryFileCleanup = "rate(30 minutes)"
     DigestFlush          = "rate(5 minutes)"
+    OpsNotifications     = "rate(1 minute)"
   }
 }
 

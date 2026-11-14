@@ -117,6 +117,27 @@ mock_provider "aws" {
   }
 }
 
+override_resource {
+  target = aws_lambda_function.control_plane_tick[0]
+  values = {
+    arn = "arn:aws:lambda:us-east-1:123456789012:function:honua-tick"
+  }
+}
+
+override_resource {
+  target = aws_lambda_function.control_plane_backstop[0]
+  values = {
+    arn = "arn:aws:lambda:us-east-1:123456789012:function:honua-backstop"
+  }
+}
+
+override_resource {
+  target = aws_lambda_function.control_plane_reconcile[0]
+  values = {
+    arn = "arn:aws:lambda:us-east-1:123456789012:function:honua-reconcile"
+  }
+}
+
 mock_provider "random" {}
 mock_provider "null" {}
 
@@ -148,8 +169,17 @@ run "defaults_bound_every_event_function" {
       for kind, schedule in aws_scheduler_schedule.control_plane_tick :
       schedule.target[0].retry_policy[0].maximum_retry_attempts == 10 &&
       schedule.target[0].retry_policy[0].maximum_event_age_in_seconds == 900
-    ]) && length(aws_scheduler_schedule.control_plane_tick) == 8
+    ]) && length(aws_scheduler_schedule.control_plane_tick) == 9
     error_message = "Every tick schedule must retry failed deliveries (10 attempts within 900 seconds)."
+  }
+
+  assert {
+    condition = (
+      aws_scheduler_schedule.control_plane_tick["OpsNotifications"].schedule_expression == "rate(1 minute)" &&
+      jsondecode(aws_scheduler_schedule.control_plane_tick["OpsNotifications"].target[0].input).kind == "OpsNotifications" &&
+      aws_scheduler_schedule.control_plane_tick["OpsNotifications"].target[0].arn == aws_lambda_function.control_plane_tick[0].arn
+    )
+    error_message = "Operations reminders must invoke the existing scheduled-tick Lambda once per minute with kind OpsNotifications."
   }
 
   assert {
