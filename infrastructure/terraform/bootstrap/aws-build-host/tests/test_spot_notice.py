@@ -10,7 +10,7 @@ BOOTSTRAP = Path(__file__).resolve().parents[1] / 'install-gate-runner.sh'
 
 
 class SpotNoticeTests(unittest.TestCase):
-    def notice(self, status, heartbeat_failure=False):
+    def notice(self, status, heartbeat_exit='0'):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             marker = root / 'draining'
@@ -20,7 +20,7 @@ class SpotNoticeTests(unittest.TestCase):
                 'jq': 'echo 10',
                 'systemctl': '''[[ -e "$MARKER" ]] || exit 99
 printf '%s\\n' "$*" >> "$CAPTURE"
-[[ "$*" != *heartbeat.timer* || "$HEARTBEAT_FAILURE" != 1 ]]''',
+[[ "$*" != *heartbeat.timer* || "$HEARTBEAT_EXIT" == 0 ]]''',
             }
             for name, body in stubs.items():
                 path = root / name
@@ -30,7 +30,7 @@ printf '%s\\n' "$*" >> "$CAPTURE"
             script = script.replace('/run/honua-gate-runner-draining', str(marker))
             env = dict(os.environ, PATH=f'{root}:{os.environ["PATH"]}', STATUS=status,
                        MARKER=str(marker), CAPTURE=str(capture),
-                       HEARTBEAT_FAILURE=str(int(heartbeat_failure)))
+                       HEARTBEAT_EXIT=heartbeat_exit)
             result = subprocess.run(['bash'], input=script, env=env, text=True,
                                     capture_output=True)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -48,7 +48,7 @@ printf '%s\\n' "$*" >> "$CAPTURE"
             f'honua-gate-runner@{index}.service' for index in range(1, 11)))
 
     def test_heartbeat_stop_failure_does_not_leave_listeners_accepting_jobs(self):
-        draining, calls = self.notice('200', heartbeat_failure=True)
+        draining, calls = self.notice('200', heartbeat_exit='1')
         self.assertTrue(draining)
         self.assertIn('honua-gate-runner@10.service', calls[-1])
 
