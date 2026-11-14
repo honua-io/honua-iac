@@ -207,11 +207,25 @@ class RunnerRegistrationTests(unittest.TestCase):
         self.assertEqual(labels, ['honua-heavy'])
         self.assertTrue(any('/jobs?' in url and 'page=2' in url for url in requests))
 
-    def test_queue_failure_is_closed_without_breaking_registration(self):
-        for error in ('QUEUE_DENIED', 'QUEUE_FAILED', 'BAD_JOB', 'EMPTY_JOBS', 'RUN_COUNT'):
-            with self.subTest(error=error):
-                labels, _ = self.overflow_registration(**{error:'1000' if error == 'RUN_COUNT' else '1'})
-                self.assertEqual(labels, ['honua-heavy'])
+    def test_denied_queue_access_keeps_registration_heavy_only(self):
+        labels, _ = self.overflow_registration(QUEUE_DENIED='1')
+        self.assertEqual(labels, ['honua-heavy'])
+
+    def test_failed_queue_request_keeps_registration_heavy_only(self):
+        labels, _ = self.overflow_registration(QUEUE_FAILED='1')
+        self.assertEqual(labels, ['honua-heavy'])
+
+    def test_malformed_job_keeps_registration_heavy_only(self):
+        labels, _ = self.overflow_registration(BAD_JOB='1')
+        self.assertEqual(labels, ['honua-heavy'])
+
+    def test_missing_job_page_keeps_registration_heavy_only(self):
+        labels, _ = self.overflow_registration(EMPTY_JOBS='1')
+        self.assertEqual(labels, ['honua-heavy'])
+
+    def test_truncated_run_search_keeps_registration_heavy_only(self):
+        labels, _ = self.overflow_registration(RUN_COUNT='1000')
+        self.assertEqual(labels, ['honua-heavy'])
 
     def runner(self, number, **overrides):
         return dict(id=number, name=f"i-abc123-1-{number}", status="offline", busy=False, **overrides)
