@@ -81,6 +81,12 @@ run "shared_account_denies_and_alert_budget" {
     error_message = "Gate creation and updates must include the budget allocation tag."
   }
   assert {
+    condition = alltrue([for policy in [aws_iam_role_policy.lane.policy, aws_iam_policy.lane_boundary.policy] : anytrue([
+      for statement in jsondecode(policy).Statement : try(statement.Sid == "TagGateStacks" && statement.Effect == "Allow" && statement.Action == "cloudformation:TagResource" && statement.Resource == local.stack_arn && toset(statement.Condition.StringEquals["cloudformation:CreateAction"]) == toset(["CreateStack", "UpdateStack"]), false)
+    ])])
+    error_message = "Tagged stack creation and updates require tagging permission in both lane policies."
+  }
+  assert {
     condition     = aws_budgets_budget.shared[0].limit_amount == "300" && one(aws_budgets_budget.shared[0].cost_filter).name == "TagKeyValue" && one(one(aws_budgets_budget.shared[0].cost_filter).values) == "user:HonuaGate$true" && one(aws_budgets_budget.shared[0].notification).threshold == 80
     error_message = "Shared mode must budget only gate-tagged costs with an 80 percent alert."
   }

@@ -12,6 +12,13 @@ locals {
     Condition = { StringNotEqualsIfExists = { "aws:RequestTag/HonuaGate" = "true" } }
   }] : []
 
+  stack_tag_permissions = var.shared_account ? [{
+    Sid       = "TagGateStacks", Effect = "Allow"
+    Action    = "cloudformation:TagResource"
+    Resource  = local.stack_arn
+    Condition = { StringEquals = { "cloudformation:CreateAction" = ["CreateStack", "UpdateStack"] } }
+  }] : []
+
   # These APIs allocate resources; they do not authorize changing an existing
   # resource merely because its name starts with honua-gate-. Unsupported
   # ownership checks fail closed, including tag-changing APIs.

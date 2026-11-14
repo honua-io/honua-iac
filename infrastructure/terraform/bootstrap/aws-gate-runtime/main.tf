@@ -33,7 +33,7 @@ locals {
       }, {
       Effect    = "Allow", Action = "iam:PassRole", Resource = local.service_role_arn
       Condition = { StringEquals = { "iam:PassedToService" = "cloudformation.amazonaws.com" } }
-    }], local.region_controls, local.stack_tag_controls)
+    }], local.region_controls, local.stack_tag_controls, local.stack_tag_permissions)
   })
 }
 resource "aws_iam_policy" "lane_boundary" {
