@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import unittest
 
-SCRIPT = Path(__file__).resolve().parents[1] / 'infrastructure/terraform/bootstrap/aws-build-host/ensure-dotnet-sdk.sh'
+SCRIPT = Path(__file__).resolve().parents[1] / 'ensure-dotnet-sdk.sh'
 
 
 class SdkInstallTests(unittest.TestCase):
@@ -70,6 +70,13 @@ cp -a "$SDK_TEST_PAYLOAD/." "$2/"
         first, second = self.launch(), self.launch()
         self.assertEqual((0, 0), (first.wait(), second.wait()))
         self.assertEqual(['download'], self.log.read_text().splitlines())
+
+    def test_truncated_manifest_is_rejected_without_overwriting(self):
+        subprocess.run(['cp', '-a', str(self.payload), str(self.target)], check=True)
+        manifest = self.target / 'sdk-manifests/11.0.100/example.manifest/11.0.1/WorkloadManifest.json'
+        manifest.write_text('{')
+        self.assertNotEqual(0, self.launch().wait())
+        self.assertEqual('{', manifest.read_text())
 
     def test_incomplete_download_fails(self):
         (self.payload / 'sdk-manifests/11.0.100/example.manifest/11.0.1/WorkloadManifest.json').unlink()

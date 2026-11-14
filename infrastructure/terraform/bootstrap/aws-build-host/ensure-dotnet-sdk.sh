@@ -8,7 +8,7 @@ mkdir -p "$install_dir"
 exec 9>"$install_dir/.honua-sdk-install.lock"
 flock 9
 sdk_complete() {
-  python3 - "$install_dir" "$sdk_version" <<'PY'
+  python3 - "${1:-$install_dir}" "$sdk_version" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -23,7 +23,8 @@ try:
     for workload_set in sets:
         for name, reference in json.loads(workload_set.read_text()).items():
             manifest_version, feature_band = reference.split('/')
-            complete &= (root / 'sdk-manifests' / feature_band / name.lower() / manifest_version / 'WorkloadManifest.json').is_file()
+            manifest = root / 'sdk-manifests' / feature_band / name.lower() / manifest_version / 'WorkloadManifest.json'
+            complete &= isinstance(json.loads(manifest.read_text()), dict)
     sys.exit(0 if complete else 1)
 except (OSError, ValueError, TypeError):
     sys.exit(1)
@@ -36,6 +37,7 @@ staging=$(mktemp -d "$install_dir/.sdk-stage.XXXXXX")
 trap 'rm -rf "${staging:?}"' EXIT
 curl -fsSL --retry 5 --retry-all-errors https://dot.net/v1/dotnet-install.sh -o "$staging/install.sh"
 bash "$staging/install.sh" --version "$sdk_version" --install-dir "$staging/sdk" --no-path
+sdk_complete "$staging/sdk" || { echo "Downloaded SDK $sdk_version is incomplete" >&2; exit 1; }
 # Preserve files in use by running builds; fill missing versioned files only.
 cp -an "$staging/sdk/." "$install_dir/"
 sdk_complete || { echo "SDK $sdk_version remains incomplete in $install_dir" >&2; exit 1; }
