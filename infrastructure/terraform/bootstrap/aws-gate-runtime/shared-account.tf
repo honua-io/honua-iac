@@ -55,12 +55,12 @@ locals {
   # cannot repeat that list and stay inside the managed-policy quota, so its
   # copy exempts only allocation calls and named gate buckets.
   service_role_ownership_deny = {
-    Sid       = "DenyNonGateChanges", Effect = "Deny", Resource = "*"
+    Sid       = "DenyNonGateChanges", Effect = "Deny", NotResource = aws_secretsmanager_secret.idp_client.arn
     NotAction = concat(local.metadata_read_actions, ["s3:*"], local.shared_creation_actions)
     Condition = local.ownership_condition
   }
   boundary_ownership_deny = {
-    Sid       = "DenyNonGateChanges", Effect = "Deny", Resource = "*"
+    Sid       = "DenyNonGateChanges", Effect = "Deny", NotResource = aws_secretsmanager_secret.idp_client.arn
     NotAction = concat(["s3:*"], local.shared_creation_actions)
     Condition = local.ownership_condition
   }
@@ -78,13 +78,13 @@ locals {
       Resource = "*"
     },
     {
-      Sid       = "DenyNonGateContentReads", Effect = "Deny", Resource = "*"
+      Sid       = "DenyNonGateContentReads", Effect = "Deny", NotResource = aws_secretsmanager_secret.idp_client.arn
       Action    = local.shared_content_read_actions
       Condition = { StringNotLikeIfExists = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" } }
     }
   ] : control if var.shared_account]
-  boundary_shared_denies     = concat(local.shared_controls, var.shared_account ? [local.boundary_ownership_deny] : [])
-  service_role_shared_denies = concat(local.shared_controls, var.shared_account ? [local.service_role_ownership_deny] : [])
+  boundary_shared_denies     = concat(local.shared_controls, local.idp_secret_controls, var.shared_account ? [local.boundary_ownership_deny] : [])
+  service_role_shared_denies = concat(local.shared_controls, local.idp_secret_controls, var.shared_account ? [local.service_role_ownership_deny] : [])
   # PutRule, PutTargets, PutMetricAlarm, PutCompositeAlarm and ModifyBudget are
   # create and update in one API, so a missing stack tag cannot gate them.
   # Names do. The reaper schedule and shared budget match the gate prefix and
