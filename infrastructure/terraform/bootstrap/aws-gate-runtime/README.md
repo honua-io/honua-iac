@@ -89,6 +89,7 @@ Still not grantable:
 - `AWS::SSM::Parameter` (watchdog, off by default) and SSM documents. The template
   has no `AWS::SSM::Document`. `ssm:*` stays denied so private parameters cannot
   be read. A stack parameter allow would be a separate change to that deny.
+  Watchdog also names its health rule `honua-health-*`, which this name fence denies.
 - `AWS::Bedrock::*`, `AWS::BedrockAgentCore::*` and `AWS::IAM::ManagedPolicy`.
   They exist only on the agents child template, which defaults to Off. This role
   also has no `cloudformation:CreateStack`, so it cannot create that nested stack.

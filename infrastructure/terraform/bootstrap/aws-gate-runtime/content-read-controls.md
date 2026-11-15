@@ -164,7 +164,7 @@ A gate-named EventBridge rule can still receive GuardDuty finding events. The La
 
 Plaintext from decrypt and data-key calls, key policies and imported key material. Decrypt, data-key and re-encrypt operations support key tags. GetKeyPolicy supports key tags. GetParametersForImport does not expose this ownership key.
 
-Actions: `kms:Decrypt`, `kms:GenerateDataKey*`, `kms:ReEncrypt*`, `kms:Get*`. `kms:Get*` keeps the managed policy inside its quota and also denies key-policy, public-key and import-parameter reads. Describe and list calls stay on the metadata exception.
+Actions: `kms:Decrypt`, `kms:GenerateDataKey*`, `kms:ReEncrypt*`, `kms:Get*`. `kms:Get*` keeps the managed policy inside its quota and also denies key-policy, public-key and import-parameter reads. Describe and list are not in this deny. The service role still exempts them; the workload boundary does not.
 
 ## sns
 
