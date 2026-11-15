@@ -60,7 +60,7 @@ run "shared_account_denies_and_alert_budget" {
   }
   assert {
     condition = alltrue([for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] : alltrue([
-      for sid in ["DenyOtherBuckets", "DenyState", "DenyPrivateParameters", "DenyNonGateChanges"] : anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == sid && statement.Effect == "Deny", false)])
+      for sid in ["DenyOtherBuckets", "DenyState", "DenyPrivateParameters", "DenyNonGateChanges", "DenyNonGateContentReads"] : anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == sid && statement.Effect == "Deny", false)])
     ])])
     error_message = "Service and workload identities must protect existing shared resources."
   }
