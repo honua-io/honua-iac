@@ -38,13 +38,31 @@ def load_config(parameter_name, target):
     private_json(target, value)
 
 
+def lock_inactive_nested_stack(template, resource):
+    condition = template.get('Conditions', {}).get(resource.get('Condition'), {})
+    operands = condition.get('Fn::Equals') if isinstance(condition, dict) else None
+    if not isinstance(operands, list) or len(operands) != 2 or len(condition) != 1:
+        raise ValueError('Nested stacks require a simple inactive parameter equality condition')
+    reference, enabled_value = operands
+    if not isinstance(reference, dict) or set(reference) != {'Ref'} or not isinstance(enabled_value, str):
+        raise ValueError('Nested stack conditions must compare a String parameter to a literal')
+    parameter_name = reference['Ref']
+    parameter = template.get('Parameters', {}).get(parameter_name, {}) if isinstance(parameter_name, str) else {}
+    default = parameter.get('Default')
+    if parameter.get('Type') != 'String' or not isinstance(default, str) or default == enabled_value:
+        raise ValueError('Nested stack selectors require an inactive String default')
+    if 'AllowedValues' in parameter and default not in parameter['AllowedValues']:
+        raise ValueError('Nested stack selector default must be an allowed value')
+    parameter['AllowedValues'] = [default]
+
+
 def bound_template(source, boundary):
     if 'Transform' in source:
         raise ValueError('Transforms are unsupported in gate templates')
     result = copy.deepcopy(source)
     for resource in result.get('Resources', {}).values():
         if resource['Type'] == 'AWS::CloudFormation::Stack':
-            raise ValueError('Nested stacks are unsupported in gate templates')
+            lock_inactive_nested_stack(result, resource)
         if resource['Type'] == 'AWS::IAM::Role':
             properties = resource.setdefault('Properties', {})
             name = properties.get('RoleName', 'honua-gate-generated')
