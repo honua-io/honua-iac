@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import time
 import unittest
 import uuid
 
@@ -94,8 +95,20 @@ end_previous_job
         return int(result.stdout.strip())
 
     def assert_running(self, pid):
-        status = Path(f"/proc/{pid}/status").read_text()
-        self.assertRegex(status, rf"(?m)^Uid:\s+{self.uid}\s+{self.uid}\s")
+        # systemd-executor publishes MainPID before it drops credentials and
+        # execs the command. During that window /proc shows a root "(sleep)"
+        # in uninterruptible exec, so wait for the service uid at rest.
+        uid_pattern = rf"(?m)^Uid:\s+{self.uid}\s+{self.uid}\s"
+        state_pattern = r"(?m)^State:\s+[SR]"
+        deadline = time.monotonic() + 2
+        status = ""
+        while time.monotonic() < deadline:
+            status = Path(f"/proc/{pid}/status").read_text()
+            if re.search(uid_pattern, status) and re.search(state_pattern, status):
+                return
+            time.sleep(0.02)
+        self.assertRegex(status, uid_pattern)
+        self.assertRegex(status, state_pattern)
 
     def test_same_uid_foreign_cgroup_survives_start_and_stop(self):
         foreign = self.start_unit("foreign")
