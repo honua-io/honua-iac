@@ -284,6 +284,11 @@ assert_not_planned() {
   if grep -q "PLAN delete $arn" <<<"$OUT"; then check "$name" no; else check "$name" ok; fi
 }
 
+# Other test files reuse everything above (the fakes, fixtures and assertions).
+if [[ "${SWEEP_TEST_HARNESS_ONLY:-}" == "1" ]]; then
+  return 0
+fi
+
 echo "== the reaper refuses when it cannot prove a resource is dead =="
 
 REAPABLE="$(tagged 'arn:aws:ecs:us-west-2:1:cluster/honua-it-cluster' 'gha-111-aws-ecs' 'ecs' "$PAST")"
@@ -611,55 +616,6 @@ SUMMARY="$TMP_DIR/summary.md"
 run_sweeper "$(resources "$REAPABLE")" --summary-file "$SUMMARY"
 if grep -q "Validation cell reaper" "$SUMMARY"; then check "a job summary is emitted" ok; else check "a job summary is emitted" no; fi
 
-# 17. A delete the service refuses fails the sweep and says why. Only the
-#     service's error code is repeated: the message can name other resources.
-DENIED='An error occurred (AccessDeniedException) when calling the DeleteCluster operation: fixture detail arn:aws:iam::1:role/other'
-: > "$SUMMARY"
-FAKE_WRITE_FAILURE="delete-cluster:$DENIED" run_sweeper "$(resources "$REAPABLE" "$KEY")" --summary-file "$SUMMARY"
-if [[ "$RC" -ne 0 ]] && grep -q 'Failed to delete arn:aws:ecs:us-west-2:1:cluster/honua-it-cluster (last service error: AccessDeniedException)' <<<"$OUT"; then
-  check "a refused delete fails the sweep and names the service error" ok
-else
-  check "a refused delete fails the sweep and names the service error" no
-fi
-if grep -q 'cluster/honua-it-cluster (run=gha-111-aws-ecs; last service error AccessDeniedException)' "$SUMMARY"; then
-  check "the summary lists the refused delete with its error" ok
-else
-  check "the summary lists the refused delete with its error" no
-fi
-if grep -q 'fixture detail' <<<"$OUT" || grep -q 'fixture detail' "$SUMMARY"; then
-  check "the service's error message is not repeated" no
-else
-  check "the service's error message is not repeated" ok
-fi
-assert_deleted "a later resource is still reaped after a refused delete" 'arn:aws:kms:us-west-2:1:key/abc'
-if grep -q 'Deleted arn:aws:kms:us-west-2:1:key/abc (' <<<"$OUT"; then
-  check "an earlier error is not attached to a later success" no
-else
-  check "an earlier error is not attached to a later success" ok
-fi
-
-NO_WRITE="$(tagged 'arn:aws:ecs:us-west-2:1:capacity-provider/honua-it' 'gha-111-aws-ecs' 'ecs' "$PAST")"
-FAKE_WRITE_FAILURE="delete-cluster:$DENIED" run_sweeper "$(resources "$NO_WRITE" "$REAPABLE")"
-if grep -q 'Failed to delete arn:aws:ecs:us-west-2:1:capacity-provider/honua-it$' <<<"$OUT"; then
-  check "an earlier error is not attached to a later failure that made no call" ok
-else
-  check "an earlier error is not attached to a later failure that made no call" no
-fi
-
-FAKE_WRITE_FAILURE='delete-cluster:connection reset' run_sweeper "$(resources "$REAPABLE")"
-if [[ "$RC" -ne 0 ]] && grep -q 'Failed to delete arn:aws:ecs:us-west-2:1:cluster/honua-it-cluster$' <<<"$OUT"; then
-  check "a failure without a service error code invents no reason" ok
-else
-  check "a failure without a service error code invents no reason" no
-fi
-
-FAKE_WRITE_FAILURE="update-service:$DENIED" run_sweeper "$(resources "$(tagged 'arn:aws:ecs:us-west-2:1:service/honua-it-cluster/web' 'gha-111-aws-ecs' 'ecs' "$PAST")")"
-if [[ "$RC" -eq 0 ]] && ! grep -q 'AccessDeniedException' <<<"$OUT"; then
-  check "a tolerated failure inside a successful teardown is not reported" ok
-else
-  check "a tolerated failure inside a successful teardown is not reported" no
-fi
-
 # Read failure must retain a survivor/refusal, never settled/delete credit.
 for arn in 'arn:aws:ecs:us-west-2:1:cluster/test' 'arn:aws:ecs:us-west-2:1:service/test/name' 'arn:aws:ecs:us-west-2:1:task-definition/test:1' 'arn:aws:secretsmanager:us-west-2:1:secret:test'; do
   FAKE_RESOURCE_READ_ERROR=AccessDenied run_sweeper "$(resources "$(tagged "$arn" 'gha-111-aws-ecs' 'ecs' "$PAST")")"
@@ -816,3 +772,4 @@ echo "passed: $PASS  failed: $FAIL"
 [[ "$FAIL" -eq 0 ]]
 # The shared read-only verdict controls also exercise the integration consumer.
 bash "$SCRIPT_DIR/test-cleanup-read-verdict.sh"
+bash "$SCRIPT_DIR/test-sweep-failure-reason.sh"
