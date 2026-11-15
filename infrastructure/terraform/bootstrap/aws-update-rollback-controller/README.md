@@ -32,14 +32,15 @@ moved from a tracked partial `backend "s3" {}` block to `backend.tf.example`
 The release session applies this. Do not apply it from a product lane.
 
 ```sh
+AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 cd infrastructure/terraform/bootstrap/aws-update-rollback-controller
-sed 's/REPLACE_WITH_STATE_BUCKET_NAME/honua-tfstate-585192672263/' backend.tf.example > backend.tf
+sed "s/REPLACE_WITH_STATE_BUCKET_NAME/honua-tfstate-${AWS_ACCOUNT_ID}/" backend.tf.example > backend.tf
 terraform init -reconfigure
 terraform plan -var='restore_name_prefixes=["honua-cert-"]' -out=controller.tfplan
 terraform apply controller.tfplan
 ```
 
-Applied 2026-10-21 in 585192672263. Output `controller_role_arn` is honua-release variable
+Applied 2026-10-21 in the production account. Output `controller_role_arn` is honua-release variable
 `HONUA_UPDATE_ROLLBACK_CONTROLLER_ROLE_ARN`, and `controller_role_name` is
 `HONUA_UPDATE_ROLLBACK_ECS_SAFETY.controller_role_name`.
 

@@ -67,29 +67,30 @@ ARNs against the rendered resource ceiling and rejects an unrelated stream.
 
 ## State and apply (operator)
 
-The identities were first applied on 2026-10-10 without retained state. They are now imported into the account's state bucket, at key `bootstrap/aws-release-cells/terraform.tfstate`. Copy `backend.tf.example` to the gitignored `backend.tf`, set `bucket` to `honua-tfstate-585192672263`, and keep the account's applied inputs in a gitignored `terraform.tfvars`:
+The identities were first applied on 2026-10-10 without retained state. They are now imported into the account's state bucket, at key `bootstrap/aws-release-cells/terraform.tfstate`. Copy `backend.tf.example` to the gitignored `backend.tf`, set `bucket` to `honua-tfstate-<account-id>`, and keep the account's applied inputs in a gitignored `terraform.tfvars`:
 
 ```hcl
-oidc_provider_arn     = "arn:aws:iam::585192672263:oidc-provider/token.actions.githubusercontent.com"
-mirror_repository_arn = "arn:aws:ecr:us-east-1:585192672263:repository/honua-server"
+oidc_provider_arn     = "arn:aws:iam::<account-id>:oidc-provider/token.actions.githubusercontent.com"
+mirror_repository_arn = "arn:aws:ecr:us-east-1:<account-id>:repository/honua-server"
 runtime_bedrock_model_arns = [
-  "arn:aws:bedrock:us-east-1:585192672263:inference-profile/us.anthropic.claude-sonnet-4-6",
+  "arn:aws:bedrock:us-east-1:<account-id>:inference-profile/us.anthropic.claude-sonnet-4-6",
   "arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-sonnet-4-6",
   "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-sonnet-4-6",
   "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-sonnet-4-6",
-  "arn:aws:bedrock:us-east-1:585192672263:inference-profile/us.openai.gpt-6.1-terra",
+  "arn:aws:bedrock:us-east-1:<account-id>:inference-profile/us.openai.gpt-6.1-terra",
   "arn:aws:bedrock:us-east-1::foundation-model/openai.gpt-6.1-terra",
   "arn:aws:bedrock:us-east-2::foundation-model/openai.gpt-6.1-terra",
   "arn:aws:bedrock:us-west-2::foundation-model/openai.gpt-6.1-terra",
 ]
-runtime_operation_key_ring_certificate_secret_arns = ["arn:aws:secretsmanager:us-east-1:585192672263:secret:honua-release/cert/operation-key-ring-zDn618"]
-runtime_audit_chain_key_secret_arns                = ["arn:aws:secretsmanager:us-east-1:585192672263:secret:honua-release/cert/audit-chain-key-RLtpME"]
+runtime_operation_key_ring_certificate_secret_arns = ["arn:aws:secretsmanager:us-east-1:<account-id>:secret:honua-release/cert/operation-key-ring-zDn618"]
+runtime_audit_chain_key_secret_arns                = ["arn:aws:secretsmanager:us-east-1:<account-id>:secret:honua-release/cert/audit-chain-key-RLtpME"]
 ```
 
 These values reproduce the live workload boundary exactly (shipped Sonnet 4.6 and GPT-6.1 Terra). The same variable accepts the identical four-ARN shape for `us.anthropic.claude-opus-5-5`, `us.anthropic.claude-sonnet-5-5` and `us.openai.gpt-6.1-sol`. This root is not applied from the model-allowlist change. The one-time import that adopted the existing resources:
 
 ```sh
-A=arn:aws:iam::585192672263:policy
+AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+A=arn:aws:iam::${AWS_ACCOUNT_ID}:policy
 for lane in provision reaper mirror; do
   terraform import "aws_iam_role.cell[\"$lane\"]" "honua-release-cell-$lane"
   terraform import "aws_iam_role_policy.cell[\"$lane\"]" "honua-release-cell-$lane:cell-permissions"
@@ -190,7 +191,7 @@ After merging the #207 inputs from trunk, all 47 ECS and 32 serverless native
 module tests pass together. The bootstrap has five native policy tests and
 98 passing AWS IAM decisions with independently specified expectations.
 
-Read-only inspection of account `585192672263` found the existing $200 budget
+Read-only inspection of the production account found the existing $200 budget
 with actual 50%, 80%, 100% notifications, 73 `Environment=cert` tagged resources
 but no `Lifecycle=standing`, no SNS subscriptions in us-east-1, and the existing
 `honua-release-cicd` role still attached to PowerUserAccess. No apply was performed.

@@ -143,7 +143,7 @@ run "harness_inputs_reach_every_server_process" {
 
   variables {
     file_storage_provider           = "AwsS3"
-    file_storage_aws_s3_bucket_name = "release-cells-file-storage-585192672263"
+    file_storage_aws_s3_bucket_name = "release-cells-file-storage-444455556666"
     file_storage_aws_s3_key_prefix  = "release-cells/honuarawsse380460"
     enable_gp_batch                 = true
     gp_batch_image                  = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -155,7 +155,7 @@ run "harness_inputs_reach_every_server_process" {
       for process in ["api", "control_plane", "gp_batch"] : alltrue([
         length(output.file_storage_environment_rendered[process]) == 4,
         output.file_storage_environment_rendered[process]["FileStorage__Provider"] == "AwsS3",
-        output.file_storage_environment_rendered[process]["FileStorage__AwsS3__BucketName"] == "release-cells-file-storage-585192672263",
+        output.file_storage_environment_rendered[process]["FileStorage__AwsS3__BucketName"] == "release-cells-file-storage-444455556666",
         output.file_storage_environment_rendered[process]["FileStorage__AwsS3__Region"] == "us-east-1",
         output.file_storage_environment_rendered[process]["FileStorage__AwsS3__KeyPrefix"] == "release-cells/honuarawsse380460",
       ])
@@ -164,7 +164,7 @@ run "harness_inputs_reach_every_server_process" {
   }
 
   assert {
-    condition     = length(module.honua.file_storage_s3_resources) == 2 && module.honua.file_storage_s3_resources.object_arn == "arn:aws:s3:::release-cells-file-storage-585192672263/release-cells/honuarawsse380460/*"
+    condition     = length(module.honua.file_storage_s3_resources) == 2 && module.honua.file_storage_s3_resources.object_arn == "arn:aws:s3:::release-cells-file-storage-444455556666/release-cells/honuarawsse380460/*"
     error_message = "The module must grant the file-storage roles object access under the harness key prefix."
   }
 }

@@ -2,7 +2,7 @@
 # approver, shared guardrails and the workload boundary).
 #
 # Copy to backend.tf (gitignored) and replace the bucket placeholder with the
-# account's state bucket from bootstrap/aws-tfstate (honua-tfstate-585192672263
+# account's state bucket from bootstrap/aws-tfstate (honua-tfstate-<account-id>
 # in the Honua account). Never commit the activated backend.tf.
 #
 # The key is exclusive to this root. Locking: `use_lockfile = true` needs

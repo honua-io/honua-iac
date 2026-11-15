@@ -46,12 +46,13 @@ Branch, `pull_request` and wildcard subjects fail variable validation. Pull-requ
 ## Apply (operator)
 
 ```sh
+AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 cd infrastructure/terraform/bootstrap/aws-demo-deploy
-sed 's/REPLACE_WITH_STATE_BUCKET_NAME/honua-tfstate-585192672263/' backend.tf.example > backend.tf
+sed "s/REPLACE_WITH_STATE_BUCKET_NAME/honua-tfstate-${AWS_ACCOUNT_ID}/" backend.tf.example > backend.tf
 terraform init
 terraform plan -out=demo-deploy.tfplan \
-  -var oidc_provider_arn=arn:aws:iam::585192672263:oidc-provider/token.actions.githubusercontent.com \
-  -var state_bucket_name=honua-tfstate-585192672263
+  -var oidc_provider_arn=arn:aws:iam::${AWS_ACCOUNT_ID}:oidc-provider/token.actions.githubusercontent.com \
+  -var state_bucket_name=honua-tfstate-${AWS_ACCOUNT_ID}
 terraform apply demo-deploy.tfplan
 ```
 
