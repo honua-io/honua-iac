@@ -127,8 +127,8 @@ register_for_one_job() { echo REGISTERED; }
         self.assertNotEqual(*roots)
 
     def test_embedded_shell_scripts_parse(self):
-        bodies = re.findall(r"<<'(PREPARE|RUN|ENVIRONMENT|CHECK|HEARTBEAT|REGISTRATION|SPOT)'\n(.*?)\n\1\n", INSTALLER.read_text(), re.S)
-        self.assertEqual(len(bodies), 7)
+        bodies = re.findall(r"<<'(PREPARE|ADMIT|RUN|ENVIRONMENT|CHECK|HEARTBEAT|REGISTRATION|SPOT)'\n(.*?)\n\1\n", INSTALLER.read_text(), re.S)
+        self.assertEqual(len(bodies), 8)
         for name, body in bodies:
             with self.subTest(script=name):
                 result = subprocess.run(["/bin/bash", "-n"], input=body, text=True, capture_output=True)

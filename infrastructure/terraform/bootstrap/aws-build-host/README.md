@@ -92,6 +92,23 @@ group `honua-server-gate`, which only `gate_runner_repository` can use.
   UID rather than host root. An `iptables` owner rule rejects instance metadata
   (169.254.0.0/16, `fd00:ec2::254`) for the account and its rootless network stack,
   so jobs cannot obtain the instance role.
+- **Job admission.** GitHub assigns a job by the labels its workflow file names, so
+  the host decides which jobs run. Every runner starts with a root-owned job-started
+  hook, `/usr/local/bin/honua-gate-runner-admit.sh`, which the runner calls after a
+  job is assigned and before its first step. The hook admits a job only when the
+  event's pull request head and triggering workflow run belong to the repository
+  that owns the run. For any other source, or an event that cannot be read, the
+  hook ends the runner's worker process, so the job fails and none of its steps
+  start; the service then registers again for the next job. A runner does not start
+  when the hook is missing or is not owned and writable by root alone. The heavy and
+  light pools share this bootstrap and the same rule. A runner keeps the environment
+  it started with, so after a live rerun of the bootstrap the hook applies from each
+  runner's next start: restart idle runner services, never busy ones. Do not remove
+  the hook while runner services are active. A refusal is recorded in the host journal
+  under `honua-gate-runner-admit`; the job itself ends as a lost worker. An admitted
+  job's `Set up runner` step logs that a job started hook is configured. To try the
+  hook by hand, run it from a throwaway shell (`bash -c 'bash <hook>; echo admitted'`),
+  because a refusal ends the calling process.
 - **Published ports.** The shared installer assigns each runner a disjoint 768-port
   dynamic range within `20000-32287` (up to 16 runners). Rootless Docker stays in
   RootlessKit's attached child network namespace so its allocator reads that

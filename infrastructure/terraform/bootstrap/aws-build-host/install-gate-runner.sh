@@ -357,6 +357,42 @@ PREPARE
 chmod 0700 "$prepare_file"
 mv -f "$prepare_file" /usr/local/sbin/honua-gate-runner-prepare
 
+# Job admission. GitHub assigns a job by the labels its workflow file names, so the host
+# decides which jobs run: the runner calls this hook after a job is assigned and before its
+# first step. Replaced atomically, and before the start wrapper that requires it.
+admit_file="$(mktemp /usr/local/bin/.honua-gate-runner-admit.XXXXXX)"
+cat > "$admit_file" <<'ADMIT'
+#!/bin/bash
+# Admits a job only when its event comes from the repository that owns the run. The event
+# and the repository name are written by the runner from GitHub's job message.
+set -euo pipefail
+trap '' HUP INT QUIT TERM
+# A failed hook only marks the job failed. Any exit other than admission therefore ends the
+# worker that called this hook, so that no step of the job starts. The runner is registered
+# for this one job and its service starts again with a new registration.
+trap '[[ $? -eq 0 || $PPID -le 1 ]] || kill -KILL "$PPID"' EXIT
+refuse() {
+  echo "::error::This runner runs only jobs whose source is the repository that owns the run ($1)."
+  # The job log ends with the worker, so the host journal keeps the reason.
+  /usr/bin/timeout 2 /usr/bin/logger -t honua-gate-runner-admit "refused a job: $1" || true
+  exit 1
+}
+[[ -n "${GITHUB_REPOSITORY:-}" ]] || refuse "the repository is unknown"
+[[ -r "${GITHUB_EVENT_PATH:-}" ]] || refuse "the event is unreadable"
+command -p jq -e -s --arg repository "$GITHUB_REPOSITORY" '
+  def own: type == "string" and ascii_downcase == ($repository | ascii_downcase);
+  def from_repository(name): . == null or (type == "object" and ((try name catch null) | own));
+  length == 1 and (.[0] | type == "object"
+    and (.pull_request | from_repository(.head.repo.full_name))
+    and (.workflow_run | from_repository(.head_repository.full_name)))
+' "$GITHUB_EVENT_PATH" > /dev/null 2>&1 || refuse "the event has another source or cannot be read"
+ADMIT
+chmod 0755 "$admit_file"
+mv -f "$admit_file" /usr/local/bin/honua-gate-runner-admit.sh
+# Fail the bootstrap here, rather than every runner start, when others could replace the hook.
+[[ "$(stat -Lc %u /usr/local/bin)" == 0 && -z "$(find /usr/local/bin -maxdepth 0 -perm /022)" ]] ||
+  { echo "The job admission hook directory must be owned by root and closed to group and others." >&2; exit 1; }
+
 cat > /usr/local/bin/honua-gate-runner-run <<'RUN'
 #!/bin/bash
 # Starts runner $1 for the single job its just-in-time configuration registers.
@@ -368,6 +404,15 @@ export ACTIONS_RUNNER_INPUT_JITCONFIG
 rm -f "$jit_file"
 . /etc/honua-gate-runner-env
 /usr/local/bin/honua-gate-runner-check
+# Set after the environment file. A runner starts only with an admission hook that it can
+# run and that only root can change.
+admit=/usr/local/bin/honua-gate-runner-admit.sh
+root_only() { [[ "$(stat -Lc %u "$1")" == 0 ]] && (( (8#$(stat -Lc %a "$1") & 8#022) == 0 )); }
+if ! { [[ -f "$admit" && -r "$admit" && -x "$admit" ]] && root_only "$admit" && root_only "${admit%/*}"; }; then
+  echo "The job admission hook is missing or is not root-only." >&2
+  exit 1
+fi
+export ACTIONS_RUNNER_HOOK_JOB_STARTED="$admit"
 cd "${HOME}/runner"
 exec ./run.sh
 RUN

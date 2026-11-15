@@ -40,7 +40,9 @@ runs-on: ${{ vars.HONUA_LIGHT_RUNNER && (!github.event.pull_request || github.ev
 
 Setting the repository variable `HONUA_LIGHT_RUNNER` to `["self-hosted","honua-light"]` moves
 them; deleting it returns them to hosted runners. Pull requests and `workflow_run` events from
-forks always stay hosted.
+forks always stay hosted. The host applies the same rule independently of workflow routing and
+refuses such jobs: see job admission in the
+[shared bootstrap](../aws-build-host/README.md#pr-gate-runners-off-by-default).
 
 ## Apply
 
