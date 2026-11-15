@@ -129,6 +129,10 @@ Options:
                            repeatable (data | ecs | serverless)
   --protect-run-id <id>    Never touch resources with this ValidationRunId;
                            repeatable
+  --exclude-type <service>:<type>
+                           Never plan Owner-tagged resources of this type and
+                           report them as skipped, e.g. ecs:task-definition;
+                           repeatable
   --max-delete <n>         Abandon the sweep if the plan exceeds n resources
                            (default: 400)
   --summary-file <path>    Append a markdown report here (job summary)
@@ -158,6 +162,7 @@ ONLY_RUN_IDS=()
 THIS_RUN=false
 STACK_FILTERS=()
 PROTECT_RUN_IDS=()
+EXCLUDED_TYPES=()
 MAX_DELETE=400
 SUMMARY_FILE=""
 DRY_RUN=false
@@ -180,6 +185,7 @@ while [[ $# -gt 0 ]]; do
     --legacy-release-workflow) LEGACY_WORKFLOW="$2"; shift 2 ;;
     --stack) STACK_FILTERS+=("$2"); shift 2 ;;
     --protect-run-id) PROTECT_RUN_IDS+=("$2"); shift 2 ;;
+    --exclude-type) EXCLUDED_TYPES+=("$2"); shift 2 ;;
     --max-delete) MAX_DELETE="$2"; shift 2 ;;
     --summary-file) SUMMARY_FILE="$2"; shift 2 ;;
     --dry-run) DRY_RUN=true; shift ;;
@@ -198,6 +204,13 @@ if ! [[ "$GRACE_HOURS" =~ ^[0-9]+$ ]]; then
   log_error "--grace-hours must be a non-negative integer (got '$GRACE_HOURS')"
   exit 1
 fi
+
+for excluded_type in ${EXCLUDED_TYPES[@]+"${EXCLUDED_TYPES[@]}"}; do
+  if ! [[ "$excluded_type" =~ ^[a-z0-9-]+:[a-z0-9-]+$ ]]; then
+    log_error "--exclude-type must be <service>:<type> as they appear in an ARN, e.g. ecs:task-definition (got '$excluded_type')"
+    exit 1
+  fi
+done
 
 if ! [[ "$MAX_DELETE" =~ ^[0-9]+$ ]] || (( MAX_DELETE < 1 )); then
   log_error "--max-delete must be a positive integer (got '$MAX_DELETE')"
@@ -375,6 +388,11 @@ select_candidates() {
 
     if [[ ${#ONLY_RUN_IDS[@]} -gt 0 ]] && ! contains "$run_id" "${ONLY_RUN_IDS[@]}"; then
       emit_skip "$arn" "not in the requested run id set"
+      continue
+    fi
+
+    if [[ ${#EXCLUDED_TYPES[@]} -gt 0 ]] && contains "$(arn_type "$arn")" "${EXCLUDED_TYPES[@]}"; then
+      emit_skip "$arn" "resource type $(arn_type "$arn") is excluded (--exclude-type)"
       continue
     fi
 
@@ -587,6 +605,11 @@ select_legacy_release_vpcs() {
 
 arn_service() { local arn="$1"; awk -F: '{print $3}' <<<"$arn"; }
 arn_resource() { local arn="$1"; cut -d: -f6- <<<"$arn"; }
+arn_type() {
+  local resource
+  resource="$(arn_resource "$1")"
+  echo "$(arn_service "$1"):${resource%%[/:]*}"
+}
 
 wait_gone() {
   # wait_gone <deadline seconds> <probe command...> -- returns 0 once the probe

@@ -370,6 +370,38 @@ DATA="$(tagged 'arn:aws:rds:us-west-2:1:db:shared-data' 'gha-111-aws-ecs' 'data'
 run_sweeper "$(resources "$DATA" "$REAPABLE")" --stack ecs --stack serverless
 assert_not_planned "a data-stack resource is skipped under --stack ecs" 'arn:aws:rds:us-west-2:1:db:shared-data'
 
+# 11b. --exclude-type leaves one resource type alone and says so. A role that
+#      cannot delete a type, or a type its stack keeps on purpose, would
+#      otherwise fail every sweep on work that is not its to do.
+TASKDEF="$(tagged 'arn:aws:ecs:us-west-2:1:task-definition/honua-it-task:1' 'gha-111-aws-ecs' 'ecs' "$PAST")"
+run_sweeper "$(resources "$TASKDEF" "$REAPABLE")" --exclude-type ecs:task-definition
+assert_not_planned "an excluded resource type is not planned" 'arn:aws:ecs:us-west-2:1:task-definition/honua-it-task:1'
+if grep -q "honua-it-task:1 | resource type ecs:task-definition is excluded" <<<"$OUT"; then
+  check "an excluded resource is reported with its reason" ok
+else
+  check "an excluded resource is reported with its reason" no
+fi
+if grep -q 'deregister-task-definition' "$AWS_CALL_LOG"; then
+  check "an excluded resource type gets no delete call" no
+else
+  check "an excluded resource type gets no delete call" ok
+fi
+assert_deleted "another type of the same service is still reaped" 'arn:aws:ecs:us-west-2:1:cluster/honua-it-cluster'
+if [[ "$RC" -eq 0 ]]; then check "an excluded resource type does not fail the sweep" ok; else check "an excluded resource type does not fail the sweep" no; fi
+
+run_sweeper "$(resources "$TASKDEF")"
+assert_deleted "a task definition is reaped unless its type is excluded" 'arn:aws:ecs:us-west-2:1:task-definition/honua-it-task:1'
+
+for malformed in 'task-definition' 'ecs:' ':task-definition' 'ecs:task-definition/honua-it-task' 'ECS:task-definition' 'ecs:*'; do
+  run_sweeper "$(resources "$TASKDEF" "$REAPABLE")" --exclude-type "$malformed"
+  if [[ "$RC" -ne 0 ]] && grep -q -- "--exclude-type must be" <<<"$OUT"; then
+    check "a malformed --exclude-type is refused: $malformed" ok
+  else
+    check "a malformed --exclude-type is refused: $malformed" no
+  fi
+  assert_no_mutations "a malformed --exclude-type triggers no mutating call: $malformed"
+done
+
 # 12. --this-run must name the runs whose checks it waives.
 run_sweeper "$(resources "$REAPABLE")" --this-run
 if [[ "$RC" -ne 0 ]] && grep -q "must name the run ids" <<<"$OUT"; then
