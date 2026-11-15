@@ -365,6 +365,7 @@ jobs:
           terraform -chdir=infrastructure/terraform/bootstrap/aws-eval-docker-hosts test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-build-host test -no-color
           python3 -m unittest discover -s infrastructure/terraform/bootstrap/aws-build-host/tests -p 'test_*.py'
+          sudo env HONUA_SYSTEMD_CGROUP_TEST=1 python3 -m unittest discover -s infrastructure/terraform/bootstrap/aws-build-host/tests -p test_gate_runner_cleanup.py -v
           terraform -chdir=infrastructure/terraform/bootstrap/aws-lane-host test -no-color
           terraform -chdir=infrastructure/terraform/bootstrap/aws-ci-events test -no-color
           python3 -m unittest discover -s infrastructure/terraform/bootstrap/aws-ci-events/lambda -p 'test_*.py'

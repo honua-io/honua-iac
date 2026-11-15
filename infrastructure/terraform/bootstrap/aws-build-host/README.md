@@ -273,6 +273,36 @@ aws ec2 describe-launch-template-versions --region "$BUILD_REGION" \
 ssh ubuntu@"$BUILD_HOST" 'sudo bash -c "apt_retry() { apt-get \"\$@\"; }; set -euo pipefail; source /dev/stdin"' < runner-bootstrap.sh
 ```
 
+### Runner process cleanup and running-host convergence
+
+Each runner service uses `KillMode=control-group` for its job processes. The
+pre-job and post-job hooks stop only that account's `user@UID.service`, whose
+runner-specific drop-in also sets `KillMode=control-group`, to remove its
+rootless Docker processes. Cleanup must never signal processes by UID or stop
+`user-UID.slice`: rootful containers can share the numeric UID, and that slice
+also contains the active runner service.
+
+This correction applies to the existing host through the live convergence above;
+no host replacement is required. Apply the versioned launch-template change and
+rerun only its runner bootstrap. The prepare hook is replaced atomically, and
+`daemon-reload` updates the unit configuration without restarting active jobs.
+The next natural job stop/start uses the corrected cleanup. The operator owns
+this rollout; source validation alone does not prove the installed cohort stable.
+
+The offline bootstrap suite checks both lifecycle hooks and cleanup configuration.
+Its opt-in systemd fixture creates a temporary system account and three uniquely
+named transient services with that UID in separate cgroups, runs the production cleanup function
+in `ExecStartPre` and `ExecStopPost`, and checks the foreign service survives while
+runner/manager processes stop. Only the manager unit name and filesystem cleanup
+are substituted; process signaling uses real systemd and kernel cgroups. The
+fixture removes its services and account afterward. CI runs:
+
+```bash
+sudo env HONUA_SYSTEMD_CGROUP_TEST=1 python3 -m unittest discover \
+  -s infrastructure/terraform/bootstrap/aws-build-host/tests \
+  -p test_gate_runner_cleanup.py -v
+```
+
 ### PR Gate tool and environment contract
 
 The three selected jobs (`pr-gate`, `fast-tests`, `format`) use the same image.

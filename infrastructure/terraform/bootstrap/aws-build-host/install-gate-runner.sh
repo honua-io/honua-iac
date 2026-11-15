@@ -285,7 +285,8 @@ esac
 REGISTRATION
 chmod 0700 /usr/local/sbin/honua-gate-runner-registration
 
-cat > /usr/local/sbin/honua-gate-runner-prepare <<'PREPARE'
+prepare_file="$(mktemp /usr/local/sbin/.honua-gate-runner-prepare.XXXXXX)"
+cat > "$prepare_file" <<'PREPARE'
 #!/bin/bash
 # Runs as root before each job of runner $1, and with --clean after it.
 set -euo pipefail
@@ -299,8 +300,8 @@ setting() { jq -r ".$1" "$config"; }
 # Container users map to the account's subordinate UIDs, so their files count as the job's too.
 end_previous_job() {
   local sub_start sub_count
+  # The runner unit kills its job cgroup; this stops only its rootless Docker cgroup.
   systemctl stop "user@${uid}.service"
-  pkill -KILL -u "$user" || true
   IFS=: read -r _ sub_start sub_count < <(grep "^${user}:" /etc/subuid)
   find /tmp /var/tmp /dev/shm -xdev -mindepth 1 \( -user "$user" -o \
     \( -uid "+$((sub_start - 1))" -uid "-$((sub_start + sub_count))" \) \) -delete 2>/dev/null || true
@@ -353,6 +354,8 @@ check_prerequisites
 [[ ! -e /run/honua-gate-runner-draining ]] || exit 1
 /usr/local/sbin/honua-gate-runner-registration register "$index"
 PREPARE
+chmod 0700 "$prepare_file"
+mv -f "$prepare_file" /usr/local/sbin/honua-gate-runner-prepare
 
 cat > /usr/local/bin/honua-gate-runner-run <<'RUN'
 #!/bin/bash
@@ -590,6 +593,8 @@ for index in $(seq 1 "$(gate runner_count)"); do
   id -u "$user" > /dev/null 2>&1 || provision_account "$index"
   configure_rootless_ports "/var/lib/honua-gate-runner/home-${index}" "$index"
   uid="$(id -u "$user")"
+  install -d "/etc/systemd/system/user@${uid}.service.d"
+  printf '[Service]\nKillMode=control-group\n' > "/etc/systemd/system/user@${uid}.service.d/50-gate-runner-cleanup.conf"
   # The runner and its rootless Docker share the account's slice, so one ceiling covers both.
   install -d "/etc/systemd/system/user-${uid}.slice.d" "/etc/systemd/system/honua-gate-runner@${index}.service.d"
   jq -r --argjson index "$index" '.runners[$index - 1] |
