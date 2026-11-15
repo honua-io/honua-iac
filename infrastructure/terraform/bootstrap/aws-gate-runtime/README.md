@@ -143,6 +143,34 @@ The existing reaper retains its schedule, keep/protection behavior and failure
 reporting. Offline mocked tests validate generated controls; they do not prove
 AWS authorization, a successful install, cleanup or budget delivery.
 
+### Launch Stack template uploads
+
+The Launch Stack template is larger than the 51,200-byte inline `TemplateBody`
+limit, so create and update calls pass an S3 `TemplateURL`. This root creates one
+private bucket, `honua-gate-templates-<account>` in `us-east-1` (output
+`template_bucket_name`): public access blocked, bucket-owner-enforced ownership,
+versioning on, TLS required, and current and noncurrent versions expiring after
+14 days. The lane role may only put and get objects under `templates/`; the
+CloudFormation service role may only get them. The bucket name falls inside the
+`honua-gate-*` namespace the service role manages, so the bucket policy denies
+that role every action except `s3:GetObject` and denies workload roles all
+access: a template cannot rewrite, delete or re-policy the bucket it was
+launched from. Objects use S3-managed encryption (SSE-S3) rather than the
+`aws/s3` KMS key, because shared-account mode denies `kms:Decrypt` on keys no
+gate stack owns and the service role would be unable to read the template.
+Templates are public product artifacts, not secrets. The lane grant is pinned to
+this account (`aws:ResourceAccount`), so a squatted bucket of the same name in
+another account cannot receive uploads. The bucket is versioned and has no
+`force_destroy`: destroying this root requires deleting every object version and
+delete marker first.
+
+```bash
+aws s3 cp honua-launch-stack.json "s3://$TEMPLATE_BUCKET/templates/<run-id>/honua-launch-stack.json"
+aws cloudformation create-stack --stack-name honua-gate-<run-id> \
+  --template-url "https://$TEMPLATE_BUCKET.s3.us-east-1.amazonaws.com/templates/<run-id>/honua-launch-stack.json" \
+  --role-arn "$GATE_CLOUDFORMATION_ROLE" --tags Key=HonuaGate,Value=true ...
+```
+
 ### Gate sign-in provider
 
 This root creates the `honua-gate-idp` Cognito pool and hosted domain in
