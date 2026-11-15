@@ -129,6 +129,12 @@ Options:
                            repeatable (data | ecs | serverless)
   --protect-run-id <id>    Never touch resources with this ValidationRunId;
                            repeatable
+  --exclude-type <service>:<type>
+                           Never plan an Owner-tagged resource of this type on
+                           its own, and report it as skipped, e.g.
+                           ecs:task-definition; repeatable. Network resources
+                           torn down with their VPC still go, and the legacy
+                           VPC pass ignores this option.
   --max-delete <n>         Abandon the sweep if the plan exceeds n resources
                            (default: 400)
   --summary-file <path>    Append a markdown report here (job summary)
@@ -158,6 +164,7 @@ ONLY_RUN_IDS=()
 THIS_RUN=false
 STACK_FILTERS=()
 PROTECT_RUN_IDS=()
+EXCLUDED_TYPES=()
 MAX_DELETE=400
 SUMMARY_FILE=""
 DRY_RUN=false
@@ -180,6 +187,7 @@ while [[ $# -gt 0 ]]; do
     --legacy-release-workflow) LEGACY_WORKFLOW="$2"; shift 2 ;;
     --stack) STACK_FILTERS+=("$2"); shift 2 ;;
     --protect-run-id) PROTECT_RUN_IDS+=("$2"); shift 2 ;;
+    --exclude-type) EXCLUDED_TYPES+=("$2"); shift 2 ;;
     --max-delete) MAX_DELETE="$2"; shift 2 ;;
     --summary-file) SUMMARY_FILE="$2"; shift 2 ;;
     --dry-run) DRY_RUN=true; shift ;;
@@ -198,6 +206,13 @@ if ! [[ "$GRACE_HOURS" =~ ^[0-9]+$ ]]; then
   log_error "--grace-hours must be a non-negative integer (got '$GRACE_HOURS')"
   exit 1
 fi
+
+for excluded_type in ${EXCLUDED_TYPES[@]+"${EXCLUDED_TYPES[@]}"}; do
+  if ! [[ "$excluded_type" =~ ^[a-z0-9-]+:[a-z0-9-]+$ ]]; then
+    log_error "--exclude-type must be <service>:<type> as they appear in an ARN, e.g. ecs:task-definition (got '$excluded_type')"
+    exit 1
+  fi
+done
 
 if ! [[ "$MAX_DELETE" =~ ^[0-9]+$ ]] || (( MAX_DELETE < 1 )); then
   log_error "--max-delete must be a positive integer (got '$MAX_DELETE')"
@@ -231,6 +246,8 @@ fi
 NOW_EPOCH="$(date -u +%s)"
 FAILURES=0
 PLANNED_ARNS=()
+PLAN_LINES=()
+UNREADABLE_ARNS=()
 DELETED_ARNS=()
 SKIPPED_LINES=()
 SURVIVOR_LINES=()
@@ -373,6 +390,11 @@ select_candidates() {
 
     if [[ ${#ONLY_RUN_IDS[@]} -gt 0 ]] && ! contains "$run_id" "${ONLY_RUN_IDS[@]}"; then
       emit_skip "$arn" "not in the requested run id set"
+      continue
+    fi
+
+    if [[ ${#EXCLUDED_TYPES[@]} -gt 0 ]] && contains "$(arn_type "$arn")" "${EXCLUDED_TYPES[@]}"; then
+      emit_skip "$arn" "resource type $(arn_type "$arn") is excluded (--exclude-type)"
       continue
     fi
 
@@ -585,6 +607,11 @@ select_legacy_release_vpcs() {
 
 arn_service() { local arn="$1"; awk -F: '{print $3}' <<<"$arn"; }
 arn_resource() { local arn="$1"; cut -d: -f6- <<<"$arn"; }
+arn_type() {
+  local resource
+  resource="$(arn_resource "$1")"
+  echo "$(arn_service "$1"):${resource%%[/:]*}"
+}
 
 wait_gone() {
   # wait_gone <deadline seconds> <probe command...> -- returns 0 once the probe
@@ -935,6 +962,39 @@ already_settled() {
   cleanup_resource_settled aws_read "$1" "$2"
 }
 
+# The plan is exactly what this sweep would delete. A settled resource is
+# reported and dropped: every torn-down cell leaves a few in the tag index for
+# weeks, and counting them would fill --max-delete and stop the sweep from ever
+# reaching a cell that is still alive. A resource whose state cannot be read is
+# neither deleted nor credited: it fails the sweep and still counts against
+# the cap, because it may be as live as the ones in the plan.
+plan_candidate() {
+  local line="$1" region arn run_id stack settled
+  IFS="$US" read -r region arn run_id stack <<<"$line"
+  set +e
+  already_settled "$region" "$arn"
+  settled=$?
+  set -e
+  case "$settled" in
+    0)
+      SETTLED_ARNS+=("$arn")
+      log_info "Already settled (tag index lagging): $arn"
+      ;;
+    1)
+      PLAN_LINES+=("$line")
+      PLANNED_ARNS+=("$arn")
+      echo "PLAN delete $arn (run=$run_id stack=${stack:-<untagged>} region=$region)"
+      ;;
+    *)
+      UNREADABLE_ARNS+=("$arn")
+      SURVIVOR_ARNS+=("$arn")
+      SURVIVOR_LINES+=("$arn (run=$run_id; state probe failed)")
+      FAILURES=1
+      log_warn "Not planned, state probe failed: $arn"
+      ;;
+  esac
+}
+
 delete_arn() {
   local region="$1" arn="$2" service rc
   service="$(arn_service "$arn")"
@@ -1059,7 +1119,7 @@ main() {
     fi
   fi
 
-  local region line arn run_id stack rc settled
+  local region line arn run_id stack rc
   local -a candidates=()
 
   local kind rest
@@ -1123,41 +1183,23 @@ main() {
   )
 
   for line in "${ordered[@]}"; do
-    IFS="$US" read -r region arn run_id stack <<<"$line"
-    PLANNED_ARNS+=("$arn")
-    echo "PLAN delete $arn (run=$run_id stack=${stack:-<untagged>} region=$region)"
+    plan_candidate "$line"
   done
 
-  if (( ${#PLANNED_ARNS[@]} > MAX_DELETE )); then
-    log_error "Plan covers ${#PLANNED_ARNS[@]} resources, over the --max-delete cap of $MAX_DELETE. Abandoning: a plan this large is more likely a tagging accident than a leak."
+  if (( ${#PLANNED_ARNS[@]} + ${#UNREADABLE_ARNS[@]} > MAX_DELETE )); then
+    log_error "Plan covers ${#PLANNED_ARNS[@]} resources and ${#UNREADABLE_ARNS[@]} more could not be read, over the --max-delete cap of $MAX_DELETE. Abandoning: a plan this large is more likely a tagging accident than a leak."
     emit_summary
     exit 1
   fi
 
   if [[ "$DRY_RUN" == "true" ]]; then
-    log_info "Dry run: ${#PLANNED_ARNS[@]} resource(s) would be deleted; no API call was made."
+    log_info "Dry run: ${#PLANNED_ARNS[@]} resource(s) would be deleted; no mutating API call was made."
     emit_summary
     exit "$FAILURES"
   fi
 
-  for line in "${ordered[@]}"; do
+  for line in ${PLAN_LINES[@]+"${PLAN_LINES[@]}"}; do
     IFS="$US" read -r region arn run_id stack <<<"$line"
-
-    set +e
-    already_settled "$region" "$arn"
-    settled=$?
-    set -e
-    if [[ "$settled" -eq 3 ]]; then
-      SURVIVOR_ARNS+=("$arn")
-      SURVIVOR_LINES+=("$arn (run=$run_id; state probe failed)")
-      FAILURES=1
-      continue
-    fi
-    if [[ "$settled" -eq 0 ]]; then
-      SETTLED_ARNS+=("$arn")
-      log_info "Already settled (tag index lagging): $arn"
-      continue
-    fi
 
     set +e
     delete_arn "$region" "$arn"
