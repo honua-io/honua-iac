@@ -85,6 +85,29 @@ locals {
   ] : control if var.shared_account]
   boundary_shared_denies     = concat(local.shared_controls, var.shared_account ? [local.boundary_ownership_deny] : [])
   service_role_shared_denies = concat(local.shared_controls, var.shared_account ? [local.service_role_ownership_deny] : [])
+  # PutRule, PutTargets, PutMetricAlarm, PutCompositeAlarm and ModifyBudget are
+  # create and update in one API, so a missing stack tag cannot gate them.
+  # Names do. The reaper schedule and shared budget match the gate prefix and
+  # need their own denies.
+  launch_name_denies = [
+    {
+      Sid    = "NameFence", Effect = "Deny"
+      Action = ["events:PutRule", "events:PutTargets", "cloudwatch:PutMetricAlarm", "cloudwatch:PutCompositeAlarm", "budgets:ModifyBudget"]
+      NotResource = [
+        "arn:aws:events:us-east-1:${var.member_account_id}:rule/honua-gate-*",
+        "arn:aws:cloudwatch:us-east-1:${var.member_account_id}:alarm:honua-gate-*",
+        "arn:aws:budgets::${var.member_account_id}:budget/honua-gate-*"
+      ]
+    },
+    {
+      Sid      = "ReaperRule", Effect = "Deny", Action = "events:*"
+      Resource = "arn:aws:events:us-east-1:${var.member_account_id}:rule/honua-gate-nightly-reaper"
+    },
+    {
+      Sid      = "DenySharedBudget", Effect = "Deny", Action = "budgets:*"
+      Resource = "arn:aws:budgets::${var.member_account_id}:budget/honua-gate-shared-monthly"
+    }
+  ]
 }
 
 resource "aws_budgets_budget" "shared" {

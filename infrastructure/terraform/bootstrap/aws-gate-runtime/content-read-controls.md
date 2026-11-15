@@ -128,7 +128,7 @@ Actions: `wafv2:Get*`, `wafv2:ListAPIKeys`.
 
 Account cost, usage, forecast and tag breakdowns. Anomaly-monitor reads stay on the metadata exception so a gate stack can read the monitor it creates. These account-level reads do not expose the ownership key, so the deny applies to gate callers as well.
 
-Actions: `ce:GetCostAndUsage`, `ce:GetCostAndUsageWithResources`, `ce:GetCostForecast`, `ce:GetCostCategories`, `ce:GetDimensionValues`, `ce:GetTags`.
+Actions: `ce:GetCost*`, `ce:GetDimensionValues`, `ce:GetTags`. `ce:GetCost*` also covers usage-with-resources, forecast and cost-category reads.
 
 ## cloudtrail
 
@@ -137,6 +137,8 @@ Actions: `ce:GetCostAndUsage`, `ce:GetCostAndUsageWithResources`, `ce:GetCostFor
 Event history and query results can include request parameters. LookupEvents has no resource-tag condition. GetQueryResults does not expose this ownership key. Trail configuration reads remain on the metadata exception.
 
 Actions: `cloudtrail:LookupEvents`, `cloudtrail:GetQueryResults`.
+
+These denies do not cover a trail the gate identity creates into a `honua-gate-*` bucket. The Launch Stack's protection trail is that path, and objects in a gate bucket are readable under this boundary. Treat delivered management events as visible to gate workloads.
 
 ## cloudwatch
 
@@ -154,13 +156,15 @@ Finding details. Detector reads stay on the metadata exception. GetFindings supp
 
 Actions: `guardduty:GetFindings*`.
 
+A gate-named EventBridge rule can still receive GuardDuty finding events. The Launch Stack creates those rules. `GetFindings` is not a control against that delivery.
+
 ## kms
 
 [kms authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_awskeymanagementservice.html)
 
 Plaintext from decrypt and data-key calls, key policies and imported key material. Decrypt, data-key and re-encrypt operations support key tags. GetKeyPolicy supports key tags. GetParametersForImport does not expose this ownership key.
 
-Actions: `kms:Decrypt`, `kms:GenerateDataKey*`, `kms:ReEncrypt*`, `kms:GetKeyPolicy`, `kms:GetPublicKey`, `kms:GetParametersForImport`.
+Actions: `kms:Decrypt`, `kms:GenerateDataKey*`, `kms:ReEncrypt*`, `kms:Get*`. `kms:Get*` keeps the managed policy inside its quota and also denies key-policy, public-key and import-parameter reads. Describe and list calls stay on the metadata exception.
 
 ## sns
 

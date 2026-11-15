@@ -79,8 +79,10 @@ RDS, Route 53, S3, Secrets Manager, SNS, SQS and WAFv2, plus ECR image pulls.
 GuardDuty may create its service-linked role. The same region, stack-tag and
 content-read denies apply. Several AWS create calls are also the update call
 (`budgets:ModifyBudget`, `cloudwatch:PutMetricAlarm`, `cloudwatch:PutCompositeAlarm`,
-`events:PutRule`, `events:PutTargets`); those allocation APIs cannot prove the
-resource already belongs to a gate stack.
+`events:PutRule`, `events:PutTargets`). A missing stack tag cannot distinguish
+create from overwrite, so those calls are limited to `honua-gate-*` names.
+`events:*` on `honua-gate-nightly-reaper` and `budgets:*` on
+`honua-gate-shared-monthly` are denied even though those names match the prefix.
 
 Still not grantable:
 

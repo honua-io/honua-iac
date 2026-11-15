@@ -38,6 +38,10 @@ run "lane_is_stack_only_and_workloads_are_bounded" {
     condition     = length(aws_budgets_budget.shared) == 0 && length(local.region_controls) == 0 && length(local.shared_controls) == 0
     error_message = "Default member-account behavior must remain unchanged."
   }
+  assert {
+    condition     = alltrue([for sid in ["NameFence", "ReaperRule", "DenySharedBudget"] : anytrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(statement.Sid == sid && statement.Effect == "Deny", false)])])
+    error_message = "Member mode must keep the gate-name fence and the reaper and budget denies."
+  }
 }
 run "wildcard_trust_is_rejected" {
   command = plan
@@ -108,7 +112,17 @@ run "shared_account_denies_and_alert_budget" {
     condition = alltrue([
       for action in ["kms:CreateKey", "kms:CreateAlias", "cloudwatch:PutMetricAlarm", "cloudwatch:PutCompositeAlarm", "sns:CreateTopic", "sqs:CreateQueue", "events:PutRule", "events:PutTargets", "cloudtrail:CreateTrail", "budgets:ModifyBudget", "ce:CreateAnomalyMonitor", "ce:CreateAnomalySubscription", "guardduty:CreateDetector"] : contains(local.shared_creation_actions, action)
     ])
-    error_message = "Resource allocation APIs for the added Launch Stack services must remain ownership-exempt."
+    error_message = "Resource allocation APIs for the added Launch Stack services must remain available before a stack tag exists."
+  }
+  assert {
+    condition = alltrue([
+      for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] : alltrue([
+        anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == "NameFence" && statement.Effect == "Deny" && toset(statement.NotResource) == toset(["arn:aws:events:us-east-1:${format("%012d", 2)}:rule/honua-gate-*", "arn:aws:cloudwatch:us-east-1:${format("%012d", 2)}:alarm:honua-gate-*", "arn:aws:budgets::${format("%012d", 2)}:budget/honua-gate-*"]), false)]),
+        anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == "ReaperRule" && statement.Action == "events:*" && statement.Resource == "arn:aws:events:us-east-1:${format("%012d", 2)}:rule/honua-gate-nightly-reaper", false)]),
+        anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == "DenySharedBudget" && statement.Action == "budgets:*" && statement.Resource == "arn:aws:budgets::${format("%012d", 2)}:budget/honua-gate-shared-monthly", false)])
+      ])
+    ])
+    error_message = "Create-and-update APIs must stay on gate names, and the reaper schedule and shared budget stay denied."
   }
 }
 run "shared_account_requires_private_protection_inputs" {

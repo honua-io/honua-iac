@@ -64,7 +64,7 @@ resource "aws_iam_policy" "workload_boundary" {
       Condition = { StringEquals = { "iam:PassedToService" = ["ecs-tasks.amazonaws.com", "batch.amazonaws.com", "backup.amazonaws.com", "lambda.amazonaws.com", "vpc-flow-logs.amazonaws.com"] } }
       }, {
       Effect = "Deny", Action = "iam:PassRole", NotResource = local.workload_roles
-    }], local.region_controls, local.boundary_shared_denies)
+    }], local.region_controls, local.boundary_shared_denies, local.launch_name_denies)
   })
 }
 resource "aws_iam_role" "cloudformation" {
@@ -92,7 +92,7 @@ resource "aws_iam_role_policy" "cloudformation" {
       }, {
       Effect    = "Allow", Action = "iam:CreateServiceLinkedRole", Resource = "arn:aws:iam::${var.member_account_id}:role/aws-service-role/*"
       Condition = { StringEquals = { "iam:AWSServiceName" = ["ecs.amazonaws.com", "ecs.application-autoscaling.amazonaws.com", "elasticloadbalancing.amazonaws.com", "rds.amazonaws.com", "batch.amazonaws.com", "backup.amazonaws.com", "guardduty.amazonaws.com", "vpc-origin.cloudfront.amazonaws.com"] } }
-    }], local.region_controls, local.service_role_shared_denies)
+    }], local.region_controls, local.service_role_shared_denies, local.launch_name_denies)
   })
 }
 output "lane_role_arn" {
