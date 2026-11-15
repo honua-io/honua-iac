@@ -109,7 +109,7 @@ stack tag, and allocation APIs remain the only untagged workload exemption besid
 named gate buckets. IAM PassRole remains restricted to gate role names and the
 allowed receiving services. Actions outside the workload allow list are implicit
 denies; the boundary does not repeat that allow list inside a second deny.
-The default member-account mode is unchanged. See the
+Member mode has no shared budget, region deny or shared-account resource denies. It does allow these Launch Stack services and the name fence. See the
 [content-read audit](content-read-controls.md) for covered APIs and unsupported
 ownership conditions.
 
