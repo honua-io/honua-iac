@@ -370,6 +370,38 @@ DATA="$(tagged 'arn:aws:rds:us-west-2:1:db:shared-data' 'gha-111-aws-ecs' 'data'
 run_sweeper "$(resources "$DATA" "$REAPABLE")" --stack ecs --stack serverless
 assert_not_planned "a data-stack resource is skipped under --stack ecs" 'arn:aws:rds:us-west-2:1:db:shared-data'
 
+# 11b. --exclude-type leaves one resource type alone and says so. A role that
+#      cannot delete a type, or a type its stack keeps on purpose, would
+#      otherwise fail every sweep on work that is not its to do.
+TASKDEF="$(tagged 'arn:aws:ecs:us-west-2:1:task-definition/honua-it-task:1' 'gha-111-aws-ecs' 'ecs' "$PAST")"
+run_sweeper "$(resources "$TASKDEF" "$REAPABLE")" --exclude-type ecs:task-definition
+assert_not_planned "an excluded resource type is not planned" 'arn:aws:ecs:us-west-2:1:task-definition/honua-it-task:1'
+if grep -q "honua-it-task:1 | resource type ecs:task-definition is excluded" <<<"$OUT"; then
+  check "an excluded resource is reported with its reason" ok
+else
+  check "an excluded resource is reported with its reason" no
+fi
+if grep -q 'deregister-task-definition' "$AWS_CALL_LOG"; then
+  check "an excluded resource type gets no delete call" no
+else
+  check "an excluded resource type gets no delete call" ok
+fi
+assert_deleted "another type of the same service is still reaped" 'arn:aws:ecs:us-west-2:1:cluster/honua-it-cluster'
+if [[ "$RC" -eq 0 ]]; then check "an excluded resource type does not fail the sweep" ok; else check "an excluded resource type does not fail the sweep" no; fi
+
+run_sweeper "$(resources "$TASKDEF")"
+assert_deleted "a task definition is reaped unless its type is excluded" 'arn:aws:ecs:us-west-2:1:task-definition/honua-it-task:1'
+
+for malformed in 'task-definition' 'ecs:' ':task-definition' 'ecs:task-definition/honua-it-task' 'ECS:task-definition' 'ecs:*'; do
+  run_sweeper "$(resources "$TASKDEF" "$REAPABLE")" --exclude-type "$malformed"
+  if [[ "$RC" -ne 0 ]] && grep -q -- "--exclude-type must be" <<<"$OUT"; then
+    check "a malformed --exclude-type is refused: $malformed" ok
+  else
+    check "a malformed --exclude-type is refused: $malformed" no
+  fi
+  assert_no_mutations "a malformed --exclude-type triggers no mutating call: $malformed"
+done
+
 # 12. --this-run must name the runs whose checks it waives.
 run_sweeper "$(resources "$REAPABLE")" --this-run
 if [[ "$RC" -ne 0 ]] && grep -q "must name the run ids" <<<"$OUT"; then
@@ -422,6 +454,67 @@ if [[ "$RC" -eq 0 ]] && grep -q "Already settled" <<<"$OUT"; then
 else
   check "a missing KMS key is settled" no
 fi
+
+# 14c. Every torn-down cell leaves settled keys and secrets in the tag index
+#      for weeks. They are not deletions, so they must not fill --max-delete
+#      and stop the sweep from reaching the cells that are still alive.
+keys=()
+for i in $(seq 1 5); do
+  keys+=("$(tagged "arn:aws:kms:us-west-2:1:key/cell-$i" 'gha-111-aws-ecs' 'ecs' "$PAST")")
+done
+FAKE_KMS_KEY_STATE=PendingDeletion run_sweeper "$(resources "${keys[@]}" "$REAPABLE")" --max-delete 3
+if [[ "$RC" -eq 0 ]] && ! grep -q "over the --max-delete cap" <<<"$OUT"; then
+  check "settled resources do not count against --max-delete" ok
+else
+  check "settled resources do not count against --max-delete" no
+fi
+assert_deleted "a live cell is still reaped past settled resources" 'arn:aws:ecs:us-west-2:1:cluster/honua-it-cluster'
+assert_not_planned "a settled resource is not in the deletion plan" 'arn:aws:kms:us-west-2:1:key/cell-1'
+if [[ "$(grep -c 'Already settled' <<<"$OUT")" == "5" ]]; then
+  check "each settled resource is reported once" ok
+else
+  check "each settled resource is reported once" no
+fi
+
+FAKE_KMS_KEY_STATE=PendingDeletion run_sweeper "$(resources "${keys[@]}" "$REAPABLE")" --max-delete 3 --dry-run
+if [[ "$RC" -eq 0 ]] && grep -q "Dry run: 1 resource(s) would be deleted" <<<"$OUT"; then
+  check "a dry run plans only the live resources" ok
+else
+  check "a dry run plans only the live resources" no
+fi
+assert_no_mutations "a dry run past settled resources triggers no mutating call"
+
+run_sweeper "$(resources "${keys[@]}")" --max-delete 3
+if [[ "$RC" -ne 0 ]] && grep -q "over the --max-delete cap" <<<"$OUT"; then
+  check "live resources still count against --max-delete" ok
+else
+  check "live resources still count against --max-delete" no
+fi
+assert_no_mutations "an oversized live plan triggers no mutating call"
+
+FAKE_KMS_DESCRIBE_ERROR=AccessDeniedException run_sweeper "$(resources "$KEY" "$REAPABLE")" --dry-run
+if [[ "$RC" -ne 0 ]] && grep -q "state probe failed" <<<"$OUT"; then
+  check "a dry run reports a resource whose state cannot be read" ok
+else
+  check "a dry run reports a resource whose state cannot be read" no
+fi
+assert_not_planned "an unreadable resource is not in the deletion plan" 'arn:aws:kms:us-west-2:1:key/abc'
+
+FAKE_KMS_DESCRIBE_ERROR=AccessDeniedException run_sweeper "$(resources "$KEY" "$REAPABLE")"
+assert_deleted "a live cell is still reaped beside an unreadable resource" 'arn:aws:ecs:us-west-2:1:cluster/honua-it-cluster'
+if [[ "$RC" -ne 0 ]] && ! grep -q "schedule-key-deletion" "$AWS_CALL_LOG"; then
+  check "an unreadable resource is left alone and fails the sweep" ok
+else
+  check "an unreadable resource is left alone and fails the sweep" no
+fi
+
+FAKE_KMS_DESCRIBE_ERROR=AccessDeniedException run_sweeper "$(resources "${keys[@]}" "$REAPABLE")" --max-delete 3
+if [[ "$RC" -ne 0 ]] && grep -q "over the --max-delete cap" <<<"$OUT"; then
+  check "unreadable resources still count against --max-delete" ok
+else
+  check "unreadable resources still count against --max-delete" no
+fi
+assert_no_mutations "a plan oversized by unreadable resources triggers no mutating call"
 
 # Protected stacks win over a valid disposable owner/run/expiry, even --this-run.
 for protection in 'Environment cert' 'Environment demo' 'Environment standing' 'Lifecycle standing' 'Lifecycle demo'; do
@@ -494,8 +587,9 @@ else
 fi
 
 # 16. A dry run does not merely skip the delete calls -- it returns before the
-#     deletion loop is entered at all, so the only AWS call it makes is the
-#     read-only enumeration. Nothing downstream has to honour a flag.
+#     deletion loop is entered at all, so the only AWS calls it makes are
+#     read-only: the enumeration, and a state probe for the kinds that have
+#     one (a VPC has none). Nothing downstream has to honour a flag.
 export FAKE_SG_IDS="sg-1	sg-2"
 export FAKE_SUBNET_IDS="subnet-1"
 run_sweeper "$(resources "$VPC")" --dry-run
