@@ -82,9 +82,10 @@ run "reject_foreign_execution_reader" {
 run "shared_account_protects_both_bootstrap_secrets" {
   command = plan
   variables {
-    shared_account = true
+    shared_account          = true
     protected_state_buckets = ["synthetic-state"]
-    budget_alert_email = "gate@example.invalid"
+    protected_ssm_paths     = ["/synthetic/gate"]
+    budget_alert_email      = "gate@example.invalid"
   }
   assert {
     condition = alltrue([for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] : alltrue([
