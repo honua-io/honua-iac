@@ -567,7 +567,7 @@ See `outputs.tf` for ALB URL, ECS service names, canary routing headers, control
 
 1. Verify extensions: `psql $CONNECTION_STRING -c "SELECT PostGIS_Version(); SELECT extname FROM pg_extension WHERE extname IN ('postgis','postgis_raster');"`
 2. Readiness check: call `HonuaClient("https://<alb-url>").readiness()` from the supported Python SDK.
-3. If using OIDC, configure env vars per [Security Configuration](../../../../docs/devops/security.md)
+3. If using OIDC, configure env vars per [Honua Server authentication guide](https://github.com/honua-io/honua-server/blob/trunk/docs/guides/secure/authentication.md)
 
 ## Deployment safety
 
