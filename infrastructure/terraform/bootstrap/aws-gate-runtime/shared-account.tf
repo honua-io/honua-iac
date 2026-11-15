@@ -61,12 +61,12 @@ locals {
   # description, which has no resource-level authorization.
   service_role_ownership_deny = {
     Sid       = "DenyNonGateChanges", Effect = "Deny", NotResource = aws_secretsmanager_secret.idp_client.arn
-    NotAction = concat(local.metadata_read_actions, ["s3:*", "cognito-idp:TagResource"], local.shared_creation_actions)
+    NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource"], local.shared_creation_actions)
     Condition = local.ownership_condition
   }
   boundary_ownership_deny = {
     Sid       = "DenyNonGateChanges", Effect = "Deny", NotResource = aws_secretsmanager_secret.idp_client.arn
-    NotAction = concat(["s3:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource"], local.shared_creation_actions)
+    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource"], local.shared_creation_actions)
     Condition = local.ownership_condition
   }
   # Only metadata exceptions need a separate content deny; all other content
@@ -82,8 +82,10 @@ locals {
       Resource = flatten([for bucket in sort(tolist(var.protected_state_buckets)) : ["arn:aws:s3:::${bucket}", "arn:aws:s3:::${bucket}/*"]])
     },
     {
-      Sid      = "DenyPrivateParameters", Effect = "Deny", Action = "ssm:*"
-      Resource = "*"
+      # Only a gate stack's watchdog state and mode parameters are reachable.
+      # PutParameter creates and updates in one call, so the name fences it.
+      Sid         = "DenyPrivateParameters", Effect = "Deny", Action = "ssm:*"
+      NotResource = local.watchdog_parameters
     },
     {
       Sid = "DenyNonGateContentReads", Effect = "Deny", NotResource = aws_secretsmanager_secret.idp_client.arn
@@ -105,7 +107,9 @@ locals {
   # The ownership NotAction deny already covers every content-read action.
   # Keep the explicit content list only in the metadata-reading service policy
   # to avoid duplicating it inside the 6,144-character managed boundary.
-  boundary_shared_denies     = concat([for control in local.shared_controls : control if control.Sid != "DenyNonGateContentReads"], local.idp_secret_controls, var.shared_account ? [local.boundary_ownership_deny] : [])
+  # The boundary allows SSM only on watchdog parameters, so it needs no
+  # separate SSM deny either; that also keeps it inside the managed quota.
+  boundary_shared_denies     = concat([for control in local.shared_controls : control if !contains(["DenyNonGateContentReads", "DenyPrivateParameters"], control.Sid)], local.idp_secret_controls, var.shared_account ? [local.boundary_ownership_deny] : [])
   service_role_shared_denies = concat(local.shared_controls, local.idp_secret_controls, var.shared_account ? [local.service_role_ownership_deny] : [])
   # PutRule, PutTargets, PutMetricAlarm, PutCompositeAlarm and ModifyBudget are
   # create and update in one API, so a missing stack tag cannot gate them.

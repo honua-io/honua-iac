@@ -2,6 +2,8 @@ locals {
   stack_arn        = "arn:aws:cloudformation:us-east-1:${var.member_account_id}:stack/honua-gate-*/*"
   workload_roles   = "arn:aws:iam::${var.member_account_id}:role/honua-gate-*"
   service_role_arn = "arn:aws:iam::${var.member_account_id}:role/HonuaGateCloudFormation"
+  # A Launch Stack watchdog keeps its state and mode in two String parameters.
+  watchdog_parameters = "arn:aws:ssm:us-east-1:${var.member_account_id}:parameter/honua/honua-gate-*/watchdog/*"
   workload_services = [
     "acm:*", "application-autoscaling:*", "backup:*", "batch:*", "budgets:*", "ce:*",
     "cloudfront:*", "cloudtrail:*", "cloudwatch:*", "ec2:*", "ecs:*", "elasticloadbalancing:*",
@@ -74,10 +76,12 @@ resource "aws_iam_policy" "workload_boundary" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = concat([local.protected_controls, { Effect = "Allow", Action = local.workload_services, Resource = "*" }, {
+      Effect = "Allow", Action = "ssm:*", Resource = local.watchdog_parameters
+      }, {
+      # A boundary only restricts: PassRole outside gate roles has no allow here,
+      # so it stays denied without a separate statement inside the quota.
       Effect    = "Allow", Action = "iam:PassRole", Resource = local.workload_roles
       Condition = { StringEquals = { "iam:PassedToService" = ["ecs-tasks.amazonaws.com", "batch.amazonaws.com", "backup.amazonaws.com", "lambda.amazonaws.com", "vpc-flow-logs.amazonaws.com"] } }
-      }, {
-      Effect = "Deny", Action = "iam:PassRole", NotResource = local.workload_roles
     }], local.region_controls, local.boundary_shared_denies, local.launch_name_denies)
   })
 }
@@ -108,6 +112,8 @@ resource "aws_iam_role_policy" "cloudformation" {
       Condition = { StringEquals = { "iam:AWSServiceName" = ["ecs.amazonaws.com", "ecs.application-autoscaling.amazonaws.com", "elasticloadbalancing.amazonaws.com", "rds.amazonaws.com", "batch.amazonaws.com", "backup.amazonaws.com", "guardduty.amazonaws.com", "vpc-origin.cloudfront.amazonaws.com"] } }
       }, {
       Sid = "ReadGateTemplates", Effect = "Allow", Action = "s3:GetObject", Resource = local.template_objects
+      }, {
+      Sid = "WatchdogParameters", Effect = "Allow", Action = "ssm:*", Resource = local.watchdog_parameters
     }], local.region_controls, local.service_role_shared_denies, local.launch_name_denies)
   })
 }
