@@ -63,12 +63,17 @@ or automatic fence. Monitor total account cost and clean up resources promptly.
 The lane policy/boundary, CloudFormation service policy and workload boundary
 explicitly deny regional calls outside `us-east-1`; IAM, Route 53 and CloudFront
 are the only global-service exceptions. The service and workload policies deny
-all S3 access outside `honua-gate-*`, deny the named state buckets even if they
-match that prefix, and allow SSM only on gate stack watchdog parameters
-(`/honua/honua-gate-*/watchdog/*`). The service policy also denies SSM outside
-that path; `protected_ssm_paths` must stay outside it. Pre-existing buckets with the gate prefix are therefore a
+all S3 access outside `honua-gate-*` and deny the named state buckets even if
+they match that prefix. Pre-existing buckets with the gate prefix are therefore a
 name-collision risk: main must ensure the prefix is reserved exclusively for gate
 stacks before granting access.
+
+SSM is allowed only on gate stack watchdog parameters
+(`/honua/honua-gate-*/watchdog/*`), and the service policy denies SSM outside
+that path. `protected_ssm_paths` must stay outside it, and main must likewise
+keep the `/honua/honua-gate-*` parameter path free of private parameters. Any
+gate stack can write another gate stack's watchdog parameters; the template's
+own role policies are the per-stack fence.
 
 ### Launch Stack services
 

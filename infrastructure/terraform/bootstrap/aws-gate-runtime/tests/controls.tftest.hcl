@@ -107,7 +107,7 @@ run "shared_account_denies_and_alert_budget" {
     error_message = "SSM is allowed only on gate stack watchdog parameters; a new parameter has no stack tag, so the name, not the ownership deny, scopes SSM."
   }
   assert {
-    condition     = alltrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : !(statement.Effect == "Allow" && contains(flatten([statement.Action]), "iam:PassRole")) || statement.Resource == local.workload_roles])
+    condition     = alltrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : !(statement.Effect == "Allow" && anytrue([for action in flatten([try(statement.Action, "*")]) : contains(["*", "iam:*", "iam:Pass*", "iam:PassRole"], action)])) || try(statement.Resource == local.workload_roles, false)])
     error_message = "The workload boundary may allow PassRole only on gate roles."
   }
   assert {
