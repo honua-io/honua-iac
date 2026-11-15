@@ -69,8 +69,8 @@ run "shared_account_denies_and_alert_budget" {
     error_message = "Missing ownership tags must deny mutation, including retagging and shared DNS writes."
   }
   assert {
-    condition     = contains(local.shared_controls[1].Resource, "arn:aws:s3:::synthetic-state/*") && contains(local.shared_controls[2].Resource, format("arn:aws:ssm:us-east-1:%s:parameter/synthetic/gate", var.member_account_id))
-    error_message = "State objects and exact private SSM inputs need explicit protection."
+    condition     = contains(local.shared_controls[1].Resource, "arn:aws:s3:::synthetic-state/*") && local.shared_controls[2].Resource == "*" && local.shared_controls[2].Action == "ssm:*" && local.shared_controls[2].Effect == "Deny"
+    error_message = "State objects and all private SSM parameters need explicit protection."
   }
   assert {
     condition     = length(aws_iam_policy.workload_boundary.policy) <= 6144 && length(aws_iam_role_policy.cloudformation.policy) <= 10240
@@ -95,4 +95,35 @@ run "shared_account_requires_private_protection_inputs" {
   command = plan
   variables { shared_account = true }
   expect_failures = [var.protected_state_buckets, var.protected_ssm_paths, var.budget_alert_email]
+}
+
+run "shared_account_policy_quotas_with_deployment_sized_inputs" {
+  command = plan
+  variables {
+    shared_account          = true
+    protected_state_buckets = [for index in range(2) : format("synthetic-state-%048d", index)]
+    protected_ssm_paths     = [for index in range(18) : format("/synthetic/gate/runtime/protected-parameter-%02d", index)]
+    budget_alert_email      = "gate@example.invalid"
+  }
+  assert {
+    condition = alltrue([
+      for policy in [aws_iam_policy.lane_boundary.policy, aws_iam_policy.workload_boundary.policy] :
+      length(jsonencode(jsondecode(policy))) <= 6144
+    ])
+    error_message = "Every managed policy must fit the 6144-character quota with 18 protected paths and two state buckets."
+  }
+  assert {
+    condition = alltrue([
+      for policy in [aws_iam_role_policy.lane.policy, aws_iam_role_policy.cloudformation.policy, aws_iam_role_policy.reaper.policy] :
+      length(jsonencode(jsondecode(policy))) <= 10240
+    ])
+    error_message = "Every inline role policy must fit the 10240-character quota."
+  }
+  assert {
+    condition = alltrue([
+      for policy in [aws_iam_role.lane.assume_role_policy, aws_iam_role.cloudformation.assume_role_policy, aws_iam_role.reaper.assume_role_policy] :
+      length(jsonencode(jsondecode(policy))) <= 2048
+    ])
+    error_message = "Every role trust policy must fit the 2048-character quota."
+  }
 }

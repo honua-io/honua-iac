@@ -50,7 +50,7 @@ locals {
     },
     {
       Sid      = "DenyPrivateParameters", Effect = "Deny", Action = "ssm:*"
-      Resource = concat(["*"], [for path in sort(tolist(var.protected_ssm_paths)) : "arn:aws:ssm:us-east-1:${var.member_account_id}:parameter${path}"])
+      Resource = "*"
     },
     {
       Sid = "DenyNonGateChanges", Effect = "Deny", Resource = "*"
