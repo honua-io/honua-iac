@@ -130,9 +130,11 @@ Options:
   --protect-run-id <id>    Never touch resources with this ValidationRunId;
                            repeatable
   --exclude-type <service>:<type>
-                           Never plan Owner-tagged resources of this type and
-                           report them as skipped, e.g. ecs:task-definition;
-                           repeatable
+                           Never plan an Owner-tagged resource of this type on
+                           its own, and report it as skipped, e.g.
+                           ecs:task-definition; repeatable. Network resources
+                           torn down with their VPC still go, and the legacy
+                           VPC pass ignores this option.
   --max-delete <n>         Abandon the sweep if the plan exceeds n resources
                            (default: 400)
   --summary-file <path>    Append a markdown report here (job summary)
