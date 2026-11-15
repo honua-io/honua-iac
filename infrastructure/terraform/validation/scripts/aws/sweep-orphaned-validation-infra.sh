@@ -269,8 +269,7 @@ aws_read() { aws "$@"; }
 # without contacting AWS at all, which is what makes the dry run provably
 # side-effect free rather than merely intended to be. A failed call leaves the
 # service's error code in LAST_WRITE_ERROR, and only the code: the message can
-# name other resources. A teardown makes several calls and tolerates some
-# failures, so the code is reported as the last service error, not the cause.
+# name other resources.
 aws_write() {
   if [[ "$DRY_RUN" == "true" ]]; then
     # stderr, not stdout: some callers capture a helper's stdout (the VPC

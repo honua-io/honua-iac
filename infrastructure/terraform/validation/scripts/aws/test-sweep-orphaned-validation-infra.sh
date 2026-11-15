@@ -638,6 +638,14 @@ else
   check "an earlier error is not attached to a later success" ok
 fi
 
+NO_WRITE="$(tagged 'arn:aws:ecs:us-west-2:1:capacity-provider/honua-it' 'gha-111-aws-ecs' 'ecs' "$PAST")"
+FAKE_WRITE_FAILURE="delete-cluster:$DENIED" run_sweeper "$(resources "$NO_WRITE" "$REAPABLE")"
+if grep -q 'Failed to delete arn:aws:ecs:us-west-2:1:capacity-provider/honua-it$' <<<"$OUT"; then
+  check "an earlier error is not attached to a later failure that made no call" ok
+else
+  check "an earlier error is not attached to a later failure that made no call" no
+fi
+
 FAKE_WRITE_FAILURE='delete-cluster:connection reset' run_sweeper "$(resources "$REAPABLE")"
 if [[ "$RC" -ne 0 ]] && grep -q 'Failed to delete arn:aws:ecs:us-west-2:1:cluster/honua-it-cluster$' <<<"$OUT"; then
   check "a failure without a service error code invents no reason" ok
