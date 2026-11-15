@@ -101,7 +101,7 @@ run "shared_account_policy_quotas_with_deployment_sized_inputs" {
   command = plan
   variables {
     shared_account          = true
-    protected_state_buckets = [for index in range(2) : format("synthetic-state-%048d", index)]
+    protected_state_buckets = [for index in range(2) : format("synthetic-state-%047d", index)]
     protected_ssm_paths     = [for index in range(18) : format("/synthetic/gate/runtime/protected-parameter-%02d", index)]
     budget_alert_email      = "gate@example.invalid"
   }
