@@ -129,7 +129,8 @@ subnets, clusters or load balancer parents). Service-linked roles are account-wi
 and outside workload permissions boundaries; service operations performed by
 those roles are not fenced by these policies. S3 ownership uses names rather
 than stack tags. Metadata access for the CloudFormation service role is account-wide. Workload
-roles get metadata only for gate-tagged resources.
+roles get metadata only for gate-tagged resources, except Cognito domain
+description, which AWS does not support authorizing against a resource ARN.
 Main must assess those shared-account limits, existing gate-prefixed names,
 service-linked roles, tag propagation and supported resource types before a live
 run. This identity is for reviewed gate templates; arbitrary untrusted templates
@@ -168,8 +169,21 @@ so membership in `admin` grants administrator access. The client secret value
 is plaintext in its secret; the administrator secret is JSON with `username`
 and `password`. Do not print either value or copy it to logs, issues or PRs.
 
-The identity provider is managed by this bootstrap root, not gate stacks;
-`cognito-idp:*` is not added to the lane or workload policies.
+This bootstrap provider remains managed by this root. Gate stacks may also
+create their own sign-in provider. The workload boundary and
+`HonuaGateCloudFormation` role allow explicit pool, client, domain, group and
+administrator-user lifecycle APIs, membership changes, MFA configuration and
+resource tagging. They grant no user-data reads or authentication APIs. The lane
+role still operates through CloudFormation.
+
+In shared-account mode, pool allocation is the only Cognito write exempt from
+ownership checks. Child creation, updates, deletion and tag changes require the
+parent pool's `aws:cloudformation:stack-name` tag to match `honua-gate-*`.
+`DescribeUserPoolDomain` is an account-wide metadata exception because AWS
+provides no resource-level authorization for it. Other workload metadata requires
+the pool ownership tag. Native CloudFormation resources must stabilize without
+user-data reads; record exact live denials rather than broadening the policy.
+See the [Cognito authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_cognito-idp.html).
 
 Client-secret access defaults to the CloudFormation role only. Existing Launch
 Stack containers fetch the secret through their ECS **execution** role. Main

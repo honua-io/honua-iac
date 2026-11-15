@@ -1,4 +1,5 @@
 mock_provider "aws" {
+  mock_resource "aws_cognito_user_pool" { defaults = { id = "us-east-1_Synthetic", arn = "arn:aws:cognito-idp:us-east-1:000000000002:userpool/us-east-1_Synthetic" } }
   override_during = plan
   mock_resource "aws_secretsmanager_secret" { defaults = { arn = "arn:aws:secretsmanager:us-east-1:000000000002:secret:honua-gate/idp/client-secret-abcdef" } }
   mock_resource "aws_iam_policy" { defaults = { arn = "arn:aws:iam::000000000002:policy/mock" } }
@@ -55,7 +56,7 @@ run "content_read_families_are_guarded_in_both_policies" {
   assert {
     condition = alltrue([
       for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] : alltrue([
-        for action in ["lambda:GetFunction", "lambda:ListEventSourceMappings", "wafv2:GetWebACL", "rds:DescribeDBProxyTargetGroups", "logs:GetLogEvents", "logs:FilterLogEvents", "logs:GetLogRecord", "logs:StartQuery", "logs:GetQueryResults", "logs:StartLiveTail", "ec2:GetPasswordData", "ec2:GetConsoleOutput", "ec2:GetConsoleScreenshot", "ecs:ExecuteCommand", "rds:StartExportTask", "backup:GetRecoveryPointRestoreMetadata", "cloudfront:GetPublicKey", "cloudfront:GetFieldLevelEncryption", "ecr:GetAuthorizationToken", "wafv2:GetDecryptedAPIKey", "kms:Decrypt", "kms:GenerateDataKey", "kms:GetKeyPolicy", "ce:GetCostAndUsage", "cloudtrail:LookupEvents", "cloudtrail:GetQueryResults", "cloudwatch:GetDashboard", "guardduty:GetFindings", "sqs:ReceiveMessage", "sns:GetSMSAttributes"] : anytrue([
+        for action in concat(local.shared_content_read_actions, ["lambda:GetFunction", "lambda:ListEventSourceMappings", "wafv2:GetWebACL", "rds:DescribeDBProxyTargetGroups", "logs:GetLogEvents", "logs:FilterLogEvents", "logs:GetLogRecord", "logs:StartQuery", "logs:GetQueryResults", "logs:StartLiveTail", "ec2:GetPasswordData", "ec2:GetConsoleOutput", "ec2:GetConsoleScreenshot", "ecs:ExecuteCommand", "rds:StartExportTask", "backup:GetRecoveryPointRestoreMetadata", "cloudfront:GetPublicKey", "cloudfront:GetFieldLevelEncryption", "ecr:GetAuthorizationToken", "wafv2:GetDecryptedAPIKey", "kms:Decrypt", "kms:GenerateDataKey", "kms:GetKeyPolicy", "ce:GetCostAndUsage", "cloudtrail:LookupEvents", "cloudtrail:GetQueryResults", "cloudwatch:GetDashboard", "guardduty:GetFindings", "sqs:ReceiveMessage", "sns:GetSMSAttributes"]) : anytrue([
           for statement in jsondecode(policy).Statement : try(
             statement.Effect == "Deny" && statement.NotResource == aws_secretsmanager_secret.idp_client.arn && statement.Condition.StringNotLikeIfExists["aws:ResourceTag/aws:cloudformation:stack-name"] == "honua-gate-*" &&
             (try(anytrue([for pattern in statement.Action : can(regex("^${replace(pattern, "*", ".*")}$", action))]), false) || try(!anytrue([for pattern in statement.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))]), false)), false

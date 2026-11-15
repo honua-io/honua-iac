@@ -24,6 +24,7 @@ locals {
   # ownership checks fail closed, including tag-changing APIs.
   shared_creation_actions = [
     "acm:RequestCertificate", "backup:CreateBackupVault", "backup:CreateBackupPlan",
+    "cognito-idp:CreateUserPool",
     "batch:CreateComputeEnvironment", "batch:CreateJobQueue", "batch:RegisterJobDefinition",
     "cloudfront:CreateDistribution", "cloudfront:CreateDistributionWithTags",
     "cloudfront:CreateOriginAccessControl", "cloudfront:CreateFunction", "cloudfront:CreateVpcOrigin",
@@ -43,27 +44,34 @@ locals {
     "kms:CreateKey", "kms:CreateAlias", "sns:CreateTopic", "sqs:CreateQueue",
     "iam:CreateRole", "iam:CreateServiceLinkedRole", "iam:PassRole"
   ]
-  metadata_read_actions = flatten([
+  metadata_read_actions = concat([for action in flatten([
     for service in ["acm", "application-autoscaling", "backup", "batch", "budgets", "ce", "cloudfront", "cloudtrail", "cloudwatch", "ec2", "ecs", "elasticloadbalancing", "events", "guardduty", "kms", "lambda", "logs", "rds", "route53", "secretsmanager", "sns", "sqs", "wafv2", "ecr", "iam"] : [
       "${service}:Get*", "${service}:List*", "${service}:Describe*"
     ]
+    ]) : action if !contains(local.shared_content_read_actions, action)], [
+    "cognito-idp:DescribeUserPool", "cognito-idp:DescribeUserPoolDomain",
+    "cognito-idp:GetGroup", "cognito-idp:GetUserPoolMfaConfig", "cognito-idp:ListTagsForResource"
   ])
   ownership_condition = {
     StringNotLikeIfExists = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }
   }
   # The service role keeps account-wide metadata reads. The workload boundary
   # cannot repeat that list and stay inside the managed-policy quota, so its
-  # copy exempts only allocation calls and named gate buckets.
+  # copy exempts allocation calls, named gate buckets and Cognito domain
+  # description, which has no resource-level authorization.
   service_role_ownership_deny = {
     Sid       = "DenyNonGateChanges", Effect = "Deny", NotResource = aws_secretsmanager_secret.idp_client.arn
-    NotAction = concat(local.metadata_read_actions, ["s3:*"], local.shared_creation_actions)
+    NotAction = concat(local.metadata_read_actions, ["s3:*", "cognito-idp:TagResource"], local.shared_creation_actions)
     Condition = local.ownership_condition
   }
   boundary_ownership_deny = {
     Sid       = "DenyNonGateChanges", Effect = "Deny", NotResource = aws_secretsmanager_secret.idp_client.arn
-    NotAction = concat(["s3:*"], local.shared_creation_actions)
+    NotAction = concat(["s3:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource"], local.shared_creation_actions)
     Condition = local.ownership_condition
   }
+  # Only metadata exceptions need a separate content deny; all other content
+  # APIs are already fenced by DenyNonGateChanges. Fully denied metadata
+  # families are also omitted from its exceptions to fit the inline quota.
   shared_controls = [for control in [
     {
       Sid         = "DenyOtherBuckets", Effect = "Deny", Action = "s3:*"
@@ -78,9 +86,20 @@ locals {
       Resource = "*"
     },
     {
-      Sid       = "DenyNonGateContentReads", Effect = "Deny", NotResource = aws_secretsmanager_secret.idp_client.arn
-      Action    = local.shared_content_read_actions
+      Sid = "DenyNonGateContentReads", Effect = "Deny", NotResource = aws_secretsmanager_secret.idp_client.arn
+      Action = [for action in local.shared_content_read_actions : action if anytrue([
+        for pattern in local.metadata_read_actions : can(regex("^${replace(pattern, "*", ".*")}$", action))
+      ])]
       Condition = { StringNotLikeIfExists = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" } }
+    },
+    {
+      # CreateUserPool requires tagging before a pool has ownership tags. Only
+      # CloudFormation can supply the reserved creation tag used by this fence.
+      Sid = "PoolTags", Effect = "Deny", Action = "cognito-idp:TagResource", Resource = "*"
+      Condition = { StringNotLikeIfExists = {
+        "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*"
+        "aws:RequestTag/aws:cloudformation:stack-name"  = "honua-gate-*"
+      } }
     }
   ] : control if var.shared_account]
   # The ownership NotAction deny already covers every content-read action.
