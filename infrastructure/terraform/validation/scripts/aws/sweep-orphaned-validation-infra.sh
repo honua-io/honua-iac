@@ -232,6 +232,7 @@ NOW_EPOCH="$(date -u +%s)"
 FAILURES=0
 PLANNED_ARNS=()
 PLAN_LINES=()
+UNREADABLE_ARNS=()
 DELETED_ARNS=()
 SKIPPED_LINES=()
 SURVIVOR_LINES=()
@@ -936,11 +937,12 @@ already_settled() {
   cleanup_resource_settled aws_read "$1" "$2"
 }
 
-# The plan is exactly what this sweep would delete, and --max-delete caps that.
-# A settled resource is reported and dropped: every torn-down cell leaves a few
-# in the tag index for weeks, and counting them would fill the cap and stop the
-# sweep from ever reaching a cell that is still alive. A resource whose state
-# cannot be read is neither deleted nor credited; it fails the sweep.
+# The plan is exactly what this sweep would delete. A settled resource is
+# reported and dropped: every torn-down cell leaves a few in the tag index for
+# weeks, and counting them would fill --max-delete and stop the sweep from ever
+# reaching a cell that is still alive. A resource whose state cannot be read is
+# neither deleted nor credited: it fails the sweep and still counts against
+# the cap, because it may be as live as the ones in the plan.
 plan_candidate() {
   local line="$1" region arn run_id stack settled
   IFS="$US" read -r region arn run_id stack <<<"$line"
@@ -953,16 +955,17 @@ plan_candidate() {
       SETTLED_ARNS+=("$arn")
       log_info "Already settled (tag index lagging): $arn"
       ;;
-    3)
+    1)
+      PLAN_LINES+=("$line")
+      PLANNED_ARNS+=("$arn")
+      echo "PLAN delete $arn (run=$run_id stack=${stack:-<untagged>} region=$region)"
+      ;;
+    *)
+      UNREADABLE_ARNS+=("$arn")
       SURVIVOR_ARNS+=("$arn")
       SURVIVOR_LINES+=("$arn (run=$run_id; state probe failed)")
       FAILURES=1
       log_warn "Not planned, state probe failed: $arn"
-      ;;
-    *)
-      PLAN_LINES+=("$line")
-      PLANNED_ARNS+=("$arn")
-      echo "PLAN delete $arn (run=$run_id stack=${stack:-<untagged>} region=$region)"
       ;;
   esac
 }
@@ -1158,8 +1161,8 @@ main() {
     plan_candidate "$line"
   done
 
-  if (( ${#PLANNED_ARNS[@]} > MAX_DELETE )); then
-    log_error "Plan covers ${#PLANNED_ARNS[@]} resources, over the --max-delete cap of $MAX_DELETE. Abandoning: a plan this large is more likely a tagging accident than a leak."
+  if (( ${#PLANNED_ARNS[@]} + ${#UNREADABLE_ARNS[@]} > MAX_DELETE )); then
+    log_error "Plan covers ${#PLANNED_ARNS[@]} resources and ${#UNREADABLE_ARNS[@]} more could not be read, over the --max-delete cap of $MAX_DELETE. Abandoning: a plan this large is more likely a tagging accident than a leak."
     emit_summary
     exit 1
   fi

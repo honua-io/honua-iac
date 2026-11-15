@@ -468,6 +468,22 @@ else
 fi
 assert_not_planned "an unreadable resource is not in the deletion plan" 'arn:aws:kms:us-west-2:1:key/abc'
 
+FAKE_KMS_DESCRIBE_ERROR=AccessDeniedException run_sweeper "$(resources "$KEY" "$REAPABLE")"
+assert_deleted "a live cell is still reaped beside an unreadable resource" 'arn:aws:ecs:us-west-2:1:cluster/honua-it-cluster'
+if [[ "$RC" -ne 0 ]] && ! grep -q "schedule-key-deletion" "$AWS_CALL_LOG"; then
+  check "an unreadable resource is left alone and fails the sweep" ok
+else
+  check "an unreadable resource is left alone and fails the sweep" no
+fi
+
+FAKE_KMS_DESCRIBE_ERROR=AccessDeniedException run_sweeper "$(resources "${keys[@]}" "$REAPABLE")" --max-delete 3
+if [[ "$RC" -ne 0 ]] && grep -q "over the --max-delete cap" <<<"$OUT"; then
+  check "unreadable resources still count against --max-delete" ok
+else
+  check "unreadable resources still count against --max-delete" no
+fi
+assert_no_mutations "a plan oversized by unreadable resources triggers no mutating call"
+
 # Protected stacks win over a valid disposable owner/run/expiry, even --this-run.
 for protection in 'Environment cert' 'Environment demo' 'Environment standing' 'Lifecycle standing' 'Lifecycle demo'; do
   read -r key value <<<"$protection"
