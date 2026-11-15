@@ -254,6 +254,7 @@ SURVIVOR_LINES=()
 SURVIVOR_ARNS=()
 SETTLED_ARNS=()
 DEFERRED=false
+LAST_WRITE_ERROR=""
 
 # ---------------------------------------------------------------------------
 # plumbing
@@ -266,7 +267,10 @@ aws_read() { aws "$@"; }
 
 # Mutating AWS call. Under --dry-run this prints the call and returns success
 # without contacting AWS at all, which is what makes the dry run provably
-# side-effect free rather than merely intended to be.
+# side-effect free rather than merely intended to be. A failed call leaves the
+# service's error code in LAST_WRITE_ERROR, and only the code: the message can
+# name other resources. A teardown makes several calls and tolerates some
+# failures, so the code is reported as the last service error, not the cause.
 aws_write() {
   if [[ "$DRY_RUN" == "true" ]]; then
     # stderr, not stdout: some callers capture a helper's stdout (the VPC
@@ -275,7 +279,14 @@ aws_write() {
     echo "[dry-run] aws $*" >&2
     return 0
   fi
-  aws "$@"
+  local stderr_text status=0
+  { stderr_text="$(aws "$@" 2>&1 1>&3)"; } 3>&1 || status=$?
+  [[ -z "$stderr_text" ]] || printf '%s\n' "$stderr_text" >&2
+  if (( status != 0 )); then
+    LAST_WRITE_ERROR=""
+    [[ "$stderr_text" =~ An\ error\ occurred\ \(([A-Za-z0-9.]+)\) ]] && LAST_WRITE_ERROR="${BASH_REMATCH[1]}"
+  fi
+  return "$status"
 }
 
 contains() {
@@ -1201,6 +1212,7 @@ main() {
   for line in ${PLAN_LINES[@]+"${PLAN_LINES[@]}"}; do
     IFS="$US" read -r region arn run_id stack <<<"$line"
 
+    LAST_WRITE_ERROR=""
     set +e
     delete_arn "$region" "$arn"
     rc=$?
@@ -1208,7 +1220,12 @@ main() {
     case "$rc" in
       0) DELETED_ARNS+=("$arn"); log_info "Deleted $arn" ;;
       2) skip "$arn" "no deletion path for this resource type; left for its VPC teardown or an operator" ;;
-      *) SURVIVOR_ARNS+=("$arn"); SURVIVOR_LINES+=("$arn (run=$run_id)"); FAILURES=1; log_warn "Failed to delete $arn" ;;
+      *)
+        SURVIVOR_ARNS+=("$arn")
+        SURVIVOR_LINES+=("$arn (run=$run_id${LAST_WRITE_ERROR:+; last service error $LAST_WRITE_ERROR})")
+        FAILURES=1
+        log_warn "Failed to delete $arn${LAST_WRITE_ERROR:+ (last service error: $LAST_WRITE_ERROR)}"
+        ;;
     esac
   done
 
