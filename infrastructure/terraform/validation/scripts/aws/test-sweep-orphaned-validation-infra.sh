@@ -62,6 +62,11 @@ if [[ -n "${FAKE_RESOURCE_READ_ERROR:-}" && "$operation" == describe-* && "$serv
   exit 1
 fi
 
+if [[ -n "${FAKE_WRITE_FAILURE:-}" && "$operation" == "${FAKE_WRITE_FAILURE%%:*}" ]]; then
+  echo "${FAKE_WRITE_FAILURE#*:}" >&2
+  exit 254
+fi
+
 case "$service $operation" in
   "resourcegroupstaggingapi get-resources")
     # The Owner tag filter is the reaper's containment boundary. Anything not
@@ -278,6 +283,11 @@ assert_not_planned() {
   local name="$1" arn="$2"
   if grep -q "PLAN delete $arn" <<<"$OUT"; then check "$name" no; else check "$name" ok; fi
 }
+
+# Other test files reuse everything above (the fakes, fixtures and assertions).
+if [[ "${SWEEP_TEST_HARNESS_ONLY:-}" == "1" ]]; then
+  return 0
+fi
 
 echo "== the reaper refuses when it cannot prove a resource is dead =="
 
@@ -762,3 +772,4 @@ echo "passed: $PASS  failed: $FAIL"
 [[ "$FAIL" -eq 0 ]]
 # The shared read-only verdict controls also exercise the integration consumer.
 bash "$SCRIPT_DIR/test-cleanup-read-verdict.sh"
+bash "$SCRIPT_DIR/test-sweep-failure-reason.sh"
