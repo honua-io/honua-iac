@@ -1,6 +1,6 @@
 The reviewed `foss4g-images.tfvars.json` is byte-identical to the counterpart in
 honua-release PR845. It prepares candidate-independent encrypted custody,
-scoped roles and immutable image repositories in account 585192672263/us-east-1.
+scoped roles and immutable image repositories in the production account (us-east-1).
 It contains references and monetary reservations only; no secret values or state.
 No main Server/Console/Cognito deployment or model invocation is enabled.
 

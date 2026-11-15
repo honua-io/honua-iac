@@ -1,7 +1,7 @@
 # Remote state for the state substrate itself (bucket and lock table).
 #
 # Copy to backend.tf (gitignored) and replace the bucket placeholder with the
-# account's state bucket from bootstrap/aws-tfstate (honua-tfstate-585192672263
+# account's state bucket from bootstrap/aws-tfstate (honua-tfstate-<account-id>
 # in the Honua account). Never commit the activated backend.tf.
 #
 # Chicken and egg: the first apply of this root creates the bucket, so it runs

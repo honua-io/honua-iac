@@ -26,8 +26,8 @@ mock_provider "aws" {
   }
   mock_data "aws_caller_identity" {
     defaults = {
-      account_id = "585192672263"
-      arn        = "arn:aws:iam::585192672263:user/terraform-test"
+      account_id = "444455556666"
+      arn        = "arn:aws:iam::444455556666:user/terraform-test"
       user_id    = "AIDATEST"
     }
   }
@@ -41,9 +41,9 @@ mock_provider "aws" {
   }
   mock_data "aws_ecr_repository" {
     defaults = {
-      arn            = "arn:aws:ecr:us-east-1:585192672263:repository/honua-server"
-      registry_id    = "585192672263"
-      repository_url = "585192672263.dkr.ecr.us-east-1.amazonaws.com/honua-server"
+      arn            = "arn:aws:ecr:us-east-1:444455556666:repository/honua-server"
+      registry_id    = "444455556666"
+      repository_url = "444455556666.dkr.ecr.us-east-1.amazonaws.com/honua-server"
     }
   }
   mock_data "aws_iam_policy_document" {
@@ -54,49 +54,49 @@ mock_provider "aws" {
   }
   mock_resource "aws_iam_policy" {
     defaults = {
-      arn = "arn:aws:iam::585192672263:policy/honua-test"
+      arn = "arn:aws:iam::444455556666:policy/honua-test"
     }
   }
   mock_resource "aws_iam_role" {
     defaults = {
-      arn = "arn:aws:iam::585192672263:role/honua-test"
+      arn = "arn:aws:iam::444455556666:role/honua-test"
     }
   }
   mock_resource "aws_batch_compute_environment" {
     defaults = {
-      arn = "arn:aws:batch:us-east-1:585192672263:compute-environment/honua-mock"
+      arn = "arn:aws:batch:us-east-1:444455556666:compute-environment/honua-mock"
     }
   }
   mock_resource "aws_cloudwatch_log_group" {
     defaults = {
-      arn = "arn:aws:logs:us-east-1:585192672263:log-group:honua-mock:*"
+      arn = "arn:aws:logs:us-east-1:444455556666:log-group:honua-mock:*"
     }
   }
   mock_resource "aws_apigatewayv2_api" {
     defaults = {
       arn           = "arn:aws:apigateway:us-east-1::/apis/abcdefghij"
-      execution_arn = "arn:aws:execute-api:us-east-1:585192672263:abcdefghij"
+      execution_arn = "arn:aws:execute-api:us-east-1:444455556666:abcdefghij"
     }
   }
   mock_resource "aws_lambda_function" {
     defaults = {
-      arn = "arn:aws:lambda:us-east-1:585192672263:function:honua-mock"
+      arn = "arn:aws:lambda:us-east-1:444455556666:function:honua-mock"
     }
   }
   mock_resource "aws_cloudwatch_event_rule" {
     defaults = {
-      arn = "arn:aws:events:us-east-1:585192672263:rule/honua-mock"
+      arn = "arn:aws:events:us-east-1:444455556666:rule/honua-mock"
     }
   }
   mock_resource "aws_secretsmanager_secret" {
     defaults = {
-      arn = "arn:aws:secretsmanager:us-east-1:585192672263:secret:honua-mock-AbCdEf"
+      arn = "arn:aws:secretsmanager:us-east-1:444455556666:secret:honua-mock-AbCdEf"
     }
   }
   # RDS Proxy (the release cell runs behind it); rds_proxy.tftest.hcl mocks.
   mock_resource "aws_db_proxy" {
     defaults = {
-      arn      = "arn:aws:rds:us-east-1:585192672263:db-proxy:prx-0123456789abcdef0"
+      arn      = "arn:aws:rds:us-east-1:444455556666:db-proxy:prx-0123456789abcdef0"
       endpoint = "honuarawsse380460-it-pg-proxy.proxy-abcdefghijkl.us-east-1.rds.amazonaws.com"
     }
   }
@@ -112,39 +112,39 @@ mock_provider "null" {}
 
 override_resource {
   target = aws_secretsmanager_secret.connection_string
-  values = { arn = "arn:aws:secretsmanager:us-east-1:585192672263:secret:honuarawsse380460-it/connection-string-Ab12Cd" }
+  values = { arn = "arn:aws:secretsmanager:us-east-1:444455556666:secret:honuarawsse380460-it/connection-string-Ab12Cd" }
 }
 override_resource {
   target = aws_secretsmanager_secret.admin_password
-  values = { arn = "arn:aws:secretsmanager:us-east-1:585192672263:secret:honuarawsse380460-it/admin-password-Ab12Cd" }
+  values = { arn = "arn:aws:secretsmanager:us-east-1:444455556666:secret:honuarawsse380460-it/admin-password-Ab12Cd" }
 }
 override_resource {
   target = aws_secretsmanager_secret.master_key
-  values = { arn = "arn:aws:secretsmanager:us-east-1:585192672263:secret:honuarawsse380460-it/connection-encryption-master-key-Ab12Cd" }
+  values = { arn = "arn:aws:secretsmanager:us-east-1:444455556666:secret:honuarawsse380460-it/connection-encryption-master-key-Ab12Cd" }
 }
 override_resource {
   target = aws_secretsmanager_secret.redis_connection
-  values = { arn = "arn:aws:secretsmanager:us-east-1:585192672263:secret:honuarawsse380460-it/redis-connection-Ab12Cd" }
+  values = { arn = "arn:aws:secretsmanager:us-east-1:444455556666:secret:honuarawsse380460-it/redis-connection-Ab12Cd" }
 }
 override_resource {
   target = aws_batch_job_queue.gp
-  values = { arn = "arn:aws:batch:us-east-1:585192672263:job-queue/honuarawsse380460-it-gp-queue" }
+  values = { arn = "arn:aws:batch:us-east-1:444455556666:job-queue/honuarawsse380460-it-gp-queue" }
 }
 override_resource {
   target = aws_batch_job_definition.gp["s"]
-  values = { arn = "arn:aws:batch:us-east-1:585192672263:job-definition/honuarawsse380460-it-gp-s:1", revision = 1 }
+  values = { arn = "arn:aws:batch:us-east-1:444455556666:job-definition/honuarawsse380460-it-gp-s:1", revision = 1 }
 }
 override_resource {
   target = aws_batch_job_definition.gp["m"]
-  values = { arn = "arn:aws:batch:us-east-1:585192672263:job-definition/honuarawsse380460-it-gp-m:1", revision = 1 }
+  values = { arn = "arn:aws:batch:us-east-1:444455556666:job-definition/honuarawsse380460-it-gp-m:1", revision = 1 }
 }
 override_resource {
   target = aws_batch_job_definition.gp["l"]
-  values = { arn = "arn:aws:batch:us-east-1:585192672263:job-definition/honuarawsse380460-it-gp-l:1", revision = 1 }
+  values = { arn = "arn:aws:batch:us-east-1:444455556666:job-definition/honuarawsse380460-it-gp-l:1", revision = 1 }
 }
 override_resource {
   target = aws_batch_job_definition.gp["xl"]
-  values = { arn = "arn:aws:batch:us-east-1:585192672263:job-definition/honuarawsse380460-it-gp-xl:1", revision = 1 }
+  values = { arn = "arn:aws:batch:us-east-1:444455556666:job-definition/honuarawsse380460-it-gp-xl:1", revision = 1 }
 }
 
 variables {
@@ -152,7 +152,7 @@ variables {
   # on so all three event functions exist.
   name_prefix      = "honuarawsse380460"
   environment      = "it"
-  image            = "585192672263.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:acae8755a327933e11718de3b0317b6a420a2444ec21135debcb6087adf3f12b"
+  image            = "444455556666.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:acae8755a327933e11718de3b0317b6a420a2444ec21135debcb6087adf3f12b"
   gp_batch_image   = "ghcr.io/honua-io/honua-server@sha256:961b983de43ede21d315770dd2e4e1f3bf41dc358ce8ed156ddcb3101a3b6bcc"
   admin_password   = "Synthetic-Terraform-Test-Admin-4721!aA1"
   redis_auth_token = "aaaaAAAA1111&&&&aaaaAAAA1111&&&&"
@@ -162,8 +162,8 @@ variables {
 
   enable_control_plane_events = true
 
-  operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:585192672263:secret:honua-release/cert/operation-key-ring-zDn618"
-  audit_chain_key_secret_arn                = "arn:aws:secretsmanager:us-east-1:585192672263:secret:honua-release/cert/audit-chain-key-RLtpME"
+  operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:444455556666:secret:honua-release/cert/operation-key-ring-zDn618"
+  audit_chain_key_secret_arn                = "arn:aws:secretsmanager:us-east-1:444455556666:secret:honua-release/cert/audit-chain-key-RLtpME"
 
   additional_env = {
     HONUA_SERVE_ADMIN_UI = "true"
