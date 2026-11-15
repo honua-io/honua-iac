@@ -20,12 +20,13 @@ locals {
     "cognito-idp:TagResource", "cognito-idp:UntagResource", "cognito-idp:ListTagsForResource"
   ]
   protected_controls = {
-    Effect = "Deny", Action = ["lambda:*", "logs:*"]
+    Effect = "Deny", Action = "*"
     Resource = [
-      "arn:aws:lambda:us-east-1:${var.member_account_id}:function:honua-gate-reaper",
-      "arn:aws:lambda:us-east-1:${var.member_account_id}:function:honua-gate-reaper:*",
-      "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/aws/lambda/honua-gate-reaper",
-      "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/aws/lambda/honua-gate-reaper:*"
+      aws_cognito_user_pool.gate.arn,
+      # Reserve the reaper namespace, including qualified functions and log streams.
+      # Combining these deny-only resources keeps the managed boundary within quota.
+      "arn:aws:lambda:us-east-1:${var.member_account_id}:function:honua-gate-reaper*",
+      "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/aws/lambda/honua-gate-reaper*"
     ]
   }
   lane_policy = jsonencode({

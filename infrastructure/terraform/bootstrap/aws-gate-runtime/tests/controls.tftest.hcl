@@ -2,6 +2,7 @@
 mock_provider "aws" {
   override_during = plan
   mock_resource "aws_secretsmanager_secret" { defaults = { arn = "arn:aws:secretsmanager:us-east-1:000000000002:secret:honua-gate/idp/client-secret-abcdef" } }
+  mock_resource "aws_cognito_user_pool" { defaults = { id = "us-east-1_Synthetic", arn = "arn:aws:cognito-idp:us-east-1:000000000002:userpool/us-east-1_Synthetic" } }
   mock_resource "aws_iam_role" { defaults = { arn = "arn:aws:iam::000000000002:role/mock" } }
   mock_resource "aws_iam_policy" { defaults = { arn = "arn:aws:iam::000000000002:policy/mock" } }
   mock_resource "aws_lambda_function" { defaults = { arn = "arn:aws:lambda:us-east-1:000000000002:function:honua-gate-reaper" } }
@@ -26,6 +27,15 @@ run "lane_is_stack_only_and_workloads_are_bounded" {
   assert {
     condition     = jsondecode(aws_iam_policy.workload_boundary.policy).Statement[0].Effect == "Deny" && jsondecode(aws_iam_role_policy.cloudformation.policy).Statement[0] == jsondecode(aws_iam_policy.workload_boundary.policy).Statement[0]
     error_message = "Templates and workload code must be unable to modify the reaper."
+  }
+  assert {
+    condition = alltrue([for resource in [
+      "arn:aws:lambda:us-east-1:${var.member_account_id}:function:honua-gate-reaper",
+      "arn:aws:lambda:us-east-1:${var.member_account_id}:function:honua-gate-reaper:version",
+      "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/aws/lambda/honua-gate-reaper",
+      "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/aws/lambda/honua-gate-reaper:log-stream:synthetic"
+    ] : anytrue([for pattern in local.protected_controls.Resource : can(regex("^${replace(pattern, "*", ".*")}$", resource))])])
+    error_message = "Compact deny patterns must protect the reaper, function qualifiers and log streams."
   }
   assert {
     condition     = contains(jsondecode(aws_iam_role_policy.cloudformation.policy).Statement[5].Condition.StringEquals["iam:AWSServiceName"], "ecs.application-autoscaling.amazonaws.com") && contains(jsondecode(aws_iam_role_policy.cloudformation.policy).Statement[5].Condition.StringEquals["iam:AWSServiceName"], "guardduty.amazonaws.com")
@@ -151,14 +161,14 @@ run "shared_account_policy_quotas_with_deployment_sized_inputs" {
       for policy in [aws_iam_policy.lane_boundary.policy, aws_iam_policy.workload_boundary.policy] :
       length(jsonencode(jsondecode(policy))) <= 6144
     ])
-    error_message = "Every managed policy must fit the 6144-character quota with 18 protected paths and two state buckets."
+    error_message = "Every managed policy must fit the 6144-character quota with 18 protected paths and two state buckets; workload uses ${nonsensitive(length(jsonencode(jsondecode(aws_iam_policy.workload_boundary.policy))))} characters."
   }
   assert {
     condition = alltrue([
       for policy in [aws_iam_role_policy.lane.policy, aws_iam_role_policy.cloudformation.policy, aws_iam_role_policy.reaper.policy] :
       length(jsonencode(jsondecode(policy))) <= 10240
     ])
-    error_message = "Every inline role policy must fit the 10240-character quota; CloudFormation uses ${length(jsonencode(jsondecode(aws_iam_role_policy.cloudformation.policy)))} characters."
+    error_message = "Every inline role policy must fit the 10240-character quota; CloudFormation uses ${nonsensitive(length(jsonencode(jsondecode(aws_iam_role_policy.cloudformation.policy))))} characters."
   }
   assert {
     condition = alltrue([
@@ -195,11 +205,11 @@ run "stack_cognito_lifecycle_without_user_reads" {
   }
   assert {
     condition = contains(local.shared_creation_actions, "cognito-idp:CreateUserPool") && alltrue([
-      for action in ["CreateUserPoolClient", "CreateUserPoolDomain", "CreateGroup", "AdminCreateUser", "DeleteUserPool", "DeleteUserPoolClient", "DeleteUserPoolDomain", "DeleteGroup", "AdminDeleteUser", "AdminAddUserToGroup", "AdminRemoveUserFromGroup", "UpdateUserPool", "UpdateUserPoolClient", "UpdateUserPoolDomain", "UpdateGroup", "SetUserPoolMfaConfig", "TagResource", "UntagResource"] : alltrue([
+      for action in ["CreateUserPoolClient", "CreateUserPoolDomain", "CreateGroup", "AdminCreateUser", "DeleteUserPool", "DeleteUserPoolClient", "DeleteUserPoolDomain", "DeleteGroup", "AdminDeleteUser", "AdminAddUserToGroup", "AdminRemoveUserFromGroup", "UpdateUserPool", "UpdateUserPoolClient", "UpdateUserPoolDomain", "UpdateGroup", "SetUserPoolMfaConfig", "UntagResource"] : alltrue([
         for deny in [local.boundary_ownership_deny, local.service_role_ownership_deny] : !anytrue([for pattern in deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", "cognito-idp:${action}"))])
       ])
     ])
-    error_message = "Only pool allocation may bypass ownership; child creation, deletion and tagging require an existing gate-tagged pool."
+    error_message = "Pool allocation may bypass ownership; child creation, deletion and untagging require an existing gate-tagged pool."
   }
   assert {
     condition = alltrue([for deny in [local.boundary_ownership_deny, local.service_role_ownership_deny] : contains(deny.NotAction, "cognito-idp:DescribeUserPoolDomain")]) && alltrue([
@@ -208,4 +218,46 @@ run "stack_cognito_lifecycle_without_user_reads" {
     error_message = "Domain description has no resource-level authorization; other workload metadata must still require the parent pool ownership tag."
   }
 
+}
+
+run "cognito_creation_tagging_and_client_reads_are_fenced" {
+  command = plan
+  variables {
+    shared_account          = true
+    protected_state_buckets = ["synthetic-state"]
+    protected_ssm_paths     = ["/synthetic/gate"]
+    budget_alert_email      = "gate@example.invalid"
+  }
+  assert {
+    condition = alltrue([for deny in [local.boundary_ownership_deny, local.service_role_ownership_deny] :
+      contains(deny.NotAction, "cognito-idp:TagResource") && !contains(deny.NotAction, "cognito-idp:DescribeUserPoolClient")
+    ])
+    error_message = "Creation-time tagging needs a separate fence; client descriptions must require ownership."
+  }
+  assert {
+    condition = alltrue([for policy in [aws_iam_policy.workload_boundary.policy, aws_iam_role_policy.cloudformation.policy] : anytrue([
+      for statement in jsondecode(policy).Statement : try(
+        statement.Effect == "Deny" && statement.Action == "cognito-idp:TagResource" && statement.Resource == "*" &&
+        statement.Condition.StringNotLikeIfExists == {
+          "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*"
+          "aws:RequestTag/aws:cloudformation:stack-name"  = "honua-gate-*"
+      }, false)
+    ])])
+    error_message = "Tagging requires existing ownership or CloudFormation's reserved creation tag; missing and foreign tags must fail closed."
+  }
+  assert {
+    condition = alltrue([for policy in [aws_iam_policy.workload_boundary.policy, aws_iam_role_policy.cloudformation.policy] : anytrue([
+      for statement in jsondecode(policy).Statement : try(statement.Effect == "Deny" && statement.Action == "*" && contains(statement.Resource, aws_cognito_user_pool.gate.arn), false)
+    ])])
+    error_message = "Shared-account policies must protect the bootstrap pool even if it has gate tags."
+  }
+}
+run "member_account_bootstrap_pool_is_protected" {
+  command = plan
+  assert {
+    condition = alltrue([for policy in [aws_iam_policy.workload_boundary.policy, aws_iam_role_policy.cloudformation.policy] : anytrue([
+      for statement in jsondecode(policy).Statement : try(statement.Effect == "Deny" && statement.Action == "*" && contains(statement.Resource, aws_cognito_user_pool.gate.arn), false)
+    ])])
+    error_message = "Member-account policies must protect the bootstrap pool independently of shared ownership controls."
+  }
 }
