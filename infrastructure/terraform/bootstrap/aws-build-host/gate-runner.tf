@@ -10,23 +10,27 @@ locals {
       service_containers = false
       group              = "honua-server-gate"
       labels             = ["self-hosted", "linux", "x64", "honua-build"]
+      light_overflow     = false
       cpu_quota_percent  = var.gate_runner_cpu_quota_percent
       memory_max_gib     = var.gate_runner_memory_max_gib
     }],
-    [for _ in range(var.heavy_runner_count) : {
+    [for index in range(var.heavy_runner_count) : {
       pool = "heavy"
       # Service containers need /proc/1/cgroup, which ProtectProc=invisible hides.
       service_containers = true
       group              = "honua-heavy"
       labels             = ["self-hosted", "linux", "x64", "honua-heavy"]
-      cpu_quota_percent  = var.heavy_runner_cpu_quota_percent
-      memory_max_gib     = var.heavy_runner_memory_max_gib
+      # Keep two heavy-only slots even if heavy work arrives after queue observation.
+      light_overflow    = index >= 2
+      cpu_quota_percent = var.heavy_runner_cpu_quota_percent
+      memory_max_gib    = var.heavy_runner_memory_max_gib
     }]
   )
   gate_runner_host_config = {
     region              = var.region
     org                 = split("/", var.gate_runner_repository)[0]
     runners             = local.build_host_runners
+    overflow_repository = var.gate_runner_repository
     runner_count        = length(local.build_host_runners)
     min_free_disk_gib   = var.runner_min_free_disk_gib
     runner_version      = "2.338.2"

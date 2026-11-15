@@ -17,8 +17,21 @@ run "default_has_no_overflow_access" {
     error_message = "Overflow must be opt-in without changing the existing pool."
   }
   assert {
-    condition     = length(base64decode(aws_launch_template.runners.user_data)) <= 16384
+    condition     = local.user_data_bytes <= 16384 && aws_launch_template.runners.user_data == base64gzip(local.runner_bootstrap) && startswith(aws_launch_template.runners.user_data, "H4sI")
     error_message = "Default user data must fit the EC2 limit."
+  }
+}
+run "shared_installer_receives_complete_light_runner_configuration" {
+  command = apply
+  assert {
+    condition = length(local.runner_host_config.runners) == var.runner_count && alltrue([
+      for runner in local.runner_host_config.runners :
+      runner.pool == "light" && runner.group == var.runner_group &&
+      contains(runner.labels, "honua-light") && runner.service_containers &&
+      runner.cpu_quota_percent == var.runner_cpu_quota_percent &&
+      runner.memory_max_gib == var.runner_memory_max_gib && !runner.light_overflow
+    ]) && local.runner_host_config.min_free_disk_gib == 40
+    error_message = "The shared installer needs a complete isolated service-container account per light runner."
   }
 }
 run "overflow_reserves_capacity_on_existing_spot_host" {
@@ -40,7 +53,7 @@ run "overflow_reserves_capacity_on_existing_spot_host" {
     error_message = "Overflow must reuse the single Spot host."
   }
   assert {
-    condition     = length(base64decode(aws_launch_template.runners.user_data)) <= 16384
+    condition     = local.user_data_bytes <= 16384 && aws_launch_template.runners.user_data == base64gzip(local.runner_bootstrap) && startswith(aws_launch_template.runners.user_data, "H4sI")
     error_message = "Overflow SDK and isolation bootstrap must fit the EC2 limit."
   }
 }

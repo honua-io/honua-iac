@@ -7,7 +7,19 @@ locals {
     "HONUA_SDK_INSTALLER",
     "chmod 755 /usr/local/bin/ensure-dotnet-sdk"
   ])
-  name = "honua-lane-build-host"
+  build_host_bootstrap = join("\n", concat([
+    "#!/bin/bash\nset -euo pipefail",
+    "echo '${base64encode(jsonencode({ region = var.region, group = local.name, idle_seconds = var.idle_stop_minutes * 60 }))}' | base64 -d > /etc/honua-build-host.json"
+    ], var.gate_runner_enabled ? [local.gated_build_bootstrap] : [
+    file("${path.module}/install-idle-stop.sh"),
+    file("${path.module}/../shared/install-docker.sh"),
+    local.sdk_installer_bootstrap,
+    file("${path.module}/install-build-tools.sh")
+  ]))
+  # cloud-init decompresses gzip user data before interpreting the shell script.
+  build_host_user_data = var.gate_runner_enabled ? base64gzip(local.build_host_bootstrap) : base64encode(local.build_host_bootstrap)
+  user_data_bytes      = length(local.build_host_user_data) * 3 / 4 - length(regexall("=", local.build_host_user_data))
+  name                 = "honua-lane-build-host"
   tags = {
     Environment = "it"
     Lifecycle   = "spot"
@@ -96,18 +108,7 @@ resource "aws_launch_template" "build" {
   image_id      = data.aws_ssm_parameter.ubuntu.value
   key_name      = aws_key_pair.build.key_name
   ebs_optimized = true
-  user_data = base64encode(join("\n", concat([
-    "#!/bin/bash\nset -euo pipefail",
-    "echo '${base64encode(jsonencode({ region = var.region, group = local.name, idle_seconds = var.idle_stop_minutes * 60 }))}' | base64 -d > /etc/honua-build-host.json"
-    ], var.gate_runner_enabled ? [
-    # Keep idle-stop first and apt_retry in scope within the 16 KiB limit.
-    "source <(base64 -d <<< '${base64gzip(local.gated_build_bootstrap)}' | gunzip)"
-    ] : [
-    file("${path.module}/install-idle-stop.sh"),
-    file("${path.module}/../shared/install-docker.sh"),
-    local.sdk_installer_bootstrap,
-    file("${path.module}/install-build-tools.sh")
-  ])))
+  user_data     = local.build_host_user_data
   iam_instance_profile { name = aws_iam_instance_profile.build.name }
   network_interfaces {
     associate_public_ip_address = true

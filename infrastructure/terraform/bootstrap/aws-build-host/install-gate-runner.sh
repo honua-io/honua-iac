@@ -120,10 +120,63 @@ github() {
     -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' "${@:2}"
 }
 cleanup_credentials() {
+  if [[ -f "${secrets}/queue-auth" ]]; then
+    github "${secrets}/queue-auth" -X DELETE https://api.github.com/installation/token > /dev/null || true
+  fi
   if [[ -f "${secrets}/runner-auth" ]]; then
     github "${secrets}/runner-auth" -X DELETE https://api.github.com/installation/token > /dev/null || true
   fi
   rm -rf "${secrets:?}"
+}
+# A job may be queued inside an in-progress workflow. Inspect every job page.
+run_has_no_waiting_heavy_jobs() {
+  local repository="$1" run="$2" page response count
+  for ((page=1; page<=10; page++)); do
+    response="$(github "${secrets}/queue-auth" \
+      "https://api.github.com/repos/${repository}/actions/runs/${run}/jobs?filter=latest&per_page=100&page=${page}")" || return 1
+    count="$(jq -er '.total_count | numbers | select(. >= 0 and . < 1000)' <<< "$response")" || return 1
+    jq -e --argjson count "$count" --argjson page "$page" '(.jobs | type == "array") and
+      (.jobs | length) == ([100, ($count - (($page - 1) * 100))] | min | if . < 0 then 0 else . end) and all(.jobs[];
+      (.status | type == "string") and (.labels | type == "array") and
+      all(.labels[]; type == "string"))' <<< "$response" > /dev/null || return 1
+    if jq -e '.jobs[] | select(.status != "completed" and .status != "in_progress") |
+      select(.labels | index("honua-heavy"))' <<< "$response" > /dev/null; then
+      return 1
+    fi
+    (( page * 100 < count )) || return 0
+  done
+  return 1
+}
+workflow_status_has_no_waiting_heavy_jobs() {
+  local repository="$1" status="$2" page response count run
+  for ((page=1; page<=10; page++)); do
+    response="$(github "${secrets}/queue-auth" \
+      "https://api.github.com/repos/${repository}/actions/runs?status=${status}&per_page=100&page=${page}")" || return 1
+    count="$(jq -er '.total_count | numbers | select(. >= 0 and . < 1000)' <<< "$response")" || return 1
+    jq -e --argjson count "$count" --argjson page "$page" '(.workflow_runs | type == "array") and
+      (.workflow_runs | length) == ([100, ($count - (($page - 1) * 100))] | min | if . < 0 then 0 else . end) and
+      all(.workflow_runs[]; (.id | type == "number"))' <<< "$response" > /dev/null || return 1
+    for run in $(jq -r '.workflow_runs[].id' <<< "$response"); do
+      [[ "$run" =~ ^[0-9]+$ ]] || return 1
+      run_has_no_waiting_heavy_jobs "$repository" "$run" || return 1
+    done
+    (( page * 100 < count )) || return 0
+  done
+  return 1
+}
+# Observation is advisory: two runners never offer light capacity. Missing Actions
+# permission, API errors or truncated search keep overflow registrations heavy-only.
+light_queue_clear() {
+  local repository status
+  repository="$(setting overflow_repository)"
+  [[ "$repository" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || return 1
+  github "${secrets}/app-auth" -X POST \
+    -d "$(jq -cn --arg repository "${repository#*/}" '{repositories:[$repository],permissions:{actions:"read"}}')" \
+    "https://api.github.com/app/installations/${installation}/access_tokens" |
+    jq -er '"Authorization: Bearer " + (.token | strings | select(length > 0))' > "${secrets}/queue-auth" || return 1
+  for status in queued in_progress waiting pending requested; do
+    workflow_status_has_no_waiting_heavy_jobs "$repository" "$status" || return 1
+  done
 }
 # An ephemeral runner may already have removed itself after its job.
 delete_runner() {
@@ -203,6 +256,13 @@ case "$mode" in
   register)
     user="gate-runner-${index}"
     runner="$(jq -c --argjson index "$index" '.runners[$index - 1]' "$config")"
+    if [[ "$(jq -r '.light_overflow // false' <<< "$runner")" == true ]]; then
+      if light_queue_clear; then
+        runner="$(jq '.labels |= (. + ["honua-light"] | unique)' <<< "$runner")"
+      else
+        echo "Heavy queue not proven clear; runner ${index} stays heavy-only." >&2
+      fi
+    fi
     group="$(jq -r .group <<< "$runner")"
     group_id="$(group_id_named "$group")"
     [[ -n "$group_id" ]] || { echo "Runner group ${group} does not exist." >&2; exit 1; }
@@ -249,6 +309,7 @@ end_previous_job() {
 restore_pristine_home() {
   find "$home" -mindepth 1 -delete
   rsync -a --chown="${user}:${user}" "/var/lib/honua-gate-runner/home-${index}/" "${home}/"
+  install -d -o "$user" -g "$user" -m 0700 "${home}/.cache/tmp"
   cp -a /opt/actions-runner "${home}/runner"
   chown -R "${user}:${user}" "${home}/runner"
   systemctl start "user@${uid}.service"
@@ -312,6 +373,7 @@ cat > /etc/honua-gate-runner-env <<'ENVIRONMENT'
 # These paths are private, writable, and reset with the home after every job.
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 export DOCKER_HOST="unix://${XDG_RUNTIME_DIR}/docker.sock"
+export TMPDIR="${HOME}/.cache/tmp"
 export DOTNET_INSTALL_DIR="${HOME}/.dotnet" DOTNET_ROOT="${HOME}/.dotnet"
 export RUNNER_TOOL_CACHE="${HOME}/.cache/toolcache" AGENT_TOOLSDIRECTORY="${HOME}/.cache/toolcache"
 export PATH="${HOME}/.venv/bin:${HOME}/.dotnet:${HOME}/.local/bin:${PATH}"
@@ -351,7 +413,7 @@ setting() { jq -r ".$1" "$config"; }
 imds="$(curl -fsS -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' http://169.254.169.254/latest/api/token)"
 instance="$(curl -fsS -H "X-aws-ec2-metadata-token: ${imds}" http://169.254.169.254/latest/meta-data/instance-id)"
 idle=0
-for index in $(jq -r '.runners | to_entries[] | select(.value.pool == "gate") | .key + 1' "$config"); do
+for index in $(jq -r '.runners | to_entries[] | select(.value.pool == "gate" or .value.pool == "light") | .key + 1' "$config"); do
   user="gate-runner-${index}"
   if pgrep -u "$user" -x Runner.Listener > /dev/null && ! pgrep -u "$user" -x Runner.Worker > /dev/null; then
     idle=$((idle + 1))

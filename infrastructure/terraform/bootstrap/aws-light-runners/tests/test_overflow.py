@@ -1,5 +1,6 @@
 """Exercise admission and private-daemon cleanup without SSH, Docker or AWS."""
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -37,6 +38,23 @@ class OverflowTests(unittest.TestCase):
 
     def session(self):
         return subprocess.Popen(["bash", self.scripts["pre-pr-session.sh"]], env=self.env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+    def test_installer_creates_private_temp_root_for_new_and_existing_accounts(self):
+        installer = (ROOT / "install-pre-pr-overflow.sh").read_text()
+        directories = re.search(r'install -d -o "\$overflow_user".*?\n([^\n]+)', installer).group(0)
+        directories = directories.replace('-o "$overflow_user" -g "$overflow_user"', "")
+        environment = (ROOT.parent / "aws-build-host/install-gate-runner.sh").read_text()
+        environment = re.search(r"<<'ENVIRONMENT'\n(.*?)\nENVIRONMENT\n", environment, re.S).group(1)
+        for _ in range(2):
+            result = subprocess.run(
+                ["bash", "-c", directories + "\n" + environment + '\nmktemp "$TMPDIR/overflow.XXXXXX"'],
+                env=dict(os.environ, HOME=str(self.home), overflow_home=str(self.home)),
+                capture_output=True, text=True, timeout=5,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            temporary = self.home / ".cache/tmp"
+            self.assertEqual(Path(result.stdout.strip()).parent, temporary)
+            self.assertEqual(temporary.stat().st_mode & 0o777, 0o700)
 
     def test_session_lock_spans_sync_and_releases_at_eof(self):
         first = self.session()

@@ -147,11 +147,11 @@ run "gate_runner_enabled" {
     error_message = "Gate runner parent slices must allow 16 GiB while retaining six-vCPU ceilings."
   }
   assert {
-    condition     = strcontains(base64decode(aws_launch_template.build.user_data), "source <(base64 -d <<< '${base64gzip(local.gated_build_bootstrap)}' | gunzip)") && local.gated_build_bootstrap == join("\n", [file("install-idle-stop.sh"), file("../shared/install-docker.sh"), local.sdk_installer_bootstrap, file("install-build-tools.sh"), local.gate_runner_bootstrap]) && strcontains(local.gate_runner_bootstrap, jsonencode(local.gate_runner_host_config)) && endswith(local.gate_runner_bootstrap, file("install-gate-runner.sh"))
+    condition     = aws_launch_template.build.user_data == base64gzip(local.build_host_bootstrap) && startswith(aws_launch_template.build.user_data, "H4sI") && endswith(local.build_host_bootstrap, local.gated_build_bootstrap) && local.gated_build_bootstrap == join("\n", [file("install-idle-stop.sh"), file("../shared/install-docker.sh"), local.sdk_installer_bootstrap, file("install-build-tools.sh"), local.gate_runner_bootstrap]) && strcontains(local.gate_runner_bootstrap, jsonencode(local.gate_runner_host_config)) && endswith(local.gate_runner_bootstrap, file("install-gate-runner.sh"))
     error_message = "The enabled host must install the runner services with their configuration."
   }
   assert {
-    condition     = length(base64decode(aws_launch_template.build.user_data)) <= 16384
+    condition     = local.user_data_bytes <= 16384
     error_message = "EC2 user data must stay within 16 KiB."
   }
   assert {
@@ -180,7 +180,7 @@ run "maximum_runner_pool_fits_user_data" {
     heavy_runner_count  = 8
   }
   assert {
-    condition     = local.gate_runner_host_config.runner_count == 12 && length(base64decode(aws_launch_template.build.user_data)) <= 16384
+    condition     = local.gate_runner_host_config.runner_count == 12 && local.user_data_bytes <= 16384
     error_message = "The maximum supported runner pool must fit EC2's 16 KiB user-data limit."
   }
 }
@@ -200,8 +200,17 @@ run "heavy_runners_follow_the_gate_runners" {
     error_message = "Heavy runners join only the honua-heavy group and label with eight vCPUs and 16 GiB each."
   }
   assert {
-    condition     = length(base64decode(aws_launch_template.build.user_data)) <= 16384
+    condition     = local.user_data_bytes <= 16384
     error_message = "EC2 user data must stay within 16 KiB."
+  }
+}
+
+run "heavy_light_overflow_preserves_reserved_capacity" {
+  command = apply
+  variables { gate_runner_enabled = true }
+  assert {
+    condition     = length([for runner in local.build_host_runners : runner if runner.pool == "heavy" && !runner.light_overflow]) == 2 && length([for runner in local.build_host_runners : runner if runner.light_overflow]) == 6 && local.gate_runner_host_config.overflow_repository == var.gate_runner_repository
+    error_message = "Two heavy-only runners must remain; the other six may offer light capacity after checking the repository queue."
   }
 }
 

@@ -205,11 +205,36 @@ current instance and timestamp (at most 90 seconds old, never in the future),
 version 1 and an integer idle count from 1 through 8 before routing heavy work.
 Missing or rejected proof selects GitHub-hosted compute. This is availability
 observation, not slot reservation; concurrent runs can still queue.
+The first two heavy runners stay heavy-only (or all runners when fewer than
+three are configured). Before each one-job registration, the remaining heavy
+runners inspect queued jobs in queued, in-progress, waiting, pending and requested
+workflows in `gate_runner_repository`. When none requests `honua-heavy`, their
+registration also advertises `honua-light`. This keeps the existing runner group,
+CPU/memory limits, cleanup and heartbeat semantics. No additional instances or
+runner accounts are created. The build producer does not offer light overflow.
+
+Queue inspection uses a separate, repository-scoped installation token with
+Actions read permission; it is revoked after registration. The App needs Actions
+read permission on the configured repository in addition to its existing runner
+registration permission. If permission is unavailable, inspection fails, or an API
+search reaches its 1,000-result limit, the runner registers heavy-only. The token
+never enters the job's home. Both workflow and job lists are paginated.
+
+GitHub does not provide label priority or atomic queue inspection/registration.
+An overflow runner may accept a light job just before heavy work arrives; the two
+reserved runners continue serving affected shards, and each overflow runner
+checks again after its single job. This bounds contention rather than preempting
+light jobs. Light routing must retain the same-repository guard and the runner
+group's repository restrictions.
+
 Heavy jobs start PostGIS as a service container. The Actions runner reads
 `/proc/1/cgroup` before it starts one, so heavy runners use `ProtectProc=default`:
 they can list other processes and their command lines, but other accounts'
 environments and memory stay unreadable, and `/home/ubuntu` stays inaccessible.
 
+- **Temporary files.** Each job exports `TMPDIR` inside its private home. Fixed-name
+  test directories therefore cannot inherit another runner account’s ownership.
+  The temporary root is reset with that home after every job.
 - **Workspace cleanup.** When a job ends, the service stops the account's rootless
   Docker and empties its home, including `runner/_work`, images and volumes. The
   next start restores the pristine home before registering again.
@@ -221,12 +246,19 @@ environments and memory stay unreadable, and `/home/ubuntu` stays inaccessible.
   (`{"group":"honua-heavy","labels":["honua-heavy"]}`); unset, every shard runs
   hosted. Fork pull requests always run hosted.
 
+The overflow policy can be applied to the running build host without replacing
+the instance. Terraform updates launch-template user data; that alone does not
+update a running host. After the merged change is applied, use the live runner
+convergence below. Existing registrations retain their labels until their next
+job/registration cycle; drain and restart only idle services when immediate
+registration is needed. Do not restart busy runner services.
+
 Rolling these runners out does not need a new host. The installer is idempotent:
 it skips prerequisites already installed for the pinned runner version, provisions
 only missing accounts and rewrites every runner's limits, so rerunning the applied
 launch template's runner bootstrap converges the running host without touching
-running jobs. Runner-enabled user data compresses Docker, build tools, and runner
-setup together to stay below EC2's 16 KiB limit. Extract only the runner section
+running jobs. Runner-enabled user data uses cloud-init’s native gzip decoding for Docker,
+build tools, and runner setup together to stay below EC2's 16 KiB limit. Extract only the runner section
 for a live convergence; the idle timer still installs before network bootstrap:
 
 ```bash
@@ -236,7 +268,7 @@ aws ec2 describe-launch-template-versions --region "$BUILD_REGION" \
     --auto-scaling-group-names honua-lane-build-host \
     --query 'AutoScalingGroups[0].MixedInstancesPolicy.LaunchTemplate.LaunchTemplateSpecification.LaunchTemplateName' --output text)" \
   --versions '$Latest' --query 'LaunchTemplateVersions[0].LaunchTemplateData.UserData' --output text |
-  base64 -d | sed -n "s/^source <(base64 -d <<< '\(.*\)' | gunzip)$/\1/p" | base64 -d | gunzip |
+  base64 -d | gunzip |
   sed -n '/^(umask 077 && cat > \/etc\/honua-gate-runner.json)/,$p' > runner-bootstrap.sh
 ssh ubuntu@"$BUILD_HOST" 'sudo bash -c "apt_retry() { apt-get \"\$@\"; }; set -euo pipefail; source /dev/stdin"' < runner-bootstrap.sh
 ```
@@ -309,3 +341,8 @@ the 64-vCPU host and guarantee no lane-build headroom. They are not reservations
 Do not infer a reserved CPU budget from an idle heartbeat. Changing the ceilings
 requires Terraform configuration and the documented bootstrap rollout; this
 change does not apply infrastructure or silently change active job limits.
+
+The light-host configuration also supplies the shared installer's per-account
+`runners` array and 40 GiB free-disk floor. Light accounts retain their configured
+CPU and memory ceilings and enable service-container process visibility. Their
+heartbeat counts idle light listeners without advertising heavy capacity.

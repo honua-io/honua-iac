@@ -10,7 +10,7 @@ systemctl daemon-reload
 systemctl set-property "user-${overflow_uid}.slice" CPUQuota=400% MemoryMax=8G
 # SSH sessions and the user's rootless daemon share the same resource slice.
 install -d -o "$overflow_user" -g "$overflow_user" -m 0700 \
-  "$overflow_home/.ssh" "$overflow_home/repos" "$overflow_home/wt"
+  "$overflow_home/.ssh" "$overflow_home/repos" "$overflow_home/wt" "$overflow_home/.cache/tmp"
 rsync -a /home/ubuntu/.dotnet/ "$overflow_home/.dotnet/"
 chown -R "$overflow_user:$overflow_user" "$overflow_home/.dotnet"
 # Restore account isolation before SSH or its persistent user services start.
