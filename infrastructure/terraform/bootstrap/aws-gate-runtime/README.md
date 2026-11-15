@@ -158,7 +158,11 @@ access: a template cannot rewrite, delete or re-policy the bucket it was
 launched from. Objects use S3-managed encryption (SSE-S3) rather than the
 `aws/s3` KMS key, because shared-account mode denies `kms:Decrypt` on keys no
 gate stack owns and the service role would be unable to read the template.
-Templates are public product artifacts, not secrets.
+Templates are public product artifacts, not secrets. The lane grant is pinned to
+this account (`aws:ResourceAccount`), so a squatted bucket of the same name in
+another account cannot receive uploads. The bucket is versioned and has no
+`force_destroy`: destroying this root requires deleting every object version and
+delete marker first.
 
 ```bash
 aws s3 cp honua-launch-stack.json "s3://$TEMPLATE_BUCKET/templates/<run-id>/honua-launch-stack.json"

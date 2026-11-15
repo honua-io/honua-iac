@@ -46,7 +46,8 @@ locals {
       Effect    = "Allow", Action = "iam:PassRole", Resource = local.service_role_arn
       Condition = { StringEquals = { "iam:PassedToService" = "cloudformation.amazonaws.com" } }
       }, {
-      Sid = "GateTemplates", Effect = "Allow", Action = ["s3:PutObject", "s3:GetObject"], Resource = local.template_objects
+      Sid       = "GateTemplates", Effect = "Allow", Action = ["s3:PutObject", "s3:GetObject"], Resource = local.template_objects
+      Condition = { StringEquals = { "aws:ResourceAccount" = var.member_account_id } }
     }], local.region_controls, local.stack_tag_controls, local.stack_tag_permissions)
   })
 }

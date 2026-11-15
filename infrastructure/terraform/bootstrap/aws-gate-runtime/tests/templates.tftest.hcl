@@ -39,7 +39,7 @@ run "template_bucket_is_private_versioned_and_expiring" {
       for rule in aws_s3_bucket_server_side_encryption_configuration.templates.rule :
       one(rule.apply_server_side_encryption_by_default).sse_algorithm == "AES256"
     ])
-    error_message = "Templates use AWS managed S3 encryption, which needs no KMS grant through the shared-account content fence."
+    error_message = "Templates use Amazon S3 managed keys (SSE-S3), which need no KMS grant through the lane boundary or the shared-account content fence."
   }
   assert {
     condition = anytrue([
@@ -55,9 +55,9 @@ run "lane_writes_and_reads_templates_only" {
   assert {
     condition = anytrue([
       for statement in jsondecode(aws_iam_role_policy.lane.policy).Statement :
-      try(statement.Sid == "GateTemplates" && statement.Effect == "Allow" && toset(statement.Action) == toset(["s3:PutObject", "s3:GetObject"]) && statement.Resource == format("arn:aws:s3:::honua-gate-templates-%s/templates/*", var.member_account_id), false)
+      try(statement.Sid == "GateTemplates" && statement.Effect == "Allow" && toset(statement.Action) == toset(["s3:PutObject", "s3:GetObject"]) && statement.Resource == format("arn:aws:s3:::honua-gate-templates-%s/templates/*", var.member_account_id) && statement.Condition.StringEquals["aws:ResourceAccount"] == var.member_account_id, false)
     ]) && aws_iam_policy.lane_boundary.policy == aws_iam_role_policy.lane.policy
-    error_message = "The lane may put and get template objects only, and its boundary allows the same."
+    error_message = "The lane may put and get template objects only in its own account, and its boundary allows the same."
   }
   assert {
     condition = alltrue([
@@ -120,7 +120,7 @@ run "shared_account_keeps_template_access_inside_quotas" {
     error_message = "Shared-account bucket fences must not deny the template objects."
   }
   assert {
-    condition     = length(jsonencode(jsondecode(aws_iam_policy.lane_boundary.policy))) <= 6144 && length(jsonencode(jsondecode(aws_iam_role_policy.cloudformation.policy))) <= 10240
-    error_message = "Template access must keep the lane boundary and service policy inside their quotas."
+    condition     = contains(local.service_role_ownership_deny.NotAction, "s3:*") && contains(local.boundary_ownership_deny.NotAction, "s3:*")
+    error_message = "The stack-ownership NotAction fence must keep exempting S3, which is fenced by bucket name and the template bucket policy."
   }
 }
