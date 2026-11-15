@@ -45,6 +45,8 @@ locals {
       }, {
       Effect    = "Allow", Action = "iam:PassRole", Resource = local.service_role_arn
       Condition = { StringEquals = { "iam:PassedToService" = "cloudformation.amazonaws.com" } }
+      }, {
+      Sid = "GateTemplates", Effect = "Allow", Action = ["s3:PutObject", "s3:GetObject"], Resource = local.template_objects
     }], local.region_controls, local.stack_tag_controls, local.stack_tag_permissions)
   })
 }
@@ -103,6 +105,8 @@ resource "aws_iam_role_policy" "cloudformation" {
       }, {
       Effect    = "Allow", Action = "iam:CreateServiceLinkedRole", Resource = "arn:aws:iam::${var.member_account_id}:role/aws-service-role/*"
       Condition = { StringEquals = { "iam:AWSServiceName" = ["ecs.amazonaws.com", "ecs.application-autoscaling.amazonaws.com", "elasticloadbalancing.amazonaws.com", "rds.amazonaws.com", "batch.amazonaws.com", "backup.amazonaws.com", "guardduty.amazonaws.com", "vpc-origin.cloudfront.amazonaws.com"] } }
+      }, {
+      Sid = "ReadGateTemplates", Effect = "Allow", Action = "s3:GetObject", Resource = local.template_objects
     }], local.region_controls, local.service_role_shared_denies, local.launch_name_denies)
   })
 }
