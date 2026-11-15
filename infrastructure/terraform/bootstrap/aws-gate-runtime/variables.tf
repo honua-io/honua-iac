@@ -36,12 +36,12 @@ variable "protected_ssm_paths" {
   type        = set(string)
   default     = []
   sensitive   = true
-  description = "Exact private SSM parameter paths to protect, including this runtime input. All SSM access is also denied."
+  description = "Exact private SSM parameter paths to protect, including this runtime input. All SSM access outside gate stack watchdog parameters is also denied."
   validation {
     condition = (!var.shared_account || length(var.protected_ssm_paths) > 0) && alltrue([
-      for path in var.protected_ssm_paths : can(regex("^/[A-Za-z0-9_./-]+$", path)) && !endswith(path, "/")
+      for path in var.protected_ssm_paths : can(regex("^/[A-Za-z0-9_./-]+$", path)) && !endswith(path, "/") && !startswith(path, "/honua/honua-gate-")
     ])
-    error_message = "Shared mode requires exact private SSM parameter paths without wildcards."
+    error_message = "Shared mode requires exact private SSM parameter paths without wildcards, outside the /honua/honua-gate-* watchdog namespace that gate stacks may write."
   }
 }
 variable "budget_alert_email" {

@@ -63,11 +63,17 @@ or automatic fence. Monitor total account cost and clean up resources promptly.
 The lane policy/boundary, CloudFormation service policy and workload boundary
 explicitly deny regional calls outside `us-east-1`; IAM, Route 53 and CloudFront
 are the only global-service exceptions. The service and workload policies deny
-all S3 access outside `honua-gate-*`, deny the named state buckets even if they
-match that prefix, and deny all SSM access with the private parameters also
-listed explicitly. Pre-existing buckets with the gate prefix are therefore a
+all S3 access outside `honua-gate-*` and deny the named state buckets even if
+they match that prefix. Pre-existing buckets with the gate prefix are therefore a
 name-collision risk: main must ensure the prefix is reserved exclusively for gate
 stacks before granting access.
+
+SSM is allowed only on gate stack watchdog parameters
+(`/honua/honua-gate-*/watchdog/*`), and the service policy denies SSM outside
+that path. `protected_ssm_paths` must stay outside it, and main must likewise
+keep the `/honua/honua-gate-*` parameter path free of private parameters. Any
+gate stack can write another gate stack's watchdog parameters; the template's
+own role policies are the per-stack fence.
 
 ### Launch Stack services
 
@@ -86,10 +92,13 @@ create from overwrite, so those calls are limited to `honua-gate-*` names.
 
 Still not grantable:
 
-- `AWS::SSM::Parameter` (watchdog, off by default) and SSM documents. The template
-  has no `AWS::SSM::Document`. `ssm:*` stays denied so private parameters cannot
-  be read. A stack parameter allow would be a separate change to that deny.
-  Watchdog also names its health rule `honua-health-*`, which this name fence denies.
+- SSM outside the watchdog's own `/honua/<stack>/watchdog/state` and `mode`
+  parameters, and SSM documents. The template has no `AWS::SSM::Document`.
+  `PutParameter` creates and updates in one call and a new parameter has no stack
+  tag, so the parameter name, not the ownership tag, scopes these calls.
+- The watchdog health rule while the template names it `honua-health-*`, which
+  the events name fence denies; it must be named under the stack's
+  `honua-gate-*` name before a gate install can run the watchdog.
 - `AWS::Bedrock::*`, `AWS::BedrockAgentCore::*` and `AWS::IAM::ManagedPolicy`.
   They exist only on the agents child template, which defaults to Off. This role
   also has no `cloudformation:CreateStack`, so it cannot create that nested stack.

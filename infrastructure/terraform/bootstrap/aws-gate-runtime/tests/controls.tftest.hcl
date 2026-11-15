@@ -75,8 +75,8 @@ run "shared_account_denies_and_alert_budget" {
   }
   assert {
     condition = alltrue([for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] : alltrue([
-      for sid in ["DenyOtherBuckets", "DenyState", "DenyPrivateParameters", "DenyNonGateChanges"] : anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == sid && statement.Effect == "Deny", false)])
-    ])])
+      for sid in ["DenyOtherBuckets", "DenyState", "DenyNonGateChanges"] : anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == sid && statement.Effect == "Deny", false)])
+    ])]) && anytrue([for statement in jsondecode(aws_iam_role_policy.cloudformation.policy).Statement : try(statement.Sid == "DenyPrivateParameters" && statement.Effect == "Deny", false)])
     error_message = "Service and workload identities must protect existing shared resources."
   }
   assert {
@@ -94,8 +94,21 @@ run "shared_account_denies_and_alert_budget" {
     error_message = "Missing ownership tags must deny mutation. Only the service role keeps account-wide metadata reads."
   }
   assert {
-    condition     = contains(local.shared_controls[1].Resource, "arn:aws:s3:::synthetic-state/*") && local.shared_controls[2].Resource == "*" && local.shared_controls[2].Action == "ssm:*" && local.shared_controls[2].Effect == "Deny"
-    error_message = "State objects and all private SSM parameters need explicit protection."
+    condition     = contains(local.shared_controls[1].Resource, "arn:aws:s3:::synthetic-state/*") && local.shared_controls[2].NotResource == "arn:aws:ssm:us-east-1:${format("%012d", 2)}:parameter/honua/honua-gate-*/watchdog/*" && !can(local.shared_controls[2].Resource) && local.shared_controls[2].Action == "ssm:*" && local.shared_controls[2].Effect == "Deny"
+    error_message = "State objects need explicit protection, and SSM is denied everywhere except gate stack watchdog parameters."
+  }
+  assert {
+    condition = anytrue([for statement in jsondecode(aws_iam_role_policy.cloudformation.policy).Statement : try(
+      statement.Sid == "WatchdogParameters" && statement.Effect == "Allow" && statement.Action == "ssm:*" && statement.Resource == "arn:aws:ssm:us-east-1:${format("%012d", 2)}:parameter/honua/honua-gate-*/watchdog/*", false)
+      ]) && anytrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(
+      statement.Effect == "Allow" && statement.Action == "ssm:*" && statement.Resource == "arn:aws:ssm:us-east-1:${format("%012d", 2)}:parameter/honua/honua-gate-*/watchdog/*", false)
+      ]) && alltrue([for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] : alltrue([for statement in jsondecode(policy).Statement : !(statement.Effect == "Allow" && try(statement.Resource == "*", false) && anytrue([for action in flatten([statement.Action]) : startswith(action, "ssm:")]))])
+    ]) && contains(local.service_role_ownership_deny.NotAction, "ssm:*") && contains(local.boundary_ownership_deny.NotAction, "ssm:*")
+    error_message = "SSM is allowed only on gate stack watchdog parameters; a new parameter has no stack tag, so the name, not the ownership deny, scopes SSM."
+  }
+  assert {
+    condition     = alltrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : !(statement.Effect == "Allow" && anytrue([for action in flatten([try(statement.Action, "*")]) : contains(["*", "iam:*", "iam:Pass*", "iam:PassRole"], action)])) || try(statement.Resource == local.workload_roles, false)])
+    error_message = "The workload boundary may allow PassRole only on gate roles."
   }
   assert {
     condition     = length(aws_iam_policy.workload_boundary.policy) <= 6144 && length(aws_iam_role_policy.cloudformation.policy) <= 10240
@@ -141,6 +154,16 @@ run "shared_account_denies_and_alert_budget" {
     ])
     error_message = "Create-and-update APIs must stay on gate names, and the reaper schedule and shared budget stay denied."
   }
+}
+run "protected_ssm_paths_cannot_overlap_gate_watchdog_parameters" {
+  command = plan
+  variables {
+    shared_account          = true
+    protected_state_buckets = ["synthetic-state"]
+    protected_ssm_paths     = ["/synthetic/gate", "/honua/honua-gate-synthetic/watchdog/mode"]
+    budget_alert_email      = "gate@example.invalid"
+  }
+  expect_failures = [var.protected_ssm_paths]
 }
 run "shared_account_requires_private_protection_inputs" {
   command = plan
