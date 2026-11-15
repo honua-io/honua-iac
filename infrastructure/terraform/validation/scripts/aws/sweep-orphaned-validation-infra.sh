@@ -231,6 +231,7 @@ fi
 NOW_EPOCH="$(date -u +%s)"
 FAILURES=0
 PLANNED_ARNS=()
+PLAN_LINES=()
 DELETED_ARNS=()
 SKIPPED_LINES=()
 SURVIVOR_LINES=()
@@ -935,6 +936,37 @@ already_settled() {
   cleanup_resource_settled aws_read "$1" "$2"
 }
 
+# The plan is exactly what this sweep would delete, and --max-delete caps that.
+# A settled resource is reported and dropped: every torn-down cell leaves a few
+# in the tag index for weeks, and counting them would fill the cap and stop the
+# sweep from ever reaching a cell that is still alive. A resource whose state
+# cannot be read is neither deleted nor credited; it fails the sweep.
+plan_candidate() {
+  local line="$1" region arn run_id stack settled
+  IFS="$US" read -r region arn run_id stack <<<"$line"
+  set +e
+  already_settled "$region" "$arn"
+  settled=$?
+  set -e
+  case "$settled" in
+    0)
+      SETTLED_ARNS+=("$arn")
+      log_info "Already settled (tag index lagging): $arn"
+      ;;
+    3)
+      SURVIVOR_ARNS+=("$arn")
+      SURVIVOR_LINES+=("$arn (run=$run_id; state probe failed)")
+      FAILURES=1
+      log_warn "Not planned, state probe failed: $arn"
+      ;;
+    *)
+      PLAN_LINES+=("$line")
+      PLANNED_ARNS+=("$arn")
+      echo "PLAN delete $arn (run=$run_id stack=${stack:-<untagged>} region=$region)"
+      ;;
+  esac
+}
+
 delete_arn() {
   local region="$1" arn="$2" service rc
   service="$(arn_service "$arn")"
@@ -1059,7 +1091,7 @@ main() {
     fi
   fi
 
-  local region line arn run_id stack rc settled
+  local region line arn run_id stack rc
   local -a candidates=()
 
   local kind rest
@@ -1123,9 +1155,7 @@ main() {
   )
 
   for line in "${ordered[@]}"; do
-    IFS="$US" read -r region arn run_id stack <<<"$line"
-    PLANNED_ARNS+=("$arn")
-    echo "PLAN delete $arn (run=$run_id stack=${stack:-<untagged>} region=$region)"
+    plan_candidate "$line"
   done
 
   if (( ${#PLANNED_ARNS[@]} > MAX_DELETE )); then
@@ -1135,29 +1165,13 @@ main() {
   fi
 
   if [[ "$DRY_RUN" == "true" ]]; then
-    log_info "Dry run: ${#PLANNED_ARNS[@]} resource(s) would be deleted; no API call was made."
+    log_info "Dry run: ${#PLANNED_ARNS[@]} resource(s) would be deleted; no mutating API call was made."
     emit_summary
     exit "$FAILURES"
   fi
 
-  for line in "${ordered[@]}"; do
+  for line in ${PLAN_LINES[@]+"${PLAN_LINES[@]}"}; do
     IFS="$US" read -r region arn run_id stack <<<"$line"
-
-    set +e
-    already_settled "$region" "$arn"
-    settled=$?
-    set -e
-    if [[ "$settled" -eq 3 ]]; then
-      SURVIVOR_ARNS+=("$arn")
-      SURVIVOR_LINES+=("$arn (run=$run_id; state probe failed)")
-      FAILURES=1
-      continue
-    fi
-    if [[ "$settled" -eq 0 ]]; then
-      SETTLED_ARNS+=("$arn")
-      log_info "Already settled (tag index lagging): $arn"
-      continue
-    fi
 
     set +e
     delete_arn "$region" "$arn"

@@ -423,6 +423,51 @@ else
   check "a missing KMS key is settled" no
 fi
 
+# 14c. Every torn-down cell leaves settled keys and secrets in the tag index
+#      for weeks. They are not deletions, so they must not fill --max-delete
+#      and stop the sweep from reaching the cells that are still alive.
+keys=()
+for i in $(seq 1 5); do
+  keys+=("$(tagged "arn:aws:kms:us-west-2:1:key/cell-$i" 'gha-111-aws-ecs' 'ecs' "$PAST")")
+done
+FAKE_KMS_KEY_STATE=PendingDeletion run_sweeper "$(resources "${keys[@]}" "$REAPABLE")" --max-delete 3
+if [[ "$RC" -eq 0 ]] && ! grep -q "over the --max-delete cap" <<<"$OUT"; then
+  check "settled resources do not count against --max-delete" ok
+else
+  check "settled resources do not count against --max-delete" no
+fi
+assert_deleted "a live cell is still reaped past settled resources" 'arn:aws:ecs:us-west-2:1:cluster/honua-it-cluster'
+assert_not_planned "a settled resource is not in the deletion plan" 'arn:aws:kms:us-west-2:1:key/cell-1'
+if [[ "$(grep -c 'Already settled' <<<"$OUT")" == "5" ]]; then
+  check "each settled resource is reported once" ok
+else
+  check "each settled resource is reported once" no
+fi
+
+FAKE_KMS_KEY_STATE=PendingDeletion run_sweeper "$(resources "${keys[@]}" "$REAPABLE")" --max-delete 3 --dry-run
+if [[ "$RC" -eq 0 ]] && grep -q "Dry run: 1 resource(s) would be deleted" <<<"$OUT"; then
+  check "a dry run plans only the live resources" ok
+else
+  check "a dry run plans only the live resources" no
+fi
+assert_no_mutations "a dry run past settled resources triggers no mutating call"
+
+run_sweeper "$(resources "${keys[@]}")" --max-delete 3
+if [[ "$RC" -ne 0 ]] && grep -q "over the --max-delete cap" <<<"$OUT"; then
+  check "live resources still count against --max-delete" ok
+else
+  check "live resources still count against --max-delete" no
+fi
+assert_no_mutations "an oversized live plan triggers no mutating call"
+
+FAKE_KMS_DESCRIBE_ERROR=AccessDeniedException run_sweeper "$(resources "$KEY" "$REAPABLE")" --dry-run
+if [[ "$RC" -ne 0 ]] && grep -q "state probe failed" <<<"$OUT"; then
+  check "a dry run reports a resource whose state cannot be read" ok
+else
+  check "a dry run reports a resource whose state cannot be read" no
+fi
+assert_not_planned "an unreadable resource is not in the deletion plan" 'arn:aws:kms:us-west-2:1:key/abc'
+
 # Protected stacks win over a valid disposable owner/run/expiry, even --this-run.
 for protection in 'Environment cert' 'Environment demo' 'Environment standing' 'Lifecycle standing' 'Lifecycle demo'; do
   read -r key value <<<"$protection"
@@ -494,8 +539,9 @@ else
 fi
 
 # 16. A dry run does not merely skip the delete calls -- it returns before the
-#     deletion loop is entered at all, so the only AWS call it makes is the
-#     read-only enumeration. Nothing downstream has to honour a flag.
+#     deletion loop is entered at all, so the only AWS calls it makes are
+#     read-only: the enumeration, and a state probe for the kinds that have
+#     one (a VPC has none). Nothing downstream has to honour a flag.
 export FAKE_SG_IDS="sg-1	sg-2"
 export FAKE_SUBNET_IDS="subnet-1"
 run_sweeper "$(resources "$VPC")" --dry-run
