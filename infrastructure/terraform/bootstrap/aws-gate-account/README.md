@@ -76,7 +76,12 @@ python3 ../aws-gate-tools/gate_tools.py bind-template "$GATE_SOURCE_JSON" \
 ```
 
 The helper preserves resource properties, inserts the boundary, and rejects
-transforms, nested stacks and explicit IAM role names outside `honua-gate-*`.
+transforms, active nested stacks and explicit IAM role names outside `honua-gate-*`.
+A nested stack is accepted only when its condition directly compares a String
+parameter to a literal and the parameter's default disables that stack. The
+bound template restricts that parameter's `AllowedValues` to its default, so a
+deployment override cannot activate the child. Other nested-stack conditions
+remain unsupported; enabling a child requires a separately bounded template.
 Unnamed roles inherit the gate stack name in their generated names. The service
 role enforces the boundary independently of this helper. Workloads and templates
 cannot change bootstrap IAM controls, the reaper function or its logs. Resource

@@ -45,6 +45,44 @@ class GateToolsTests(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 gate_tools.bound_template({'Resources': {'R': {'Type': 'AWS::IAM::Role', 'Properties': {'RoleName': name}}}}, 'boundary')
 
+    def test_inactive_nested_stack_locks_its_selector_to_default(self):
+        source = {'Parameters': {'Agents': {'Type': 'String', 'Default': 'Off',
+                                           'AllowedValues': ['Off', 'Preview']}},
+                  'Conditions': {'Preview': {'Fn::Equals': [{'Ref': 'Agents'}, 'Preview']}},
+                  'Resources': {'Child': {'Type': 'AWS::CloudFormation::Stack', 'Condition': 'Preview'},
+                                'Role': {'Type': 'AWS::IAM::Role'}}}
+        result = gate_tools.bound_template(source, 'boundary')
+        self.assertEqual(result['Parameters']['Agents']['AllowedValues'], ['Off'])
+        self.assertEqual(result['Resources']['Child'], source['Resources']['Child'])
+        self.assertEqual(result['Resources']['Role']['Properties']['PermissionsBoundary'], 'boundary')
+        self.assertEqual(source['Parameters']['Agents']['AllowedValues'], ['Off', 'Preview'])
+
+    def test_nested_stack_conditions_fail_closed(self):
+        for selector, condition in (
+            ({'Type': 'String', 'Default': 'Preview'}, {'Fn::Equals': [{'Ref': 'Agents'}, 'Preview']}),
+            ({'Type': 'String'}, {'Fn::Equals': [{'Ref': 'Agents'}, 'Preview']}),
+            ({'Type': 'AWS::SSM::Parameter::Value<String>', 'Default': 'Off'},
+             {'Fn::Equals': [{'Ref': 'Agents'}, 'Preview']}),
+            ({'Type': 'String', 'Default': 'Off'}, {'Fn::Not': [{'Condition': 'Other'}]}),
+            ({'Type': 'String', 'Default': 'Off'}, {'Fn::Equals': [{'Ref': 'Missing'}, 'Preview']}),
+            ({'Type': 'String', 'Default': 'Off', 'AllowedValues': ['Preview']},
+             {'Fn::Equals': [{'Ref': 'Agents'}, 'Preview']}),
+            ({'Type': 'String', 'Default': 'Off'}, {'Fn::Equals': [{'Ref': 'Agents'}]}),
+            ({'Type': 'String', 'Default': 'Off'}, {'Fn::Equals': [{'Ref': 'Agents'}, {'Ref': 'Other'}]}),
+        ):
+            source = {'Parameters': {'Agents': selector}, 'Conditions': {'Preview': condition},
+                      'Resources': {'Child': {'Type': 'AWS::CloudFormation::Stack', 'Condition': 'Preview'}}}
+            with self.subTest(selector=selector, condition=condition), self.assertRaises(ValueError):
+                gate_tools.bound_template(source, 'boundary')
+
+    def test_inactive_nested_stack_does_not_bypass_role_validation(self):
+        source = {'Parameters': {'Agents': {'Type': 'String', 'Default': 'Off'}},
+                  'Conditions': {'Preview': {'Fn::Equals': [{'Ref': 'Agents'}, 'Preview']}},
+                  'Resources': {'Child': {'Type': 'AWS::CloudFormation::Stack', 'Condition': 'Preview'},
+                                'Role': {'Type': 'AWS::IAM::Role', 'Properties': {'RoleName': 'Admin'}}}}
+        with self.assertRaises(ValueError):
+            gate_tools.bound_template(source, 'boundary')
+
     def test_template_rejects_nested_stacks_and_transforms(self):
         for template in ({'Transform': 'AWS::Serverless-2016-10-31'},
                          {'Resources': {'Child': {'Type': 'AWS::CloudFormation::Stack'}}}):
