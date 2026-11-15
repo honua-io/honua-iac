@@ -122,6 +122,62 @@ Decrypted API keys, sampled HTTP request contents, and Web ACL custom response b
 
 Actions: `wafv2:Get*`, `wafv2:ListAPIKeys`.
 
+## ce
+
+[Cost Explorer authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_awscostexplorerservice.html)
+
+Account cost, usage, forecast and tag breakdowns. Anomaly-monitor reads stay on the metadata exception so a gate stack can read the monitor it creates. These account-level reads do not expose the ownership key, so the deny applies to gate callers as well.
+
+Actions: `ce:GetCostAndUsage`, `ce:GetCostAndUsageWithResources`, `ce:GetCostForecast`, `ce:GetCostCategories`, `ce:GetDimensionValues`, `ce:GetTags`.
+
+## cloudtrail
+
+[cloudtrail authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_awscloudtrail.html)
+
+Event history and query results can include request parameters. LookupEvents has no resource-tag condition. GetQueryResults does not expose this ownership key. Trail configuration reads remain on the metadata exception.
+
+Actions: `cloudtrail:LookupEvents`, `cloudtrail:GetQueryResults`.
+
+## cloudwatch
+
+[cloudwatch authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazoncloudwatch.html)
+
+Dashboard bodies. Alarm and metric reads are metadata. GetDashboard supports resource tags.
+
+Actions: `cloudwatch:GetDashboard`.
+
+## guardduty
+
+[guardduty authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonguardduty.html)
+
+Finding details. Detector reads stay on the metadata exception. GetFindings supports resource tags; the wildcard also covers statistics.
+
+Actions: `guardduty:GetFindings*`.
+
+## kms
+
+[kms authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_awskeymanagementservice.html)
+
+Plaintext from decrypt and data-key calls, key policies and imported key material. Decrypt, data-key and re-encrypt operations support key tags. GetKeyPolicy supports key tags. GetParametersForImport does not expose this ownership key.
+
+Actions: `kms:Decrypt`, `kms:GenerateDataKey*`, `kms:ReEncrypt*`, `kms:GetKeyPolicy`, `kms:GetPublicKey`, `kms:GetParametersForImport`.
+
+## sns
+
+[sns authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonsns.html)
+
+SMS settings and opted-out phone numbers. Topic configuration reads stay on the metadata exception. SNS has no API that returns stored notification bodies. These account-level reads do not expose the ownership key.
+
+Actions: `sns:GetSMSAttributes`, `sns:ListPhoneNumbersOptedOut`.
+
+## sqs
+
+[sqs authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonsqs.html)
+
+Queue messages. ReceiveMessage supports queue tags. Queue attribute reads stay on the metadata exception.
+
+Actions: `sqs:ReceiveMessage`.
+
 ## Remaining allowed families
 
 - [Application Auto Scaling](https://docs.aws.amazon.com/service-authorization/latest/reference/list_application-autoscaling.html): read/list/describe APIs expose scaling metadata and forecasts; no stored payload or credential read was identified.

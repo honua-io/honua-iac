@@ -57,6 +57,25 @@ locals {
     "secretsmanager:GetSecretValue",
     "secretsmanager:BatchGetSecretValue",
     "wafv2:Get*",
-    "wafv2:ListAPIKeys"
+    "wafv2:ListAPIKeys",
+    "ce:GetCostAndUsage",
+    "ce:GetCostAndUsageWithResources",
+    "ce:GetCostForecast",
+    "ce:GetCostCategories",
+    "ce:GetDimensionValues",
+    "ce:GetTags",
+    "cloudtrail:LookupEvents",
+    "cloudtrail:GetQueryResults",
+    "cloudwatch:GetDashboard",
+    "guardduty:GetFindings*",
+    "kms:Decrypt",
+    "kms:GenerateDataKey*",
+    "kms:ReEncrypt*",
+    "kms:GetKeyPolicy",
+    "kms:GetPublicKey",
+    "kms:GetParametersForImport",
+    "sns:GetSMSAttributes",
+    "sns:ListPhoneNumbersOptedOut",
+    "sqs:ReceiveMessage"
   ]
 }
