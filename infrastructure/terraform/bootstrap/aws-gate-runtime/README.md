@@ -141,3 +141,44 @@ create/update/delete and cleanup, boundary enforcement and cost tag attribution.
 The existing reaper retains its schedule, keep/protection behavior and failure
 reporting. Offline mocked tests validate generated controls; they do not prove
 AWS authorization, a successful install, cleanup or budget delivery.
+
+### Gate sign-in provider
+
+This root creates the `honua-gate-idp` Cognito pool and hosted domain in
+`us-east-1`. Only administrators can create users. Its confidential app client
+uses the authorization-code flow with `openid` and `profile` scopes. The
+`honua-gate-admin` user has a generated permanent password and belongs to the
+`admin` group. Invitations are suppressed; credentials are written directly to
+Secrets Manager under `honua-gate/idp/` and never exposed as Terraform outputs.
+Terraform state contains these credentials: keep the existing private encrypted
+backend and restrict access to state and saved plans.
+
+Main supplies `idp_callback_urls` privately as exact HTTPS URLs ending in
+`/admin/auth/callback`. Cognito does not accept wildcard callbacks. The initial
+localhost callback only permits bootstrap before the stack has a hostname;
+it does not enable sign-in to the installed stack. After CloudFront assigns a
+hostname, main updates the callback list with that stack's exact public callback
+and applies this root before testing sign-in. Remove callbacks when deleting
+stacks. The gate lane cannot update the provider directly.
+
+The sensitive outputs `oidc_authority`, `oidc_client_id`,
+`oidc_client_secret_arn` and `oidc_admin_secret_arn` provide the private runtime
+configuration references. Set Launch Stack `OidcRoleClaimType=cognito:groups`
+so membership in `admin` grants administrator access. The client secret value
+is plaintext in its secret; the administrator secret is JSON with `username`
+and `password`. Do not print either value or copy it to logs, issues or PRs.
+
+The identity provider is managed by this bootstrap root, not gate stacks;
+`cognito-idp:*` is not added to the lane or workload policies.
+
+Client-secret access defaults to the CloudFormation role only. Existing Launch
+Stack containers fetch the secret through their ECS **execution** role. Main
+must approve and set `idp_task_execution_role_arns` to the exact installed
+execution-role ARN before launching containers; an empty list deliberately
+blocks that fetch. The task definition's own policy still needs to allow this
+specific secret, as it already does for `OidcClientSecretArn`. Do not grant the
+application task role or lane role access. Foreign secrets keep their existing
+ownership denies. Only this exact client secret bypasses those ownership checks;
+the gate policies deny all operations on it except a single-secret read by an
+approved principal. The bootstrap operator retains Terraform secret lifecycle
+access through its existing private credentials.

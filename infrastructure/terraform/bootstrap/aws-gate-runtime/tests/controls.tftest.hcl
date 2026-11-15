@@ -1,6 +1,7 @@
 # Synthetic fixtures only; deployment identifiers come from private SSM configuration.
 mock_provider "aws" {
   override_during = plan
+  mock_resource "aws_secretsmanager_secret" { defaults = { arn = "arn:aws:secretsmanager:us-east-1:000000000002:secret:honua-gate/idp/client-secret-abcdef" } }
   mock_resource "aws_iam_role" { defaults = { arn = "arn:aws:iam::000000000002:role/mock" } }
   mock_resource "aws_iam_policy" { defaults = { arn = "arn:aws:iam::000000000002:policy/mock" } }
   mock_resource "aws_lambda_function" { defaults = { arn = "arn:aws:lambda:us-east-1:000000000002:function:honua-gate-reaper" } }
@@ -64,9 +65,15 @@ run "shared_account_denies_and_alert_budget" {
   }
   assert {
     condition = alltrue([for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] : alltrue([
-      for sid in ["DenyOtherBuckets", "DenyState", "DenyPrivateParameters", "DenyNonGateChanges", "DenyNonGateContentReads"] : anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == sid && statement.Effect == "Deny", false)])
+      for sid in ["DenyOtherBuckets", "DenyState", "DenyPrivateParameters", "DenyNonGateChanges"] : anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == sid && statement.Effect == "Deny", false)])
     ])])
     error_message = "Service and workload identities must protect existing shared resources."
+  }
+  assert {
+    condition = anytrue([for statement in jsondecode(aws_iam_role_policy.cloudformation.policy).Statement : try(statement.Sid == "DenyNonGateContentReads" && statement.Effect == "Deny", false)]) && alltrue([
+      for action in local.shared_content_read_actions : !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))])
+    ])
+    error_message = "Service metadata exemptions need an explicit content deny; every content action must remain denied by the workload ownership control."
   }
   assert {
     condition = alltrue([
