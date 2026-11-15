@@ -36,9 +36,34 @@ locals {
     "rds:CreateDBInstance", "rds:CreateDBCluster", "rds:CreateDBSubnetGroup",
     "rds:CreateDBParameterGroup", "rds:CreateDBClusterParameterGroup",
     "route53:CreateHostedZone", "secretsmanager:CreateSecret", "wafv2:CreateWebACL",
-    "wafv2:CreateIPSet", "wafv2:CreateRegexPatternSet", "iam:CreateRole",
-    "iam:CreateServiceLinkedRole", "iam:PassRole"
+    "wafv2:CreateIPSet", "wafv2:CreateRegexPatternSet",
+    "budgets:ModifyBudget", "ce:CreateAnomalyMonitor", "ce:CreateAnomalySubscription",
+    "cloudtrail:CreateTrail", "cloudwatch:PutMetricAlarm", "cloudwatch:PutCompositeAlarm",
+    "events:PutRule", "events:PutTargets", "guardduty:CreateDetector",
+    "kms:CreateKey", "kms:CreateAlias", "sns:CreateTopic", "sqs:CreateQueue",
+    "iam:CreateRole", "iam:CreateServiceLinkedRole", "iam:PassRole"
   ]
+  metadata_read_actions = flatten([
+    for service in ["acm", "application-autoscaling", "backup", "batch", "budgets", "ce", "cloudfront", "cloudtrail", "cloudwatch", "ec2", "ecs", "elasticloadbalancing", "events", "guardduty", "kms", "lambda", "logs", "rds", "route53", "secretsmanager", "sns", "sqs", "wafv2", "ecr", "iam"] : [
+      "${service}:Get*", "${service}:List*", "${service}:Describe*"
+    ]
+  ])
+  ownership_condition = {
+    StringNotLikeIfExists = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }
+  }
+  # The service role keeps account-wide metadata reads. The workload boundary
+  # cannot repeat that list and stay inside the managed-policy quota, so its
+  # copy exempts only allocation calls and named gate buckets.
+  service_role_ownership_deny = {
+    Sid       = "DenyNonGateChanges", Effect = "Deny", Resource = "*"
+    NotAction = concat(local.metadata_read_actions, ["s3:*"], local.shared_creation_actions)
+    Condition = local.ownership_condition
+  }
+  boundary_ownership_deny = {
+    Sid       = "DenyNonGateChanges", Effect = "Deny", Resource = "*"
+    NotAction = concat(["s3:*"], local.shared_creation_actions)
+    Condition = local.ownership_condition
+  }
   shared_controls = [for control in [
     {
       Sid         = "DenyOtherBuckets", Effect = "Deny", Action = "s3:*"
@@ -53,20 +78,36 @@ locals {
       Resource = "*"
     },
     {
-      Sid = "DenyNonGateChanges", Effect = "Deny", Resource = "*"
-      NotAction = concat(flatten([
-        for service in ["acm", "application-autoscaling", "backup", "batch", "cloudfront", "ec2", "ecs", "elasticloadbalancing", "lambda", "logs", "rds", "route53", "secretsmanager", "wafv2", "ecr", "iam"] : [
-          "${service}:Get*", "${service}:List*", "${service}:Describe*"
-        ]
-      ]), ["s3:*"], local.shared_creation_actions)
-      Condition = { StringNotLikeIfExists = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" } }
-    },
-    {
       Sid       = "DenyNonGateContentReads", Effect = "Deny", Resource = "*"
       Action    = local.shared_content_read_actions
       Condition = { StringNotLikeIfExists = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" } }
     }
   ] : control if var.shared_account]
+  boundary_shared_denies     = concat(local.shared_controls, var.shared_account ? [local.boundary_ownership_deny] : [])
+  service_role_shared_denies = concat(local.shared_controls, var.shared_account ? [local.service_role_ownership_deny] : [])
+  # PutRule, PutTargets, PutMetricAlarm, PutCompositeAlarm and ModifyBudget are
+  # create and update in one API, so a missing stack tag cannot gate them.
+  # Names do. The reaper schedule and shared budget match the gate prefix and
+  # need their own denies.
+  launch_name_denies = [
+    {
+      Sid    = "NameFence", Effect = "Deny"
+      Action = ["events:PutRule", "events:PutTargets", "cloudwatch:PutMetricAlarm", "cloudwatch:PutCompositeAlarm", "budgets:ModifyBudget"]
+      NotResource = [
+        "arn:aws:events:us-east-1:${var.member_account_id}:rule/honua-gate-*",
+        "arn:aws:cloudwatch:us-east-1:${var.member_account_id}:alarm:honua-gate-*",
+        "arn:aws:budgets::${var.member_account_id}:budget/honua-gate-*"
+      ]
+    },
+    {
+      Sid      = "ReaperRule", Effect = "Deny", Action = "events:*"
+      Resource = "arn:aws:events:us-east-1:${var.member_account_id}:rule/honua-gate-nightly-reaper"
+    },
+    {
+      Sid      = "DenySharedBudget", Effect = "Deny", Action = "budgets:*"
+      Resource = "arn:aws:budgets::${var.member_account_id}:budget/honua-gate-shared-monthly"
+    }
+  ]
 }
 
 resource "aws_budgets_budget" "shared" {

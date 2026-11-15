@@ -3,10 +3,11 @@ locals {
   workload_roles   = "arn:aws:iam::${var.member_account_id}:role/honua-gate-*"
   service_role_arn = "arn:aws:iam::${var.member_account_id}:role/HonuaGateCloudFormation"
   workload_services = [
-    "acm:*", "application-autoscaling:*", "backup:*", "batch:*", "cloudfront:*", "ec2:*",
-    "ecs:*", "elasticloadbalancing:*", "lambda:*", "logs:*", "rds:*", "route53:*",
-    "s3:*", "secretsmanager:*", "wafv2:*", "ecr:GetAuthorizationToken", "ecr:BatchGetImage",
-    "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability"
+    "acm:*", "application-autoscaling:*", "backup:*", "batch:*", "budgets:*", "ce:*",
+    "cloudfront:*", "cloudtrail:*", "cloudwatch:*", "ec2:*", "ecs:*", "elasticloadbalancing:*",
+    "events:*", "guardduty:*", "kms:*", "lambda:*", "logs:*", "rds:*", "route53:*",
+    "s3:*", "secretsmanager:*", "sns:*", "sqs:*", "wafv2:*", "ecr:GetAuthorizationToken",
+    "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability"
   ]
   protected_controls = {
     Effect = "Deny", Action = ["lambda:*", "logs:*"]
@@ -62,10 +63,8 @@ resource "aws_iam_policy" "workload_boundary" {
       Effect    = "Allow", Action = "iam:PassRole", Resource = local.workload_roles
       Condition = { StringEquals = { "iam:PassedToService" = ["ecs-tasks.amazonaws.com", "batch.amazonaws.com", "backup.amazonaws.com", "lambda.amazonaws.com", "vpc-flow-logs.amazonaws.com"] } }
       }, {
-      Effect = "Deny", NotAction = concat(local.workload_services, ["iam:PassRole"]), Resource = "*"
-      }, {
       Effect = "Deny", Action = "iam:PassRole", NotResource = local.workload_roles
-    }], local.region_controls, local.shared_controls)
+    }], local.region_controls, local.boundary_shared_denies, local.launch_name_denies)
   })
 }
 resource "aws_iam_role" "cloudformation" {
@@ -92,8 +91,8 @@ resource "aws_iam_role_policy" "cloudformation" {
       Condition = { StringEquals = { "iam:PassedToService" = ["ecs-tasks.amazonaws.com", "batch.amazonaws.com", "backup.amazonaws.com", "lambda.amazonaws.com", "vpc-flow-logs.amazonaws.com"] } }
       }, {
       Effect    = "Allow", Action = "iam:CreateServiceLinkedRole", Resource = "arn:aws:iam::${var.member_account_id}:role/aws-service-role/*"
-      Condition = { StringEquals = { "iam:AWSServiceName" = ["ecs.amazonaws.com", "ecs.application-autoscaling.amazonaws.com", "elasticloadbalancing.amazonaws.com", "rds.amazonaws.com", "batch.amazonaws.com", "backup.amazonaws.com", "vpc-origin.cloudfront.amazonaws.com"] } }
-    }], local.region_controls, local.shared_controls)
+      Condition = { StringEquals = { "iam:AWSServiceName" = ["ecs.amazonaws.com", "ecs.application-autoscaling.amazonaws.com", "elasticloadbalancing.amazonaws.com", "rds.amazonaws.com", "batch.amazonaws.com", "backup.amazonaws.com", "guardduty.amazonaws.com", "vpc-origin.cloudfront.amazonaws.com"] } }
+    }], local.region_controls, local.service_role_shared_denies, local.launch_name_denies)
   })
 }
 output "lane_role_arn" {

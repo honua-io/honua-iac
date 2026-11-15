@@ -122,6 +122,66 @@ Decrypted API keys, sampled HTTP request contents, and Web ACL custom response b
 
 Actions: `wafv2:Get*`, `wafv2:ListAPIKeys`.
 
+## ce
+
+[Cost Explorer authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_awscostexplorerservice.html)
+
+Account cost, usage, forecast and tag breakdowns. Anomaly-monitor reads stay on the metadata exception so a gate stack can read the monitor it creates. These account-level reads do not expose the ownership key, so the deny applies to gate callers as well.
+
+Actions: `ce:GetCost*`, `ce:GetDimensionValues`, `ce:GetTags`. `ce:GetCost*` also covers usage-with-resources, forecast and cost-category reads.
+
+## cloudtrail
+
+[cloudtrail authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_awscloudtrail.html)
+
+Event history and query results can include request parameters. LookupEvents has no resource-tag condition. GetQueryResults does not expose this ownership key. Trail configuration reads remain on the metadata exception.
+
+Actions: `cloudtrail:LookupEvents`, `cloudtrail:GetQueryResults`.
+
+These denies do not cover a trail the gate identity creates into a `honua-gate-*` bucket. The Launch Stack's protection trail is that path, and objects in a gate bucket are readable under this boundary. Treat delivered management events as visible to gate workloads.
+
+## cloudwatch
+
+[cloudwatch authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazoncloudwatch.html)
+
+Dashboard bodies. Alarm and metric reads are metadata. GetDashboard supports resource tags.
+
+Actions: `cloudwatch:GetDashboard`.
+
+## guardduty
+
+[guardduty authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonguardduty.html)
+
+Finding details. Detector reads stay on the metadata exception. GetFindings supports resource tags; the wildcard also covers statistics.
+
+Actions: `guardduty:GetFindings*`.
+
+A gate-named EventBridge rule can still receive GuardDuty finding events. The Launch Stack creates those rules. `GetFindings` is not a control against that delivery.
+
+## kms
+
+[kms authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_awskeymanagementservice.html)
+
+Plaintext from decrypt and data-key calls, key policies and imported key material. Decrypt, data-key and re-encrypt operations support key tags. GetKeyPolicy supports key tags. GetParametersForImport does not expose this ownership key.
+
+Actions: `kms:Decrypt`, `kms:GenerateDataKey*`, `kms:ReEncrypt*`, `kms:Get*`. `kms:Get*` keeps the managed policy inside its quota and also denies key-policy, public-key and import-parameter reads. Describe and list are not in this deny. The service role still exempts them; the workload boundary does not.
+
+## sns
+
+[sns authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonsns.html)
+
+SMS settings and opted-out phone numbers. Topic configuration reads stay on the metadata exception. SNS has no API that returns stored notification bodies. These account-level reads do not expose the ownership key.
+
+Actions: `sns:GetSMSAttributes`, `sns:ListPhoneNumbersOptedOut`.
+
+## sqs
+
+[sqs authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonsqs.html)
+
+Queue messages. ReceiveMessage supports queue tags. Queue attribute reads stay on the metadata exception.
+
+Actions: `sqs:ReceiveMessage`.
+
 ## Remaining allowed families
 
 - [Application Auto Scaling](https://docs.aws.amazon.com/service-authorization/latest/reference/list_application-autoscaling.html): read/list/describe APIs expose scaling metadata and forecasts; no stored payload or credential read was identified.

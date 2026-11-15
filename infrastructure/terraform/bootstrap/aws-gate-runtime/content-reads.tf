@@ -57,6 +57,20 @@ locals {
     "secretsmanager:GetSecretValue",
     "secretsmanager:BatchGetSecretValue",
     "wafv2:Get*",
-    "wafv2:ListAPIKeys"
+    "wafv2:ListAPIKeys",
+    "ce:GetCost*",
+    "ce:GetDimensionValues",
+    "ce:GetTags",
+    "cloudtrail:LookupEvents",
+    "cloudtrail:GetQueryResults",
+    "cloudwatch:GetDashboard",
+    "guardduty:GetFindings*",
+    "kms:Decrypt",
+    "kms:GenerateDataKey*",
+    "kms:ReEncrypt*",
+    "kms:Get*",
+    "sns:GetSMSAttributes",
+    "sns:ListPhoneNumbersOptedOut",
+    "sqs:ReceiveMessage"
   ]
 }

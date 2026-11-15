@@ -69,14 +69,47 @@ listed explicitly. Pre-existing buckets with the gate prefix are therefore a
 name-collision risk: main must ensure the prefix is reserved exclusively for gate
 stacks before granting access.
 
+### Launch Stack services
+
+The workload allow covers the parent template's default and optional resource
+types that this boundary can fence: ACM, Application Auto Scaling, Backup, Batch,
+Budgets, Cost Explorer anomaly monitors, CloudFront, CloudTrail, CloudWatch,
+EC2, ECS, Elastic Load Balancing, EventBridge, GuardDuty, KMS, Lambda, Logs,
+RDS, Route 53, S3, Secrets Manager, SNS, SQS and WAFv2, plus ECR image pulls.
+GuardDuty may create its service-linked role. The same region, stack-tag and
+content-read denies apply. Several AWS create calls are also the update call
+(`budgets:ModifyBudget`, `cloudwatch:PutMetricAlarm`, `cloudwatch:PutCompositeAlarm`,
+`events:PutRule`, `events:PutTargets`). A missing stack tag cannot distinguish
+create from overwrite, so those calls are limited to `honua-gate-*` names.
+`events:*` on `honua-gate-nightly-reaper` and `budgets:*` on
+`honua-gate-shared-monthly` are denied even though those names match the prefix.
+
+Still not grantable:
+
+- `AWS::SSM::Parameter` (watchdog, off by default) and SSM documents. The template
+  has no `AWS::SSM::Document`. `ssm:*` stays denied so private parameters cannot
+  be read. A stack parameter allow would be a separate change to that deny.
+  Watchdog also names its health rule `honua-health-*`, which this name fence denies.
+- `AWS::Bedrock::*`, `AWS::BedrockAgentCore::*` and `AWS::IAM::ManagedPolicy`.
+  They exist only on the agents child template, which defaults to Off. This role
+  also has no `cloudformation:CreateStack`, so it cannot create that nested stack.
+- Security Hub and EventBridge Scheduler. The template has neither resource type.
+  Schedules in the parent template are `AWS::Events::Rule`.
+
 Other existing-resource mutations require the immutable AWS-owned
 `aws:cloudformation:stack-name` resource tag to match `honua-gate-*`. A missing tag
 or unavailable condition key denies the request (`StringNotLikeIfExists` with
 Deny); tag-changing calls are not exempt. Content-bearing reads use the same
 ownership deny in both the CloudFormation service policy and workload boundary.
-Metadata reads and enumerated resource allocation APIs remain exempt; IAM
-PassRole remains restricted to gate role names and the allowed receiving services.
-The default member-account mode is unchanged. See the
+The service role still exempts Get, List and Describe plus enumerated allocation
+APIs, because stabilizing a stack needs account-wide metadata. The workload
+boundary does not repeat that metadata list: it is the statement that overflowed
+the managed-policy quota. Workload reads and writes therefore require the gate
+stack tag, and allocation APIs remain the only untagged workload exemption besides
+named gate buckets. IAM PassRole remains restricted to gate role names and the
+allowed receiving services. Actions outside the workload allow list are implicit
+denies; the boundary does not repeat that allow list inside a second deny.
+Member mode has no shared budget, region deny or shared-account resource denies. It does allow these Launch Stack services and the name fence. See the
 [content-read audit](content-read-controls.md) for covered APIs and unsupported
 ownership conditions.
 
@@ -95,7 +128,8 @@ They can allocate resources using existing dependencies (for example network
 subnets, clusters or load balancer parents). Service-linked roles are account-wide
 and outside workload permissions boundaries; service operations performed by
 those roles are not fenced by these policies. S3 ownership uses names rather
-than stack tags. Metadata access to the allowed service families is account-wide.
+than stack tags. Metadata access for the CloudFormation service role is account-wide. Workload
+roles get metadata only for gate-tagged resources.
 Main must assess those shared-account limits, existing gate-prefixed names,
 service-linked roles, tag propagation and supported resource types before a live
 run. This identity is for reviewed gate templates; arbitrary untrusted templates

@@ -42,7 +42,8 @@ run "gate_secret_single_read_keeps_its_allow" {
         statement.Sid == "DenyNonGateContentReads" && statement.Effect == "Deny" && contains(statement.Action, "secretsmanager:GetSecretValue") &&
         startswith("honua-gate-synthetic", trimsuffix(statement.Condition.StringNotLikeIfExists["aws:ResourceTag/aws:cloudformation:stack-name"], "*")), false
       )]) &&
-      anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == "DenyNonGateChanges" && contains(statement.NotAction, "secretsmanager:Get*"), false)])
+      anytrue([for statement in jsondecode(aws_iam_role_policy.cloudformation.policy).Statement : try(statement.Sid == "DenyNonGateChanges" && contains(statement.NotAction, "secretsmanager:Get*"), false)]) &&
+      anytrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(statement.Sid == "DenyNonGateChanges" && !contains(statement.NotAction, "secretsmanager:Get*"), false)])
     ])
     error_message = "The ownership deny must preserve GetSecretValue for an immutable gate stack tag."
   }
@@ -53,7 +54,7 @@ run "content_read_families_are_guarded_in_both_policies" {
   assert {
     condition = alltrue([
       for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] : alltrue([
-        for action in ["lambda:GetFunction", "lambda:ListEventSourceMappings", "wafv2:GetWebACL", "rds:DescribeDBProxyTargetGroups", "logs:GetLogEvents", "logs:FilterLogEvents", "logs:GetLogRecord", "logs:StartQuery", "logs:GetQueryResults", "logs:StartLiveTail", "ec2:GetPasswordData", "ec2:GetConsoleOutput", "ec2:GetConsoleScreenshot", "ecs:ExecuteCommand", "rds:StartExportTask", "backup:GetRecoveryPointRestoreMetadata", "cloudfront:GetPublicKey", "cloudfront:GetFieldLevelEncryption", "ecr:GetAuthorizationToken", "wafv2:GetDecryptedAPIKey"] : anytrue([
+        for action in ["lambda:GetFunction", "lambda:ListEventSourceMappings", "wafv2:GetWebACL", "rds:DescribeDBProxyTargetGroups", "logs:GetLogEvents", "logs:FilterLogEvents", "logs:GetLogRecord", "logs:StartQuery", "logs:GetQueryResults", "logs:StartLiveTail", "ec2:GetPasswordData", "ec2:GetConsoleOutput", "ec2:GetConsoleScreenshot", "ecs:ExecuteCommand", "rds:StartExportTask", "backup:GetRecoveryPointRestoreMetadata", "cloudfront:GetPublicKey", "cloudfront:GetFieldLevelEncryption", "ecr:GetAuthorizationToken", "wafv2:GetDecryptedAPIKey", "kms:Decrypt", "kms:GenerateDataKey", "kms:GetKeyPolicy", "ce:GetCostAndUsage", "cloudtrail:LookupEvents", "cloudtrail:GetQueryResults", "cloudwatch:GetDashboard", "guardduty:GetFindings", "sqs:ReceiveMessage", "sns:GetSMSAttributes"] : anytrue([
           for statement in jsondecode(policy).Statement : try(
             statement.Effect == "Deny" && statement.Resource == "*" && statement.Condition.StringNotLikeIfExists["aws:ResourceTag/aws:cloudformation:stack-name"] == "honua-gate-*" &&
             anytrue([for pattern in statement.Action : can(regex("^${replace(pattern, "*", ".*")}$", action))]), false
