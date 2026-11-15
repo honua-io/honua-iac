@@ -3,8 +3,8 @@
 # honua-gate-* bucket namespace the service role may manage; the bucket policy
 # fences that role to object reads and keeps workload roles out entirely.
 # SSE-S3 (Amazon S3 managed keys), not the aws/s3 KMS key: the lane boundary
-# allows no kms:* (a Principal "*" key policy is still bounded), and
-# shared-account mode denies kms:Decrypt on keys no gate stack owns.
+# allows no kms:*, and shared-account mode denies kms:Decrypt on keys no gate
+# stack owns.
 locals {
   template_bucket     = "honua-gate-templates-${var.member_account_id}"
   template_bucket_arn = "arn:aws:s3:::${local.template_bucket}"

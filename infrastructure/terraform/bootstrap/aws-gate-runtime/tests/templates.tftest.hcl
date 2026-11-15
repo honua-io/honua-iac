@@ -100,7 +100,7 @@ run "cloudformation_reads_templates_and_workloads_cannot_touch_them" {
   }
 }
 
-run "shared_account_keeps_template_access_inside_quotas" {
+run "shared_account_fences_leave_template_objects_reachable" {
   command = plan
   variables {
     shared_account          = true
