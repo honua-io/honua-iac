@@ -7,7 +7,17 @@ locals {
     "cloudfront:*", "cloudtrail:*", "cloudwatch:*", "ec2:*", "ecs:*", "elasticloadbalancing:*",
     "events:*", "guardduty:*", "kms:*", "lambda:*", "logs:*", "rds:*", "route53:*",
     "s3:*", "secretsmanager:*", "sns:*", "sqs:*", "wafv2:*", "ecr:GetAuthorizationToken",
-    "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability"
+    "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability",
+    # Explicit lifecycle and configuration APIs; never user-data reads or auth.
+    "cognito-idp:CreateUserPool", "cognito-idp:DeleteUserPool", "cognito-idp:UpdateUserPool",
+    "cognito-idp:CreateUserPoolClient", "cognito-idp:DeleteUserPoolClient", "cognito-idp:UpdateUserPoolClient",
+    "cognito-idp:CreateUserPoolDomain", "cognito-idp:DeleteUserPoolDomain", "cognito-idp:UpdateUserPoolDomain",
+    "cognito-idp:CreateGroup", "cognito-idp:DeleteGroup", "cognito-idp:UpdateGroup",
+    "cognito-idp:AdminCreateUser", "cognito-idp:AdminDeleteUser",
+    "cognito-idp:AdminAddUserToGroup", "cognito-idp:AdminRemoveUserFromGroup",
+    "cognito-idp:DescribeUserPool", "cognito-idp:DescribeUserPoolClient", "cognito-idp:DescribeUserPoolDomain",
+    "cognito-idp:GetGroup", "cognito-idp:GetUserPoolMfaConfig", "cognito-idp:SetUserPoolMfaConfig",
+    "cognito-idp:TagResource", "cognito-idp:UntagResource", "cognito-idp:ListTagsForResource"
   ]
   protected_controls = {
     Effect = "Deny", Action = ["lambda:*", "logs:*"]

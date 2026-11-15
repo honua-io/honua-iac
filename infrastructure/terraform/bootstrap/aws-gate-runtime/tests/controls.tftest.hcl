@@ -158,7 +158,7 @@ run "shared_account_policy_quotas_with_deployment_sized_inputs" {
       for policy in [aws_iam_role_policy.lane.policy, aws_iam_role_policy.cloudformation.policy, aws_iam_role_policy.reaper.policy] :
       length(jsonencode(jsondecode(policy))) <= 10240
     ])
-    error_message = "Every inline role policy must fit the 10240-character quota."
+    error_message = "Every inline role policy must fit the 10240-character quota; CloudFormation uses ${length(jsonencode(jsondecode(aws_iam_role_policy.cloudformation.policy)))} characters."
   }
   assert {
     condition = alltrue([
@@ -167,4 +167,45 @@ run "shared_account_policy_quotas_with_deployment_sized_inputs" {
     ])
     error_message = "Every role trust policy must fit the 2048-character quota."
   }
+}
+
+run "stack_cognito_lifecycle_without_user_reads" {
+  command = plan
+  variables {
+    shared_account          = true
+    protected_state_buckets = ["synthetic-state"]
+    protected_ssm_paths     = ["/synthetic/gate"]
+    budget_alert_email      = "gate@example.invalid"
+  }
+  assert {
+    condition = alltrue([for policy in [aws_iam_policy.workload_boundary.policy, aws_iam_role_policy.cloudformation.policy] : alltrue([
+      for action in ["CreateUserPool", "DeleteUserPool", "UpdateUserPool", "CreateUserPoolClient", "DeleteUserPoolClient", "UpdateUserPoolClient", "CreateUserPoolDomain", "DeleteUserPoolDomain", "UpdateUserPoolDomain", "CreateGroup", "DeleteGroup", "UpdateGroup", "AdminCreateUser", "AdminDeleteUser", "AdminAddUserToGroup", "AdminRemoveUserFromGroup", "DescribeUserPool", "DescribeUserPoolClient", "DescribeUserPoolDomain", "GetGroup", "GetUserPoolMfaConfig", "SetUserPoolMfaConfig", "TagResource", "UntagResource", "ListTagsForResource"] : anytrue([
+        for statement in jsondecode(policy).Statement : try(statement.Effect == "Allow" && anytrue([for pattern in statement.Action : can(regex("^${replace(pattern, "*", ".*")}$", "cognito-idp:${action}"))]), false)
+      ])
+    ])])
+    error_message = "Both identities must allow stack-owned Cognito pool, client, domain, group and user lifecycle."
+  }
+  assert {
+    condition = alltrue([for policy in [aws_iam_policy.workload_boundary.policy, aws_iam_role_policy.cloudformation.policy] : alltrue([
+      for action in ["AdminGetUser", "ListUsers", "ListUsersInGroup", "AdminListGroupsForUser", "GetUser", "AdminInitiateAuth", "InitiateAuth"] : !anytrue([
+        for statement in jsondecode(policy).Statement : try(statement.Effect == "Allow" && anytrue([for pattern in statement.Action : can(regex("^${replace(pattern, "*", ".*")}$", "cognito-idp:${action}"))]), false)
+      ])
+    ])])
+    error_message = "Cognito lifecycle must not allow user-data reads or authentication."
+  }
+  assert {
+    condition = contains(local.shared_creation_actions, "cognito-idp:CreateUserPool") && alltrue([
+      for action in ["CreateUserPoolClient", "CreateUserPoolDomain", "CreateGroup", "AdminCreateUser", "DeleteUserPool", "DeleteUserPoolClient", "DeleteUserPoolDomain", "DeleteGroup", "AdminDeleteUser", "AdminAddUserToGroup", "AdminRemoveUserFromGroup", "UpdateUserPool", "UpdateUserPoolClient", "UpdateUserPoolDomain", "UpdateGroup", "SetUserPoolMfaConfig", "TagResource", "UntagResource"] : alltrue([
+        for deny in [local.boundary_ownership_deny, local.service_role_ownership_deny] : !anytrue([for pattern in deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", "cognito-idp:${action}"))])
+      ])
+    ])
+    error_message = "Only pool allocation may bypass ownership; child creation, deletion and tagging require an existing gate-tagged pool."
+  }
+  assert {
+    condition = alltrue([for deny in [local.boundary_ownership_deny, local.service_role_ownership_deny] : contains(deny.NotAction, "cognito-idp:DescribeUserPoolDomain")]) && alltrue([
+      for action in ["DescribeUserPool", "DescribeUserPoolClient", "GetGroup", "GetUserPoolMfaConfig", "ListTagsForResource"] : !contains(local.boundary_ownership_deny.NotAction, "cognito-idp:${action}")
+    ])
+    error_message = "Domain description has no resource-level authorization; other workload metadata must still require the parent pool ownership tag."
+  }
+
 }
