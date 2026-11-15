@@ -22,7 +22,7 @@ run "foreign_and_untagged_secret_reads_are_denied" {
         for action in ["secretsmanager:GetSecretValue", "secretsmanager:BatchGetSecretValue"] : alltrue([
           for ownership in ["existing-stack", ""] : anytrue([
             for statement in jsondecode(policy).Statement : try(
-              statement.Effect == "Deny" && statement.NotResource == aws_secretsmanager_secret.idp_client.arn && contains(statement.Action, action) &&
+              statement.Effect == "Deny" && statement.NotResource == aws_secretsmanager_secret.idp_client.arn && (try(contains(statement.Action, action), false) || try(!anytrue([for pattern in statement.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))]), false)) &&
               !startswith(ownership, trimsuffix(statement.Condition.StringNotLikeIfExists["aws:ResourceTag/aws:cloudformation:stack-name"], "*")), false
             )
           ])
@@ -38,9 +38,9 @@ run "gate_secret_single_read_keeps_its_allow" {
   assert {
     condition = alltrue([
       for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] :
-      anytrue([for statement in jsondecode(policy).Statement : try(statement.Effect == "Allow" && statement.NotResource == aws_secretsmanager_secret.idp_client.arn && contains(statement.Action, "secretsmanager:*"), false)]) &&
+      anytrue([for statement in jsondecode(policy).Statement : try(statement.Effect == "Allow" && statement.Resource == "*" && contains(statement.Action, "secretsmanager:*"), false)]) &&
       anytrue([for statement in jsondecode(policy).Statement : try(
-        statement.Sid == "DenyNonGateContentReads" && statement.Effect == "Deny" && contains(statement.Action, "secretsmanager:GetSecretValue") &&
+        contains(["DenyNonGateContentReads", "DenyNonGateChanges"], statement.Sid) && statement.Effect == "Deny" &&
         startswith("honua-gate-synthetic", trimsuffix(statement.Condition.StringNotLikeIfExists["aws:ResourceTag/aws:cloudformation:stack-name"], "*")), false
       )]) &&
       anytrue([for statement in jsondecode(aws_iam_role_policy.cloudformation.policy).Statement : try(statement.Sid == "DenyNonGateChanges" && contains(statement.NotAction, "secretsmanager:Get*"), false)]) &&
@@ -58,7 +58,7 @@ run "content_read_families_are_guarded_in_both_policies" {
         for action in ["lambda:GetFunction", "lambda:ListEventSourceMappings", "wafv2:GetWebACL", "rds:DescribeDBProxyTargetGroups", "logs:GetLogEvents", "logs:FilterLogEvents", "logs:GetLogRecord", "logs:StartQuery", "logs:GetQueryResults", "logs:StartLiveTail", "ec2:GetPasswordData", "ec2:GetConsoleOutput", "ec2:GetConsoleScreenshot", "ecs:ExecuteCommand", "rds:StartExportTask", "backup:GetRecoveryPointRestoreMetadata", "cloudfront:GetPublicKey", "cloudfront:GetFieldLevelEncryption", "ecr:GetAuthorizationToken", "wafv2:GetDecryptedAPIKey", "kms:Decrypt", "kms:GenerateDataKey", "kms:GetKeyPolicy", "ce:GetCostAndUsage", "cloudtrail:LookupEvents", "cloudtrail:GetQueryResults", "cloudwatch:GetDashboard", "guardduty:GetFindings", "sqs:ReceiveMessage", "sns:GetSMSAttributes"] : anytrue([
           for statement in jsondecode(policy).Statement : try(
             statement.Effect == "Deny" && statement.NotResource == aws_secretsmanager_secret.idp_client.arn && statement.Condition.StringNotLikeIfExists["aws:ResourceTag/aws:cloudformation:stack-name"] == "honua-gate-*" &&
-            anytrue([for pattern in statement.Action : can(regex("^${replace(pattern, "*", ".*")}$", action))]), false
+            (try(anytrue([for pattern in statement.Action : can(regex("^${replace(pattern, "*", ".*")}$", action))]), false) || try(!anytrue([for pattern in statement.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))]), false)), false
           )
         ])
       ])

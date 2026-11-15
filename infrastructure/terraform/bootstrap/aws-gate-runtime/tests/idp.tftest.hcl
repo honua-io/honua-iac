@@ -1,6 +1,14 @@
 mock_provider "aws" {
   override_during = plan
-  mock_resource "aws_secretsmanager_secret" { defaults = { arn = "arn:aws:secretsmanager:us-east-1:000000000002:secret:honua-gate/idp/client-secret-abcdef" } }
+  mock_resource "aws_iam_policy" { defaults = { arn = "arn:aws:iam::000000000002:policy/mock" } }
+  override_resource {
+    target = aws_secretsmanager_secret.idp_client
+    values = { arn = "arn:aws:secretsmanager:us-east-1:000000000002:secret:honua-gate/idp/client-secret-abcdef" }
+  }
+  override_resource {
+    target = aws_secretsmanager_secret.idp_admin
+    values = { arn = "arn:aws:secretsmanager:us-east-1:000000000002:secret:honua-gate/idp/admin-ghijkl" }
+  }
 }
 mock_provider "archive" {}
 mock_provider "random" {}
@@ -45,7 +53,8 @@ run "default_secret_reader_is_cloudformation_only" {
     condition = local.idp_client_readers == [local.service_role_arn] && alltrue([
       for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] : alltrue([
         anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == "DenyUnapprovedIdpReaders" && statement.Resource == aws_secretsmanager_secret.idp_client.arn && statement.Condition.ArnNotEquals["aws:PrincipalArn"] == [local.service_role_arn], false)]),
-        anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == "DenyBootstrapSecretMutation" && statement.NotAction == ["secretsmanager:GetSecretValue"] && statement.Resource == aws_secretsmanager_secret.idp_client.arn, false)])
+        anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == "DenyBootstrapAdminReads" && statement.Resource == aws_secretsmanager_secret.idp_admin.arn && statement.Action == ["secretsmanager:GetSecretValue"], false)]),
+        anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == "DenyBootstrapSecretMutation" && statement.NotAction == ["secretsmanager:GetSecretValue"] && toset(statement.Resource) == toset([aws_secretsmanager_secret.idp_client.arn, aws_secretsmanager_secret.idp_admin.arn]), false)])
       ])
     ])
     error_message = "Only CloudFormation can read the bootstrap client secret by default; all gate mutations remain denied."
@@ -68,4 +77,20 @@ run "reject_foreign_execution_reader" {
   command = plan
   variables { idp_task_execution_role_arns = ["arn:aws:iam::000000000003:role/honua-gate-install-ExecutionRole"] }
   expect_failures = [var.idp_task_execution_role_arns]
+}
+
+run "shared_account_protects_both_bootstrap_secrets" {
+  command = plan
+  variables {
+    shared_account = true
+    protected_state_buckets = ["synthetic-state"]
+    budget_alert_email = "gate@example.invalid"
+  }
+  assert {
+    condition = alltrue([for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] : alltrue([
+      anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == "DenyBootstrapSecretMutation" && toset(statement.Resource) == toset([aws_secretsmanager_secret.idp_client.arn, aws_secretsmanager_secret.idp_admin.arn]), false)]),
+      anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == "DenyBootstrapAdminReads" && statement.Resource == aws_secretsmanager_secret.idp_admin.arn && statement.Action == ["secretsmanager:GetSecretValue"], false)])
+    ])])
+    error_message = "Gate identities must not read the admin password or mutate either bootstrap secret, including in shared-account mode."
+  }
 }

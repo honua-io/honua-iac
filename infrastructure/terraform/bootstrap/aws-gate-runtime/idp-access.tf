@@ -4,7 +4,12 @@ locals {
     {
       Sid       = "DenyBootstrapSecretMutation", Effect = "Deny"
       NotAction = ["secretsmanager:GetSecretValue"]
-      Resource  = aws_secretsmanager_secret.idp_client.arn
+      Resource  = [aws_secretsmanager_secret.idp_client.arn, aws_secretsmanager_secret.idp_admin.arn]
+    },
+    {
+      Sid      = "DenyBootstrapAdminReads", Effect = "Deny"
+      Action   = ["secretsmanager:GetSecretValue"]
+      Resource = aws_secretsmanager_secret.idp_admin.arn
     },
     {
       Sid       = "DenyUnapprovedIdpReaders", Effect = "Deny"

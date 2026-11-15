@@ -83,7 +83,10 @@ locals {
       Condition = { StringNotLikeIfExists = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" } }
     }
   ] : control if var.shared_account]
-  boundary_shared_denies     = concat(local.shared_controls, local.idp_secret_controls, var.shared_account ? [local.boundary_ownership_deny] : [])
+  # The ownership NotAction deny already covers every content-read action.
+  # Keep the explicit content list only in the metadata-reading service policy
+  # to avoid duplicating it inside the 6,144-character managed boundary.
+  boundary_shared_denies     = concat([for control in local.shared_controls : control if control.Sid != "DenyNonGateContentReads"], local.idp_secret_controls, var.shared_account ? [local.boundary_ownership_deny] : [])
   service_role_shared_denies = concat(local.shared_controls, local.idp_secret_controls, var.shared_account ? [local.service_role_ownership_deny] : [])
   # PutRule, PutTargets, PutMetricAlarm, PutCompositeAlarm and ModifyBudget are
   # create and update in one API, so a missing stack tag cannot gate them.
