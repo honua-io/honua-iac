@@ -32,7 +32,8 @@ run "named_teardown_is_scoped_to_the_service_role" {
       toset(statement.Action) == toset(["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias"]) &&
       toset(statement.NotResource) == toset([
         "arn:aws:events:us-east-1:000000000002:rule/honua-gate-*",
-        "arn:aws:kms:us-east-1:000000000002:alias/honua-gate-*"
+        "arn:aws:kms:us-east-1:000000000002:alias/honua-gate-*",
+        "arn:aws:kms:us-east-1:000000000002:key/*"
       ]), false)
     ]) && aws_iam_role_policy_attachment.cloudformation_fences.role == aws_iam_role.cloudformation.name
     error_message = "An attached unconditional deny must fence teardown by exact service, account, region and gate prefix."
@@ -40,17 +41,27 @@ run "named_teardown_is_scoped_to_the_service_role" {
   assert {
     condition = alltrue([for arn in [
       "arn:aws:events:us-east-1:000000000002:rule/honua-gate-synthetic-OpsAlarmEvents",
-      "arn:aws:kms:us-east-1:000000000002:alias/honua-gate-synthetic-key"
+      "arn:aws:kms:us-east-1:000000000002:alias/honua-gate-synthetic-key",
+      "arn:aws:kms:us-east-1:000000000002:key/synthetic-key"
     ] : anytrue([for pattern in local.named_teardown_deny.NotResource : can(regex("^${replace(pattern, "*", ".*")}$", arn))])]) && alltrue([
       for arn in [
         "arn:aws:events:us-east-1:000000000002:rule/foreign-rule",
         "arn:aws:kms:us-east-1:000000000002:alias/foreign-key",
         "arn:aws:events:us-east-1:000000000003:rule/honua-gate-foreign-account",
         "arn:aws:kms:us-west-2:000000000002:alias/honua-gate-foreign-region",
-        "arn:aws:kms:us-east-1:000000000002:key/honua-gate-not-an-alias"
+        "arn:aws:kms:us-east-1:000000000003:key/foreign-key"
       ] : !anytrue([for pattern in local.named_teardown_deny.NotResource : can(regex("^${replace(pattern, "*", ".*")}$", arn))])
     ])
-    error_message = "Gate names are eligible; foreign names, accounts, regions and KMS keys stay denied."
+    error_message = "Gate names are eligible; foreign names, accounts and regions stay denied."
+  }
+  assert {
+    condition = anytrue([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : try(
+      statement.Sid == "AliasTeardownKeys" && statement.Effect == "Deny" &&
+      statement.Action == "kms:DeleteAlias" &&
+      statement.Resource == "arn:aws:kms:us-east-1:000000000002:key/*" &&
+      statement.Condition.StringNotEqualsIfExists["aws:ResourceTag/HonuaGate"] == "true", false
+    )])
+    error_message = "Alias deletion must retain an attached ownership deny for untagged or foreign backing keys. StringNotEqualsIfExists denies missing and non-gate tags."
   }
   assert {
     condition = anytrue([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : try(
@@ -66,7 +77,7 @@ run "named_teardown_is_scoped_to_the_service_role" {
     error_message = "Alias reassignment, key deletion and untagged network changes must retain the ownership deny."
   }
   assert {
-    condition     = alltrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(statement.Sid, "") != "NamedTeardownFence"])
+    condition     = alltrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : !contains(["NamedTeardownFence", "AliasTeardownKeys"], try(statement.Sid, ""))])
     error_message = "The service-role exception must not change the workload boundary."
   }
 }

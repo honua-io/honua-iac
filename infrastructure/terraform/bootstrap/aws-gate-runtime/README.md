@@ -326,6 +326,8 @@ CloudFormation may remove targets and delete EventBridge rules whose names begin
 `honua-gate-`, and delete KMS aliases with the same prefix, even when those
 resources have no ownership tags. The service-role name fences deny those
 operations on other names, and the nightly reaper rule remains protected.
+[KMS requires authorization on both the alias and its backing key](https://docs.aws.amazon.com/kms/latest/developerguide/alias-access.html);
+a separate deny requires the backing key to carry `HonuaGate=true`.
 Workload roles retain the ownership-tag checks. This exception does not permit
 alias updates or deletion of untagged keys, VPCs or internet gateways.
 
