@@ -10,10 +10,10 @@ check() {
   if [[ "$actual" != "$expected" ]]; then echo "FAIL: $name expected=$expected actual=$actual"; exit 1; fi
   PASS=$((PASS+1))
 }
-# Finite fake provider: only the five read operations/tag enumeration accepted.
+# Finite fake provider: only the supported read operations/tag enumeration accepted.
 fake_read() {
   case "$1 $2" in
-    'kms describe-key'|'secretsmanager describe-secret'|'ecs describe-clusters'|'ecs describe-services'|'ecs describe-task-definition')
+    'ec2 describe-addresses'|'kms describe-key'|'secretsmanager describe-secret'|'ecs describe-clusters'|'ecs describe-services'|'ecs describe-task-definition')
       if [[ -n "${ERROR:-}" ]]; then printf '%s\n' "$ERROR" >&2; return 1; fi
       printf '%s\n' "$PAYLOAD" ;;
     'resourcegroupstaggingapi get-resources')
@@ -41,6 +41,16 @@ for pair in 'kms:key/test' 'secretsmanager:secret:test' 'ecs:cluster/test' 'ecs:
   esac
   check 0 "$pair settled positive" cleanup_resource_settled fake_read "$region" "$arn"
   PAYLOAD="${PAYLOAD//123456789012/999999999999}" check 3 "$pair wrong identity" cleanup_resource_settled fake_read "$region" "$arn"
+done
+address=arn:aws:ec2:$region:123456789012:elastic-ip/eipalloc-0123456789abcdef0
+PAYLOAD='{"Addresses":[]}' check 0 'absent address settled' cleanup_resource_settled fake_read "$region" "$address"
+PAYLOAD='{"Addresses":[{"AllocationId":"eipalloc-0123456789abcdef0"}]}' check 1 'allocated address live' cleanup_resource_settled fake_read "$region" "$address"
+ERROR='An error occurred (InvalidAllocationID.NotFound) when calling the DescribeAddresses operation: absent' check 0 'typed address absence' cleanup_resource_settled fake_read "$region" "$address"
+for error in AuthFailure UnauthorizedOperation Throttling 'connection reset'; do
+  ERROR="An error occurred ($error) when calling the DescribeAddresses operation: refused" check 3 "address $error unverified" cleanup_resource_settled fake_read "$region" "$address"
+done
+for payload in '{}' 'null' '{"Addresses":null}' '{"Addresses":[null]}' '{"Addresses":[{"AllocationId":"eipalloc-foreign"}]}' '{"Addresses":[],"NextToken":"more"}'; do
+  PAYLOAD="$payload" check 3 'malformed/mismatched address response' cleanup_resource_settled fake_read "$region" "$address"
 done
 key=arn:aws:kms:$region:123456789012:key/test
 secret=arn:aws:secretsmanager:$region:123456789012:secret:test

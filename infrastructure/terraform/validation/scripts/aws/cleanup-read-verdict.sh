@@ -5,6 +5,7 @@ cleanup_resource_settled() {
   local reader="$1" region="$2" arn="$3" service operation payload verdict
   local -a args
   case "$arn" in
+    arn:aws:ec2:*:elastic-ip/eipalloc-*) service=ec2; operation=describe-addresses; args=(--allocation-ids "${arn##*/}") ;;
     arn:aws:kms:*) service=kms; operation=describe-key; args=(--key-id "$arn") ;;
     arn:aws:secretsmanager:*) service=secretsmanager; operation=describe-secret; args=(--secret-id "$arn") ;;
     arn:aws:ecs:*:cluster/*) service=ecs; operation=describe-clusters; args=(--clusters "$arn") ;;
@@ -22,7 +23,8 @@ cleanup_resource_settled() {
     # Only the service's authoritative not-found code for this operation is
     # absence. Denial, throttling, transport errors and arbitrary text are not.
     if [[ "$service" == kms && "$payload" =~ ^An\ error\ occurred\ \(NotFoundException\)\ when\ calling\ the\ DescribeKey\ operation: ]] ||
-       [[ "$service" == secretsmanager && "$payload" =~ ^An\ error\ occurred\ \(ResourceNotFoundException\)\ when\ calling\ the\ DescribeSecret\ operation: ]]; then
+       [[ "$service" == secretsmanager && "$payload" =~ ^An\ error\ occurred\ \(ResourceNotFoundException\)\ when\ calling\ the\ DescribeSecret\ operation: ]] ||
+       [[ "$service" == ec2 && "$payload" =~ ^An\ error\ occurred\ \(InvalidAllocationID\.NotFound\)\ when\ calling\ the\ DescribeAddresses\ operation: ]]; then
       return 0
     fi
     return 3
@@ -34,6 +36,11 @@ cleanup_resource_settled() {
       if ($value|type)!="string" or ($known|index($value))==null then refuse
       elif ($settled|index($value))!=null then "settled" else "live" end;
     if type!="object" then refuse
+    elif $service=="ec2" then
+      if (.Addresses|type)!="array" or (has("NextToken") and .NextToken!="") then refuse
+      elif (.Addresses|length)==0 then "settled"
+      elif (.Addresses|length)==1 and .Addresses[0].AllocationId==($arn|split("/")|last) then "live"
+      else refuse end
     elif $service=="kms" then
       if .KeyMetadata.Arn!=$arn then refuse else
       state(.KeyMetadata.KeyState; ["Creating","Enabled","Disabled","PendingDeletion","PendingImport","PendingReplicaDeletion","Unavailable","Updating"]; ["PendingDeletion","PendingReplicaDeletion"]) end
