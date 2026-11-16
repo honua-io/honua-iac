@@ -30,3 +30,18 @@ run "lane_can_inspect_resource_ownership" {
     error_message = "Lane permissions and their boundary must both allow EC2 inspection and KMS key-tag reads in the gate account and region."
   }
 }
+
+run "lane_inspection_cannot_read_ec2_content" {
+  command = plan
+  assert {
+    condition = alltrue([for policy in [aws_iam_role_policy.lane.policy, aws_iam_policy.lane_boundary.policy] :
+      alltrue([for action in ["ec2:DescribeInstanceAttribute", "ec2:DescribeKeyPairs", "ec2:DescribeLaunchTemplateVersions", "ec2:DescribeVpnConnections"] :
+        anytrue([for statement in jsondecode(policy).Statement : try(
+          statement.Effect == "Deny" && statement.Resource == "*" &&
+          contains(statement.Action, action) && !can(statement.Condition), false
+        )])
+      ])
+    ])
+    error_message = "Both lane policies must deny EC2 content reads unconditionally, including resources with gate ownership tags."
+  }
+}

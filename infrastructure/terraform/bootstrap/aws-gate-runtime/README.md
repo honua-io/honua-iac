@@ -168,6 +168,8 @@ roles; a full Launch Stack create needs both:
 ownership tags with `kms:ListResourceTags`. Both the lane policy and its permissions
 boundary include these reads. KMS reads name only keys in the configured gate
 account and `us-east-1`; the existing region deny also limits EC2 inspection.
+Both policies explicitly deny the EC2 Describe APIs classified as content reads
+in `content-reads.tf`, including reads of gate-owned resources.
 
 The name fences and the `CreationTags` deny sit in the attached managed policy
 `HonuaGateCloudFormationFences`, because the inline service policy is at its

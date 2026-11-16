@@ -60,6 +60,11 @@ locals {
       }, {
       Sid = "InspectNetworkOwnership", Effect = "Allow", Action = "ec2:Describe*", Resource = "*"
       }, {
+      Sid = "DenyInspectionContentReads", Effect = "Deny"
+      # Metadata inspection must never expose content, even on gate-owned resources.
+      Action   = [for action in local.shared_content_read_actions : action if startswith(action, "ec2:Describe")]
+      Resource = "*"
+      }, {
       Sid      = "InspectKeyOwnership", Effect = "Allow", Action = "kms:ListResourceTags"
       Resource = "arn:aws:kms:us-east-1:${var.member_account_id}:key/*"
     }], local.region_controls, local.stack_tag_controls, local.stack_tag_permissions)
