@@ -23,7 +23,7 @@ run "foreign_and_untagged_secret_reads_are_denied" {
         for action in ["secretsmanager:GetSecretValue", "secretsmanager:BatchGetSecretValue"] : alltrue([
           for ownership in ["existing-stack", ""] : anytrue([
             for statement in jsondecode(policy).Statement : try(
-              statement.Effect == "Deny" && statement.NotResource == aws_secretsmanager_secret.idp_client.arn && (try(contains(statement.Action, action), false) || try(!anytrue([for pattern in statement.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))]), false)) &&
+              statement.Effect == "Deny" && contains(flatten([statement.NotResource]), aws_secretsmanager_secret.idp_client.arn) && (try(contains(statement.Action, action), false) || try(!anytrue([for pattern in statement.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))]), false)) &&
               !startswith(ownership, trimsuffix(statement.Condition.StringNotLikeIfExists["aws:ResourceTag/aws:cloudformation:stack-name"], "*")), false
             )
           ])
@@ -56,9 +56,10 @@ run "content_read_families_are_guarded_in_both_policies" {
   assert {
     condition = alltrue([
       for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] : alltrue([
-        for action in concat(local.shared_content_read_actions, ["lambda:GetFunction", "lambda:ListEventSourceMappings", "wafv2:GetWebACL", "rds:DescribeDBProxyTargetGroups", "logs:GetLogEvents", "logs:FilterLogEvents", "logs:GetLogRecord", "logs:StartQuery", "logs:GetQueryResults", "logs:StartLiveTail", "ec2:GetPasswordData", "ec2:GetConsoleOutput", "ec2:GetConsoleScreenshot", "ecs:ExecuteCommand", "rds:StartExportTask", "backup:GetRecoveryPointRestoreMetadata", "cloudfront:GetPublicKey", "cloudfront:GetFieldLevelEncryption", "ecr:GetAuthorizationToken", "wafv2:GetDecryptedAPIKey", "kms:Decrypt", "kms:GenerateDataKey", "kms:GetKeyPolicy", "ce:GetCostAndUsage", "cloudtrail:LookupEvents", "cloudtrail:GetQueryResults", "cloudwatch:GetDashboard", "guardduty:GetFindings", "sqs:ReceiveMessage", "sns:GetSMSAttributes"]) : anytrue([
+        # Workloads may log in to the registry; image reads stay fenced (ecr.tftest.hcl).
+        for action in setsubtract(concat(local.shared_content_read_actions, ["lambda:GetFunction", "lambda:ListEventSourceMappings", "wafv2:GetWebACL", "rds:DescribeDBProxyTargetGroups", "logs:GetLogEvents", "logs:FilterLogEvents", "logs:GetLogRecord", "logs:StartQuery", "logs:GetQueryResults", "logs:StartLiveTail", "ec2:GetPasswordData", "ec2:GetConsoleOutput", "ec2:GetConsoleScreenshot", "ecs:ExecuteCommand", "rds:StartExportTask", "backup:GetRecoveryPointRestoreMetadata", "cloudfront:GetPublicKey", "cloudfront:GetFieldLevelEncryption", "ecr:GetAuthorizationToken", "wafv2:GetDecryptedAPIKey", "kms:Decrypt", "kms:GenerateDataKey", "kms:GetKeyPolicy", "ce:GetCostAndUsage", "cloudtrail:LookupEvents", "cloudtrail:GetQueryResults", "cloudwatch:GetDashboard", "guardduty:GetFindings", "sqs:ReceiveMessage", "sns:GetSMSAttributes"]), policy == aws_iam_policy.workload_boundary.policy ? ["ecr:GetAuthorizationToken"] : []) : anytrue([
           for statement in jsondecode(policy).Statement : try(
-            statement.Effect == "Deny" && statement.NotResource == aws_secretsmanager_secret.idp_client.arn && statement.Condition.StringNotLikeIfExists["aws:ResourceTag/aws:cloudformation:stack-name"] == "honua-gate-*" &&
+            statement.Effect == "Deny" && contains(flatten([statement.NotResource]), aws_secretsmanager_secret.idp_client.arn) && statement.Condition.StringNotLikeIfExists["aws:ResourceTag/aws:cloudformation:stack-name"] == "honua-gate-*" &&
             (try(anytrue([for pattern in statement.Action : can(regex("^${replace(pattern, "*", ".*")}$", action))]), false) || try(!anytrue([for pattern in statement.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))]), false)), false
           )
         ])

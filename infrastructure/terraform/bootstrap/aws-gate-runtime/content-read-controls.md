@@ -74,6 +74,12 @@ Registry credentials and image manifests/layers. Repository content reads suppor
 
 Actions: `ecr:GetAuthorizationToken`, `ecr:BatchGetImage`, `ecr:GetDownloadUrlForLayer`.
 
+Exception (workload boundary only): the ownership fence exempts registry login and the
+Terraform-owned `honua-gate/server` repository, which has no stack tag, so gate stacks can
+pull the private gate server image. A registry token reads nothing by itself; image reads
+from every other repository still require gate stack ownership. The service role keeps the
+full fence.
+
 ## lambda
 
 [lambda authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_lambda.html)
