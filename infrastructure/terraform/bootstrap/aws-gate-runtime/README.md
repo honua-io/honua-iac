@@ -392,3 +392,19 @@ repository or environment, a subject without an environment, or a custom subject
 with appended claims fails the IAM match. AWS checks the signed subject; GitHub
 enforces environment deployment restrictions. A lane shell run does not provide
 an authenticated producer receipt.
+
+### Temporary orphan network cleanup
+
+The lane role and its boundary can temporarily allow only `ec2:DeleteVpc`,
+`ec2:DeleteInternetGateway` and `ec2:DetachInternetGateway` on exact network IDs.
+`temporary_cleanup_vpc_ids` and `temporary_cleanup_gateway_ids` default to empty,
+accept at most two IDs each and require shared-account mode. Supply the reviewed
+orphan IDs through the private SSM tfvars; never commit actual IDs. This permission
+does not change CloudFormation or workload ownership fences.
+
+Main reviews the Terraform plan and applies it. Confirm that the plan grants only
+the reviewed VPC and gateway ARNs in the gate account and us-east-1. Use the lane
+role for cleanup, detach gateways before deleting them and delete the orphan VPCs.
+Then clear both inputs in the private tfvars and apply the removal immediately.
+Retain the removal plan and result with the private operational record. Leaving
+an ID configured retains delete permission for that resource.

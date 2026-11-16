@@ -84,3 +84,37 @@ variable "orphan_cleanup_dry_run" {
   type        = bool
   default     = true
 }
+
+variable "temporary_cleanup_vpc_ids" {
+  description = "Temporary exact IDs for at most two orphan gate networks; private SSM tfvars only, clear after cleanup."
+  type        = set(string)
+  default     = []
+  sensitive   = true
+  validation {
+    condition = length(var.temporary_cleanup_vpc_ids) <= 2 && alltrue([
+      for id in var.temporary_cleanup_vpc_ids : can(regex("^vpc-([0-9a-f]{8}|[0-9a-f]{17})$", id))
+    ])
+    error_message = "Supply at most two exact vpc IDs; wildcards and ARNs are forbidden."
+  }
+  validation {
+    condition     = var.shared_account || length(var.temporary_cleanup_vpc_ids) == 0
+    error_message = "Temporary cleanup is available only in the shared gate account."
+  }
+}
+
+variable "temporary_cleanup_gateway_ids" {
+  description = "Temporary exact IDs for at most two orphan gate networks; private SSM tfvars only, clear after cleanup."
+  type        = set(string)
+  default     = []
+  sensitive   = true
+  validation {
+    condition = length(var.temporary_cleanup_gateway_ids) <= 2 && alltrue([
+      for id in var.temporary_cleanup_gateway_ids : can(regex("^igw-([0-9a-f]{8}|[0-9a-f]{17})$", id))
+    ])
+    error_message = "Supply at most two exact igw IDs; wildcards and ARNs are forbidden."
+  }
+  validation {
+    condition     = var.shared_account || length(var.temporary_cleanup_gateway_ids) == 0
+    error_message = "Temporary cleanup is available only in the shared gate account."
+  }
+}
