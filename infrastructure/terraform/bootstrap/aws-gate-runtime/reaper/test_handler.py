@@ -180,7 +180,10 @@ class OrphanTests(unittest.TestCase):
             [{'StackSummaries': [stack() | {'StackStatus': 'DELETE_COMPLETE'},
                                  stack('honua-gate-old-exec')]}]
             if operation == 'list_stacks' else [{'StackResourceSummaries': []}])))
+        self.cf.describe_stacks.side_effect = None
+        self.cf.describe_stacks.return_value = {'Stacks': [stack('honua-gate-old-exec')]}
         self.assertEqual(self.run_cleanup()['roles'], 0)
+        self.cf.describe_stacks.assert_called_once_with(StackName='honua-gate-old-exec')
 
 
 if __name__ == '__main__':
