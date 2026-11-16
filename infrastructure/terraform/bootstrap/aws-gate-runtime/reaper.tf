@@ -20,13 +20,30 @@ resource "aws_iam_role_policy" "reaper" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{ Effect = "Allow", Action = "cloudformation:ListStacks", Resource = "*" }, {
-      Effect = "Allow", Action = "cloudformation:DescribeStacks", Resource = local.stack_arn
+      Effect = "Allow", Action = ["cloudformation:DescribeStacks", "cloudformation:ListStackResources"], Resource = local.stack_arn
       }, {
       Effect    = "Allow", Action = "cloudformation:DeleteStack", Resource = local.stack_arn
       Condition = { StringEquals = { "cloudformation:RoleArn" = local.service_role_arn } }
       }, {
       Effect    = "Allow", Action = "iam:PassRole", Resource = local.service_role_arn
       Condition = { StringEquals = { "iam:PassedToService" = "cloudformation.amazonaws.com" } }
+      }, {
+      Effect = "Allow", Action = "iam:ListRoles", Resource = "*"
+      }, {
+      Effect = "Allow"
+      Action = ["iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
+      "iam:DeleteRolePolicy", "iam:DetachRolePolicy", "iam:DeleteRole"]
+      Resource = "arn:aws:iam::${var.member_account_id}:role/honua-gate-*"
+      }, {
+      Effect   = "Allow", Action = ["kms:DescribeKey", "kms:ListResourceTags"]
+      Resource = "arn:aws:kms:us-east-1:${var.member_account_id}:key/*"
+      }, {
+      Effect   = "Allow", Action = "kms:ScheduleKeyDeletion"
+      Resource = "arn:aws:kms:us-east-1:${var.member_account_id}:key/*"
+      Condition = {
+        StringEquals  = { "aws:ResourceTag/HonuaGate" = "true" }
+        NumericEquals = { "kms:ScheduleKeyDeletionPendingWindowInDays" = 7 }
+      }
       }, {
       Effect = "Allow", Action = ["logs:CreateLogStream", "logs:PutLogEvents"], Resource = "${aws_cloudwatch_log_group.reaper.arn}:*"
     }]
@@ -42,7 +59,12 @@ resource "aws_lambda_function" "reaper" {
   timeout                        = 300
   memory_size                    = 128
   reserved_concurrent_executions = 1
-  environment { variables = { SERVICE_ROLE_ARN = local.service_role_arn } }
+  environment {
+    variables = {
+      SERVICE_ROLE_ARN = local.service_role_arn
+      ORPHAN_DRY_RUN   = tostring(var.orphan_cleanup_dry_run)
+    }
+  }
   depends_on = [aws_iam_role_policy.reaper]
 }
 resource "aws_cloudwatch_event_rule" "nightly" {
