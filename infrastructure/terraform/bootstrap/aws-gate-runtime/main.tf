@@ -104,7 +104,7 @@ resource "aws_iam_role" "cloudformation" {
 # without the fences.
 resource "aws_iam_policy" "cloudformation_fences" {
   name   = "HonuaGateCloudFormationFences"
-  policy = jsonencode({ Version = "2012-10-17", Statement = concat(local.launch_name_denies, var.shared_account ? [local.creation_tag_deny, local.named_teardown_deny] : []) })
+  policy = jsonencode({ Version = "2012-10-17", Statement = concat(local.launch_name_denies, var.shared_account ? [local.creation_tag_deny] : [], var.shared_account ? [local.named_teardown_deny] : []) })
 }
 resource "aws_iam_role_policy_attachment" "cloudformation_fences" {
   role       = aws_iam_role.cloudformation.name
