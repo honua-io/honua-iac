@@ -19,8 +19,8 @@ variables {
 }
 override_resource {
   override_during = plan
-  target = aws_iam_role.release_actions
-  values = { arn = "arn:aws:iam::000000000002:role/HonuaGateReleaseActions" }
+  target          = aws_iam_role.release_actions
+  values          = { arn = "arn:aws:iam::000000000002:role/HonuaGateReleaseActions" }
 }
 run "release_role_can_assume_gate_lane" {
   command = plan
