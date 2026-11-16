@@ -134,7 +134,14 @@ group `honua-server-gate`, which only `gate_runner_repository` can use.
 - **Wake and readiness.** Every 30 seconds the host writes its instance ID, a
   timestamp and its idle runner count to `/honua-lane-build-host/gate-runner/heartbeat`.
   The PR Gate assumes the output `gate_runner_wake_role_arn` by GitHub OIDC (only
-  `pull_request` runs of the repository). That role can describe Auto Scaling
+  `pull_request` runs and the exact `ref:refs/heads/trunk` subject of the
+  configured repository). No wildcard branch, tag or environment subjects are
+  trusted. This also lets trusted trunk certification workflows read the existing
+  instance/heartbeat through their bounded advisory selector. The selector does
+  not wake or resize the host, and still reserves two idle heavy runners for
+  required PR checks. This trust change requires a plan and apply from merged
+  trunk before those workflows can select heavy compute; until then they keep
+  their hosted fallback. That role can describe Auto Scaling
   groups, set this group's desired capacity and read the heartbeat, nothing else.
   The gate wakes the group, uses the runners if the heartbeat from the in-service
   instance is fresh and shows two idle runners within three minutes, and otherwise

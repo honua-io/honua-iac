@@ -108,7 +108,10 @@ resource "aws_iam_role" "gate_runner_wake" {
       Condition = {
         StringEquals = {
           "${local.github_oidc_host}:aud" = "sts.amazonaws.com"
-          "${local.github_oidc_host}:sub" = "repo:${var.gate_runner_repository}:pull_request"
+          "${local.github_oidc_host}:sub" = [
+            "repo:${var.gate_runner_repository}:pull_request",
+            "repo:${var.gate_runner_repository}:ref:refs/heads/trunk"
+          ]
         }
       }
     }]

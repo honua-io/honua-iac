@@ -83,7 +83,7 @@ variable "gate_runner_enabled" {
 }
 
 variable "gate_runner_repository" {
-  description = "The only repository whose pull_request workflows may assume the wake role; its owner is the organization the runners register with."
+  description = "The only repository whose pull_request and exact trunk-branch workflows may assume the wake role; its owner is the organization the runners register with."
   type        = string
   default     = "honua-io/honua-server"
   validation {

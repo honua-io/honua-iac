@@ -155,8 +155,8 @@ run "gate_runner_enabled" {
     error_message = "EC2 user data must stay within 16 KiB."
   }
   assert {
-    condition     = jsondecode(aws_iam_role.gate_runner_wake[0].assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:honua-io/honua-server:pull_request" && jsondecode(aws_iam_role.gate_runner_wake[0].assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:aud"] == "sts.amazonaws.com"
-    error_message = "Only honua-server pull_request workflows may assume the wake role."
+    condition     = toset(jsondecode(aws_iam_role.gate_runner_wake[0].assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"]) == toset(["repo:honua-io/honua-server:pull_request", "repo:honua-io/honua-server:ref:refs/heads/trunk"]) && jsondecode(aws_iam_role.gate_runner_wake[0].assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:aud"] == "sts.amazonaws.com"
+    error_message = "Only honua-server pull_request and exact trunk subjects may assume the wake role; no other branch, tag, environment or repository is trusted."
   }
   assert {
     condition     = toset([for statement in jsondecode(aws_iam_role_policy.gate_runner_wake[0].policy).Statement : statement.Action]) == toset(["autoscaling:DescribeAutoScalingGroups", "autoscaling:SetDesiredCapacity", "ssm:GetParameter"]) && contains([for statement in jsondecode(aws_iam_role_policy.gate_runner_wake[0].policy).Statement : statement.Resource if statement.Action == "autoscaling:SetDesiredCapacity"], aws_autoscaling_group.build.arn)
@@ -220,5 +220,17 @@ run "only_heavy_runners_start_service_containers" {
   assert {
     condition     = alltrue([for runner in local.build_host_runners : runner.service_containers == (runner.pool == "heavy")])
     error_message = "Only heavy runners expose /proc/1/cgroup for service containers; PR Gate runners keep ProtectProc=invisible."
+  }
+}
+
+run "gate_runner_trust_follows_configured_repository" {
+  command = apply
+  variables {
+    gate_runner_enabled    = true
+    gate_runner_repository = "example/another-server"
+  }
+  assert {
+    condition     = toset(jsondecode(aws_iam_role.gate_runner_wake[0].assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"]) == toset(["repo:example/another-server:pull_request", "repo:example/another-server:ref:refs/heads/trunk"])
+    error_message = "Trust must contain only the configured repository's PR and exact trunk identities."
   }
 }
