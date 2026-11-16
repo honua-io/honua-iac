@@ -152,7 +152,9 @@ The shared bootstrap sets `CODEQL_RAM` to 60% of each configured runner
 uses 3072 MiB and two threads. The remaining memory accommodates the runner,
 extractors and rootless Docker within the same user slice. This prevents
 managed CodeQL default setup from choosing the host's full memory and CPU count.
-Workflow-level CodeQL resource inputs can still override these defaults.
+A workflow can override these defaults by setting `CODEQL_RAM` and
+`CODEQL_THREADS` in its environment; these variables take precedence over
+CodeQL action resource inputs.
 
 The environment is generated in each runner service's root-owned
 `55-codeql-resources.conf` systemd drop-in. Updating the bootstrap source alone
