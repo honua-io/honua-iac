@@ -13,6 +13,10 @@ variables {
 run "default_has_no_overflow_access" {
   command = apply
   assert {
+    condition     = aws_security_group.runners.description == "Light runner host: no inbound, outbound to GitHub, package feeds and registries"
+    error_message = "Preserve the deployed security group description to avoid replacing attached runner networking."
+  }
+  assert {
     condition     = length(aws_security_group.runners.ingress) == 0 && local.overflow_toolchain == "" && local.runner_host_config.runner_count == 12
     error_message = "Overflow must be opt-in without changing the existing pool."
   }

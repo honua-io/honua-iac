@@ -121,7 +121,8 @@ resource "aws_route_table_association" "runners" {
 # SSH is opt-in and restricted to the overflow operator network.
 resource "aws_security_group" "runners" {
   name_prefix = "${local.name}-"
-  description = "Light runner host: optional restricted overflow SSH and outbound dependencies"
+  # The deployed description is immutable; ingress rules control optional SSH.
+  description = "Light runner host: no inbound, outbound to GitHub, package feeds and registries"
   vpc_id      = aws_vpc.runners.id
   dynamic "ingress" {
     for_each = var.pre_pr_overflow == null ? [] : [var.pre_pr_overflow]
