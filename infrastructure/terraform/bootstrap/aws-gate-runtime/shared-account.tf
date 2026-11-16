@@ -73,8 +73,26 @@ locals {
         "aws:RequestTag/aws:cloudformation:stack-name" = "honua-gate-*"
       })
       StringNotEqualsIfExists = local.ownership_condition.StringNotEqualsIfExists
+      Null                    = { "ec2:CreateAction" = "true" }
     }
   }
+  # EC2 authorizes tag-on-create separately; the resource has no ownership tags yet.
+  ec2_creation_tag_deny = {
+    Sid = "EC2CreationTags", Effect = "Deny", Action = ["ec2:CreateTags"], Resource = "*"
+    Condition = {
+      Null                    = { "ec2:CreateAction" = "false" }
+      StringNotEqualsIfExists = { "aws:RequestTag/HonuaGate" = "true" }
+    }
+  }
+  # Exact IDs are supplied privately and removed immediately after orphan cleanup.
+  network_cleanup_permissions = length(var.temporary_cleanup_vpc_ids) + length(var.temporary_cleanup_gateway_ids) > 0 ? [{
+    Sid    = "TemporaryNetworkCleanup", Effect = "Allow"
+    Action = ["ec2:DeleteVpc", "ec2:DeleteInternetGateway", "ec2:DetachInternetGateway"]
+    Resource = concat(
+      [for id in sort(tolist(var.temporary_cleanup_vpc_ids)) : "arn:aws:ec2:us-east-1:${var.member_account_id}:vpc/${id}"],
+      [for id in sort(tolist(var.temporary_cleanup_gateway_ids)) : "arn:aws:ec2:us-east-1:${var.member_account_id}:internet-gateway/${id}"]
+    )
+  }] : []
   # CloudFront cache, origin-request and response-headers policies and origin access controls cannot carry
   # tags, their create calls take no resource and their other calls name a random ID, so neither tag nor
   # name can fence them. Only the service role (CloudFormation acting for a gate stack) may manage them;

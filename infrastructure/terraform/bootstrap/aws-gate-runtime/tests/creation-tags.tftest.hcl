@@ -26,6 +26,7 @@ run "only_cloudformation_creation_tags_spare_an_untagged_resource" {
       jsonencode(statement.Condition) == jsonencode({
         StringNotLikeIfExists   = { "aws:RequestTag/aws:cloudformation:stack-name" = "honua-gate-*", "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }
         StringNotEqualsIfExists = { "aws:ResourceTag/HonuaGate" = "true" }
+        Null                    = { "ec2:CreateAction" = "true" }
       }), false)
     ])
     error_message = "The two tag-after-create APIs need their own deny that spares only the reserved CloudFormation stack-name request tag."
@@ -95,4 +96,82 @@ run "untaggable_cloudfront_types_are_managed_by_the_service_role_only" {
     ])
     error_message = "Taggable distributions, functions outside the gate name and other accounts keep the ownership fence."
   }
+}
+
+run "ec2_creation_and_post_creation_tagging_decisions" {
+  command = plan
+  assert {
+    condition = alltrue([for scenario in [
+      { name = "vpc_create", action = "ec2:CreateTags", denied = false, context = { "ec2:CreateAction" = "CreateVpc", "aws:RequestTag/HonuaGate" = "true" } },
+      { name = "gateway_create", action = "ec2:CreateTags", denied = false, context = { "ec2:CreateAction" = "CreateInternetGateway", "aws:RequestTag/HonuaGate" = "true" } },
+      { name = "create_missing_tag", action = "ec2:CreateTags", denied = true, context = { "ec2:CreateAction" = "CreateVpc" } },
+      { name = "create_wrong_tag", action = "ec2:CreateTags", denied = true, context = { "ec2:CreateAction" = "CreateVpc", "aws:RequestTag/HonuaGate" = "false" } },
+      { name = "foreign_post_create", action = "ec2:CreateTags", denied = true, context = { "aws:RequestTag/HonuaGate" = "true" } },
+      { name = "foreign_rds", action = "rds:AddTagsToResource", denied = true, context = { "aws:RequestTag/HonuaGate" = "true" } },
+      { name = "owned_post_create", action = "ec2:CreateTags", denied = false, context = { "aws:ResourceTag/HonuaGate" = "true" } },
+      { name = "reserved_post_create", action = "rds:AddTagsToResource", denied = false, context = { "aws:RequestTag/aws:cloudformation:stack-name" = "honua-gate-synthetic" } },
+      { name = "foreign_stack_post_create", action = "ec2:CreateTags", denied = true, context = { "aws:RequestTag/aws:cloudformation:stack-name" = "foreign-stack", "aws:RequestTag/HonuaGate" = "true" } }
+      ] : scenario.denied == anytrue([
+        for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : try(
+          statement.Effect == "Deny" && contains(flatten([statement.Action]), scenario.action) &&
+          alltrue([for operator, entries in try(statement.Condition, {}) : alltrue([
+            for key, value in entries :
+            operator == "Null" ? tostring(!contains(keys(scenario.context), key)) == value :
+            operator == "StringNotEqualsIfExists" ? try(scenario.context[key] != value, true) :
+            operator == "StringNotLikeIfExists" ? !can(regex("^${replace(value, "*", ".*")}$", scenario.context[key])) : false
+        ])]), false)
+      ])
+    ])
+    error_message = "EC2 create-time tags require HonuaGate=true; post-create EC2/RDS tagging cannot claim an unowned resource with a customer request tag."
+  }
+}
+
+run "network_cleanup_is_disabled_by_default" {
+  command = plan
+  assert {
+    condition = alltrue([for policy in [aws_iam_role_policy.lane.policy, aws_iam_policy.lane_boundary.policy] :
+      !anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == "TemporaryNetworkCleanup", false)])
+    ])
+    error_message = "Empty cleanup inputs must grant no network deletion permission."
+  }
+}
+
+run "network_cleanup_uses_only_exact_ids_and_three_actions" {
+  command = plan
+  variables {
+    temporary_cleanup_vpc_ids     = ["vpc-00000000000000001", "vpc-00000000000000002"]
+    temporary_cleanup_gateway_ids = ["igw-00000000000000001", "igw-00000000000000002"]
+  }
+  assert {
+    condition = alltrue([for policy in [aws_iam_role_policy.lane.policy, aws_iam_policy.lane_boundary.policy] :
+      length([for statement in jsondecode(policy).Statement : statement if try(
+        statement.Sid == "TemporaryNetworkCleanup" && statement.Effect == "Allow" &&
+        toset(statement.Action) == toset(["ec2:DeleteVpc", "ec2:DeleteInternetGateway", "ec2:DetachInternetGateway"]) &&
+        toset(statement.Resource) == toset([
+          "arn:aws:ec2:us-east-1:000000000002:vpc/vpc-00000000000000001",
+          "arn:aws:ec2:us-east-1:000000000002:vpc/vpc-00000000000000002",
+          "arn:aws:ec2:us-east-1:000000000002:internet-gateway/igw-00000000000000001",
+          "arn:aws:ec2:us-east-1:000000000002:internet-gateway/igw-00000000000000002"
+      ]), false)]) == 1
+    ])
+    error_message = "Both lane identity and boundary must allow exactly the reviewed network IDs and three cleanup actions."
+  }
+  assert {
+    condition = alltrue([for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.cloudformation_fences.policy, aws_iam_policy.workload_boundary.policy] :
+      !strcontains(policy, "TemporaryNetworkCleanup")
+    ])
+    error_message = "Temporary cleanup must not weaken CloudFormation or workload ownership fences."
+  }
+}
+
+run "reject_wildcard_cleanup_ids" {
+  command = plan
+  variables { temporary_cleanup_vpc_ids = ["vpc-*"] }
+  expect_failures = [var.temporary_cleanup_vpc_ids]
+}
+
+run "reject_more_than_two_cleanup_gateways" {
+  command = plan
+  variables { temporary_cleanup_gateway_ids = ["igw-00000001", "igw-00000002", "igw-00000003"] }
+  expect_failures = [var.temporary_cleanup_gateway_ids]
 }
