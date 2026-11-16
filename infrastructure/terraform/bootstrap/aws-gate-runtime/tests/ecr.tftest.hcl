@@ -72,7 +72,7 @@ run "stacks_can_pull_but_never_write_images" {
   }
   assert {
     # Exact spellings: a broader wildcard such as ecr:Get* would grant repository policy reads.
-    condition = toset([for pattern in local.workload_services : pattern if startswith(lower(pattern), "ecr:")]) == toset(["ecr:GetAuth*", "ecr:BatchGetImage", "ecr:GetDownload*", "ecr:BatchCheck*"])
+    condition     = toset([for pattern in local.workload_services : pattern if startswith(lower(pattern), "ecr:")]) == toset(["ecr:GetAuth*", "ecr:BatchGetImage", "ecr:GetDownload*", "ecr:BatchCheck*"])
     error_message = "The workload boundary allows exactly the four pull actions a task execution role needs."
   }
 }
