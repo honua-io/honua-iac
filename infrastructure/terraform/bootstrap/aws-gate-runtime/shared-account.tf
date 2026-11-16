@@ -67,7 +67,7 @@ locals {
   # description, which has no resource-level authorization.
   service_role_ownership_deny = {
     Sid       = "DenyNonGateChanges", Effect = "Deny", NotResource = aws_secretsmanager_secret.idp_client.arn
-    NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource"], local.shared_creation_actions)
+    NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery"], local.shared_creation_actions)
     Condition = local.ownership_condition
   }
   # The gate server repository is Terraform-owned, so it has no stack tag; the
