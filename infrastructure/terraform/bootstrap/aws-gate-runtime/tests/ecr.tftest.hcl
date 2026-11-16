@@ -71,7 +71,10 @@ run "stacks_can_pull_but_never_write_images" {
     error_message = "Launch Stack roles and their boundary must not push, delete or re-policy images, including by wildcard."
   }
   assert {
-    condition     = alltrue([for action in ["ecr:GetAuthorizationToken", "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability"] : contains(local.workload_services, action)])
+    condition = alltrue([
+      for action in ["ecr:GetAuthorizationToken", "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability"] :
+      anytrue([for pattern in local.workload_services : can(regex("(?i)^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", action))])
+    ]) && length([for pattern in local.workload_services : pattern if startswith(pattern, "ecr:")]) == 4
     error_message = "The workload boundary keeps the four pull actions a task execution role needs."
   }
 }
@@ -85,7 +88,7 @@ run "shared_account_exempts_only_the_gate_repository" {
     budget_alert_email      = "gate@example.invalid"
   }
   assert {
-    condition     = toset(local.boundary_ownership_deny.NotResource) == toset([aws_secretsmanager_secret.idp_client.arn, local.server_repository_arn]) && contains(local.boundary_ownership_deny.NotAction, "ecr:GetAuthorizationToken")
+    condition     = toset(local.boundary_ownership_deny.NotResource) == toset([aws_secretsmanager_secret.idp_client.arn, local.boundary_repository_arn]) && contains(local.boundary_ownership_deny.NotAction, "ecr:GetAuth*") && local.boundary_repository_arn == replace(local.server_repository_arn, ":us-east-1:", ":*:")
     error_message = "Workloads may log in to the registry and pull from the Terraform-owned gate repository, which carries no stack tag."
   }
   assert {

@@ -11,11 +11,14 @@
 # immutable tags keep integrity, and the images are pre-release builds of the
 # public server, not secrets.
 locals {
-  server_repository     = "honua-gate/server"
-  server_repository_arn = "arn:aws:ecr:us-east-1:${var.member_account_id}:repository/${local.server_repository}"
+  server_repository       = "honua-gate/server"
+  server_repository_arn   = "arn:aws:ecr:us-east-1:${var.member_account_id}:repository/${local.server_repository}"
+  boundary_repository_arn = "arn:aws:ecr:*:${var.member_account_id}:repository/${local.server_repository}"
+
   # Covers the gate cohorts in flight: an expired digest breaks the next task
   # replacement of a live gate stack that still references it.
   kept_server_images = 20
+
   image_push_actions = [
     "ecr:BatchCheckLayerAvailability", "ecr:InitiateLayerUpload", "ecr:UploadLayerPart",
     "ecr:CompleteLayerUpload", "ecr:PutImage", "ecr:DescribeImages", "ecr:BatchGetImage"
