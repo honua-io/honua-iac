@@ -331,6 +331,33 @@ a separate deny requires the backing key to carry `HonuaGate=true`.
 Workload roles retain the ownership-tag checks. This exception does not permit
 alias updates or deletion of untagged keys, VPCs or internet gateways.
 
+### Orphan gate roles and keys
+
+The nightly reaper also logs orphan IAM role and KMS key cleanup. This pass is
+**dry-run by default** (`orphan_cleanup_dry_run = true`); expired-stack deletion
+retains its existing behavior. Main reviews the log and applies Terraform with
+`orphan_cleanup_dry_run = false` to enable orphan mutations. Lanes do not apply.
+
+IAM role names must equal or begin with their `honua-gate-*` stack name followed
+by `-`. Ownership uses the longest matching name in CloudFormation's stack
+history. Roles outside that history are left for manual investigation. IAM and
+KMS do not carry reserved CloudFormation ownership tags. Keys instead require
+both an exact physical ID recorded as `AWS::KMS::Key` in a deleted gate stack's
+resource history and the propagated `HonuaGate=true` tag. The reaper never scans
+unrelated keys. Resources outside CloudFormation's retained deleted-stack
+history (normally 90 days) are left for manual investigation. AWS-managed keys
+and keys that have completed deletion are skipped.
+
+A fresh stack lookup must report `DELETE_COMPLETE` or the specific stack-not-found
+error. Every other status (including deletion in progress, failed deletion and
+keep/protected live stacks) prevents orphan cleanup; lookup errors fail closed.
+Role cleanup deletes inline policies, detaches managed policies, then deletes
+the role. Managed policies themselves are retained. A role still in an instance
+profile reports a cleanup failure; this pass does not detach live instance profiles.
+Key cleanup schedules deletion with the seven-day minimum, skipping keys already
+pending deletion. Per-resource failures are logged and fail the invocation after
+other resources are checked. Offline tests do not prove live cleanup permission.
+
 ## Authenticated release producers
 
 `release_actions_role_arn` is the sensitive GitHub Actions entry point. Its only

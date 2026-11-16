@@ -285,3 +285,31 @@ run "member_account_bootstrap_pool_is_protected" {
     error_message = "Member-account policies must protect the bootstrap pool independently of shared ownership controls."
   }
 }
+
+run "orphan_cleanup_defaults_to_dry_run_and_scopes_mutations" {
+  command = plan
+  assert {
+    condition     = aws_lambda_function.reaper.environment[0].variables["ORPHAN_DRY_RUN"] == "true"
+    error_message = "Orphan mutations must require an explicit Terraform opt-in."
+  }
+  assert {
+    condition = anytrue([for statement in jsondecode(aws_iam_role_policy.reaper.policy).Statement : try(
+    contains(statement.Action, "iam:DeleteRole") && statement.Resource == "arn:aws:iam::${var.member_account_id}:role/honua-gate-*", false)])
+    error_message = "Role mutations must stay within the gate role name fence."
+  }
+  assert {
+    condition = anytrue([for statement in jsondecode(aws_iam_role_policy.reaper.policy).Statement : try(
+      statement.Action == "kms:ScheduleKeyDeletion" && statement.Resource == "arn:aws:kms:us-east-1:${var.member_account_id}:key/*" &&
+      statement.Condition.StringEquals["aws:ResourceTag/HonuaGate"] == "true" &&
+    statement.Condition.NumericEquals["kms:ScheduleKeyDeletionPendingWindowInDays"] == 7, false)])
+    error_message = "Key deletion must require gate ownership and the seven-day waiting period."
+  }
+}
+run "orphan_cleanup_explicit_opt_in" {
+  command = plan
+  variables { orphan_cleanup_dry_run = false }
+  assert {
+    condition     = aws_lambda_function.reaper.environment[0].variables["ORPHAN_DRY_RUN"] == "false"
+    error_message = "Main must be able to opt in after reviewing the dry-run log."
+  }
+}
