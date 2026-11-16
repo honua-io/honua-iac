@@ -43,7 +43,7 @@ run "named_teardown_is_scoped_to_the_service_role" {
       "arn:aws:events:us-east-1:000000000002:rule/honua-gate-synthetic-OpsAlarmEvents",
       "arn:aws:kms:us-east-1:000000000002:alias/honua-gate-synthetic-key",
       "arn:aws:kms:us-east-1:000000000002:key/synthetic-key"
-    ] : anytrue([for pattern in local.named_teardown_deny.NotResource : can(regex("^${replace(pattern, "*", ".*")}$", arn))])]) && alltrue([
+      ] : anytrue([for pattern in local.named_teardown_deny.NotResource : can(regex("^${replace(pattern, "*", ".*")}$", arn))])]) && alltrue([
       for arn in [
         "arn:aws:events:us-east-1:000000000002:rule/foreign-rule",
         "arn:aws:kms:us-east-1:000000000002:alias/foreign-key",

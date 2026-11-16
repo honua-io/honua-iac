@@ -108,7 +108,7 @@ locals {
   # DeleteAlias authorizes both alias and key. Alias names supply the name fence;
   # the backing key must independently carry the gate ownership tag.
   alias_teardown_key_deny = {
-    Sid      = "AliasTeardownKeys", Effect = "Deny", Action = "kms:DeleteAlias"
+    Sid       = "AliasTeardownKeys", Effect = "Deny", Action = "kms:DeleteAlias"
     Resource  = "arn:aws:kms:us-east-1:${var.member_account_id}:key/*"
     Condition = { StringNotEqualsIfExists = { "aws:ResourceTag/HonuaGate" = "true" } }
   }
