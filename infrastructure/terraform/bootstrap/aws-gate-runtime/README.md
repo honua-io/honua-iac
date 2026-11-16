@@ -180,6 +180,36 @@ aws cloudformation create-stack --stack-name honua-gate-<run-id> \
   --role-arn "$GATE_CLOUDFORMATION_ROLE" --tags Key=HonuaGate,Value=true ...
 ```
 
+### Gate server images
+
+Gate stacks need current server builds before any public image exists. This
+root creates the private ECR repository `honua-gate/server` in `us-east-1`
+(output `server_repository_uri`, sensitive): tags are immutable, images are
+scanned on push, ECR-managed AES256 encryption (no KMS grant through the gate
+fences, as for the template bucket) and only the newest 20 images are kept, so
+a gate stack that outlives 20 newer pushes cannot replace its tasks.
+The lane role may log in, push images and read their manifests in this repository only;
+it cannot delete images, the repository or its policy. A gate stack pulls by
+digest: pass `ServerImageUri=<uri>@sha256:<digest>` and the repository ARN in
+the template's private repository parameter, which grants the stack's
+execution role the pull actions that the workload boundary already allows.
+Launch Stack roles cannot write images. In shared-account mode the ownership
+fence exempts only this Terraform-owned repository (it has no stack tag) and
+registry login; image reads from every other repository still require gate
+stack ownership. Whoever pushes must assume the lane role, so the pushing host's
+role must be in `lane_principal_arns`.
+
+```bash
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin "${GATE_SERVER_REPOSITORY_URI%%/*}"
+docker tag "$IMAGE" "$GATE_SERVER_REPOSITORY_URI:<new-tag>" && docker push "$GATE_SERVER_REPOSITORY_URI:<new-tag>"
+aws ecr describe-images --region us-east-1 --repository-name honua-gate/server --image-ids imageTag=<new-tag> \
+  --query 'imageDetails[0].imageDigest' --output text
+```
+
+The CloudFormation role may also pass gate roles to `events.amazonaws.com`, so a
+stack's EventBridge rule can deliver findings through its own role instead of a
+topic or key policy grant to the EventBridge service.
+
 ### Gate sign-in provider
 
 This root creates the `honua-gate-idp` Cognito pool and hosted domain in

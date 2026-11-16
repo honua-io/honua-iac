@@ -8,8 +8,10 @@ locals {
     "acm:*", "application-autoscaling:*", "backup:*", "batch:*", "budgets:*", "ce:*",
     "cloudfront:*", "cloudtrail:*", "cloudwatch:*", "ec2:*", "ecs:*", "elasticloadbalancing:*",
     "events:*", "guardduty:*", "kms:*", "lambda:*", "logs:*", "rds:*", "route53:*",
-    "s3:*", "secretsmanager:*", "sns:*", "sqs:*", "wafv2:*", "ecr:GetAuthorizationToken",
-    "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability",
+    "s3:*", "secretsmanager:*", "sns:*", "sqs:*", "wafv2:*",
+    # Image pulls. Each ECR wildcard matches exactly one action (GetAuthorizationToken,
+    # GetDownloadUrlForLayer, BatchCheckLayerAvailability); it keeps the boundary in quota.
+    "ecr:GetAuth*", "ecr:BatchGetImage", "ecr:GetDownload*", "ecr:BatchCheck*",
     # Explicit lifecycle and configuration APIs; never user-data reads or auth.
     "cognito-idp:CreateUserPool", "cognito-idp:DeleteUserPool", "cognito-idp:UpdateUserPool",
     "cognito-idp:CreateUserPoolClient", "cognito-idp:DeleteUserPoolClient", "cognito-idp:UpdateUserPoolClient",
@@ -50,6 +52,10 @@ locals {
       }, {
       Sid       = "GateTemplates", Effect = "Allow", Action = ["s3:PutObject", "s3:GetObject"], Resource = local.template_objects
       Condition = { StringEquals = { "aws:ResourceAccount" = var.member_account_id } }
+      }, {
+      Sid = "GateImagePush", Effect = "Allow", Action = local.image_push_actions, Resource = local.server_repository_arn
+      }, {
+      Sid = "RegistryLogin", Effect = "Allow", Action = "ecr:GetAuthorizationToken", Resource = "*"
     }], local.region_controls, local.stack_tag_controls, local.stack_tag_permissions)
   })
 }
@@ -105,8 +111,9 @@ resource "aws_iam_role_policy" "cloudformation" {
       Action   = ["iam:GetRole", "iam:GetRolePolicy", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies", "iam:ListRoleTags", "iam:TagRole", "iam:UntagRole", "iam:DeleteRole", "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:UpdateAssumeRolePolicy", "iam:UpdateRoleDescription"]
       Resource = local.workload_roles
       }, {
+      # events: a stack's EventBridge rule delivers findings through its own role.
       Effect    = "Allow", Action = "iam:PassRole", Resource = local.workload_roles
-      Condition = { StringEquals = { "iam:PassedToService" = ["ecs-tasks.amazonaws.com", "batch.amazonaws.com", "backup.amazonaws.com", "lambda.amazonaws.com", "vpc-flow-logs.amazonaws.com"] } }
+      Condition = { StringEquals = { "iam:PassedToService" = ["ecs-tasks.amazonaws.com", "batch.amazonaws.com", "backup.amazonaws.com", "lambda.amazonaws.com", "vpc-flow-logs.amazonaws.com", "events.amazonaws.com"] } }
       }, {
       Effect    = "Allow", Action = "iam:CreateServiceLinkedRole", Resource = "arn:aws:iam::${var.member_account_id}:role/aws-service-role/*"
       Condition = { StringEquals = { "iam:AWSServiceName" = ["ecs.amazonaws.com", "ecs.application-autoscaling.amazonaws.com", "elasticloadbalancing.amazonaws.com", "rds.amazonaws.com", "batch.amazonaws.com", "backup.amazonaws.com", "guardduty.amazonaws.com", "vpc-origin.cloudfront.amazonaws.com"] } }

@@ -64,9 +64,13 @@ locals {
     NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource"], local.shared_creation_actions)
     Condition = local.ownership_condition
   }
+  # The gate server repository is Terraform-owned, so it has no stack tag; the
+  # boundary allows only pulls on ECR, and registry login (ecr:GetAuth*, exactly
+  # GetAuthorizationToken) has no resource. The region wildcard saves quota; the
+  # region deny already confines ECR to us-east-1.
   boundary_ownership_deny = {
-    Sid       = "DenyNonGateChanges", Effect = "Deny", NotResource = aws_secretsmanager_secret.idp_client.arn
-    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource"], local.shared_creation_actions)
+    Sid       = "DenyNonGateChanges", Effect = "Deny", NotResource = [aws_secretsmanager_secret.idp_client.arn, local.boundary_repository_arn]
+    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*"], local.shared_creation_actions)
     Condition = local.ownership_condition
   }
   # Only metadata exceptions need a separate content deny; all other content
