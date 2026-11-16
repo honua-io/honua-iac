@@ -91,8 +91,26 @@ locals {
   # description, which has no resource-level authorization.
   service_role_ownership_deny = {
     Sid       = "DenyNonGateChanges", Effect = "Deny", NotResource = local.service_role_unfenced
-    NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery"], local.shared_creation_actions, local.cloudfront_untaggable_creates, local.creation_tag_actions)
+    NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery"], local.shared_creation_actions, local.cloudfront_untaggable_creates, local.creation_tag_actions, local.named_teardown_actions)
     Condition = local.ownership_condition
+  }
+  # Alias tags are unavailable and CloudFormation-created rules may lack ownership tags.
+  # Only the service role may remove these resources; name fences still reject foreign resources.
+  named_teardown_actions = ["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias"]
+  named_teardown_deny = {
+    Sid = "NamedTeardownFence", Effect = "Deny", Action = local.named_teardown_actions
+    NotResource = [
+      "arn:aws:events:us-east-1:${var.member_account_id}:rule/honua-gate-*",
+      "arn:aws:kms:us-east-1:${var.member_account_id}:alias/honua-gate-*",
+      "arn:aws:kms:us-east-1:${var.member_account_id}:key/*"
+    ]
+  }
+  # DeleteAlias authorizes both alias and key. Alias names supply the name fence;
+  # the backing key must independently carry the gate ownership tag.
+  alias_teardown_key_deny = {
+    Sid       = "AliasTeardownKeys", Effect = "Deny", Action = "kms:DeleteAlias"
+    Resource  = "arn:aws:kms:us-east-1:${var.member_account_id}:key/*"
+    Condition = { StringNotEqualsIfExists = { "aws:ResourceTag/HonuaGate" = "true" } }
   }
   # The gate server repository is Terraform-owned, so it has no stack tag; the
   # boundary allows only pulls on ECR, and registry login (ecr:GetAuth*, exactly
