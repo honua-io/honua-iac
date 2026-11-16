@@ -53,9 +53,9 @@ run "default_secret_reader_is_cloudformation_only" {
   assert {
     condition = local.idp_client_readers == [local.service_role_arn] && alltrue([
       for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] : alltrue([
-        anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == "DenyUnapprovedIdpReaders" && statement.Resource == aws_secretsmanager_secret.idp_client.arn && statement.Condition.ArnNotEquals["aws:PrincipalArn"] == [local.service_role_arn], false)]),
-        anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == "DenyBootstrapAdminReads" && statement.Resource == aws_secretsmanager_secret.idp_admin.arn && statement.Action == ["secretsmanager:GetSecretValue"], false)]),
-        anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == "DenyBootstrapSecretMutation" && statement.NotAction == ["secretsmanager:GetSecretValue"] && toset(statement.Resource) == toset([aws_secretsmanager_secret.idp_client.arn, aws_secretsmanager_secret.idp_admin.arn]), false)])
+        anytrue([for statement in jsondecode(policy).Statement : try(statement.Effect == "Deny" && statement.Action == ["secretsmanager:GetSecretValue"] && statement.Resource == aws_secretsmanager_secret.idp_client.arn && statement.Condition.ArnNotEquals["aws:PrincipalArn"] == [local.service_role_arn], false)]),
+        anytrue([for statement in jsondecode(policy).Statement : try(statement.Effect == "Deny" && statement.Resource == aws_secretsmanager_secret.idp_admin.arn && statement.Action == ["secretsmanager:GetSecretValue"], false)]),
+        anytrue([for statement in jsondecode(policy).Statement : try(statement.Effect == "Deny" && statement.NotAction == ["secretsmanager:GetSecretValue"] && toset(statement.Resource) == toset([aws_secretsmanager_secret.idp_client.arn, aws_secretsmanager_secret.idp_admin.arn]), false)])
       ])
     ])
     error_message = "Only CloudFormation can read the bootstrap client secret by default; all gate mutations remain denied."
@@ -90,8 +90,8 @@ run "shared_account_protects_both_bootstrap_secrets" {
   }
   assert {
     condition = alltrue([for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] : alltrue([
-      anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == "DenyBootstrapSecretMutation" && toset(statement.Resource) == toset([aws_secretsmanager_secret.idp_client.arn, aws_secretsmanager_secret.idp_admin.arn]), false)]),
-      anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == "DenyBootstrapAdminReads" && statement.Resource == aws_secretsmanager_secret.idp_admin.arn && statement.Action == ["secretsmanager:GetSecretValue"], false)])
+      anytrue([for statement in jsondecode(policy).Statement : try(statement.Effect == "Deny" && statement.NotAction == ["secretsmanager:GetSecretValue"] && toset(statement.Resource) == toset([aws_secretsmanager_secret.idp_client.arn, aws_secretsmanager_secret.idp_admin.arn]), false)]),
+      anytrue([for statement in jsondecode(policy).Statement : try(statement.Effect == "Deny" && statement.Resource == aws_secretsmanager_secret.idp_admin.arn && statement.Action == ["secretsmanager:GetSecretValue"], false)])
     ])])
     error_message = "Gate identities must not read the admin password or mutate either bootstrap secret, including in shared-account mode."
   }

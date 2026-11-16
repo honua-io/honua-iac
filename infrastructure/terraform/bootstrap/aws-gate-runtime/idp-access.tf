@@ -1,18 +1,19 @@
 locals {
   idp_client_readers = concat([local.service_role_arn], sort(tolist(var.idp_task_execution_role_arns)))
+  # Statement labels are omitted to keep the workload boundary within its size quota.
   idp_secret_controls = [
     {
-      Sid       = "DenyBootstrapSecretMutation", Effect = "Deny"
+      Effect    = "Deny"
       NotAction = ["secretsmanager:GetSecretValue"]
       Resource  = [aws_secretsmanager_secret.idp_client.arn, aws_secretsmanager_secret.idp_admin.arn]
     },
     {
-      Sid      = "DenyBootstrapAdminReads", Effect = "Deny"
+      Effect   = "Deny"
       Action   = ["secretsmanager:GetSecretValue"]
       Resource = aws_secretsmanager_secret.idp_admin.arn
     },
     {
-      Sid       = "DenyUnapprovedIdpReaders", Effect = "Deny"
+      Effect    = "Deny"
       Action    = ["secretsmanager:GetSecretValue"]
       Resource  = aws_secretsmanager_secret.idp_client.arn
       Condition = { ArnNotEquals = { "aws:PrincipalArn" = local.idp_client_readers } }
