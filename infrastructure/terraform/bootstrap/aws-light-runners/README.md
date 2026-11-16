@@ -143,3 +143,19 @@ Offline controls run with `terraform test` (Terraform 1.17 or newer for mocked
 ephemeral resources) and `python3 -m unittest discover -s tests -v` in this root.
 These controls prove bootstrap size, network/resource constraints and execution
 behavior; they do not substitute for the live comparison after deployment.
+
+### CodeQL resource budgets
+
+The shared bootstrap sets `CODEQL_RAM` to 60% of each configured runner
+`memory_max_gib` in MiB and `CODEQL_THREADS` to the whole CPUs in
+`cpu_quota_percent` (at least one). The default 5-GiB, 250% light slot therefore
+uses 3072 MiB and two threads. The remaining memory accommodates the runner,
+extractors and rootless Docker within the same user slice. This prevents
+managed CodeQL default setup from choosing the host's full memory and CPU count.
+Workflow-level CodeQL resource inputs can still override these defaults.
+
+The environment is generated in each runner service's root-owned
+`55-codeql-resources.conf` systemd drop-in. Updating the bootstrap source alone
+does not change installed runners: the infrastructure owner must deploy it
+through the existing IaC process and verify a subsequent natural CodeQL run.
+No scan language, query suite, gate, or runner count changes with this budget.
