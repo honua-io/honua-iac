@@ -166,7 +166,8 @@ that role every action except `s3:GetObject` and denies workload roles
 everything except `s3:GetObject` on `templates/*/console.zip`: a template cannot
 rewrite, delete or re-policy the bucket it was launched from. That one read lets a
 gate stack's Console installer fetch a bundle published with `--private-bucket`
-(it retries with its own role when the anonymous read is refused). Objects use S3-managed encryption (SSE-S3) rather than the
+(it retries with its own role when the anonymous read is refused). Objects use
+S3-managed encryption (SSE-S3) rather than the
 `aws/s3` KMS key, because shared-account mode denies `kms:Decrypt` on keys no
 gate stack owns and the service role would be unable to read the template.
 Templates are public product artifacts, not secrets. The lane grant is pinned to
