@@ -42,11 +42,11 @@ run "release_oidc_is_exact_and_has_no_direct_workload_permissions" {
         Action    = "sts:AssumeRoleWithWebIdentity"
         Condition = { StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = "repo:honua-io/honua-release:environment:gate:ref:refs/heads/trunk"
+          "token.actions.githubusercontent.com:sub" = "repo:honua-io/honua-release:environment:gate"
         } }
       }]
     }
-    error_message = "Trust must require the exact GitHub provider, STS audience, release repository, gate environment and trunk ref."
+    error_message = "Trust must require the exact GitHub provider, STS audience, release repository and default gate environment subject."
   }
   assert {
     condition = jsondecode(aws_iam_role_policy.release_actions.policy) == {
@@ -57,14 +57,14 @@ run "release_oidc_is_exact_and_has_no_direct_workload_permissions" {
   }
   assert {
     condition = alltrue([for subject in [
-      "repo:honua-io/another-repo:environment:gate:ref:refs/heads/trunk",
-      "repo:honua-io/honua-release:environment:production:ref:refs/heads/trunk",
+      "repo:honua-io/another-repo:environment:gate",
+      "repo:honua-io/honua-release:environment:production",
       "repo:honua-io/honua-release:environment:gate:ref:refs/heads/feature",
       "repo:honua-io/honua-release:environment:gate:ref:refs/tags/release",
       "repo:honua-io/honua-release:environment:gate:ref:refs/pull/1/merge",
-      "repo:honua-io/honua-release:environment:gate",
+      "repo:honua-io/honua-release:environment:gate:ref:refs/heads/trunk",
       "repo:honua-io/honua-release:ref:refs/heads/trunk"
     ] : jsondecode(aws_iam_role.release_actions.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] != subject])
-    error_message = "Foreign repositories, environments, branches, tags, pull refs and default subjects must be rejected."
+    error_message = "Foreign repositories, other environments, custom subjects and subjects without an environment must be rejected."
   }
 }
