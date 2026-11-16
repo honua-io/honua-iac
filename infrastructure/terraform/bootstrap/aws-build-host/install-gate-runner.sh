@@ -633,6 +633,13 @@ provision_account() {
   chown -R root:root "/var/lib/honua-gate-runner/home-${index}"
 }
 
+runner_resource_environment() {
+  jq -er --argjson index "$1" '.runners[$index - 1] |
+    (.memory_max_gib * 1024 * 0.6 | floor) as $ram |
+    ([1, (.cpu_quota_percent / 100 | floor)] | max) as $threads |
+    "[Service]\nEnvironment=\"CODEQL_RAM=\($ram)\" \"CODEQL_THREADS=\($threads)\""' "$gate_config"
+}
+
 for index in $(seq 1 "$(gate runner_count)"); do
   user="gate-runner-${index}"
   id -u "$user" > /dev/null 2>&1 || provision_account "$index"
@@ -646,6 +653,7 @@ for index in $(seq 1 "$(gate runner_count)"); do
     "[Slice]\nCPUQuota=\(.cpu_quota_percent)%\nMemoryMax=\(.memory_max_gib)G"' "$gate_config" \
     > "/etc/systemd/system/user-${uid}.slice.d/50-gate-runner.conf"
   printf '[Service]\nSlice=user-%s.slice\n' "$uid" > "/etc/systemd/system/honua-gate-runner@${index}.service.d/50-slice.conf"
+  runner_resource_environment "$index" > "/etc/systemd/system/honua-gate-runner@${index}.service.d/55-codeql-resources.conf"
   # The Actions runner reads /proc/1/cgroup before it starts service containers.
   proc_dropin="/etc/systemd/system/honua-gate-runner@${index}.service.d/60-service-containers.conf"
   if jq -e --argjson index "$index" '.runners[$index - 1].service_containers' "$gate_config" > /dev/null; then
