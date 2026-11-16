@@ -60,13 +60,20 @@ ACCOUNT_ROOT = 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
 
 
 def keeps_account_administration(key_policy):
-    for statement in key_policy.get('Statement', []):
+    statements = key_policy.get('Statement', [])
+    statements = [statements] if isinstance(statements, dict) else statements
+    if not isinstance(statements, list) or any(not isinstance(item, dict) for item in statements):
+        return False
+    # Any Deny or NotPrincipal could lock the account out once the lockout check is skipped.
+    if any(item.get('Effect') != 'Allow' or 'NotPrincipal' in item for item in statements):
+        return False
+    for statement in statements:
         principal = statement.get('Principal', {})
         root = principal.get('AWS') if isinstance(principal, dict) else None
         if isinstance(root, dict):
             root = root.get('Fn::Sub')
-        if statement.get('Effect') == 'Allow' and root == ACCOUNT_ROOT and statement.get('Action') == 'kms:*' \
-                and 'Condition' not in statement:
+        if root == ACCOUNT_ROOT and statement.get('Action') == 'kms:*' and statement.get('Resource') == '*' \
+                and 'Condition' not in statement and 'NotAction' not in statement:
             return True
     return False
 

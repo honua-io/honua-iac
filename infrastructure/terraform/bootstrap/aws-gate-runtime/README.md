@@ -124,6 +124,12 @@ accepts the stack's required `HonuaGate=true` tag, which CloudFormation propagat
 to them: it denies only when a resource has neither tag. Every gate stack must be
 created and updated with that tag, and gate principals cannot add it to a
 resource they do not already own, because tag changes sit behind the same deny.
+The tag is weaker than the stack-name tag: it applies to every service, not only
+IAM and KMS, and anyone with tagging rights outside the gate can set it. Never
+put `HonuaGate=true` on a resource that is not a disposable gate resource (the
+cost budget filters on the same tag), and expect any gate stack to be able to
+change another gate stack's resources. Scoping it to IAM and KMS does not fit
+the managed-policy quota.
 A new KMS key has no tags yet when KMS runs its policy lockout check, so the gate
 binder (`aws-gate-tools/gate_tools.py bind-template`) sets
 `BypassPolicyLockoutSafetyCheck` on every key in the bound copy. It refuses a key

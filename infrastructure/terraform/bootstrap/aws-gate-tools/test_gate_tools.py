@@ -48,10 +48,17 @@ class GateToolsTests(unittest.TestCase):
         self.assertIs(result['Resources']['Key']['Properties']['BypassPolicyLockoutSafetyCheck'], True)
         self.assertNotIn('BypassPolicyLockoutSafetyCheck', source['Resources']['Key']['Properties'])
         weakened = (dict(root, Action='kms:Decrypt'), dict(root, Condition={'Bool': {'aws:MultiFactorAuthPresent': 'true'}}),
-                    dict(root, Effect='Deny'), dict(root, Principal={'AWS': 'arn:aws:iam::000000000002:role/x'}))
-        for statement in weakened + (None,):
-            policy = {'Statement': [statement]} if statement else None
-            with self.subTest(statement=statement), self.assertRaises(ValueError):
+                    dict(root, Effect='Deny'), dict(root, Principal={'AWS': 'arn:aws:iam::000000000002:role/x'}),
+                    dict(root, Resource='arn:aws:kms:us-east-1:000000000002:key/other'))
+        deny_all = {'Effect': 'Deny', 'Principal': '*', 'Action': 'kms:*', 'Resource': '*'}
+        not_principal = {'Effect': 'Allow', 'NotPrincipal': {'AWS': 'x'}, 'Action': 'kms:Decrypt', 'Resource': '*'}
+        policies = [{'Statement': [statement]} for statement in weakened] + [
+            {'Statement': [root, deny_all]}, {'Statement': [root, not_principal]}, {'Statement': ['text']}, None]
+        single = gate_tools.bound_template({'Resources': {'Key': {'Type': 'AWS::KMS::Key', 'Properties': {
+            'KeyPolicy': {'Statement': root}}}}}, 'boundary')
+        self.assertIs(single['Resources']['Key']['Properties']['BypassPolicyLockoutSafetyCheck'], True)
+        for policy in policies:
+            with self.subTest(policy=policy), self.assertRaises(ValueError):
                 gate_tools.bound_template({'Resources': {'Key': {'Type': 'AWS::KMS::Key', 'Properties': {'KeyPolicy': policy}}}},
                                           'boundary')
 
