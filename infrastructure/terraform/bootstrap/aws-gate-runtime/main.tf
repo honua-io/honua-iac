@@ -8,10 +8,10 @@ locals {
     "acm:*", "application-autoscaling:*", "backup:*", "batch:*", "budgets:*", "ce:*",
     "cloudfront:*", "cloudtrail:*", "cloudwatch:*", "ec2:*", "ecs:*", "elasticloadbalancing:*",
     "events:*", "guardduty:*", "kms:*", "lambda:*", "logs:*", "rds:*", "route53:*",
+    "s3:*", "secretsmanager:*", "sns:*", "sqs:*", "wafv2:*",
     # Image pulls. Each ECR wildcard matches exactly one action (GetAuthorizationToken,
     # GetDownloadUrlForLayer, BatchCheckLayerAvailability); it keeps the boundary in quota.
-    "s3:*", "secretsmanager:*", "sns:*", "sqs:*", "wafv2:*", "ecr:GetAuth*",
-    "ecr:BatchGetImage", "ecr:GetDownload*", "ecr:BatchCheck*",
+    "ecr:GetAuth*", "ecr:BatchGetImage", "ecr:GetDownload*", "ecr:BatchCheck*",
     # Explicit lifecycle and configuration APIs; never user-data reads or auth.
     "cognito-idp:CreateUserPool", "cognito-idp:DeleteUserPool", "cognito-idp:UpdateUserPool",
     "cognito-idp:CreateUserPoolClient", "cognito-idp:DeleteUserPoolClient", "cognito-idp:UpdateUserPoolClient",

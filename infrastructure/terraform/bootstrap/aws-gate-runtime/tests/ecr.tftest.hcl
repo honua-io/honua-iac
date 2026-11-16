@@ -71,11 +71,9 @@ run "stacks_can_pull_but_never_write_images" {
     error_message = "Launch Stack roles and their boundary must not push, delete or re-policy images, including by wildcard."
   }
   assert {
-    condition = alltrue([
-      for action in ["ecr:GetAuthorizationToken", "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability"] :
-      anytrue([for pattern in local.workload_services : can(regex("(?i)^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", action))])
-    ]) && length([for pattern in local.workload_services : pattern if startswith(pattern, "ecr:")]) == 4
-    error_message = "The workload boundary keeps the four pull actions a task execution role needs."
+    # Exact spellings: a broader wildcard such as ecr:Get* would grant repository policy reads.
+    condition = toset([for pattern in local.workload_services : pattern if startswith(lower(pattern), "ecr:")]) == toset(["ecr:GetAuth*", "ecr:BatchGetImage", "ecr:GetDownload*", "ecr:BatchCheck*"])
+    error_message = "The workload boundary allows exactly the four pull actions a task execution role needs."
   }
 }
 
@@ -117,6 +115,16 @@ run "shared_account_exempts_only_the_gate_repository" {
       )
     ])
     error_message = "The region deny skipped above must keep sparing exactly us-east-1 and nothing else."
+  }
+  assert {
+    # The exempt repository ARN has a region wildcard; this deny is what keeps pulls in us-east-1.
+    condition = anytrue([
+      for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(statement.Sid, "") == "DenyOtherRegions" && alltrue([
+        for action in ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability", "ecr:GetAuthorizationToken"] :
+        try(anytrue([for pattern in flatten([statement.Action]) : can(regex("(?i)^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", action))]), !anytrue([for pattern in flatten([statement.NotAction]) : can(regex("(?i)^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", action))]))
+      ])
+    ])
+    error_message = "The region deny must cover every ECR pull action, or the region-wildcard exemption would reach other regions."
   }
   assert {
     condition     = local.service_role_ownership_deny.NotResource == aws_secretsmanager_secret.idp_client.arn

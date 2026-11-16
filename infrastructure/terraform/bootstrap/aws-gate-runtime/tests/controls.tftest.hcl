@@ -82,7 +82,7 @@ run "shared_account_denies_and_alert_budget" {
   assert {
     condition = anytrue([for statement in jsondecode(aws_iam_role_policy.cloudformation.policy).Statement : try(statement.Sid == "DenyNonGateContentReads" && statement.Effect == "Deny", false)]) && alltrue([
       # Registry login is exempt for the gate server repository (ecr.tftest.hcl).
-      for action in setsubtract(local.shared_content_read_actions, ["ecr:GetAuthorizationToken"]) : !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))])
+      for action in setsubtract(local.shared_content_read_actions, ["ecr:GetAuthorizationToken"]) : !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", action))])
     ])
     error_message = "Service metadata exemptions need an explicit content deny; every content action must remain denied by the workload ownership control."
   }
