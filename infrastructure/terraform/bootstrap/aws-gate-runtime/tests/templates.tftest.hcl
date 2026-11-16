@@ -87,9 +87,16 @@ run "cloudformation_reads_templates_and_workloads_cannot_touch_them" {
   assert {
     condition = anytrue([
       for statement in jsondecode(aws_s3_bucket_policy.templates.policy).Statement :
-      try(statement.Sid == "NoWorkloadAccess" && statement.Effect == "Deny" && statement.Action == "s3:*" && statement.Condition.ArnLike["aws:PrincipalArn"] == local.workload_roles && toset(statement.Resource) == toset([local.template_bucket_arn, "${local.template_bucket_arn}/*"]), false)
+      try(statement.Sid == "NoWorkloadAccess" && statement.Effect == "Deny" && statement.NotAction == "s3:GetObject" && statement.Condition.ArnLike["aws:PrincipalArn"] == local.workload_roles && toset(statement.Resource) == toset([local.template_bucket_arn, "${local.template_bucket_arn}/*"]), false)
     ])
-    error_message = "Launch Stack workload roles must not read or change templates."
+    error_message = "Launch Stack workload roles must not change, list or re-policy templates."
+  }
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(aws_s3_bucket_policy.templates.policy).Statement :
+      try(statement.Sid == "WorkloadsReadOnlyConsoleBundles" && statement.Effect == "Deny" && statement.Action == "s3:GetObject" && statement.Condition.ArnLike["aws:PrincipalArn"] == local.workload_roles && statement.NotResource == [format("arn:aws:s3:::honua-gate-templates-%s/templates/*/console.zip", var.member_account_id)], false)
+    ])
+    error_message = "Launch Stack workload roles may read published Console bundles and no other template object."
   }
   assert {
     condition = anytrue([
