@@ -122,16 +122,21 @@ def orphan_key(cf, kms, key, dry_run):
     return 1
 
 
+def stack_key_ids(cf, stack_id):
+    pages = cf.get_paginator('list_stack_resources').paginate(StackName=stack_id)
+    resources = (resource for page in pages for resource in page['StackResourceSummaries'])
+    for resource in resources:
+        if resource['ResourceType'] == 'AWS::KMS::Key' and resource.get('PhysicalResourceId'):
+            yield resource['PhysicalResourceId']
+
+
 def recorded_keys(cf, stacks):
     """Use physical IDs retained in deleted stack history, never guessed key names."""
     keys = {}
     for stack in stacks:
         if stack['StackStatus'] != 'DELETE_COMPLETE':
             continue
-        for page in cf.get_paginator('list_stack_resources').paginate(StackName=stack['StackId']):
-            for resource in page['StackResourceSummaries']:
-                if resource['ResourceType'] == 'AWS::KMS::Key' and resource.get('PhysicalResourceId'):
-                    keys[resource['PhysicalResourceId']] = stack['StackName']
+        keys.update((key_id, stack['StackName']) for key_id in stack_key_ids(cf, stack['StackId']))
     return keys.items()
 
 
