@@ -321,3 +321,10 @@ ownership denies. Only this exact client secret bypasses those ownership checks;
 the gate policies deny all operations on it except a single-secret read by an
 approved principal. The bootstrap operator retains Terraform secret lifecycle
 access through its existing private credentials.
+
+CloudFormation may remove targets and delete EventBridge rules whose names begin
+`honua-gate-`, and delete KMS aliases with the same prefix, even when those
+resources have no ownership tags. The service-role name fences deny those
+operations on other names, and the nightly reaper rule remains protected.
+Workload roles retain the ownership-tag checks. This exception does not permit
+alias updates or deletion of untagged keys, VPCs or internet gateways.
