@@ -56,6 +56,31 @@ def lock_inactive_nested_stack(template, resource):
     parameter['AllowedValues'] = [default]
 
 
+ACCOUNT_ROOT = 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+
+
+def keeps_account_administration(key_policy):
+    for statement in key_policy.get('Statement', []):
+        principal = statement.get('Principal', {})
+        root = principal.get('AWS') if isinstance(principal, dict) else None
+        if isinstance(root, dict):
+            root = root.get('Fn::Sub')
+        if statement.get('Effect') == 'Allow' and root == ACCOUNT_ROOT and statement.get('Action') == 'kms:*' \
+                and 'Condition' not in statement:
+            return True
+    return False
+
+
+def unlock_key_creation(resource):
+    # A new key has no tags when KMS runs its policy lockout check, so the gate
+    # ownership deny makes the check fail. Skipping it is safe only while the
+    # policy keeps unconditional account administration.
+    properties = resource.setdefault('Properties', {})
+    if not isinstance(properties.get('KeyPolicy'), dict) or not keeps_account_administration(properties['KeyPolicy']):
+        raise ValueError('Gate KMS keys must keep unconditional account-root administration')
+    properties['BypassPolicyLockoutSafetyCheck'] = True
+
+
 def bound_template(source, boundary):
     if 'Transform' in source:
         raise ValueError('Transforms are unsupported in gate templates')
@@ -69,6 +94,8 @@ def bound_template(source, boundary):
             if not isinstance(name, str) or not name.startswith('honua-gate-'):
                 raise ValueError('Explicit role names must start with honua-gate-')
             properties['PermissionsBoundary'] = boundary
+        if resource['Type'] == 'AWS::KMS::Key':
+            unlock_key_creation(resource)
     return result
 
 

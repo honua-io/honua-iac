@@ -19,7 +19,8 @@ locals {
     "cognito-idp:CreateGroup", "cognito-idp:DeleteGroup", "cognito-idp:UpdateGroup",
     "cognito-idp:AdminCreateUser", "cognito-idp:AdminDeleteUser",
     "cognito-idp:AdminAddUserToGroup", "cognito-idp:AdminRemoveUserFromGroup",
-    "cognito-idp:DescribeUserPool", "cognito-idp:DescribeUserPoolClient", "cognito-idp:DescribeUserPoolDomain",
+    # DescribeUserPool* is exactly DescribeUserPool, DescribeUserPoolClient and DescribeUserPoolDomain.
+    "cognito-idp:DescribeUserPool*",
     "cognito-idp:GetGroup", "cognito-idp:GetUserPoolMfaConfig", "cognito-idp:SetUserPoolMfaConfig",
     "cognito-idp:TagResource", "cognito-idp:UntagResource", "cognito-idp:ListTagsForResource"
   ]
