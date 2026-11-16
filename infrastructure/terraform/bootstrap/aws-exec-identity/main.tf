@@ -260,7 +260,7 @@ data "aws_iam_policy_document" "deployment_trust" {
       }
 
       condition {
-        test     = "StringLike"
+        test     = "StringEquals"
         variable = "${local.oidc_hostpath}:sub"
         values   = var.oidc_subjects
       }

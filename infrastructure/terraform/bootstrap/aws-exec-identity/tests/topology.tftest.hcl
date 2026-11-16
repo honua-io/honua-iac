@@ -417,3 +417,73 @@ run "lambda_all_features" {
     error_message = "All Lambda managed policies must fit IAM document and role attachment limits."
   }
 }
+
+# The deployment role trusts only the exact OIDC subjects it is given: the subject condition
+# is an exact match, and a wildcard subject is refused before planning.
+run "subject_condition_is_an_exact_match" {
+  command = plan
+
+  variables {
+    topology = { compute = "ecs" }
+  }
+
+  assert {
+    condition = one([
+      for statement in jsondecode(data.aws_iam_policy_document.deployment_trust.json).Statement : statement
+      if statement.Sid == "WebIdentityFederation"
+    ]).Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:honua-io/honua-iac:environment:prod"
+    error_message = "The web-identity trust must match the subject exactly (StringEquals)."
+  }
+
+  assert {
+    condition = !can(one([
+      for statement in jsondecode(data.aws_iam_policy_document.deployment_trust.json).Statement : statement
+      if statement.Sid == "WebIdentityFederation"
+    ]).Condition.StringLike)
+    error_message = "The web-identity trust must not use a pattern operator."
+  }
+}
+
+run "wildcard_subject_is_refused" {
+  command = plan
+
+  variables {
+    topology      = { compute = "ecs" }
+    oidc_subjects = ["repo:honua-io/honua-iac:*"]
+  }
+
+  expect_failures = [var.oidc_subjects]
+}
+
+run "single_character_wildcard_is_refused" {
+  command = plan
+
+  variables {
+    topology      = { compute = "ecs" }
+    oidc_subjects = ["repo:honua-io/honua-iac:environment:pro?"]
+  }
+
+  expect_failures = [var.oidc_subjects]
+}
+
+run "policy_variable_subject_is_refused" {
+  command = plan
+
+  variables {
+    topology      = { compute = "ecs" }
+    oidc_subjects = ["$${token.actions.githubusercontent.com:sub}"]
+  }
+
+  expect_failures = [var.oidc_subjects]
+}
+
+run "empty_subject_is_refused" {
+  command = plan
+
+  variables {
+    topology      = { compute = "ecs" }
+    oidc_subjects = ["  "]
+  }
+
+  expect_failures = [var.oidc_subjects]
+}

@@ -83,9 +83,15 @@ variable "oidc_provider_url" {
 }
 
 variable "oidc_subjects" {
-  description = "Exact OIDC subjects allowed to assume the deployment role. Wildcards are permitted but discouraged."
+  description = "Exact OIDC subjects allowed to assume the deployment role. They are matched exactly; wildcards are refused."
   type        = list(string)
   default     = []
+  validation {
+    condition = alltrue([
+      for subject in var.oidc_subjects : trimspace(subject) != "" && !strcontains(subject, "*") && !strcontains(subject, "?") && !strcontains(subject, "$")
+    ])
+    error_message = "oidc_subjects must be exact subjects such as repo:honua-io/honua-iac:environment:prod; wildcards (* and ?), policy variables ($) and empty entries are refused."
+  }
 }
 
 variable "oidc_audience" {
