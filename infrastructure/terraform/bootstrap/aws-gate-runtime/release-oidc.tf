@@ -16,7 +16,7 @@ resource "aws_iam_role" "release_actions" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = "repo:honua-io/honua-release:environment:gate:ref:refs/heads/trunk"
+          "token.actions.githubusercontent.com:sub" = "repo:honua-io/honua-release:environment:gate"
         }
       }
     }]

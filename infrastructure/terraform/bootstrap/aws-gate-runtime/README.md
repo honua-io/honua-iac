@@ -369,20 +369,19 @@ The existing account GitHub OIDC provider must already trust audience
 Before running a producer, Main configures the `honua-io/honua-release` repository:
 
 1. Create the `gate` environment, restrict deployment branches to `trunk`, and
-   configure required reviewers with self-review prevented. Keep workflow changes
-   under the repository's protected-branch review rules.
-2. Set its OIDC subject customization to
-   `{"use_default":false,"include_claim_keys":["repo","context","ref"]}` using
-   the [repository OIDC customization API](https://docs.github.com/en/rest/actions/oidc).
-   Review existing OIDC consumers before changing this repository-wide setting.
+   leave required reviewers unset. Keep workflow changes under the repository's
+   protected-branch review rules.
+2. Keep the default GitHub OIDC subject format. Repository-wide subject
+   customization also affects existing environments and is not needed here.
 3. Set producer jobs to `environment: gate`, run them from `refs/heads/trunk`,
    and grant `id-token: write`. Use STS audience `sts.amazonaws.com` and pass the
    output role ARN through private configuration.
 
-The trust uses `StringEquals` for the audience and the complete subject
-`repo:honua-io/honua-release:environment:gate:ref:refs/heads/trunk`.
-[GitHub custom subjects](https://docs.github.com/en/actions/reference/security/oidc)
-include these claims in the configured order. Default subjects, another
-repository or environment, feature branches, tags and pull refs fail the match.
-AWS checks the signed subject; GitHub enforces environment protection. A lane
-shell run does not provide an authenticated producer receipt.
+The trust uses `StringEquals` for the audience and the complete default subject
+`repo:honua-io/honua-release:environment:gate`.
+GitHub environment subjects do not include the branch ref: the `gate`
+environment's deployment branch restriction enforces trunk-only access. Another
+repository or environment, a subject without an environment, or a custom subject
+with appended claims fails the IAM match. AWS checks the signed subject; GitHub
+enforces environment deployment restrictions. A lane shell run does not provide
+an authenticated producer receipt.
