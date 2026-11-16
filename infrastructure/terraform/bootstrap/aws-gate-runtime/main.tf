@@ -99,9 +99,21 @@ resource "aws_iam_role" "cloudformation" {
     Statement = [{ Effect = "Allow", Action = "sts:AssumeRole", Principal = { Service = "cloudformation.amazonaws.com" } }]
   })
 }
+# The name fences and the creation-tag deny live in an attached managed policy: the inline policy is at its
+# 10,240-character quota. The inline policy waits for the attachment so an apply never leaves the role
+# without the fences.
+resource "aws_iam_policy" "cloudformation_fences" {
+  name   = "HonuaGateCloudFormationFences"
+  policy = jsonencode({ Version = "2012-10-17", Statement = concat(local.launch_name_denies, var.shared_account ? [local.creation_tag_deny] : []) })
+}
+resource "aws_iam_role_policy_attachment" "cloudformation_fences" {
+  role       = aws_iam_role.cloudformation.name
+  policy_arn = aws_iam_policy.cloudformation_fences.arn
+}
 resource "aws_iam_role_policy" "cloudformation" {
-  name = "gate-launch-stack"
-  role = aws_iam_role.cloudformation.id
+  name       = "gate-launch-stack"
+  role       = aws_iam_role.cloudformation.id
+  depends_on = [aws_iam_role_policy_attachment.cloudformation_fences]
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = concat([local.protected_controls, { Effect = "Allow", Action = local.workload_services, Resource = "*" }, {
@@ -122,7 +134,7 @@ resource "aws_iam_role_policy" "cloudformation" {
       Sid = "ReadGateTemplates", Effect = "Allow", Action = "s3:GetObject", Resource = local.template_objects
       }, {
       Sid = "WatchdogParameters", Effect = "Allow", Action = "ssm:*", Resource = local.watchdog_parameters
-    }], local.region_controls, local.service_role_shared_denies, local.launch_name_denies)
+    }], local.region_controls, local.service_role_shared_denies)
   })
 }
 output "lane_role_arn" {
