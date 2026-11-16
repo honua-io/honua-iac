@@ -105,8 +105,8 @@ locals {
   service_role_unfenced = concat([aws_secretsmanager_secret.idp_client.arn], local.cloudfront_untaggable_arns)
   # The service role keeps account-wide metadata reads. The workload boundary
   # cannot repeat that list and stay inside the managed-policy quota, so its
-  # copy exempts allocation calls, named gate buckets and Cognito domain
-  # description, which has no resource-level authorization.
+  # copy exempts allocation calls, named gate buckets, Cognito domain description
+  # and the lookup Lambda's four network metadata calls, which have no resource tags.
   service_role_ownership_deny = {
     Sid       = "DenyNonGateChanges", Effect = "Deny", NotResource = local.service_role_unfenced
     NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery"], local.shared_creation_actions, local.cloudfront_untaggable_creates, local.creation_tag_actions, local.named_teardown_actions)
@@ -136,7 +136,7 @@ locals {
   # region deny already confines ECR to us-east-1.
   boundary_ownership_deny = {
     Sid       = "DenyNonGateChanges", Effect = "Deny", NotResource = [aws_secretsmanager_secret.idp_client.arn, local.boundary_repository_arn]
-    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*"], local.shared_creation_actions)
+    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*", "ec2:DescribeManagedPrefixLists", "ec2:DescribeAvailabilityZones", "ec2:DescribeSubnets", "ec2:DescribeVpcs"], local.shared_creation_actions)
     Condition = local.ownership_condition
   }
   # Only metadata exceptions need a separate content deny; all other content
