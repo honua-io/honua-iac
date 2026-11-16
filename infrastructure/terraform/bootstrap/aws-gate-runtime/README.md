@@ -141,7 +141,7 @@ Member mode has no shared budget, region deny or shared-account resource denies.
 ownership conditions.
 
 Two exceptions apply to the CloudFormation service role only, never to workload
-roles; the first full Launch Stack create in the gate (16 Nov 2026) needed both:
+roles; a full Launch Stack create needs both:
 
 - **Creation tags.** EC2 and RDS handlers create a resource and then tag it
   (`ec2:CreateTags`, `rds:AddTagsToResource`) while it has no tag yet, so the

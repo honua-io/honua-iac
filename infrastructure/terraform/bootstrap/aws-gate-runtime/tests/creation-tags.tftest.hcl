@@ -1,6 +1,5 @@
-# Synthetic fixtures only. A first full Launch Stack create in the gate (16 Nov 2026) showed two gaps in the
-# ownership fence: EC2 and RDS handlers tag a resource after creating it, and CloudFront policies and origin
-# access controls cannot carry tags at all. Only the CloudFormation service role gets either exception.
+# Synthetic fixtures only. EC2 and RDS handlers tag a resource after creating it, and CloudFront policies and
+# origin access controls cannot carry tags at all. Only the CloudFormation service role gets either exception.
 mock_provider "aws" {
   override_during = plan
   mock_resource "aws_secretsmanager_secret" { defaults = { arn = "arn:aws:secretsmanager:us-east-1:000000000002:secret:honua-gate/idp/client-secret-abcdef" } }
