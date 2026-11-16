@@ -21,15 +21,10 @@ run "roles_and_keys_are_owned_through_the_required_stack_tag" {
   command = plan
   assert {
     condition = alltrue([for policy in [aws_iam_policy.workload_boundary.policy, aws_iam_role_policy.cloudformation.policy] : anytrue([
-      # The service role also spares CloudFormation's own creation tags (creation-tags.tftest.hcl).
-      for statement in jsondecode(policy).Statement : try(statement.Sid == "DenyNonGateChanges" && statement.Effect == "Deny" && jsonencode(statement.Condition) == (
-        policy == aws_iam_role_policy.cloudformation.policy ? jsonencode({
-          StringNotLikeIfExists   = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*", "aws:RequestTag/aws:cloudformation:stack-name" = "honua-gate-*" }
-          StringNotEqualsIfExists = { "aws:ResourceTag/HonuaGate" = "true" }
-          }) : jsonencode({
-          StringNotLikeIfExists   = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }
-          StringNotEqualsIfExists = { "aws:ResourceTag/HonuaGate" = "true" }
-      })), false)
+      for statement in jsondecode(policy).Statement : try(statement.Sid == "DenyNonGateChanges" && statement.Effect == "Deny" && statement.Condition == {
+        StringNotLikeIfExists   = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }
+        StringNotEqualsIfExists = { "aws:ResourceTag/HonuaGate" = "true" }
+      }, false)
     ])])
     error_message = "The ownership deny must spare resources carrying either the gate stack-name tag or the required HonuaGate tag."
   }

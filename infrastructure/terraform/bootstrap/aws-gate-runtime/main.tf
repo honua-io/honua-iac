@@ -99,20 +99,21 @@ resource "aws_iam_role" "cloudformation" {
     Statement = [{ Effect = "Allow", Action = "sts:AssumeRole", Principal = { Service = "cloudformation.amazonaws.com" } }]
   })
 }
-# The name fences live in an attached managed policy: the inline policy is at its 10,240-character quota.
-# The inline policy waits for the attachment so an apply never leaves the role without the fences.
-resource "aws_iam_policy" "cloudformation_name_fences" {
-  name   = "HonuaGateCloudFormationNameFences"
-  policy = jsonencode({ Version = "2012-10-17", Statement = local.launch_name_denies })
+# The name fences and the creation-tag deny live in an attached managed policy: the inline policy is at its
+# 10,240-character quota. The inline policy waits for the attachment so an apply never leaves the role
+# without the fences.
+resource "aws_iam_policy" "cloudformation_fences" {
+  name   = "HonuaGateCloudFormationFences"
+  policy = jsonencode({ Version = "2012-10-17", Statement = concat(local.launch_name_denies, var.shared_account ? [local.creation_tag_deny] : []) })
 }
-resource "aws_iam_role_policy_attachment" "cloudformation_name_fences" {
+resource "aws_iam_role_policy_attachment" "cloudformation_fences" {
   role       = aws_iam_role.cloudformation.name
-  policy_arn = aws_iam_policy.cloudformation_name_fences.arn
+  policy_arn = aws_iam_policy.cloudformation_fences.arn
 }
 resource "aws_iam_role_policy" "cloudformation" {
   name       = "gate-launch-stack"
   role       = aws_iam_role.cloudformation.id
-  depends_on = [aws_iam_role_policy_attachment.cloudformation_name_fences]
+  depends_on = [aws_iam_role_policy_attachment.cloudformation_fences]
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = concat([local.protected_controls, { Effect = "Allow", Action = local.workload_services, Resource = "*" }, {

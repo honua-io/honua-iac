@@ -146,21 +146,32 @@ roles; the first full Launch Stack create in the gate (16 Nov 2026) needed both:
 - **Creation tags.** EC2 and RDS handlers create a resource and then tag it
   (`ec2:CreateTags`, `rds:AddTagsToResource`) while it has no tag yet, so the
   ownership deny refused the tag call and left an untagged resource that the gate
-  could no longer delete. The service role's ownership deny also spares a request
-  carrying the reserved `aws:cloudformation:stack-name` request tag with a
-  `honua-gate-*` value. Only CloudFormation can send `aws:`-prefixed tags, and only
-  on resources it creates for that stack; the lane role cannot create change sets,
-  so it cannot import a foreign resource into a gate stack. `HonuaGate=true` as a
+  could no longer delete. For those two APIs only, the ownership deny is replaced
+  by a `CreationTags` deny that also spares a request carrying the reserved
+  `aws:cloudformation:stack-name` request tag with a `honua-gate-*` value. Only
+  CloudFormation can send `aws:`-prefixed tags, and the lane role cannot create
+  change sets, so it cannot import a foreign resource into a gate stack. Create,
+  restore and copy calls carry the same request tag, so no other statement may
+  trust it: a restore from a foreign snapshot stays denied. `HonuaGate=true` as a
   request tag spares nothing, because any principal can send it.
 - **Untaggable CloudFront types.** Cache, origin-request and response-headers
   policies and origin access controls cannot carry tags, their create calls take no
   resource and their other calls name a random ID. The service role may create,
   read, update and delete any of them in the account; CloudFront refuses to delete
-  a policy still attached to a distribution. CloudFront functions are fenced by name
-  (`function/honua-gate-*`): set the Launch Stack `NamePrefix` to `honua-gate`.
+  a policy still attached to a distribution. CloudFormation only changes resources
+  its stack owns, but a third-party or private registry resource type runs with the
+  service role's credentials; keep such types deactivated in the shared account.
+  CloudFront functions are fenced by name (`function/honua-gate-*`): set the Launch
+  Stack `NamePrefix` to `honua-gate`, or the function is created and then orphaned.
+
+The name fences and the `CreationTags` deny sit in the attached managed policy
+`HonuaGateCloudFormationFences`, because the inline service policy is at its
+10,240-character quota. Apply changes to it while no gate stack is running.
 
 AWS does not expose this resource tag for every action. In particular, Route 53
-record changes, Application Auto Scaling
+record changes, other untaggable CloudFront resources (origin access identities,
+key groups, public keys, KeyValueStores, real-time log configurations),
+Application Auto Scaling
 registrations, some Logs operations, EC2 association/route operations and service
 resources without CloudFormation tag propagation may be denied even for gate
 resources. These are **not** blanket write exceptions: a live install or cleanup

@@ -21,27 +21,48 @@ variables {
 run "only_cloudformation_creation_tags_spare_an_untagged_resource" {
   command = plan
   assert {
-    condition = (
-      local.service_role_ownership_deny.Condition.StringNotLikeIfExists["aws:RequestTag/aws:cloudformation:stack-name"] == "honua-gate-*" &&
-      !can(local.boundary_ownership_deny.Condition.StringNotLikeIfExists["aws:RequestTag/aws:cloudformation:stack-name"]) &&
-      alltrue([for deny in [local.boundary_ownership_deny, local.service_role_ownership_deny] : alltrue([
-        for key in keys(deny.Condition.StringNotEqualsIfExists) : !startswith(key, "aws:RequestTag/")
-      ])])
-    )
-    error_message = "Only the reserved CloudFormation stack-name request tag may spare a tagging call; any principal can send HonuaGate=true."
+    condition = anytrue([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : try(
+      statement.Sid == "CreationTags" && statement.Effect == "Deny" && statement.Resource == "*" &&
+      toset(statement.Action) == toset(["ec2:CreateTags", "rds:AddTagsToResource"]) &&
+      jsonencode(statement.Condition) == jsonencode({
+        StringNotLikeIfExists   = { "aws:RequestTag/aws:cloudformation:stack-name" = "honua-gate-*", "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }
+        StringNotEqualsIfExists = { "aws:ResourceTag/HonuaGate" = "true" }
+      }), false)
+    ])
+    error_message = "The two tag-after-create APIs need their own deny that spares only the reserved CloudFormation stack-name request tag."
   }
   assert {
-    condition = alltrue([for action in ["ec2:CreateTags", "rds:AddTagsToResource", "ec2:DeleteVpc", "rds:DeleteDBParameterGroup"] :
+    # A create or restore request carries the same request tag; only the tagging APIs may trust it.
+    condition = alltrue([for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.cloudformation_fences.policy, aws_iam_policy.workload_boundary.policy] : alltrue([
+      for statement in jsondecode(policy).Statement : !strcontains(jsonencode(try(statement.Condition, {})), "aws:RequestTag/aws:cloudformation:stack-name") ||
+      contains(["CreationTags", "PoolTags"], try(statement.Sid, ""))
+    ])])
+    error_message = "Only the CreationTags and PoolTags denies may read the CloudFormation stack-name request tag."
+  }
+  assert {
+    condition = !anytrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(statement.Sid == "CreationTags", false)]) && alltrue([
+      for action in ["ec2:CreateTags", "rds:AddTagsToResource"] : !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))])
+    ])
+    error_message = "Workload roles keep the full ownership fence on tagging."
+  }
+  assert {
+    condition = alltrue([for action in ["ec2:DeleteVpc", "rds:DeleteDBParameterGroup", "rds:RestoreDBInstanceFromDBSnapshot", "rds:CreateDBInstanceReadReplica", "ec2:CreateVolume"] :
       !anytrue([for pattern in local.service_role_ownership_deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))])
     ])
-    error_message = "Tagging and deletion stay behind the ownership deny; only the request-tag condition spares the creation step."
+    error_message = "Deletion, restores and copies stay behind the ownership deny."
   }
   assert {
     # Gate stacks are created with CreateStack only; a change set could import a foreign resource into one.
     condition = !anytrue([for statement in jsondecode(aws_iam_role_policy.lane.policy).Statement : try(
-      statement.Effect == "Allow" && anytrue([for action in flatten([statement.Action]) : startswith(action, "cloudformation:") && (strcontains(action, "ChangeSet") || strcontains(action, "Import"))]), false
+      statement.Effect == "Allow" && anytrue([for pattern in flatten([statement.Action]) : anytrue([
+        for action in ["cloudformation:CreateChangeSet", "cloudformation:ExecuteChangeSet"] : can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))
+      ])]), false
     )])
     error_message = "The lane must not create change sets: an import would let CloudFormation tag a resource the stack did not create."
+  }
+  assert {
+    condition     = aws_iam_role_policy_attachment.cloudformation_fences.role == aws_iam_role.cloudformation.name
+    error_message = "The name fences must be attached to the CloudFormation service role."
   }
 }
 

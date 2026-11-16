@@ -127,7 +127,8 @@ run "shared_account_exempts_only_the_gate_repository" {
     error_message = "The region deny must cover every ECR pull action, or the region-wildcard exemption would reach other regions."
   }
   assert {
-    condition     = !contains(local.service_role_ownership_deny.NotResource, local.boundary_repository_arn)
+    # Beyond the IdP secret it spares only untaggable CloudFront types (creation-tags.tftest.hcl).
+    condition     = toset(local.service_role_ownership_deny.NotResource) == toset(concat([aws_secretsmanager_secret.idp_client.arn], local.cloudfront_untaggable_arns))
     error_message = "The CloudFormation role needs no image access and keeps the unchanged ownership fence."
   }
 }

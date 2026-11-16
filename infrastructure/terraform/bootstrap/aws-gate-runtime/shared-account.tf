@@ -61,15 +61,19 @@ locals {
     StringNotLikeIfExists   = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }
     StringNotEqualsIfExists = { "aws:ResourceTag/HonuaGate" = "true" }
   }
-  # Only CloudFormation can send the reserved aws:cloudformation:stack-name tag, and only on resources it
-  # creates for that stack. EC2 and RDS handlers tag after the create call, while the new resource has no
-  # tag yet; the request tag proves the call is that creation step. The lane role cannot import resources
-  # (no change sets), so the tag cannot be put on a resource the stack did not create.
-  service_role_ownership_condition = {
-    StringNotLikeIfExists = merge(local.ownership_condition.StringNotLikeIfExists, {
-      "aws:RequestTag/aws:cloudformation:stack-name" = "honua-gate-*"
-    })
-    StringNotEqualsIfExists = local.ownership_condition.StringNotEqualsIfExists
+  # EC2 and RDS handlers tag a resource after creating it, while it has no tag yet. Only CloudFormation can
+  # send the reserved aws:cloudformation:stack-name tag, so these two tagging APIs alone (never the create
+  # or restore call that may carry the same request tag) are spared when it names a gate stack. The lane
+  # role cannot create change sets, so it cannot import a foreign resource for CloudFormation to tag.
+  creation_tag_actions = ["ec2:CreateTags", "rds:AddTagsToResource"]
+  creation_tag_deny = {
+    Sid = "CreationTags", Effect = "Deny", Action = local.creation_tag_actions, Resource = "*"
+    Condition = {
+      StringNotLikeIfExists = merge(local.ownership_condition.StringNotLikeIfExists, {
+        "aws:RequestTag/aws:cloudformation:stack-name" = "honua-gate-*"
+      })
+      StringNotEqualsIfExists = local.ownership_condition.StringNotEqualsIfExists
+    }
   }
   # CloudFront cache, origin-request and response-headers policies and origin access controls cannot carry
   # tags, their create calls take no resource and their other calls name a random ID, so neither tag nor
@@ -87,8 +91,8 @@ locals {
   # description, which has no resource-level authorization.
   service_role_ownership_deny = {
     Sid       = "DenyNonGateChanges", Effect = "Deny", NotResource = local.service_role_unfenced
-    NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery"], local.shared_creation_actions, local.cloudfront_untaggable_creates)
-    Condition = local.service_role_ownership_condition
+    NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery"], local.shared_creation_actions, local.cloudfront_untaggable_creates, local.creation_tag_actions)
+    Condition = local.ownership_condition
   }
   # The gate server repository is Terraform-owned, so it has no stack tag; the
   # boundary allows only pulls on ECR, and registry login (ecr:GetAuth*, exactly
