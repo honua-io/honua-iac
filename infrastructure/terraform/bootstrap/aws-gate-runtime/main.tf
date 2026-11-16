@@ -57,6 +57,11 @@ locals {
       Sid = "GateImagePush", Effect = "Allow", Action = local.image_push_actions, Resource = local.server_repository_arn
       }, {
       Sid = "RegistryLogin", Effect = "Allow", Action = "ecr:GetAuthorizationToken", Resource = "*"
+      }, {
+      Sid = "InspectNetworkOwnership", Effect = "Allow", Action = "ec2:Describe*", Resource = "*"
+      }, {
+      Sid      = "InspectKeyOwnership", Effect = "Allow", Action = "kms:ListResourceTags"
+      Resource = "arn:aws:kms:us-east-1:${var.member_account_id}:key/*"
     }], local.region_controls, local.stack_tag_controls, local.stack_tag_permissions)
   })
 }

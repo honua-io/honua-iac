@@ -164,6 +164,11 @@ roles; a full Launch Stack create needs both:
   CloudFront functions are fenced by name (`function/honua-gate-*`): set the Launch
   Stack `NamePrefix` to `honua-gate`, or the function is created and then orphaned.
 
+`HonuaGateLane` can inspect EC2 resources with `ec2:Describe*` and read KMS key
+ownership tags with `kms:ListResourceTags`. Both the lane policy and its permissions
+boundary include these reads. KMS reads name only keys in the configured gate
+account and `us-east-1`; the existing region deny also limits EC2 inspection.
+
 The name fences and the `CreationTags` deny sit in the attached managed policy
 `HonuaGateCloudFormationFences`, because the inline service policy is at its
 10,240-character quota. Apply changes to it while no gate stack is running.
