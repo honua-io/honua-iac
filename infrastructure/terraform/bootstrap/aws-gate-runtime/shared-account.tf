@@ -61,14 +61,34 @@ locals {
     StringNotLikeIfExists   = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }
     StringNotEqualsIfExists = { "aws:ResourceTag/HonuaGate" = "true" }
   }
+  # Only CloudFormation can send the reserved aws:cloudformation:stack-name tag, and only on resources it
+  # creates for that stack. EC2 and RDS handlers tag after the create call, while the new resource has no
+  # tag yet; the request tag proves the call is that creation step. The lane role cannot import resources
+  # (no change sets), so the tag cannot be put on a resource the stack did not create.
+  service_role_ownership_condition = {
+    StringNotLikeIfExists = merge(local.ownership_condition.StringNotLikeIfExists, {
+      "aws:RequestTag/aws:cloudformation:stack-name" = "honua-gate-*"
+    })
+    StringNotEqualsIfExists = local.ownership_condition.StringNotEqualsIfExists
+  }
+  # CloudFront cache, origin-request and response-headers policies and origin access controls cannot carry
+  # tags, their create calls take no resource and their other calls name a random ID, so neither tag nor
+  # name can fence them. Only the service role (CloudFormation acting for a gate stack) may manage them;
+  # workload roles keep the full fence. Functions are named, so the name fences them.
+  cloudfront_untaggable_creates = ["cloudfront:CreateCachePolicy", "cloudfront:CreateOriginRequestPolicy", "cloudfront:CreateResponseHeadersPolicy"]
+  cloudfront_untaggable_arns = concat([
+    for type in ["origin-access-control", "cache-policy", "origin-request-policy", "response-headers-policy"] :
+    "arn:aws:cloudfront::${var.member_account_id}:${type}/*"
+  ], ["arn:aws:cloudfront::${var.member_account_id}:function/honua-gate-*"])
+  service_role_unfenced = concat([aws_secretsmanager_secret.idp_client.arn], local.cloudfront_untaggable_arns)
   # The service role keeps account-wide metadata reads. The workload boundary
   # cannot repeat that list and stay inside the managed-policy quota, so its
   # copy exempts allocation calls, named gate buckets and Cognito domain
   # description, which has no resource-level authorization.
   service_role_ownership_deny = {
-    Sid       = "DenyNonGateChanges", Effect = "Deny", NotResource = aws_secretsmanager_secret.idp_client.arn
-    NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery"], local.shared_creation_actions)
-    Condition = local.ownership_condition
+    Sid       = "DenyNonGateChanges", Effect = "Deny", NotResource = local.service_role_unfenced
+    NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery"], local.shared_creation_actions, local.cloudfront_untaggable_creates)
+    Condition = local.service_role_ownership_condition
   }
   # The gate server repository is Terraform-owned, so it has no stack tag; the
   # boundary allows only pulls on ECR, and registry login (ecr:GetAuth*, exactly

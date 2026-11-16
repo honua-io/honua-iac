@@ -147,7 +147,7 @@ run "shared_account_denies_and_alert_budget" {
   }
   assert {
     condition = alltrue([
-      for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] : alltrue([
+      for policy in [aws_iam_policy.cloudformation_name_fences.policy, aws_iam_policy.workload_boundary.policy] : alltrue([
         anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == "NameFence" && statement.Effect == "Deny" && toset(statement.NotResource) == toset(["arn:aws:events:us-east-1:${format("%012d", 2)}:rule/honua-gate-*", "arn:aws:cloudwatch:us-east-1:${format("%012d", 2)}:alarm:honua-gate-*", "arn:aws:budgets::${format("%012d", 2)}:budget/honua-gate-*"]), false)]),
         anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == "ReaperRule" && statement.Action == "events:*" && statement.Resource == "arn:aws:events:us-east-1:${format("%012d", 2)}:rule/honua-gate-nightly-reaper", false)]),
         anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == "DenySharedBudget" && statement.Action == "budgets:*" && statement.Resource == "arn:aws:budgets::${format("%012d", 2)}:budget/honua-gate-shared-monthly", false)])
@@ -182,7 +182,7 @@ run "shared_account_policy_quotas_with_deployment_sized_inputs" {
   }
   assert {
     condition = alltrue([
-      for policy in [aws_iam_policy.lane_boundary.policy, aws_iam_policy.workload_boundary.policy] :
+      for policy in [aws_iam_policy.lane_boundary.policy, aws_iam_policy.workload_boundary.policy, aws_iam_policy.cloudformation_name_fences.policy] :
       length(jsonencode(jsondecode(policy))) <= 6144
     ])
     error_message = "Every managed policy must fit the 6144-character quota with 18 protected paths and two state buckets; workload uses ${nonsensitive(length(jsonencode(jsondecode(aws_iam_policy.workload_boundary.policy))))} characters."

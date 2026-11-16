@@ -140,8 +140,27 @@ Member mode has no shared budget, region deny or shared-account resource denies.
 [content-read audit](content-read-controls.md) for covered APIs and unsupported
 ownership conditions.
 
+Two exceptions apply to the CloudFormation service role only, never to workload
+roles; the first full Launch Stack create in the gate (16 Nov 2026) needed both:
+
+- **Creation tags.** EC2 and RDS handlers create a resource and then tag it
+  (`ec2:CreateTags`, `rds:AddTagsToResource`) while it has no tag yet, so the
+  ownership deny refused the tag call and left an untagged resource that the gate
+  could no longer delete. The service role's ownership deny also spares a request
+  carrying the reserved `aws:cloudformation:stack-name` request tag with a
+  `honua-gate-*` value. Only CloudFormation can send `aws:`-prefixed tags, and only
+  on resources it creates for that stack; the lane role cannot create change sets,
+  so it cannot import a foreign resource into a gate stack. `HonuaGate=true` as a
+  request tag spares nothing, because any principal can send it.
+- **Untaggable CloudFront types.** Cache, origin-request and response-headers
+  policies and origin access controls cannot carry tags, their create calls take no
+  resource and their other calls name a random ID. The service role may create,
+  read, update and delete any of them in the account; CloudFront refuses to delete
+  a policy still attached to a distribution. CloudFront functions are fenced by name
+  (`function/honua-gate-*`): set the Launch Stack `NamePrefix` to `honua-gate`.
+
 AWS does not expose this resource tag for every action. In particular, Route 53
-record changes, untaggable CloudFront resources, Application Auto Scaling
+record changes, Application Auto Scaling
 registrations, some Logs operations, EC2 association/route operations and service
 resources without CloudFormation tag propagation may be denied even for gate
 resources. These are **not** blanket write exceptions: a live install or cleanup
