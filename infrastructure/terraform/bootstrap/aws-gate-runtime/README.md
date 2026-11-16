@@ -118,6 +118,22 @@ stack tag, and allocation APIs remain the only untagged workload exemption besid
 named gate buckets. IAM PassRole remains restricted to gate role names and the
 allowed receiving services. Actions outside the workload allow list are implicit
 denies; the boundary does not repeat that allow list inside a second deny.
+IAM and KMS reject tags with the `aws:` prefix, so CloudFormation never puts the
+stack-name tag on a gate stack's roles and keys. The ownership deny therefore also
+accepts the stack's required `HonuaGate=true` tag, which CloudFormation propagates
+to them: it denies only when a resource has neither tag. Every gate stack must be
+created and updated with that tag, and gate principals cannot add it to a
+resource they do not already own, because tag changes sit behind the same deny.
+The tag is weaker than the stack-name tag: it applies to every service, not only
+IAM and KMS, and anyone with tagging rights outside the gate can set it. Never
+put `HonuaGate=true` on a resource that is not a disposable gate resource (the
+cost budget filters on the same tag), and expect any gate stack to be able to
+change another gate stack's resources. Scoping it to IAM and KMS does not fit
+the managed-policy quota.
+A new KMS key has no tags yet when KMS runs its policy lockout check, so the gate
+binder (`aws-gate-tools/gate_tools.py bind-template`) sets
+`BypassPolicyLockoutSafetyCheck` on every key in the bound copy. It refuses a key
+whose policy does not keep unconditional account-root administration.
 Member mode has no shared budget, region deny or shared-account resource denies. It does allow these Launch Stack services and the name fence. See the
 [content-read audit](content-read-controls.md) for covered APIs and unsupported
 ownership conditions.

@@ -52,8 +52,14 @@ locals {
     "cognito-idp:DescribeUserPool", "cognito-idp:DescribeUserPoolDomain",
     "cognito-idp:GetGroup", "cognito-idp:GetUserPoolMfaConfig", "cognito-idp:ListTagsForResource"
   ])
+  # IAM and KMS reject aws:-prefixed tags, so gate roles and keys never carry
+  # the CloudFormation stack-name tag. They do carry the stack's required
+  # HonuaGate=true tag, which CloudFormation propagates; the deny applies only
+  # when a resource has neither. Gate principals cannot add that tag to a
+  # resource they do not already own.
   ownership_condition = {
-    StringNotLikeIfExists = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }
+    StringNotLikeIfExists   = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }
+    StringNotEqualsIfExists = { "aws:ResourceTag/HonuaGate" = "true" }
   }
   # The service role keeps account-wide metadata reads. The workload boundary
   # cannot repeat that list and stay inside the managed-policy quota, so its

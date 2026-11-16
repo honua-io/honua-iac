@@ -40,6 +40,28 @@ class GateToolsTests(unittest.TestCase):
         self.assertEqual(result['Resources']['Logs'], source['Resources']['Logs'])
         self.assertNotIn('PermissionsBoundary', source['Resources']['Role']['Properties'])
 
+    def test_keys_skip_the_lockout_check_only_with_account_administration(self):
+        root = {'Sid': 'EnableAccountIAM', 'Effect': 'Allow', 'Principal': {'AWS': {'Fn::Sub': gate_tools.ACCOUNT_ROOT}},
+                'Action': 'kms:*', 'Resource': '*'}
+        source = {'Resources': {'Key': {'Type': 'AWS::KMS::Key', 'Properties': {'KeyPolicy': {'Statement': [root]}}}}}
+        result = gate_tools.bound_template(source, 'boundary')
+        self.assertIs(result['Resources']['Key']['Properties']['BypassPolicyLockoutSafetyCheck'], True)
+        self.assertNotIn('BypassPolicyLockoutSafetyCheck', source['Resources']['Key']['Properties'])
+        weakened = (dict(root, Action='kms:Decrypt'), dict(root, Condition={'Bool': {'aws:MultiFactorAuthPresent': 'true'}}),
+                    dict(root, Effect='Deny'), dict(root, Principal={'AWS': 'arn:aws:iam::000000000002:role/x'}),
+                    dict(root, Resource='arn:aws:kms:us-east-1:000000000002:key/other'))
+        deny_all = {'Effect': 'Deny', 'Principal': '*', 'Action': 'kms:*', 'Resource': '*'}
+        not_principal = {'Effect': 'Allow', 'NotPrincipal': {'AWS': 'x'}, 'Action': 'kms:Decrypt', 'Resource': '*'}
+        policies = [{'Statement': [statement]} for statement in weakened] + [
+            {'Statement': [root, deny_all]}, {'Statement': [root, not_principal]}, {'Statement': ['text']}, None]
+        single = gate_tools.bound_template({'Resources': {'Key': {'Type': 'AWS::KMS::Key', 'Properties': {
+            'KeyPolicy': {'Statement': root}}}}}, 'boundary')
+        self.assertIs(single['Resources']['Key']['Properties']['BypassPolicyLockoutSafetyCheck'], True)
+        for policy in policies:
+            with self.subTest(policy=policy), self.assertRaises(ValueError):
+                gate_tools.bound_template({'Resources': {'Key': {'Type': 'AWS::KMS::Key', 'Properties': {'KeyPolicy': policy}}}},
+                                          'boundary')
+
     def test_template_rejects_explicit_role_names_outside_namespace(self):
         for name in ('Admin', {'Ref': 'UnconstrainedName'}):
             with self.subTest(name=name), self.assertRaises(ValueError):
