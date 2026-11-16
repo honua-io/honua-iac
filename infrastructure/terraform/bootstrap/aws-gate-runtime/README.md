@@ -10,7 +10,9 @@ Main applies this root directly using existing-account bootstrap credentials.
 Skip `aws-gate-account` entirely: its organization, linked-account budget and SCP
 budget action are **not** used. Keep separate state for this runtime, and check
 that the role, policy, function, log group and budget names are unused before
-applying. Do not import unrelated existing resources into this state.
+applying. In shared-account mode also check that no account log resource policy
+is named `honua-gate-waf-logs` (a put replaces it) and that us-east-1 holds
+fewer than 10 account log resource policies. Do not import unrelated existing resources into this state.
 
 Main creates an SSM SecureString JSON object privately in `us-east-1` with these
 fields (actual identifiers and recipient stay out of repository text):
@@ -147,6 +149,13 @@ can fail closed, requiring a reviewed policy adjustment. Check each action in th
 [AWS service authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/reference.html)
 before expanding permissions. The global exceptions bypass only the region deny,
 not ownership checks.
+
+One write exception exists for WAF logging: log deliveries (`logs:*LogDelivery`)
+have no resource ARN, so the service role, never workload roles, may create,
+update and delete any delivery in the account. The account log resource policy
+WAF would otherwise write stays denied; this root owns `honua-gate-waf-logs`,
+which lets the log delivery service write only to `aws-waf-logs-honua-gate-*`
+log groups.
 
 Creation APIs cannot prove ownership of a resource that does not yet exist.
 They can allocate resources using existing dependencies (for example network
