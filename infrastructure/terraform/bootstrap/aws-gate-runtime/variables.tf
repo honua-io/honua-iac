@@ -78,3 +78,9 @@ variable "idp_task_execution_role_arns" {
     error_message = "Supply only exact gate execution role ARNs in this account; wildcards are forbidden."
   }
 }
+
+variable "orphan_cleanup_dry_run" {
+  description = "Log orphan gate IAM/KMS cleanup without mutating resources. Main opts in after reviewing the log."
+  type        = bool
+  default     = true
+}

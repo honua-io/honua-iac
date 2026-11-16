@@ -321,3 +321,27 @@ ownership denies. Only this exact client secret bypasses those ownership checks;
 the gate policies deny all operations on it except a single-secret read by an
 approved principal. The bootstrap operator retains Terraform secret lifecycle
 access through its existing private credentials.
+
+### Orphan gate roles and keys
+
+The nightly reaper also logs orphan IAM role and KMS key cleanup. This pass is
+**dry-run by default** (`orphan_cleanup_dry_run = true`); expired-stack deletion
+retains its existing behavior. Main reviews the log and applies Terraform with
+`orphan_cleanup_dry_run = false` to enable orphan mutations. Lanes do not apply.
+
+IAM role names must equal or begin with their `honua-gate-*` stack name followed
+by `-`. Ownership comes from the CloudFormation stack-name tag, or the longest
+matching name in CloudFormation's stack history for untagged legacy roles.
+Untagged roles outside that history are left for manual investigation. KMS keys
+have no name field: their CloudFormation stack-name tag identifies ownership;
+untagged keys are left untouched. AWS-managed keys are skipped.
+
+A fresh stack lookup must report `DELETE_COMPLETE` or the specific stack-not-found
+error. Every other status (including deletion in progress, failed deletion and
+keep/protected live stacks) prevents orphan cleanup; lookup errors fail closed.
+Role cleanup deletes inline policies, detaches managed policies, then deletes
+the role. Managed policies themselves are retained. A role still in an instance
+profile reports a cleanup failure; this pass does not detach live instance profiles.
+Key cleanup schedules deletion with the seven-day minimum, skipping keys already
+pending deletion. Per-resource failures are logged and fail the invocation after
+other resources are checked. Offline tests do not prove live cleanup permission.
