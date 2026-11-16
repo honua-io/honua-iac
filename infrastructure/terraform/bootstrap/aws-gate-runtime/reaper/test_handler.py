@@ -169,10 +169,17 @@ class OrphanTests(unittest.TestCase):
         self.kms.describe_key.assert_not_called()
         self.kms.schedule_key_deletion.assert_not_called()
 
+    def test_completed_key_deletion_is_idempotent(self):
+        self.kms.describe_key.side_effect = AwsError('NotFoundException', 'deleted')
+        self.assertEqual(self.run_cleanup()['keys'], 0)
+        self.kms.schedule_key_deletion.assert_not_called()
+
     def test_active_longer_prefix_prevents_short_deleted_owner_match(self):
         self.cf.get_paginator.side_effect = None
-        self.cf.get_paginator.return_value.paginate.return_value = [{'StackSummaries': [
-            stack() | {'StackStatus': 'DELETE_COMPLETE'}, stack('honua-gate-old-exec')]}]
+        self.cf.get_paginator.side_effect = lambda operation: Mock(paginate=Mock(return_value=(
+            [{'StackSummaries': [stack() | {'StackStatus': 'DELETE_COMPLETE'},
+                                 stack('honua-gate-old-exec')]}]
+            if operation == 'list_stacks' else [{'StackResourceSummaries': []}])))
         self.assertEqual(self.run_cleanup()['roles'], 0)
 
 
