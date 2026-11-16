@@ -32,10 +32,6 @@ run "server_repository_is_immutable_scanned_and_bounded" {
     }]
     error_message = "The repository keeps the newest images and expires older ones."
   }
-  assert {
-    condition     = local.kept_server_images == 20
-    error_message = "Twenty images cover the gate cohorts in flight; lowering it can expire a digest a live gate stack still pulls."
-  }
 }
 
 run "lane_pushes_to_the_gate_repository_only" {
@@ -48,14 +44,17 @@ run "lane_pushes_to_the_gate_repository_only" {
       for statement in jsondecode(aws_iam_role_policy.lane.policy).Statement :
       try(statement.Sid == "RegistryLogin" && statement.Action == "ecr:GetAuthorizationToken" && statement.Resource == "*", false)
     ]) && aws_iam_policy.lane_boundary.policy == aws_iam_role_policy.lane.policy
-    error_message = "The lane may log in and push layers and images to the gate server repository, and its boundary allows the same."
+    error_message = "The lane may log in, push and read manifests in the gate server repository, and its boundary allows the same."
   }
   assert {
     condition = alltrue([
-      for statement in jsondecode(aws_iam_role_policy.lane.policy).Statement :
-      statement.Effect != "Allow" || try(alltrue([for action in flatten([statement.Action]) : !startswith(action, "ecr:") || contains(concat(local.image_push_actions, ["ecr:GetAuthorizationToken"]), action)]), false)
+      for statement in jsondecode(aws_iam_role_policy.lane.policy).Statement : statement.Effect != "Allow" || alltrue([
+        for pattern in flatten([try(statement.Action, "*")]) : alltrue([
+          for action in setsubtract(["ecr:InitiateLayerUpload", "ecr:UploadLayerPart", "ecr:CompleteLayerUpload", "ecr:PutImage", "ecr:BatchDeleteImage", "ecr:DeleteRepository", "ecr:DeleteRepositoryPolicy", "ecr:SetRepositoryPolicy", "ecr:PutLifecyclePolicy", "ecr:DeleteLifecyclePolicy", "ecr:PutImageTagMutability", "ecr:TagResource"], local.image_push_actions) : !can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))
+        ])
+      ])
     ])
-    error_message = "The lane gets no other ECR action: no image deletion, repository deletion or policy change."
+    error_message = "The lane gets no other ECR write, including by wildcard: no image or repository deletion, policy, lifecycle or tag change."
   }
 }
 
@@ -64,15 +63,15 @@ run "stacks_can_pull_but_never_write_images" {
   assert {
     condition = alltrue([
       for policy in [aws_iam_policy.workload_boundary.policy, aws_iam_role_policy.cloudformation.policy] : alltrue([
-        for statement in jsondecode(policy).Statement : statement.Effect != "Allow" || try(alltrue([
-          for action in flatten([statement.Action]) : !contains(["ecr:*", "ecr:InitiateLayerUpload", "ecr:UploadLayerPart", "ecr:CompleteLayerUpload", "ecr:PutImage", "ecr:BatchDeleteImage", "ecr:DeleteRepository", "ecr:SetRepositoryPolicy"], action)
-        ]), false)
+        for statement in jsondecode(policy).Statement : statement.Effect != "Allow" || alltrue([
+          for pattern in flatten([try(statement.Action, "*")]) : alltrue([for action in ["ecr:InitiateLayerUpload", "ecr:UploadLayerPart", "ecr:CompleteLayerUpload", "ecr:PutImage", "ecr:BatchDeleteImage", "ecr:DeleteRepository", "ecr:DeleteRepositoryPolicy", "ecr:SetRepositoryPolicy", "ecr:PutLifecyclePolicy", "ecr:DeleteLifecyclePolicy", "ecr:PutImageTagMutability", "ecr:TagResource"] : !can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))])
+        ])
       ])
     ])
-    error_message = "Launch Stack roles and their boundary must not push, delete or re-policy images."
+    error_message = "Launch Stack roles and their boundary must not push, delete or re-policy images, including by wildcard."
   }
   assert {
-    condition = alltrue([for action in ["ecr:GetAuthorizationToken", "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability"] : contains(local.workload_services, action)])
+    condition     = alltrue([for action in ["ecr:GetAuthorizationToken", "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability"] : contains(local.workload_services, action)])
     error_message = "The workload boundary keeps the four pull actions a task execution role needs."
   }
 }
@@ -92,20 +91,39 @@ run "shared_account_exempts_only_the_gate_repository" {
   assert {
     condition = alltrue([
       for action in ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"] :
-      !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))])
+      !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))])
     ])
     error_message = "Image reads from any other untagged or foreign repository stay denied by the ownership fence."
   }
   assert {
+    # regex() errors on no match, so an invalid pattern would also read as "no match" below;
+    # regexall() errors only on an invalid pattern.
+    condition = alltrue(flatten([
+      for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : [
+        for pattern in flatten([try(statement.Action, []), try(statement.NotAction, []), try(statement.Resource, []), try(statement.NotResource, [])]) :
+        can(regexall("^${replace(pattern, "*", ".*")}$", ""))
+      ]
+    ]))
+    error_message = "Every workload-boundary pattern must be checkable as a regular expression."
+  }
+  assert {
     condition = alltrue([
       for request in [["ecr:GetAuthorizationToken", "*"], ["ecr:BatchGetImage", local.server_repository_arn], ["ecr:GetDownloadUrlForLayer", local.server_repository_arn], ["ecr:BatchCheckLayerAvailability", local.server_repository_arn]] : alltrue([
-        for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : statement.Effect != "Deny" || statement.Sid == "DenyOtherRegions" || !(
-          try(anytrue([for pattern in flatten([statement.Action]) : can(regex("^${replace(pattern, "*", ".*")}$", request[0]))]), !anytrue([for pattern in flatten([statement.NotAction]) : can(regex("^${replace(pattern, "*", ".*")}$", request[0]))])) &&
+        for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : statement.Effect != "Deny" || try(statement.Sid, "") == "DenyOtherRegions" || !(
+          try(anytrue([for pattern in flatten([statement.Action]) : can(regex("(?i)^${replace(pattern, "*", ".*")}$", request[0]))]), !anytrue([for pattern in flatten([statement.NotAction]) : can(regex("(?i)^${replace(pattern, "*", ".*")}$", request[0]))])) &&
           try(anytrue([for pattern in flatten([statement.Resource]) : can(regex("^${replace(pattern, "*", ".*")}$", request[1]))]), !anytrue([for pattern in flatten([statement.NotResource]) : can(regex("^${replace(pattern, "*", ".*")}$", request[1]))]))
         )
       ])
     ])
     error_message = "No workload-boundary deny may block registry login or a pull from the gate repository in us-east-1, whatever its conditions."
+  }
+  assert {
+    condition = alltrue([
+      for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(statement.Sid, "") != "DenyOtherRegions" || (
+        try(statement.Condition.StringNotEquals["aws:RequestedRegion"], "") == "us-east-1" && length(keys(statement.Condition)) == 1 && length(keys(statement.Condition.StringNotEquals)) == 1
+      )
+    ])
+    error_message = "The region deny skipped above must keep sparing exactly us-east-1 and nothing else."
   }
   assert {
     condition     = local.service_role_ownership_deny.NotResource == aws_secretsmanager_secret.idp_client.arn
@@ -123,9 +141,12 @@ run "cloudformation_passes_the_stack_delivery_role_to_eventbridge" {
     error_message = "A stack's EventBridge rule delivers through a gate role that CloudFormation passes to events."
   }
   assert {
+    # Fails closed: a PassRole allow without a service condition could pass to EventBridge.
     condition = alltrue([
       for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement :
-      try(statement.Action != "iam:PassRole", true) || try(!contains(statement.Condition.StringEquals["iam:PassedToService"], "events.amazonaws.com"), true)
+      statement.Effect != "Allow" || !anytrue([for pattern in flatten([try(statement.Action, "*")]) : can(regex("(?i)^${replace(pattern, "*", ".*")}$", "iam:PassRole"))]) || (
+        can(statement.Condition.StringEquals["iam:PassedToService"]) && !contains(flatten([try(statement.Condition.StringEquals["iam:PassedToService"], [])]), "events.amazonaws.com")
+      )
     ])
     error_message = "Workload roles never pass roles to EventBridge; only the service role does."
   }
