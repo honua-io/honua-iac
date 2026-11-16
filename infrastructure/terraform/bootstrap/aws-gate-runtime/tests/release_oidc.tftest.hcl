@@ -18,6 +18,7 @@ variables {
   lane_principal_arns = [format("arn:aws:iam::%s:role/GateOperator", format("%012d", 1))]
 }
 override_resource {
+  override_during = plan
   target = aws_iam_role.release_actions
   values = { arn = "arn:aws:iam::000000000002:role/HonuaGateReleaseActions" }
 }

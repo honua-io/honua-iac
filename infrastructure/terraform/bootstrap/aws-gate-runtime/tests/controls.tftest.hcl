@@ -103,7 +103,7 @@ run "shared_account_denies_and_alert_budget" {
       statement.Sid == "WatchdogParameters" && statement.Effect == "Allow" && statement.Action == "ssm:*" && statement.Resource == "arn:aws:ssm:us-east-1:${format("%012d", 2)}:parameter/honua/honua-gate-*/watchdog/*", false)
       ]) && anytrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(
       statement.Effect == "Allow" && statement.Action == "ssm:*" && statement.Resource == "arn:aws:ssm:us-east-1:${format("%012d", 2)}:parameter/honua/honua-gate-*/watchdog/*", false)
-      ]) && alltrue([for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] : alltrue([for statement in jsondecode(policy).Statement : !(statement.Effect == "Allow" && try(statement.Resource == "*", false) && anytrue([for action in flatten([statement.Action]) : startswith(action, "ssm:")]))])
+      ]) && alltrue([for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] : alltrue([for statement in jsondecode(policy).Statement : !(statement.Effect == "Allow" && try(statement.Resource == "*", false) && anytrue([for action in flatten([try(statement.Action, [])]) : startswith(action, "ssm:")]))])
     ]) && contains(local.service_role_ownership_deny.NotAction, "ssm:*") && contains(local.boundary_ownership_deny.NotAction, "ssm:*")
     error_message = "SSM is allowed only on gate stack watchdog parameters; a new parameter has no stack tag, so the name, not the ownership deny, scopes SSM."
   }
