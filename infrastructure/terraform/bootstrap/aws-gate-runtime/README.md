@@ -44,7 +44,7 @@ terraform apply gate.tfplan
 ```
 
 Mark this root applied/operator in the private drift inventory when applying.
-Use the three sensitive outputs privately for the lane assume-role target,
+Use the sensitive outputs privately for the lane assume-role target,
 CloudFormation RoleARN and template permissions boundary, as described above.
 No apply is performed by this change.
 
@@ -328,3 +328,32 @@ resources have no ownership tags. The service-role name fences deny those
 operations on other names, and the nightly reaper rule remains protected.
 Workload roles retain the ownership-tag checks. This exception does not permit
 alias updates or deletion of untagged keys, VPCs or internet gateways.
+
+## Authenticated release producers
+
+`release_actions_role_arn` is the sensitive GitHub Actions entry point. Its only
+permission is `sts:AssumeRole` for `HonuaGateLane`; producer jobs first assume
+this entry role with OIDC, then assume the lane role. Main applies this root.
+The existing account GitHub OIDC provider must already trust audience
+`sts.amazonaws.com`; this root looks it up rather than creating another provider.
+
+Before running a producer, Main configures the `honua-io/honua-release` repository:
+
+1. Create the `gate` environment, restrict deployment branches to `trunk`, and
+   configure required reviewers with self-review prevented. Keep workflow changes
+   under the repository's protected-branch review rules.
+2. Set its OIDC subject customization to
+   `{"use_default":false,"include_claim_keys":["repo","context","ref"]}` using
+   the [repository OIDC customization API](https://docs.github.com/en/rest/actions/oidc).
+   Review existing OIDC consumers before changing this repository-wide setting.
+3. Set producer jobs to `environment: gate`, run them from `refs/heads/trunk`,
+   and grant `id-token: write`. Use STS audience `sts.amazonaws.com` and pass the
+   output role ARN through private configuration.
+
+The trust uses `StringEquals` for the audience and the complete subject
+`repo:honua-io/honua-release:environment:gate:ref:refs/heads/trunk`.
+[GitHub custom subjects](https://docs.github.com/en/actions/reference/security/oidc)
+include these claims in the configured order. Default subjects, another
+repository or environment, feature branches, tags and pull refs fail the match.
+AWS checks the signed subject; GitHub enforces environment protection. A lane
+shell run does not provide an authenticated producer receipt.

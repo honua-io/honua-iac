@@ -66,7 +66,7 @@ run "named_teardown_is_scoped_to_the_service_role" {
     error_message = "Alias reassignment, key deletion and untagged network changes must retain the ownership deny."
   }
   assert {
-    condition = alltrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(statement.Sid, "") != "NamedTeardownFence"])
+    condition     = alltrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(statement.Sid, "") != "NamedTeardownFence"])
     error_message = "The service-role exception must not change the workload boundary."
   }
 }

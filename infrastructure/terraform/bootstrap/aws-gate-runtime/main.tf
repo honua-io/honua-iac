@@ -70,7 +70,7 @@ resource "aws_iam_role" "lane" {
   permissions_boundary = aws_iam_policy.lane_boundary.arn
   assume_role_policy = jsonencode({
     Version   = "2012-10-17"
-    Statement = [{ Effect = "Allow", Action = "sts:AssumeRole", Principal = { AWS = sort(tolist(var.lane_principal_arns)) } }]
+    Statement = [{ Effect = "Allow", Action = "sts:AssumeRole", Principal = { AWS = sort(tolist(setunion(var.lane_principal_arns, [aws_iam_role.release_actions.arn]))) } }]
   })
 }
 resource "aws_iam_role_policy" "lane" {
