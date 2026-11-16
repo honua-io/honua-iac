@@ -117,6 +117,15 @@ case "$service $operation" in
   "secretsmanager describe-secret")
     jq -cn --arg arn "$(value_of --secret-id)" --arg date "${FAKE_SECRET_DELETED_DATE:-None}" '{ARN:$arn} + (if $date=="None" then {} else {DeletedDate:$date} end)'
     ;;
+  "ec2 describe-addresses")
+    if [[ -n "${FAKE_ADDRESS_ERROR:-}" ]]; then
+      echo "An error occurred ($FAKE_ADDRESS_ERROR) when calling the DescribeAddresses operation: fixture failure" >&2
+      exit 1
+    fi
+    if [[ "${FAKE_ADDRESS_ABSENT:-}" == 1 ]]; then echo '{"Addresses":[]}'; else
+      jq -cn --arg id "$(value_of --allocation-ids)" '{Addresses:[{AllocationId:$id}]}'
+    fi
+    ;;
   "ec2 describe-security-groups")
     echo "${FAKE_SG_IDS:-}"
     ;;
@@ -525,6 +534,28 @@ else
   check "unreadable resources still count against --max-delete" no
 fi
 assert_no_mutations "a plan oversized by unreadable resources triggers no mutating call"
+
+ADDRESS_ARN=arn:aws:ec2:us-west-2:1:elastic-ip/eipalloc-0123456789abcdef0
+ADDRESS="$(tagged "$ADDRESS_ARN" gha-111-aws-ecs ecs "$PAST")"
+FAKE_ADDRESS_ABSENT=1 run_sweeper "$(resources "$ADDRESS")"
+if [[ "$RC" -eq 0 ]] && grep -q 'Already settled' <<<"$OUT"; then
+  check 'absent address settles despite stale tag index' ok
+else
+  check 'absent address settles despite stale tag index' no
+fi
+assert_no_mutations 'absent address never released again'
+for error in AuthFailure UnauthorizedOperation; do
+  FAKE_ADDRESS_ERROR="$error" run_sweeper "$(resources "$ADDRESS")"
+  if [[ "$RC" -ne 0 ]]; then check "address $error fails sweep" ok; else check "address $error fails sweep" no; fi
+  assert_no_mutations "address $error never authorizes release"
+done
+run_sweeper "$(resources "$ADDRESS")"
+assert_deleted 'live address remains deletable' "$ADDRESS_ARN"
+if grep -q "ec2 describe-addresses --region us-west-2 --allocation-ids ${ADDRESS_ARN##*/} --output json" "$AWS_CALL_LOG"; then
+  check 'address read is scoped to exact region and allocation' ok
+else
+  check 'address read is scoped to exact region and allocation' no
+fi
 
 # Protected stacks win over a valid disposable owner/run/expiry, even --this-run.
 for protection in 'Environment cert' 'Environment demo' 'Environment standing' 'Lifecycle standing' 'Lifecycle demo'; do
