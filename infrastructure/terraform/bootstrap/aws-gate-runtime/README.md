@@ -186,8 +186,9 @@ Gate stacks need current server builds before any public image exists. This
 root creates the private ECR repository `honua-gate/server` in `us-east-1`
 (output `server_repository_uri`, sensitive): tags are immutable, images are
 scanned on push, ECR-managed AES256 encryption (no KMS grant through the gate
-fences, as for the template bucket) and only the newest 20 images are kept.
-The lane role may log in, push and read back images in this repository only;
+fences, as for the template bucket) and only the newest 20 images are kept, so
+a gate stack that outlives 20 newer pushes cannot replace its tasks.
+The lane role may log in, push images and read their manifests in this repository only;
 it cannot delete images, the repository or its policy. A gate stack pulls by
 digest: pass `ServerImageUri=<uri>@sha256:<digest>` and the repository ARN in
 the template's private repository parameter, which grants the stack's
@@ -201,7 +202,8 @@ role must be in `lane_principal_arns`.
 ```bash
 aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin "${GATE_SERVER_REPOSITORY_URI%%/*}"
 docker tag "$IMAGE" "$GATE_SERVER_REPOSITORY_URI:<new-tag>" && docker push "$GATE_SERVER_REPOSITORY_URI:<new-tag>"
-aws ecr describe-images --region us-east-1 --repository-name honua-gate/server --image-ids imageTag=<new-tag>
+aws ecr describe-images --region us-east-1 --repository-name honua-gate/server --image-ids imageTag=<new-tag> \
+  --query 'imageDetails[0].imageDigest' --output text
 ```
 
 The CloudFormation role may also pass gate roles to `events.amazonaws.com`, so a

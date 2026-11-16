@@ -27,10 +27,14 @@ run "server_repository_is_immutable_scanned_and_bounded" {
   }
   assert {
     condition = jsondecode(aws_ecr_lifecycle_policy.server.policy).rules == [{
-      rulePriority = 1, description = "Keep the newest 20 images", action = { type = "expire" }
-      selection    = { tagStatus = "any", countType = "imageCountMoreThan", countNumber = 20 }
+      rulePriority = 1, description = "Keep the newest ${local.kept_server_images} images", action = { type = "expire" }
+      selection    = { tagStatus = "any", countType = "imageCountMoreThan", countNumber = local.kept_server_images }
     }]
-    error_message = "The repository keeps the newest 20 images and expires older ones."
+    error_message = "The repository keeps the newest images and expires older ones."
+  }
+  assert {
+    condition     = local.kept_server_images == 20
+    error_message = "Twenty images cover the gate cohorts in flight; lowering it can expire a digest a live gate stack still pulls."
   }
 }
 
@@ -49,7 +53,7 @@ run "lane_pushes_to_the_gate_repository_only" {
   assert {
     condition = alltrue([
       for statement in jsondecode(aws_iam_role_policy.lane.policy).Statement :
-      statement.Effect != "Allow" || alltrue([for action in flatten([statement.Action]) : !startswith(action, "ecr:") || contains(concat(local.image_push_actions, ["ecr:GetAuthorizationToken"]), action)])
+      statement.Effect != "Allow" || try(alltrue([for action in flatten([statement.Action]) : !startswith(action, "ecr:") || contains(concat(local.image_push_actions, ["ecr:GetAuthorizationToken"]), action)]), false)
     ])
     error_message = "The lane gets no other ECR action: no image deletion, repository deletion or policy change."
   }
@@ -60,9 +64,9 @@ run "stacks_can_pull_but_never_write_images" {
   assert {
     condition = alltrue([
       for policy in [aws_iam_policy.workload_boundary.policy, aws_iam_role_policy.cloudformation.policy] : alltrue([
-        for statement in jsondecode(policy).Statement : statement.Effect != "Allow" || alltrue([
+        for statement in jsondecode(policy).Statement : statement.Effect != "Allow" || try(alltrue([
           for action in flatten([statement.Action]) : !contains(["ecr:*", "ecr:InitiateLayerUpload", "ecr:UploadLayerPart", "ecr:CompleteLayerUpload", "ecr:PutImage", "ecr:BatchDeleteImage", "ecr:DeleteRepository", "ecr:SetRepositoryPolicy"], action)
-        ])
+        ]), false)
       ])
     ])
     error_message = "Launch Stack roles and their boundary must not push, delete or re-policy images."
@@ -93,6 +97,17 @@ run "shared_account_exempts_only_the_gate_repository" {
     error_message = "Image reads from any other untagged or foreign repository stay denied by the ownership fence."
   }
   assert {
+    condition = alltrue([
+      for request in [["ecr:GetAuthorizationToken", "*"], ["ecr:BatchGetImage", local.server_repository_arn], ["ecr:GetDownloadUrlForLayer", local.server_repository_arn], ["ecr:BatchCheckLayerAvailability", local.server_repository_arn]] : alltrue([
+        for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : statement.Effect != "Deny" || statement.Sid == "DenyOtherRegions" || !(
+          try(anytrue([for pattern in flatten([statement.Action]) : can(regex("^${replace(pattern, "*", ".*")}$", request[0]))]), !anytrue([for pattern in flatten([statement.NotAction]) : can(regex("^${replace(pattern, "*", ".*")}$", request[0]))])) &&
+          try(anytrue([for pattern in flatten([statement.Resource]) : can(regex("^${replace(pattern, "*", ".*")}$", request[1]))]), !anytrue([for pattern in flatten([statement.NotResource]) : can(regex("^${replace(pattern, "*", ".*")}$", request[1]))]))
+        )
+      ])
+    ])
+    error_message = "No workload-boundary deny may block registry login or a pull from the gate repository in us-east-1, whatever its conditions."
+  }
+  assert {
     condition     = local.service_role_ownership_deny.NotResource == aws_secretsmanager_secret.idp_client.arn
     error_message = "The CloudFormation role needs no image access and keeps the unchanged ownership fence."
   }
@@ -110,7 +125,7 @@ run "cloudformation_passes_the_stack_delivery_role_to_eventbridge" {
   assert {
     condition = alltrue([
       for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement :
-      try(statement.Action != "iam:PassRole", true) || !contains(statement.Condition.StringEquals["iam:PassedToService"], "events.amazonaws.com")
+      try(statement.Action != "iam:PassRole", true) || try(!contains(statement.Condition.StringEquals["iam:PassedToService"], "events.amazonaws.com"), true)
     ])
     error_message = "Workload roles never pass roles to EventBridge; only the service role does."
   }
