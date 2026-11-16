@@ -50,7 +50,7 @@ run "lane_pushes_to_the_gate_repository_only" {
     condition = alltrue([
       for statement in jsondecode(aws_iam_role_policy.lane.policy).Statement : statement.Effect != "Allow" || alltrue([
         for pattern in flatten([try(statement.Action, "*")]) : alltrue([
-          for action in setsubtract(["ecr:InitiateLayerUpload", "ecr:UploadLayerPart", "ecr:CompleteLayerUpload", "ecr:PutImage", "ecr:BatchDeleteImage", "ecr:DeleteRepository", "ecr:DeleteRepositoryPolicy", "ecr:SetRepositoryPolicy", "ecr:PutLifecyclePolicy", "ecr:DeleteLifecyclePolicy", "ecr:PutImageTagMutability", "ecr:TagResource"], local.image_push_actions) : !can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))
+          for action in ["ecr:BatchDeleteImage", "ecr:DeleteRepository", "ecr:DeleteRepositoryPolicy", "ecr:SetRepositoryPolicy", "ecr:PutLifecyclePolicy", "ecr:DeleteLifecyclePolicy", "ecr:PutImageTagMutability", "ecr:TagResource"] : !can(regex("(?i)^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", action))
         ])
       ])
     ])
@@ -64,7 +64,7 @@ run "stacks_can_pull_but_never_write_images" {
     condition = alltrue([
       for policy in [aws_iam_policy.workload_boundary.policy, aws_iam_role_policy.cloudformation.policy] : alltrue([
         for statement in jsondecode(policy).Statement : statement.Effect != "Allow" || alltrue([
-          for pattern in flatten([try(statement.Action, "*")]) : alltrue([for action in ["ecr:InitiateLayerUpload", "ecr:UploadLayerPart", "ecr:CompleteLayerUpload", "ecr:PutImage", "ecr:BatchDeleteImage", "ecr:DeleteRepository", "ecr:DeleteRepositoryPolicy", "ecr:SetRepositoryPolicy", "ecr:PutLifecyclePolicy", "ecr:DeleteLifecyclePolicy", "ecr:PutImageTagMutability", "ecr:TagResource"] : !can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))])
+          for pattern in flatten([try(statement.Action, "*")]) : alltrue([for action in ["ecr:InitiateLayerUpload", "ecr:UploadLayerPart", "ecr:CompleteLayerUpload", "ecr:PutImage", "ecr:BatchDeleteImage", "ecr:DeleteRepository", "ecr:DeleteRepositoryPolicy", "ecr:SetRepositoryPolicy", "ecr:PutLifecyclePolicy", "ecr:DeleteLifecyclePolicy", "ecr:PutImageTagMutability", "ecr:TagResource"] : !can(regex("(?i)^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", action))])
         ])
       ])
     ])
@@ -91,27 +91,16 @@ run "shared_account_exempts_only_the_gate_repository" {
   assert {
     condition = alltrue([
       for action in ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"] :
-      !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))])
+      !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", action))])
     ])
     error_message = "Image reads from any other untagged or foreign repository stay denied by the ownership fence."
-  }
-  assert {
-    # regex() errors on no match, so an invalid pattern would also read as "no match" below;
-    # regexall() errors only on an invalid pattern.
-    condition = alltrue(flatten([
-      for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : [
-        for pattern in flatten([try(statement.Action, []), try(statement.NotAction, []), try(statement.Resource, []), try(statement.NotResource, [])]) :
-        can(regexall("^${replace(pattern, "*", ".*")}$", ""))
-      ]
-    ]))
-    error_message = "Every workload-boundary pattern must be checkable as a regular expression."
   }
   assert {
     condition = alltrue([
       for request in [["ecr:GetAuthorizationToken", "*"], ["ecr:BatchGetImage", local.server_repository_arn], ["ecr:GetDownloadUrlForLayer", local.server_repository_arn], ["ecr:BatchCheckLayerAvailability", local.server_repository_arn]] : alltrue([
         for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : statement.Effect != "Deny" || try(statement.Sid, "") == "DenyOtherRegions" || !(
-          try(anytrue([for pattern in flatten([statement.Action]) : can(regex("(?i)^${replace(pattern, "*", ".*")}$", request[0]))]), !anytrue([for pattern in flatten([statement.NotAction]) : can(regex("(?i)^${replace(pattern, "*", ".*")}$", request[0]))])) &&
-          try(anytrue([for pattern in flatten([statement.Resource]) : can(regex("^${replace(pattern, "*", ".*")}$", request[1]))]), !anytrue([for pattern in flatten([statement.NotResource]) : can(regex("^${replace(pattern, "*", ".*")}$", request[1]))]))
+          try(anytrue([for pattern in flatten([statement.Action]) : can(regex("(?i)^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", request[0]))]), !anytrue([for pattern in flatten([statement.NotAction]) : can(regex("(?i)^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", request[0]))])) &&
+          try(anytrue([for pattern in flatten([statement.Resource]) : can(regex("^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", request[1]))]), !anytrue([for pattern in flatten([statement.NotResource]) : can(regex("^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", request[1]))]))
         )
       ])
     ])
@@ -119,8 +108,9 @@ run "shared_account_exempts_only_the_gate_repository" {
   }
   assert {
     condition = alltrue([
-      for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(statement.Sid, "") != "DenyOtherRegions" || (
-        try(statement.Condition.StringNotEquals["aws:RequestedRegion"], "") == "us-east-1" && length(keys(statement.Condition)) == 1 && length(keys(statement.Condition.StringNotEquals)) == 1
+      for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(statement.Sid, "") != "DenyOtherRegions" || try(
+        flatten([statement.Condition.StringNotEquals["aws:RequestedRegion"]]) == ["us-east-1"] && length(keys(statement.Condition)) == 1 && length(keys(statement.Condition.StringNotEquals)) == 1,
+        false
       )
     ])
     error_message = "The region deny skipped above must keep sparing exactly us-east-1 and nothing else."
@@ -144,7 +134,7 @@ run "cloudformation_passes_the_stack_delivery_role_to_eventbridge" {
     # Fails closed: a PassRole allow without a service condition could pass to EventBridge.
     condition = alltrue([
       for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement :
-      statement.Effect != "Allow" || !anytrue([for pattern in flatten([try(statement.Action, "*")]) : can(regex("(?i)^${replace(pattern, "*", ".*")}$", "iam:PassRole"))]) || (
+      statement.Effect != "Allow" || !anytrue([for pattern in flatten([try(statement.Action, "*")]) : can(regex("(?i)^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", "iam:PassRole"))]) || (
         can(statement.Condition.StringEquals["iam:PassedToService"]) && !contains(flatten([try(statement.Condition.StringEquals["iam:PassedToService"], [])]), "events.amazonaws.com")
       )
     ])
