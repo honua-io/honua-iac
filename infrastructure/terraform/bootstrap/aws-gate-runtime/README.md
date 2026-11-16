@@ -330,11 +330,14 @@ retains its existing behavior. Main reviews the log and applies Terraform with
 `orphan_cleanup_dry_run = false` to enable orphan mutations. Lanes do not apply.
 
 IAM role names must equal or begin with their `honua-gate-*` stack name followed
-by `-`. Ownership comes from the CloudFormation stack-name tag, or the longest
-matching name in CloudFormation's stack history for untagged legacy roles.
-Untagged roles outside that history are left for manual investigation. KMS keys
-have no name field: their CloudFormation stack-name tag identifies ownership;
-untagged keys are left untouched. AWS-managed keys are skipped.
+by `-`. Ownership uses the longest matching name in CloudFormation's stack
+history. Roles outside that history are left for manual investigation. IAM and
+KMS do not carry reserved CloudFormation ownership tags. Keys instead require
+both an exact physical ID recorded as `AWS::KMS::Key` in a deleted gate stack's
+resource history and the propagated `HonuaGate=true` tag. The reaper never scans
+unrelated keys. Resources outside CloudFormation's retained deleted-stack
+history (normally 90 days) are left for manual investigation. AWS-managed keys
+and keys that have completed deletion are skipped.
 
 A fresh stack lookup must report `DELETE_COMPLETE` or the specific stack-not-found
 error. Every other status (including deletion in progress, failed deletion and

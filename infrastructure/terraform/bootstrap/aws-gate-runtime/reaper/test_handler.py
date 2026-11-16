@@ -74,6 +74,10 @@ class OrphanTests(unittest.TestCase):
         self.cf, self.iam, self.kms = Mock(), Mock(), Mock()
         self.cf.get_paginator.return_value.paginate.return_value = [
             {'StackSummaries': [stack() | {'StackStatus': 'DELETE_COMPLETE'}]}]
+        self.cf.get_paginator.side_effect = lambda operation: Mock(paginate=Mock(return_value=(
+            [{'StackSummaries': [stack() | {'StackStatus': 'DELETE_COMPLETE'}]}]
+            if operation == 'list_stacks' else [{'StackResourceSummaries': [
+                {'ResourceType': 'AWS::KMS::Key', 'PhysicalResourceId': 'key'}]}])))
         self.cf.describe_stacks.side_effect = AwsError(
             'ValidationError', 'Stack with id honua-gate-old does not exist')
         self.iam.get_paginator.return_value.paginate.return_value = [
@@ -82,7 +86,7 @@ class OrphanTests(unittest.TestCase):
         self.kms.get_paginator.return_value.paginate.return_value = [
             {'Keys': [{'KeyId': 'key'}]}]
         self.kms.list_resource_tags.return_value = {'Tags': [
-            {'TagKey': 'aws:cloudformation:stack-name', 'TagValue': 'honua-gate-old'}]}
+            {'TagKey': 'HonuaGate', 'TagValue': 'true'}]}
         self.kms.describe_key.return_value = {'KeyMetadata': {
             'KeyManager': 'CUSTOMER', 'KeyState': 'Enabled'}}
 
@@ -150,17 +154,23 @@ class OrphanTests(unittest.TestCase):
             self.kms.describe_key.return_value = {'KeyMetadata': metadata}
             self.assertEqual(self.run_cleanup()['keys'], 0)
 
-    def test_tagged_role_without_stack_history_and_paginated_key_tags(self):
-        self.cf.get_paginator.return_value.paginate.return_value = [{'StackSummaries': []}]
-        self.iam.list_role_tags.return_value = {'Tags': [
-            {'Key': 'aws:cloudformation:stack-name', 'Value': 'honua-gate-old'}]}
+    def test_paginated_key_tags_and_resource_history(self):
         self.kms.list_resource_tags.side_effect = [
             {'Tags': [], 'Truncated': True, 'NextMarker': 'next'},
-            {'Tags': [{'TagKey': 'aws:cloudformation:stack-name', 'TagValue': 'honua-gate-old'}]}]
-        self.assertEqual(self.run_cleanup()['roles'], 1)
+            {'Tags': [{'TagKey': 'HonuaGate', 'TagValue': 'true'}]}]
+        self.assertEqual(self.run_cleanup()['keys'], 1)
         self.kms.list_resource_tags.assert_called_with(KeyId='key', Marker='next')
+        self.cf.get_paginator.assert_any_call('list_stack_resources')
+
+    def test_unrecorded_key_is_never_inspected_or_deleted(self):
+        self.cf.get_paginator.side_effect = None
+        self.cf.get_paginator.return_value.paginate.return_value = [{'StackSummaries': []}]
+        self.assertEqual(self.run_cleanup()['keys'], 0)
+        self.kms.describe_key.assert_not_called()
+        self.kms.schedule_key_deletion.assert_not_called()
 
     def test_active_longer_prefix_prevents_short_deleted_owner_match(self):
+        self.cf.get_paginator.side_effect = None
         self.cf.get_paginator.return_value.paginate.return_value = [{'StackSummaries': [
             stack() | {'StackStatus': 'DELETE_COMPLETE'}, stack('honua-gate-old-exec')]}]
         self.assertEqual(self.run_cleanup()['roles'], 0)

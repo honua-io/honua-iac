@@ -20,7 +20,7 @@ resource "aws_iam_role_policy" "reaper" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{ Effect = "Allow", Action = "cloudformation:ListStacks", Resource = "*" }, {
-      Effect = "Allow", Action = "cloudformation:DescribeStacks", Resource = local.stack_arn
+      Effect = "Allow", Action = ["cloudformation:DescribeStacks", "cloudformation:ListStackResources"], Resource = local.stack_arn
       }, {
       Effect    = "Allow", Action = "cloudformation:DeleteStack", Resource = local.stack_arn
       Condition = { StringEquals = { "cloudformation:RoleArn" = local.service_role_arn } }
@@ -28,10 +28,10 @@ resource "aws_iam_role_policy" "reaper" {
       Effect    = "Allow", Action = "iam:PassRole", Resource = local.service_role_arn
       Condition = { StringEquals = { "iam:PassedToService" = "cloudformation.amazonaws.com" } }
       }, {
-      Effect = "Allow", Action = ["iam:ListRoles", "kms:ListKeys"], Resource = "*"
+      Effect = "Allow", Action = "iam:ListRoles", Resource = "*"
       }, {
       Effect = "Allow"
-      Action = ["iam:ListRoleTags", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
+      Action = ["iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
       "iam:DeleteRolePolicy", "iam:DetachRolePolicy", "iam:DeleteRole"]
       Resource = "arn:aws:iam::${var.member_account_id}:role/honua-gate-*"
       }, {
@@ -41,7 +41,7 @@ resource "aws_iam_role_policy" "reaper" {
       Effect   = "Allow", Action = "kms:ScheduleKeyDeletion"
       Resource = "arn:aws:kms:us-east-1:${var.member_account_id}:key/*"
       Condition = {
-        StringLike    = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }
+        StringEquals  = { "aws:ResourceTag/HonuaGate" = "true" }
         NumericEquals = { "kms:ScheduleKeyDeletionPendingWindowInDays" = 7 }
       }
       }, {

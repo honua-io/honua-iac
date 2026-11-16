@@ -300,7 +300,7 @@ run "orphan_cleanup_defaults_to_dry_run_and_scopes_mutations" {
   assert {
     condition = anytrue([for statement in jsondecode(aws_iam_role_policy.reaper.policy).Statement : try(
       statement.Action == "kms:ScheduleKeyDeletion" && statement.Resource == "arn:aws:kms:us-east-1:${var.member_account_id}:key/*" &&
-      statement.Condition.StringLike["aws:ResourceTag/aws:cloudformation:stack-name"] == "honua-gate-*" &&
+      statement.Condition.StringEquals["aws:ResourceTag/HonuaGate"] == "true" &&
       statement.Condition.NumericEquals["kms:ScheduleKeyDeletionPendingWindowInDays"] == 7, false)])
     error_message = "Key deletion must require gate ownership and the seven-day waiting period."
   }

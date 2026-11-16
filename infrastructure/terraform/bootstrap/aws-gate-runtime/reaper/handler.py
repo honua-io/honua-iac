@@ -47,7 +47,7 @@ def lambda_handler(event, context):
     return result
 
 
-STACK_TAG = 'aws:cloudformation:stack-name'
+GATE_TAG = 'HonuaGate'
 
 
 def resource_tags(client, operation, field, **request):
@@ -61,18 +61,13 @@ def resource_tags(client, operation, field, **request):
         request['Marker'] = page['NextMarker'] if 'NextMarker' in page else page['Marker']
 
 
-def role_owner(iam, name, stacks):
+def role_owner(name, stacks):
     if not name.startswith('honua-gate-'):
         return None
-    tags = resource_tags(iam, 'list_role_tags', 'Tags', RoleName=name)
-    owner = next((tag['Value'] for tag in tags if tag['Key'] == STACK_TAG), None)
-    # Longest match protects similarly named, still-live stacks.
-    matches = [s for s in stacks if name == s or name.startswith(s + '-')]
-    inferred = max(matches, key=len, default=None)
-    owner = owner or inferred
-    return owner if owner and owner.startswith('honua-gate-') and (
-        name == owner or name.startswith(owner + '-')) and (
-        not inferred or len(inferred) <= len(owner)) else None
+    # IAM cannot carry reserved CloudFormation tags. Longest historical name
+    # match protects similarly named, still-live stacks.
+    return max((s for s in stacks if name == s or name.startswith(s + '-')),
+               key=len, default=None)
 
 
 def stack_is_gone(cf, name):
@@ -99,7 +94,7 @@ def delete_role(iam, name):
 
 def orphan_role(cf, iam, role, stacks, dry_run):
     name = role['RoleName']
-    owner = role_owner(iam, name, stacks)
+    owner = role_owner(name, stacks)
     if not owner or not stack_is_gone(cf, owner):
         return 0
     LOG.info('%s remove inline policies, detach managed policies and delete role %s (stack %s)',
@@ -110,14 +105,15 @@ def orphan_role(cf, iam, role, stacks, dry_run):
 
 
 def orphan_key(cf, kms, key, dry_run):
-    key_id = key['KeyId']
+    key_id, owner = key
     metadata = kms.describe_key(KeyId=key_id)['KeyMetadata']
     if metadata['KeyManager'] != 'CUSTOMER' or metadata['KeyState'] in (
             'PendingDeletion', 'PendingReplicaDeletion'):
         return 0
     tags = resource_tags(kms, 'list_resource_tags', 'Tags', KeyId=key_id)
-    owner = next((tag['TagValue'] for tag in tags if tag['TagKey'] == STACK_TAG), None)
-    if not owner or not owner.startswith('honua-gate-') or not stack_is_gone(cf, owner):
+    if not any(tag['TagKey'] == GATE_TAG and tag['TagValue'] == 'true' for tag in tags):
+        return 0
+    if not stack_is_gone(cf, owner):
         return 0
     LOG.info('%s schedule key %s deletion in 7 days (stack %s)',
              'Would' if dry_run else 'Will', key_id, owner)
@@ -126,21 +122,38 @@ def orphan_key(cf, kms, key, dry_run):
     return 1
 
 
+def recorded_keys(cf, stacks):
+    """Use physical IDs retained in deleted stack history, never guessed key names."""
+    keys = {}
+    for stack in stacks:
+        if stack['StackStatus'] != 'DELETE_COMPLETE':
+            continue
+        for page in cf.get_paginator('list_stack_resources').paginate(StackName=stack['StackId']):
+            for resource in page['StackResourceSummaries']:
+                if resource['ResourceType'] == 'AWS::KMS::Key' and resource.get('PhysicalResourceId'):
+                    keys[resource['PhysicalResourceId']] = stack['StackName']
+    return keys.items()
+
+
 def reap_orphans(cf, iam, kms, dry_run=True):
-    stacks = [s['StackName'] for page in cf.get_paginator('list_stacks').paginate()
+    stacks = [s for page in cf.get_paginator('list_stacks').paginate()
               for s in page['StackSummaries'] if s['StackName'].startswith('honua-gate-')]
+    names = [s['StackName'] for s in stacks]
     result = {'roles': 0, 'keys': 0, 'dry_run': dry_run}
     failures = 0
-    for client, operation, field, cleanup in (
-            (iam, 'list_roles', 'Roles', lambda role: orphan_role(cf, iam, role, stacks, dry_run)),
-            (kms, 'list_keys', 'Keys', lambda key: orphan_key(cf, kms, key, dry_run))):
-        for page in client.get_paginator(operation).paginate():
-            for resource in page[field]:
-                try:
-                    result['roles' if field == 'Roles' else 'keys'] += cleanup(resource)
-                except Exception:
-                    failures += 1
-                    LOG.exception('Gate orphan cleanup failed for %s', resource)
+    roles = (role for page in iam.get_paginator('list_roles').paginate() for role in page['Roles'])
+    for field, resources, cleanup in (
+            ('roles', roles, lambda role: orphan_role(cf, iam, role, names, dry_run)),
+            ('keys', recorded_keys(cf, stacks), lambda key: orphan_key(cf, kms, key, dry_run))):
+        for resource in resources:
+            try:
+                result[field] += cleanup(resource)
+            except Exception as error:
+                # A recorded key may already have completed its deletion window.
+                if field == 'keys' and getattr(error, 'response', {}).get('Error', {}).get('Code') == 'NotFoundException':
+                    continue
+                failures += 1
+                LOG.exception('Gate orphan cleanup failed for %s', resource)
     if failures:
         raise RuntimeError(f'Orphan cleanup failed for {failures} resource(s)')
     return result
