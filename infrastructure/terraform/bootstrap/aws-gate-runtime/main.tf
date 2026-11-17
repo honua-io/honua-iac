@@ -1,6 +1,8 @@
 locals {
-  stack_arn        = "arn:aws:cloudformation:us-east-1:${var.member_account_id}:stack/honua-gate-*/*"
-  workload_roles   = "arn:aws:iam::${var.member_account_id}:role/honua-gate-*"
+  stack_arn      = "arn:aws:cloudformation:us-east-1:${var.member_account_id}:stack/honua-gate-*/*"
+  workload_roles = "arn:aws:iam::${var.member_account_id}:role/honua-gate-*"
+  # Gate test Connections (quick-create Connection role, Connection ID gate-*).
+  connection_roles = "arn:aws:iam::${var.member_account_id}:role/honua-connection-gate-*"
   service_role_arn = "arn:aws:iam::${var.member_account_id}:role/HonuaGateCloudFormation"
   # A Launch Stack watchdog keeps its state and mode in two String parameters.
   watchdog_parameters = "arn:aws:ssm:us-east-1:${var.member_account_id}:parameter/honua/honua-gate-*/watchdog/*"
@@ -73,6 +75,23 @@ locals {
       }, {
       Sid      = "InspectKeyOwnership", Effect = "Allow", Action = "kms:ListResourceTags"
       Resource = "arn:aws:kms:us-east-1:${var.member_account_id}:key/*"
+      }, {
+      # Qualification rows observe the running install. CloudFormation names
+      # gate clusters and database instances after the stack; the template names
+      # its log groups. Log APIs have no tag condition, so names are the fence.
+      # Task definitions stay unreadable (no resource scope): compare the task's
+      # taskDefinitionArn with ListStackResources and read it from GetTemplate.
+      Sid    = "InspectGateRuntime", Effect = "Allow"
+      Action = ["ecs:DescribeTasks", "logs:DescribeLogStreams", "logs:FilterLogEvents", "logs:GetLogEvents"]
+      Resource = [
+        "arn:aws:ecs:us-east-1:${var.member_account_id}:task/honua-gate-*-Cluster-*/*",
+        "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/honua/honua-gate-*",
+        "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:aws-waf-logs-honua-gate-*",
+        "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/aws/rds/instance/honua-gate-*"
+      ]
+      }, {
+      Sid       = "ListGateTasks", Effect = "Allow", Action = "ecs:ListTasks", Resource = "*"
+      Condition = { ArnLike = { "ecs:cluster" = "arn:aws:ecs:us-east-1:${var.member_account_id}:cluster/honua-gate-*-Cluster-*" } }
     }], local.region_controls, local.stack_tag_controls, local.stack_tag_permissions, local.network_cleanup_permissions)
   })
 }
@@ -99,7 +118,10 @@ resource "aws_iam_policy" "workload_boundary" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = concat([local.protected_controls, { Effect = "Allow", Action = local.workload_services, Resource = "*" }, {
-      Effect = "Allow", Action = "ssm:*", Resource = local.watchdog_parameters
+      # Gate test Connection roles share this statement to keep the boundary in quota:
+      # ssm actions never match a role ARN and sts:AssumeRole never matches a parameter.
+      # The task role's own policy also requires the installation tag on the role.
+      Effect = "Allow", Action = ["ssm:*", "sts:AssumeRole"], Resource = [local.watchdog_parameters, local.connection_roles]
       }, {
       # A boundary only restricts: PassRole outside gate roles has no allow here,
       # so it stays denied without a separate statement inside the quota.
@@ -133,12 +155,12 @@ resource "aws_iam_role_policy" "cloudformation" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = concat([local.protected_controls, { Effect = "Allow", Action = concat(local.workload_services, local.handler_read_actions, ["backup-storage:MountCapsule"]), Resource = "*" }, {
-      Effect    = "Allow", Action = ["iam:CreateRole", "iam:PutRolePermissionsBoundary"], Resource = local.workload_roles
+      Effect    = "Allow", Action = ["iam:CreateRole", "iam:PutRolePermissionsBoundary"], Resource = [local.workload_roles, local.connection_roles]
       Condition = { ArnEquals = { "iam:PermissionsBoundary" = aws_iam_policy.workload_boundary.arn } }
       }, {
       Effect   = "Allow"
       Action   = ["iam:GetRole", "iam:GetRolePolicy", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies", "iam:ListRoleTags", "iam:TagRole", "iam:UntagRole", "iam:DeleteRole", "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:UpdateAssumeRolePolicy", "iam:UpdateRoleDescription", "iam:UpdateRole"]
-      Resource = local.workload_roles
+      Resource = [local.workload_roles, local.connection_roles]
       }, {
       # events: a stack's EventBridge rule delivers findings through its own role.
       Effect    = "Allow", Action = "iam:PassRole", Resource = local.workload_roles

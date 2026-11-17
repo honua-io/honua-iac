@@ -208,6 +208,29 @@ account and `us-east-1`; the existing region deny also limits EC2 inspection.
 Both policies explicitly deny the EC2 Describe APIs classified as content reads
 in `content-reads.tf`, including reads of gate-owned resources.
 
+Qualification rows must observe a running install (sidecar image digest, WAF log
+redaction, the database role in use, Batch worker output). For that, both lane
+policies also allow these read-only calls, on gate resources only:
+
+- `ecs:ListTasks` where the cluster is named `honua-gate-*-Cluster-*`, and
+  `ecs:DescribeTasks` on tasks in those clusters. CloudFormation names each cluster
+  `<stack name>-Cluster-<random>`.
+- `logs:DescribeLogStreams`, `logs:FilterLogEvents` and `logs:GetLogEvents` on the
+  log groups `/honua/honua-gate-*`, `aws-waf-logs-honua-gate-*` and
+  `/aws/rds/instance/honua-gate-*`. CloudWatch Logs has no resource-tag condition
+  for these calls, so the name is the fence. Reaper Lambda logs are not included.
+
+These are content reads of gate installs, which hold synthetic qualification data
+only. The lane still cannot read task definitions: `ecs:DescribeTaskDefinition` has no
+resource scope and would expose every task definition in the account. To check the
+container user or secret references, check that the running task's
+`taskDefinitionArn` matches the task definition in `ListStackResources`. If it
+matches, read that definition in `GetTemplate`, with parameter values from
+`DescribeStacks`. During an update or rollback a task can still run an older
+revision; then this check does not apply. Batch job reads, WAF API reads, log
+queries and command execution are not granted either: Batch job APIs have no
+resource scope, and WAF redaction shows in the WAF log records.
+
 The name fences and the `CreationTags` deny sit in the attached managed policy
 `HonuaGateCloudFormationFences`, because the inline service policy is at its
 10,240-character quota. Apply changes to it while no gate stack is running.
@@ -405,6 +428,31 @@ operations on other names, and the nightly reaper rule remains protected.
 a separate deny requires the backing key to carry `HonuaGate=true`.
 Workload roles retain the ownership-tag checks. This exception does not permit
 alias updates or deletion of untagged keys, VPCs or internet gateways.
+
+### Gate test Connections
+
+A Launch Stack task role can assume customer Connection roles named
+`honua-connection-*`. To test this on a gate install, deploy the quick-create
+Connection role template as a `honua-gate-*` stack with a Connection ID that starts
+with `gate-`. Bind the workload boundary into each role of that template at
+publish time, as the gate publish step does for the Launch Stack roles; the
+customer template does not change. The role is then named `honua-connection-gate-<id>`.
+
+- The service role may create and manage `honua-connection-gate-*` roles, and only
+  with the workload boundary attached. It cannot pass them to any service.
+- The workload boundary allows `sts:AssumeRole` on `honua-connection-gate-*` roles
+  only. The task role's own policy also requires the role's installation tag to
+  match the stack. The boundary also refuses roles without `HonuaGate=true`, so
+  only roles created by a gate stack can be assumed. The boundary carries this in
+  the watchdog-parameter statement to stay inside its quota.
+- Gate principals choose the installation tag value freely, so a gate stack could
+  let another Launch Stack's task role assume a gate Connection role. Access then
+  only reaches gate resources.
+- The lane cannot assume these roles. Point the Connection at a gate-owned bucket:
+  its KMS key carries `HonuaGate=true`, which the content-read fence requires.
+
+The reaper's orphan role pass does not cover these roles; they are deleted with
+their stack.
 
 ### Orphan gate roles and keys
 

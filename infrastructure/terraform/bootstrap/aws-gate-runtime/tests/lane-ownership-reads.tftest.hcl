@@ -31,6 +31,36 @@ run "lane_can_inspect_resource_ownership" {
   }
 }
 
+run "lane_runtime_inspection_is_read_only_and_gate_scoped" {
+  command = plan
+  assert {
+    condition = alltrue([for policy in [aws_iam_role_policy.lane.policy, aws_iam_policy.lane_boundary.policy] :
+      length([for statement in jsondecode(policy).Statement : statement if try(
+        statement.Sid == "InspectGateRuntime" && statement.Effect == "Allow" && !can(statement.Condition) &&
+        toset(statement.Action) == toset(["ecs:DescribeTasks", "logs:DescribeLogStreams", "logs:FilterLogEvents", "logs:GetLogEvents"]) &&
+        toset(statement.Resource) == toset([
+          "arn:aws:ecs:us-east-1:000000000002:task/honua-gate-*-Cluster-*/*",
+          "arn:aws:logs:us-east-1:000000000002:log-group:/honua/honua-gate-*",
+          "arn:aws:logs:us-east-1:000000000002:log-group:aws-waf-logs-honua-gate-*",
+          "arn:aws:logs:us-east-1:000000000002:log-group:/aws/rds/instance/honua-gate-*"
+        ]), false
+        )]) == 1 && length([for statement in jsondecode(policy).Statement : statement if try(
+        statement.Sid == "ListGateTasks" && statement.Effect == "Allow" && statement.Action == "ecs:ListTasks" && statement.Resource == "*" &&
+        statement.Condition.ArnLike["ecs:cluster"] == "arn:aws:ecs:us-east-1:000000000002:cluster/honua-gate-*-Cluster-*", false
+      )]) == 1
+    ])
+    error_message = "Both lane policies must allow only read-only task and log inspection, scoped to gate-named clusters and log groups in the gate account."
+  }
+  assert {
+    condition = alltrue([for policy in [aws_iam_role_policy.lane.policy, aws_iam_policy.lane_boundary.policy] :
+      !anytrue([for statement in jsondecode(policy).Statement : statement.Effect == "Allow" && anytrue([
+        for action in flatten([statement.Action]) : contains(["ecs:DescribeTaskDefinition", "ecs:ExecuteCommand", "logs:StartQuery", "secretsmanager:GetSecretValue", "wafv2:GetLoggingConfiguration"], action) || endswith(action, ":*")
+      ])])
+    ])
+    error_message = "Lane runtime inspection must not grant unscoped task-definition reads, command execution, account-wide log queries, secret reads or service wildcards."
+  }
+}
+
 run "lane_inspection_cannot_read_ec2_content" {
   command = plan
   assert {
