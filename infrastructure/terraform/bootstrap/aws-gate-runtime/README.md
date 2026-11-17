@@ -98,7 +98,11 @@ which AWS Backup requires to create a vault and which has no resource-level
 permissions. It bypasses the ownership-tag deny for that exact action. Failed
 creates can also leave subnet groups without ownership tags, so service-role
 `rds:DeleteDBSubnetGroup` is fenced to `honua-gate-*` subnet groups in the member
-account and gate region. Neither exception extends the workload boundary.
+account and gate region. A failed first create of the Launch Stack protection
+trail likewise has no ownership tags, so service-role `cloudtrail:DeleteTrail`
+is fenced to `honua-protection-<stack GUID>` in the member account and gate
+region. Other trail mutations stay on the ownership fence. None of these
+exceptions extend the workload boundary.
 
 Still not grantable:
 

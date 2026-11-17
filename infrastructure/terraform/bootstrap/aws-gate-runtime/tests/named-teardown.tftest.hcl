@@ -20,7 +20,7 @@ variables {
 run "named_teardown_is_scoped_to_the_service_role" {
   command = plan
   assert {
-    condition = alltrue([for action in ["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "logs:DeleteLogGroup"] :
+    condition = alltrue([for action in ["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "logs:DeleteLogGroup", "cloudtrail:DeleteTrail"] :
       contains(local.service_role_ownership_deny.NotAction, action) &&
       !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))])
     ])
@@ -29,14 +29,15 @@ run "named_teardown_is_scoped_to_the_service_role" {
   assert {
     condition = anytrue([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : try(
       statement.Sid == "NamedTeardownFence" && statement.Effect == "Deny" &&
-      toset(statement.Action) == toset(["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "logs:DeleteLogGroup"]) &&
+      toset(statement.Action) == toset(["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "logs:DeleteLogGroup", "cloudtrail:DeleteTrail"]) &&
       toset(statement.NotResource) == toset([
         "arn:aws:events:us-east-1:000000000002:rule/honua-gate-*",
         "arn:aws:kms:us-east-1:000000000002:alias/honua-gate-*",
         "arn:aws:kms:us-east-1:000000000002:key/*",
         "arn:aws:logs:us-east-1:000000000002:log-group:/honua/honua-gate-*",
         "arn:aws:logs:us-east-1:000000000002:log-group:/aws/lambda/honua-gate-*",
-        "arn:aws:logs:us-east-1:000000000002:log-group:aws-waf-logs-honua-gate-*"
+        "arn:aws:logs:us-east-1:000000000002:log-group:aws-waf-logs-honua-gate-*",
+        "arn:aws:cloudtrail:us-east-1:000000000002:trail/honua-protection-????????-????-????-????-????????????"
       ]), false)
     ]) && aws_iam_role_policy_attachment.cloudformation_fences.role == aws_iam_role.cloudformation.name
     error_message = "An attached unconditional deny must fence teardown by exact service, account, region and gate prefix."
@@ -45,8 +46,9 @@ run "named_teardown_is_scoped_to_the_service_role" {
     condition = alltrue([for arn in [
       "arn:aws:events:us-east-1:000000000002:rule/honua-gate-synthetic-OpsAlarmEvents",
       "arn:aws:kms:us-east-1:000000000002:alias/honua-gate-synthetic-key",
-      "arn:aws:kms:us-east-1:000000000002:key/synthetic-key"
-      ] : anytrue([for pattern in local.named_teardown_deny.NotResource : can(regex("^${replace(pattern, "*", ".*")}$", arn))])]) && alltrue([
+      "arn:aws:kms:us-east-1:000000000002:key/synthetic-key",
+      "arn:aws:cloudtrail:us-east-1:000000000002:trail/honua-protection-12345678-1234-1234-1234-123456789012"
+      ] : anytrue([for pattern in local.named_teardown_deny.NotResource : can(regex("^${replace(replace(pattern, "?", "."), "*", ".*")}$", arn))])]) && alltrue([
       for arn in [
         "arn:aws:events:us-east-1:000000000002:rule/foreign-rule",
         "arn:aws:kms:us-east-1:000000000002:alias/foreign-key",
@@ -56,8 +58,12 @@ run "named_teardown_is_scoped_to_the_service_role" {
         "arn:aws:rds:us-east-1:000000000002:subgrp:foreign-subnet-group",
         "arn:aws:rds:us-east-1:000000000003:subgrp:honua-gate-foreign-account",
         "arn:aws:rds:us-west-2:000000000002:subgrp:honua-gate-foreign-region",
-        "arn:aws:rds:us-east-1:000000000002:db:honua-gate-database"
-      ] : !anytrue([for pattern in local.named_teardown_deny.NotResource : can(regex("^${replace(pattern, "*", ".*")}$", arn))])
+        "arn:aws:rds:us-east-1:000000000002:db:honua-gate-database",
+        "arn:aws:cloudtrail:us-east-1:000000000002:trail/honua-protection-not-a-guid",
+        "arn:aws:cloudtrail:us-east-1:000000000002:trail/other-trail",
+        "arn:aws:cloudtrail:us-west-2:000000000002:trail/honua-protection-12345678-1234-1234-1234-123456789012",
+        "arn:aws:cloudtrail:us-east-1:000000000003:trail/honua-protection-12345678-1234-1234-1234-123456789012"
+      ] : !anytrue([for pattern in local.named_teardown_deny.NotResource : can(regex("^${replace(replace(pattern, "?", "."), "*", ".*")}$", arn))])
     ])
     error_message = "Gate names are eligible; foreign names, accounts and regions stay denied."
   }
@@ -78,7 +84,7 @@ run "named_teardown_is_scoped_to_the_service_role" {
     error_message = "The gate reaper remains protected even though its name has the gate prefix."
   }
   assert {
-    condition = alltrue([for action in ["kms:UpdateAlias", "kms:ScheduleKeyDeletion", "ec2:DeleteVpc", "ec2:DeleteInternetGateway", "ec2:DetachInternetGateway"] :
+    condition = alltrue([for action in ["kms:UpdateAlias", "kms:ScheduleKeyDeletion", "ec2:DeleteVpc", "ec2:DeleteInternetGateway", "ec2:DetachInternetGateway", "cloudtrail:UpdateTrail", "cloudtrail:StopLogging", "cloudtrail:PutEventSelectors"] :
       !anytrue([for pattern in local.service_role_ownership_deny.NotAction : can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))])
     ])
     error_message = "Alias reassignment, key deletion and untagged network changes must retain the ownership deny."
