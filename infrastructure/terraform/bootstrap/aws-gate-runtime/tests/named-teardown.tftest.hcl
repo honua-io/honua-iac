@@ -34,6 +34,8 @@ run "named_teardown_is_scoped_to_the_service_role" {
         "arn:aws:events:us-east-1:000000000002:rule/honua-gate-*",
         "arn:aws:kms:us-east-1:000000000002:alias/honua-gate-*",
         "arn:aws:kms:us-east-1:000000000002:key/*",
+        "arn:aws:logs:us-east-1:000000000002:log-group:/honua/honua-gate-*",
+        "arn:aws:logs:us-east-1:000000000002:log-group:/aws/lambda/honua-gate-*",
         "arn:aws:logs:us-east-1:000000000002:log-group:aws-waf-logs-honua-gate-*"
       ]), false)
     ]) && aws_iam_role_policy_attachment.cloudformation_fences.role == aws_iam_role.cloudformation.name
