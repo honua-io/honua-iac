@@ -26,6 +26,8 @@ resource "aws_cognito_user_pool_client" "gate" {
   callback_urls                        = sort(tolist(var.idp_callback_urls))
   prevent_user_existence_errors        = "ENABLED"
   enable_token_revocation              = true
+  # honua-gate-reaper-callbacks owns the live list: static callbacks plus live gate stacks.
+  lifecycle { ignore_changes = [callback_urls] }
 }
 
 resource "random_password" "admin" {

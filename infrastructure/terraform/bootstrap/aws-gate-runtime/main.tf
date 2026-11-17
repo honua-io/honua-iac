@@ -59,6 +59,8 @@ locals {
       }, {
       Sid = "RegistryLogin", Effect = "Allow", Action = "ecr:GetAuthorizationToken", Resource = "*"
       }, {
+      Sid = "SyncIdpCallbacks", Effect = "Allow", Action = "lambda:InvokeFunction", Resource = "arn:aws:lambda:us-east-1:${var.member_account_id}:function:honua-gate-reaper-callbacks"
+      }, {
       Sid = "InspectNetworkOwnership", Effect = "Allow", Action = "ec2:Describe*", Resource = "*"
       }, {
       Sid = "DenyInspectionContentReads", Effect = "Deny"

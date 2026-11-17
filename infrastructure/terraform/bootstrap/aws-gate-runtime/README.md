@@ -316,20 +316,36 @@ topic or key policy grant to the EventBridge service.
 
 This root creates the `honua-gate-idp` Cognito pool and hosted domain in
 `us-east-1`. Only administrators can create users. Its confidential app client
-uses the authorization-code flow with `openid` and `profile` scopes. The
+uses the authorization-code flow with `openid`, `profile` and `email` scopes. The
 `honua-gate-admin` user has a generated permanent password and belongs to the
 `admin` group. Invitations are suppressed; credentials are written directly to
 Secrets Manager under `honua-gate/idp/` and never exposed as Terraform outputs.
 Terraform state contains these credentials: keep the existing private encrypted
 backend and restrict access to state and saved plans.
 
-Main supplies `idp_callback_urls` privately as exact HTTPS URLs ending in
-`/admin/auth/callback`. Cognito does not accept wildcard callbacks. The initial
-localhost callback only permits bootstrap before the stack has a hostname;
-it does not enable sign-in to the installed stack. After CloudFront assigns a
-hostname, main updates the callback list with that stack's exact public callback
-and applies this root before testing sign-in. Remove callbacks when deleting
-stacks. The gate lane cannot update the provider directly.
+Cognito accepts only exact callback URLs, so gate callbacks are synced, not
+wildcarded. After a gate stack reaches `CREATE_COMPLETE`, the gate lane invokes
+`honua-gate-reaper-callbacks` with its lane role:
+
+```bash
+aws lambda invoke --region us-east-1 --function-name honua-gate-reaper-callbacks /dev/stdout
+```
+
+The function lists live top-level `honua-gate-*` stacks, takes each stack's
+`OidcCallbackUrl` output when it is `https://<id>.cloudfront.net/admin/auth/callback`,
+and sets the client's callbacks to the static `idp_callback_urls` plus those,
+newest first, within Cognito's 100-URL limit. Every other client setting is
+copied unchanged. Callbacks of deleted stacks drop out on the next sync, so no
+main apply is needed per install. `idp_callback_urls` (at most 20, exact HTTPS
+URLs ending in `/admin/auth/callback`) stays as the permanent list; the
+localhost default only permits bootstrap. Terraform ignores `callback_urls`
+drift on the client, which the function owns.
+
+The lane can invoke the function but has no Cognito permissions: it cannot
+register an arbitrary URL or call `DescribeUserPoolClient`, which returns the
+client secret. The function sits in the protected `honua-gate-reaper*`
+namespace and runs as `HonuaGateCallbackSync`, outside `honua-gate-*`, so gate
+stacks and the CloudFormation role cannot change its code or permissions.
 
 The sensitive outputs `oidc_authority`, `oidc_client_id`,
 `oidc_client_secret_arn` and `oidc_admin_secret_arn` provide the private runtime
