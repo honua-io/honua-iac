@@ -184,7 +184,8 @@ locals {
   boundary_ownership_deny = {
     Sid       = "DenyNonGateChanges", Effect = "Deny", NotResource = [aws_secretsmanager_secret.idp_client.arn, local.boundary_repository_arn]
     NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*", "ec2:DescribeManagedPrefixLists", "ec2:DescribeAvailabilityZones", "ec2:DescribeSubnets", "ec2:DescribeVpcs"], local.shared_creation_actions)
-    Condition = local.ownership_condition
+    # Secrets Manager decrypts with its AWS-managed key for callers already allowed to read the secret.
+    Condition = merge(local.ownership_condition, { StringNotEquals = { "kms:ViaService" = "secretsmanager.us-east-1.amazonaws.com" } })
   }
   # Only metadata exceptions need a separate content deny; all other content
   # APIs are already fenced by DenyNonGateChanges. Fully denied metadata
@@ -209,8 +210,7 @@ locals {
       Action = [for action in local.shared_content_read_actions : action if anytrue([
         for pattern in local.metadata_read_actions : can(regex("^${replace(pattern, "*", ".*")}$", action))
       ])]
-      # Secrets Manager decrypts with its AWS-managed key for callers already allowed to read the secret.
-      Condition = { StringNotLikeIfExists = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }, StringNotEquals = { "kms:ViaService" = "secretsmanager.us-east-1.amazonaws.com" } }
+      Condition = { StringNotLikeIfExists = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" } }
     },
     {
       # CreateUserPool requires tagging before a pool has ownership tags. Only
