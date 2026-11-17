@@ -56,11 +56,14 @@ class ReaperTests(unittest.TestCase):
 
     def test_lambda_always_uses_regional_client(self):
         boto = Mock()
-        with patch.dict(sys.modules, {'boto3': boto}), patch.dict(os.environ, {'SERVICE_ROLE_ARN': 'service-role'}), patch.object(handler, 'reap') as reap, patch.object(handler, 'reap_orphans') as orphans:
+        with patch.dict(sys.modules, {'boto3': boto}), patch.dict(os.environ, {'SERVICE_ROLE_ARN': 'service-role'}), patch.object(handler, 'reap') as reap, patch.object(handler, 'reap_orphans') as orphans, patch.object(handler, 'reap_protection_trails') as trails:
             handler.lambda_handler({}, None)
         boto.client.assert_any_call('cloudformation', region_name='us-east-1')
         boto.client.assert_any_call('kms', region_name='us-east-1')
+        boto.client.assert_any_call('cloudtrail', region_name='us-east-1')
+        boto.client.assert_any_call('s3', region_name='us-east-1')
         self.assertTrue(orphans.call_args.kwargs['dry_run'])
+        self.assertEqual(len(trails.call_args.args), 3)
         self.assertEqual(reap.call_args.args[2], 'service-role')
 
 
@@ -184,6 +187,155 @@ class OrphanTests(unittest.TestCase):
         self.cf.describe_stacks.return_value = {'Stacks': [stack('honua-gate-old-exec')]}
         self.assertEqual(self.run_cleanup()['roles'], 0)
         self.cf.describe_stacks.assert_called_once_with(StackName='honua-gate-old-exec')
+
+
+GUID = '12345678-1234-1234-1234-123456789012'
+TRAIL_NAME = f'honua-protection-{GUID}'
+BUCKET_NAME = 'honua-gate-old-protectiontrailbucket-ab'
+
+
+def protection_trail(name=TRAIL_NAME, bucket=BUCKET_NAME, **extra):
+    return {'Name': name, 'S3BucketName': bucket, 'HomeRegion': 'us-east-1', **extra}
+
+
+def stack_id(name, guid):
+    return f'arn:aws:cloudformation:us-east-1:1:stack/{name}/{guid}'
+
+
+class ProtectionTests(unittest.TestCase):
+    def setUp(self):
+        self.cf, self.cloudtrail, self.s3 = Mock(), Mock(), Mock()
+        self.cf.get_paginator.return_value.paginate.return_value = [
+            {'StackSummaries': [stack() | {
+                'StackStatus': 'DELETE_COMPLETE', 'StackId': stack_id('honua-gate-old', GUID)}]}]
+        self.cloudtrail.describe_trails.return_value = {'trailList': [protection_trail()]}
+        self.s3.list_buckets.return_value = {'Buckets': []}
+        self.s3.get_paginator.return_value.paginate.return_value = [
+            {'Versions': [{'Key': 'log', 'VersionId': '1'}], 'DeleteMarkers': []}]
+        self.s3.delete_objects.return_value = {}
+
+    def run_cleanup(self, apply=False):
+        with patch.dict(os.environ, {'TRAIL_CLEANUP_DRY_RUN': 'false' if apply else 'true'}):
+            return handler.reap_protection_trails(self.cf, self.cloudtrail, self.s3)
+
+    def test_dry_run_plans_an_orphaned_gate_trail_and_bucket(self):
+        with self.assertLogs(handler.LOG, level='INFO') as logs:
+            self.assertEqual(self.run_cleanup(), {'trails': 1, 'buckets': 1, 'dry_run': True})
+        self.cloudtrail.delete_trail.assert_not_called()
+        self.s3.delete_bucket.assert_not_called()
+        self.assertIn(TRAIL_NAME, ' '.join(logs.output))
+        self.assertIn(BUCKET_NAME, ' '.join(logs.output))
+
+    def test_apply_deletes_the_trail_then_empties_and_deletes_the_bucket(self):
+        self.assertEqual(self.run_cleanup(apply=True), {'trails': 1, 'buckets': 1, 'dry_run': False})
+        self.cloudtrail.delete_trail.assert_called_once_with(Name=TRAIL_NAME)
+        self.s3.delete_objects.assert_called_once()
+        self.s3.delete_bucket.assert_called_once_with(Bucket=BUCKET_NAME)
+        calls = self.s3.mock_calls
+        self.assertLess(calls.index(unittest.mock.call.delete_objects(
+            Bucket=BUCKET_NAME, Delete={'Objects': [{'Key': 'log', 'VersionId': '1'}], 'Quiet': True})),
+            calls.index(unittest.mock.call.delete_bucket(Bucket=BUCKET_NAME)))
+
+    def test_live_owning_stack_and_live_consumer_are_kept(self):
+        live = stack() | {'StackStatus': 'CREATE_COMPLETE', 'StackId': stack_id('honua-gate-old', GUID)}
+        self.cf.get_paginator.return_value.paginate.return_value = [{'StackSummaries': [live]}]
+        self.assertEqual(self.run_cleanup(apply=True)['trails'], 0)
+        consumer = stack('honua-gate-other') | {
+            'StackStatus': 'CREATE_COMPLETE', 'StackId': stack_id('honua-gate-other', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')}
+        gone = stack() | {'StackStatus': 'DELETE_COMPLETE', 'StackId': stack_id('honua-gate-old', GUID)}
+
+        def pages(operation):
+            if operation == 'list_stacks':
+                return Mock(paginate=Mock(return_value=[{'StackSummaries': [gone, consumer]}]))
+            return Mock(paginate=Mock(return_value=[{'StackResourceSummaries': [
+                {'ResourceType': 'AWS::CloudTrail::Trail', 'PhysicalResourceId': TRAIL_NAME}]}]))
+
+        self.cf.get_paginator.side_effect = pages
+        self.assertEqual(self.run_cleanup(apply=True)['trails'], 0)
+        self.cloudtrail.delete_trail.assert_not_called()
+        self.s3.delete_bucket.assert_not_called()
+
+    def test_foreign_audit_and_wrong_bucket_or_region_are_kept(self):
+        foreign = [
+            protection_trail('honua-audit', 'honua-audit'),
+            protection_trail('customer-trail', 'customer-bucket'),
+            protection_trail(f'honua-protection-not-a-guid', BUCKET_NAME),
+            protection_trail(bucket='honua-audit'),
+            protection_trail(bucket='other-logs'),
+            protection_trail(HomeRegion='us-west-2'),
+        ]
+        for trail in foreign:
+            with self.subTest(trail=trail['Name'], bucket=trail['S3BucketName'], region=trail['HomeRegion']):
+                self.cloudtrail.describe_trails.return_value = {'trailList': [trail]}
+                self.assertEqual(self.run_cleanup(apply=True)['trails'], 0)
+        self.cloudtrail.delete_trail.assert_not_called()
+        self.s3.delete_bucket.assert_not_called()
+
+    def test_missing_trail_still_removes_its_bucket(self):
+        self.cloudtrail.delete_trail.side_effect = AwsError('TrailNotFoundException', 'missing')
+        self.assertEqual(self.run_cleanup(apply=True)['buckets'], 1)
+        self.s3.delete_bucket.assert_called_once_with(Bucket=BUCKET_NAME)
+
+    def test_missing_bucket_is_idempotent(self):
+        self.s3.delete_objects.side_effect = AwsError('NoSuchBucket', 'missing')
+        self.assertEqual(self.run_cleanup(apply=True), {'trails': 1, 'buckets': 1, 'dry_run': False})
+
+    def test_version_delete_errors_do_not_delete_the_bucket(self):
+        self.s3.delete_objects.return_value = {'Errors': [{'Key': 'log'}]}
+        with self.assertRaisesRegex(RuntimeError, 'Protection cleanup failed'):
+            self.run_cleanup(apply=True)
+        self.s3.delete_bucket.assert_not_called()
+
+    def test_one_failure_does_not_skip_the_next_trail(self):
+        second = protection_trail(f'honua-protection-abcdefab-cdef-abcd-efab-cdefabcdefab',
+                                  'honua-gate-next-protectiontrailbucket-cd')
+        self.cloudtrail.describe_trails.return_value = {'trailList': [protection_trail(), second]}
+        self.cloudtrail.delete_trail.side_effect = [RuntimeError('denied'), None]
+        with self.assertRaisesRegex(RuntimeError, '1 resource'):
+            self.run_cleanup(apply=True)
+        self.cloudtrail.delete_trail.assert_any_call(Name=second['Name'])
+
+    def test_leftover_gate_bucket_is_removed_only_after_its_stack_is_gone(self):
+        self.cloudtrail.describe_trails.return_value = {'trailList': []}
+        self.s3.list_buckets.return_value = {'Buckets': [{'Name': BUCKET_NAME}, {'Name': 'honua-audit'},
+                                                         {'Name': 'honua-gate-old-console-ab'}]}
+        self.cf.describe_stacks.side_effect = AwsError(
+            'ValidationError', 'Stack with id honua-gate-old does not exist')
+        self.assertEqual(self.run_cleanup(apply=True), {'trails': 0, 'buckets': 1, 'dry_run': False})
+        self.s3.delete_bucket.assert_called_once_with(Bucket=BUCKET_NAME)
+        self.cf.describe_stacks.side_effect = None
+        self.cf.describe_stacks.return_value = {'Stacks': [stack()]}
+        self.s3.delete_bucket.reset_mock()
+        self.assertEqual(self.run_cleanup(apply=True)['buckets'], 0)
+        self.s3.delete_bucket.assert_not_called()
+
+    def test_non_gate_live_stack_is_outside_the_readable_set(self):
+        foreign = stack('production') | {
+            'StackStatus': 'CREATE_COMPLETE',
+            'StackId': stack_id('production', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')}
+        gone = stack() | {'StackStatus': 'DELETE_COMPLETE', 'StackId': stack_id('honua-gate-old', GUID)}
+
+        def pages(operation):
+            if operation == 'list_stacks':
+                return Mock(paginate=Mock(return_value=[{'StackSummaries': [gone, foreign]}]))
+            raise AssertionError(operation)
+
+        self.cf.get_paginator.side_effect = pages
+        self.assertEqual(self.run_cleanup(apply=True)['trails'], 1)
+        self.cloudtrail.delete_trail.assert_called_once_with(Name=TRAIL_NAME)
+
+    def test_a_surviving_trail_keeps_the_shared_bucket(self):
+        kept = protection_trail('customer-trail', BUCKET_NAME)
+        self.cloudtrail.describe_trails.return_value = {'trailList': [protection_trail(), kept]}
+        self.assertEqual(self.run_cleanup(apply=True), {'trails': 1, 'buckets': 0, 'dry_run': False})
+        self.s3.delete_bucket.assert_not_called()
+
+    def test_too_many_live_stacks_fails_closed(self):
+        live = [stack(f'honua-gate-{index}') | {'StackStatus': 'CREATE_COMPLETE'} for index in range(51)]
+        self.cf.get_paginator.return_value.paginate.return_value = [{'StackSummaries': live}]
+        with self.assertRaisesRegex(RuntimeError, '51 live stacks'):
+            self.run_cleanup(apply=True)
+        self.cloudtrail.delete_trail.assert_not_called()
 
 
 if __name__ == '__main__':

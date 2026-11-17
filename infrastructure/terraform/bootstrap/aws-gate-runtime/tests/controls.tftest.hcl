@@ -314,3 +314,42 @@ run "orphan_cleanup_explicit_opt_in" {
     error_message = "Main must be able to opt in after reviewing the dry-run log."
   }
 }
+
+run "protection_trail_cleanup_is_name_fenced_and_dry_run" {
+  command = plan
+  assert {
+    condition     = aws_lambda_function.reaper.environment[0].variables["TRAIL_CLEANUP_DRY_RUN"] == "true"
+    error_message = "Retained protection-trail deletion must require an explicit Terraform opt-in."
+  }
+  assert {
+    condition = anytrue([for statement in jsondecode(aws_iam_role_policy.reaper.policy).Statement : try(
+      toset(statement.Action) == toset(["cloudtrail:GetTrail", "cloudtrail:DeleteTrail"]) &&
+    statement.Resource == "arn:aws:cloudtrail:us-east-1:${var.member_account_id}:trail/honua-protection-*", false)])
+    error_message = "Trail deletion must be limited to honua-protection trails in the gate account and region."
+  }
+  assert {
+    condition = anytrue([for statement in jsondecode(aws_iam_role_policy.reaper.policy).Statement : try(
+      statement.Effect == "Deny" && contains(statement.Action, "cloudtrail:DeleteTrail") &&
+    contains(statement.Resource, format("arn:aws:cloudtrail:us-east-1:%s:trail/honua-audit", var.member_account_id)), false)])
+    error_message = "The reaper must explicitly deny deletion of the audit trail."
+  }
+  assert {
+    condition = anytrue([for statement in jsondecode(aws_iam_role_policy.reaper.policy).Statement : try(
+    statement.Effect == "Allow" && statement.Resource == "arn:aws:s3:::honua-gate-*", false)])
+    error_message = "Bucket cleanup must stay inside the honua-gate name fence."
+  }
+  assert {
+    condition = anytrue([for statement in jsondecode(aws_iam_role_policy.reaper.policy).Statement : try(
+    statement.Effect == "Deny" && contains(statement.Resource, "arn:aws:s3:::honua-audit"), false)])
+    error_message = "The reaper must explicitly deny deletion of the audit bucket."
+  }
+}
+
+run "protection_trail_cleanup_explicit_opt_in" {
+  command = plan
+  variables { protection_trail_cleanup_dry_run = false }
+  assert {
+    condition     = aws_lambda_function.reaper.environment[0].variables["TRAIL_CLEANUP_DRY_RUN"] == "false"
+    error_message = "Main must be able to opt in to retained protection-trail deletion."
+  }
+}
