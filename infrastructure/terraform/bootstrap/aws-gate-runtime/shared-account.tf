@@ -163,8 +163,9 @@ locals {
   # Alias tags are unavailable; failed-create rules and log groups whose first tag failed may lack ownership
   # tags. Only the service role may remove these resources; name fences still reject foreign resources.
   # Log groups share the first-tag name fence, so every gate log group a stack creates stays deletable.
-  # A protection trail that failed before creation has no ownership tags. Rollback's DeleteTrail is
-  # therefore denied. The Launch Stack names that trail honua-protection-<stack GUID> (8-4-4-4-12).
+  # A protection trail that failed before creation has no ownership tags, so the ownership
+  # fence would deny rollback's DeleteTrail. The Launch Stack names that trail
+  # honua-protection-<stack GUID> (8-4-4-4-12), and this name fence allows that delete.
   named_teardown_actions = ["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "logs:DeleteLogGroup", "cloudtrail:DeleteTrail"]
   named_teardown_deny = {
     Sid = "NamedTeardownFence", Effect = "Deny", Action = local.named_teardown_actions
