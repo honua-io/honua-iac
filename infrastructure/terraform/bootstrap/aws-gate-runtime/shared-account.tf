@@ -218,8 +218,13 @@ locals {
   # to avoid duplicating it inside the 6,144-character managed boundary.
   # The boundary allows SSM only on watchdog parameters, so it needs no
   # separate SSM deny either; that also keeps it inside the managed quota.
-  boundary_shared_denies     = concat([for control in local.shared_controls : control if !contains(["DenyNonGateContentReads", "DenyPrivateParameters"], control.Sid)], local.idp_secret_controls, var.shared_account ? [local.boundary_ownership_deny] : [])
-  service_role_shared_denies = concat(local.shared_controls, local.idp_secret_controls, var.shared_account ? [local.service_role_ownership_deny] : [])
+  boundary_shared_denies = concat([for control in local.shared_controls : control if !contains(["DenyNonGateContentReads", "DenyPrivateParameters"], control.Sid)], local.idp_secret_controls, var.shared_account ? [local.boundary_ownership_deny] : [])
+  # CloudFormation reads listeners and rules to create them; neither API accepts a resource or tag scope.
+  service_role_listener_reads = ["elasticloadbalancing:DescribeListeners", "elasticloadbalancing:DescribeRules"]
+  service_role_shared_controls = [for control in local.shared_controls : try(control.Sid, "") == "DenyNonGateContentReads" ? merge(control, {
+    Action = [for action in control.Action : action if !contains(local.service_role_listener_reads, action)]
+  }) : control]
+  service_role_shared_denies = concat(local.service_role_shared_controls, local.idp_secret_controls, var.shared_account ? [local.service_role_ownership_deny] : [])
   # PutRule, PutTargets, PutMetricAlarm, PutCompositeAlarm and ModifyBudget are
   # create and update in one API, so a missing stack tag cannot gate them.
   # Names do. The reaper schedule and shared budget match the gate prefix and
