@@ -170,6 +170,11 @@ roles; a full Launch Stack create needs both:
   service role's credentials; keep such types deactivated in the shared account.
   CloudFront functions are fenced by name (`function/honua-gate-*`): set the Launch
   Stack `NamePrefix` to `honua-gate`, or the function is created and then orphaned.
+- **AWS managed rule groups in a web ACL.** `wafv2:UpdateWebACL` is also
+  authorized against each AWS managed rule group the ACL references, and those carry
+  no tags. The service role is exempt from the ownership deny for this account's
+  `managedruleset` ARNs only, so a stack update can change its web ACL's rules. The
+  web ACL itself stays fenced by its ownership tags.
 - **Route 53 health checks and CloudFront monitoring subscriptions.** The Launch
   Stack's public edge probe and real-time edge metrics have the same shape: create
   takes no resource, later calls name a random health-check ID or none at all, and
@@ -314,7 +319,10 @@ scanned on push, ECR-managed AES256 encryption (no KMS grant through the gate
 fences, as for the template bucket) and only the newest 20 images are kept, so
 a gate stack that outlives 20 newer pushes cannot replace its tasks.
 The lane role may log in, push images and read their manifests in this repository only;
-it cannot delete images, the repository or its policy. A gate stack pulls by
+it cannot delete images, the repository or its policy. Workloads may also pull the
+ECS-managed GuardDuty runtime agent from AWS's `aws-guardduty-agent-fargate`
+repository, which has no gate tags. The boundary uses an account wildcard for it to
+stay inside its quota; the Launch Stack execution role names AWS's account. A gate stack pulls by
 digest: pass `ServerImageUri=<uri>@sha256:<digest>` and the repository ARN in
 the template's private repository parameter, which grants the stack's
 execution role the pull actions that the workload boundary already allows.

@@ -203,3 +203,15 @@ run "rollback_can_delete_an_uncreated_protection_trail_only" {
     error_message = "Workloads keep the full ownership fence on trail deletion."
   }
 }
+
+run "managed_rule_groups_and_the_guardduty_agent_pass_their_untagged_fences" {
+  command = plan
+  assert {
+    condition     = contains(local.service_role_ownership_deny.NotResource, "arn:aws:wafv2:us-east-1:000000000002:global/managedruleset/*/*") && !anytrue([for arn in local.service_role_ownership_deny.NotResource : strcontains(arn, ":webacl/")])
+    error_message = "The service role may update a web ACL's references to AWS managed rule groups; web ACLs themselves stay fenced."
+  }
+  assert {
+    condition     = contains(local.boundary_ownership_deny.NotResource, "arn:aws:ecr:*:*:repository/aws-guardduty-agent-fargate") && !contains(local.service_role_ownership_deny.NotResource, "arn:aws:ecr:*:*:repository/aws-guardduty-agent-fargate")
+    error_message = "Only workloads (task execution roles) may pull the untagged GuardDuty runtime agent image."
+  }
+}
