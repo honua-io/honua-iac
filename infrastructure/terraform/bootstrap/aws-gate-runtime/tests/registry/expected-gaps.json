@@ -793,13 +793,6 @@
   {
     "type": "AWS::ElasticLoadBalancingV2::Listener",
     "handler": "create",
-    "action": "elasticloadbalancing:DescribeListeners",
-    "decision": "Deny",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::Listener",
-    "handler": "create",
     "action": "elasticloadbalancing:ModifyListenerAttributes",
     "decision": "Unmapped multi-resource authorization: elasticloadbalancing:ModifyListenerAttributes",
     "count": 1
@@ -809,20 +802,6 @@
     "handler": "delete",
     "action": "elasticloadbalancing:DeleteListener",
     "decision": "Unmapped multi-resource authorization: elasticloadbalancing:DeleteListener",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::Listener",
-    "handler": "delete",
-    "action": "elasticloadbalancing:DescribeListeners",
-    "decision": "Deny",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::Listener",
-    "handler": "read",
-    "action": "elasticloadbalancing:DescribeListeners",
-    "decision": "Deny",
     "count": 1
   },
   {
@@ -844,13 +823,6 @@
     "handler": "update",
     "action": "elasticloadbalancing:AddTags",
     "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::Listener",
-    "handler": "update",
-    "action": "elasticloadbalancing:DescribeListeners",
-    "decision": "Deny",
     "count": 1
   },
   {
@@ -883,30 +855,9 @@
   },
   {
     "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
-    "handler": "create",
-    "action": "elasticloadbalancing:DescribeRules",
-    "decision": "Deny",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
     "handler": "delete",
     "action": "elasticloadbalancing:DeleteRule",
     "decision": "Unmapped multi-resource authorization: elasticloadbalancing:DeleteRule",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
-    "handler": "delete",
-    "action": "elasticloadbalancing:DescribeRules",
-    "decision": "Deny",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
-    "handler": "read",
-    "action": "elasticloadbalancing:DescribeRules",
-    "decision": "Deny",
     "count": 1
   },
   {
@@ -928,13 +879,6 @@
     "handler": "update",
     "action": "elasticloadbalancing:AddTags",
     "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
-    "handler": "update",
-    "action": "elasticloadbalancing:DescribeRules",
-    "decision": "Deny",
     "count": 1
   },
   {
