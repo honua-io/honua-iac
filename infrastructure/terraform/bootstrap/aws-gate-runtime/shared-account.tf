@@ -142,8 +142,10 @@ locals {
   # resource or a random ID and support no tag condition keys, so the edge probe and real-time metrics follow
   # the same service-role-only rule; the subscription pattern matches exactly Create, Delete and Get (the Get
   # returns only the distribution's real-time metrics setting). Hosted zones stay fenced. Risks: README.md.
-  untaggable_creates = ["cloudfront:CreateCachePolicy", "cloudfront:CreateOriginRequestPolicy", "cloudfront:CreateResponseHeadersPolicy",
-  "cloudfront:*MonitoringSubscription", "route53:CreateHealthCheck"]
+  # cloudfront:Create*Policy is exactly the cache, origin-request, response-headers and (unattached until a
+  # fenced UpdateDistribution) continuous-deployment policy creates; one pattern keeps the role within quota.
+  # ecs:DeregisterTaskDefinition takes no resource or condition key, so stack teardown needs it here too.
+  untaggable_creates = ["cloudfront:Create*Policy", "cloudfront:*MonitoringSubscription", "route53:CreateHealthCheck", "ecs:DeregisterTaskDefinition"]
   untaggable_arns = concat([
     for type in ["origin-access-control", "cache-policy", "origin-request-policy", "response-headers-policy"] :
     "arn:aws:cloudfront::${var.member_account_id}:${type}/*"

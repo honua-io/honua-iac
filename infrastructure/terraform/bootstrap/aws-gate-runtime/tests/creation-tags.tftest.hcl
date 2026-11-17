@@ -70,7 +70,7 @@ run "untaggable_types_are_managed_by_the_service_role_only" {
   command = plan
   assert {
     condition = alltrue([for action in ["cloudfront:CreateCachePolicy", "cloudfront:CreateOriginRequestPolicy", "cloudfront:CreateResponseHeadersPolicy",
-      "cloudfront:CreateMonitoringSubscription", "cloudfront:DeleteMonitoringSubscription", "route53:CreateHealthCheck"] :
+      "cloudfront:CreateMonitoringSubscription", "cloudfront:DeleteMonitoringSubscription", "route53:CreateHealthCheck", "ecs:DeregisterTaskDefinition"] :
       anytrue([for pattern in local.service_role_ownership_deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))]) &&
       !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))])
     ])
@@ -101,7 +101,8 @@ run "untaggable_types_are_managed_by_the_service_role_only" {
     error_message = "Taggable distributions, functions outside the gate name, hosted zones and other accounts keep the ownership fence."
   }
   assert {
-    condition = alltrue([for action in ["route53:ChangeResourceRecordSets", "route53:ChangeTagsForResource", "cloudfront:UpdateDistribution", "cloudfront:DeleteDistribution"] :
+    condition = alltrue([for action in ["route53:ChangeResourceRecordSets", "route53:ChangeTagsForResource", "cloudfront:UpdateDistribution", "cloudfront:DeleteDistribution",
+      "cloudfront:UpdateContinuousDeploymentPolicy", "cloudfront:DeleteContinuousDeploymentPolicy", "ecs:DeleteTaskDefinitions"] :
       !anytrue([for pattern in local.service_role_ownership_deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))])
     ])
     error_message = "Record, hosted-zone tag and distribution changes keep the ownership fence; the subscription pattern must not reach them."

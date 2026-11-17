@@ -183,6 +183,14 @@ roles; a full Launch Stack create needs both:
   only CloudFormation uses the role, and third-party resource types stay
   deactivated. Keep production failover health checks and distributions out of the
   shared gate account. Hosted zones and their records keep the ownership fence.
+- **ECS task definition deregistration and CloudFront continuous-deployment
+  policies.** `ecs:DeregisterTaskDefinition` takes no resource and no condition key,
+  so stack teardown cannot be fenced: the service role may deregister any task
+  definition revision in the account. That cannot be undone: existing services keep
+  running, but new tasks, services and service updates can no longer use the
+  revision. The CloudFront `Create*Policy` pattern also admits creating an
+  unattached continuous-deployment policy; attaching one needs `UpdateDistribution`,
+  which keeps the fence. Same conditions as above.
 - **CloudWatch composite alarms.** CloudWatch authorizes the CloudFormation
   composite-alarm create against the literal `alarm:*`, not only the alarm's name
   (seen live), so the service role's name fence also accepts `alarm:${*}`, the IAM
