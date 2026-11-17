@@ -212,8 +212,9 @@ Qualification rows must observe a running install (sidecar image digest, WAF log
 redaction, the database role in use, Batch worker output). For that, both lane
 policies also allow these read-only calls, on gate resources only:
 
-- `ecs:ListTasks` where the cluster is named `honua-gate-*`, and `ecs:DescribeTasks`
-  on tasks in those clusters. CloudFormation names each cluster after its stack.
+- `ecs:ListTasks` where the cluster is named `honua-gate-*-Cluster-*`, and
+  `ecs:DescribeTasks` on tasks in those clusters. CloudFormation names each cluster
+  `<stack name>-Cluster-<random>`.
 - `logs:DescribeLogStreams`, `logs:FilterLogEvents` and `logs:GetLogEvents` on the
   log groups `/honua/honua-gate-*`, `aws-waf-logs-honua-gate-*` and
   `/aws/rds/instance/honua-gate-*`. CloudWatch Logs has no resource-tag condition
@@ -222,9 +223,11 @@ policies also allow these read-only calls, on gate resources only:
 These are content reads of gate installs, which hold synthetic qualification data
 only. The lane still cannot read task definitions: `ecs:DescribeTaskDefinition` has no
 resource scope and would expose every task definition in the account. To check the
-container user or secret references, match the running task's `taskDefinitionArn`
-with the task definition in `ListStackResources`, then read that definition in
-`GetTemplate`. Each revision is immutable. Batch job reads, WAF API reads, log
+container user or secret references, check that the running task's
+`taskDefinitionArn` matches the task definition in `ListStackResources`. If it
+matches, read that definition in `GetTemplate`, with parameter values from
+`DescribeStacks`. During an update or rollback a task can still run an older
+revision; then this check does not apply. Batch job reads, WAF API reads, log
 queries and command execution are not granted either: Batch job APIs have no
 resource scope, and WAF redaction shows in the WAF log records.
 
