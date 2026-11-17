@@ -61,13 +61,11 @@ locals {
     StringNotLikeIfExists   = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }
     StringNotEqualsIfExists = { "aws:ResourceTag/HonuaGate" = "true" }
   }
-  # EC2 and RDS handlers tag a resource after creating it, while it has no tag yet. Only CloudFormation can
-  # send the reserved aws:cloudformation:stack-name tag, so these two tagging APIs alone (never the create
-  # or restore call that may carry the same request tag) are spared when it names a gate stack. The lane
-  # role cannot create change sets, so it cannot import a foreign resource for CloudFormation to tag.
+  # EC2 accepts the reserved stack-name tag on post-create tagging. RDS instead
+  # needs the customer request tag plus a gate name, account and region fence.
   creation_tag_actions = ["ec2:CreateTags", "rds:AddTagsToResource"]
   creation_tag_deny = {
-    Sid = "CreationTags", Effect = "Deny", Action = local.creation_tag_actions, Resource = "*"
+    Sid = "CreationTags", Effect = "Deny", Action = ["ec2:CreateTags"], Resource = "*"
     Condition = {
       StringNotLikeIfExists = merge(local.ownership_condition.StringNotLikeIfExists, {
         "aws:RequestTag/aws:cloudformation:stack-name" = "honua-gate-*"
@@ -84,6 +82,28 @@ locals {
       StringNotEqualsIfExists = { "aws:RequestTag/HonuaGate" = "true" }
     }
   }
+  rds_gate_arns = [for kind in ["subgrp", "db", "cluster", "pg", "og", "snapshot"] :
+    "arn:aws:rds:us-east-1:${var.member_account_id}:${kind}:honua-gate-*"
+  ]
+  rds_creation_tag_deny = {
+    Sid = "RDSCreationTags", Effect = "Deny", Action = "rds:AddTagsToResource", Resource = "*"
+    Condition = merge(local.ownership_condition, {
+      StringNotEqualsIfExists = merge(local.ownership_condition.StringNotEqualsIfExists, {
+        "aws:RequestTag/HonuaGate" = "true"
+      })
+    })
+  }
+  rds_creation_name_deny = {
+    Sid         = "RDSCreationNames", Effect = "Deny", Action = "rds:AddTagsToResource"
+    NotResource = local.rds_gate_arns
+  }
+  temporary_subnet_cleanup_actions = length(var.temporary_cleanup_subnet_group_names) > 0 ? ["rds:DeleteDBSubnetGroup"] : []
+  temporary_subnet_cleanup_denies = length(local.temporary_subnet_cleanup_actions) > 0 ? [{
+    Sid = "TemporarySubnetCleanup", Effect = "Deny", Action = "rds:DeleteDBSubnetGroup"
+    NotResource = [for name in sort(tolist(var.temporary_cleanup_subnet_group_names)) :
+      "arn:aws:rds:us-east-1:${var.member_account_id}:subgrp:${name}"
+    ]
+  }] : []
   # Exact IDs are supplied privately and removed immediately after orphan cleanup.
   network_cleanup_permissions = length(var.temporary_cleanup_vpc_ids) + length(var.temporary_cleanup_gateway_ids) > 0 ? [{
     Sid    = "TemporaryNetworkCleanup", Effect = "Allow"
@@ -109,19 +129,18 @@ locals {
   # and the lookup Lambda's four network metadata calls, which have no resource tags.
   service_role_ownership_deny = {
     Sid       = "DenyNonGateChanges", Effect = "Deny", NotResource = local.service_role_unfenced
-    NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery", "backup-storage:MountCapsule"], local.shared_creation_actions, local.cloudfront_untaggable_creates, local.creation_tag_actions, local.named_teardown_actions)
+    NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery", "backup-storage:MountCapsule"], local.shared_creation_actions, local.cloudfront_untaggable_creates, local.creation_tag_actions, local.named_teardown_actions, local.temporary_subnet_cleanup_actions)
     Condition = local.ownership_condition
   }
-  # Alias tags are unavailable; failed-create rules and subnet groups may lack ownership tags.
+  # Alias tags are unavailable; failed-create rules may lack ownership tags.
   # Only the service role may remove these resources; name fences still reject foreign resources.
-  named_teardown_actions = ["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "rds:DeleteDBSubnetGroup"]
+  named_teardown_actions = ["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias"]
   named_teardown_deny = {
     Sid = "NamedTeardownFence", Effect = "Deny", Action = local.named_teardown_actions
     NotResource = [
       "arn:aws:events:us-east-1:${var.member_account_id}:rule/honua-gate-*",
       "arn:aws:kms:us-east-1:${var.member_account_id}:alias/honua-gate-*",
-      "arn:aws:kms:us-east-1:${var.member_account_id}:key/*",
-      "arn:aws:rds:us-east-1:${var.member_account_id}:subgrp:honua-gate-*"
+      "arn:aws:kms:us-east-1:${var.member_account_id}:key/*"
     ]
   }
   # DeleteAlias authorizes both alias and key. Alias names supply the name fence;

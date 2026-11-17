@@ -1,0 +1,639 @@
+[
+  {
+    "type": "AWS::ApplicationAutoScaling::ScalableTarget",
+    "handler": "create",
+    "action": "application-autoscaling:RegisterScalableTarget",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Backup::BackupVault",
+    "handler": "create",
+    "action": "backup-storage:Mount",
+    "decision": "UnknownAction",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobDefinition",
+    "handler": "create",
+    "action": "Batch:DescribeJobDefinitions",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobDefinition",
+    "handler": "delete",
+    "action": "Batch:DescribeJobDefinitions",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobDefinition",
+    "handler": "read",
+    "action": "Batch:DescribeJobDefinitions",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobDefinition",
+    "handler": "update",
+    "action": "Batch:DescribeJobDefinitions",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobQueue",
+    "handler": "create",
+    "action": "Batch:DescribeJobQueues",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobQueue",
+    "handler": "delete",
+    "action": "Batch:DescribeJobQueues",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobQueue",
+    "handler": "read",
+    "action": "Batch:DescribeJobQueues",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobQueue",
+    "handler": "update",
+    "action": "Batch:DescribeJobQueues",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::CertificateManager::Certificate",
+    "handler": "create",
+    "action": "route53:ChangeResourceRecordSets",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::MonitoringSubscription",
+    "handler": "create",
+    "action": "cloudfront:CreateMonitoringSubscription",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::MonitoringSubscription",
+    "handler": "delete",
+    "action": "cloudfront:DeleteMonitoringSubscription",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::MonitoringSubscription",
+    "handler": "read",
+    "action": "cloudfront:GetMonitoringSubscription",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::VpcOrigin",
+    "handler": "create",
+    "action": "sts:AssumeRole",
+    "decision": "ImplicitDeny",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::VpcOrigin",
+    "handler": "delete",
+    "action": "sts:AssumeRole",
+    "decision": "ImplicitDeny",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::VpcOrigin",
+    "handler": "update",
+    "action": "sts:AssumeRole",
+    "decision": "ImplicitDeny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Cognito::UserPoolClient",
+    "handler": "read",
+    "action": "cognito-idp:ListUserPoolClientSecrets",
+    "decision": "ImplicitDeny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Cognito::UserPoolUser",
+    "handler": "create",
+    "action": "cognito-idp:AdminGetUser",
+    "decision": "ImplicitDeny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Cognito::UserPoolUser",
+    "handler": "read",
+    "action": "cognito-idp:AdminGetUser",
+    "decision": "ImplicitDeny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Cognito::UserPoolUserToGroupAttachment",
+    "handler": "create",
+    "action": "cognito-idp:AdminListGroupsForUser",
+    "decision": "ImplicitDeny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Cognito::UserPoolUserToGroupAttachment",
+    "handler": "delete",
+    "action": "cognito-idp:AdminListGroupsForUser",
+    "decision": "ImplicitDeny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Cognito::UserPoolUserToGroupAttachment",
+    "handler": "read",
+    "action": "cognito-idp:AdminListGroupsForUser",
+    "decision": "ImplicitDeny",
+    "count": 1
+  },
+  {
+    "type": "AWS::EC2::FlowLog",
+    "handler": "create",
+    "action": "autoscaling:DescribeTags",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::Cluster",
+    "handler": "update",
+    "action": "ecs:PutAccountSetting",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::Cluster",
+    "handler": "update",
+    "action": "ecs:PutAccountSettingDefault",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::TaskDefinition",
+    "handler": "create",
+    "action": "ecs:DescribeTaskDefinition",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::TaskDefinition",
+    "handler": "delete",
+    "action": "ecs:DeregisterTaskDefinition",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::TaskDefinition",
+    "handler": "delete",
+    "action": "ecs:DescribeTaskDefinition",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::TaskDefinition",
+    "handler": "read",
+    "action": "ecs:DescribeTaskDefinition",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::TaskDefinition",
+    "handler": "update",
+    "action": "ecs:DescribeTaskDefinition",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::Listener",
+    "handler": "create",
+    "action": "elasticloadbalancing:DescribeListeners",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::Listener",
+    "handler": "delete",
+    "action": "elasticloadbalancing:DescribeListeners",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::Listener",
+    "handler": "read",
+    "action": "elasticloadbalancing:DescribeListeners",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::Listener",
+    "handler": "update",
+    "action": "elasticloadbalancing:DescribeListeners",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+    "handler": "create",
+    "action": "elasticloadbalancing:DescribeRules",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+    "handler": "delete",
+    "action": "elasticloadbalancing:DescribeRules",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+    "handler": "read",
+    "action": "elasticloadbalancing:DescribeRules",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+    "handler": "update",
+    "action": "elasticloadbalancing:DescribeRules",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::IAM::Role",
+    "handler": "update",
+    "action": "iam:DeleteRolePermissionsBoundary",
+    "decision": "ImplicitDeny",
+    "count": 13
+  },
+  {
+    "type": "AWS::KMS::Alias",
+    "handler": "update",
+    "action": "kms:UpdateAlias",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBInstance",
+    "handler": "create",
+    "action": "rds:DescribeDBClusterSnapshots",
+    "decision": "Unmapped resource selection: AWS::RDS::DBInstance rds:DescribeDBClusterSnapshots: ['cluster', 'cluster-snapshot']",
+    "count": 1
+  },
+  {
+    "type": "AWS::Route53::HealthCheck",
+    "handler": "create",
+    "action": "route53:ChangeTagsForResource",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Route53::HealthCheck",
+    "handler": "create",
+    "action": "route53:CreateHealthCheck",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Route53::HealthCheck",
+    "handler": "delete",
+    "action": "route53:DeleteHealthCheck",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Route53::HealthCheck",
+    "handler": "tag",
+    "action": "route53:ChangeTagsForResource",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Route53::HealthCheck",
+    "handler": "update",
+    "action": "route53:ChangeTagsForResource",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Route53::HealthCheck",
+    "handler": "update",
+    "action": "route53:UpdateHealthCheck",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Route53::RecordSet",
+    "handler": "create",
+    "action": "route53:ChangeResourceRecordSets",
+    "decision": "Deny",
+    "count": 6
+  },
+  {
+    "type": "AWS::Route53::RecordSet",
+    "handler": "create",
+    "action": "route53:ListResourceRecordSets",
+    "decision": "Deny",
+    "count": 6
+  },
+  {
+    "type": "AWS::Route53::RecordSet",
+    "handler": "delete",
+    "action": "route53:ChangeResourceRecordSets",
+    "decision": "Deny",
+    "count": 6
+  },
+  {
+    "type": "AWS::Route53::RecordSet",
+    "handler": "delete",
+    "action": "route53:ListResourceRecordSets",
+    "decision": "Deny",
+    "count": 6
+  },
+  {
+    "type": "AWS::Route53::RecordSet",
+    "handler": "read",
+    "action": "route53:ListResourceRecordSets",
+    "decision": "Deny",
+    "count": 6
+  },
+  {
+    "type": "AWS::Route53::RecordSet",
+    "handler": "update",
+    "action": "route53:ChangeResourceRecordSets",
+    "decision": "Deny",
+    "count": 6
+  },
+  {
+    "type": "AWS::Route53::RecordSet",
+    "handler": "update",
+    "action": "route53:ListResourceRecordSets",
+    "decision": "Deny",
+    "count": 6
+  },
+  {
+    "type": "AWS::S3::Bucket",
+    "handler": "read",
+    "action": "s3:GetBucketDefaultStorageClass",
+    "decision": "UnknownAction",
+    "count": 6
+  },
+  {
+    "type": "AWS::WAFv2::LoggingConfiguration",
+    "handler": "create",
+    "action": "logs:PutResourcePolicy",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::WAFv2::LoggingConfiguration",
+    "handler": "update",
+    "action": "logs:PutResourcePolicy",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::WAFv2::WebACL",
+    "handler": "create",
+    "action": "payments:GetConnectedAccount",
+    "decision": "ImplicitDeny",
+    "count": 1
+  },
+  {
+    "type": "AWS::WAFv2::WebACL",
+    "handler": "update",
+    "action": "payments:GetConnectedAccount",
+    "decision": "ImplicitDeny",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit001",
+    "handler": "runtime",
+    "action": "cognito-idp:DescribeUserPoolClient",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit001",
+    "handler": "runtime",
+    "action": "secretsmanager:PutSecretValue",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit002",
+    "handler": "runtime",
+    "action": "bedrock:GetModelInvocationLoggingConfiguration",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit002",
+    "handler": "runtime",
+    "action": "bedrock:PutModelInvocationLoggingConfiguration",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit003",
+    "handler": "runtime",
+    "action": "s3:PutObject",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit004",
+    "handler": "runtime",
+    "action": "ec2:DescribeAvailabilityZones",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit004",
+    "handler": "runtime",
+    "action": "ec2:DescribeManagedPrefixLists",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit004",
+    "handler": "runtime",
+    "action": "ec2:DescribeSubnets",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit004",
+    "handler": "runtime",
+    "action": "ec2:DescribeVpcs",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit004",
+    "handler": "runtime",
+    "action": "wafv2:GetLoggingConfiguration",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit004",
+    "handler": "runtime",
+    "action": "wafv2:GetWebACL",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit005",
+    "handler": "runtime",
+    "action": "ec2:DescribeAvailabilityZones",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit005",
+    "handler": "runtime",
+    "action": "ec2:DescribeManagedPrefixLists",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit005",
+    "handler": "runtime",
+    "action": "ec2:DescribeSubnets",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit005",
+    "handler": "runtime",
+    "action": "ec2:DescribeVpcs",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit005",
+    "handler": "runtime",
+    "action": "wafv2:GetLoggingConfiguration",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit005",
+    "handler": "runtime",
+    "action": "wafv2:GetWebACL",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit006",
+    "handler": "runtime",
+    "action": "ec2:DescribeAvailabilityZones",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit006",
+    "handler": "runtime",
+    "action": "ec2:DescribeManagedPrefixLists",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit006",
+    "handler": "runtime",
+    "action": "ec2:DescribeSubnets",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit006",
+    "handler": "runtime",
+    "action": "ec2:DescribeVpcs",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit006",
+    "handler": "runtime",
+    "action": "wafv2:GetLoggingConfiguration",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit006",
+    "handler": "runtime",
+    "action": "wafv2:GetWebACL",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit007",
+    "handler": "runtime",
+    "action": "ec2:DescribeAvailabilityZones",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit007",
+    "handler": "runtime",
+    "action": "ec2:DescribeManagedPrefixLists",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit007",
+    "handler": "runtime",
+    "action": "ec2:DescribeSubnets",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit007",
+    "handler": "runtime",
+    "action": "ec2:DescribeVpcs",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit007",
+    "handler": "runtime",
+    "action": "wafv2:GetLoggingConfiguration",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit007",
+    "handler": "runtime",
+    "action": "wafv2:GetWebACL",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit008",
+    "handler": "runtime",
+    "action": "s3:GetObject",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit008",
+    "handler": "runtime",
+    "action": "s3:PutObject",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  }
+]

@@ -150,17 +150,16 @@ ownership conditions.
 Two exceptions apply to the CloudFormation service role only, never to workload
 roles; a full Launch Stack create needs both:
 
-- **Creation tags.** EC2 and RDS handlers create a resource and then tag it
-  (`ec2:CreateTags`, `rds:AddTagsToResource`) while it has no tag yet, so the
-  ownership deny refused the tag call and left an untagged resource that the gate
-  could no longer delete. For those two APIs only, the ownership deny is replaced
-  by a `CreationTags` deny that also spares a request carrying the reserved
-  `aws:cloudformation:stack-name` request tag with a `honua-gate-*` value. Only
-  CloudFormation can send `aws:`-prefixed tags, and the lane role cannot create
-  change sets, so it cannot import a foreign resource into a gate stack. Create,
-  restore and copy calls carry the same request tag, so no other statement may
-  trust it: a restore from a foreign snapshot stays denied. `HonuaGate=true` as a
-  request tag spares nothing, because any principal can send it.
+- **Creation tags.** EC2 and RDS handlers can tag a newly created resource
+  before it has ownership tags. EC2 `CreateTags` requires the reserved
+  `aws:cloudformation:stack-name` request tag matching `honua-gate-*` when no
+  existing ownership tag matches. RDS `AddTagsToResource` instead accepts
+  `HonuaGate=true` for gate-prefixed DB instance, cluster, subnet-group,
+  parameter-group, option-group and snapshot ARNs in this account and region.
+  An independent name deny applies even when the request carries the reserved
+  stack tag; foreign names, accounts, regions and other RDS resource types stay
+  denied. This narrowly permits the RDS create-then-tag sequence. Restore and
+  copy operations retain the ownership deny on their source resources.
 - **Untaggable CloudFront types.** Cache, origin-request and response-headers
   policies and origin access controls cannot carry tags, their create calls take no
   resource and their other calls name a random ID. The service role may create,
@@ -415,3 +414,17 @@ role for cleanup, detach gateways before deleting them and delete the orphan VPC
 Then clear both inputs in the private tfvars and apply the removal immediately.
 Retain the removal plan and result with the private operational record. Leaving
 an ID configured retains delete permission for that resource.
+
+### Handler permission inventory
+
+The [registry audit](tests/registry/README.md) compares the pinned Launch Stack
+resource-handler permissions against the actual rendered CloudFormation role.
+It also inventories inline custom-handler SDK calls separately. Its known-gap
+regression can pass while the authorization sweep remains **NOT PASS**; use the
+machine-readable report and installed create/update/teardown evidence before
+claiming compatibility.
+
+`temporary_cleanup_subnet_group_names` permits service-role deletion of exactly
+one named gate-prefixed subnet group in shared mode, empty by default. While
+configured, the separate name deny refuses deletion of every other subnet group,
+including tagged groups. Remove the temporary entry after authorized cleanup.

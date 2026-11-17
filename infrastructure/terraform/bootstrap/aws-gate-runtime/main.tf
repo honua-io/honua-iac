@@ -114,7 +114,7 @@ resource "aws_iam_role" "cloudformation" {
 # without the fences.
 resource "aws_iam_policy" "cloudformation_fences" {
   name   = "HonuaGateCloudFormationFences"
-  policy = jsonencode({ Version = "2012-10-17", Statement = concat(local.launch_name_denies, var.shared_account ? [local.creation_tag_deny, local.ec2_creation_tag_deny] : [], var.shared_account ? [local.named_teardown_deny] : [], var.shared_account ? [local.alias_teardown_key_deny] : []) })
+  policy = jsonencode({ Version = "2012-10-17", Statement = concat(local.launch_name_denies, var.shared_account ? [local.creation_tag_deny] : [], var.shared_account ? [local.ec2_creation_tag_deny] : [], var.shared_account ? [local.rds_creation_tag_deny] : [], var.shared_account ? [local.rds_creation_name_deny] : [], var.shared_account ? [local.named_teardown_deny] : [], var.shared_account ? [local.alias_teardown_key_deny] : [], local.temporary_subnet_cleanup_denies) })
 }
 resource "aws_iam_role_policy_attachment" "cloudformation_fences" {
   role       = aws_iam_role.cloudformation.name
@@ -126,12 +126,12 @@ resource "aws_iam_role_policy" "cloudformation" {
   depends_on = [aws_iam_role_policy_attachment.cloudformation_fences]
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = concat([local.protected_controls, { Effect = "Allow", Action = concat(local.workload_services, ["backup-storage:MountCapsule"]), Resource = "*" }, {
-      Effect    = "Allow", Action = "iam:CreateRole", Resource = local.workload_roles
+    Statement = concat([local.protected_controls, { Effect = "Allow", Action = concat(local.workload_services, local.handler_read_actions, ["backup-storage:MountCapsule"]), Resource = "*" }, {
+      Effect    = "Allow", Action = ["iam:CreateRole", "iam:PutRolePermissionsBoundary"], Resource = local.workload_roles
       Condition = { ArnEquals = { "iam:PermissionsBoundary" = aws_iam_policy.workload_boundary.arn } }
       }, {
       Effect   = "Allow"
-      Action   = ["iam:GetRole", "iam:GetRolePolicy", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies", "iam:ListRoleTags", "iam:TagRole", "iam:UntagRole", "iam:DeleteRole", "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:UpdateAssumeRolePolicy", "iam:UpdateRoleDescription"]
+      Action   = ["iam:GetRole", "iam:GetRolePolicy", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies", "iam:ListRoleTags", "iam:TagRole", "iam:UntagRole", "iam:DeleteRole", "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:UpdateAssumeRolePolicy", "iam:UpdateRoleDescription", "iam:UpdateRole"]
       Resource = local.workload_roles
       }, {
       # events: a stack's EventBridge rule delivers findings through its own role.

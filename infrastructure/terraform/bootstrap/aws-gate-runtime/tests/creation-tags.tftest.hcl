@@ -22,14 +22,14 @@ run "only_cloudformation_creation_tags_spare_an_untagged_resource" {
   assert {
     condition = anytrue([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : try(
       statement.Sid == "CreationTags" && statement.Effect == "Deny" && statement.Resource == "*" &&
-      toset(statement.Action) == toset(["ec2:CreateTags", "rds:AddTagsToResource"]) &&
+      toset(statement.Action) == toset(["ec2:CreateTags"]) &&
       jsonencode(statement.Condition) == jsonencode({
         StringNotLikeIfExists   = { "aws:RequestTag/aws:cloudformation:stack-name" = "honua-gate-*", "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }
         StringNotEqualsIfExists = { "aws:ResourceTag/HonuaGate" = "true" }
         Null                    = { "ec2:CreateAction" = "true" }
       }), false)
     ])
-    error_message = "The two tag-after-create APIs need their own deny that spares only the reserved CloudFormation stack-name request tag."
+    error_message = "EC2 post-create tagging needs a separate deny that spares the reserved CloudFormation stack-name request tag."
   }
   assert {
     # A create or restore request carries the same request tag; only the tagging APIs may trust it.
@@ -107,9 +107,7 @@ run "ec2_creation_and_post_creation_tagging_decisions" {
       { name = "create_missing_tag", action = "ec2:CreateTags", denied = true, context = { "ec2:CreateAction" = "CreateVpc" } },
       { name = "create_wrong_tag", action = "ec2:CreateTags", denied = true, context = { "ec2:CreateAction" = "CreateVpc", "aws:RequestTag/HonuaGate" = "false" } },
       { name = "foreign_post_create", action = "ec2:CreateTags", denied = true, context = { "aws:RequestTag/HonuaGate" = "true" } },
-      { name = "foreign_rds", action = "rds:AddTagsToResource", denied = true, context = { "aws:RequestTag/HonuaGate" = "true" } },
       { name = "owned_post_create", action = "ec2:CreateTags", denied = false, context = { "aws:ResourceTag/HonuaGate" = "true" } },
-      { name = "reserved_post_create", action = "rds:AddTagsToResource", denied = false, context = { "aws:RequestTag/aws:cloudformation:stack-name" = "honua-gate-synthetic" } },
       { name = "foreign_stack_post_create", action = "ec2:CreateTags", denied = true, context = { "aws:RequestTag/aws:cloudformation:stack-name" = "foreign-stack", "aws:RequestTag/HonuaGate" = "true" } }
       ] : scenario.denied == anytrue([
         for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : try(
@@ -122,7 +120,7 @@ run "ec2_creation_and_post_creation_tagging_decisions" {
         ])]), false)
       ])
     ])
-    error_message = "EC2 create-time tags require HonuaGate=true; post-create EC2/RDS tagging cannot claim an unowned resource with a customer request tag."
+    error_message = "EC2 create-time tags require HonuaGate=true; post-create EC2 tagging cannot claim an unowned resource with a customer request tag."
   }
 }
 
