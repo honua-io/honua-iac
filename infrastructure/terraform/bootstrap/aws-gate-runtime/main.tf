@@ -43,6 +43,9 @@ locals {
       Resource  = local.stack_arn
       Condition = { StringEquals = { "cloudformation:RoleArn" = local.service_role_arn } }
       }, {
+      # Such a name would make every generated role match the IdP secret-reader pattern.
+      Effect = "Deny", Action = ["cloudformation:CreateStack"], Resource = "arn:aws:cloudformation:us-east-1:${var.member_account_id}:stack/*ExecutionRole*/*"
+      }, {
       Effect   = "Allow", Action = ["cloudformation:DescribeStacks", "cloudformation:DescribeStackEvents", "cloudformation:ListStackResources", "cloudformation:GetTemplate", "cloudformation:GetStackPolicy"]
       Resource = local.stack_arn
       }, {

@@ -332,18 +332,21 @@ aws lambda invoke --region us-east-1 --function-name honua-gate-reaper-callbacks
 ```
 
 The function lists live top-level `honua-gate-*` stacks, takes each stack's
-`OidcCallbackUrl` output when it is `https://<id>.cloudfront.net/admin/auth/callback`,
-and sets the client's callbacks to the static `idp_callback_urls` plus those,
-newest first, within Cognito's 100-URL limit. Every other client setting is
-copied unchanged. Callbacks of deleted stacks drop out on the next sync, so no
-main apply is needed per install. `idp_callback_urls` (at most 20, exact HTTPS
+`OidcCallbackUrl` output when it is `https://<host>/admin/auth/callback` and
+`<host>` is the domain of a CloudFront distribution that same stack created in
+this account, and sets the client's callbacks to the static
+`idp_callback_urls` plus those, newest first, within Cognito's 100-URL limit.
+Every other client setting is copied unchanged, except that a
+`DefaultRedirectURI` no longer in the list is dropped. Callbacks of deleted
+stacks drop out on the next sync, so no main apply is needed per install. The
+client changes only when the function runs: invoke it after deleting a stack
+and after an apply that changes `idp_callback_urls`. `idp_callback_urls` (at most 20, exact HTTPS
 URLs ending in `/admin/auth/callback`) stays as the permanent list; the
 localhost default only permits bootstrap. Terraform ignores `callback_urls`
 drift on the client, which the function owns.
 
-The lane can invoke the function but has no Cognito permissions: it cannot
-register an arbitrary URL or call `DescribeUserPoolClient`, which returns the
-client secret. The function sits in the protected `honua-gate-reaper*`
+The lane can invoke the function but has no Cognito permissions, and the
+function registers only hosts of distributions owned by the gate stack itself. The function sits in the protected `honua-gate-reaper*`
 namespace and runs as `HonuaGateCallbackSync`, outside `honua-gate-*`, so gate
 stacks and the CloudFormation role cannot change its code or permissions.
 
@@ -378,13 +381,18 @@ execution roles. Launch Stack containers fetch the secret through their ECS
 needs no approval or apply. Only `HonuaGateCloudFormation` can create
 `honua-gate-*` roles, and only under the workload boundary. Keep gate stack
 names short (about 30 characters) so the generated name keeps its
-`ExecutionRole` part within IAM's 64-character role-name limit. Task, batch and Lambda roles do not
-match. `idp_task_execution_role_arns` still adds exact ARNs for a role named
+`ExecutionRole` part within IAM's 64-character role-name limit. The lane role
+cannot create a stack whose name contains `ExecutionRole`, which would make
+every generated role match. The pattern is a naming convention, not a
+confidentiality boundary against the lane: a gate template can name any role
+`…-ExecutionRole-…` explicitly, and CloudFormation itself is a reader. Treat the
+gate client secret as available to anyone who can launch gate stacks.
+`idp_task_execution_role_arns` still adds exact ARNs for a role named
 differently. The task definition's own policy still needs to allow this
-specific secret, as it already does for `OidcClientSecretArn`. Do not grant the
-application task role or lane role access. Foreign secrets keep their existing
-ownership denies. Only this exact client secret bypasses those ownership checks;
-the gate policies deny all operations on it except a single-secret read by an
+specific secret, as it already does for `OidcClientSecretArn`. Foreign secrets
+keep their existing ownership denies. Only this exact client secret bypasses
+those ownership checks; the gate policies deny all operations on it except a
+single-secret read by an
 approved principal, and deny every operation on the administrator secret.
 The bootstrap operator retains Terraform secret lifecycle
 access through its existing private credentials.

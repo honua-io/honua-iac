@@ -40,15 +40,25 @@ run "callback_sync_role_is_scoped" {
   assert {
     condition = jsondecode(aws_iam_role_policy.idp_callbacks.policy).Statement == [
       { Effect = "Allow", Action = "cloudformation:ListStacks", Resource = "*" },
-      { Effect = "Allow", Action = "cloudformation:DescribeStacks", Resource = local.stack_arn },
+      { Effect = "Allow", Action = ["cloudformation:DescribeStacks", "cloudformation:ListStackResources"], Resource = local.stack_arn },
+      { Effect = "Allow", Action = "cloudfront:GetDistribution", Resource = "arn:aws:cloudfront::000000000002:distribution/*" },
       { Effect = "Allow", Action = ["cognito-idp:DescribeUserPoolClient", "cognito-idp:UpdateUserPoolClient"], Resource = aws_cognito_user_pool.gate.arn },
       { Effect = "Allow", Action = ["logs:CreateLogStream", "logs:PutLogEvents"], Resource = "${aws_cloudwatch_log_group.idp_callbacks.arn}:*" },
     ]
-    error_message = "The sync role may read gate stacks and update only the gate pool's clients."
+    error_message = "The sync role may read gate stacks and this account's distributions and update only the gate pool's clients."
   }
   assert {
     condition     = aws_lambda_function.idp_callbacks.reserved_concurrent_executions == 1 && aws_lambda_function.idp_callbacks.environment[0].variables.STATIC_CALLBACKS == "https://gate.example.invalid/admin/auth/callback,https://localhost/admin/auth/callback"
     error_message = "One sync at a time, with the static callbacks always kept."
+  }
+}
+run "lane_cannot_name_a_stack_like_an_execution_role" {
+  command = plan
+  assert {
+    condition = anytrue([for statement in jsondecode(aws_iam_role_policy.lane.policy).Statement : try(
+      statement.Effect == "Deny" && contains(statement.Action, "cloudformation:CreateStack") && statement.Resource == "arn:aws:cloudformation:us-east-1:000000000002:stack/*ExecutionRole*/*", false
+    )])
+    error_message = "A stack named like an execution role would make every generated role match the secret-reader pattern."
   }
 }
 run "reject_more_than_twenty_static_callbacks" {

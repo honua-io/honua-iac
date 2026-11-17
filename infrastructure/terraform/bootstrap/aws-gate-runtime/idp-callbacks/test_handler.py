@@ -16,12 +16,13 @@ def url(host):
     return f'https://{host}.cloudfront.net/admin/auth/callback'
 
 
-def stack(name, callback=None, hours=0, **extra):
+def stack(name, callback=None, hours=0, own=None, **extra):
     outputs = [{'OutputKey': 'HonuaUrl', 'OutputValue': 'https://x'}]
     if callback:
         outputs.append({'OutputKey': 'OidcCallbackUrl', 'OutputValue': callback})
+    host = callback.split('/')[2] if callback else None
     return dict(StackId=name, StackName=name, CreationTime=T0 + dt.timedelta(hours=hours),
-                StackStatus='CREATE_COMPLETE', Outputs=outputs, **extra)
+                Outputs=outputs, Own=own or host, **({'StackStatus': 'CREATE_COMPLETE'} | extra))
 
 
 def clients(stacks, current):
@@ -30,9 +31,21 @@ def clients(stacks, current):
         {'StackSummaries': stacks[:1]}, {'StackSummaries': stacks[1:]}]
     cf.describe_stacks.side_effect = lambda **kw: {'Stacks': [next(
         s for s in stacks if s['StackId'] == kw['StackName'])]}
+    by_id = {s['StackId']: s for s in stacks}
+    cf.get_paginator.side_effect = lambda op: paginators[op]
+    paginators = {'list_stacks': Mock(), 'list_stack_resources': Mock()}
+    paginators['list_stacks'].paginate.return_value = [
+        {'StackSummaries': stacks[:1]}, {'StackSummaries': stacks[1:]}]
+    paginators['list_stack_resources'].paginate.side_effect = lambda StackName: [{'StackResourceSummaries': [
+        {'ResourceType': 'AWS::S3::Bucket', 'PhysicalResourceId': 'bucket'},
+        {'ResourceType': 'AWS::CloudFront::Distribution', 'PhysicalResourceId': f'dist-{StackName}'}]}]
+    cloudfront = Mock()
+    cloudfront.get_distribution.side_effect = lambda Id: {'Distribution': {
+        'DomainName': by_id[Id.removeprefix('dist-')]['Own']}}
     idp = Mock()
     idp.describe_user_pool_client.return_value = {'UserPoolClient': current}
-    return cf, idp
+    cf.paginators = paginators
+    return (cf, cloudfront, idp), idp
 
 
 def client(**extra):
@@ -51,9 +64,9 @@ class CallbackSyncTests(unittest.TestCase):
                   stack('honua-gate-custom', 'https://evil.example/admin/auth/callback'),
                   stack('honua-gate-pending'), stack('honua-gate-b', url('d444'), hours=1)]
         cf, idp = clients(stacks, client())
-        result = handler.sync(cf, idp, REF, STATIC)
+        result = handler.sync(cf, REF, STATIC)
         self.assertEqual(result, {'changed': True, 'callbacks': 3})
-        cf.get_paginator.return_value.paginate.assert_called_once_with(
+        cf[0].paginators['list_stacks'].paginate.assert_called_once_with(
             StackStatusFilter=list(handler.LIVE))
         kwargs = idp.update_user_pool_client.call_args.kwargs
         self.assertEqual(kwargs['CallbackURLs'], STATIC + [url('d444'), url('d111')])
@@ -66,19 +79,28 @@ class CallbackSyncTests(unittest.TestCase):
     def test_deleted_stacks_drop_out_and_no_change_skips_update(self):
         cf, idp = clients([stack('honua-gate-a', url('d111'))],
                           client(CallbackURLs=STATIC + [url('d111'), url('gone')]))
-        handler.sync(cf, idp, REF, STATIC)
+        handler.sync(cf, REF, STATIC)
         self.assertEqual(idp.update_user_pool_client.call_args.kwargs['CallbackURLs'],
                          STATIC + [url('d111')])
         cf, idp = clients([stack('honua-gate-a', url('d111'))],
                           client(CallbackURLs=[url('d111')] + STATIC))
-        self.assertEqual(handler.sync(cf, idp, REF, STATIC),
+        self.assertEqual(handler.sync(cf, REF, STATIC),
                          {'changed': False, 'callbacks': 2})
         idp.update_user_pool_client.assert_not_called()
+
+    def test_callback_must_be_the_stacks_own_distribution(self):
+        stacks = [stack('honua-gate-foreign', url('dforeign'), own='downed.cloudfront.net'),
+                  stack('honua-gate-a', url('d111'), StackStatus='UPDATE_ROLLBACK_FAILED')]
+        cf, idp = clients(stacks, client())
+        handler.sync(cf, REF, STATIC)
+        self.assertEqual(idp.update_user_pool_client.call_args.kwargs['CallbackURLs'],
+                         STATIC + [url('d111')])
+        self.assertIn('UPDATE_ROLLBACK_FAILED', handler.LIVE)
 
     def test_stale_default_redirect_is_dropped(self):
         cf, idp = clients([], client(DefaultRedirectURI=url('gone'),
                                      CallbackURLs=STATIC + [url('gone')]))
-        handler.sync(cf, idp, REF, STATIC)
+        handler.sync(cf, REF, STATIC)
         self.assertNotIn('DefaultRedirectURI', idp.update_user_pool_client.call_args.kwargs)
 
     def test_callback_limit_keeps_static_and_newest(self):

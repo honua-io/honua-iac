@@ -23,7 +23,9 @@ resource "aws_iam_role_policy" "idp_callbacks" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{ Effect = "Allow", Action = "cloudformation:ListStacks", Resource = "*" }, {
-      Effect = "Allow", Action = "cloudformation:DescribeStacks", Resource = local.stack_arn
+      Effect = "Allow", Action = ["cloudformation:DescribeStacks", "cloudformation:ListStackResources"], Resource = local.stack_arn
+      }, {
+      Effect = "Allow", Action = "cloudfront:GetDistribution", Resource = "arn:aws:cloudfront::${var.member_account_id}:distribution/*"
       }, {
       Effect   = "Allow", Action = ["cognito-idp:DescribeUserPoolClient", "cognito-idp:UpdateUserPoolClient"]
       Resource = aws_cognito_user_pool.gate.arn
