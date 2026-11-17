@@ -429,6 +429,26 @@ a separate deny requires the backing key to carry `HonuaGate=true`.
 Workload roles retain the ownership-tag checks. This exception does not permit
 alias updates or deletion of untagged keys, VPCs or internet gateways.
 
+### Gate test Connections
+
+A Launch Stack task role can assume customer Connection roles named
+`honua-connection-*`. To test this on a gate install, deploy the quick-create
+Connection role template as a `honua-gate-*` stack with a Connection ID that starts
+with `gate-`, and pass the workload boundary as its permissions boundary. The role
+is then named `honua-connection-gate-<id>`.
+
+- The service role may create and manage `honua-connection-gate-*` roles, and only
+  with the workload boundary attached. It cannot pass them to any service.
+- The workload boundary allows `sts:AssumeRole` on `honua-connection-gate-*` roles
+  only. The task role's own policy also requires the role's installation tag to
+  match the stack. The boundary carries this in the watchdog-parameter statement
+  to stay inside its quota.
+- The lane cannot assume these roles. Point the Connection at a gate-owned bucket:
+  its KMS key carries `HonuaGate=true`, which the content-read fence requires.
+
+The reaper's orphan role pass does not cover these roles; they are deleted with
+their stack.
+
 ### Orphan gate roles and keys
 
 The nightly reaper also logs orphan IAM role and KMS key cleanup. This pass is
