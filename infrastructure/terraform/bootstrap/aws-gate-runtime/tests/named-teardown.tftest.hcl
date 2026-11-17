@@ -20,7 +20,7 @@ variables {
 run "named_teardown_is_scoped_to_the_service_role" {
   command = plan
   assert {
-    condition = alltrue([for action in ["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias"] :
+    condition = alltrue([for action in ["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "logs:DeleteLogGroup"] :
       contains(local.service_role_ownership_deny.NotAction, action) &&
       !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))])
     ])
