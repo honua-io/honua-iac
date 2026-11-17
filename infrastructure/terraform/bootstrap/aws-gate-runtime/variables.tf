@@ -70,7 +70,7 @@ variable "idp_callback_urls" {
 variable "idp_task_execution_role_arns" {
   type        = set(string)
   default     = []
-  description = "Main-approved exact gate ECS execution roles that may fetch the client secret. Empty permits CloudFormation only."
+  description = "Optional exact gate ECS execution roles that may fetch the client secret, beyond the template ExecutionRole name pattern that is always admitted. Entries the pattern already covers are ignored."
   validation {
     condition = alltrue([
       for arn in var.idp_task_execution_role_arns : can(regex("^arn:aws:iam::${var.member_account_id}:role/honua-gate-[A-Za-z0-9_+=,.@/-]+$", arn)) && !strcontains(arn, "*")

@@ -354,16 +354,27 @@ the pool ownership tag. Native CloudFormation resources must stabilize without
 user-data reads; record exact live denials rather than broadening the policy.
 See the [Cognito authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_cognito-idp.html).
 
-Client-secret access defaults to the CloudFormation role only. Existing Launch
-Stack containers fetch the secret through their ECS **execution** role. Main
-must approve and set `idp_task_execution_role_arns` to the exact installed
-execution-role ARN before launching containers; an empty list deliberately
-blocks that fetch. The task definition's own policy still needs to allow this
+Client-secret access is limited to two kinds of principal. The CloudFormation
+role reads it through its own policy, which names only that role. Launch Stack
+containers fetch it through their ECS **execution** role, which the workload
+boundary admits by the CloudFormation-generated name
+`honua-gate-*-ExecutionRole-*` (the template's `ExecutionRole` resource), so a
+new install needs no per-install approval or apply. Only
+`HonuaGateCloudFormation` creates `honua-gate-*` roles, always under the
+workload boundary, so the pattern admits no principal outside gate stacks.
+`BatchExecutionRole`, `TaskRole` and other template roles do not carry the
+`-ExecutionRole-` segment and stay denied. Keep gate stack names short enough
+that CloudFormation does not truncate the generated role name (under about 35
+characters); a truncated name fails closed. `idp_task_execution_role_arns`
+still accepts exact execution-role ARNs that fall outside the pattern; entries
+the pattern already covers are ignored so older tfvars cannot push the boundary
+past its quota. The task definition's own policy still needs to allow this
 specific secret, as it already does for `OidcClientSecretArn`. Do not grant the
 application task role or lane role access. Foreign secrets keep their existing
 ownership denies. Only this exact client secret bypasses those ownership checks;
 the gate policies deny all operations on it except a single-secret read by an
-approved principal. The bootstrap operator retains Terraform secret lifecycle
+admitted principal. The administrator secret stays unreadable to every gate
+role. The bootstrap operator retains Terraform secret lifecycle
 access through its existing private credentials.
 
 CloudFormation may remove targets and delete EventBridge rules whose names begin

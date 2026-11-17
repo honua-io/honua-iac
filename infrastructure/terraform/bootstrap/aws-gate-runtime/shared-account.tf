@@ -232,7 +232,7 @@ locals {
   # to avoid duplicating it inside the 6,144-character managed boundary.
   # The boundary allows SSM only on watchdog parameters, so it needs no
   # separate SSM deny either; that also keeps it inside the managed quota.
-  boundary_shared_denies = concat([for control in local.shared_controls : control if !contains(["DenyNonGateContentReads", "DenyPrivateParameters"], control.Sid)], local.idp_secret_controls, var.shared_account ? [local.boundary_ownership_deny] : [])
+  boundary_shared_denies = concat([for control in local.shared_controls : control if !contains(["DenyNonGateContentReads", "DenyPrivateParameters"], control.Sid)], local.idp_boundary_secret_controls, var.shared_account ? [local.boundary_ownership_deny] : [])
   # CloudFormation reads listeners, rules and task definitions to create them;
   # none of these APIs accepts a resource or tag scope. Task and task-set reads stay denied.
   service_role_content_reads = ["elasticloadbalancing:DescribeListeners", "elasticloadbalancing:DescribeRules", "ecs:DescribeTask*"]
