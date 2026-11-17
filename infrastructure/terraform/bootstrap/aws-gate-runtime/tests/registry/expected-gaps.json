@@ -338,20 +338,6 @@
   {
     "type": "AWS::CloudTrail::Trail",
     "handler": "create",
-    "action": "CloudTrail:PutEventConfiguration",
-    "decision": "Unmapped multi-resource authorization: CloudTrail:PutEventConfiguration",
-    "count": 1
-  },
-  {
-    "type": "AWS::CloudTrail::Trail",
-    "handler": "create",
-    "action": "CloudTrail:PutInsightSelectors",
-    "decision": "Unmapped multi-resource authorization: CloudTrail:PutInsightSelectors",
-    "count": 1
-  },
-  {
-    "type": "AWS::CloudTrail::Trail",
-    "handler": "create",
     "action": "iam:CreateServiceLinkedRole",
     "decision": "Unresolved provider service-linked-role identity",
     "count": 1
@@ -361,34 +347,6 @@
     "handler": "create",
     "action": "iam:PassRole",
     "decision": "Unresolved provider passed-role service identity: AWS::CloudTrail::Trail",
-    "count": 1
-  },
-  {
-    "type": "AWS::CloudTrail::Trail",
-    "handler": "read",
-    "action": "CloudTrail:GetEventConfiguration",
-    "decision": "Unmapped multi-resource authorization: CloudTrail:GetEventConfiguration",
-    "count": 1
-  },
-  {
-    "type": "AWS::CloudTrail::Trail",
-    "handler": "read",
-    "action": "CloudTrail:GetInsightSelectors",
-    "decision": "Unmapped multi-resource authorization: CloudTrail:GetInsightSelectors",
-    "count": 1
-  },
-  {
-    "type": "AWS::CloudTrail::Trail",
-    "handler": "update",
-    "action": "CloudTrail:PutEventConfiguration",
-    "decision": "Unmapped multi-resource authorization: CloudTrail:PutEventConfiguration",
-    "count": 1
-  },
-  {
-    "type": "AWS::CloudTrail::Trail",
-    "handler": "update",
-    "action": "CloudTrail:PutInsightSelectors",
-    "decision": "Unmapped multi-resource authorization: CloudTrail:PutInsightSelectors",
     "count": 1
   },
   {
@@ -831,34 +789,6 @@
     "action": "elasticloadbalancing:AddTags",
     "decision": "Deny",
     "count": 1
-  },
-  {
-    "type": "AWS::Events::Rule",
-    "handler": "create",
-    "action": "iam:PassRole",
-    "decision": "Unresolved provider passed-role service identity: AWS::Events::Rule",
-    "count": 12
-  },
-  {
-    "type": "AWS::Events::Rule",
-    "handler": "delete",
-    "action": "iam:PassRole",
-    "decision": "Unresolved provider passed-role service identity: AWS::Events::Rule",
-    "count": 12
-  },
-  {
-    "type": "AWS::Events::Rule",
-    "handler": "read",
-    "action": "iam:PassRole",
-    "decision": "Unresolved provider passed-role service identity: AWS::Events::Rule",
-    "count": 12
-  },
-  {
-    "type": "AWS::Events::Rule",
-    "handler": "update",
-    "action": "iam:PassRole",
-    "decision": "Unresolved provider passed-role service identity: AWS::Events::Rule",
-    "count": 12
   },
   {
     "type": "AWS::GuardDuty::Detector",

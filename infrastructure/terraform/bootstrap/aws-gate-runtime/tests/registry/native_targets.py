@@ -11,6 +11,11 @@ BUCKET_TARGETS = {
     "s3:deleteobject": "object", "s3:getobject": "object", "s3:getobjectversion": "object",
 }
 
+TRAIL_CONFIGURATION_ACTIONS = {
+    "cloudtrail:geteventconfiguration", "cloudtrail:puteventconfiguration",
+    "cloudtrail:getinsightselectors", "cloudtrail:putinsightselectors",
+}
+
 
 def native_target(spec):
     if spec["type"] == "AWS::S3::Bucket":
@@ -23,6 +28,11 @@ def native_target(spec):
     # https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-s3-bucketpolicy.html
     if spec["type"] == "AWS::S3::BucketPolicy" and spec["action"].lower() == "s3:getbucketpolicy":
         return "bucket"
+    # TrailName selects the trail endpoint; event data stores use separate inputs.
+    # https://docs.aws.amazon.com/awscloudtrail/latest/APIReference/API_PutInsightSelectors.html
+    # https://docs.aws.amazon.com/awscloudtrail/latest/APIReference/API_GetEventConfiguration.html
+    if spec["type"] == "AWS::CloudTrail::Trail" and spec["action"].lower() in TRAIL_CONFIGURATION_ACTIONS:
+        return "trail"
     return None
 
 

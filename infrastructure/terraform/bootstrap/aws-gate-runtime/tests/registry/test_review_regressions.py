@@ -60,6 +60,19 @@ class ReviewRegressions(unittest.TestCase):
         self.assertEqual('lambda.amazonaws.com', request[2]['iam:PassedToService'])
 
     def test_unmapped_passed_role_service_stays_unresolved(self):
-        spec = self.spec('AWS::Events::Rule', 'iam:PassRole')
+        spec = self.spec('AWS::Events::Unknown', 'iam:PassRole')
         policy = [{'Effect': 'Allow', 'Action': '*', 'Resource': '*'}]
         self.assertNotEqual('Allow', evaluate(spec, self.services['iam'], policy)[1])
+
+    def test_event_rule_role_is_passed_to_events_not_its_ecs_target(self):
+        spec = self.spec('AWS::Events::Rule', 'iam:PassRole')
+        action, resource, context = request_for(spec, self.services['iam'])
+        self.assertEqual('events.amazonaws.com', context['iam:PassedToService'])
+        policy = [{'Effect': 'Allow', 'Action': action, 'Resource': resource,
+                   'Condition': {'StringEquals': {'iam:PassedToService': 'ecs-tasks.amazonaws.com'}}}]
+        self.assertEqual('ImplicitDeny', evaluate(spec, self.services['iam'], policy)[1])
+        policy[0]['Condition']['StringEquals']['iam:PassedToService'] = 'events.amazonaws.com'
+        self.assertEqual('Allow', evaluate(spec, self.services['iam'], policy)[1])
+        policy.append({'Effect': 'Deny', 'Action': action, 'Resource': resource})
+        self.assertEqual('Deny', evaluate(spec, self.services['iam'], policy)[1])
+        self.assertEqual('ImplicitDeny', evaluate(spec, self.services['iam'], [])[1])

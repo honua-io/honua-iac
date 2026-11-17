@@ -103,7 +103,10 @@ def role_context(spec):
     if action != 'iam:passrole':
         return {}
     services = {'AWS::Lambda::Function': 'lambda.amazonaws.com',
-                'AWS::ECS::TaskDefinition': 'ecs-tasks.amazonaws.com'}
+                'AWS::ECS::TaskDefinition': 'ecs-tasks.amazonaws.com',
+                # Rule execution roles go to EventBridge, including ECS targets:
+                # https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AmazonEventBridgeFullAccess.html
+                'AWS::Events::Rule': 'events.amazonaws.com'}
     service = services.get(spec['type'])
     if service is None:
         raise ValueError('Unresolved provider passed-role service identity: ' + spec['type'])

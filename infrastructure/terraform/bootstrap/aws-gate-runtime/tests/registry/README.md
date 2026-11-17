@@ -41,10 +41,10 @@ changes while preserving the unresolved list. Matching that baseline is a
 regression check; it explicitly reports **authorization sweep NOT PASS**. Never
 use baseline success as evidence that installation or teardown is authorized.
 
-The captured inventory currently produces 4,876 checks: 4,047 Allow, 409
-NotApplicable and 420 unresolved. These include 126 calls whose complete
+The captured inventory currently produces 4,876 checks: 4,101 Allow, 409
+NotApplicable and 366 unresolved. These include 120 calls whose complete
 multi-resource mapping is unverified, 20 unresolved service-linked-role identities,
-87 unresolved PassRole identities, 31 custom runtime calls with unverified execution
+39 unresolved PassRole identities, 31 custom runtime calls with unverified execution
 policies, seven unknown actions, and 149 explicit or implicit policy denies. The inventory includes
 all template resources rather than selecting only one deployment's conditions.
 
@@ -62,7 +62,9 @@ that feature. Unresolved intrinsic values conservatively activate features.
 Lambda code-signing attachment checks both the function and configuration ARN;
 an allow on either one alone cannot authorize the operation. Native Lambda S3
 package reads select bucket objects because the code contract takes a bucket
-name and object key. Imported package access still requires installed proof.
+name and object key. Imported package access still requires installed proof. Native CloudTrail trail
+configuration selects trail ARNs through TrailName; event-data-store configuration
+uses separate API inputs and is not inferred for other resource types.
 
 Requests use a synthetic account, us-east-1, gate-prefixed names and ownership
 context only when the authorization metadata supports the relevant condition key.
@@ -81,7 +83,7 @@ BucketPolicy contract. ELBv2 operations check all supported ARN variants for the
 native resource kind, excluding classic load balancers and unrelated targets.
 First tagging of all four ELBv2 resource kinds remains explicitly denied and needs
 provider-path or installed evidence before a policy repair. PassRole identities
-are modeled for Lambda functions and ECS task definitions; other providers stay
+are modeled for Lambda functions, ECS task definitions and EventBridge rules; other providers stay
 unresolved. The evaluator supports only the condition
 operators emitted by this root and rejects unsupported operators.
 
