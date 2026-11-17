@@ -12,6 +12,7 @@ TARGETS = {
     'logs:TagResource': [
         'arn:aws:logs:us-east-1:000000000002:log-group:/honua/honua-gate-test/audit',
         'arn:aws:logs:us-east-1:000000000002:log-group:/aws/lambda/honua-gate-test',
+        'arn:aws:logs:us-east-1:000000000002:log-group:aws-waf-logs-honua-gate-test',
     ],
 }
 CONTEXT = {'aws:RequestedRegion': 'us-east-1', 'aws:RequestTag/HonuaGate': 'true'}

@@ -103,7 +103,9 @@ locals {
     "lambda:TagResource"     = ["arn:aws:lambda:us-east-1:${var.member_account_id}:function:honua-gate-*"]
     "logs:TagResource" = [
       "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/honua/honua-gate-*",
-      "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/aws/lambda/honua-gate-*"
+      "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/aws/lambda/honua-gate-*",
+      # AWS WAF accepts only log groups named aws-waf-logs-*; waf-logs.tf fences delivery to the same prefix.
+      "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:aws-waf-logs-honua-gate-*"
     ]
   }
   named_tag_denies = concat([{
