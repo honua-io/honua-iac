@@ -481,6 +481,8 @@ Key cleanup schedules deletion with the seven-day minimum, skipping keys already
 pending deletion. Per-resource failures are logged and fail the invocation after
 other resources are checked. Offline tests do not prove live cleanup permission.
 
+The same invocation also plans retained `honua-protection-<stack guid>` trails whose log bucket name starts with `honua-gate-`, whose home region is the gate region, and which no live stack still owns or references. It then empties and deletes that bucket, including a leftover `honua-gate-*-protectiontrailbucket-*` bucket after its stack is gone. `honua-audit` trails and buckets are denied. Trails in another region, with any other name, or logging to any other bucket are left alone. The ownership check reads only live `honua-gate-*` stacks, which is the set this role can list. More than 50 of those fails the invocation before any deletion. A bucket still used by a trail that is not deleted is left in place. This pass follows `protection_trail_cleanup_dry_run` (default true). Main sets it to false and applies before invoking the reaper. Lanes do not apply. The CloudFormation service-role rollback of a trail that was never created is a separate fence.
+
 ## Authenticated release producers
 
 `release_actions_role_arn` is the sensitive GitHub Actions entry point. Its only

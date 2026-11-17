@@ -45,6 +45,33 @@ resource "aws_iam_role_policy" "reaper" {
         NumericEquals = { "kms:ScheduleKeyDeletionPendingWindowInDays" = 7 }
       }
       }, {
+      Effect = "Allow", Action = "cloudtrail:DescribeTrails", Resource = "*"
+      }, {
+      Effect   = "Allow", Action = ["cloudtrail:GetTrail", "cloudtrail:DeleteTrail"]
+      Resource = "arn:aws:cloudtrail:us-east-1:${var.member_account_id}:trail/honua-protection-*"
+      }, {
+      Effect = "Deny", Action = ["cloudtrail:DeleteTrail", "cloudtrail:UpdateTrail", "cloudtrail:StopLogging", "cloudtrail:PutEventSelectors"]
+      Resource = [
+        "arn:aws:cloudtrail:us-east-1:${var.member_account_id}:trail/honua-audit",
+        "arn:aws:cloudtrail:us-east-1:${var.member_account_id}:trail/honua-audit*"
+      ]
+      }, {
+      Effect = "Allow", Action = "s3:ListAllMyBuckets", Resource = "*"
+      }, {
+      Effect   = "Allow"
+      Action   = ["s3:ListBucket", "s3:ListBucketVersions", "s3:ListBucketMultipartUploads", "s3:DeleteBucket"]
+      Resource = "arn:aws:s3:::honua-gate-*"
+      }, {
+      Effect   = "Allow"
+      Action   = ["s3:DeleteObject", "s3:DeleteObjectVersion", "s3:AbortMultipartUpload"]
+      Resource = "arn:aws:s3:::honua-gate-*/*"
+      }, {
+      Effect = "Deny", Action = ["s3:DeleteBucket", "s3:DeleteObject", "s3:DeleteObjectVersion"]
+      Resource = [
+        "arn:aws:s3:::honua-audit", "arn:aws:s3:::honua-audit/*",
+        "arn:aws:s3:::honua-audit-*", "arn:aws:s3:::honua-audit-*/*"
+      ]
+      }, {
       Effect = "Allow", Action = ["logs:CreateLogStream", "logs:PutLogEvents"], Resource = "${aws_cloudwatch_log_group.reaper.arn}:*"
     }]
   })
@@ -61,8 +88,9 @@ resource "aws_lambda_function" "reaper" {
   reserved_concurrent_executions = 1
   environment {
     variables = {
-      SERVICE_ROLE_ARN = local.service_role_arn
-      ORPHAN_DRY_RUN   = tostring(var.orphan_cleanup_dry_run)
+      SERVICE_ROLE_ARN      = local.service_role_arn
+      ORPHAN_DRY_RUN        = tostring(var.orphan_cleanup_dry_run)
+      TRAIL_CLEANUP_DRY_RUN = tostring(var.protection_trail_cleanup_dry_run)
     }
   }
   depends_on = [aws_iam_role_policy.reaper]
