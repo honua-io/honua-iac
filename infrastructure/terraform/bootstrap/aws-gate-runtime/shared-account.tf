@@ -209,7 +209,8 @@ locals {
       Action = [for action in local.shared_content_read_actions : action if anytrue([
         for pattern in local.metadata_read_actions : can(regex("^${replace(pattern, "*", ".*")}$", action))
       ])]
-      Condition = { StringNotLikeIfExists = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" } }
+      # Secrets Manager decrypts with its AWS-managed key for callers already allowed to read the secret.
+      Condition = { StringNotLikeIfExists = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }, StringNotEquals = { "kms:ViaService" = "secretsmanager.us-east-1.amazonaws.com" } }
     },
     {
       # CreateUserPool requires tagging before a pool has ownership tags. Only
