@@ -109,18 +109,19 @@ locals {
   # and the lookup Lambda's four network metadata calls, which have no resource tags.
   service_role_ownership_deny = {
     Sid       = "DenyNonGateChanges", Effect = "Deny", NotResource = local.service_role_unfenced
-    NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery"], local.shared_creation_actions, local.cloudfront_untaggable_creates, local.creation_tag_actions, local.named_teardown_actions)
+    NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery", "backup-storage:MountCapsule"], local.shared_creation_actions, local.cloudfront_untaggable_creates, local.creation_tag_actions, local.named_teardown_actions)
     Condition = local.ownership_condition
   }
-  # Alias tags are unavailable and CloudFormation-created rules may lack ownership tags.
+  # Alias tags are unavailable; failed-create rules and subnet groups may lack ownership tags.
   # Only the service role may remove these resources; name fences still reject foreign resources.
-  named_teardown_actions = ["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias"]
+  named_teardown_actions = ["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "rds:DeleteDBSubnetGroup"]
   named_teardown_deny = {
     Sid = "NamedTeardownFence", Effect = "Deny", Action = local.named_teardown_actions
     NotResource = [
       "arn:aws:events:us-east-1:${var.member_account_id}:rule/honua-gate-*",
       "arn:aws:kms:us-east-1:${var.member_account_id}:alias/honua-gate-*",
-      "arn:aws:kms:us-east-1:${var.member_account_id}:key/*"
+      "arn:aws:kms:us-east-1:${var.member_account_id}:key/*",
+      "arn:aws:rds:us-east-1:${var.member_account_id}:subgrp:honua-gate-*"
     ]
   }
   # DeleteAlias authorizes both alias and key. Alias names supply the name fence;

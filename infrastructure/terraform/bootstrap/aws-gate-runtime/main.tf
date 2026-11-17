@@ -126,7 +126,7 @@ resource "aws_iam_role_policy" "cloudformation" {
   depends_on = [aws_iam_role_policy_attachment.cloudformation_fences]
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = concat([local.protected_controls, { Effect = "Allow", Action = local.workload_services, Resource = "*" }, {
+    Statement = concat([local.protected_controls, { Effect = "Allow", Action = concat(local.workload_services, ["backup-storage:MountCapsule"]), Resource = "*" }, {
       Effect    = "Allow", Action = "iam:CreateRole", Resource = local.workload_roles
       Condition = { ArnEquals = { "iam:PermissionsBoundary" = aws_iam_policy.workload_boundary.arn } }
       }, {
