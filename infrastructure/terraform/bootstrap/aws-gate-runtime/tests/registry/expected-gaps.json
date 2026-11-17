@@ -609,41 +609,6 @@
     "count": 2
   },
   {
-    "type": "AWS::EC2::SecurityGroup",
-    "handler": "create",
-    "action": "ec2:AuthorizeSecurityGroupEgress",
-    "decision": "Deny",
-    "count": 5
-  },
-  {
-    "type": "AWS::EC2::SecurityGroup",
-    "handler": "create",
-    "action": "ec2:AuthorizeSecurityGroupIngress",
-    "decision": "Deny",
-    "count": 5
-  },
-  {
-    "type": "AWS::EC2::SecurityGroup",
-    "handler": "update",
-    "action": "ec2:AuthorizeSecurityGroupEgress",
-    "decision": "Deny",
-    "count": 5
-  },
-  {
-    "type": "AWS::EC2::SecurityGroup",
-    "handler": "update",
-    "action": "ec2:AuthorizeSecurityGroupIngress",
-    "decision": "Deny",
-    "count": 5
-  },
-  {
-    "type": "AWS::EC2::SecurityGroupEgress",
-    "handler": "create",
-    "action": "ec2:AuthorizeSecurityGroupEgress",
-    "decision": "Deny",
-    "count": 2
-  },
-  {
     "type": "AWS::EC2::Subnet",
     "handler": "create",
     "action": "ec2:CreateSubnet",

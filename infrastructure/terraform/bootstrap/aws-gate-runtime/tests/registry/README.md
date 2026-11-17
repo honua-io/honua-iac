@@ -30,6 +30,7 @@ python3 -m unittest discover -s "$root/tests/registry" -p 'test_*.py'
 terraform -chdir="$root" init -backend=false -input=false
 terraform -chdir="$root" test -filter=tests/controls.tftest.hcl -json -verbose > /tmp/gate-plan.jsonl
 python3 "$root/tests/registry/verify_tags.py" /tmp/gate-plan.jsonl
+python3 "$root/tests/registry/verify_rule_creation.py" /tmp/gate-plan.jsonl
 python3 "$root/tests/registry/audit.py" /tmp/gate-plan.jsonl --report /tmp/gate-sweep.json
 ```
 
@@ -40,11 +41,11 @@ changes while preserving the unresolved list. Matching that baseline is a
 regression check; it explicitly reports **authorization sweep NOT PASS**. Never
 use baseline success as evidence that installation or teardown is authorized.
 
-The captured inventory currently produces 4,876 checks: 3,958 Allow, 409
-NotApplicable and 509 unresolved. These include 197 calls whose complete
+The captured inventory currently produces 4,876 checks: 3,980 Allow, 409
+NotApplicable and 487 unresolved. These include 197 calls whose complete
 multi-resource mapping is unverified, 20 unresolved service-linked-role identities,
 87 unresolved PassRole identities, 31 custom runtime calls with unverified execution
-policies, seven unknown actions, and 167 explicit or implicit policy denies. The inventory includes
+policies, seven unknown actions, and 145 explicit or implicit policy denies. The inventory includes
 all template resources rather than selecting only one deployment's conditions.
 
 ## What the model covers
@@ -99,7 +100,13 @@ its [authorization reference](https://docs.aws.amazon.com/service-authorization/
 so a task-family ARN alone cannot enforce the existing ownership fence. RDS
 create-time tagging is separately repaired with both a gate ARN fence and the
 HonuaGate request tag; its negative tests cover foreign names, accounts, regions
-and missing or false request tags.
+and missing or false request tags. Security-group ingress and egress creation
+require ownership of the existing parent group while allowing a new rule before
+it acquires resource tags. Both resource types remain confined to this account
+and region; the workload boundary still rejects unowned rule allocation. AWS
+checks the rule resource when the request includes TagSpecifications, as described
+in the [EC2 authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_ec2.html).
+The inventory conservatively checks both resources for every such call.
 
 ## Refresh the snapshot
 

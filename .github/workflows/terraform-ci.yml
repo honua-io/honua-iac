@@ -259,6 +259,7 @@ jobs:
         run: |
           "$RUNNER_TEMP/gate-registry-test/bin/python" -m unittest discover -s infrastructure/terraform/bootstrap/aws-gate-runtime/tests/registry -v
           "$RUNNER_TEMP/gate-registry-test/bin/python" infrastructure/terraform/bootstrap/aws-gate-runtime/tests/registry/verify_tags.py "$RUNNER_TEMP/gate-runtime-plan.jsonl"
+          "$RUNNER_TEMP/gate-registry-test/bin/python" infrastructure/terraform/bootstrap/aws-gate-runtime/tests/registry/verify_rule_creation.py "$RUNNER_TEMP/gate-runtime-plan.jsonl"
           "$RUNNER_TEMP/gate-registry-test/bin/python" infrastructure/terraform/bootstrap/aws-gate-runtime/tests/registry/audit.py \
             "$RUNNER_TEMP/gate-runtime-plan.jsonl" \
             --report "$RUNNER_TEMP/gate-runtime-sweep.json" \

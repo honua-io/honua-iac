@@ -116,6 +116,19 @@ locals {
     }], [for action, arns in local.named_tag_targets : {
     Effect = "Deny", Action = action, NotResource = arns
   }])
+  # Tag-on-create checks the existing group and the new, untagged rule.
+  # Require ownership on the parent; confine both resource types to this account.
+  security_group_rule_actions = ["ec2:AuthorizeSecurityGroupIngress", "ec2:AuthorizeSecurityGroupEgress"]
+  security_group_rule_denies = [{
+    Sid         = "RuleParentOwnership", Effect = "Deny", Action = local.security_group_rule_actions
+    NotResource = "arn:aws:ec2:us-east-1:${var.member_account_id}:security-group-rule/*"
+    Condition   = local.ownership_condition
+    }, {
+    Sid = "RuleCreationScope", Effect = "Deny", Action = local.security_group_rule_actions
+    NotResource = [for kind in ["security-group", "security-group-rule"] :
+      "arn:aws:ec2:us-east-1:${var.member_account_id}:${kind}/*"
+    ]
+  }]
   temporary_subnet_cleanup_actions = length(var.temporary_cleanup_subnet_group_names) > 0 ? ["rds:DeleteDBSubnetGroup"] : []
   temporary_subnet_cleanup_denies = length(local.temporary_subnet_cleanup_actions) > 0 ? [{
     Sid = "TemporarySubnetCleanup", Effect = "Deny", Action = "rds:DeleteDBSubnetGroup"
@@ -148,7 +161,7 @@ locals {
   # and the lookup Lambda's four network metadata calls, which have no resource tags.
   service_role_ownership_deny = {
     Sid       = "DenyNonGateChanges", Effect = "Deny", NotResource = local.service_role_unfenced
-    NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery", "backup-storage:MountCapsule"], local.shared_creation_actions, local.cloudfront_untaggable_creates, local.creation_tag_actions, local.named_teardown_actions, local.temporary_subnet_cleanup_actions)
+    NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery", "backup-storage:MountCapsule"], local.shared_creation_actions, local.cloudfront_untaggable_creates, local.creation_tag_actions, local.security_group_rule_actions, local.named_teardown_actions, local.temporary_subnet_cleanup_actions)
     Condition = local.ownership_condition
   }
   # Alias tags are unavailable; failed-create rules may lack ownership tags.
