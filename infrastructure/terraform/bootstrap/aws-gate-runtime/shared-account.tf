@@ -151,7 +151,8 @@ locals {
     "arn:aws:cloudfront::${var.member_account_id}:${type}/*"
     ], ["arn:aws:cloudfront::${var.member_account_id}:function/honua-gate-*", "arn:aws:route53:::healthcheck/*",
     # UpdateWebACL also authorizes against each AWS managed rule group it references, and those carry no tags;
-    # the web ACL itself stays fenced by its own ownership tags.
+    # the web ACL itself stays fenced by its own ownership tags. The other managedruleset actions act only on
+    # rule sets this account sells as a vendor, which it does not.
   "arn:aws:wafv2:us-east-1:${var.member_account_id}:global/managedruleset/*/*"])
   service_role_unfenced = concat([aws_secretsmanager_secret.idp_client.arn], local.untaggable_arns)
   # The service role keeps account-wide metadata reads. The workload boundary

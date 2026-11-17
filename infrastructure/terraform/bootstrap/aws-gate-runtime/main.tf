@@ -159,9 +159,9 @@ resource "aws_iam_role_policy" "cloudformation" {
       Condition = { ArnEquals = { "iam:PermissionsBoundary" = aws_iam_policy.workload_boundary.arn } }
       }, {
       Effect = "Allow"
-      # iam:*RolePolic* is exactly Get/Put/Delete/Attach/DetachRolePolicy, ListRolePolicies and
-      # ListAttachedRolePolicies, written once to keep this inline policy within its quota.
-      Action   = ["iam:GetRole", "iam:*RolePolic*", "iam:ListRoleTags", "iam:TagRole", "iam:UntagRole", "iam:DeleteRole", "iam:UpdateAssumeRolePolicy", "iam:UpdateRoleDescription", "iam:UpdateRole"]
+      # iam:*RolePolic* is exactly Get/Put/Delete/Attach/DetachRolePolicy, ListRolePolicies,
+      # ListAttachedRolePolicies and UpdateAssumeRolePolicy, written once to keep this inline policy in quota.
+      Action   = ["iam:GetRole", "iam:*RolePolic*", "iam:ListRoleTags", "iam:TagRole", "iam:UntagRole", "iam:DeleteRole", "iam:UpdateRoleDescription", "iam:UpdateRole"]
       Resource = [local.workload_roles, local.connection_roles]
       }, {
       # events: a stack's EventBridge rule delivers findings through its own role.

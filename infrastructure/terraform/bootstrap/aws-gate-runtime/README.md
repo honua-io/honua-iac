@@ -322,7 +322,9 @@ The lane role may log in, push images and read their manifests in this repositor
 it cannot delete images, the repository or its policy. Workloads may also pull the
 ECS-managed GuardDuty runtime agent from AWS's `aws-guardduty-agent-fargate`
 repository, which has no gate tags. The boundary uses an account wildcard for it to
-stay inside its quota; the Launch Stack execution role names AWS's account. A gate stack pulls by
+stay inside its quota; the Launch Stack execution role names AWS's account. The
+wildcard would also exempt a repository with that name in this account, so do not
+create one. A gate stack pulls by
 digest: pass `ServerImageUri=<uri>@sha256:<digest>` and the repository ARN in
 the template's private repository parameter, which grants the stack's
 execution role the pull actions that the workload boundary already allows.
@@ -438,8 +440,8 @@ Workload roles retain the ownership-tag checks. This exception does not permit
 alias updates or deletion of untagged keys, VPCs or internet gateways.
 
 CloudFormation may also delete CloudTrail trails named `honua-protection-*` without
-ownership tags. A failed create that never made its protection trail still rolls
-the trail back, and a trail that does not exist has no tags. A separate deny refuses
+ownership tags. A failed create that never made its protection trail still tries
+to delete the trail on rollback, and a trail that does not exist has no tags. A separate deny refuses
 the delete when the trail carries another stack's CloudFormation stack-name tag, so
 trails made by non-gate stacks stay protected. A hand-made, untagged trail with
 that name is not protected. Gate stacks keep their trails on delete; main's
