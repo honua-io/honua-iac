@@ -219,10 +219,11 @@ locals {
   # The boundary allows SSM only on watchdog parameters, so it needs no
   # separate SSM deny either; that also keeps it inside the managed quota.
   boundary_shared_denies = concat([for control in local.shared_controls : control if !contains(["DenyNonGateContentReads", "DenyPrivateParameters"], control.Sid)], local.idp_secret_controls, var.shared_account ? [local.boundary_ownership_deny] : [])
-  # CloudFormation reads listeners and rules to create them; neither API accepts a resource or tag scope.
-  service_role_listener_reads = ["elasticloadbalancing:DescribeListeners", "elasticloadbalancing:DescribeRules"]
+  # CloudFormation reads listeners, rules and task definitions to create them;
+  # none of these APIs accepts a resource or tag scope. Task and task-set reads stay denied.
+  service_role_content_reads = ["elasticloadbalancing:DescribeListeners", "elasticloadbalancing:DescribeRules", "ecs:DescribeTask*"]
   service_role_shared_controls = [for control in local.shared_controls : try(control.Sid, "") == "DenyNonGateContentReads" ? merge(control, {
-    Action = [for action in control.Action : action if !contains(local.service_role_listener_reads, action)]
+    Action = concat([for action in control.Action : action if !contains(local.service_role_content_reads, action)], ["ecs:DescribeTasks", "ecs:DescribeTaskSets"])
   }) : control]
   service_role_shared_denies = concat(local.service_role_shared_controls, local.idp_secret_controls, var.shared_account ? [local.service_role_ownership_deny] : [])
   # PutRule, PutTargets, PutMetricAlarm, PutCompositeAlarm and ModifyBudget are

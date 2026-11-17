@@ -744,13 +744,6 @@
   {
     "type": "AWS::ECS::TaskDefinition",
     "handler": "create",
-    "action": "ecs:DescribeTaskDefinition",
-    "decision": "Deny",
-    "count": 1
-  },
-  {
-    "type": "AWS::ECS::TaskDefinition",
-    "handler": "create",
     "action": "ecs:TagResource",
     "decision": "Deny",
     "count": 1
@@ -759,27 +752,6 @@
     "type": "AWS::ECS::TaskDefinition",
     "handler": "delete",
     "action": "ecs:DeregisterTaskDefinition",
-    "decision": "Deny",
-    "count": 1
-  },
-  {
-    "type": "AWS::ECS::TaskDefinition",
-    "handler": "delete",
-    "action": "ecs:DescribeTaskDefinition",
-    "decision": "Deny",
-    "count": 1
-  },
-  {
-    "type": "AWS::ECS::TaskDefinition",
-    "handler": "read",
-    "action": "ecs:DescribeTaskDefinition",
-    "decision": "Deny",
-    "count": 1
-  },
-  {
-    "type": "AWS::ECS::TaskDefinition",
-    "handler": "update",
-    "action": "ecs:DescribeTaskDefinition",
     "decision": "Deny",
     "count": 1
   },
