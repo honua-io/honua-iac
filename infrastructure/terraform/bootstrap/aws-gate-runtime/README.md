@@ -88,7 +88,8 @@ GuardDuty may create its service-linked role. The same region, stack-tag and
 content-read denies apply. Several AWS create calls are also the update call
 (`budgets:ModifyBudget`, `cloudwatch:PutMetricAlarm`, `cloudwatch:PutCompositeAlarm`,
 `events:PutRule`, `events:PutTargets`). A missing stack tag cannot distinguish
-create from overwrite, so those calls are limited to `honua-gate-*` names.
+create from overwrite, so those calls are limited to `honua-gate-*` names
+(composite alarms: see the service-role exceptions below).
 `events:*` on `honua-gate-nightly-reaper` and `budgets:*` on
 `honua-gate-shared-monthly` are denied even though those names match the prefix.
 
@@ -182,6 +183,15 @@ roles; a full Launch Stack create needs both:
   only CloudFormation uses the role, and third-party resource types stay
   deactivated. Keep production failover health checks and distributions out of the
   shared gate account. Hosted zones and their records keep the ownership fence.
+- **CloudWatch composite alarms.** CloudWatch authorizes the CloudFormation
+  composite-alarm create against the literal `alarm:*`, not only the alarm's name
+  (seen live), so the service role's name fence also accepts `alarm:${*}`, the IAM
+  variable for a literal asterisk. Metric alarms keep the `honua-gate-*` fence. If
+  CloudWatch does not also check the named alarm, the service role may create, or
+  overwrite the rule and actions of, any composite alarm in the account. The same
+  conditions hold: only CloudFormation uses the role and third-party resource types
+  stay deactivated. Keep production composite alarms out of the shared gate
+  account. The workload boundary keeps the strict fence.
 
 `HonuaGateLane` can inspect EC2 resources with `ec2:Describe*` and read KMS key
 ownership tags with `kms:ListResourceTags`. Both the lane policy and its permissions

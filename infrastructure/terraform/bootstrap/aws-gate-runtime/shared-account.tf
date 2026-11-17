@@ -258,8 +258,9 @@ locals {
     }
   ]
   # CloudWatch also authorizes the CloudFormation composite-alarm create against the literal alarm:* (seen
-  # live). The IAM variable $${*} matches only that asterisk, so every named alarm still needs the gate
-  # prefix. Service role only: workloads create no composite alarms and the boundary has no room.
+  # live). The IAM variable $${*} matches only that asterisk. If CloudWatch evaluates PutCompositeAlarm only
+  # against alarm:*, the service role can create or overwrite any composite alarm in the account (README).
+  # Service role only: workloads create no composite alarms and the boundary has no room.
   service_role_launch_name_denies = [for deny in local.launch_name_denies : deny.Sid == "NameFence" ? merge(deny, {
     NotResource = concat(deny.NotResource, ["arn:aws:cloudwatch:us-east-1:${var.member_account_id}:alarm:$${*}"])
   }) : deny]
