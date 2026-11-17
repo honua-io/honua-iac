@@ -25,7 +25,7 @@ run "workloads_assume_only_gate_connection_roles" {
       Effect   = "Allow", Action = ["ssm:*", "sts:AssumeRole"]
       Resource = ["arn:aws:ssm:us-east-1:000000000002:parameter/honua/honua-gate-*/watchdog/*", "arn:aws:iam::000000000002:role/honua-connection-gate-*"]
     }]
-    error_message = "The workload boundary must allow sts:AssumeRole only, unconditionally scoped to gate test Connection roles."
+    error_message = "The workload boundary must allow sts:AssumeRole only on gate test Connection roles, scoped by name with no condition."
   }
   assert {
     condition = !anytrue([for policy in [aws_iam_role_policy.lane.policy, aws_iam_role_policy.cloudformation.policy] :
@@ -50,5 +50,19 @@ run "service_role_creates_boundaried_connection_roles_only" {
       alltrue([for statement in jsondecode(policy).Statement : !(statement.Effect == "Allow" && contains(flatten([statement.Action]), "iam:PassRole") && strcontains(jsonencode(statement.Resource), "honua-connection"))])
     ])
     error_message = "No gate principal may pass a Connection role to a service."
+  }
+  assert {
+    condition     = !anytrue([for action in local.boundary_ownership_deny.NotAction : startswith(action, "sts:")])
+    error_message = "The boundary ownership deny must keep covering sts:AssumeRole, so workloads assume only roles that carry gate ownership tags."
+  }
+  assert {
+    condition     = !anytrue([for statement in jsondecode(aws_iam_role_policy.cloudformation.policy).Statement : statement.Effect == "Allow" && contains(flatten([statement.Action]), "iam:DeleteRolePermissionsBoundary")])
+    error_message = "The service role must not remove a permissions boundary."
+  }
+  assert {
+    condition = length([for statement in jsondecode(aws_iam_role_policy.cloudformation.policy).Statement : statement if try(
+      contains(statement.Action, "iam:PutRolePolicy") && toset(statement.Resource) == toset(["arn:aws:iam::000000000002:role/honua-gate-*", "arn:aws:iam::000000000002:role/honua-connection-gate-*"]), false
+    )]) == 1
+    error_message = "The service role manages gate and gate Connection roles only."
   }
 }

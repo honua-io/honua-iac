@@ -434,15 +434,20 @@ alias updates or deletion of untagged keys, VPCs or internet gateways.
 A Launch Stack task role can assume customer Connection roles named
 `honua-connection-*`. To test this on a gate install, deploy the quick-create
 Connection role template as a `honua-gate-*` stack with a Connection ID that starts
-with `gate-`, and pass the workload boundary as its permissions boundary. The role
-is then named `honua-connection-gate-<id>`.
+with `gate-`. Bind the workload boundary into each role of that template at
+publish time, as the gate publish step does for the Launch Stack roles; the
+customer template does not change. The role is then named `honua-connection-gate-<id>`.
 
 - The service role may create and manage `honua-connection-gate-*` roles, and only
   with the workload boundary attached. It cannot pass them to any service.
 - The workload boundary allows `sts:AssumeRole` on `honua-connection-gate-*` roles
   only. The task role's own policy also requires the role's installation tag to
-  match the stack. The boundary carries this in the watchdog-parameter statement
-  to stay inside its quota.
+  match the stack. The boundary also refuses roles without `HonuaGate=true`, so
+  only roles created by a gate stack can be assumed. The boundary carries this in
+  the watchdog-parameter statement to stay inside its quota.
+- Gate principals choose the installation tag value freely, so a gate stack could
+  let another Launch Stack's task role assume a gate Connection role. Access then
+  only reaches gate resources.
 - The lane cannot assume these roles. Point the Connection at a gate-owned bucket:
   its KMS key carries `HonuaGate=true`, which the content-read fence requires.
 
