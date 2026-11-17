@@ -4,6 +4,12 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # hosted-pilot-bootstrap.yml must stay byte-identical to the protected copy in honua-release
+    # (certification/hosted-pilot/bootstrap/foundation-bootstrap-workflow.yml); the
+    # "Hosted pilot foundation inputs" check compares the two. Bump its actions by hand, with
+    # the release copy.
+    exclude-paths:
+      - ".github/workflows/hosted-pilot-bootstrap.yml"
     groups:
       github-actions:
         patterns:
