@@ -29,11 +29,12 @@ run "named_teardown_is_scoped_to_the_service_role" {
   assert {
     condition = anytrue([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : try(
       statement.Sid == "NamedTeardownFence" && statement.Effect == "Deny" &&
-      toset(statement.Action) == toset(["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias"]) &&
+      toset(statement.Action) == toset(["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "logs:DeleteLogGroup"]) &&
       toset(statement.NotResource) == toset([
         "arn:aws:events:us-east-1:000000000002:rule/honua-gate-*",
         "arn:aws:kms:us-east-1:000000000002:alias/honua-gate-*",
-        "arn:aws:kms:us-east-1:000000000002:key/*"
+        "arn:aws:kms:us-east-1:000000000002:key/*",
+        "arn:aws:logs:us-east-1:000000000002:log-group:aws-waf-logs-honua-gate-*"
       ]), false)
     ]) && aws_iam_role_policy_attachment.cloudformation_fences.role == aws_iam_role.cloudformation.name
     error_message = "An attached unconditional deny must fence teardown by exact service, account, region and gate prefix."

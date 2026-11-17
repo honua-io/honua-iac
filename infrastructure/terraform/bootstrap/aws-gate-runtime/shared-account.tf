@@ -155,13 +155,14 @@ locals {
   }
   # Alias tags are unavailable; failed-create rules may lack ownership tags.
   # Only the service role may remove these resources; name fences still reject foreign resources.
-  named_teardown_actions = ["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias"]
+  named_teardown_actions = ["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "logs:DeleteLogGroup"]
   named_teardown_deny = {
     Sid = "NamedTeardownFence", Effect = "Deny", Action = local.named_teardown_actions
     NotResource = [
       "arn:aws:events:us-east-1:${var.member_account_id}:rule/honua-gate-*",
       "arn:aws:kms:us-east-1:${var.member_account_id}:alias/honua-gate-*",
-      "arn:aws:kms:us-east-1:${var.member_account_id}:key/*"
+      "arn:aws:kms:us-east-1:${var.member_account_id}:key/*",
+      "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:aws-waf-logs-honua-gate-*"
     ]
   }
   # DeleteAlias authorizes both alias and key. Alias names supply the name fence;
