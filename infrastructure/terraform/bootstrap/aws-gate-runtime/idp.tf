@@ -21,7 +21,7 @@ resource "aws_cognito_user_pool_client" "gate" {
   generate_secret                      = true
   allowed_oauth_flows_user_pool_client = true
   allowed_oauth_flows                  = ["code"]
-  allowed_oauth_scopes                 = ["openid", "profile"]
+  allowed_oauth_scopes                 = ["openid", "profile", "email"]
   supported_identity_providers         = ["COGNITO"]
   callback_urls                        = sort(tolist(var.idp_callback_urls))
   prevent_user_existence_errors        = "ENABLED"
