@@ -344,6 +344,13 @@
   },
   {
     "type": "AWS::CloudTrail::Trail",
+    "handler": "delete",
+    "action": "CloudTrail:DeleteTrail",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudTrail::Trail",
     "handler": "read",
     "action": "CloudTrail:GetEventConfiguration",
     "decision": "Unmapped multi-resource authorization: CloudTrail:GetEventConfiguration",
