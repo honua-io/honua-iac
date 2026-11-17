@@ -728,13 +728,6 @@
     "count": 1
   },
   {
-    "type": "AWS::ECS::TaskDefinition",
-    "handler": "delete",
-    "action": "ecs:DeregisterTaskDefinition",
-    "decision": "Deny",
-    "count": 1
-  },
-  {
     "type": "AWS::ElasticLoadBalancingV2::Listener",
     "handler": "create",
     "action": "elasticloadbalancing:AddTags",

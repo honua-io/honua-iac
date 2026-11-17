@@ -70,7 +70,7 @@ run "untaggable_types_are_managed_by_the_service_role_only" {
   command = plan
   assert {
     condition = alltrue([for action in ["cloudfront:CreateCachePolicy", "cloudfront:CreateOriginRequestPolicy", "cloudfront:CreateResponseHeadersPolicy",
-      "cloudfront:CreateMonitoringSubscription", "cloudfront:DeleteMonitoringSubscription", "route53:CreateHealthCheck"] :
+      "cloudfront:CreateMonitoringSubscription", "cloudfront:DeleteMonitoringSubscription", "route53:CreateHealthCheck", "ecs:DeregisterTaskDefinition"] :
       anytrue([for pattern in local.service_role_ownership_deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))]) &&
       !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))])
     ])
