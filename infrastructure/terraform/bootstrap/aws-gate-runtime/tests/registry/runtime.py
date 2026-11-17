@@ -15,39 +15,53 @@ def client_service(node):
     return None
 
 
+def assignment_clients(node):
+    if not isinstance(node, ast.Assign) or not (service := client_service(node.value)):
+        return
+    for target in node.targets:
+        if isinstance(target, ast.Name):
+            yield target.id, service
+
+
+def default_clients(node):
+    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return
+    arguments = node.args.posonlyargs + node.args.args
+    defaults = zip(arguments[-len(node.args.defaults):], node.args.defaults)
+    for argument, value in defaults:
+        if service := client_service(value):
+            yield argument.arg, service
+
+
 def client_bindings(tree):
     bindings = {}
     for node in ast.walk(tree):
-        if isinstance(node, ast.Assign) and (service := client_service(node.value)):
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    bindings.setdefault(target.id, set()).add(service)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            arguments = node.args.posonlyargs + node.args.args
-            defaults = zip(arguments[-len(node.args.defaults):], node.args.defaults)
-            for argument, value in defaults:
-                if service := client_service(value):
-                    bindings.setdefault(argument.arg, set()).add(service)
+        for name, service in (*assignment_clients(node), *default_clients(node)):
+            bindings.setdefault(name, set()).add(service)
     for name, service in helper_clients(tree):
         bindings.setdefault(name, set()).add(service)
     return bindings
+
+
+def call_clients(node, functions):
+    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+        return
+    function = functions.get(node.func.id)
+    if function is None:
+        return
+    parameters = function.args.posonlyargs + function.args.args
+    values = [(parameter.arg, value) for parameter, value in zip(parameters, node.args)]
+    values.extend((keyword.arg, keyword.value) for keyword in node.keywords if keyword.arg)
+    for name, value in values:
+        if service := client_service(value):
+            yield name, service
 
 
 def helper_clients(tree):
     functions = {node.name: node for node in ast.walk(tree)
                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
-            continue
-        function = functions.get(node.func.id)
-        if function is None:
-            continue
-        parameters = function.args.posonlyargs + function.args.args
-        values = [(parameter.arg, value) for parameter, value in zip(parameters, node.args)]
-        values.extend((keyword.arg, keyword.value) for keyword in node.keywords if keyword.arg)
-        for name, value in values:
-            if service := client_service(value):
-                yield name, service
+        yield from call_clients(node, functions)
 
 
 def inline_actions(code, authorization):
@@ -78,12 +92,17 @@ def custom_actions(resource, resources, authorization):
     return inline_actions(code, authorization) if isinstance(code, str) else None
 
 
+def resource_services(resource):
+    code = resource.get("Properties", {}).get("Code", {}).get("ZipFile")
+    if not isinstance(code, str) or resource["Type"] != "AWS::Lambda::Function":
+        return set()
+    return {service for node in ast.walk(ast.parse(code))
+            if (service := client_service(node))}
+
+
 def template_services(templates):
     services = set()
     for template in templates:
         for resource in template["resources"].values():
-            code = resource.get("Properties", {}).get("Code", {}).get("ZipFile")
-            if isinstance(code, str) and resource["Type"] == "AWS::Lambda::Function":
-                services.update(service for node in ast.walk(ast.parse(code))
-                                if (service := client_service(node)))
+            services.update(resource_services(resource))
     return services

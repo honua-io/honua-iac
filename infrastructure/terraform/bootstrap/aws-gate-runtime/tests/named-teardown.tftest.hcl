@@ -111,7 +111,7 @@ run "vault_storage_mount_is_service_role_only" {
 run "subnet_cleanup_is_empty_by_default" {
   command = plan
   assert {
-    condition = !contains(local.service_role_ownership_deny.NotAction, "rds:DeleteDBSubnetGroup")
+    condition     = !contains(local.service_role_ownership_deny.NotAction, "rds:DeleteDBSubnetGroup")
     error_message = "Untagged subnet deletion must never have a permanent gate-prefix exception."
   }
 }
@@ -123,7 +123,7 @@ run "subnet_cleanup_is_one_exact_resource" {
       for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : try(
         statement.Sid == "TemporarySubnetCleanup" && statement.Effect == "Deny" &&
         statement.Action == "rds:DeleteDBSubnetGroup" &&
-        statement.NotResource == ["arn:aws:rds:us-east-1:000000000002:subgrp:honua-gate-synthetic-databasesubnets-abc"], false)
+      statement.NotResource == ["arn:aws:rds:us-east-1:000000000002:subgrp:honua-gate-synthetic-databasesubnets-abc"], false)
     ])
     error_message = "Temporary cleanup must permit only the privately selected exact subnet group."
   }
@@ -144,7 +144,7 @@ run "rds_creation_tags_are_name_and_tag_fenced" {
     condition = (local.rds_creation_tag_deny.Condition.StringNotEqualsIfExists["aws:RequestTag/HonuaGate"] == "true" &&
       toset(local.rds_creation_name_deny.NotResource) == toset([
         for kind in ["subgrp", "db", "cluster", "pg", "og", "snapshot"] : "arn:aws:rds:us-east-1:000000000002:${kind}:honua-gate-*"
-      ]))
+    ]))
     error_message = "New RDS resources need both the gate name in the gate account/region and HonuaGate=true."
   }
 }
@@ -175,7 +175,7 @@ run "rds_tagging_authorization_scenarios" {
             for key, value in entries : operator == "StringNotEqualsIfExists" ?
             (key == "aws:RequestTag/HonuaGate" ? scenario.tag != value : true) :
             operator == "StringNotLikeIfExists" ? true : false
-          ])]), false)
+        ])]), false)
       ])
     ])
     error_message = "RDS tag-on-create requires the gate account, region, supported ARN kind, name and request tag together."
