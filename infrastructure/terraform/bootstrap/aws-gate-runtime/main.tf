@@ -28,6 +28,7 @@ locals {
     Effect = "Deny", Action = "*"
     Resource = [
       aws_cognito_user_pool.gate.arn,
+      aws_secretsmanager_secret.idp_admin.arn,
       # Reserve the reaper namespace, including qualified functions and log streams.
       # Combining these deny-only resources keeps the managed boundary within quota.
       "arn:aws:lambda:us-east-1:${var.member_account_id}:function:honua-gate-reaper*",

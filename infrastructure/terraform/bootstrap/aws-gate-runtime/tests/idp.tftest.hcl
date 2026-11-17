@@ -48,25 +48,43 @@ run "reject_insecure_callback" {
   expect_failures = [var.idp_callback_urls]
 }
 
-run "default_secret_reader_is_cloudformation_only" {
+run "secret_readers_are_cloudformation_and_gate_execution_roles" {
   command = plan
   assert {
-    condition = local.idp_client_readers == [local.service_role_arn] && alltrue([
+    condition = local.idp_client_readers == [local.service_role_arn, "arn:aws:iam::000000000002:role/honua-gate-*-ExecutionRole-*"] && alltrue([
       for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] : alltrue([
-        anytrue([for statement in jsondecode(policy).Statement : try(statement.Effect == "Deny" && statement.Action == ["secretsmanager:GetSecretValue"] && statement.Resource == aws_secretsmanager_secret.idp_client.arn && statement.Condition.ArnNotEquals["aws:PrincipalArn"] == [local.service_role_arn], false)]),
-        anytrue([for statement in jsondecode(policy).Statement : try(statement.Effect == "Deny" && statement.Resource == aws_secretsmanager_secret.idp_admin.arn && statement.Action == ["secretsmanager:GetSecretValue"], false)]),
-        anytrue([for statement in jsondecode(policy).Statement : try(statement.Effect == "Deny" && statement.NotAction == ["secretsmanager:GetSecretValue"] && toset(statement.Resource) == toset([aws_secretsmanager_secret.idp_client.arn, aws_secretsmanager_secret.idp_admin.arn]), false)])
+        anytrue([for statement in jsondecode(policy).Statement : try(statement.Effect == "Deny" && statement.Action == ["secretsmanager:GetSecretValue"] && statement.Resource == aws_secretsmanager_secret.idp_client.arn && statement.Condition.ArnNotLike["aws:PrincipalArn"] == local.idp_client_readers, false)]),
+        anytrue([for statement in jsondecode(policy).Statement : try(statement.Effect == "Deny" && statement.NotAction == ["secretsmanager:GetSecretValue"] && statement.Resource == aws_secretsmanager_secret.idp_client.arn, false)]),
+        jsondecode(policy).Statement[0] == local.protected_controls && contains(local.protected_controls.Resource, aws_secretsmanager_secret.idp_admin.arn) && local.protected_controls.Action == "*"
       ])
     ])
-    error_message = "Only CloudFormation can read the bootstrap client secret by default; all gate mutations remain denied."
+    error_message = "Only CloudFormation and gate execution roles may read the client secret; the admin secret and every client-secret mutation stay denied."
   }
 }
-run "exact_execution_role_can_be_registered" {
+run "execution_role_pattern_admits_only_execution_roles" {
+  command = plan
+  assert {
+    condition = alltrue([for name in ["honua-gate-m1-20261117t2130z-ExecutionRole-AbC123dEf456", "honua-gate-x-ExecutionRole-1"] :
+    can(regex(format("^%s$", replace(replace(local.idp_execution_role_pattern, ".", "\\."), "*", ".*")), "arn:aws:iam::000000000002:role/${name}"))])
+    error_message = "CloudFormation-named gate execution roles must match the reader pattern."
+  }
+  assert {
+    condition = !anytrue([for arn in [
+      "arn:aws:iam::000000000002:role/honua-gate-m1-BatchExecutionRole-AbC123",
+      "arn:aws:iam::000000000002:role/honua-gate-m1-TaskRole-AbC123",
+      "arn:aws:iam::000000000002:role/honua-gate-m1-LookupRole-AbC123",
+      "arn:aws:iam::000000000002:role/other-ExecutionRole-AbC123",
+      "arn:aws:iam::000000000003:role/honua-gate-m1-ExecutionRole-AbC123",
+    ] : can(regex(format("^%s$", replace(replace(local.idp_execution_role_pattern, ".", "\\."), "*", ".*")), arn))])
+    error_message = "Task, batch, Lambda, non-gate and foreign-account roles must not match the reader pattern."
+  }
+}
+run "exact_execution_role_can_still_be_registered" {
   command = plan
   variables { idp_task_execution_role_arns = ["arn:aws:iam::000000000002:role/honua-gate-install-ExecutionRole"] }
   assert {
-    condition     = toset(local.idp_client_readers) == toset([local.service_role_arn, "arn:aws:iam::000000000002:role/honua-gate-install-ExecutionRole"])
-    error_message = "The optional runtime exception must contain only the exact registered execution role."
+    condition     = local.idp_client_readers == [local.service_role_arn, local.idp_execution_role_pattern, "arn:aws:iam::000000000002:role/honua-gate-install-ExecutionRole"]
+    error_message = "Existing exact execution-role registrations must keep working next to the pattern."
   }
 }
 run "reject_wildcard_execution_reader" {
@@ -90,8 +108,8 @@ run "shared_account_protects_both_bootstrap_secrets" {
   }
   assert {
     condition = alltrue([for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] : alltrue([
-      anytrue([for statement in jsondecode(policy).Statement : try(statement.Effect == "Deny" && statement.NotAction == ["secretsmanager:GetSecretValue"] && toset(statement.Resource) == toset([aws_secretsmanager_secret.idp_client.arn, aws_secretsmanager_secret.idp_admin.arn]), false)]),
-      anytrue([for statement in jsondecode(policy).Statement : try(statement.Effect == "Deny" && statement.Resource == aws_secretsmanager_secret.idp_admin.arn && statement.Action == ["secretsmanager:GetSecretValue"], false)])
+      anytrue([for statement in jsondecode(policy).Statement : try(statement.Effect == "Deny" && statement.NotAction == ["secretsmanager:GetSecretValue"] && statement.Resource == aws_secretsmanager_secret.idp_client.arn, false)]),
+      anytrue([for statement in jsondecode(policy).Statement : try(statement.Effect == "Deny" && statement.Action == "*" && contains(statement.Resource, aws_secretsmanager_secret.idp_admin.arn), false)])
     ])])
     error_message = "Gate identities must not read the admin password or mutate either bootstrap secret, including in shared-account mode."
   }

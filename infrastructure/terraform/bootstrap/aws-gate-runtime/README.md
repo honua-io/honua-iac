@@ -354,16 +354,23 @@ the pool ownership tag. Native CloudFormation resources must stabilize without
 user-data reads; record exact live denials rather than broadening the policy.
 See the [Cognito authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_cognito-idp.html).
 
-Client-secret access defaults to the CloudFormation role only. Existing Launch
-Stack containers fetch the secret through their ECS **execution** role. Main
-must approve and set `idp_task_execution_role_arns` to the exact installed
-execution-role ARN before launching containers; an empty list deliberately
-blocks that fetch. The task definition's own policy still needs to allow this
+Client-secret access is limited to the CloudFormation role and gate task
+execution roles. Launch Stack containers fetch the secret through their ECS
+**execution** role, which CloudFormation names
+`<stack>-ExecutionRole-<suffix>`; the fence admits
+`role/honua-gate-*-ExecutionRole-*` with `ArnNotLike`, so a new gate install
+needs no approval or apply. Only `HonuaGateCloudFormation` can create
+`honua-gate-*` roles, and only under the workload boundary. Keep gate stack
+names short (about 30 characters) so the generated name keeps its
+`ExecutionRole` part within IAM's 64-character role-name limit. Task, batch and Lambda roles do not
+match. `idp_task_execution_role_arns` still adds exact ARNs for a role named
+differently. The task definition's own policy still needs to allow this
 specific secret, as it already does for `OidcClientSecretArn`. Do not grant the
 application task role or lane role access. Foreign secrets keep their existing
 ownership denies. Only this exact client secret bypasses those ownership checks;
 the gate policies deny all operations on it except a single-secret read by an
-approved principal. The bootstrap operator retains Terraform secret lifecycle
+approved principal, and deny every operation on the administrator secret.
+The bootstrap operator retains Terraform secret lifecycle
 access through its existing private credentials.
 
 CloudFormation may remove targets and delete EventBridge rules whose names begin
