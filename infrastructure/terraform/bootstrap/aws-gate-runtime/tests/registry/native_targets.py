@@ -15,6 +15,10 @@ BUCKET_TARGETS = {
 def native_target(spec):
     if spec["type"] == "AWS::S3::Bucket":
         return BUCKET_TARGETS.get(spec["action"].lower())
+    # Package locations require a bucket name and object key, not an access point.
+    # https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-properties-lambda-function-code.html
+    if spec["type"] == "AWS::Lambda::Function" and spec["action"].lower() in {"s3:getobject", "s3:getobjectversion"}:
+        return "object"
     # The native BucketPolicy contract requires the bucket's name.
     # https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-s3-bucketpolicy.html
     if spec["type"] == "AWS::S3::BucketPolicy" and spec["action"].lower() == "s3:getbucketpolicy":

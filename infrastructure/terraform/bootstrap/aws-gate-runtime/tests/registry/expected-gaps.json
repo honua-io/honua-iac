@@ -910,41 +910,6 @@
     "count": 1
   },
   {
-    "type": "AWS::Lambda::Function",
-    "handler": "create",
-    "action": "s3:GetObject",
-    "decision": "Unmapped multi-resource authorization: s3:GetObject",
-    "count": 1
-  },
-  {
-    "type": "AWS::Lambda::Function",
-    "handler": "create",
-    "action": "s3:GetObjectVersion",
-    "decision": "Unmapped multi-resource authorization: s3:GetObjectVersion",
-    "count": 1
-  },
-  {
-    "type": "AWS::Lambda::Function",
-    "handler": "update",
-    "action": "lambda:PutFunctionCodeSigningConfig",
-    "decision": "Unmapped multi-resource authorization: lambda:PutFunctionCodeSigningConfig",
-    "count": 6
-  },
-  {
-    "type": "AWS::Lambda::Function",
-    "handler": "update",
-    "action": "s3:GetObject",
-    "decision": "Unmapped multi-resource authorization: s3:GetObject",
-    "count": 1
-  },
-  {
-    "type": "AWS::Lambda::Function",
-    "handler": "update",
-    "action": "s3:GetObjectVersion",
-    "decision": "Unmapped multi-resource authorization: s3:GetObjectVersion",
-    "count": 1
-  },
-  {
     "type": "AWS::RDS::DBInstance",
     "handler": "create",
     "action": "iam:CreateServiceLinkedRole",

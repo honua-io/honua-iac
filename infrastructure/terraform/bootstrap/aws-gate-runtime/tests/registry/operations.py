@@ -11,6 +11,9 @@ from native_targets import native_target, native_variants
 # The subnet association template cannot target a gateway or an IPAM pool.
 # https://docs.aws.amazon.com/service-authorization/latest/reference/list_ec2.html
 MULTI_RESOURCE = {
+    # Both resources are required by the Lambda authorization contract.
+    # https://docs.aws.amazon.com/service-authorization/latest/reference/list_lambda.html
+    "lambda:PutFunctionCodeSigningConfig": ("code signing config", "function"),
     "ec2:AssociateRouteTable": ("route-table", "subnet"),
     "ec2:ReplaceRouteTableAssociation": ("route-table", "subnet"),
     "ec2:DisassociateRouteTable": ("route-table", "subnet"),

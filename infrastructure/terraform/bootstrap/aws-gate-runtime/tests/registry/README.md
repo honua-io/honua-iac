@@ -41,8 +41,8 @@ changes while preserving the unresolved list. Matching that baseline is a
 regression check; it explicitly reports **authorization sweep NOT PASS**. Never
 use baseline success as evidence that installation or teardown is authorized.
 
-The captured inventory currently produces 4,876 checks: 4,037 Allow, 409
-NotApplicable and 430 unresolved. These include 136 calls whose complete
+The captured inventory currently produces 4,876 checks: 4,047 Allow, 409
+NotApplicable and 420 unresolved. These include 126 calls whose complete
 multi-resource mapping is unverified, 20 unresolved service-linked-role identities,
 87 unresolved PassRole identities, 31 custom runtime calls with unverified execution
 policies, seven unknown actions, and 149 explicit or implicit policy denies. The inventory includes
@@ -58,6 +58,11 @@ Known registry/API spelling differences have explicit mappings in `actions.py`;
 unrecognized actions remain unresolved. Optional permissions are excluded only
 when the relevant template property is absent or a literal value cannot activate
 that feature. Unresolved intrinsic values conservatively activate features.
+
+Lambda code-signing attachment checks both the function and configuration ARN;
+an allow on either one alone cannot authorize the operation. Native Lambda S3
+package reads select bucket objects because the code contract takes a bucket
+name and object key. Imported package access still requires installed proof.
 
 Requests use a synthetic account, us-east-1, gate-prefixed names and ownership
 context only when the authorization metadata supports the relevant condition key.
