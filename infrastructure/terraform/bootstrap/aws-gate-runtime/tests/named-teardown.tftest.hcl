@@ -20,7 +20,7 @@ variables {
 run "named_teardown_is_scoped_to_the_service_role" {
   command = plan
   assert {
-    condition = alltrue([for action in ["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "logs:DeleteLogGroup"] :
+    condition = alltrue([for action in ["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "logs:DeleteLogGroup", "cloudtrail:DeleteTrail"] :
       contains(local.service_role_ownership_deny.NotAction, action) &&
       !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))])
     ])
@@ -29,11 +29,12 @@ run "named_teardown_is_scoped_to_the_service_role" {
   assert {
     condition = anytrue([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : try(
       statement.Sid == "NamedTeardownFence" && statement.Effect == "Deny" &&
-      toset(statement.Action) == toset(["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "logs:DeleteLogGroup"]) &&
+      toset(statement.Action) == toset(["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "logs:DeleteLogGroup", "cloudtrail:DeleteTrail"]) &&
       toset(statement.NotResource) == toset([
         "arn:aws:events:us-east-1:000000000002:rule/honua-gate-*",
         "arn:aws:kms:us-east-1:000000000002:alias/honua-gate-*",
         "arn:aws:kms:us-east-1:000000000002:key/*",
+        "arn:aws:cloudtrail:us-east-1:000000000002:trail/honua-protection-*",
         "arn:aws:logs:us-east-1:000000000002:log-group:/honua/honua-gate-*",
         "arn:aws:logs:us-east-1:000000000002:log-group:/aws/lambda/honua-gate-*",
         "arn:aws:logs:us-east-1:000000000002:log-group:aws-waf-logs-honua-gate-*"
@@ -182,5 +183,23 @@ run "rds_tagging_authorization_scenarios" {
       ])
     ])
     error_message = "RDS tag-on-create requires the gate account, region, supported ARN kind, name and request tag together."
+  }
+}
+
+run "rollback_can_delete_an_uncreated_protection_trail_only" {
+  command = plan
+  assert {
+    condition = length([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : statement if try(
+      statement.Sid == "TrailTeardownFence" && statement.Effect == "Deny" && statement.Action == "cloudtrail:DeleteTrail" && statement.Resource == "*" &&
+      statement.Condition == {
+        Null          = { "aws:ResourceTag/aws:cloudformation:stack-name" = "false" }
+        StringNotLike = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }
+      }, false
+    )]) == 1
+    error_message = "The service role must refuse to delete any trail tagged by a non-gate stack, while an untagged (never-created) protection trail stays deletable."
+  }
+  assert {
+    condition     = !anytrue([for action in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(action, "*", ".*")}$", "cloudtrail:DeleteTrail"))]) && !strcontains(aws_iam_policy.workload_boundary.policy, "TrailTeardownFence")
+    error_message = "Workloads keep the full ownership fence on trail deletion."
   }
 }

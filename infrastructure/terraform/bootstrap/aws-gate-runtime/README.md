@@ -429,6 +429,15 @@ a separate deny requires the backing key to carry `HonuaGate=true`.
 Workload roles retain the ownership-tag checks. This exception does not permit
 alias updates or deletion of untagged keys, VPCs or internet gateways.
 
+CloudFormation may also delete CloudTrail trails named `honua-protection-*` without
+ownership tags. A failed create that never made its protection trail still rolls
+the trail back, and a trail that does not exist has no tags. A separate deny refuses
+the delete when the trail carries another stack's CloudFormation stack-name tag, so
+trails made by non-gate stacks stay protected. A hand-made, untagged trail with
+that name is not protected. Gate stacks keep their trails on delete; main's
+retained-resource cleanup removes them, because they count toward the account's
+five-trails-per-region quota.
+
 ### Gate test Connections
 
 A Launch Stack task role can assume customer Connection roles named
