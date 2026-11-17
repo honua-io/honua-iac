@@ -20,21 +20,20 @@ variables {
 run "named_teardown_is_scoped_to_the_service_role" {
   command = plan
   assert {
-    condition = alltrue([for action in ["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "rds:DeleteDBSubnetGroup"] :
+    condition = alltrue([for action in ["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias"] :
       contains(local.service_role_ownership_deny.NotAction, action) &&
       !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))])
     ])
-    error_message = "Only the service role may bypass ownership tags for the four named teardown actions."
+    error_message = "Only the service role may bypass ownership tags for the named teardown actions."
   }
   assert {
     condition = anytrue([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : try(
       statement.Sid == "NamedTeardownFence" && statement.Effect == "Deny" &&
-      toset(statement.Action) == toset(["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "rds:DeleteDBSubnetGroup"]) &&
+      toset(statement.Action) == toset(["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias"]) &&
       toset(statement.NotResource) == toset([
         "arn:aws:events:us-east-1:000000000002:rule/honua-gate-*",
         "arn:aws:kms:us-east-1:000000000002:alias/honua-gate-*",
-        "arn:aws:kms:us-east-1:000000000002:key/*",
-        "arn:aws:rds:us-east-1:000000000002:subgrp:honua-gate-*"
+        "arn:aws:kms:us-east-1:000000000002:key/*"
       ]), false)
     ]) && aws_iam_role_policy_attachment.cloudformation_fences.role == aws_iam_role.cloudformation.name
     error_message = "An attached unconditional deny must fence teardown by exact service, account, region and gate prefix."
@@ -43,8 +42,7 @@ run "named_teardown_is_scoped_to_the_service_role" {
     condition = alltrue([for arn in [
       "arn:aws:events:us-east-1:000000000002:rule/honua-gate-synthetic-OpsAlarmEvents",
       "arn:aws:kms:us-east-1:000000000002:alias/honua-gate-synthetic-key",
-      "arn:aws:kms:us-east-1:000000000002:key/synthetic-key",
-      "arn:aws:rds:us-east-1:000000000002:subgrp:honua-gate-synthetic-databasesubnets-abc"
+      "arn:aws:kms:us-east-1:000000000002:key/synthetic-key"
       ] : anytrue([for pattern in local.named_teardown_deny.NotResource : can(regex("^${replace(pattern, "*", ".*")}$", arn))])]) && alltrue([
       for arn in [
         "arn:aws:events:us-east-1:000000000002:rule/foreign-rule",
@@ -107,5 +105,79 @@ run "vault_storage_mount_is_service_role_only" {
       statement.Effect != "Allow" || alltrue([for action in try(tolist(statement.Action), [statement.Action]) : !startswith(action, "backup-storage:") || action == "backup-storage:MountCapsule"]), true)
     ]) && alltrue([for action in local.service_role_ownership_deny.NotAction : !startswith(action, "backup-storage:") || action == "backup-storage:MountCapsule"])
     error_message = "No storage content, deletion or wildcard permissions may accompany MountCapsule."
+  }
+}
+
+run "subnet_cleanup_is_empty_by_default" {
+  command = plan
+  assert {
+    condition     = !contains(local.service_role_ownership_deny.NotAction, "rds:DeleteDBSubnetGroup")
+    error_message = "Untagged subnet deletion must never have a permanent gate-prefix exception."
+  }
+}
+run "subnet_cleanup_is_one_exact_resource" {
+  command = plan
+  variables { temporary_cleanup_subnet_group_names = ["honua-gate-synthetic-databasesubnets-abc"] }
+  assert {
+    condition = contains(local.service_role_ownership_deny.NotAction, "rds:DeleteDBSubnetGroup") && anytrue([
+      for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : try(
+        statement.Sid == "TemporarySubnetCleanup" && statement.Effect == "Deny" &&
+        statement.Action == "rds:DeleteDBSubnetGroup" &&
+      statement.NotResource == ["arn:aws:rds:us-east-1:000000000002:subgrp:honua-gate-synthetic-databasesubnets-abc"], false)
+    ])
+    error_message = "Temporary cleanup must permit only the privately selected exact subnet group."
+  }
+}
+run "subnet_cleanup_rejects_wildcard" {
+  command = plan
+  variables { temporary_cleanup_subnet_group_names = ["honua-gate-*"] }
+  expect_failures = [var.temporary_cleanup_subnet_group_names]
+}
+run "subnet_cleanup_rejects_two_resources" {
+  command = plan
+  variables { temporary_cleanup_subnet_group_names = ["honua-gate-first", "honua-gate-second"] }
+  expect_failures = [var.temporary_cleanup_subnet_group_names]
+}
+run "rds_creation_tags_are_name_and_tag_fenced" {
+  command = plan
+  assert {
+    condition = (local.rds_creation_tag_deny.Condition.StringNotEqualsIfExists["aws:RequestTag/HonuaGate"] == "true" &&
+      toset(local.rds_creation_name_deny.NotResource) == toset([
+        for kind in ["subgrp", "db", "cluster", "pg", "og", "snapshot"] : "arn:aws:rds:us-east-1:000000000002:${kind}:honua-gate-*"
+    ]))
+    error_message = "New RDS resources need both the gate name in the gate account/region and HonuaGate=true."
+  }
+}
+
+run "rds_tagging_authorization_scenarios" {
+  command = plan
+  assert {
+    condition = alltrue([for scenario in [
+      { arn = "arn:aws:rds:us-east-1:000000000002:subgrp:honua-gate-new", tag = "true", denied = false },
+      { arn = "arn:aws:rds:us-east-1:000000000002:db:honua-gate-new", tag = "true", denied = false },
+      { arn = "arn:aws:rds:us-east-1:000000000002:cluster:honua-gate-new", tag = "true", denied = false },
+      { arn = "arn:aws:rds:us-east-1:000000000002:pg:honua-gate-new", tag = "true", denied = false },
+      { arn = "arn:aws:rds:us-east-1:000000000002:og:honua-gate-new", tag = "true", denied = false },
+      { arn = "arn:aws:rds:us-east-1:000000000002:snapshot:honua-gate-new", tag = "true", denied = false },
+      { arn = "arn:aws:rds:us-east-1:000000000002:subgrp:foreign", tag = "true", denied = true },
+      { arn = "arn:aws:rds:us-east-1:000000000003:subgrp:honua-gate-new", tag = "true", denied = true },
+      { arn = "arn:aws:rds:us-west-2:000000000002:subgrp:honua-gate-new", tag = "true", denied = true },
+      { arn = "arn:aws:rds:us-east-1:000000000002:subgrp:honua-gate-new", tag = "false", denied = true },
+      { arn = "arn:aws:rds:us-east-1:000000000002:subgrp:honua-gate-new", tag = "", denied = true },
+      { arn = "arn:aws:rds:us-east-1:000000000002:cluster-pg:honua-gate-new", tag = "true", denied = true }
+      ] : scenario.denied == anytrue([
+        for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : try(
+          statement.Effect == "Deny" && contains(flatten([statement.Action]), "rds:AddTagsToResource") &&
+          (try(statement.NotResource, null) == null || !anytrue([
+            for pattern in statement.NotResource : can(regex("^${replace(pattern, "*", ".*")}$", scenario.arn))
+          ])) &&
+          alltrue([for operator, entries in try(statement.Condition, {}) : alltrue([
+            for key, value in entries : operator == "StringNotEqualsIfExists" ?
+            (key == "aws:RequestTag/HonuaGate" ? scenario.tag != value : true) :
+            operator == "StringNotLikeIfExists" ? true : false
+        ])]), false)
+      ])
+    ])
+    error_message = "RDS tag-on-create requires the gate account, region, supported ARN kind, name and request tag together."
   }
 }

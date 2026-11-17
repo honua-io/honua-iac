@@ -1,0 +1,3124 @@
+[
+  {
+    "type": "AWS::ApplicationAutoScaling::ScalableTarget",
+    "handler": "create",
+    "action": "application-autoscaling:RegisterScalableTarget",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ApplicationAutoScaling::ScalableTarget",
+    "handler": "create",
+    "action": "cloudwatch:PutMetricAlarm",
+    "decision": "Unmapped multi-resource authorization: cloudwatch:PutMetricAlarm",
+    "count": 1
+  },
+  {
+    "type": "AWS::ApplicationAutoScaling::ScalableTarget",
+    "handler": "create",
+    "action": "iam:CreateServiceLinkedRole",
+    "decision": "Unresolved provider service-linked-role identity",
+    "count": 1
+  },
+  {
+    "type": "AWS::ApplicationAutoScaling::ScalableTarget",
+    "handler": "update",
+    "action": "cloudwatch:PutMetricAlarm",
+    "decision": "Unmapped multi-resource authorization: cloudwatch:PutMetricAlarm",
+    "count": 1
+  },
+  {
+    "type": "AWS::Backup::BackupPlan",
+    "handler": "create",
+    "action": "backup:TagResource",
+    "decision": "Unmapped multi-resource authorization: backup:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Backup::BackupPlan",
+    "handler": "read",
+    "action": "backup:ListTags",
+    "decision": "Unmapped multi-resource authorization: backup:ListTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::Backup::BackupPlan",
+    "handler": "tag",
+    "action": "backup:ListTags",
+    "decision": "Unmapped multi-resource authorization: backup:ListTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::Backup::BackupPlan",
+    "handler": "tag",
+    "action": "backup:TagResource",
+    "decision": "Unmapped multi-resource authorization: backup:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Backup::BackupPlan",
+    "handler": "tag",
+    "action": "backup:UntagResource",
+    "decision": "Unmapped multi-resource authorization: backup:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Backup::BackupPlan",
+    "handler": "update",
+    "action": "backup:ListTags",
+    "decision": "Unmapped multi-resource authorization: backup:ListTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::Backup::BackupPlan",
+    "handler": "update",
+    "action": "backup:TagResource",
+    "decision": "Unmapped multi-resource authorization: backup:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Backup::BackupPlan",
+    "handler": "update",
+    "action": "backup:UntagResource",
+    "decision": "Unmapped multi-resource authorization: backup:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Backup::BackupSelection",
+    "handler": "create",
+    "action": "iam:CreateServiceLinkedRole",
+    "decision": "Unresolved provider service-linked-role identity",
+    "count": 1
+  },
+  {
+    "type": "AWS::Backup::BackupVault",
+    "handler": "create",
+    "action": "backup-storage:Mount",
+    "decision": "UnknownAction",
+    "count": 1
+  },
+  {
+    "type": "AWS::Backup::BackupVault",
+    "handler": "create",
+    "action": "backup:TagResource",
+    "decision": "Unmapped multi-resource authorization: backup:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Backup::BackupVault",
+    "handler": "read",
+    "action": "backup:ListTags",
+    "decision": "Unmapped multi-resource authorization: backup:ListTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::Backup::BackupVault",
+    "handler": "tag",
+    "action": "backup:ListTags",
+    "decision": "Unmapped multi-resource authorization: backup:ListTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::Backup::BackupVault",
+    "handler": "tag",
+    "action": "backup:TagResource",
+    "decision": "Unmapped multi-resource authorization: backup:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Backup::BackupVault",
+    "handler": "tag",
+    "action": "backup:UntagResource",
+    "decision": "Unmapped multi-resource authorization: backup:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Backup::BackupVault",
+    "handler": "update",
+    "action": "backup:ListTags",
+    "decision": "Unmapped multi-resource authorization: backup:ListTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::Backup::BackupVault",
+    "handler": "update",
+    "action": "backup:TagResource",
+    "decision": "Unmapped multi-resource authorization: backup:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Backup::BackupVault",
+    "handler": "update",
+    "action": "backup:UntagResource",
+    "decision": "Unmapped multi-resource authorization: backup:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::ComputeEnvironment",
+    "handler": "create",
+    "action": "Batch:TagResource",
+    "decision": "Unmapped multi-resource authorization: Batch:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::ComputeEnvironment",
+    "handler": "create",
+    "action": "iam:CreateServiceLinkedRole",
+    "decision": "Unresolved provider service-linked-role identity",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::ComputeEnvironment",
+    "handler": "tag",
+    "action": "Batch:TagResource",
+    "decision": "Unmapped multi-resource authorization: Batch:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::ComputeEnvironment",
+    "handler": "tag",
+    "action": "Batch:UnTagResource",
+    "decision": "Unmapped multi-resource authorization: Batch:UnTagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::ComputeEnvironment",
+    "handler": "update",
+    "action": "Batch:TagResource",
+    "decision": "Unmapped multi-resource authorization: Batch:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::ComputeEnvironment",
+    "handler": "update",
+    "action": "Batch:UnTagResource",
+    "decision": "Unmapped multi-resource authorization: Batch:UnTagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobDefinition",
+    "handler": "create",
+    "action": "Batch:DescribeJobDefinitions",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobDefinition",
+    "handler": "create",
+    "action": "Batch:TagResource",
+    "decision": "Unmapped multi-resource authorization: Batch:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobDefinition",
+    "handler": "delete",
+    "action": "Batch:DescribeJobDefinitions",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobDefinition",
+    "handler": "read",
+    "action": "Batch:DescribeJobDefinitions",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobDefinition",
+    "handler": "tag",
+    "action": "Batch:TagResource",
+    "decision": "Unmapped multi-resource authorization: Batch:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobDefinition",
+    "handler": "tag",
+    "action": "Batch:UntagResource",
+    "decision": "Unmapped multi-resource authorization: Batch:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobDefinition",
+    "handler": "update",
+    "action": "Batch:DescribeJobDefinitions",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobDefinition",
+    "handler": "update",
+    "action": "Batch:TagResource",
+    "decision": "Unmapped multi-resource authorization: Batch:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobDefinition",
+    "handler": "update",
+    "action": "Batch:UntagResource",
+    "decision": "Unmapped multi-resource authorization: Batch:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobQueue",
+    "handler": "create",
+    "action": "Batch:CreateJobQueue",
+    "decision": "Unmapped multi-resource authorization: Batch:CreateJobQueue",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobQueue",
+    "handler": "create",
+    "action": "Batch:DescribeJobQueues",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobQueue",
+    "handler": "create",
+    "action": "Batch:TagResource",
+    "decision": "Unmapped multi-resource authorization: Batch:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobQueue",
+    "handler": "delete",
+    "action": "Batch:DescribeJobQueues",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobQueue",
+    "handler": "delete",
+    "action": "Batch:UpdateJobQueue",
+    "decision": "Unmapped multi-resource authorization: Batch:UpdateJobQueue",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobQueue",
+    "handler": "read",
+    "action": "Batch:DescribeJobQueues",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobQueue",
+    "handler": "tag",
+    "action": "Batch:TagResource",
+    "decision": "Unmapped multi-resource authorization: Batch:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobQueue",
+    "handler": "tag",
+    "action": "Batch:UntagResource",
+    "decision": "Unmapped multi-resource authorization: Batch:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobQueue",
+    "handler": "update",
+    "action": "Batch:DescribeJobQueues",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobQueue",
+    "handler": "update",
+    "action": "Batch:TagResource",
+    "decision": "Unmapped multi-resource authorization: Batch:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobQueue",
+    "handler": "update",
+    "action": "Batch:UntagResource",
+    "decision": "Unmapped multi-resource authorization: Batch:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Batch::JobQueue",
+    "handler": "update",
+    "action": "Batch:UpdateJobQueue",
+    "decision": "Unmapped multi-resource authorization: Batch:UpdateJobQueue",
+    "count": 1
+  },
+  {
+    "type": "AWS::Budgets::Budget",
+    "handler": "create",
+    "action": "budgets:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: budgets:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Budgets::Budget",
+    "handler": "create",
+    "action": "budgets:TagResource",
+    "decision": "Unmapped multi-resource authorization: budgets:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Budgets::Budget",
+    "handler": "read",
+    "action": "budgets:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: budgets:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Budgets::Budget",
+    "handler": "tag",
+    "action": "budgets:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: budgets:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Budgets::Budget",
+    "handler": "tag",
+    "action": "budgets:TagResource",
+    "decision": "Unmapped multi-resource authorization: budgets:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Budgets::Budget",
+    "handler": "tag",
+    "action": "budgets:UntagResource",
+    "decision": "Unmapped multi-resource authorization: budgets:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Budgets::Budget",
+    "handler": "update",
+    "action": "budgets:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: budgets:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Budgets::Budget",
+    "handler": "update",
+    "action": "budgets:TagResource",
+    "decision": "Unmapped multi-resource authorization: budgets:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Budgets::Budget",
+    "handler": "update",
+    "action": "budgets:UntagResource",
+    "decision": "Unmapped multi-resource authorization: budgets:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CertificateManager::Certificate",
+    "handler": "create",
+    "action": "route53:ChangeResourceRecordSets",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::Distribution",
+    "handler": "create",
+    "action": "cloudfront:CreateDistributionWithTags",
+    "decision": "Unmapped multi-resource authorization: cloudfront:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::Distribution",
+    "handler": "create",
+    "action": "cloudfront:TagResource",
+    "decision": "Unmapped multi-resource authorization: cloudfront:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::Distribution",
+    "handler": "read",
+    "action": "cloudfront:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: cloudfront:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::Distribution",
+    "handler": "tag",
+    "action": "cloudfront:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: cloudfront:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::Distribution",
+    "handler": "tag",
+    "action": "cloudfront:TagResource",
+    "decision": "Unmapped multi-resource authorization: cloudfront:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::Distribution",
+    "handler": "tag",
+    "action": "cloudfront:UntagResource",
+    "decision": "Unmapped multi-resource authorization: cloudfront:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::Distribution",
+    "handler": "update",
+    "action": "cloudfront:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: cloudfront:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::Distribution",
+    "handler": "update",
+    "action": "cloudfront:TagResource",
+    "decision": "Unmapped multi-resource authorization: cloudfront:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::Distribution",
+    "handler": "update",
+    "action": "cloudfront:UntagResource",
+    "decision": "Unmapped multi-resource authorization: cloudfront:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::Function",
+    "handler": "create",
+    "action": "cloudfront:TagResource",
+    "decision": "Unmapped multi-resource authorization: cloudfront:TagResource",
+    "count": 2
+  },
+  {
+    "type": "AWS::CloudFront::Function",
+    "handler": "read",
+    "action": "cloudfront:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: cloudfront:ListTagsForResource",
+    "count": 2
+  },
+  {
+    "type": "AWS::CloudFront::Function",
+    "handler": "tag",
+    "action": "cloudfront:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: cloudfront:ListTagsForResource",
+    "count": 2
+  },
+  {
+    "type": "AWS::CloudFront::Function",
+    "handler": "tag",
+    "action": "cloudfront:TagResource",
+    "decision": "Unmapped multi-resource authorization: cloudfront:TagResource",
+    "count": 2
+  },
+  {
+    "type": "AWS::CloudFront::Function",
+    "handler": "tag",
+    "action": "cloudfront:UntagResource",
+    "decision": "Unmapped multi-resource authorization: cloudfront:UntagResource",
+    "count": 2
+  },
+  {
+    "type": "AWS::CloudFront::Function",
+    "handler": "update",
+    "action": "cloudfront:TagResource",
+    "decision": "Unmapped multi-resource authorization: cloudfront:TagResource",
+    "count": 2
+  },
+  {
+    "type": "AWS::CloudFront::Function",
+    "handler": "update",
+    "action": "cloudfront:UntagResource",
+    "decision": "Unmapped multi-resource authorization: cloudfront:UntagResource",
+    "count": 2
+  },
+  {
+    "type": "AWS::CloudFront::MonitoringSubscription",
+    "handler": "create",
+    "action": "cloudfront:CreateMonitoringSubscription",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::MonitoringSubscription",
+    "handler": "delete",
+    "action": "cloudfront:DeleteMonitoringSubscription",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::MonitoringSubscription",
+    "handler": "read",
+    "action": "cloudfront:GetMonitoringSubscription",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::VpcOrigin",
+    "handler": "create",
+    "action": "cloudfront:TagResource",
+    "decision": "Unmapped multi-resource authorization: cloudfront:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::VpcOrigin",
+    "handler": "create",
+    "action": "iam:CreateServiceLinkedRole",
+    "decision": "Unresolved provider service-linked-role identity",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::VpcOrigin",
+    "handler": "create",
+    "action": "sts:AssumeRole",
+    "decision": "ImplicitDeny",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::VpcOrigin",
+    "handler": "delete",
+    "action": "iam:CreateServiceLinkedRole",
+    "decision": "Unresolved provider service-linked-role identity",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::VpcOrigin",
+    "handler": "delete",
+    "action": "sts:AssumeRole",
+    "decision": "ImplicitDeny",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::VpcOrigin",
+    "handler": "read",
+    "action": "cloudfront:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: cloudfront:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::VpcOrigin",
+    "handler": "tag",
+    "action": "cloudfront:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: cloudfront:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::VpcOrigin",
+    "handler": "tag",
+    "action": "cloudfront:TagResource",
+    "decision": "Unmapped multi-resource authorization: cloudfront:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::VpcOrigin",
+    "handler": "tag",
+    "action": "cloudfront:UntagResource",
+    "decision": "Unmapped multi-resource authorization: cloudfront:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::VpcOrigin",
+    "handler": "update",
+    "action": "cloudfront:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: cloudfront:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::VpcOrigin",
+    "handler": "update",
+    "action": "cloudfront:TagResource",
+    "decision": "Unmapped multi-resource authorization: cloudfront:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::VpcOrigin",
+    "handler": "update",
+    "action": "cloudfront:UntagResource",
+    "decision": "Unmapped multi-resource authorization: cloudfront:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::VpcOrigin",
+    "handler": "update",
+    "action": "iam:CreateServiceLinkedRole",
+    "decision": "Unresolved provider service-linked-role identity",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudFront::VpcOrigin",
+    "handler": "update",
+    "action": "sts:AssumeRole",
+    "decision": "ImplicitDeny",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudTrail::Trail",
+    "handler": "create",
+    "action": "CloudTrail:AddTags",
+    "decision": "Unmapped multi-resource authorization: CloudTrail:AddTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudTrail::Trail",
+    "handler": "create",
+    "action": "CloudTrail:PutEventConfiguration",
+    "decision": "Unmapped multi-resource authorization: CloudTrail:PutEventConfiguration",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudTrail::Trail",
+    "handler": "create",
+    "action": "CloudTrail:PutInsightSelectors",
+    "decision": "Unmapped multi-resource authorization: CloudTrail:PutInsightSelectors",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudTrail::Trail",
+    "handler": "create",
+    "action": "iam:CreateServiceLinkedRole",
+    "decision": "Unresolved provider service-linked-role identity",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudTrail::Trail",
+    "handler": "read",
+    "action": "CloudTrail:GetEventConfiguration",
+    "decision": "Unmapped multi-resource authorization: CloudTrail:GetEventConfiguration",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudTrail::Trail",
+    "handler": "read",
+    "action": "CloudTrail:GetInsightSelectors",
+    "decision": "Unmapped multi-resource authorization: CloudTrail:GetInsightSelectors",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudTrail::Trail",
+    "handler": "read",
+    "action": "CloudTrail:ListTags",
+    "decision": "Unmapped multi-resource authorization: CloudTrail:ListTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudTrail::Trail",
+    "handler": "tag",
+    "action": "CloudTrail:AddTags",
+    "decision": "Unmapped multi-resource authorization: CloudTrail:AddTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudTrail::Trail",
+    "handler": "tag",
+    "action": "CloudTrail:ListTags",
+    "decision": "Unmapped multi-resource authorization: CloudTrail:ListTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudTrail::Trail",
+    "handler": "tag",
+    "action": "CloudTrail:RemoveTags",
+    "decision": "Unmapped multi-resource authorization: CloudTrail:RemoveTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudTrail::Trail",
+    "handler": "update",
+    "action": "CloudTrail:AddTags",
+    "decision": "Unmapped multi-resource authorization: CloudTrail:AddTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudTrail::Trail",
+    "handler": "update",
+    "action": "CloudTrail:PutEventConfiguration",
+    "decision": "Unmapped multi-resource authorization: CloudTrail:PutEventConfiguration",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudTrail::Trail",
+    "handler": "update",
+    "action": "CloudTrail:PutInsightSelectors",
+    "decision": "Unmapped multi-resource authorization: CloudTrail:PutInsightSelectors",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudTrail::Trail",
+    "handler": "update",
+    "action": "CloudTrail:RemoveTags",
+    "decision": "Unmapped multi-resource authorization: CloudTrail:RemoveTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudTrail::Trail",
+    "handler": "update",
+    "action": "iam:CreateServiceLinkedRole",
+    "decision": "Unresolved provider service-linked-role identity",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudWatch::Alarm",
+    "handler": "create",
+    "action": "cloudwatch:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: cloudwatch:ListTagsForResource",
+    "count": 29
+  },
+  {
+    "type": "AWS::CloudWatch::Alarm",
+    "handler": "create",
+    "action": "cloudwatch:PutMetricAlarm",
+    "decision": "Unmapped multi-resource authorization: cloudwatch:PutMetricAlarm",
+    "count": 29
+  },
+  {
+    "type": "AWS::CloudWatch::Alarm",
+    "handler": "create",
+    "action": "cloudwatch:TagResource",
+    "decision": "Unmapped multi-resource authorization: cloudwatch:TagResource",
+    "count": 29
+  },
+  {
+    "type": "AWS::CloudWatch::Alarm",
+    "handler": "read",
+    "action": "cloudwatch:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: cloudwatch:ListTagsForResource",
+    "count": 29
+  },
+  {
+    "type": "AWS::CloudWatch::Alarm",
+    "handler": "tag",
+    "action": "cloudwatch:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: cloudwatch:ListTagsForResource",
+    "count": 29
+  },
+  {
+    "type": "AWS::CloudWatch::Alarm",
+    "handler": "tag",
+    "action": "cloudwatch:TagResource",
+    "decision": "Unmapped multi-resource authorization: cloudwatch:TagResource",
+    "count": 29
+  },
+  {
+    "type": "AWS::CloudWatch::Alarm",
+    "handler": "tag",
+    "action": "cloudwatch:UntagResource",
+    "decision": "Unmapped multi-resource authorization: cloudwatch:UntagResource",
+    "count": 29
+  },
+  {
+    "type": "AWS::CloudWatch::Alarm",
+    "handler": "update",
+    "action": "cloudwatch:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: cloudwatch:ListTagsForResource",
+    "count": 29
+  },
+  {
+    "type": "AWS::CloudWatch::Alarm",
+    "handler": "update",
+    "action": "cloudwatch:PutMetricAlarm",
+    "decision": "Unmapped multi-resource authorization: cloudwatch:PutMetricAlarm",
+    "count": 29
+  },
+  {
+    "type": "AWS::CloudWatch::Alarm",
+    "handler": "update",
+    "action": "cloudwatch:TagResource",
+    "decision": "Unmapped multi-resource authorization: cloudwatch:TagResource",
+    "count": 29
+  },
+  {
+    "type": "AWS::CloudWatch::Alarm",
+    "handler": "update",
+    "action": "cloudwatch:UntagResource",
+    "decision": "Unmapped multi-resource authorization: cloudwatch:UntagResource",
+    "count": 29
+  },
+  {
+    "type": "AWS::CloudWatch::CompositeAlarm",
+    "handler": "create",
+    "action": "cloudwatch:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: cloudwatch:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudWatch::CompositeAlarm",
+    "handler": "create",
+    "action": "cloudwatch:TagResource",
+    "decision": "Unmapped multi-resource authorization: cloudwatch:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudWatch::CompositeAlarm",
+    "handler": "read",
+    "action": "cloudwatch:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: cloudwatch:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudWatch::CompositeAlarm",
+    "handler": "tag",
+    "action": "cloudwatch:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: cloudwatch:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudWatch::CompositeAlarm",
+    "handler": "tag",
+    "action": "cloudwatch:TagResource",
+    "decision": "Unmapped multi-resource authorization: cloudwatch:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudWatch::CompositeAlarm",
+    "handler": "tag",
+    "action": "cloudwatch:UntagResource",
+    "decision": "Unmapped multi-resource authorization: cloudwatch:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudWatch::CompositeAlarm",
+    "handler": "update",
+    "action": "cloudwatch:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: cloudwatch:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudWatch::CompositeAlarm",
+    "handler": "update",
+    "action": "cloudwatch:TagResource",
+    "decision": "Unmapped multi-resource authorization: cloudwatch:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::CloudWatch::CompositeAlarm",
+    "handler": "update",
+    "action": "cloudwatch:UntagResource",
+    "decision": "Unmapped multi-resource authorization: cloudwatch:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Cognito::UserPool",
+    "handler": "create",
+    "action": "iam:CreateServiceLinkedRole",
+    "decision": "Unresolved provider service-linked-role identity",
+    "count": 1
+  },
+  {
+    "type": "AWS::Cognito::UserPoolClient",
+    "handler": "create",
+    "action": "iam:CreateServiceLinkedRole",
+    "decision": "Unresolved provider service-linked-role identity",
+    "count": 1
+  },
+  {
+    "type": "AWS::Cognito::UserPoolClient",
+    "handler": "read",
+    "action": "cognito-idp:ListUserPoolClientSecrets",
+    "decision": "ImplicitDeny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Cognito::UserPoolUser",
+    "handler": "create",
+    "action": "cognito-idp:AdminGetUser",
+    "decision": "ImplicitDeny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Cognito::UserPoolUser",
+    "handler": "read",
+    "action": "cognito-idp:AdminGetUser",
+    "decision": "ImplicitDeny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Cognito::UserPoolUserToGroupAttachment",
+    "handler": "create",
+    "action": "cognito-idp:AdminListGroupsForUser",
+    "decision": "ImplicitDeny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Cognito::UserPoolUserToGroupAttachment",
+    "handler": "delete",
+    "action": "cognito-idp:AdminListGroupsForUser",
+    "decision": "ImplicitDeny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Cognito::UserPoolUserToGroupAttachment",
+    "handler": "read",
+    "action": "cognito-idp:AdminListGroupsForUser",
+    "decision": "ImplicitDeny",
+    "count": 1
+  },
+  {
+    "type": "AWS::EC2::EIP",
+    "handler": "create",
+    "action": "ec2:AllocateAddress",
+    "decision": "Unmapped multi-resource authorization: ec2:AllocateAddress",
+    "count": 2
+  },
+  {
+    "type": "AWS::EC2::EIP",
+    "handler": "create",
+    "action": "ec2:AssociateAddress",
+    "decision": "Unmapped multi-resource authorization: ec2:AssociateAddress",
+    "count": 2
+  },
+  {
+    "type": "AWS::EC2::EIP",
+    "handler": "create",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 2
+  },
+  {
+    "type": "AWS::EC2::EIP",
+    "handler": "delete",
+    "action": "ec2:DisassociateAddress",
+    "decision": "Unmapped multi-resource authorization: ec2:DisassociateAddress",
+    "count": 2
+  },
+  {
+    "type": "AWS::EC2::EIP",
+    "handler": "tag",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 2
+  },
+  {
+    "type": "AWS::EC2::EIP",
+    "handler": "tag",
+    "action": "ec2:DeleteTags",
+    "decision": "Unmapped multi-resource authorization: ec2:DeleteTags",
+    "count": 2
+  },
+  {
+    "type": "AWS::EC2::EIP",
+    "handler": "update",
+    "action": "ec2:AssociateAddress",
+    "decision": "Unmapped multi-resource authorization: ec2:AssociateAddress",
+    "count": 2
+  },
+  {
+    "type": "AWS::EC2::EIP",
+    "handler": "update",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 2
+  },
+  {
+    "type": "AWS::EC2::EIP",
+    "handler": "update",
+    "action": "ec2:DeleteTags",
+    "decision": "Unmapped multi-resource authorization: ec2:DeleteTags",
+    "count": 2
+  },
+  {
+    "type": "AWS::EC2::EIP",
+    "handler": "update",
+    "action": "ec2:DisassociateAddress",
+    "decision": "Unmapped multi-resource authorization: ec2:DisassociateAddress",
+    "count": 2
+  },
+  {
+    "type": "AWS::EC2::FlowLog",
+    "handler": "create",
+    "action": "autoscaling:DescribeTags",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::EC2::FlowLog",
+    "handler": "create",
+    "action": "ec2:CreateFlowLogs",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateFlowLogs",
+    "count": 1
+  },
+  {
+    "type": "AWS::EC2::FlowLog",
+    "handler": "create",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::EC2::FlowLog",
+    "handler": "create",
+    "action": "iam:CreateServiceLinkedRole",
+    "decision": "Unresolved provider service-linked-role identity",
+    "count": 1
+  },
+  {
+    "type": "AWS::EC2::FlowLog",
+    "handler": "tag",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::EC2::FlowLog",
+    "handler": "tag",
+    "action": "ec2:DeleteTags",
+    "decision": "Unmapped multi-resource authorization: ec2:DeleteTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::EC2::FlowLog",
+    "handler": "update",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::EC2::FlowLog",
+    "handler": "update",
+    "action": "ec2:DeleteTags",
+    "decision": "Unmapped multi-resource authorization: ec2:DeleteTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::EC2::InternetGateway",
+    "handler": "create",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::EC2::InternetGateway",
+    "handler": "tag",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::EC2::InternetGateway",
+    "handler": "tag",
+    "action": "ec2:DeleteTags",
+    "decision": "Unmapped multi-resource authorization: ec2:DeleteTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::EC2::InternetGateway",
+    "handler": "update",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::EC2::InternetGateway",
+    "handler": "update",
+    "action": "ec2:DeleteTags",
+    "decision": "Unmapped multi-resource authorization: ec2:DeleteTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::EC2::NatGateway",
+    "handler": "create",
+    "action": "ec2:CreateNatGateway",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateNatGateway",
+    "count": 2
+  },
+  {
+    "type": "AWS::EC2::NatGateway",
+    "handler": "create",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 2
+  },
+  {
+    "type": "AWS::EC2::NatGateway",
+    "handler": "tag",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 2
+  },
+  {
+    "type": "AWS::EC2::NatGateway",
+    "handler": "tag",
+    "action": "ec2:DeleteTags",
+    "decision": "Unmapped multi-resource authorization: ec2:DeleteTags",
+    "count": 2
+  },
+  {
+    "type": "AWS::EC2::NatGateway",
+    "handler": "update",
+    "action": "ec2:AssociateNatGatewayAddress",
+    "decision": "Unmapped multi-resource authorization: ec2:AssociateNatGatewayAddress",
+    "count": 2
+  },
+  {
+    "type": "AWS::EC2::NatGateway",
+    "handler": "update",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 2
+  },
+  {
+    "type": "AWS::EC2::NatGateway",
+    "handler": "update",
+    "action": "ec2:DeleteTags",
+    "decision": "Unmapped multi-resource authorization: ec2:DeleteTags",
+    "count": 2
+  },
+  {
+    "type": "AWS::EC2::NatGateway",
+    "handler": "update",
+    "action": "ec2:DisassociateNatGatewayAddress",
+    "decision": "Unmapped multi-resource authorization: ec2:DisassociateNatGatewayAddress",
+    "count": 2
+  },
+  {
+    "type": "AWS::EC2::RouteTable",
+    "handler": "create",
+    "action": "ec2:CreateRouteTable",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateRouteTable",
+    "count": 3
+  },
+  {
+    "type": "AWS::EC2::RouteTable",
+    "handler": "create",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 3
+  },
+  {
+    "type": "AWS::EC2::RouteTable",
+    "handler": "tag",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 3
+  },
+  {
+    "type": "AWS::EC2::RouteTable",
+    "handler": "tag",
+    "action": "ec2:DeleteTags",
+    "decision": "Unmapped multi-resource authorization: ec2:DeleteTags",
+    "count": 3
+  },
+  {
+    "type": "AWS::EC2::RouteTable",
+    "handler": "update",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 3
+  },
+  {
+    "type": "AWS::EC2::RouteTable",
+    "handler": "update",
+    "action": "ec2:DeleteTags",
+    "decision": "Unmapped multi-resource authorization: ec2:DeleteTags",
+    "count": 3
+  },
+  {
+    "type": "AWS::EC2::SecurityGroup",
+    "handler": "create",
+    "action": "ec2:AuthorizeSecurityGroupEgress",
+    "decision": "Unmapped multi-resource authorization: ec2:AuthorizeSecurityGroupEgress",
+    "count": 5
+  },
+  {
+    "type": "AWS::EC2::SecurityGroup",
+    "handler": "create",
+    "action": "ec2:AuthorizeSecurityGroupIngress",
+    "decision": "Unmapped multi-resource authorization: ec2:AuthorizeSecurityGroupIngress",
+    "count": 5
+  },
+  {
+    "type": "AWS::EC2::SecurityGroup",
+    "handler": "create",
+    "action": "ec2:CreateSecurityGroup",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateSecurityGroup",
+    "count": 5
+  },
+  {
+    "type": "AWS::EC2::SecurityGroup",
+    "handler": "create",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 5
+  },
+  {
+    "type": "AWS::EC2::SecurityGroup",
+    "handler": "tag",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 5
+  },
+  {
+    "type": "AWS::EC2::SecurityGroup",
+    "handler": "tag",
+    "action": "ec2:DeleteTags",
+    "decision": "Unmapped multi-resource authorization: ec2:DeleteTags",
+    "count": 5
+  },
+  {
+    "type": "AWS::EC2::SecurityGroup",
+    "handler": "update",
+    "action": "ec2:AuthorizeSecurityGroupEgress",
+    "decision": "Unmapped multi-resource authorization: ec2:AuthorizeSecurityGroupEgress",
+    "count": 5
+  },
+  {
+    "type": "AWS::EC2::SecurityGroup",
+    "handler": "update",
+    "action": "ec2:AuthorizeSecurityGroupIngress",
+    "decision": "Unmapped multi-resource authorization: ec2:AuthorizeSecurityGroupIngress",
+    "count": 5
+  },
+  {
+    "type": "AWS::EC2::SecurityGroup",
+    "handler": "update",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 5
+  },
+  {
+    "type": "AWS::EC2::SecurityGroup",
+    "handler": "update",
+    "action": "ec2:DeleteTags",
+    "decision": "Unmapped multi-resource authorization: ec2:DeleteTags",
+    "count": 5
+  },
+  {
+    "type": "AWS::EC2::SecurityGroupEgress",
+    "handler": "create",
+    "action": "ec2:AuthorizeSecurityGroupEgress",
+    "decision": "Unmapped multi-resource authorization: ec2:AuthorizeSecurityGroupEgress",
+    "count": 2
+  },
+  {
+    "type": "AWS::EC2::Subnet",
+    "handler": "create",
+    "action": "ec2:CreateSubnet",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateSubnet",
+    "count": 4
+  },
+  {
+    "type": "AWS::EC2::Subnet",
+    "handler": "create",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 4
+  },
+  {
+    "type": "AWS::EC2::Subnet",
+    "handler": "tag",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 4
+  },
+  {
+    "type": "AWS::EC2::Subnet",
+    "handler": "tag",
+    "action": "ec2:DeleteTags",
+    "decision": "Unmapped multi-resource authorization: ec2:DeleteTags",
+    "count": 4
+  },
+  {
+    "type": "AWS::EC2::Subnet",
+    "handler": "update",
+    "action": "ec2:AssociateSubnetCidrBlock",
+    "decision": "Unmapped multi-resource authorization: ec2:AssociateSubnetCidrBlock",
+    "count": 4
+  },
+  {
+    "type": "AWS::EC2::Subnet",
+    "handler": "update",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 4
+  },
+  {
+    "type": "AWS::EC2::Subnet",
+    "handler": "update",
+    "action": "ec2:DeleteTags",
+    "decision": "Unmapped multi-resource authorization: ec2:DeleteTags",
+    "count": 4
+  },
+  {
+    "type": "AWS::EC2::VPC",
+    "handler": "create",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::EC2::VPC",
+    "handler": "create",
+    "action": "ec2:CreateVpc",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateVpc",
+    "count": 1
+  },
+  {
+    "type": "AWS::EC2::VPC",
+    "handler": "tag",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::EC2::VPC",
+    "handler": "tag",
+    "action": "ec2:DeleteTags",
+    "decision": "Unmapped multi-resource authorization: ec2:DeleteTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::EC2::VPC",
+    "handler": "update",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::EC2::VPC",
+    "handler": "update",
+    "action": "ec2:DeleteTags",
+    "decision": "Unmapped multi-resource authorization: ec2:DeleteTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::EC2::VPCEndpoint",
+    "handler": "create",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 7
+  },
+  {
+    "type": "AWS::EC2::VPCEndpoint",
+    "handler": "create",
+    "action": "ec2:CreateVpcEndpoint",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateVpcEndpoint",
+    "count": 7
+  },
+  {
+    "type": "AWS::EC2::VPCEndpoint",
+    "handler": "create",
+    "action": "ec2:DeleteTags",
+    "decision": "Unmapped multi-resource authorization: ec2:DeleteTags",
+    "count": 7
+  },
+  {
+    "type": "AWS::EC2::VPCEndpoint",
+    "handler": "delete",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 7
+  },
+  {
+    "type": "AWS::EC2::VPCEndpoint",
+    "handler": "delete",
+    "action": "ec2:DeleteTags",
+    "decision": "Unmapped multi-resource authorization: ec2:DeleteTags",
+    "count": 7
+  },
+  {
+    "type": "AWS::EC2::VPCEndpoint",
+    "handler": "tag",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 7
+  },
+  {
+    "type": "AWS::EC2::VPCEndpoint",
+    "handler": "tag",
+    "action": "ec2:DeleteTags",
+    "decision": "Unmapped multi-resource authorization: ec2:DeleteTags",
+    "count": 7
+  },
+  {
+    "type": "AWS::EC2::VPCEndpoint",
+    "handler": "update",
+    "action": "ec2:CreateTags",
+    "decision": "Unmapped multi-resource authorization: ec2:CreateTags",
+    "count": 7
+  },
+  {
+    "type": "AWS::EC2::VPCEndpoint",
+    "handler": "update",
+    "action": "ec2:DeleteTags",
+    "decision": "Unmapped multi-resource authorization: ec2:DeleteTags",
+    "count": 7
+  },
+  {
+    "type": "AWS::EC2::VPCEndpoint",
+    "handler": "update",
+    "action": "ec2:ModifyVpcEndpoint",
+    "decision": "Unmapped multi-resource authorization: ec2:ModifyVpcEndpoint",
+    "count": 7
+  },
+  {
+    "type": "AWS::ECS::Cluster",
+    "handler": "create",
+    "action": "ecs:TagResource",
+    "decision": "Unmapped multi-resource authorization: ecs:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::Cluster",
+    "handler": "create",
+    "action": "iam:CreateServiceLinkedRole",
+    "decision": "Unresolved provider service-linked-role identity",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::Cluster",
+    "handler": "tag",
+    "action": "ecs:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: ecs:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::Cluster",
+    "handler": "tag",
+    "action": "ecs:TagResource",
+    "decision": "Unmapped multi-resource authorization: ecs:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::Cluster",
+    "handler": "tag",
+    "action": "ecs:UntagResource",
+    "decision": "Unmapped multi-resource authorization: ecs:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::Cluster",
+    "handler": "update",
+    "action": "ecs:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: ecs:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::Cluster",
+    "handler": "update",
+    "action": "ecs:PutAccountSetting",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::Cluster",
+    "handler": "update",
+    "action": "ecs:PutAccountSettingDefault",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::Cluster",
+    "handler": "update",
+    "action": "ecs:TagResource",
+    "decision": "Unmapped multi-resource authorization: ecs:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::Cluster",
+    "handler": "update",
+    "action": "ecs:UntagResource",
+    "decision": "Unmapped multi-resource authorization: ecs:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::Service",
+    "handler": "create",
+    "action": "ecs:DescribeServiceDeployments",
+    "decision": "Unmapped multi-resource authorization: ecs:DescribeServiceDeployments",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::Service",
+    "handler": "create",
+    "action": "ecs:TagResource",
+    "decision": "Unmapped multi-resource authorization: ecs:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::Service",
+    "handler": "tag",
+    "action": "ecs:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: ecs:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::Service",
+    "handler": "tag",
+    "action": "ecs:TagResource",
+    "decision": "Unmapped multi-resource authorization: ecs:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::Service",
+    "handler": "tag",
+    "action": "ecs:UntagResource",
+    "decision": "Unmapped multi-resource authorization: ecs:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::Service",
+    "handler": "update",
+    "action": "ecs:DescribeServiceDeployments",
+    "decision": "Unmapped multi-resource authorization: ecs:DescribeServiceDeployments",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::Service",
+    "handler": "update",
+    "action": "ecs:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: ecs:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::Service",
+    "handler": "update",
+    "action": "ecs:StopServiceDeployment",
+    "decision": "Unmapped multi-resource authorization: ecs:StopServiceDeployment",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::Service",
+    "handler": "update",
+    "action": "ecs:TagResource",
+    "decision": "Unmapped multi-resource authorization: ecs:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::Service",
+    "handler": "update",
+    "action": "ecs:UntagResource",
+    "decision": "Unmapped multi-resource authorization: ecs:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::TaskDefinition",
+    "handler": "create",
+    "action": "ecs:DescribeTaskDefinition",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::TaskDefinition",
+    "handler": "create",
+    "action": "ecs:TagResource",
+    "decision": "Unmapped multi-resource authorization: ecs:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::TaskDefinition",
+    "handler": "delete",
+    "action": "ecs:DeregisterTaskDefinition",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::TaskDefinition",
+    "handler": "delete",
+    "action": "ecs:DescribeTaskDefinition",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::TaskDefinition",
+    "handler": "read",
+    "action": "ecs:DescribeTaskDefinition",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::TaskDefinition",
+    "handler": "tag",
+    "action": "ecs:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: ecs:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::TaskDefinition",
+    "handler": "tag",
+    "action": "ecs:TagResource",
+    "decision": "Unmapped multi-resource authorization: ecs:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::TaskDefinition",
+    "handler": "tag",
+    "action": "ecs:UntagResource",
+    "decision": "Unmapped multi-resource authorization: ecs:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::TaskDefinition",
+    "handler": "update",
+    "action": "ecs:DescribeTaskDefinition",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::TaskDefinition",
+    "handler": "update",
+    "action": "ecs:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: ecs:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::TaskDefinition",
+    "handler": "update",
+    "action": "ecs:TagResource",
+    "decision": "Unmapped multi-resource authorization: ecs:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::ECS::TaskDefinition",
+    "handler": "update",
+    "action": "ecs:UntagResource",
+    "decision": "Unmapped multi-resource authorization: ecs:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::Listener",
+    "handler": "create",
+    "action": "elasticloadbalancing:AddTags",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::Listener",
+    "handler": "create",
+    "action": "elasticloadbalancing:DescribeListeners",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::Listener",
+    "handler": "create",
+    "action": "elasticloadbalancing:ModifyListenerAttributes",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:ModifyListenerAttributes",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::Listener",
+    "handler": "delete",
+    "action": "elasticloadbalancing:DeleteListener",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:DeleteListener",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::Listener",
+    "handler": "delete",
+    "action": "elasticloadbalancing:DescribeListeners",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::Listener",
+    "handler": "read",
+    "action": "elasticloadbalancing:DescribeListeners",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::Listener",
+    "handler": "tag",
+    "action": "elasticloadbalancing:AddTags",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::Listener",
+    "handler": "tag",
+    "action": "elasticloadbalancing:RemoveTags",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:RemoveTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::Listener",
+    "handler": "update",
+    "action": "elasticloadbalancing:AddTags",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::Listener",
+    "handler": "update",
+    "action": "elasticloadbalancing:DescribeListeners",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::Listener",
+    "handler": "update",
+    "action": "elasticloadbalancing:ModifyListener",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:ModifyListener",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::Listener",
+    "handler": "update",
+    "action": "elasticloadbalancing:ModifyListenerAttributes",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:ModifyListenerAttributes",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::Listener",
+    "handler": "update",
+    "action": "elasticloadbalancing:RemoveTags",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:RemoveTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+    "handler": "create",
+    "action": "elasticloadbalancing:AddTags",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+    "handler": "create",
+    "action": "elasticloadbalancing:DescribeRules",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+    "handler": "delete",
+    "action": "elasticloadbalancing:DeleteRule",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:DeleteRule",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+    "handler": "delete",
+    "action": "elasticloadbalancing:DescribeRules",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+    "handler": "read",
+    "action": "elasticloadbalancing:DescribeRules",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+    "handler": "tag",
+    "action": "elasticloadbalancing:AddTags",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+    "handler": "tag",
+    "action": "elasticloadbalancing:RemoveTags",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:RemoveTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+    "handler": "update",
+    "action": "elasticloadbalancing:AddTags",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+    "handler": "update",
+    "action": "elasticloadbalancing:DescribeRules",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+    "handler": "update",
+    "action": "elasticloadbalancing:ModifyRule",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:ModifyRule",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+    "handler": "update",
+    "action": "elasticloadbalancing:RemoveTags",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:RemoveTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+    "handler": "update",
+    "action": "elasticloadbalancing:SetRulePriorities",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:SetRulePriorities",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "handler": "create",
+    "action": "elasticloadbalancing:AddTags",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "handler": "create",
+    "action": "elasticloadbalancing:CreateLoadBalancer",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:CreateLoadBalancer",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "handler": "create",
+    "action": "elasticloadbalancing:ModifyCapacityReservation",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:ModifyCapacityReservation",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "handler": "create",
+    "action": "elasticloadbalancing:ModifyLoadBalancerAttributes",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:ModifyLoadBalancerAttributes",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "handler": "create",
+    "action": "elasticloadbalancing:SetSecurityGroups",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:SetSecurityGroups",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "handler": "delete",
+    "action": "elasticloadbalancing:DeleteLoadBalancer",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:DeleteLoadBalancer",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "handler": "tag",
+    "action": "elasticloadbalancing:AddTags",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "handler": "tag",
+    "action": "elasticloadbalancing:RemoveTags",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:RemoveTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "handler": "update",
+    "action": "elasticloadbalancing:AddTags",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "handler": "update",
+    "action": "elasticloadbalancing:ModifyCapacityReservation",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:ModifyCapacityReservation",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "handler": "update",
+    "action": "elasticloadbalancing:ModifyLoadBalancerAttributes",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:ModifyLoadBalancerAttributes",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "handler": "update",
+    "action": "elasticloadbalancing:RemoveTags",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:RemoveTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "handler": "update",
+    "action": "elasticloadbalancing:SetIpAddressType",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:SetIpAddressType",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "handler": "update",
+    "action": "elasticloadbalancing:SetSecurityGroups",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:SetSecurityGroups",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+    "handler": "update",
+    "action": "elasticloadbalancing:SetSubnets",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:SetSubnets",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+    "handler": "create",
+    "action": "elasticloadbalancing:AddTags",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+    "handler": "tag",
+    "action": "elasticloadbalancing:AddTags",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+    "handler": "tag",
+    "action": "elasticloadbalancing:RemoveTags",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:RemoveTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+    "handler": "update",
+    "action": "elasticloadbalancing:AddTags",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+    "handler": "update",
+    "action": "elasticloadbalancing:RemoveTags",
+    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:RemoveTags",
+    "count": 1
+  },
+  {
+    "type": "AWS::GuardDuty::Detector",
+    "handler": "create",
+    "action": "guardduty:TagResource",
+    "decision": "Unmapped multi-resource authorization: guardduty:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::GuardDuty::Detector",
+    "handler": "create",
+    "action": "iam:CreateServiceLinkedRole",
+    "decision": "Unresolved provider service-linked-role identity",
+    "count": 1
+  },
+  {
+    "type": "AWS::GuardDuty::Detector",
+    "handler": "read",
+    "action": "guardduty:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: guardduty:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::GuardDuty::Detector",
+    "handler": "update",
+    "action": "guardduty:TagResource",
+    "decision": "Unmapped multi-resource authorization: guardduty:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::GuardDuty::Detector",
+    "handler": "update",
+    "action": "guardduty:UntagResource",
+    "decision": "Unmapped multi-resource authorization: guardduty:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::GuardDuty::Detector",
+    "handler": "update",
+    "action": "iam:CreateServiceLinkedRole",
+    "decision": "Unresolved provider service-linked-role identity",
+    "count": 1
+  },
+  {
+    "type": "AWS::IAM::Role",
+    "handler": "create",
+    "action": "iam:CreateRole",
+    "decision": "ImplicitDeny",
+    "count": 13
+  },
+  {
+    "type": "AWS::IAM::Role",
+    "handler": "update",
+    "action": "iam:DeleteRolePermissionsBoundary",
+    "decision": "ImplicitDeny",
+    "count": 13
+  },
+  {
+    "type": "AWS::IAM::Role",
+    "handler": "update",
+    "action": "iam:PutRolePermissionsBoundary",
+    "decision": "ImplicitDeny",
+    "count": 13
+  },
+  {
+    "type": "AWS::KMS::Alias",
+    "handler": "update",
+    "action": "kms:UpdateAlias",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Lambda::Function",
+    "handler": "create",
+    "action": "lambda:TagResource",
+    "decision": "Unmapped multi-resource authorization: lambda:TagResource",
+    "count": 6
+  },
+  {
+    "type": "AWS::Lambda::Function",
+    "handler": "create",
+    "action": "s3:GetObject",
+    "decision": "Unmapped multi-resource authorization: s3:GetObject",
+    "count": 1
+  },
+  {
+    "type": "AWS::Lambda::Function",
+    "handler": "create",
+    "action": "s3:GetObjectVersion",
+    "decision": "Unmapped multi-resource authorization: s3:GetObjectVersion",
+    "count": 1
+  },
+  {
+    "type": "AWS::Lambda::Function",
+    "handler": "tag",
+    "action": "lambda:ListTags",
+    "decision": "Unmapped multi-resource authorization: lambda:ListTags",
+    "count": 6
+  },
+  {
+    "type": "AWS::Lambda::Function",
+    "handler": "tag",
+    "action": "lambda:TagResource",
+    "decision": "Unmapped multi-resource authorization: lambda:TagResource",
+    "count": 6
+  },
+  {
+    "type": "AWS::Lambda::Function",
+    "handler": "tag",
+    "action": "lambda:UntagResource",
+    "decision": "Unmapped multi-resource authorization: lambda:UntagResource",
+    "count": 6
+  },
+  {
+    "type": "AWS::Lambda::Function",
+    "handler": "update",
+    "action": "lambda:PutFunctionCodeSigningConfig",
+    "decision": "Unmapped multi-resource authorization: lambda:PutFunctionCodeSigningConfig",
+    "count": 6
+  },
+  {
+    "type": "AWS::Lambda::Function",
+    "handler": "update",
+    "action": "lambda:TagResource",
+    "decision": "Unmapped multi-resource authorization: lambda:TagResource",
+    "count": 6
+  },
+  {
+    "type": "AWS::Lambda::Function",
+    "handler": "update",
+    "action": "lambda:UntagResource",
+    "decision": "Unmapped multi-resource authorization: lambda:UntagResource",
+    "count": 6
+  },
+  {
+    "type": "AWS::Lambda::Function",
+    "handler": "update",
+    "action": "s3:GetObject",
+    "decision": "Unmapped multi-resource authorization: s3:GetObject",
+    "count": 1
+  },
+  {
+    "type": "AWS::Lambda::Function",
+    "handler": "update",
+    "action": "s3:GetObjectVersion",
+    "decision": "Unmapped multi-resource authorization: s3:GetObjectVersion",
+    "count": 1
+  },
+  {
+    "type": "AWS::Logs::LogGroup",
+    "handler": "create",
+    "action": "logs:TagResource",
+    "decision": "Unmapped multi-resource authorization: logs:TagResource",
+    "count": 9
+  },
+  {
+    "type": "AWS::Logs::LogGroup",
+    "handler": "read",
+    "action": "logs:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: logs:ListTagsForResource",
+    "count": 9
+  },
+  {
+    "type": "AWS::Logs::LogGroup",
+    "handler": "tag",
+    "action": "logs:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: logs:ListTagsForResource",
+    "count": 9
+  },
+  {
+    "type": "AWS::Logs::LogGroup",
+    "handler": "tag",
+    "action": "logs:TagResource",
+    "decision": "Unmapped multi-resource authorization: logs:TagResource",
+    "count": 9
+  },
+  {
+    "type": "AWS::Logs::LogGroup",
+    "handler": "tag",
+    "action": "logs:UntagResource",
+    "decision": "Unmapped multi-resource authorization: logs:UntagResource",
+    "count": 9
+  },
+  {
+    "type": "AWS::Logs::LogGroup",
+    "handler": "update",
+    "action": "logs:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: logs:ListTagsForResource",
+    "count": 9
+  },
+  {
+    "type": "AWS::Logs::LogGroup",
+    "handler": "update",
+    "action": "logs:TagResource",
+    "decision": "Unmapped multi-resource authorization: logs:TagResource",
+    "count": 9
+  },
+  {
+    "type": "AWS::Logs::LogGroup",
+    "handler": "update",
+    "action": "logs:UntagResource",
+    "decision": "Unmapped multi-resource authorization: logs:UntagResource",
+    "count": 9
+  },
+  {
+    "type": "AWS::RDS::DBInstance",
+    "handler": "create",
+    "action": "iam:CreateServiceLinkedRole",
+    "decision": "Unresolved provider service-linked-role identity",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBInstance",
+    "handler": "create",
+    "action": "rds:AddTagsToResource",
+    "decision": "Unmapped multi-resource authorization: rds:AddTagsToResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBInstance",
+    "handler": "create",
+    "action": "rds:CreateDBInstance",
+    "decision": "Unmapped multi-resource authorization: rds:CreateDBInstance",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBInstance",
+    "handler": "create",
+    "action": "rds:DescribeDBClusterSnapshots",
+    "decision": "Unmapped multi-resource authorization: rds:DescribeDBClusterSnapshots",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBInstance",
+    "handler": "create",
+    "action": "rds:DescribeDBInstanceAutomatedBackups",
+    "decision": "Unmapped multi-resource authorization: rds:DescribeDBInstanceAutomatedBackups",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBInstance",
+    "handler": "create",
+    "action": "rds:DescribeDBSnapshots",
+    "decision": "Unmapped multi-resource authorization: rds:DescribeDBSnapshots",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBInstance",
+    "handler": "create",
+    "action": "rds:ModifyDBInstance",
+    "decision": "Unmapped multi-resource authorization: rds:ModifyDBInstance",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBInstance",
+    "handler": "create",
+    "action": "rds:RestoreDBInstanceFromDBSnapshot",
+    "decision": "Unmapped multi-resource authorization: rds:RestoreDBInstanceFromDBSnapshot",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBInstance",
+    "handler": "create",
+    "action": "rds:RestoreDBInstanceToPointInTime",
+    "decision": "Unmapped multi-resource authorization: rds:RestoreDBInstanceToPointInTime",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBInstance",
+    "handler": "create",
+    "action": "rds:StartDBInstanceAutomatedBackupsReplication",
+    "decision": "Unmapped multi-resource authorization: rds:StartDBInstanceAutomatedBackupsReplication",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBInstance",
+    "handler": "delete",
+    "action": "rds:AddTagsToResource",
+    "decision": "Unmapped multi-resource authorization: rds:AddTagsToResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBInstance",
+    "handler": "delete",
+    "action": "rds:CreateDBSnapshot",
+    "decision": "Unmapped multi-resource authorization: rds:CreateDBSnapshot",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBInstance",
+    "handler": "tag",
+    "action": "rds:AddTagsToResource",
+    "decision": "Unmapped multi-resource authorization: rds:AddTagsToResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBInstance",
+    "handler": "tag",
+    "action": "rds:RemoveTagsFromResource",
+    "decision": "Unmapped multi-resource authorization: rds:RemoveTagsFromResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBInstance",
+    "handler": "update",
+    "action": "iam:CreateServiceLinkedRole",
+    "decision": "Unresolved provider service-linked-role identity",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBInstance",
+    "handler": "update",
+    "action": "rds:AddTagsToResource",
+    "decision": "Unmapped multi-resource authorization: rds:AddTagsToResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBInstance",
+    "handler": "update",
+    "action": "rds:DescribeDBInstanceAutomatedBackups",
+    "decision": "Unmapped multi-resource authorization: rds:DescribeDBInstanceAutomatedBackups",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBInstance",
+    "handler": "update",
+    "action": "rds:ModifyDBInstance",
+    "decision": "Unmapped multi-resource authorization: rds:ModifyDBInstance",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBInstance",
+    "handler": "update",
+    "action": "rds:RemoveTagsFromResource",
+    "decision": "Unmapped multi-resource authorization: rds:RemoveTagsFromResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBInstance",
+    "handler": "update",
+    "action": "rds:StartDBInstanceAutomatedBackupsReplication",
+    "decision": "Unmapped multi-resource authorization: rds:StartDBInstanceAutomatedBackupsReplication",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBParameterGroup",
+    "handler": "create",
+    "action": "iam:CreateServiceLinkedRole",
+    "decision": "Unresolved provider service-linked-role identity",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBParameterGroup",
+    "handler": "create",
+    "action": "rds:AddTagsToResource",
+    "decision": "Unmapped multi-resource authorization: rds:AddTagsToResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBParameterGroup",
+    "handler": "create",
+    "action": "rds:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: rds:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBParameterGroup",
+    "handler": "create",
+    "action": "rds:RemoveTagsFromResource",
+    "decision": "Unmapped multi-resource authorization: rds:RemoveTagsFromResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBParameterGroup",
+    "handler": "read",
+    "action": "rds:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: rds:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBParameterGroup",
+    "handler": "tag",
+    "action": "rds:AddTagsToResource",
+    "decision": "Unmapped multi-resource authorization: rds:AddTagsToResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBParameterGroup",
+    "handler": "tag",
+    "action": "rds:RemoveTagsFromResource",
+    "decision": "Unmapped multi-resource authorization: rds:RemoveTagsFromResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBParameterGroup",
+    "handler": "update",
+    "action": "rds:AddTagsToResource",
+    "decision": "Unmapped multi-resource authorization: rds:AddTagsToResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBParameterGroup",
+    "handler": "update",
+    "action": "rds:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: rds:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBParameterGroup",
+    "handler": "update",
+    "action": "rds:RemoveTagsFromResource",
+    "decision": "Unmapped multi-resource authorization: rds:RemoveTagsFromResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBSubnetGroup",
+    "handler": "create",
+    "action": "iam:CreateServiceLinkedRole",
+    "decision": "Unresolved provider service-linked-role identity",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBSubnetGroup",
+    "handler": "create",
+    "action": "rds:AddTagsToResource",
+    "decision": "Unmapped multi-resource authorization: rds:AddTagsToResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBSubnetGroup",
+    "handler": "create",
+    "action": "rds:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: rds:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBSubnetGroup",
+    "handler": "create",
+    "action": "rds:RemoveTagsFromResource",
+    "decision": "Unmapped multi-resource authorization: rds:RemoveTagsFromResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBSubnetGroup",
+    "handler": "delete",
+    "action": "rds:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: rds:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBSubnetGroup",
+    "handler": "read",
+    "action": "rds:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: rds:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBSubnetGroup",
+    "handler": "tag",
+    "action": "rds:AddTagsToResource",
+    "decision": "Unmapped multi-resource authorization: rds:AddTagsToResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBSubnetGroup",
+    "handler": "tag",
+    "action": "rds:RemoveTagsFromResource",
+    "decision": "Unmapped multi-resource authorization: rds:RemoveTagsFromResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBSubnetGroup",
+    "handler": "update",
+    "action": "rds:AddTagsToResource",
+    "decision": "Unmapped multi-resource authorization: rds:AddTagsToResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBSubnetGroup",
+    "handler": "update",
+    "action": "rds:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: rds:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::RDS::DBSubnetGroup",
+    "handler": "update",
+    "action": "rds:RemoveTagsFromResource",
+    "decision": "Unmapped multi-resource authorization: rds:RemoveTagsFromResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Route53::HealthCheck",
+    "handler": "create",
+    "action": "route53:ChangeTagsForResource",
+    "decision": "Unmapped multi-resource authorization: route53:ChangeTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Route53::HealthCheck",
+    "handler": "create",
+    "action": "route53:CreateHealthCheck",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Route53::HealthCheck",
+    "handler": "delete",
+    "action": "route53:DeleteHealthCheck",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Route53::HealthCheck",
+    "handler": "read",
+    "action": "route53:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: route53:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Route53::HealthCheck",
+    "handler": "tag",
+    "action": "route53:ChangeTagsForResource",
+    "decision": "Unmapped multi-resource authorization: route53:ChangeTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Route53::HealthCheck",
+    "handler": "tag",
+    "action": "route53:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: route53:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Route53::HealthCheck",
+    "handler": "update",
+    "action": "route53:ChangeTagsForResource",
+    "decision": "Unmapped multi-resource authorization: route53:ChangeTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Route53::HealthCheck",
+    "handler": "update",
+    "action": "route53:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: route53:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::Route53::HealthCheck",
+    "handler": "update",
+    "action": "route53:UpdateHealthCheck",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::Route53::RecordSet",
+    "handler": "create",
+    "action": "route53:ChangeResourceRecordSets",
+    "decision": "Deny",
+    "count": 6
+  },
+  {
+    "type": "AWS::Route53::RecordSet",
+    "handler": "create",
+    "action": "route53:ListResourceRecordSets",
+    "decision": "Deny",
+    "count": 6
+  },
+  {
+    "type": "AWS::Route53::RecordSet",
+    "handler": "delete",
+    "action": "route53:ChangeResourceRecordSets",
+    "decision": "Deny",
+    "count": 6
+  },
+  {
+    "type": "AWS::Route53::RecordSet",
+    "handler": "delete",
+    "action": "route53:ListResourceRecordSets",
+    "decision": "Deny",
+    "count": 6
+  },
+  {
+    "type": "AWS::Route53::RecordSet",
+    "handler": "read",
+    "action": "route53:ListResourceRecordSets",
+    "decision": "Deny",
+    "count": 6
+  },
+  {
+    "type": "AWS::Route53::RecordSet",
+    "handler": "update",
+    "action": "route53:ChangeResourceRecordSets",
+    "decision": "Deny",
+    "count": 6
+  },
+  {
+    "type": "AWS::Route53::RecordSet",
+    "handler": "update",
+    "action": "route53:ListResourceRecordSets",
+    "decision": "Deny",
+    "count": 6
+  },
+  {
+    "type": "AWS::S3::Bucket",
+    "handler": "create",
+    "action": "s3:DeleteObject",
+    "decision": "Unmapped multi-resource authorization: s3:DeleteObject",
+    "count": 6
+  },
+  {
+    "type": "AWS::S3::Bucket",
+    "handler": "create",
+    "action": "s3:GetBucketAcl",
+    "decision": "Unmapped multi-resource authorization: s3:GetBucketAcl",
+    "count": 6
+  },
+  {
+    "type": "AWS::S3::Bucket",
+    "handler": "create",
+    "action": "s3:ListBucket",
+    "decision": "Unmapped multi-resource authorization: s3:ListBucket",
+    "count": 6
+  },
+  {
+    "type": "AWS::S3::Bucket",
+    "handler": "create",
+    "action": "s3:PutObjectAcl",
+    "decision": "Unmapped multi-resource authorization: s3:PutObjectAcl",
+    "count": 6
+  },
+  {
+    "type": "AWS::S3::Bucket",
+    "handler": "create",
+    "action": "s3:TagResource",
+    "decision": "Unmapped multi-resource authorization: s3:TagResource",
+    "count": 6
+  },
+  {
+    "type": "AWS::S3::Bucket",
+    "handler": "delete",
+    "action": "s3:ListBucket",
+    "decision": "Unmapped multi-resource authorization: s3:ListBucket",
+    "count": 6
+  },
+  {
+    "type": "AWS::S3::Bucket",
+    "handler": "read",
+    "action": "s3:GetBucketCORS",
+    "decision": "Unmapped multi-resource authorization: s3:GetBucketCORS",
+    "count": 6
+  },
+  {
+    "type": "AWS::S3::Bucket",
+    "handler": "read",
+    "action": "s3:GetBucketDefaultStorageClass",
+    "decision": "UnknownAction",
+    "count": 6
+  },
+  {
+    "type": "AWS::S3::Bucket",
+    "handler": "read",
+    "action": "s3:GetBucketNotification",
+    "decision": "Unmapped multi-resource authorization: s3:GetBucketNotification",
+    "count": 6
+  },
+  {
+    "type": "AWS::S3::Bucket",
+    "handler": "read",
+    "action": "s3:ListBucket",
+    "decision": "Unmapped multi-resource authorization: s3:ListBucket",
+    "count": 6
+  },
+  {
+    "type": "AWS::S3::Bucket",
+    "handler": "read",
+    "action": "s3:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: s3:ListTagsForResource",
+    "count": 6
+  },
+  {
+    "type": "AWS::S3::Bucket",
+    "handler": "tag",
+    "action": "s3:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: s3:ListTagsForResource",
+    "count": 6
+  },
+  {
+    "type": "AWS::S3::Bucket",
+    "handler": "tag",
+    "action": "s3:TagResource",
+    "decision": "Unmapped multi-resource authorization: s3:TagResource",
+    "count": 6
+  },
+  {
+    "type": "AWS::S3::Bucket",
+    "handler": "tag",
+    "action": "s3:UntagResource",
+    "decision": "Unmapped multi-resource authorization: s3:UntagResource",
+    "count": 6
+  },
+  {
+    "type": "AWS::S3::Bucket",
+    "handler": "update",
+    "action": "s3:ListBucket",
+    "decision": "Unmapped multi-resource authorization: s3:ListBucket",
+    "count": 6
+  },
+  {
+    "type": "AWS::S3::Bucket",
+    "handler": "update",
+    "action": "s3:TagResource",
+    "decision": "Unmapped multi-resource authorization: s3:TagResource",
+    "count": 6
+  },
+  {
+    "type": "AWS::S3::Bucket",
+    "handler": "update",
+    "action": "s3:UntagResource",
+    "decision": "Unmapped multi-resource authorization: s3:UntagResource",
+    "count": 6
+  },
+  {
+    "type": "AWS::S3::BucketPolicy",
+    "handler": "create",
+    "action": "s3:GetBucketPolicy",
+    "decision": "Unmapped multi-resource authorization: s3:GetBucketPolicy",
+    "count": 6
+  },
+  {
+    "type": "AWS::S3::BucketPolicy",
+    "handler": "delete",
+    "action": "s3:GetBucketPolicy",
+    "decision": "Unmapped multi-resource authorization: s3:GetBucketPolicy",
+    "count": 6
+  },
+  {
+    "type": "AWS::S3::BucketPolicy",
+    "handler": "read",
+    "action": "s3:GetBucketPolicy",
+    "decision": "Unmapped multi-resource authorization: s3:GetBucketPolicy",
+    "count": 6
+  },
+  {
+    "type": "AWS::S3::BucketPolicy",
+    "handler": "update",
+    "action": "s3:GetBucketPolicy",
+    "decision": "Unmapped multi-resource authorization: s3:GetBucketPolicy",
+    "count": 6
+  },
+  {
+    "type": "AWS::SSM::Parameter",
+    "handler": "create",
+    "action": "ssm:AddTagsToResource",
+    "decision": "Unmapped multi-resource authorization: ssm:AddTagsToResource",
+    "count": 2
+  },
+  {
+    "type": "AWS::SSM::Parameter",
+    "handler": "read",
+    "action": "ssm:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: ssm:ListTagsForResource",
+    "count": 2
+  },
+  {
+    "type": "AWS::SSM::Parameter",
+    "handler": "tag",
+    "action": "ssm:AddTagsToResource",
+    "decision": "Unmapped multi-resource authorization: ssm:AddTagsToResource",
+    "count": 2
+  },
+  {
+    "type": "AWS::SSM::Parameter",
+    "handler": "tag",
+    "action": "ssm:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: ssm:ListTagsForResource",
+    "count": 2
+  },
+  {
+    "type": "AWS::SSM::Parameter",
+    "handler": "tag",
+    "action": "ssm:RemoveTagsFromResource",
+    "decision": "Unmapped multi-resource authorization: ssm:RemoveTagsFromResource",
+    "count": 2
+  },
+  {
+    "type": "AWS::SSM::Parameter",
+    "handler": "update",
+    "action": "ssm:AddTagsToResource",
+    "decision": "Unmapped multi-resource authorization: ssm:AddTagsToResource",
+    "count": 2
+  },
+  {
+    "type": "AWS::SSM::Parameter",
+    "handler": "update",
+    "action": "ssm:RemoveTagsFromResource",
+    "decision": "Unmapped multi-resource authorization: ssm:RemoveTagsFromResource",
+    "count": 2
+  },
+  {
+    "type": "AWS::WAFv2::LoggingConfiguration",
+    "handler": "create",
+    "action": "iam:CreateServiceLinkedRole",
+    "decision": "Unresolved provider service-linked-role identity",
+    "count": 1
+  },
+  {
+    "type": "AWS::WAFv2::LoggingConfiguration",
+    "handler": "create",
+    "action": "logs:PutResourcePolicy",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::WAFv2::LoggingConfiguration",
+    "handler": "update",
+    "action": "iam:CreateServiceLinkedRole",
+    "decision": "Unresolved provider service-linked-role identity",
+    "count": 1
+  },
+  {
+    "type": "AWS::WAFv2::LoggingConfiguration",
+    "handler": "update",
+    "action": "logs:PutResourcePolicy",
+    "decision": "Deny",
+    "count": 1
+  },
+  {
+    "type": "AWS::WAFv2::WebACL",
+    "handler": "create",
+    "action": "payments:GetConnectedAccount",
+    "decision": "ImplicitDeny",
+    "count": 1
+  },
+  {
+    "type": "AWS::WAFv2::WebACL",
+    "handler": "create",
+    "action": "wafv2:CreateWebACL",
+    "decision": "Unmapped multi-resource authorization: wafv2:CreateWebACL",
+    "count": 1
+  },
+  {
+    "type": "AWS::WAFv2::WebACL",
+    "handler": "create",
+    "action": "wafv2:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: wafv2:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::WAFv2::WebACL",
+    "handler": "create",
+    "action": "wafv2:TagResource",
+    "decision": "Unmapped multi-resource authorization: wafv2:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::WAFv2::WebACL",
+    "handler": "create",
+    "action": "wafv2:UntagResource",
+    "decision": "Unmapped multi-resource authorization: wafv2:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::WAFv2::WebACL",
+    "handler": "read",
+    "action": "wafv2:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: wafv2:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::WAFv2::WebACL",
+    "handler": "tag",
+    "action": "wafv2:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: wafv2:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::WAFv2::WebACL",
+    "handler": "tag",
+    "action": "wafv2:TagResource",
+    "decision": "Unmapped multi-resource authorization: wafv2:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::WAFv2::WebACL",
+    "handler": "tag",
+    "action": "wafv2:UntagResource",
+    "decision": "Unmapped multi-resource authorization: wafv2:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::WAFv2::WebACL",
+    "handler": "update",
+    "action": "payments:GetConnectedAccount",
+    "decision": "ImplicitDeny",
+    "count": 1
+  },
+  {
+    "type": "AWS::WAFv2::WebACL",
+    "handler": "update",
+    "action": "wafv2:ListTagsForResource",
+    "decision": "Unmapped multi-resource authorization: wafv2:ListTagsForResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::WAFv2::WebACL",
+    "handler": "update",
+    "action": "wafv2:TagResource",
+    "decision": "Unmapped multi-resource authorization: wafv2:TagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::WAFv2::WebACL",
+    "handler": "update",
+    "action": "wafv2:UntagResource",
+    "decision": "Unmapped multi-resource authorization: wafv2:UntagResource",
+    "count": 1
+  },
+  {
+    "type": "AWS::WAFv2::WebACL",
+    "handler": "update",
+    "action": "wafv2:UpdateWebACL",
+    "decision": "Unmapped multi-resource authorization: wafv2:UpdateWebACL",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit001",
+    "handler": "runtime",
+    "action": "cognito-idp:DescribeUserPoolClient",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit001",
+    "handler": "runtime",
+    "action": "secretsmanager:PutSecretValue",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit002",
+    "handler": "runtime",
+    "action": "bedrock:GetModelInvocationLoggingConfiguration",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit002",
+    "handler": "runtime",
+    "action": "bedrock:PutModelInvocationLoggingConfiguration",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit003",
+    "handler": "runtime",
+    "action": "s3:PutObject",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit004",
+    "handler": "runtime",
+    "action": "ec2:DescribeAvailabilityZones",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit004",
+    "handler": "runtime",
+    "action": "ec2:DescribeManagedPrefixLists",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit004",
+    "handler": "runtime",
+    "action": "ec2:DescribeSubnets",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit004",
+    "handler": "runtime",
+    "action": "ec2:DescribeVpcs",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit004",
+    "handler": "runtime",
+    "action": "wafv2:GetLoggingConfiguration",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit004",
+    "handler": "runtime",
+    "action": "wafv2:GetWebACL",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit005",
+    "handler": "runtime",
+    "action": "ec2:DescribeAvailabilityZones",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit005",
+    "handler": "runtime",
+    "action": "ec2:DescribeManagedPrefixLists",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit005",
+    "handler": "runtime",
+    "action": "ec2:DescribeSubnets",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit005",
+    "handler": "runtime",
+    "action": "ec2:DescribeVpcs",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit005",
+    "handler": "runtime",
+    "action": "wafv2:GetLoggingConfiguration",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit005",
+    "handler": "runtime",
+    "action": "wafv2:GetWebACL",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit006",
+    "handler": "runtime",
+    "action": "ec2:DescribeAvailabilityZones",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit006",
+    "handler": "runtime",
+    "action": "ec2:DescribeManagedPrefixLists",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit006",
+    "handler": "runtime",
+    "action": "ec2:DescribeSubnets",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit006",
+    "handler": "runtime",
+    "action": "ec2:DescribeVpcs",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit006",
+    "handler": "runtime",
+    "action": "wafv2:GetLoggingConfiguration",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit006",
+    "handler": "runtime",
+    "action": "wafv2:GetWebACL",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit007",
+    "handler": "runtime",
+    "action": "ec2:DescribeAvailabilityZones",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit007",
+    "handler": "runtime",
+    "action": "ec2:DescribeManagedPrefixLists",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit007",
+    "handler": "runtime",
+    "action": "ec2:DescribeSubnets",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit007",
+    "handler": "runtime",
+    "action": "ec2:DescribeVpcs",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit007",
+    "handler": "runtime",
+    "action": "wafv2:GetLoggingConfiguration",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit007",
+    "handler": "runtime",
+    "action": "wafv2:GetWebACL",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit008",
+    "handler": "runtime",
+    "action": "s3:GetObject",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  },
+  {
+    "type": "Custom::Audit008",
+    "handler": "runtime",
+    "action": "s3:PutObject",
+    "decision": "UnverifiedRuntimePolicy",
+    "count": 1
+  }
+]

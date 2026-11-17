@@ -118,3 +118,20 @@ variable "temporary_cleanup_gateway_ids" {
     error_message = "Temporary cleanup is available only in the shared gate account."
   }
 }
+
+variable "temporary_cleanup_subnet_group_names" {
+  description = "One exact orphan gate DB subnet group; private tfvars only, clear immediately after cleanup."
+  type        = set(string)
+  default     = []
+  sensitive   = true
+  validation {
+    condition = length(var.temporary_cleanup_subnet_group_names) <= 1 && alltrue([
+      for name in var.temporary_cleanup_subnet_group_names : can(regex("^honua-gate-[a-z0-9][a-z0-9-]{0,243}$", name))
+    ])
+    error_message = "Supply at most one exact gate-prefixed subnet group name without wildcards or ARNs."
+  }
+  validation {
+    condition     = var.shared_account || length(var.temporary_cleanup_subnet_group_names) == 0
+    error_message = "Temporary subnet cleanup is available only in the shared gate account."
+  }
+}
