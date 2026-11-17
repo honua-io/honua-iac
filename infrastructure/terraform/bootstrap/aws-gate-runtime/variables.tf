@@ -58,19 +58,19 @@ variable "budget_alert_email" {
 variable "idp_callback_urls" {
   type        = set(string)
   default     = ["https://localhost/admin/auth/callback"]
-  description = "Exact installed gate HTTPS callback URLs. Main updates this list after CloudFront assigns each stack hostname."
+  description = "Static gate HTTPS callback URLs kept on the client. honua-gate-reaper-callbacks adds live gate stack callbacks."
   validation {
-    condition = length(var.idp_callback_urls) > 0 && length(var.idp_callback_urls) <= 100 && alltrue([
+    condition = length(var.idp_callback_urls) > 0 && length(var.idp_callback_urls) <= 20 && alltrue([
       for url in var.idp_callback_urls : can(regex("^https://[a-z0-9.-]+/admin/auth/callback$", url)) && !strcontains(url, "*")
     ])
-    error_message = "Register one to 100 exact HTTPS /admin/auth/callback URLs without wildcards."
+    error_message = "Register one to 20 exact HTTPS /admin/auth/callback URLs without wildcards."
   }
 }
 
 variable "idp_task_execution_role_arns" {
   type        = set(string)
   default     = []
-  description = "Main-approved exact gate ECS execution roles that may fetch the client secret. Empty permits CloudFormation only."
+  description = "Optional exact gate roles that may fetch the client secret in addition to CloudFormation and the honua-gate-*-ExecutionRole-* pattern."
   validation {
     condition = alltrue([
       for arn in var.idp_task_execution_role_arns : can(regex("^arn:aws:iam::${var.member_account_id}:role/honua-gate-[A-Za-z0-9_+=,.@/-]+$", arn)) && !strcontains(arn, "*")

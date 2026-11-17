@@ -20,11 +20,11 @@ run "lookup_role_can_discover_network_metadata" {
   command = plan
   assert {
     condition = alltrue([
-      for action in ["ec2:DescribeManagedPrefixLists", "ec2:DescribeAvailabilityZones", "ec2:DescribeSubnets", "ec2:DescribeVpcs"] :
+      for action in ["ec2:DescribeManagedPrefixLists", "ec2:DescribeAvailabilityZones", "ec2:DescribeSubnets", "ec2:DescribeVpcs", "guardduty:ListDetectors"] :
       anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))]) &&
       anytrue([for pattern in local.workload_services : can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))])
     ])
-    error_message = "Lookup Lambda metadata calls have no ownership tags and must pass the workload boundary."
+    error_message = "Lookup Lambda metadata calls (network and GuardDuty detector discovery) have no ownership tags and must pass the workload boundary."
   }
 }
 
@@ -32,7 +32,7 @@ run "lookup_exception_preserves_foreign_resource_fences" {
   command = plan
   assert {
     condition = alltrue([
-      for action in ["ec2:DeleteVpc", "ec2:ModifySubnetAttribute", "ec2:CreateTags", "ec2:DescribeInstanceAttribute", "ec2:DescribeKeyPairs", "ec2:DescribeLaunchTemplateVersions", "ec2:DescribeVpnConnections"] :
+      for action in ["ec2:DeleteVpc", "ec2:ModifySubnetAttribute", "ec2:CreateTags", "ec2:DescribeInstanceAttribute", "ec2:DescribeKeyPairs", "ec2:DescribeLaunchTemplateVersions", "ec2:DescribeVpnConnections", "guardduty:DeleteDetector", "guardduty:UpdateDetector", "guardduty:GetDetector", "guardduty:ListFindings", "guardduty:ListMembers"] :
       !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))])
     ]) && { for key, value in local.boundary_ownership_deny.Condition : key => value if key != "StringNotLike" } == local.ownership_condition && local.boundary_ownership_deny.Condition.StringNotLike == { "kms:ViaService" = "secretsmanager.*" }
     error_message = "Network mutations and sensitive EC2 reads must retain the foreign-resource ownership deny."

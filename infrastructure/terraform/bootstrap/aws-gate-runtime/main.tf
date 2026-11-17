@@ -28,6 +28,7 @@ locals {
     Effect = "Deny", Action = "*"
     Resource = [
       aws_cognito_user_pool.gate.arn,
+      aws_secretsmanager_secret.idp_admin.arn,
       # Reserve the reaper namespace, including qualified functions and log streams.
       # Combining these deny-only resources keeps the managed boundary within quota.
       "arn:aws:lambda:us-east-1:${var.member_account_id}:function:honua-gate-reaper*",
@@ -41,6 +42,9 @@ locals {
       Action    = ["cloudformation:CreateStack", "cloudformation:UpdateStack", "cloudformation:DeleteStack"]
       Resource  = local.stack_arn
       Condition = { StringEquals = { "cloudformation:RoleArn" = local.service_role_arn } }
+      }, {
+      # Such a name would make every generated role match the IdP secret-reader pattern.
+      Effect = "Deny", Action = ["cloudformation:CreateStack"], Resource = "arn:aws:cloudformation:us-east-1:${var.member_account_id}:stack/*ExecutionRole*/*"
       }, {
       Effect   = "Allow", Action = ["cloudformation:DescribeStacks", "cloudformation:DescribeStackEvents", "cloudformation:ListStackResources", "cloudformation:GetTemplate", "cloudformation:GetStackPolicy"]
       Resource = local.stack_arn
@@ -57,6 +61,8 @@ locals {
       Sid = "GateImagePush", Effect = "Allow", Action = local.image_push_actions, Resource = local.server_repository_arn
       }, {
       Sid = "RegistryLogin", Effect = "Allow", Action = "ecr:GetAuthorizationToken", Resource = "*"
+      }, {
+      Sid = "SyncIdpCallbacks", Effect = "Allow", Action = "lambda:InvokeFunction", Resource = "arn:aws:lambda:us-east-1:${var.member_account_id}:function:honua-gate-reaper-callbacks"
       }, {
       Sid = "InspectNetworkOwnership", Effect = "Allow", Action = "ec2:Describe*", Resource = "*"
       }, {
