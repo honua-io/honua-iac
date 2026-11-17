@@ -169,6 +169,19 @@ roles; a full Launch Stack create needs both:
   service role's credentials; keep such types deactivated in the shared account.
   CloudFront functions are fenced by name (`function/honua-gate-*`): set the Launch
   Stack `NamePrefix` to `honua-gate`, or the function is created and then orphaned.
+- **Route 53 health checks and CloudFront monitoring subscriptions.** The Launch
+  Stack's public edge probe and real-time edge metrics have the same shape: create
+  takes no resource, later calls name a random health-check ID or none at all, and
+  neither service supports tag condition keys. The service role may therefore
+  create, update and delete any health check in the account, and create, read and
+  delete the monitoring subscription of any distribution. Unlike the CloudFront
+  policies, nothing protects a health check that other records still use: an
+  update can invert or disable it and a delete removes it, which would change
+  failover for any non-gate record that depends on it; a subscription change adds
+  or removes metrics charges on a foreign distribution. The same conditions hold:
+  only CloudFormation uses the role, and third-party resource types stay
+  deactivated. Keep production failover health checks and distributions out of the
+  shared gate account. Hosted zones and their records keep the ownership fence.
 
 `HonuaGateLane` can inspect EC2 resources with `ec2:Describe*` and read KMS key
 ownership tags with `kms:ListResourceTags`. Both the lane policy and its permissions

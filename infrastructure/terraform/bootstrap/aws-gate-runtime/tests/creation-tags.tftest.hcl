@@ -100,6 +100,12 @@ run "untaggable_types_are_managed_by_the_service_role_only" {
     ])
     error_message = "Taggable distributions, functions outside the gate name, hosted zones and other accounts keep the ownership fence."
   }
+  assert {
+    condition = alltrue([for action in ["route53:ChangeResourceRecordSets", "route53:ChangeTagsForResource", "cloudfront:UpdateDistribution", "cloudfront:DeleteDistribution"] :
+      !anytrue([for pattern in local.service_role_ownership_deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))])
+    ])
+    error_message = "Record, hosted-zone tag and distribution changes keep the ownership fence; the subscription pattern must not reach them."
+  }
 }
 
 run "ec2_creation_and_post_creation_tagging_decisions" {

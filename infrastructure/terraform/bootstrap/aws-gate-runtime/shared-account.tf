@@ -140,8 +140,8 @@ locals {
   # workload roles keep the full fence. Functions are named, so the name fences them.
   # Route 53 health checks and CloudFront monitoring subscriptions are in the same position: their APIs take no
   # resource or a random ID and support no tag condition keys, so the edge probe and real-time metrics follow
-  # the same service-role-only rule; the subscription pattern also admits its Get, which returns only the
-  # distribution's real-time metrics setting. Hosted zones stay fenced.
+  # the same service-role-only rule; the subscription pattern matches exactly Create, Delete and Get (the Get
+  # returns only the distribution's real-time metrics setting). Hosted zones stay fenced. Risks: README.md.
   untaggable_creates = ["cloudfront:CreateCachePolicy", "cloudfront:CreateOriginRequestPolicy", "cloudfront:CreateResponseHeadersPolicy",
   "cloudfront:*MonitoringSubscription", "route53:CreateHealthCheck"]
   untaggable_arns = concat([
