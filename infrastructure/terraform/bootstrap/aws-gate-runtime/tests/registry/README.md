@@ -18,11 +18,14 @@ have a conservative static SDK-call inventory, not execution-role authorization.
 
 ## Reproduce offline
 
-Python 3.11 and PyYAML are required; Terraform uses the root's pinned provider lock.
+Python 3.11 or newer and PyYAML 6.0.3 are required; Terraform uses the root's pinned provider lock.
 Run these commands from the repository root in an approved build environment:
 
 ```bash
 root=infrastructure/terraform/bootstrap/aws-gate-runtime
+python3 -m venv /tmp/gate-registry-test
+/tmp/gate-registry-test/bin/pip install PyYAML==6.0.3
+source /tmp/gate-registry-test/bin/activate
 python3 -m unittest discover -s "$root/tests/registry" -p 'test_*.py'
 terraform -chdir="$root" init -backend=false -input=false
 terraform -chdir="$root" test -filter=tests/controls.tftest.hcl -json -verbose > /tmp/gate-plan.jsonl

@@ -250,10 +250,15 @@ jobs:
           fi
           terraform -chdir=infrastructure/terraform/bootstrap/aws-light-runners test -no-color
 
+      - name: Install bounded registry audit dependency
+        run: |
+          python3 -m venv "$RUNNER_TEMP/gate-registry-test"
+          "$RUNNER_TEMP/gate-registry-test/bin/pip" install --disable-pip-version-check PyYAML==6.0.3
+
       - name: Gate reaper and private configuration controls (offline)
         run: |
-          python3 -m unittest discover -s infrastructure/terraform/bootstrap/aws-gate-runtime/tests/registry -v
-          python3 infrastructure/terraform/bootstrap/aws-gate-runtime/tests/registry/audit.py \
+          "$RUNNER_TEMP/gate-registry-test/bin/python" -m unittest discover -s infrastructure/terraform/bootstrap/aws-gate-runtime/tests/registry -v
+          "$RUNNER_TEMP/gate-registry-test/bin/python" infrastructure/terraform/bootstrap/aws-gate-runtime/tests/registry/audit.py \
             "$RUNNER_TEMP/gate-runtime-plan.jsonl" \
             --report "$RUNNER_TEMP/gate-runtime-sweep.json" \
             --expected-gaps infrastructure/terraform/bootstrap/aws-gate-runtime/tests/registry/expected-gaps.json
