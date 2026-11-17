@@ -26,6 +26,9 @@ resource "aws_cognito_user_pool_client" "gate" {
   callback_urls                        = sort(tolist(var.idp_callback_urls))
   prevent_user_existence_errors        = "ENABLED"
   enable_token_revocation              = true
+  # honua-gate-reaper-idp-callbacks owns the live list: idp_callback_urls plus each live gate stack's
+  # callback. Terraform sets the initial list only; after changing idp_callback_urls, invoke the function.
+  lifecycle { ignore_changes = [callback_urls] }
 }
 
 resource "random_password" "admin" {

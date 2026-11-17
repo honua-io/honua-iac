@@ -324,12 +324,36 @@ Terraform state contains these credentials: keep the existing private encrypted
 backend and restrict access to state and saved plans.
 
 Main supplies `idp_callback_urls` privately as exact HTTPS URLs ending in
-`/admin/auth/callback`. Cognito does not accept wildcard callbacks. The initial
-localhost callback only permits bootstrap before the stack has a hostname;
-it does not enable sign-in to the installed stack. After CloudFront assigns a
-hostname, main updates the callback list with that stack's exact public callback
-and applies this root before testing sign-in. Remove callbacks when deleting
-stacks. The gate lane cannot update the provider directly.
+`/admin/auth/callback`; they are the static part of the callback list.
+Cognito does not accept wildcard callbacks. The initial localhost callback only
+permits bootstrap before a stack has a hostname.
+
+Each gate install's own callback is registered by the
+`honua-gate-reaper-idp-callbacks` function, not by a Terraform apply. After a
+stack reaches `CREATE_COMPLETE`, the lane invokes it with no payload:
+
+```bash
+aws lambda invoke --region us-east-1 --function-name honua-gate-reaper-idp-callbacks /dev/stdout
+```
+
+The function lists live top-level `honua-gate-*` stacks, takes each stack's
+`OidcCallbackUrl` output when it is `https://<id>.cloudfront.net/admin/auth/callback`
+and that host is the default domain of a CloudFront distribution the same stack
+owns, and sets the gate client's callbacks to the static list plus those URLs.
+It sends back every other client setting unchanged, writes nothing when the list
+is already current, and fails without writing if any lookup fails or the list
+would exceed Cognito's 100 callbacks. Deleted stacks drop out on the next
+invocation; invoke it after deleting a stack too. The function ignores its
+event, so the lane cannot register an arbitrary URL, and the lane never gets
+`DescribeUserPoolClient` (which returns the client secret) or
+`UpdateUserPoolClient`. Terraform ignores `callback_urls` drift on the client:
+after changing `idp_callback_urls`, apply and then invoke the function. Stacks
+that use a custom domain are not registered automatically.
+
+The function name sits in the reserved `honua-gate-reaper*` namespace, so the
+deny that keeps templates and workloads from modifying the reaper also protects
+it and its log group. Its role, `HonuaGateIdpCallbacks`, is outside the
+`honua-gate-*` roles that templates may create. One run executes at a time.
 
 The sensitive outputs `oidc_authority`, `oidc_client_id`,
 `oidc_client_secret_arn` and `oidc_admin_secret_arn` provide the private runtime

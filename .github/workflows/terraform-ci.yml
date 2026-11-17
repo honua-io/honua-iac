@@ -264,6 +264,7 @@ jobs:
             --report "$RUNNER_TEMP/gate-runtime-sweep.json" \
             --expected-gaps infrastructure/terraform/bootstrap/aws-gate-runtime/tests/registry/expected-gaps.json
           python3 -m unittest discover -s infrastructure/terraform/bootstrap/aws-gate-runtime/reaper -v
+          python3 -m unittest discover -s infrastructure/terraform/bootstrap/aws-gate-runtime/idp-callbacks -v
           python3 -m unittest discover -s infrastructure/terraform/bootstrap/aws-gate-tools -v
           python3 -m unittest discover -s infrastructure/terraform/bootstrap/aws-light-runners/tests -v
 

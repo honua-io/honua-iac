@@ -67,6 +67,9 @@ locals {
       }, {
       Sid      = "InspectKeyOwnership", Effect = "Allow", Action = "kms:ListResourceTags"
       Resource = "arn:aws:kms:us-east-1:${var.member_account_id}:key/*"
+      }, {
+      # The function takes no input; the lane never gets DescribeUserPoolClient or UpdateUserPoolClient.
+      Sid = "SyncGateCallbacks", Effect = "Allow", Action = "lambda:InvokeFunction", Resource = local.idp_callbacks_arn
     }], local.region_controls, local.stack_tag_controls, local.stack_tag_permissions, local.network_cleanup_permissions)
   })
 }
