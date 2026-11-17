@@ -76,7 +76,7 @@ def request_for(spec, service):
     ]
     context = {"aws:RequestedRegion": "us-east-1"}
     allocation = handler == "create" and action not in PARENT_CREATES and (
-        action.split(":")[1].startswith(("Create", "Register", "Request", "Allocate")) or
+        action.split(":")[1].startswith(("Create", "Register", "Request", "Allocate", "Restore")) or
         (action.lower() in {"ec2:createtags", "rds:addtagstoresource"}))
     if "aws:ResourceTag/${TagKey}" in keys and not allocation:
         context["aws:ResourceTag/HonuaGate"] = "true"
@@ -89,10 +89,11 @@ def request_for(spec, service):
     if action.lower() == "ec2:createtags" and handler == "create":
         context["ec2:CreateAction"] = "CreateVpc"
     if action.lower() in {"iam:createrole", "iam:putrolepermissionsboundary"}:
-        context["iam:PermissionsBoundary"] = f"arn:aws:iam::{ACCOUNT}:policy/mock"
+        boundary = spec.get("properties", {}).get("PermissionsBoundary")
+        if boundary is not None:
+            raise ValueError("Unresolved deployment permissions boundary")
     if action.lower() == "iam:passrole":
         context["iam:PassedToService"] = "lambda.amazonaws.com"
     if action.lower() == "iam:createservicelinkedrole":
-        context["iam:AWSServiceName"] = "ecs.amazonaws.com"
-        return action, f"arn:aws:iam::{ACCOUNT}:role/aws-service-role/ecs.amazonaws.com/honua-gate-audit", context
+        raise ValueError("Unresolved provider service-linked-role identity")
     return action, synthetic_arn(resource), context

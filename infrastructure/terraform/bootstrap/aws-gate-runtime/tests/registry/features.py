@@ -7,6 +7,7 @@ from scope import OPTIONAL, arn_service
 from runtime import custom_actions
 
 REQUEST_PATHS = {
+    "AWS::IAM::Role": ["PermissionsBoundary"],
     "AWS::Events::Rule": ["EventBusName"],
     "AWS::Batch::JobDefinition": ["ConsumableResourceProperties"],
 }

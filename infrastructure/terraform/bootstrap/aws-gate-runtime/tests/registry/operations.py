@@ -46,6 +46,12 @@ def operation_requests(spec, service):
     if spec["action"] in MULTI_RESOURCE:
         return [request_for({**spec, "resource_name": name}, service)
                 for name in MULTI_RESOURCE[spec["action"]]]
+    api = next((item for item in service["Actions"]
+                if item["Name"].lower() == spec["action"].split(":")[1].lower()), None)
+    alias_actions = {"kms:CreateAlias", "kms:UpdateAlias", "kms:DeleteAlias"}
+    if (api and len(api.get("Resources", [])) > 1 and
+            "resource_name" not in spec and spec["action"] not in alias_actions):
+        raise ValueError("Unmapped multi-resource authorization: " + spec["action"])
     request = request_for(spec, service)
     if request is None:
         return None

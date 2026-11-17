@@ -39,11 +39,11 @@ changes while preserving the unresolved list. Matching that baseline is a
 regression check; it explicitly reports **authorization sweep NOT PASS**. Never
 use baseline success as evidence that installation or teardown is authorized.
 
-The captured inventory currently produces 4,876 checks: 4,324 Allow, 409
-NotApplicable and 143 unresolved. Of those unresolved checks, 31 are custom
-runtime calls with unverified execution policies, seven have no matching action in
-the captured AWS authorization metadata, and one has ambiguous resource mapping.
-The remaining 104 are explicit or implicit policy denies. The inventory includes
+The captured inventory currently produces 4,876 checks: 3,272 Allow, 409
+NotApplicable and 1,195 unresolved. These include 1,010 calls whose complete
+multi-resource mapping is unverified, 20 unresolved service-linked-role identities,
+31 custom runtime calls with unverified execution policies, seven unknown actions,
+and 127 explicit or implicit policy denies. The inventory includes
 all template resources rather than selecting only one deployment's conditions.
 
 ## What the model covers
@@ -60,8 +60,11 @@ that feature. Unresolved intrinsic values conservatively activate features.
 Requests use a synthetic account, us-east-1, gate-prefixed names and ownership
 context only when the authorization metadata supports the relevant condition key.
 Create-time allocations start without resource ownership tags. IAM role creation
-and boundary updates use the rendered mock boundary ARN. Parent-dependent and
-multi-resource authorization calls have explicit expansion rules. Missing or
+does not assume a permissions boundary: an absent property supplies no condition
+context, and an unresolved boundary expression stays unresolved. Service-linked
+role identities also stay unresolved. Parent-dependent and multi-resource calls
+require explicit expansion rules; unmodeled multi-resource calls stay unresolved
+rather than selecting one authorization resource. Missing or
 ambiguous mappings fail visibly. The evaluator supports only the condition
 operators emitted by this root and rejects unsupported operators.
 
