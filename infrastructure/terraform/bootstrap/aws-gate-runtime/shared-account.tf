@@ -104,7 +104,7 @@ locals {
     "logs:TagResource" = [
       "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/honua/honua-gate-*",
       "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/aws/lambda/honua-gate-*",
-      # AWS WAF only delivers to log groups named aws-waf-logs-*.
+      # AWS WAF accepts only log groups named aws-waf-logs-*; waf-logs.tf fences delivery to the same prefix.
       "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:aws-waf-logs-honua-gate-*"
     ]
   }
