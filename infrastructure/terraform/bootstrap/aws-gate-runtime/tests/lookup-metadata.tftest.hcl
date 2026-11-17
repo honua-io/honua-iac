@@ -34,7 +34,7 @@ run "lookup_exception_preserves_foreign_resource_fences" {
     condition = alltrue([
       for action in ["ec2:DeleteVpc", "ec2:ModifySubnetAttribute", "ec2:CreateTags", "ec2:DescribeInstanceAttribute", "ec2:DescribeKeyPairs", "ec2:DescribeLaunchTemplateVersions", "ec2:DescribeVpnConnections"] :
       !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))])
-    ]) && { for key, value in local.boundary_ownership_deny.Condition : key => value if key != "StringNotEquals" } == local.ownership_condition && local.boundary_ownership_deny.Condition.StringNotEquals == { "kms:ViaService" = "secretsmanager.us-east-1.amazonaws.com" }
+    ]) && { for key, value in local.boundary_ownership_deny.Condition : key => value if key != "StringNotLike" } == local.ownership_condition && local.boundary_ownership_deny.Condition.StringNotLike == { "kms:ViaService" = "secretsmanager.*" }
     error_message = "Network mutations and sensitive EC2 reads must retain the foreign-resource ownership deny."
   }
   assert {

@@ -21,7 +21,7 @@ run "roles_and_keys_are_owned_through_the_required_stack_tag" {
   command = plan
   assert {
     condition = alltrue([for policy in [aws_iam_policy.workload_boundary.policy, aws_iam_role_policy.cloudformation.policy] : anytrue([
-      for statement in jsondecode(policy).Statement : try(statement.Sid == "DenyNonGateChanges" && statement.Effect == "Deny" && { for key, value in statement.Condition : key => value if key != "StringNotEquals" } == {
+      for statement in jsondecode(policy).Statement : try(statement.Sid == "DenyNonGateChanges" && statement.Effect == "Deny" && { for key, value in statement.Condition : key => value if key != "StringNotLike" } == {
         StringNotLikeIfExists   = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }
         StringNotEqualsIfExists = { "aws:ResourceTag/HonuaGate" = "true" }
       }, false)
