@@ -5,6 +5,8 @@ https://docs.aws.amazon.com/kms/latest/developerguide/alias-access.html
 """
 from requests import request_for
 from scope import property_present
+from tag_targets import ec2_tag_requests, first_tag, tag_target
+from native_targets import native_target
 
 # The subnet association template cannot target a gateway or an IPAM pool.
 # https://docs.aws.amazon.com/service-authorization/latest/reference/list_ec2.html
@@ -16,6 +18,16 @@ MULTI_RESOURCE = {
     "ec2:DetachInternetGateway": ("internet-gateway", "vpc"),
     "ec2:AttachVpnGateway": ("vpn-gateway", "vpc"),
     "ec2:DetachVpnGateway": ("vpn-gateway", "vpc"),
+}
+
+# The first resource is allocated; the second already exists.
+# https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_AuthorizeSecurityGroupIngress.html
+# https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_CreateSecurityGroup.html
+MIXED_RESOURCES = {
+    "ec2:AuthorizeSecurityGroupIngress": ("security-group-rule", "security-group"),
+    "ec2:AuthorizeSecurityGroupEgress": ("security-group-rule", "security-group"),
+    "ec2:CreateSecurityGroup": ("security-group", "vpc"),
+    "ec2:CreateRouteTable": ("route-table", "vpc"),
 }
 
 
@@ -34,6 +46,15 @@ def creation_resources(spec, service):
 
 
 def operation_requests(spec, service):
+    if spec["action"] in MIXED_RESOURCES:
+        return [request_for({**spec, "resource_name": name, "allocation": index == 0}, service)
+                for index, name in enumerate(MIXED_RESOURCES[spec["action"]])]
+    if requests := ec2_tag_requests(spec, service):
+        return requests
+    if target := tag_target(spec):
+        spec = {**spec, "resource_name": target, "first_tag": first_tag(spec)}
+    if target := native_target(spec):
+        spec = {**spec, "resource_name": target}
     names = creation_resources(spec, service)
     if names:
         return [request_for({**spec, "resource_name": name}, service) for name in names]
@@ -55,6 +76,10 @@ def operation_requests(spec, service):
     request = request_for(spec, service)
     if request is None:
         return None
+    return alias_requests(spec, service, request)
+
+
+def alias_requests(spec, service, request):
     requests = [request]
     if spec["action"] in {"kms:CreateAlias", "kms:UpdateAlias", "kms:DeleteAlias"}:
         key_spec = {**spec, "type": "AWS::KMS::Key", "handler": "update"}

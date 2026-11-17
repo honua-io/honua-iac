@@ -75,9 +75,11 @@ def request_for(spec, service):
         for key in entry.get("ConditionKeys", resource.get("ConditionKeys", []))
     ]
     context = {"aws:RequestedRegion": "us-east-1"}
-    allocation = handler == "create" and action not in PARENT_CREATES and (
+    allocation = spec.get("first_tag", False) or handler == "create" and action not in PARENT_CREATES and (
         action.split(":")[1].startswith(("Create", "Register", "Request", "Allocate", "Restore")) or
-        (action.lower() in {"ec2:createtags", "rds:addtagstoresource"}))
+        (action.lower() in {"ec2:createtags", "rds:addtagstoresource",
+                            "cloudwatch:tagresource", "logs:tagresource", "lambda:tagresource"}))
+    allocation = spec.get("allocation", allocation)
     if "aws:ResourceTag/${TagKey}" in keys and not allocation:
         context["aws:ResourceTag/HonuaGate"] = "true"
         if schema.get("tagging", {}).get("cloudFormationSystemTags", True):
@@ -86,14 +88,23 @@ def request_for(spec, service):
         context["aws:RequestTag/HonuaGate"] = "true"
         if schema.get("tagging", {}).get("cloudFormationSystemTags", True):
             context["aws:RequestTag/aws:cloudformation:stack-name"] = "honua-gate-audit"
-    if action.lower() == "ec2:createtags" and handler == "create":
-        context["ec2:CreateAction"] = "CreateVpc"
     if action.lower() in {"iam:createrole", "iam:putrolepermissionsboundary"}:
         boundary = spec.get("properties", {}).get("PermissionsBoundary")
         if boundary is not None:
             raise ValueError("Unresolved deployment permissions boundary")
-    if action.lower() == "iam:passrole":
-        context["iam:PassedToService"] = "lambda.amazonaws.com"
-    if action.lower() == "iam:createservicelinkedrole":
-        raise ValueError("Unresolved provider service-linked-role identity")
+    context.update(role_context(spec))
     return action, synthetic_arn(resource), context
+
+
+def role_context(spec):
+    action = spec['action'].lower()
+    if action == 'iam:createservicelinkedrole':
+        raise ValueError('Unresolved provider service-linked-role identity')
+    if action != 'iam:passrole':
+        return {}
+    services = {'AWS::Lambda::Function': 'lambda.amazonaws.com',
+                'AWS::ECS::TaskDefinition': 'ecs-tasks.amazonaws.com'}
+    service = services.get(spec['type'])
+    if service is None:
+        raise ValueError('Unresolved provider passed-role service identity: ' + spec['type'])
+    return {'iam:PassedToService': service}

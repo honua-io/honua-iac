@@ -41,7 +41,7 @@ run "only_cloudformation_creation_tags_spare_an_untagged_resource" {
   }
   assert {
     condition = !anytrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(statement.Sid == "CreationTags", false)]) && alltrue([
-      for action in ["ec2:CreateTags", "rds:AddTagsToResource"] : !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))])
+      for action in ["ec2:CreateTags", "rds:AddTagsToResource", "cloudwatch:TagResource", "logs:TagResource", "lambda:TagResource"] : !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))])
     ])
     error_message = "Workload roles keep the full ownership fence on tagging."
   }

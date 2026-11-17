@@ -45,3 +45,21 @@ class ReviewRegressions(unittest.TestCase):
         policy = [{'Effect': 'Allow', 'Action': spec['action'], 'Resource': '*',
                    'Condition': {'StringEquals': {'iam:AWSServiceName': 'ecs.amazonaws.com'}}}]
         self.assertNotEqual('Allow', evaluate(spec, self.services['iam'], policy)[1])
+
+    def test_ecs_task_role_is_not_passed_to_lambda(self):
+        spec = self.spec('AWS::ECS::TaskDefinition', 'iam:PassRole')
+        policy = [{'Effect': 'Allow', 'Action': spec['action'], 'Resource': '*',
+                   'Condition': {'StringEquals': {'iam:PassedToService': 'lambda.amazonaws.com'}}}]
+        self.assertEqual('ImplicitDeny', evaluate(spec, self.services['iam'], policy)[1])
+        policy[0]['Condition']['StringEquals']['iam:PassedToService'] = 'ecs-tasks.amazonaws.com'
+        self.assertEqual('Allow', evaluate(spec, self.services['iam'], policy)[1])
+
+    def test_lambda_role_retains_its_service_identity(self):
+        spec = self.spec('AWS::Lambda::Function', 'iam:PassRole')
+        request = request_for(spec, self.services['iam'])
+        self.assertEqual('lambda.amazonaws.com', request[2]['iam:PassedToService'])
+
+    def test_unmapped_passed_role_service_stays_unresolved(self):
+        spec = self.spec('AWS::Events::Rule', 'iam:PassRole')
+        policy = [{'Effect': 'Allow', 'Action': '*', 'Resource': '*'}]
+        self.assertNotEqual('Allow', evaluate(spec, self.services['iam'], policy)[1])
