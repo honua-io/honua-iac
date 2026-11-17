@@ -29,6 +29,7 @@ source /tmp/gate-registry-test/bin/activate
 python3 -m unittest discover -s "$root/tests/registry" -p 'test_*.py'
 terraform -chdir="$root" init -backend=false -input=false
 terraform -chdir="$root" test -filter=tests/controls.tftest.hcl -json -verbose > /tmp/gate-plan.jsonl
+python3 "$root/tests/registry/verify_tags.py" /tmp/gate-plan.jsonl
 python3 "$root/tests/registry/audit.py" /tmp/gate-plan.jsonl --report /tmp/gate-sweep.json
 ```
 
@@ -39,11 +40,11 @@ changes while preserving the unresolved list. Matching that baseline is a
 regression check; it explicitly reports **authorization sweep NOT PASS**. Never
 use baseline success as evidence that installation or teardown is authorized.
 
-The captured inventory currently produces 4,876 checks: 3,272 Allow, 409
-NotApplicable and 1,195 unresolved. These include 1,010 calls whose complete
+The captured inventory currently produces 4,876 checks: 3,958 Allow, 409
+NotApplicable and 509 unresolved. These include 197 calls whose complete
 multi-resource mapping is unverified, 20 unresolved service-linked-role identities,
-31 custom runtime calls with unverified execution policies, seven unknown actions,
-and 127 explicit or implicit policy denies. The inventory includes
+87 unresolved PassRole identities, 31 custom runtime calls with unverified execution
+policies, seven unknown actions, and 167 explicit or implicit policy denies. The inventory includes
 all template resources rather than selecting only one deployment's conditions.
 
 ## What the model covers
@@ -65,7 +66,13 @@ context, and an unresolved boundary expression stays unresolved. Service-linked
 role identities also stay unresolved. Parent-dependent and multi-resource calls
 require explicit expansion rules; unmodeled multi-resource calls stay unresolved
 rather than selecting one authorization resource. Missing or
-ambiguous mappings fail visibly. The evaluator supports only the condition
+ambiguous mappings fail visibly. Explicit tagging targets cover the native
+resource types in `tag_targets.py`; standalone EC2 first tagging and tagging
+authorized by its creation API must both pass. Mixed EC2 creation calls check the
+new child without ownership tags and the existing parent with ownership. Native
+S3 bucket endpoints select bucket or object ARNs explicitly. PassRole identities
+are modeled for Lambda functions and ECS task definitions; other providers stay
+unresolved. The evaluator supports only the condition
 operators emitted by this root and rejects unsupported operators.
 
 These are gate-owned synthetic requests. The model does not resolve real imported
@@ -110,5 +117,7 @@ Inspect the projected output before replacing `launch-stack.json`. Review schema
 feature-projection and authorization changes before updating the gap baseline;
 never regenerate it merely to clear a failing check. Retain the source and AWS
 metadata hashes so an inventory change can be distinguished from a policy change.
-Installed acceptance still requires applied IaC and a normal-role install and
+The rendered-policy tagging verifier exercises first tagging, existing ownership,
+foreign names/accounts/regions, missing or false request tags, cross-API targets
+and the unchanged workload boundary. Installed acceptance still requires applied IaC and a normal-role install and
 teardown against the pinned workload.

@@ -63,7 +63,7 @@ locals {
   }
   # EC2 accepts the reserved stack-name tag on post-create tagging. RDS instead
   # needs the customer request tag plus a gate name, account and region fence.
-  creation_tag_actions = ["ec2:CreateTags", "rds:AddTagsToResource"]
+  creation_tag_actions = concat(["ec2:CreateTags", "rds:AddTagsToResource"], keys(local.named_tag_targets))
   creation_tag_deny = {
     Sid = "CreationTags", Effect = "Deny", Action = ["ec2:CreateTags"], Resource = "*"
     Condition = {
@@ -97,6 +97,25 @@ locals {
     Sid         = "RDSCreationNames", Effect = "Deny", Action = "rds:AddTagsToResource"
     NotResource = local.rds_gate_arns
   }
+  # First tagging precedes ownership. Each API keeps its own name/account/region fence.
+  named_tag_targets = {
+    "cloudwatch:TagResource" = ["arn:aws:cloudwatch:us-east-1:${var.member_account_id}:alarm:honua-gate-*"]
+    "lambda:TagResource"     = ["arn:aws:lambda:us-east-1:${var.member_account_id}:function:honua-gate-*"]
+    "logs:TagResource" = [
+      "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/honua/honua-gate-*",
+      "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/aws/lambda/honua-gate-*"
+    ]
+  }
+  named_tag_denies = concat([{
+    Sid = "NamedCreationTags", Effect = "Deny", Action = keys(local.named_tag_targets), Resource = "*"
+    Condition = merge(local.ownership_condition, {
+      StringNotEqualsIfExists = merge(local.ownership_condition.StringNotEqualsIfExists, {
+        "aws:RequestTag/HonuaGate" = "true"
+      })
+    })
+    }], [for action, arns in local.named_tag_targets : {
+    Effect = "Deny", Action = action, NotResource = arns
+  }])
   temporary_subnet_cleanup_actions = length(var.temporary_cleanup_subnet_group_names) > 0 ? ["rds:DeleteDBSubnetGroup"] : []
   temporary_subnet_cleanup_denies = length(local.temporary_subnet_cleanup_actions) > 0 ? [{
     Sid = "TemporarySubnetCleanup", Effect = "Deny", Action = "rds:DeleteDBSubnetGroup"
