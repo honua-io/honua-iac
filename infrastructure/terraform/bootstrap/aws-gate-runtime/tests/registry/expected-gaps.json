@@ -259,27 +259,6 @@
     "count": 1
   },
   {
-    "type": "AWS::CloudFront::MonitoringSubscription",
-    "handler": "create",
-    "action": "cloudfront:CreateMonitoringSubscription",
-    "decision": "Deny",
-    "count": 1
-  },
-  {
-    "type": "AWS::CloudFront::MonitoringSubscription",
-    "handler": "delete",
-    "action": "cloudfront:DeleteMonitoringSubscription",
-    "decision": "Deny",
-    "count": 1
-  },
-  {
-    "type": "AWS::CloudFront::MonitoringSubscription",
-    "handler": "read",
-    "action": "cloudfront:GetMonitoringSubscription",
-    "decision": "Deny",
-    "count": 1
-  },
-  {
     "type": "AWS::CloudFront::VpcOrigin",
     "handler": "create",
     "action": "cloudfront:TagResource",
@@ -1250,48 +1229,6 @@
     "handler": "create",
     "action": "iam:CreateServiceLinkedRole",
     "decision": "Unresolved provider service-linked-role identity",
-    "count": 1
-  },
-  {
-    "type": "AWS::Route53::HealthCheck",
-    "handler": "create",
-    "action": "route53:ChangeTagsForResource",
-    "decision": "Deny",
-    "count": 1
-  },
-  {
-    "type": "AWS::Route53::HealthCheck",
-    "handler": "create",
-    "action": "route53:CreateHealthCheck",
-    "decision": "Deny",
-    "count": 1
-  },
-  {
-    "type": "AWS::Route53::HealthCheck",
-    "handler": "delete",
-    "action": "route53:DeleteHealthCheck",
-    "decision": "Deny",
-    "count": 1
-  },
-  {
-    "type": "AWS::Route53::HealthCheck",
-    "handler": "tag",
-    "action": "route53:ChangeTagsForResource",
-    "decision": "Deny",
-    "count": 1
-  },
-  {
-    "type": "AWS::Route53::HealthCheck",
-    "handler": "update",
-    "action": "route53:ChangeTagsForResource",
-    "decision": "Deny",
-    "count": 1
-  },
-  {
-    "type": "AWS::Route53::HealthCheck",
-    "handler": "update",
-    "action": "route53:UpdateHealthCheck",
-    "decision": "Deny",
     "count": 1
   },
   {

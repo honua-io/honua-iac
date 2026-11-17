@@ -138,19 +138,24 @@ locals {
   # tags, their create calls take no resource and their other calls name a random ID, so neither tag nor
   # name can fence them. Only the service role (CloudFormation acting for a gate stack) may manage them;
   # workload roles keep the full fence. Functions are named, so the name fences them.
-  cloudfront_untaggable_creates = ["cloudfront:CreateCachePolicy", "cloudfront:CreateOriginRequestPolicy", "cloudfront:CreateResponseHeadersPolicy"]
-  cloudfront_untaggable_arns = concat([
+  # Route 53 health checks and CloudFront monitoring subscriptions are in the same position: their APIs take no
+  # resource or a random ID and support no tag condition keys, so the edge probe and real-time metrics follow
+  # the same service-role-only rule; the subscription pattern also admits its Get, which returns only the
+  # distribution's real-time metrics setting. Hosted zones stay fenced.
+  untaggable_creates = ["cloudfront:CreateCachePolicy", "cloudfront:CreateOriginRequestPolicy", "cloudfront:CreateResponseHeadersPolicy",
+  "cloudfront:*MonitoringSubscription", "route53:CreateHealthCheck"]
+  untaggable_arns = concat([
     for type in ["origin-access-control", "cache-policy", "origin-request-policy", "response-headers-policy"] :
     "arn:aws:cloudfront::${var.member_account_id}:${type}/*"
-  ], ["arn:aws:cloudfront::${var.member_account_id}:function/honua-gate-*"])
-  service_role_unfenced = concat([aws_secretsmanager_secret.idp_client.arn], local.cloudfront_untaggable_arns)
+  ], ["arn:aws:cloudfront::${var.member_account_id}:function/honua-gate-*", "arn:aws:route53:::healthcheck/*"])
+  service_role_unfenced = concat([aws_secretsmanager_secret.idp_client.arn], local.untaggable_arns)
   # The service role keeps account-wide metadata reads. The workload boundary
   # cannot repeat that list and stay inside the managed-policy quota, so its
   # copy exempts allocation calls, named gate buckets, Cognito domain description
   # and the lookup Lambda's four network metadata calls, which have no resource tags.
   service_role_ownership_deny = {
     Sid       = "DenyNonGateChanges", Effect = "Deny", NotResource = local.service_role_unfenced
-    NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery", "backup-storage:MountCapsule"], local.shared_creation_actions, local.cloudfront_untaggable_creates, local.creation_tag_actions, local.named_teardown_actions, local.temporary_subnet_cleanup_actions)
+    NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery", "backup-storage:MountCapsule"], local.shared_creation_actions, local.untaggable_creates, local.creation_tag_actions, local.named_teardown_actions, local.temporary_subnet_cleanup_actions)
     Condition = local.ownership_condition
   }
   # Alias tags are unavailable; failed-create rules and log groups whose first tag failed may lack ownership

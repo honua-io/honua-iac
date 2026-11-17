@@ -66,13 +66,15 @@ run "only_cloudformation_creation_tags_spare_an_untagged_resource" {
   }
 }
 
-run "untaggable_cloudfront_types_are_managed_by_the_service_role_only" {
+run "untaggable_types_are_managed_by_the_service_role_only" {
   command = plan
   assert {
-    condition = alltrue([for action in ["cloudfront:CreateCachePolicy", "cloudfront:CreateOriginRequestPolicy", "cloudfront:CreateResponseHeadersPolicy"] :
-      contains(local.service_role_ownership_deny.NotAction, action) && !contains(local.boundary_ownership_deny.NotAction, action)
+    condition = alltrue([for action in ["cloudfront:CreateCachePolicy", "cloudfront:CreateOriginRequestPolicy", "cloudfront:CreateResponseHeadersPolicy",
+      "cloudfront:CreateMonitoringSubscription", "cloudfront:DeleteMonitoringSubscription", "route53:CreateHealthCheck"] :
+      anytrue([for pattern in local.service_role_ownership_deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))]) &&
+      !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))])
     ])
-    error_message = "CloudFront policy creation takes no resource; only the service role may allocate it."
+    error_message = "These calls take no resource; only the service role may make them."
   }
   assert {
     condition = alltrue([for arn in [
@@ -80,21 +82,23 @@ run "untaggable_cloudfront_types_are_managed_by_the_service_role_only" {
       "arn:aws:cloudfront::000000000002:cache-policy/0000-synthetic",
       "arn:aws:cloudfront::000000000002:origin-request-policy/0000-synthetic",
       "arn:aws:cloudfront::000000000002:response-headers-policy/0000-synthetic",
-      "arn:aws:cloudfront::000000000002:function/honua-gate-synthetic-router"
+      "arn:aws:cloudfront::000000000002:function/honua-gate-synthetic-router",
+      "arn:aws:route53:::healthcheck/00000000-synthetic"
       ] : anytrue([for pattern in local.service_role_ownership_deny.NotResource : can(regex("^${replace(pattern, "*", ".*")}$", arn))])
       && !anytrue([for pattern in flatten([local.boundary_ownership_deny.NotResource]) : can(regex("^${replace(pattern, "*", ".*")}$", arn))])
     ])
     # Their Get calls are not metadata exemptions, so the ownership deny is the only statement that reaches them.
-    error_message = "The service role must be able to read, update and delete its untaggable CloudFront resources; workload roles must not."
+    error_message = "The service role must be able to read, update and delete its untaggable CloudFront resources and health checks; workload roles must not."
   }
   assert {
     condition = alltrue([for arn in [
       "arn:aws:cloudfront::000000000002:distribution/ESYNTHETIC",
       "arn:aws:cloudfront::000000000002:function/production-router",
-      "arn:aws:cloudfront::000000000003:cache-policy/0000-synthetic"
+      "arn:aws:cloudfront::000000000003:cache-policy/0000-synthetic",
+      "arn:aws:route53:::hostedzone/ZSYNTHETIC"
       ] : !anytrue([for pattern in local.service_role_ownership_deny.NotResource : can(regex("^${replace(pattern, "*", ".*")}$", arn))])
     ])
-    error_message = "Taggable distributions, functions outside the gate name and other accounts keep the ownership fence."
+    error_message = "Taggable distributions, functions outside the gate name, hosted zones and other accounts keep the ownership fence."
   }
 }
 
