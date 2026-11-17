@@ -5,6 +5,7 @@ import unittest
 
 from audit import evaluate
 from operations import operation_requests
+from requests import synthetic_arn
 
 
 class NativeTargetTests(unittest.TestCase):
@@ -32,3 +33,29 @@ class NativeTargetTests(unittest.TestCase):
         spec = {'type': 'AWS::S3::AccessPoint', 'handler': 'update', 'action': 's3:ListBucket', 'schema': {}}
         policy = [{'Effect': 'Allow', 'Action': '*', 'Resource': '*'}]
         self.assertNotEqual('Allow', evaluate(spec, self.services['s3'], policy)[1])
+
+
+class BucketPolicyTargetTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.service = json.loads(Path(__file__).with_name('launch-stack.json').read_text())['authorization']['s3']
+
+    def test_bucket_policy_read_authorizes_its_bucket(self):
+        resource = next(item for item in self.service['Resources'] if item['Name'] == 'bucket')
+        arn = synthetic_arn(resource)
+        for handler in ('create', 'read', 'update', 'delete'):
+            with self.subTest(handler=handler):
+                spec = {'type': 'AWS::S3::BucketPolicy', 'handler': handler,
+                        'action': 's3:GetBucketPolicy', 'schema': {}}
+                requests = operation_requests(spec, self.service)
+                self.assertEqual([arn], [request[1] for request in requests])
+                policy = [{'Effect': 'Allow', 'Action': spec['action'], 'Resource': arn}]
+                self.assertEqual('Allow', evaluate(spec, self.service, policy)[1])
+                policy.append({'Effect': 'Deny', 'Action': spec['action'], 'Resource': arn})
+                self.assertEqual('Deny', evaluate(spec, self.service, policy)[1])
+
+    def test_unknown_native_handler_does_not_assume_a_bucket(self):
+        spec = {'type': 'AWS::S3::Unknown', 'handler': 'read',
+                'action': 's3:GetBucketPolicy', 'schema': {}}
+        policy = [{'Effect': 'Allow', 'Action': '*', 'Resource': '*'}]
+        self.assertNotEqual('Allow', evaluate(spec, self.service, policy)[1])

@@ -6,7 +6,7 @@ https://docs.aws.amazon.com/kms/latest/developerguide/alias-access.html
 from requests import request_for
 from scope import property_present
 from tag_targets import ec2_tag_requests, first_tag, tag_target
-from native_targets import native_target
+from native_targets import native_target, native_variants
 
 # The subnet association template cannot target a gateway or an IPAM pool.
 # https://docs.aws.amazon.com/service-authorization/latest/reference/list_ec2.html
@@ -55,6 +55,9 @@ def operation_requests(spec, service):
         spec = {**spec, "resource_name": target, "first_tag": first_tag(spec)}
     if target := native_target(spec):
         spec = {**spec, "resource_name": target}
+    if names := native_variants(spec, service):
+        return [request_for({**spec, "resource_name": name, "first_tag": first_tag(spec)}, service)
+                for name in names]
     names = creation_resources(spec, service)
     if names:
         return [request_for({**spec, "resource_name": name}, service) for name in names]

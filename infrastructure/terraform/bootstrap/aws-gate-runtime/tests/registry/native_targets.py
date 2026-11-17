@@ -15,4 +15,42 @@ BUCKET_TARGETS = {
 def native_target(spec):
     if spec["type"] == "AWS::S3::Bucket":
         return BUCKET_TARGETS.get(spec["action"].lower())
+    # The native BucketPolicy contract requires the bucket's name.
+    # https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-s3-bucketpolicy.html
+    if spec["type"] == "AWS::S3::BucketPolicy" and spec["action"].lower() == "s3:getbucketpolicy":
+        return "bucket"
     return None
+
+
+# ELBv2 native types cannot target classic load balancers or another resource kind.
+# Check every supported variant when the concrete ARN is unresolved offline.
+# https://docs.aws.amazon.com/service-authorization/latest/reference/list_elbv2.html
+ELBV2_TARGETS = {
+    "LoadBalancer": ("loadbalancer/", {
+        "createloadbalancer", "deleteloadbalancer", "modifyloadbalancerattributes",
+        "modifycapacityreservation", "setsecuritygroups", "setsubnets", "setipaddresstype",
+    }),
+    "Listener": ("listener/", {"modifylistener", "modifylistenerattributes", "deletelistener"}),
+    "ListenerRule": ("listener-rule/", {"modifyrule", "setrulepriorities", "deleterule"}),
+    "TargetGroup": ("targetgroup", set()),
+}
+
+
+def native_variants(spec, service):
+    if not spec["type"].startswith("AWS::ElasticLoadBalancingV2::"):
+        return None
+    target = ELBV2_TARGETS.get(spec["type"].split("::")[-1])
+    prefix, action = spec["action"].lower().split(":", 1)
+    if target is None or prefix != "elasticloadbalancing":
+        return None
+    resource_prefix, actions = target
+    if action not in actions | {"addtags", "removetags"}:
+        return None
+    api = next((item for item in service["Actions"] if item["Name"].lower() == action), None)
+    if api is None:
+        return None
+    names = [item["Name"] for item in api.get("Resources", [])
+             if item["Name"].startswith(resource_prefix)]
+    if not names:
+        raise ValueError("Unmapped native ELBv2 authorization: " + spec["action"])
+    return names

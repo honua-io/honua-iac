@@ -752,7 +752,7 @@
     "type": "AWS::ElasticLoadBalancingV2::Listener",
     "handler": "create",
     "action": "elasticloadbalancing:AddTags",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
+    "decision": "Deny",
     "count": 1
   },
   {
@@ -760,20 +760,6 @@
     "handler": "create",
     "action": "elasticloadbalancing:DescribeListeners",
     "decision": "Deny",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::Listener",
-    "handler": "create",
-    "action": "elasticloadbalancing:ModifyListenerAttributes",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:ModifyListenerAttributes",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::Listener",
-    "handler": "delete",
-    "action": "elasticloadbalancing:DeleteListener",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:DeleteListener",
     "count": 1
   },
   {
@@ -792,58 +778,16 @@
   },
   {
     "type": "AWS::ElasticLoadBalancingV2::Listener",
-    "handler": "tag",
-    "action": "elasticloadbalancing:AddTags",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::Listener",
-    "handler": "tag",
-    "action": "elasticloadbalancing:RemoveTags",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:RemoveTags",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::Listener",
-    "handler": "update",
-    "action": "elasticloadbalancing:AddTags",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::Listener",
     "handler": "update",
     "action": "elasticloadbalancing:DescribeListeners",
     "decision": "Deny",
     "count": 1
   },
   {
-    "type": "AWS::ElasticLoadBalancingV2::Listener",
-    "handler": "update",
-    "action": "elasticloadbalancing:ModifyListener",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:ModifyListener",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::Listener",
-    "handler": "update",
-    "action": "elasticloadbalancing:ModifyListenerAttributes",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:ModifyListenerAttributes",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::Listener",
-    "handler": "update",
-    "action": "elasticloadbalancing:RemoveTags",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:RemoveTags",
-    "count": 1
-  },
-  {
     "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
     "handler": "create",
     "action": "elasticloadbalancing:AddTags",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
+    "decision": "Deny",
     "count": 1
   },
   {
@@ -851,13 +795,6 @@
     "handler": "create",
     "action": "elasticloadbalancing:DescribeRules",
     "decision": "Deny",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
-    "handler": "delete",
-    "action": "elasticloadbalancing:DeleteRule",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:DeleteRule",
     "count": 1
   },
   {
@@ -876,191 +813,23 @@
   },
   {
     "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
-    "handler": "tag",
-    "action": "elasticloadbalancing:AddTags",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
-    "handler": "tag",
-    "action": "elasticloadbalancing:RemoveTags",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:RemoveTags",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
-    "handler": "update",
-    "action": "elasticloadbalancing:AddTags",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
     "handler": "update",
     "action": "elasticloadbalancing:DescribeRules",
     "decision": "Deny",
     "count": 1
   },
   {
-    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
-    "handler": "update",
-    "action": "elasticloadbalancing:ModifyRule",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:ModifyRule",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
-    "handler": "update",
-    "action": "elasticloadbalancing:RemoveTags",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:RemoveTags",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::ListenerRule",
-    "handler": "update",
-    "action": "elasticloadbalancing:SetRulePriorities",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:SetRulePriorities",
-    "count": 1
-  },
-  {
     "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
     "handler": "create",
     "action": "elasticloadbalancing:AddTags",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
-    "handler": "create",
-    "action": "elasticloadbalancing:CreateLoadBalancer",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:CreateLoadBalancer",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
-    "handler": "create",
-    "action": "elasticloadbalancing:ModifyCapacityReservation",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:ModifyCapacityReservation",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
-    "handler": "create",
-    "action": "elasticloadbalancing:ModifyLoadBalancerAttributes",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:ModifyLoadBalancerAttributes",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
-    "handler": "create",
-    "action": "elasticloadbalancing:SetSecurityGroups",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:SetSecurityGroups",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
-    "handler": "delete",
-    "action": "elasticloadbalancing:DeleteLoadBalancer",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:DeleteLoadBalancer",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
-    "handler": "tag",
-    "action": "elasticloadbalancing:AddTags",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
-    "handler": "tag",
-    "action": "elasticloadbalancing:RemoveTags",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:RemoveTags",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
-    "handler": "update",
-    "action": "elasticloadbalancing:AddTags",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
-    "handler": "update",
-    "action": "elasticloadbalancing:ModifyCapacityReservation",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:ModifyCapacityReservation",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
-    "handler": "update",
-    "action": "elasticloadbalancing:ModifyLoadBalancerAttributes",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:ModifyLoadBalancerAttributes",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
-    "handler": "update",
-    "action": "elasticloadbalancing:RemoveTags",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:RemoveTags",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
-    "handler": "update",
-    "action": "elasticloadbalancing:SetIpAddressType",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:SetIpAddressType",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
-    "handler": "update",
-    "action": "elasticloadbalancing:SetSecurityGroups",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:SetSecurityGroups",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
-    "handler": "update",
-    "action": "elasticloadbalancing:SetSubnets",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:SetSubnets",
+    "decision": "Deny",
     "count": 1
   },
   {
     "type": "AWS::ElasticLoadBalancingV2::TargetGroup",
     "handler": "create",
     "action": "elasticloadbalancing:AddTags",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::TargetGroup",
-    "handler": "tag",
-    "action": "elasticloadbalancing:AddTags",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::TargetGroup",
-    "handler": "tag",
-    "action": "elasticloadbalancing:RemoveTags",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:RemoveTags",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::TargetGroup",
-    "handler": "update",
-    "action": "elasticloadbalancing:AddTags",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:AddTags",
-    "count": 1
-  },
-  {
-    "type": "AWS::ElasticLoadBalancingV2::TargetGroup",
-    "handler": "update",
-    "action": "elasticloadbalancing:RemoveTags",
-    "decision": "Unmapped multi-resource authorization: elasticloadbalancing:RemoveTags",
+    "decision": "Deny",
     "count": 1
   },
   {
@@ -1411,34 +1180,6 @@
     "handler": "update",
     "action": "iam:PassRole",
     "decision": "Unresolved provider passed-role service identity: AWS::S3::Bucket",
-    "count": 6
-  },
-  {
-    "type": "AWS::S3::BucketPolicy",
-    "handler": "create",
-    "action": "s3:GetBucketPolicy",
-    "decision": "Unmapped multi-resource authorization: s3:GetBucketPolicy",
-    "count": 6
-  },
-  {
-    "type": "AWS::S3::BucketPolicy",
-    "handler": "delete",
-    "action": "s3:GetBucketPolicy",
-    "decision": "Unmapped multi-resource authorization: s3:GetBucketPolicy",
-    "count": 6
-  },
-  {
-    "type": "AWS::S3::BucketPolicy",
-    "handler": "read",
-    "action": "s3:GetBucketPolicy",
-    "decision": "Unmapped multi-resource authorization: s3:GetBucketPolicy",
-    "count": 6
-  },
-  {
-    "type": "AWS::S3::BucketPolicy",
-    "handler": "update",
-    "action": "s3:GetBucketPolicy",
-    "decision": "Unmapped multi-resource authorization: s3:GetBucketPolicy",
     "count": 6
   },
   {

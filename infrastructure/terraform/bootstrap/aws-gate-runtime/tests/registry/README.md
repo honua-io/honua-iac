@@ -41,11 +41,11 @@ changes while preserving the unresolved list. Matching that baseline is a
 regression check; it explicitly reports **authorization sweep NOT PASS**. Never
 use baseline success as evidence that installation or teardown is authorized.
 
-The captured inventory currently produces 4,876 checks: 3,980 Allow, 409
-NotApplicable and 487 unresolved. These include 197 calls whose complete
+The captured inventory currently produces 4,876 checks: 4,037 Allow, 409
+NotApplicable and 430 unresolved. These include 136 calls whose complete
 multi-resource mapping is unverified, 20 unresolved service-linked-role identities,
 87 unresolved PassRole identities, 31 custom runtime calls with unverified execution
-policies, seven unknown actions, and 145 explicit or implicit policy denies. The inventory includes
+policies, seven unknown actions, and 149 explicit or implicit policy denies. The inventory includes
 all template resources rather than selecting only one deployment's conditions.
 
 ## What the model covers
@@ -71,7 +71,11 @@ ambiguous mappings fail visibly. Explicit tagging targets cover the native
 resource types in `tag_targets.py`; standalone EC2 first tagging and tagging
 authorized by its creation API must both pass. Mixed EC2 creation calls check the
 new child without ownership tags and the existing parent with ownership. Native
-S3 bucket endpoints select bucket or object ARNs explicitly. PassRole identities
+S3 bucket endpoints select bucket or object ARNs explicitly, including the native
+BucketPolicy contract. ELBv2 operations check all supported ARN variants for the
+native resource kind, excluding classic load balancers and unrelated targets.
+First tagging of all four ELBv2 resource kinds remains explicitly denied and needs
+provider-path or installed evidence before a policy repair. PassRole identities
 are modeled for Lambda functions and ECS task definitions; other providers stay
 unresolved. The evaluator supports only the condition
 operators emitted by this root and rejects unsupported operators.
