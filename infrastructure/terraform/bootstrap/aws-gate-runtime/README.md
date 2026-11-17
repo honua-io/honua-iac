@@ -333,18 +333,27 @@ Each gate install's own callback is registered by the
 stack reaches `CREATE_COMPLETE`, the lane invokes it with no payload:
 
 ```bash
-aws lambda invoke --region us-east-1 --function-name honua-gate-reaper-idp-callbacks /dev/stdout
+aws lambda invoke --region us-east-1 --function-name honua-gate-reaper-idp-callbacks \
+  --query FunctionError --output text sync.json   # must print None
+jq -e '.callbacks' sync.json                         # fails if the sync raised
 ```
+
+`aws lambda invoke` exits 0 even when the function fails, so check both. One run
+executes at a time; a concurrent invocation fails with
+`TooManyRequestsException`: retry it after a few seconds.
 
 The function lists live top-level `honua-gate-*` stacks, takes each stack's
 `OidcCallbackUrl` output when it is `https://<id>.cloudfront.net/admin/auth/callback`
 and that host is the default domain of a CloudFront distribution the same stack
 owns, and sets the gate client's callbacks to the static list plus those URLs.
-It sends back every other client setting unchanged, writes nothing when the list
-is already current, and fails without writing if any lookup fails or the list
-would exceed Cognito's 100 callbacks. Deleted stacks drop out on the next
+Only stacks managed through `HonuaGateCloudFormation` count. It sends back
+every other client setting unchanged, writes nothing when the list is already
+current, and fails without writing if any lookup fails or the list would exceed
+Cognito's 100 callbacks. A distribution that no longer exists only drops its own
+stack's callback. Deleted stacks drop out on the next
 invocation; invoke it after deleting a stack too. The function ignores its
-event, so the lane cannot register an arbitrary URL, and the lane never gets
+event, so the lane cannot pass it a URL; a stack the lane writes can still put
+its own distribution in front of any origin. The lane never gets
 `DescribeUserPoolClient` (which returns the client secret) or
 `UpdateUserPoolClient`. Terraform ignores `callback_urls` drift on the client:
 after changing `idp_callback_urls`, apply and then invoke the function. Stacks
@@ -353,7 +362,7 @@ that use a custom domain are not registered automatically.
 The function name sits in the reserved `honua-gate-reaper*` namespace, so the
 deny that keeps templates and workloads from modifying the reaper also protects
 it and its log group. Its role, `HonuaGateIdpCallbacks`, is outside the
-`honua-gate-*` roles that templates may create. One run executes at a time.
+`honua-gate-*` roles that templates may create.
 
 The sensitive outputs `oidc_authority`, `oidc_client_id`,
 `oidc_client_secret_arn` and `oidc_admin_secret_arn` provide the private runtime
@@ -386,8 +395,12 @@ boundary admits by the CloudFormation-generated name
 new install needs no per-install approval or apply. Only
 `HonuaGateCloudFormation` creates `honua-gate-*` roles, always under the
 workload boundary, so the pattern admits no principal outside gate stacks.
-`BatchExecutionRole`, `TaskRole` and other template roles do not carry the
-`-ExecutionRole-` segment and stay denied. Keep gate stack names short enough
+The lane role may not create or update a stack whose name contains
+`-ExecutionRole`, so the segment can only come from a resource (or a nested
+stack) whose logical ID is exactly `ExecutionRole`; `BatchExecutionRole`, `TaskRole` and the other
+Launch Stack roles stay denied. The pattern limits readers to roles in gate
+stacks, not to the Launch Stack template: a template the lane writes is
+trusted and could give any role that logical ID. Keep gate stack names short enough
 that CloudFormation does not truncate the generated role name (under about 35
 characters); a truncated name fails closed. `idp_task_execution_role_arns`
 still accepts exact execution-role ARNs that fall outside the pattern; entries

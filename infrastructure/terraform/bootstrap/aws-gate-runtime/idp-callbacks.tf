@@ -58,6 +58,7 @@ resource "aws_lambda_function" "idp_callbacks" {
       USER_POOL_ID         = aws_cognito_user_pool.gate.id
       CLIENT_ID            = aws_cognito_user_pool_client.gate.id
       STATIC_CALLBACK_URLS = jsonencode(sort(tolist(var.idp_callback_urls)))
+      SERVICE_ROLE_ARN     = local.service_role_arn
     }
   }
   depends_on = [aws_iam_role_policy.idp_callbacks]

@@ -58,7 +58,7 @@ variable "budget_alert_email" {
 variable "idp_callback_urls" {
   type        = set(string)
   default     = ["https://localhost/admin/auth/callback"]
-  description = "Exact installed gate HTTPS callback URLs. Main updates this list after CloudFront assigns each stack hostname."
+  description = "Static exact HTTPS callback URLs kept on the gate client. Each live gate stack's own CloudFront callback is added by honua-gate-reaper-idp-callbacks, not listed here."
   validation {
     condition = length(var.idp_callback_urls) > 0 && length(var.idp_callback_urls) <= 100 && alltrue([
       for url in var.idp_callback_urls : can(regex("^https://[a-z0-9.-]+/admin/auth/callback$", url)) && !strcontains(url, "*")

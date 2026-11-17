@@ -70,6 +70,10 @@ locals {
       }, {
       # The function takes no input; the lane never gets DescribeUserPoolClient or UpdateUserPoolClient.
       Sid = "SyncGateCallbacks", Effect = "Allow", Action = "lambda:InvokeFunction", Resource = local.idp_callbacks_arn
+      }, {
+      # A stack name containing -ExecutionRole would make every role in it match the IdP secret reader pattern.
+      Sid      = "ReservedStackNames", Effect = "Deny", Action = ["cloudformation:CreateStack", "cloudformation:UpdateStack"]
+      Resource = "arn:aws:cloudformation:us-east-1:${var.member_account_id}:stack/*-ExecutionRole*"
     }], local.region_controls, local.stack_tag_controls, local.stack_tag_permissions, local.network_cleanup_permissions)
   })
 }

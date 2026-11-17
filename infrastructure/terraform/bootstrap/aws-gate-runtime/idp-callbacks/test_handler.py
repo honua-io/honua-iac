@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import handler
 
 STATIC = ['https://localhost/admin/auth/callback']
+SERVICE_ROLE = 'arn:aws:iam::000000000002:role/HonuaGateCloudFormation'
 CLIENT = {
     'UserPoolId': 'us-east-1_Synthetic', 'ClientId': 'client', 'ClientName': 'honua-gate-launch-stack',
     'ClientSecret': 'never-sent', 'CreationDate': 'x', 'LastModifiedDate': 'y',
@@ -24,7 +25,7 @@ def callback(domain):
 
 
 def stack(name, domain='d111.cloudfront.net', url=None, distribution='E111', **extra):
-    return {'StackId': f'id/{name}', 'StackName': name, 'StackStatus': 'CREATE_COMPLETE',
+    return {'StackId': f'id/{name}', 'StackName': name, 'StackStatus': 'CREATE_COMPLETE', 'RoleARN': SERVICE_ROLE,
             'Outputs': [{'OutputKey': 'OidcCallbackUrl', 'OutputValue': url or callback(domain)}],
             '_distribution': (distribution, domain), **extra}
 
@@ -39,6 +40,7 @@ class Fakes:
         self.cloudfront = Mock()
         domains = {s['_distribution'][0]: s['_distribution'][1] for s in stacks}
         self.cloudfront.get_distribution.side_effect = lambda Id: {'Distribution': {'Id': Id, 'DomainName': domains[Id]}}
+        self.resource_pages = {}
         self.cognito = Mock()
         self.cognito.describe_user_pool_client.return_value = {'UserPoolClient': dict(client or CLIENT)}
 
@@ -47,14 +49,14 @@ class Fakes:
         if op == 'list_stacks':
             paginator.paginate.return_value = pages
         else:
-            paginator.paginate.side_effect = lambda StackName: [{'StackResourceSummaries': [{
-                'ResourceType': 'AWS::CloudFront::Distribution',
-                'PhysicalResourceId': self.stacks[StackName]['_distribution'][0]}]}]
+            paginator.paginate.side_effect = lambda StackName: self.resource_pages.get(StackName, [{'StackResourceSummaries': [{
+                'ResourceType': 'AWS::CloudFront::Distribution', 'ResourceStatus': 'CREATE_COMPLETE',
+                'PhysicalResourceId': self.stacks[StackName]['_distribution'][0]}]}])
         return paginator
 
     def sync(self, static=STATIC):
         clients = handler.Clients(self.cf, self.cloudfront, self.cognito)
-        return handler.sync(clients, handler.Target('us-east-1_Synthetic', 'client', static))
+        return handler.sync(clients, handler.Target('us-east-1_Synthetic', 'client', static, SERVICE_ROLE))
 
     def sent(self):
         return self.cognito.update_user_pool_client.call_args.kwargs
@@ -76,6 +78,49 @@ class CallbackSyncTests(unittest.TestCase):
         self.assertNotIn('ROLLBACK_COMPLETE', handler.LIVE_STATUSES)
         self.assertNotIn('CREATE_IN_PROGRESS', handler.LIVE_STATUSES)
         self.assertIn('UPDATE_ROLLBACK_COMPLETE', handler.LIVE_STATUSES)
+
+    def test_list_requests_only_live_statuses(self):
+        fakes = Fakes([])
+        paginator = Mock()
+        paginator.paginate.return_value = []
+        fakes.cf.get_paginator.side_effect = None
+        fakes.cf.get_paginator.return_value = paginator
+        fakes.sync()
+        paginator.paginate.assert_called_once_with(StackStatusFilter=handler.LIVE_STATUSES)
+
+    def test_skips_stacks_gone_since_listing_or_not_managed_by_the_service_role(self):
+        fakes = Fakes([stack('honua-gate-gone', StackStatus='DELETE_COMPLETE'), stack('honua-gate-foreign', RoleARN='arn:aws:iam::000000000002:role/Other'),
+                       stack('honua-gate-norole', RoleARN=None)])
+        self.assertEqual(fakes.sync()['callbacks'], 1)
+        fakes.cognito.update_user_pool_client.assert_not_called()
+
+    def test_reads_every_resource_page_and_skips_deleted_or_failed_distributions(self):
+        fakes = Fakes([stack('honua-gate-a', 'd1.cloudfront.net', distribution='E1')])
+        dist = {'ResourceType': 'AWS::CloudFront::Distribution'}
+        fakes.resource_pages['id/honua-gate-a'] = [
+            {'StackResourceSummaries': [dist | {'PhysicalResourceId': 'Eold', 'ResourceStatus': 'DELETE_COMPLETE'},
+                                        dist | {'PhysicalResourceId': 'Efail', 'ResourceStatus': 'CREATE_FAILED'}]},
+            {'StackResourceSummaries': [{'ResourceType': 'AWS::S3::Bucket', 'PhysicalResourceId': 'b'},
+                                        dist | {'PhysicalResourceId': 'E1', 'ResourceStatus': 'UPDATE_COMPLETE'}]}]
+        self.assertEqual(fakes.sync()['added'], [callback('d1.cloudfront.net')])
+        fakes.cloudfront.get_distribution.assert_called_once_with(Id='E1')
+
+    def test_missing_distribution_skips_that_stack_only(self):
+        class Missing(Exception):
+            response = {'Error': {'Code': 'NoSuchDistribution'}}
+        fakes = Fakes([stack('honua-gate-a', 'd1.cloudfront.net', distribution='E1'), stack('honua-gate-b', 'd2.cloudfront.net', distribution='E2')])
+        lookup = fakes.cloudfront.get_distribution.side_effect
+        fakes.cloudfront.get_distribution.side_effect = lambda Id: (_ for _ in ()).throw(Missing()) if Id == 'E1' else lookup(Id)
+        self.assertEqual(fakes.sync()['added'], [callback('d2.cloudfront.net')])
+
+    def test_other_distribution_errors_abort_without_writing(self):
+        class Denied(Exception):
+            response = {'Error': {'Code': 'AccessDenied'}}
+        fakes = Fakes([stack('honua-gate-a')])
+        fakes.cloudfront.get_distribution.side_effect = Denied()
+        with self.assertRaises(Denied):
+            fakes.sync()
+        fakes.cognito.update_user_pool_client.assert_not_called()
 
     def test_preserves_every_client_setting_and_never_sends_the_secret(self):
         fakes = Fakes([stack('honua-gate-a')])
@@ -137,11 +182,11 @@ class CallbackSyncTests(unittest.TestCase):
 
     def test_handler_ignores_the_event_and_reads_configuration(self):
         boto = Mock()
-        env = {'USER_POOL_ID': 'pool', 'CLIENT_ID': 'client', 'STATIC_CALLBACK_URLS': json.dumps(STATIC)}
+        env = {'USER_POOL_ID': 'pool', 'CLIENT_ID': 'client', 'STATIC_CALLBACK_URLS': json.dumps(STATIC), 'SERVICE_ROLE_ARN': SERVICE_ROLE}
         with patch.dict(sys.modules, {'boto3': boto}), patch.dict(os.environ, env), patch.object(handler, 'sync', return_value={}) as sync:
             handler.lambda_handler({'CallbackURLs': ['https://attacker.example/admin/auth/callback']}, None)
         sync.assert_called_once()
-        self.assertEqual(sync.call_args.args[1], handler.Target('pool', 'client', STATIC))
+        self.assertEqual(sync.call_args.args[1], handler.Target('pool', 'client', STATIC, SERVICE_ROLE))
         boto.client.assert_any_call('cloudformation', region_name='us-east-1')
         boto.client.assert_any_call('cognito-idp', region_name='us-east-1')
 
