@@ -153,16 +153,17 @@ locals {
     NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery", "backup-storage:MountCapsule"], local.shared_creation_actions, local.cloudfront_untaggable_creates, local.creation_tag_actions, local.named_teardown_actions, local.temporary_subnet_cleanup_actions)
     Condition = local.ownership_condition
   }
-  # Alias tags are unavailable; failed-create rules may lack ownership tags.
-  # Only the service role may remove these resources; name fences still reject foreign resources.
-  named_teardown_actions = ["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias"]
+  # Alias tags are unavailable; failed-create rules and log groups whose first tag failed may lack ownership
+  # tags. Only the service role may remove these resources; name fences still reject foreign resources.
+  # Log groups share the first-tag name fence, so every gate log group a stack creates stays deletable.
+  named_teardown_actions = ["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "logs:DeleteLogGroup"]
   named_teardown_deny = {
     Sid = "NamedTeardownFence", Effect = "Deny", Action = local.named_teardown_actions
-    NotResource = [
+    NotResource = concat([
       "arn:aws:events:us-east-1:${var.member_account_id}:rule/honua-gate-*",
       "arn:aws:kms:us-east-1:${var.member_account_id}:alias/honua-gate-*",
       "arn:aws:kms:us-east-1:${var.member_account_id}:key/*"
-    ]
+    ], local.named_tag_targets["logs:TagResource"])
   }
   # DeleteAlias authorizes both alias and key. Alias names supply the name fence;
   # the backing key must independently carry the gate ownership tag.
