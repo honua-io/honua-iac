@@ -208,6 +208,26 @@ account and `us-east-1`; the existing region deny also limits EC2 inspection.
 Both policies explicitly deny the EC2 Describe APIs classified as content reads
 in `content-reads.tf`, including reads of gate-owned resources.
 
+Qualification rows must observe a running install (sidecar image digest, WAF log
+redaction, the database role in use, Batch worker output). For that, both lane
+policies also allow these read-only calls, on gate resources only:
+
+- `ecs:ListTasks` where the cluster is named `honua-gate-*`, and `ecs:DescribeTasks`
+  on tasks in those clusters. CloudFormation names each cluster after its stack.
+- `logs:DescribeLogStreams`, `logs:FilterLogEvents` and `logs:GetLogEvents` on the
+  log groups `/honua/honua-gate-*`, `aws-waf-logs-honua-gate-*` and
+  `/aws/rds/instance/honua-gate-*`. CloudWatch Logs has no resource-tag condition
+  for these calls, so the name is the fence. Reaper Lambda logs are not included.
+
+These are content reads of gate installs, which hold synthetic qualification data
+only. The lane still cannot read task definitions: `ecs:DescribeTaskDefinition` has no
+resource scope and would expose every task definition in the account. To check the
+container user or secret references, match the running task's `taskDefinitionArn`
+with the task definition in `ListStackResources`, then read that definition in
+`GetTemplate`. Each revision is immutable. Batch job reads, WAF API reads, log
+queries and command execution are not granted either: Batch job APIs have no
+resource scope, and WAF redaction shows in the WAF log records.
+
 The name fences and the `CreationTags` deny sit in the attached managed policy
 `HonuaGateCloudFormationFences`, because the inline service policy is at its
 10,240-character quota. Apply changes to it while no gate stack is running.

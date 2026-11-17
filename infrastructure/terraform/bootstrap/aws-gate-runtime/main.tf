@@ -73,7 +73,24 @@ locals {
       }, {
       Sid      = "InspectKeyOwnership", Effect = "Allow", Action = "kms:ListResourceTags"
       Resource = "arn:aws:kms:us-east-1:${var.member_account_id}:key/*"
-    }], local.region_controls, local.stack_tag_controls, local.stack_tag_permissions, local.network_cleanup_permissions)
+      }, {
+      # Qualification rows observe the running install. CloudFormation names
+      # gate clusters and database instances after the stack; the template names
+      # its log groups. Log APIs have no tag condition, so names are the fence.
+      # Task definitions stay unreadable (no resource scope): compare the task's
+      # taskDefinitionArn with ListStackResources and read it from GetTemplate.
+      Sid = "InspectGateRuntime", Effect = "Allow"
+      Action = ["ecs:DescribeTasks", "logs:DescribeLogStreams", "logs:FilterLogEvents", "logs:GetLogEvents"]
+      Resource = [
+        "arn:aws:ecs:us-east-1:${var.member_account_id}:task/honua-gate-*/*",
+        "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/honua/honua-gate-*",
+        "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:aws-waf-logs-honua-gate-*",
+        "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/aws/rds/instance/honua-gate-*"
+      ]
+      }, {
+      Sid = "ListGateTasks", Effect = "Allow", Action = "ecs:ListTasks", Resource = "*"
+      Condition = { ArnLike = { "ecs:cluster" = "arn:aws:ecs:us-east-1:${var.member_account_id}:cluster/honua-gate-*" } }
+    }],local.region_controls, local.stack_tag_controls, local.stack_tag_permissions, local.network_cleanup_permissions)
   })
 }
 resource "aws_iam_policy" "lane_boundary" {
