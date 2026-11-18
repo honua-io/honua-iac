@@ -87,7 +87,7 @@ run "service_role_reads_batch_job_definitions_workloads_do_not" {
       control.Sid == "DenyNonGateContentReads" && anytrue([for action in control.Action : can(regex("(?i)^${replace(action, "*", ".*")}$", "batch:DescribeJobDefinitions"))]), false
       )]) && anytrue([for control in local.shared_controls : try(
       control.Sid == "DenyNonGateContentReads" && contains(control.Action, "batch:DescribeJobD*"), false
-    )])
-    error_message = "CloudFormation may read the Batch job definitions it registers; the shared content-read fence still lists them for every other principal."
+    )]) && !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(pattern, "*", ".*")}$", "batch:DescribeJobDefinitions"))])
+    error_message = "CloudFormation may read the Batch job definitions it registers; workloads stay behind the boundary's ownership deny and the lane has no Batch access."
   }
 }
