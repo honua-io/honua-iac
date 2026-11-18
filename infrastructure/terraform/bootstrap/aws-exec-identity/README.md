@@ -222,6 +222,19 @@ carry this boundary. Role administration is a second managed policy so neither
 document exceeds the 6144-character managed-policy quota. This root attaches
 no inline policy, so the 10240-character inline aggregate does not apply.
 
+The deployment role writes workload trust policies, and IAM has no condition
+key on trust content, so the boundary also refuses every workload-role session
+obtained through web-identity federation other than this account's EKS OIDC
+providers (`DenyForeignFederatedSessions`). A role created or edited to trust
+GitHub Actions or any other OIDC issuer gets a session that can do nothing.
+The EKS pattern is pinned to `aws_region`, so IRSA works only for clusters in
+the deployment Region. Two trusts cannot be refused by any policy this root
+owns: one naming another AWS account, and one naming a role ARN in this
+account (in the same account the trust alone admits that role, and the chained
+session no longer carries `aws:FederatedProvider`). Either session is still
+held to the boundary (no IAM, no role chaining, no state substrate, no deployer
+or backend identity).
+
 Terraform validation is the supported local check. A successful plan or validate
 implies no live AWS qualification; that gate is honua-iac#118.
 

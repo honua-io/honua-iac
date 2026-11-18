@@ -44,6 +44,10 @@
       "applied": false,
       "state_key": "bootstrap/aws-ecr-publish/terraform.tfstate"
     },
+    "aws-ci-oidc-roles": {
+      "applied": false,
+      "state_key": "bootstrap/aws-ci-oidc-roles/terraform.tfstate"
+    },
     "aws-demo-deploy": {
       "applied": true,
       "state_key": "bootstrap/aws-demo-deploy/terraform.tfstate",

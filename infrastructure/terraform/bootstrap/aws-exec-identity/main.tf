@@ -632,6 +632,31 @@ data "aws_iam_policy_document" "workload_boundary" {
     ]
     resources = local.unpassable_role_arns
   }
+
+  # The deployment role writes workload trust policies (CreateRole, and
+  # UpdateAssumeRolePolicy for in-place changes), and IAM has no condition key
+  # on trust content. The ceiling therefore refuses every session that a
+  # workload role obtains through web-identity federation other than this
+  # account's EKS OIDC providers (IRSA), so a trust naming GitHub or any other
+  # OIDC issuer yields a session that can do nothing.
+  statement {
+    sid       = "DenyForeignFederatedSessions"
+    effect    = "Deny"
+    actions   = ["*"]
+    resources = ["*"]
+
+    condition {
+      test     = "Null"
+      variable = "aws:FederatedProvider"
+      values   = ["false"]
+    }
+
+    condition {
+      test     = "StringNotLike"
+      variable = "aws:FederatedProvider"
+      values   = [local.extra_iam_resources["eks-oidc-provider"]]
+    }
+  }
 }
 
 locals {

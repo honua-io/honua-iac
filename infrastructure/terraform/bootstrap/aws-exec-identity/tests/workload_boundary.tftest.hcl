@@ -137,3 +137,24 @@ run "created_roles_require_the_boundary" {
     error_message = "The boundary ceiling must be NotAction, must not grant Action *, and must deny the state substrate."
   }
 }
+
+run "workload_sessions_federate_only_through_eks" {
+  command = plan
+
+  assert {
+    condition = one([
+      for statement in jsondecode(data.aws_iam_policy_document.workload_boundary.json).Statement : statement
+      if statement.Sid == "DenyForeignFederatedSessions"
+      ]) == {
+      Sid      = "DenyForeignFederatedSessions"
+      Effect   = "Deny"
+      Action   = "*"
+      Resource = "*"
+      Condition = {
+        Null          = { "aws:FederatedProvider" = "false" }
+        StringNotLike = { "aws:FederatedProvider" = "arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/*" }
+      }
+    }
+    error_message = "A workload role session federated through any IdP other than this account's EKS OIDC providers must be denied, whatever trust the role was created with."
+  }
+}
