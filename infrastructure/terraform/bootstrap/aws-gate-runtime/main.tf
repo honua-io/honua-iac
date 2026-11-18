@@ -48,10 +48,11 @@ locals {
       # Such a name would make every generated role match the IdP secret-reader pattern.
       Effect = "Deny", Action = ["cloudformation:CreateStack"], Resource = "arn:aws:cloudformation:us-east-1:${var.member_account_id}:stack/*ExecutionRole*/*"
       }, {
-      Effect   = "Allow", Action = ["cloudformation:DescribeStacks", "cloudformation:DescribeStackEvents", "cloudformation:ListStackResources", "cloudformation:GetTemplate", "cloudformation:GetStackPolicy"]
+      Effect   = "Allow", Action = ["cloudformation:DescribeStacks", "cloudformation:DescribeStackEvents", "cloudformation:DescribeStackResource", "cloudformation:ListStackResources", "cloudformation:GetTemplate", "cloudformation:GetStackPolicy"]
       Resource = local.stack_arn
       }, {
-      Effect   = "Allow", Action = ["cloudformation:ListStacks", "cloudformation:ValidateTemplate", "cloudformation:GetTemplateSummary"]
+      # ecs:ListClusters lists cluster ARNs only and takes no resource scope.
+      Effect   = "Allow", Action = ["cloudformation:ListStacks", "cloudformation:ValidateTemplate", "cloudformation:GetTemplateSummary", "ecs:ListClusters"]
       Resource = "*"
       }, {
       Effect    = "Allow", Action = "iam:PassRole", Resource = local.service_role_arn

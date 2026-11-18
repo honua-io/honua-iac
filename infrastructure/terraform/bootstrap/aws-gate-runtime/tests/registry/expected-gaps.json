@@ -184,21 +184,7 @@
   {
     "type": "AWS::Batch::JobQueue",
     "handler": "create",
-    "action": "Batch:DescribeJobQueues",
-    "decision": "Deny",
-    "count": 1
-  },
-  {
-    "type": "AWS::Batch::JobQueue",
-    "handler": "create",
     "action": "Batch:TagResource",
-    "decision": "Deny",
-    "count": 1
-  },
-  {
-    "type": "AWS::Batch::JobQueue",
-    "handler": "delete",
-    "action": "Batch:DescribeJobQueues",
     "decision": "Deny",
     "count": 1
   },
@@ -207,20 +193,6 @@
     "handler": "delete",
     "action": "Batch:UpdateJobQueue",
     "decision": "Unmapped multi-resource authorization: Batch:UpdateJobQueue",
-    "count": 1
-  },
-  {
-    "type": "AWS::Batch::JobQueue",
-    "handler": "read",
-    "action": "Batch:DescribeJobQueues",
-    "decision": "Deny",
-    "count": 1
-  },
-  {
-    "type": "AWS::Batch::JobQueue",
-    "handler": "update",
-    "action": "Batch:DescribeJobQueues",
-    "decision": "Deny",
     "count": 1
   },
   {

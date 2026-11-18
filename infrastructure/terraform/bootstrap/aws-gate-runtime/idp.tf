@@ -57,6 +57,23 @@ resource "aws_cognito_user_in_group" "admin" {
   username     = aws_cognito_user.admin.username
 }
 
+# A second user with no group: qualification proves a signed-in but role-less session is denied.
+resource "random_password" "viewer" {
+  length           = 40
+  min_lower        = 1
+  min_upper        = 1
+  min_numeric      = 1
+  min_special      = 1
+  override_special = "!#%+-_=?:"
+}
+
+resource "aws_cognito_user" "viewer" {
+  user_pool_id   = aws_cognito_user_pool.gate.id
+  username       = "honua-gate-viewer"
+  password       = random_password.viewer.result
+  message_action = "SUPPRESS"
+}
+
 resource "aws_secretsmanager_secret" "idp_client" {
   name                    = "honua-gate/idp/client-secret"
   recovery_window_in_days = 7
@@ -80,6 +97,35 @@ resource "aws_secretsmanager_secret_version" "idp_admin" {
   })
 }
 
+# It carries no gate ownership tag (HonuaGate or a stack-name tag), on purpose: the service role's
+# DenyNonGateContentReads and the workload boundary's ownership deny then refuse every read, and the lane
+# role has no Secrets Manager access. The resource policy below denies gate roles as well, so a mistaken
+# HonuaGate tag would not open it. It needs no entry in the boundary's protected list (quota).
+resource "aws_secretsmanager_secret" "idp_viewer" {
+  name                    = "honua-gate/idp/viewer"
+  recovery_window_in_days = 7
+}
+
+resource "aws_secretsmanager_secret_policy" "idp_viewer" {
+  secret_arn          = aws_secretsmanager_secret.idp_viewer.arn
+  block_public_policy = true
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "NoGateRoles", Effect = "Deny", Principal = "*", Action = "secretsmanager:*", Resource = "*"
+      Condition = { ArnLike = { "aws:PrincipalArn" = ["arn:aws:iam::${var.member_account_id}:role/honua-gate-*", "arn:aws:iam::${var.member_account_id}:role/HonuaGate*"] } }
+    }]
+  })
+}
+
+resource "aws_secretsmanager_secret_version" "idp_viewer" {
+  secret_id = aws_secretsmanager_secret.idp_viewer.id
+  secret_string = jsonencode({
+    username = aws_cognito_user.viewer.username
+    password = random_password.viewer.result
+  })
+}
+
 output "oidc_authority" {
   value     = "https://${aws_cognito_user_pool.gate.endpoint}"
   sensitive = true
@@ -94,5 +140,9 @@ output "oidc_client_secret_arn" {
 }
 output "oidc_admin_secret_arn" {
   value     = aws_secretsmanager_secret.idp_admin.arn
+  sensitive = true
+}
+output "oidc_viewer_secret_arn" {
+  value     = aws_secretsmanager_secret.idp_viewer.arn
   sensitive = true
 }

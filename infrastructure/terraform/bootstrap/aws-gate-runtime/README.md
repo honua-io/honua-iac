@@ -236,6 +236,11 @@ revision; then this check does not apply. Batch job reads, WAF API reads, log
 queries and command execution are not granted either: Batch job APIs have no
 resource scope, and WAF redaction shows in the WAF log records.
 
+The lane may also call `cloudformation:DescribeStackResource` on gate stacks and
+`ecs:ListClusters`, so a deploy watcher can find the stack's cluster. ListClusters
+returns every cluster ARN in the account, including other workloads' cluster names,
+but nothing about their contents.
+
 The name fences and the `CreationTags` deny sit in the attached managed policy
 `HonuaGateCloudFormationFences`, because the inline service policy is at its
 10,240-character quota. Apply changes to it while no gate stack is running.
@@ -351,7 +356,12 @@ This root creates the `honua-gate-idp` Cognito pool and hosted domain in
 `us-east-1`. Only administrators can create users. Its confidential app client
 uses the authorization-code flow with `openid`, `profile` and `email` scopes. The
 `honua-gate-admin` user has a generated permanent password and belongs to the
-`admin` group. Invitations are suppressed; credentials are written directly to
+`admin` group. A second user, `honua-gate-viewer`, belongs to no group: security
+checks sign in with it to prove that a role-less session is denied. Its secret
+(`honua-gate/idp/viewer`) carries no gate ownership tag, so the service role's
+content-read fence and the workload boundary refuse it; its own resource policy
+also denies every gate role, and the lane role has no Secrets Manager access.
+Main hands it to the verifier. Never add `HonuaGate=true` to it. Invitations are suppressed; credentials are written directly to
 Secrets Manager under `honua-gate/idp/` and never exposed as Terraform outputs.
 Terraform state contains these credentials: keep the existing private encrypted
 backend and restrict access to state and saved plans.
