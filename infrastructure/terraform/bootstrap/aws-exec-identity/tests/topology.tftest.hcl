@@ -364,7 +364,7 @@ run "ecs_all_features" {
   command = plan
   variables {
     topology = { compute = "ecs", static_console = true, redis = true, custom_domain = true, waf = true, gp_batch = true }
-    # The longest backend role ARN IAM allows, which the assumption deny names.
+    # A backend role name of the 64-character maximum, which the assumption deny names.
     backend_access_role_arn = "arn:aws:iam::123456789012:role/honua-terraform-backend-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   }
   assert {
@@ -396,7 +396,7 @@ run "eks_all_features" {
   command = plan
   variables {
     topology = { compute = "eks", redis = true, custom_domain = true, waf = true, gp_batch = true }
-    # The longest backend role ARN IAM allows, which the assumption deny names.
+    # A backend role name of the 64-character maximum, which the assumption deny names.
     backend_access_role_arn = "arn:aws:iam::123456789012:role/honua-terraform-backend-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   }
   assert {
@@ -412,7 +412,7 @@ run "lambda_all_features" {
   command = plan
   variables {
     topology = { compute = "lambda", redis = true, custom_domain = true, waf = true, gp_batch = true }
-    # The longest backend role ARN IAM allows, which the assumption deny names.
+    # A backend role name of the 64-character maximum, which the assumption deny names.
     backend_access_role_arn = "arn:aws:iam::123456789012:role/honua-terraform-backend-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   }
   assert {
