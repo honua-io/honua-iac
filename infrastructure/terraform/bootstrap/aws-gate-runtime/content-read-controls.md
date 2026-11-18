@@ -34,7 +34,8 @@ Job definitions and jobs can contain commands and environment values. DescribeJo
 
 Actions: `batch:DescribeJobs`, `batch:DescribeJobD*` (exactly DescribeJobDefinitions), `batch:DescribeServiceJob`.
 DescribeJobQueues returns queue metadata only and is not a content read; the job queue handler needs it.
-Exception (service role only): CloudFormation may call `batch:DescribeJobD*` to manage the job definitions it registers. The API has no resource scope, so this role can read every job definition in the account, as it already can for ECS task definitions. Workload roles and the lane keep the fence.
+Exception (service role only): CloudFormation may call `batch:DescribeJobD*` to manage the job definitions it registers. The API has no resource scope, so this role can read every job definition in the account, as it already can for ECS task definitions.
+Exception (workload boundary only): a gate server polls its Batch jobs with `batch:DescribeJobs` and cancels them with `batch:TerminateJob`. DescribeJobs has no resource scope, so a gate workload can read the details of any Batch job in the shared account; only gate stacks submit jobs there, and job definitions carry secret references, not values. TerminateJob is limited to jobs tagged `honua:stack` with a gate stack name; the template requires that tag at submit and the boundary cannot tag another stack's job. The lane keeps the fence, and job definitions and service jobs stay fenced for workloads.
 
 ## cloudfront
 

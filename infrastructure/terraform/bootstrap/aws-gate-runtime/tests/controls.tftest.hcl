@@ -74,15 +74,16 @@ run "shared_account_denies_and_alert_budget" {
     error_message = "All lane, service and workload identities must carry the region deny."
   }
   assert {
+    # The boundary repeats DenyState only for gate-prefixed state buckets (batch-jobs.tftest.hcl).
     condition = alltrue([for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] : alltrue([
-      for sid in ["DenyOtherBuckets", "DenyState", "DenyNonGateChanges"] : anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == sid && statement.Effect == "Deny", false)])
+      for sid in policy == aws_iam_role_policy.cloudformation.policy ? ["DenyOtherBuckets", "DenyState", "DenyNonGateChanges"] : ["DenyOtherBuckets", "DenyNonGateChanges"] : anytrue([for statement in jsondecode(policy).Statement : try(statement.Sid == sid && statement.Effect == "Deny", false)])
     ])]) && anytrue([for statement in jsondecode(aws_iam_role_policy.cloudformation.policy).Statement : try(statement.Sid == "DenyPrivateParameters" && statement.Effect == "Deny", false)])
     error_message = "Service and workload identities must protect existing shared resources."
   }
   assert {
     condition = anytrue([for statement in jsondecode(aws_iam_role_policy.cloudformation.policy).Statement : try(statement.Sid == "DenyNonGateContentReads" && statement.Effect == "Deny", false)]) && alltrue([
-      # Registry login is exempt for the gate server repository (ecr.tftest.hcl).
-      for action in setsubtract(local.shared_content_read_actions, ["ecr:GetAuthorizationToken"]) : !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", action))])
+      # Registry login is exempt for the gate server repository (ecr.tftest.hcl); job polling for Batch (batch-jobs.tftest.hcl).
+      for action in setsubtract(local.shared_content_read_actions, ["ecr:GetAuthorizationToken", "batch:DescribeJobs"]) : !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", action))])
     ])
     error_message = "Service metadata exemptions need an explicit content deny; every content action must remain denied by the workload ownership control."
   }

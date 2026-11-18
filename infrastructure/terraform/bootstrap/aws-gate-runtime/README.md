@@ -66,7 +66,9 @@ The lane policy/boundary, CloudFormation service policy and workload boundary
 explicitly deny regional calls outside `us-east-1`; IAM, Route 53 and CloudFront
 are the only global-service exceptions. The service and workload policies deny
 all S3 access outside `honua-gate-*` and deny the named state buckets even if
-they match that prefix. Pre-existing buckets with the gate prefix are therefore a
+they match that prefix (the workload boundary lists only state buckets inside the
+prefix, since the bucket deny already covers the rest; a long one can push the
+boundary past its 6,144-character quota and fail the apply). Pre-existing buckets with the gate prefix are therefore a
 name-collision risk: main must ensure the prefix is reserved exclusively for gate
 stacks before granting access.
 

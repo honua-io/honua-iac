@@ -211,7 +211,9 @@ locals {
     # ec2:DescribeM*, DescribeAv* and DescribeSu* cover the lookup Lambda's DescribeManagedPrefixLists,
     # DescribeAvailabilityZones and DescribeSubnets, shortened for the quota; they match only metadata reads,
     # none of the EC2 content reads in content-reads.tf.
-    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*", "ec2:DescribeM*", "ec2:DescribeAv*", "ec2:DescribeSu*", "ec2:DescribeVpcs", "guardduty:ListD*"], [for action in local.shared_creation_actions : action if !startswith(action, "iam:Create")])
+    # The server polls and terminates its own Batch jobs. DescribeJobs has no resource, and jobs carry only
+    # honua:stack, so both are exempt here; boundary_terminate_deny fences TerminateJob to gate jobs.
+    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*", "ec2:DescribeM*", "ec2:DescribeAv*", "ec2:DescribeSu*", "ec2:DescribeVpcs", "guardduty:ListD*", "batch:DescribeJobs", "batch:TerminateJob"], [for action in local.shared_creation_actions : action if !startswith(action, "iam:Create")])
     # Secrets Manager decrypts with its AWS-managed key for callers already allowed to read the secret;
     # kms:ViaService only ever carries AWS service endpoints (secretsmanager.<region>.amazonaws.com).
     Condition = merge(local.ownership_condition, { StringNotLike = { "kms:ViaService" = "secretsmanager.*" } })
@@ -256,7 +258,20 @@ locals {
   # to avoid duplicating it inside the 6,144-character managed boundary.
   # The boundary allows SSM only on watchdog parameters, so it needs no
   # separate SSM deny either; that also keeps it inside the managed quota.
-  boundary_shared_denies = concat([for control in local.shared_controls : control if !contains(["DenyNonGateContentReads", "DenyPrivateParameters"], control.Sid)], local.idp_secret_controls, var.shared_account ? [local.boundary_ownership_deny] : [])
+  # Jobs are tagged honua:stack=<stack name> at submit (the template requires it), and the boundary
+  # cannot tag a job it does not own, so only gate jobs can be terminated.
+  boundary_terminate_deny = {
+    Effect    = "Deny", Action = "batch:TerminateJob", Resource = "*"
+    Condition = { StringNotLike = { "aws:ResourceTag/honua:stack" = "honua-gate-*" } }
+  }
+  # DenyOtherBuckets already denies every bucket outside honua-gate-*, so the boundary repeats only the
+  # state buckets inside that prefix (none when the prefix is reserved, see README).
+  boundary_state_buckets = [for bucket in sort(tolist(var.protected_state_buckets)) : bucket if startswith(bucket, "honua-gate-")]
+  boundary_state_deny = [for bucket in [local.boundary_state_buckets] : {
+    Sid      = "DenyState", Effect = "Deny", Action = "s3:*"
+    Resource = flatten([for name in bucket : ["arn:aws:s3:::${name}", "arn:aws:s3:::${name}/*"]])
+  } if length(bucket) > 0]
+  boundary_shared_denies = concat([for control in local.shared_controls : control if !contains(["DenyNonGateContentReads", "DenyPrivateParameters", "DenyState"], control.Sid)], local.boundary_state_deny, local.idp_secret_controls, var.shared_account ? [local.boundary_ownership_deny] : [], var.shared_account ? [local.boundary_terminate_deny] : [])
   # CloudFormation reads listeners, rules, ECS task definitions and Batch job definitions to create them;
   # none of these APIs accepts a resource or tag scope. Task and task-set reads stay denied.
   service_role_content_reads = ["elasticloadbalancing:DescribeListeners", "elasticloadbalancing:DescribeRules", "ecs:DescribeTask*", "batch:DescribeJobD*"]
