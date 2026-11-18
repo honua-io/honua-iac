@@ -29,12 +29,11 @@ run "named_teardown_is_scoped_to_the_service_role" {
   assert {
     condition = anytrue([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : try(
       statement.Sid == "NamedTeardownFence" && statement.Effect == "Deny" &&
-      toset(statement.Action) == toset(["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "logs:DeleteLogGroup", "cloudtrail:DeleteTrail"]) &&
+      toset(statement.Action) == toset(["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "logs:DeleteLogGroup"]) &&
       toset(statement.NotResource) == toset([
         "arn:aws:events:us-east-1:000000000002:rule/honua-gate-*",
         "arn:aws:kms:us-east-1:000000000002:alias/honua-gate-*",
         "arn:aws:kms:us-east-1:000000000002:key/*",
-        "arn:aws:cloudtrail:us-east-1:000000000002:trail/honua-protection-*",
         "arn:aws:logs:us-east-1:000000000002:log-group:/honua/honua-gate-*",
         "arn:aws:logs:us-east-1:000000000002:log-group:/aws/lambda/honua-gate-*",
         "arn:aws:logs:us-east-1:000000000002:log-group:aws-waf-logs-honua-gate-*"
@@ -197,6 +196,14 @@ run "rollback_can_delete_an_uncreated_protection_trail_only" {
       }, false
     )]) == 1
     error_message = "The service role must refuse to delete any trail tagged by a non-gate stack, while an untagged (never-created) protection trail stays deletable."
+  }
+  assert {
+    condition = length([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : statement if try(
+      statement.Sid == "UntaggedTrailNames" && statement.Effect == "Deny" && statement.Action == "cloudtrail:DeleteTrail" &&
+      statement.NotResource == "arn:aws:cloudtrail:us-east-1:000000000002:trail/honua-protection-*" &&
+      statement.Condition == { Null = { "aws:ResourceTag/HonuaGate" = "true" } }, false
+    )]) == 1 && contains(local.service_role_ownership_deny.NotAction, "cloudtrail:DeleteTrail")
+    error_message = "Only untagged trails with the protection-trail name escape the ownership tags; tagged gate trails of any name stay deletable."
   }
   assert {
     condition     = !anytrue([for action in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(action, "*", ".*")}$", "cloudtrail:DeleteTrail"))]) && !strcontains(aws_iam_policy.workload_boundary.policy, "TrailTeardownFence")

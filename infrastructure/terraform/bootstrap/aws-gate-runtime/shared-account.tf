@@ -169,24 +169,29 @@ locals {
   # Log groups share the first-tag name fence, so every gate log group a stack creates stays deletable.
   named_teardown_actions = ["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "logs:DeleteLogGroup", "cloudtrail:DeleteTrail"]
   named_teardown_deny = {
-    Sid = "NamedTeardownFence", Effect = "Deny", Action = local.named_teardown_actions
+    Sid = "NamedTeardownFence", Effect = "Deny", Action = [for action in local.named_teardown_actions : action if action != "cloudtrail:DeleteTrail"]
     NotResource = concat([
       "arn:aws:events:us-east-1:${var.member_account_id}:rule/honua-gate-*",
       "arn:aws:kms:us-east-1:${var.member_account_id}:alias/honua-gate-*",
-      "arn:aws:kms:us-east-1:${var.member_account_id}:key/*",
-      "arn:aws:cloudtrail:us-east-1:${var.member_account_id}:trail/honua-protection-*"
+      "arn:aws:kms:us-east-1:${var.member_account_id}:key/*"
     ], local.named_tag_targets["logs:TagResource"])
   }
   # A failed create rolls back a protection trail that was never created; it has no tags, so the
-  # ownership deny would refuse the delete. A trail another stack created carries that stack's
-  # CloudFormation tag and stays protected; a hand-made untagged trail with this name does not.
-  trail_teardown_deny = {
+  # ownership deny would refuse the delete. DeleteTrail is therefore exempt from that deny and fenced here:
+  # a trail tagged by a non-gate stack is refused, and so is an untagged trail unless it has the Launch
+  # Stack's protection-trail name. Tagged gate trails of any name stay deletable. A hand-made untagged
+  # trail with the protection name is not protected (README).
+  trail_teardown_denies = [{
     Sid = "TrailTeardownFence", Effect = "Deny", Action = "cloudtrail:DeleteTrail", Resource = "*"
     Condition = {
       Null          = { "aws:ResourceTag/aws:cloudformation:stack-name" = "false" }
       StringNotLike = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }
     }
-  }
+    }, {
+    Sid         = "UntaggedTrailNames", Effect = "Deny", Action = "cloudtrail:DeleteTrail"
+    NotResource = "arn:aws:cloudtrail:us-east-1:${var.member_account_id}:trail/honua-protection-*"
+    Condition   = { Null = { "aws:ResourceTag/HonuaGate" = "true" } }
+  }]
   # DeleteAlias authorizes both alias and key. Alias names supply the name fence;
   # the backing key must independently carry the gate ownership tag.
   alias_teardown_key_deny = {

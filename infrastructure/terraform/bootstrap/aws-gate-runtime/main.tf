@@ -142,7 +142,7 @@ resource "aws_iam_role" "cloudformation" {
 # without the fences.
 resource "aws_iam_policy" "cloudformation_fences" {
   name   = "HonuaGateCloudFormationFences"
-  policy = jsonencode({ Version = "2012-10-17", Statement = concat(local.service_role_launch_name_denies, var.shared_account ? [local.creation_tag_deny] : [], var.shared_account ? [local.ec2_creation_tag_deny] : [], var.shared_account ? [local.rds_creation_tag_deny] : [], var.shared_account ? [local.rds_creation_name_deny] : [], [for statement in local.named_tag_denies : statement if var.shared_account], var.shared_account ? [local.named_teardown_deny] : [], var.shared_account ? [local.trail_teardown_deny] : [], var.shared_account ? [local.alias_teardown_key_deny] : [], local.temporary_subnet_cleanup_denies) })
+  policy = jsonencode({ Version = "2012-10-17", Statement = concat(local.service_role_launch_name_denies, var.shared_account ? [local.creation_tag_deny] : [], var.shared_account ? [local.ec2_creation_tag_deny] : [], var.shared_account ? [local.rds_creation_tag_deny] : [], var.shared_account ? [local.rds_creation_name_deny] : [], [for statement in local.named_tag_denies : statement if var.shared_account], var.shared_account ? [local.named_teardown_deny] : [], [for statement in local.trail_teardown_denies : statement if var.shared_account], var.shared_account ? [local.alias_teardown_key_deny] : [], local.temporary_subnet_cleanup_denies) })
 }
 resource "aws_iam_role_policy_attachment" "cloudformation_fences" {
   role       = aws_iam_role.cloudformation.name
