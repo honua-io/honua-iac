@@ -83,7 +83,8 @@ run "untaggable_types_are_managed_by_the_service_role_only" {
       "arn:aws:cloudfront::000000000002:origin-request-policy/0000-synthetic",
       "arn:aws:cloudfront::000000000002:response-headers-policy/0000-synthetic",
       "arn:aws:cloudfront::000000000002:function/honua-gate-synthetic-router",
-      "arn:aws:route53:::healthcheck/00000000-synthetic"
+      "arn:aws:route53:::healthcheck/00000000-synthetic",
+      "arn:aws:wafv2:us-east-1:000000000002:global/managedruleset/AWSManagedRulesBotControlRuleSet/Version_1.0"
       ] : anytrue([for pattern in local.service_role_ownership_deny.NotResource : can(regex("^${replace(pattern, "*", ".*")}$", arn))])
       && !anytrue([for pattern in flatten([local.boundary_ownership_deny.NotResource]) : can(regex("^${replace(pattern, "*", ".*")}$", arn))])
     ])
@@ -95,10 +96,20 @@ run "untaggable_types_are_managed_by_the_service_role_only" {
       "arn:aws:cloudfront::000000000002:distribution/ESYNTHETIC",
       "arn:aws:cloudfront::000000000002:function/production-router",
       "arn:aws:cloudfront::000000000003:cache-policy/0000-synthetic",
-      "arn:aws:route53:::hostedzone/ZSYNTHETIC"
+      "arn:aws:route53:::hostedzone/ZSYNTHETIC",
+      "arn:aws:wafv2:us-east-1:000000000002:global/webacl/honua-gate-acl/synthetic",
+      "arn:aws:wafv2:us-east-1:000000000002:regional/managedruleset/AWSManagedRulesCommonRuleSet/Version_1.0",
+      "arn:aws:wafv2:us-east-1:000000000003:global/managedruleset/AWSManagedRulesBotControlRuleSet/Version_1.0",
+      "arn:aws:wafv2:us-east-1:000000000002:global/rulegroup/honua-gate-group/synthetic"
       ] : !anytrue([for pattern in local.service_role_ownership_deny.NotResource : can(regex("^${replace(pattern, "*", ".*")}$", arn))])
     ])
-    error_message = "Taggable distributions, functions outside the gate name, hosted zones and other accounts keep the ownership fence."
+    error_message = "Taggable distributions, functions outside the gate name, hosted zones, web ACLs, customer rule groups, regional managed rule sets and other accounts keep the ownership fence."
+  }
+  assert {
+    condition = anytrue([for statement in jsondecode(aws_iam_role_policy.cloudformation.policy).Statement : try(
+      statement.Sid == "DenyOtherRegions" && statement.Resource == "*" &&
+    !anytrue([for pattern in flatten([statement.NotAction]) : can(regex("(?i)^${replace(pattern, "*", ".*")}$", "wafv2:UpdateWebACL"))]), false)])
+    error_message = "The region deny confines the managed rule set exemption to us-east-1."
   }
   assert {
     condition = alltrue([for action in ["route53:ChangeResourceRecordSets", "route53:ChangeTagsForResource", "cloudfront:UpdateDistribution", "cloudfront:DeleteDistribution",

@@ -183,6 +183,14 @@ roles; a full Launch Stack create needs both:
   only CloudFormation uses the role, and third-party resource types stay
   deactivated. Keep production failover health checks and distributions out of the
   shared gate account. Hosted zones and their records keep the ownership fence.
+- **AWS managed WAF rule groups.** `wafv2:UpdateWebACL` is also authorized against
+  each managed rule group the web ACL references. Those groups carry no ownership
+  tags, so a stack update that changes the ACL's rules would be denied and rolled
+  back. The service role may reference this account's global (CloudFront) managed
+  rule sets only. The pattern uses a region wildcard so the inline policy stays
+  within its quota; the region deny still confines the call to us-east-1. The web
+  ACL, customer rule groups, regional managed rule sets and other accounts stay
+  behind the ownership fence. Workload roles are not exempt.
 - **ECS task definition deregistration and CloudFront continuous-deployment
   policies.** `ecs:DeregisterTaskDefinition` takes no resource and no condition key,
   so stack teardown cannot be fenced: the service role may deregister any task

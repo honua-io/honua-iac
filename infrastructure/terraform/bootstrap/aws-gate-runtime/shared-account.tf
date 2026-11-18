@@ -146,10 +146,21 @@ locals {
   # fenced UpdateDistribution) continuous-deployment policy creates; one pattern keeps the role within quota.
   # ecs:DeregisterTaskDefinition takes no resource or condition key, so stack teardown needs it here too.
   untaggable_creates = ["cloudfront:Create*Policy", "cloudfront:*MonitoringSubscription", "route53:CreateHealthCheck", "ecs:DeregisterTaskDefinition"]
+  # UpdateWebACL is also authorized against each AWS managed rule group the ACL references.
+  # Those groups carry no ownership tags, so the ownership deny would refuse the update and
+  # roll the stack back. The pattern is this account's global managed rule sets only
+  # (managedrule* is the managedruleset type). A region wildcard keeps the inline policy
+  # inside its quota; DenyOtherRegions still confines the call to us-east-1. The web ACL,
+  # customer rule groups and regional managed rule sets stay behind the ownership fence.
+  # Workload roles do not receive this exemption.
   untaggable_arns = concat([
     for type in ["origin-access-control", "cache-policy", "origin-request-policy", "response-headers-policy"] :
     "arn:aws:cloudfront::${var.member_account_id}:${type}/*"
-  ], ["arn:aws:cloudfront::${var.member_account_id}:function/honua-gate-*", "arn:aws:route53:::healthcheck/*"])
+    ], [
+    "arn:aws:cloudfront::${var.member_account_id}:function/honua-gate-*",
+    "arn:aws:route53:::healthcheck/*",
+    "arn:aws:wafv2:*:${var.member_account_id}:global/managedrule*"
+  ])
   service_role_unfenced = concat([aws_secretsmanager_secret.idp_client.arn], local.untaggable_arns)
   # The service role keeps account-wide metadata reads. The workload boundary
   # cannot repeat that list and stay inside the managed-policy quota, so its
