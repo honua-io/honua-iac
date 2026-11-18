@@ -213,7 +213,9 @@ locals {
     # none of the EC2 content reads in content-reads.tf.
     # The server finds, polls, cancels and terminates its Batch jobs. ListJobs and DescribeJobs have no resource,
     # and jobs carry only honua:stack, so all four are exempt; boundary_job_stop_deny fences the stops to gate jobs.
-    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*", "ec2:DescribeM*", "ec2:DescribeAv*", "ec2:DescribeSu*", "ec2:DescribeVpcs", "guardduty:ListD*", "batch:ListJobs", "batch:DescribeJobs", "batch:CancelJob", "batch:TerminateJob"], [for action in local.shared_creation_actions : action if !startswith(action, "iam:Create")])
+    # PutMetricData has no resource, so the ownership tags never match it; the operations and watchdog heartbeats
+    # need it. The template's role policies fence it to their Honua/Operations and Honua/Watchdog namespaces.
+    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*", "ec2:DescribeM*", "ec2:DescribeAv*", "ec2:DescribeSu*", "ec2:DescribeVpcs", "guardduty:ListD*", "batch:ListJobs", "batch:DescribeJobs", "batch:CancelJob", "batch:TerminateJob", "cloudwatch:PutMetricData"], [for action in local.shared_creation_actions : action if !startswith(action, "iam:Create")])
     # Secrets Manager decrypts with its AWS-managed key for callers already allowed to read the secret;
     # kms:ViaService only ever carries AWS service endpoints (secretsmanager.<region>.amazonaws.com).
     Condition = merge(local.ownership_condition, { StringNotLike = { "kms:ViaService" = "secretsmanager.*" } })
@@ -266,11 +268,12 @@ locals {
     Condition = { StringNotLike = { "aws:ResourceTag/honua:stack" = "honua-gate-*" } }
   }
   # DenyOtherBuckets already denies every bucket outside honua-gate-*, so the boundary repeats only the
-  # state buckets inside that prefix (none when the prefix is reserved, see README).
+  # state buckets inside that prefix (none when the prefix is reserved, see README). One trailing wildcard
+  # covers the bucket and its objects within the quota; it also denies longer bucket names, which fails closed.
   boundary_state_buckets = [for bucket in sort(tolist(var.protected_state_buckets)) : bucket if startswith(bucket, "honua-gate-")]
   boundary_state_deny = [for bucket in [local.boundary_state_buckets] : {
     Sid      = "DenyState", Effect = "Deny", Action = "s3:*"
-    Resource = flatten([for name in bucket : ["arn:aws:s3:::${name}", "arn:aws:s3:::${name}/*"]])
+    Resource = [for name in bucket : "arn:aws:s3:::${name}*"]
   } if length(bucket) > 0]
   boundary_shared_denies = concat([for control in local.shared_controls : control if !contains(["DenyNonGateContentReads", "DenyPrivateParameters", "DenyState"], control.Sid)], local.boundary_state_deny, local.idp_secret_controls, var.shared_account ? [local.boundary_ownership_deny] : [], var.shared_account ? [local.boundary_job_stop_deny] : [])
   # CloudFormation reads listeners, rules, ECS task definitions and Batch job definitions to create them;
