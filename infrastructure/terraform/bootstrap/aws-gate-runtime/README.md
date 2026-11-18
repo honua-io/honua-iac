@@ -354,8 +354,13 @@ This root creates the `honua-gate-idp` Cognito pool and hosted domain in
 `us-east-1`. Only administrators can create users. Its confidential app client
 uses the authorization-code flow with `openid`, `profile` and `email` scopes. The
 `honua-gate-admin` user has a generated permanent password and belongs to the
-`admin` group. Invitations are suppressed; credentials are written directly to
-Secrets Manager under `honua-gate/idp/` and never exposed as Terraform outputs.
+`admin` group. `honua-gate-viewer` has a generated permanent password and no
+group membership, so a signed-in session holds no Honua role. Invitations are
+suppressed; credentials are written directly to Secrets Manager under
+`honua-gate/idp/` and never exposed as Terraform outputs. The viewer secret is
+`honua-gate/idp/admin-viewer`. Gate policies deny `honua-gate/idp/admin*`, which
+covers that secret and the admin secret and does not cover the client secret.
+Main hands the viewer secret to the security verifier.
 Terraform state contains these credentials: keep the existing private encrypted
 backend and restrict access to state and saved plans.
 

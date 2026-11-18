@@ -57,6 +57,22 @@ resource "aws_cognito_user_in_group" "admin" {
   username     = aws_cognito_user.admin.username
 }
 
+resource "random_password" "viewer" {
+  length           = 40
+  min_lower        = 1
+  min_upper        = 1
+  min_numeric      = 1
+  min_special      = 1
+  override_special = "!#%+-_=?:"
+}
+
+resource "aws_cognito_user" "viewer" {
+  user_pool_id   = aws_cognito_user_pool.gate.id
+  username       = "honua-gate-viewer"
+  password       = random_password.viewer.result
+  message_action = "SUPPRESS"
+}
+
 resource "aws_secretsmanager_secret" "idp_client" {
   name                    = "honua-gate/idp/client-secret"
   recovery_window_in_days = 7
@@ -80,6 +96,21 @@ resource "aws_secretsmanager_secret_version" "idp_admin" {
   })
 }
 
+resource "aws_secretsmanager_secret" "idp_viewer" {
+  # Shares the admin* name so one protected-control pattern denies both passwords.
+  # honua-gate/idp/client-secret does not match that pattern.
+  name                    = "honua-gate/idp/admin-viewer"
+  recovery_window_in_days = 7
+}
+
+resource "aws_secretsmanager_secret_version" "idp_viewer" {
+  secret_id = aws_secretsmanager_secret.idp_viewer.id
+  secret_string = jsonencode({
+    username = aws_cognito_user.viewer.username
+    password = random_password.viewer.result
+  })
+}
+
 output "oidc_authority" {
   value     = "https://${aws_cognito_user_pool.gate.endpoint}"
   sensitive = true
@@ -94,5 +125,9 @@ output "oidc_client_secret_arn" {
 }
 output "oidc_admin_secret_arn" {
   value     = aws_secretsmanager_secret.idp_admin.arn
+  sensitive = true
+}
+output "oidc_viewer_secret_arn" {
+  value     = aws_secretsmanager_secret.idp_viewer.arn
   sensitive = true
 }

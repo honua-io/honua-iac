@@ -26,11 +26,14 @@ locals {
     "cognito-idp:GetGroup", "cognito-idp:GetUserPoolMfaConfig", "cognito-idp:SetUserPoolMfaConfig",
     "cognito-idp:TagResource", "cognito-idp:UntagResource", "cognito-idp:ListTagsForResource"
   ]
+  # One pattern denies the admin and role-less password secrets. A second ARN
+  # does not fit the 6,144-character workload boundary. client-secret does not match.
+  idp_password_secrets = "arn:aws:secretsmanager:us-east-1:${var.member_account_id}:secret:honua-gate/idp/admin*"
   protected_controls = {
     Effect = "Deny", Action = "*"
     Resource = [
       aws_cognito_user_pool.gate.arn,
-      aws_secretsmanager_secret.idp_admin.arn,
+      local.idp_password_secrets,
       # Reserve the reaper namespace, including qualified functions and log streams.
       # Combining these deny-only resources keeps the managed boundary within quota.
       "arn:aws:lambda:us-east-1:${var.member_account_id}:function:honua-gate-reaper*",

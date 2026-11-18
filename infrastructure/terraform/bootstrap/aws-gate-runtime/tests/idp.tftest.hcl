@@ -10,6 +10,10 @@ mock_provider "aws" {
     target = aws_secretsmanager_secret.idp_admin
     values = { arn = "arn:aws:secretsmanager:us-east-1:000000000002:secret:honua-gate/idp/admin-ghijkl" }
   }
+  override_resource {
+    target = aws_secretsmanager_secret.idp_viewer
+    values = { arn = "arn:aws:secretsmanager:us-east-1:000000000002:secret:honua-gate/idp/admin-viewer-mnopqr" }
+  }
 }
 mock_provider "archive" {}
 mock_provider "random" {}
@@ -33,7 +37,11 @@ run "confidential_authorization_code_client" {
     error_message = "The test administrator needs a generated permanent password and admin membership."
   }
   assert {
-    condition     = alltrue([for secret in [aws_secretsmanager_secret.idp_client, aws_secretsmanager_secret.idp_admin] : startswith(secret.name, "honua-gate/") && secret.recovery_window_in_days >= 7])
+    condition     = aws_cognito_user.viewer.username == "honua-gate-viewer" && aws_cognito_user.viewer.message_action == "SUPPRESS" && random_password.viewer.length >= 32 && aws_cognito_user_in_group.admin.username == aws_cognito_user.admin.username && aws_cognito_user_in_group.admin.username != aws_cognito_user.viewer.username
+    error_message = "The role-less verifier signs in with a generated password and is not in the admin group."
+  }
+  assert {
+    condition     = alltrue([for secret in [aws_secretsmanager_secret.idp_client, aws_secretsmanager_secret.idp_admin, aws_secretsmanager_secret.idp_viewer] : startswith(secret.name, "honua-gate/") && secret.recovery_window_in_days >= 7])
     error_message = "Identity credentials must use recoverable gate secrets."
   }
 }
@@ -55,7 +63,7 @@ run "secret_readers_are_cloudformation_and_gate_execution_roles" {
       for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] : alltrue([
         anytrue([for statement in jsondecode(policy).Statement : try(statement.Effect == "Deny" && statement.Action == ["secretsmanager:GetSecretValue"] && statement.Resource == aws_secretsmanager_secret.idp_client.arn && statement.Condition.ArnNotLike["aws:PrincipalArn"] == local.idp_client_readers, false)]),
         anytrue([for statement in jsondecode(policy).Statement : try(statement.Effect == "Deny" && statement.NotAction == ["secretsmanager:GetSecretValue"] && statement.Resource == aws_secretsmanager_secret.idp_client.arn, false)]),
-        jsondecode(policy).Statement[0] == local.protected_controls && contains(local.protected_controls.Resource, aws_secretsmanager_secret.idp_admin.arn) && local.protected_controls.Action == "*"
+        jsondecode(policy).Statement[0] == local.protected_controls && contains(local.protected_controls.Resource, local.idp_password_secrets) && contains(local.protected_controls.Resource, aws_cognito_user_pool.gate.arn) && local.protected_controls.Action == "*" && alltrue([for arn in [aws_secretsmanager_secret.idp_admin.arn, aws_secretsmanager_secret.idp_viewer.arn] : can(regex("^${replace(local.idp_password_secrets, "*", ".*")}$", arn))]) && !can(regex("^${replace(local.idp_password_secrets, "*", ".*")}$", aws_secretsmanager_secret.idp_client.arn))
       ])
     ])
     error_message = "Only CloudFormation and gate execution roles may read the client secret; the admin secret and every client-secret mutation stay denied."
@@ -109,7 +117,7 @@ run "shared_account_protects_both_bootstrap_secrets" {
   assert {
     condition = alltrue([for policy in [aws_iam_role_policy.cloudformation.policy, aws_iam_policy.workload_boundary.policy] : alltrue([
       anytrue([for statement in jsondecode(policy).Statement : try(statement.Effect == "Deny" && statement.NotAction == ["secretsmanager:GetSecretValue"] && statement.Resource == aws_secretsmanager_secret.idp_client.arn, false)]),
-      anytrue([for statement in jsondecode(policy).Statement : try(statement.Effect == "Deny" && statement.Action == "*" && contains(statement.Resource, aws_secretsmanager_secret.idp_admin.arn), false)])
+      anytrue([for statement in jsondecode(policy).Statement : try(statement.Effect == "Deny" && statement.Action == "*" && contains(statement.Resource, local.idp_password_secrets), false)])
     ])])
     error_message = "Gate identities must not read the admin password or mutate either bootstrap secret, including in shared-account mode."
   }
