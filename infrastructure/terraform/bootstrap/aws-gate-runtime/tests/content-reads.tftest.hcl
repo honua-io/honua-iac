@@ -79,3 +79,15 @@ run "service_role_reads_task_definitions_but_not_tasks" {
     error_message = "CloudFormation must read task definitions it registers while task and task-set reads stay fenced."
   }
 }
+
+run "service_role_reads_batch_job_definitions_workloads_do_not" {
+  command = plan
+  assert {
+    condition = contains(local.service_role_content_reads, "batch:DescribeJobD*") && !anytrue([for control in local.service_role_shared_controls : try(
+      control.Sid == "DenyNonGateContentReads" && anytrue([for action in control.Action : can(regex("(?i)^${replace(action, "*", ".*")}$", "batch:DescribeJobDefinitions"))]), false
+      )]) && anytrue([for control in local.shared_controls : try(
+      control.Sid == "DenyNonGateContentReads" && contains(control.Action, "batch:DescribeJobD*"), false
+    )])
+    error_message = "CloudFormation may read the Batch job definitions it registers; the shared content-read fence still lists them for every other principal."
+  }
+}
