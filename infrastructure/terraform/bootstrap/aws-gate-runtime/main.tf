@@ -14,15 +14,18 @@ locals {
     # Image pulls. Each ECR wildcard matches exactly one action (GetAuthorizationToken,
     # GetDownloadUrlForLayer, BatchCheckLayerAvailability); it keeps the boundary in quota.
     "ecr:GetAuth*", "ecr:BatchGetImage", "ecr:GetDownload*", "ecr:BatchCheck*",
-    # Explicit lifecycle and configuration APIs; never user-data reads or auth.
+    # DescribeUserPool* is exactly DescribeUserPool, DescribeUserPoolClient and DescribeUserPoolDomain. Launch Stack
+    # workloads only read their own pool client; pool lifecycle is CloudFormation's (cognito_lifecycle_actions).
+    "cognito-idp:DescribeUserPool*"
+  ]
+  # Explicit lifecycle and configuration APIs for the service role only; never user-data reads or auth.
+  cognito_lifecycle_actions = [
     "cognito-idp:CreateUserPool", "cognito-idp:DeleteUserPool", "cognito-idp:UpdateUserPool",
     "cognito-idp:CreateUserPoolClient", "cognito-idp:DeleteUserPoolClient", "cognito-idp:UpdateUserPoolClient",
     "cognito-idp:CreateUserPoolDomain", "cognito-idp:DeleteUserPoolDomain", "cognito-idp:UpdateUserPoolDomain",
     "cognito-idp:CreateGroup", "cognito-idp:DeleteGroup", "cognito-idp:UpdateGroup",
     "cognito-idp:AdminCreateUser", "cognito-idp:AdminDeleteUser",
     "cognito-idp:AdminAddUserToGroup", "cognito-idp:AdminRemoveUserFromGroup",
-    # DescribeUserPool* is exactly DescribeUserPool, DescribeUserPoolClient and DescribeUserPoolDomain.
-    "cognito-idp:DescribeUserPool*",
     "cognito-idp:GetGroup", "cognito-idp:GetUserPoolMfaConfig", "cognito-idp:SetUserPoolMfaConfig",
     "cognito-idp:TagResource", "cognito-idp:UntagResource", "cognito-idp:ListTagsForResource"
   ]
@@ -118,7 +121,7 @@ resource "aws_iam_policy" "workload_boundary" {
   name = "HonuaGateWorkloadBoundary"
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = concat([local.protected_controls, { Effect = "Allow", Action = local.workload_services, Resource = "*" }, {
+    Statement = concat([local.protected_controls, { Effect = "Allow", Action = concat(local.workload_services, local.workload_config_actions), Resource = "*" }, {
       # Gate test Connection roles share this statement to keep the boundary in quota:
       # ssm actions never match a role ARN and sts:AssumeRole never matches a parameter.
       # The task role's own policy also requires the installation tag on the role.
@@ -127,7 +130,7 @@ resource "aws_iam_policy" "workload_boundary" {
       # A boundary only restricts: PassRole outside gate roles has no allow here,
       # so it stays denied without a separate statement inside the quota.
       Effect    = "Allow", Action = "iam:PassRole", Resource = local.workload_roles
-      Condition = { StringEquals = { "iam:PassedToService" = ["ecs-tasks.amazonaws.com", "batch.amazonaws.com", "backup.amazonaws.com", "lambda.amazonaws.com", "vpc-flow-logs.amazonaws.com"] } }
+      Condition = { StringEquals = { "iam:PassedToService" = ["ecs-tasks.amazonaws.com", "batch.amazonaws.com", "backup.amazonaws.com", "lambda.amazonaws.com", "vpc-flow-logs.amazonaws.com", "config.amazonaws.com"] } }
     }], local.region_controls, local.boundary_shared_denies, local.launch_name_denies)
   })
 }
@@ -155,7 +158,7 @@ resource "aws_iam_role_policy" "cloudformation" {
   depends_on = [aws_iam_role_policy_attachment.cloudformation_fences]
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = concat([local.protected_controls, { Effect = "Allow", Action = concat(local.workload_services, local.handler_read_actions, ["backup-storage:MountCapsule"]), Resource = "*" }, {
+    Statement = concat([local.protected_controls, { Effect = "Allow", Action = concat(local.workload_services, local.cognito_lifecycle_actions, local.handler_read_actions, ["backup-storage:MountCapsule", local.config_rule_actions]), Resource = "*" }, {
       Effect    = "Allow", Action = ["iam:CreateRole", "iam:PutRolePermissionsBoundary"], Resource = [local.workload_roles, local.connection_roles]
       Condition = { ArnEquals = { "iam:PermissionsBoundary" = aws_iam_policy.workload_boundary.arn } }
       }, {

@@ -214,12 +214,20 @@ run "stack_cognito_lifecycle_without_user_reads" {
     budget_alert_email      = "gate@example.invalid"
   }
   assert {
-    condition = alltrue([for policy in [aws_iam_policy.workload_boundary.policy, aws_iam_role_policy.cloudformation.policy] : alltrue([
+    condition = alltrue([for policy in [aws_iam_role_policy.cloudformation.policy] : alltrue([
       for action in ["CreateUserPool", "DeleteUserPool", "UpdateUserPool", "CreateUserPoolClient", "DeleteUserPoolClient", "UpdateUserPoolClient", "CreateUserPoolDomain", "DeleteUserPoolDomain", "UpdateUserPoolDomain", "CreateGroup", "DeleteGroup", "UpdateGroup", "AdminCreateUser", "AdminDeleteUser", "AdminAddUserToGroup", "AdminRemoveUserFromGroup", "DescribeUserPool", "DescribeUserPoolClient", "DescribeUserPoolDomain", "GetGroup", "GetUserPoolMfaConfig", "SetUserPoolMfaConfig", "TagResource", "UntagResource", "ListTagsForResource"] : anytrue([
         for statement in jsondecode(policy).Statement : try(statement.Effect == "Allow" && anytrue([for pattern in statement.Action : can(regex("^${replace(pattern, "*", ".*")}$", "cognito-idp:${action}"))]), false)
       ])
     ])])
-    error_message = "Both identities must allow stack-owned Cognito pool, client, domain, group and user lifecycle."
+    error_message = "CloudFormation must allow stack-owned Cognito pool, client, domain, group and user lifecycle."
+  }
+  assert {
+    condition = toset([for pattern in local.workload_services : pattern if startswith(pattern, "cognito-idp:")]) == toset(["cognito-idp:DescribeUserPool*"]) && !anytrue([
+      for action in ["CreateUserPool", "UpdateUserPoolClient", "AdminCreateUser", "AdminAddUserToGroup", "SetUserPoolMfaConfig", "TagResource"] : anytrue([
+        for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(statement.Effect == "Allow" && anytrue([for pattern in flatten([statement.Action]) : can(regex("^${replace(pattern, "*", ".*")}$", "cognito-idp:${action}"))]), false)
+      ])
+    ])
+    error_message = "Launch Stack workloads only describe their pool and client; Cognito lifecycle belongs to CloudFormation."
   }
   assert {
     condition = alltrue([for policy in [aws_iam_policy.workload_boundary.policy, aws_iam_role_policy.cloudformation.policy] : alltrue([

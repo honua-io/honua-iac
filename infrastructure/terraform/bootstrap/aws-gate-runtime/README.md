@@ -105,6 +105,33 @@ create from overwrite, so those calls are limited to `honua-gate-*` names
 `events:*` on `honua-gate-nightly-reaper` and `budgets:*` on
 `honua-gate-shared-monthly` are denied even though those names match the prefix.
 
+AWS Config: the stack's recorder function finds the account's recorder or
+creates, starts and (when its create rolls back) removes its own, so the
+boundary allows `config:*Recorder*` and `config:*DeliveryChannel*` and exempts
+them from the ownership deny, and it may pass a gate role to
+`config.amazonaws.com`. Recorders and delivery channels are account and Region
+singletons with no tag context, so any gate workload can describe, replace,
+stop or delete the account's recorder and channel in `us-east-1`. The pattern
+also matches the service-linked recorder APIs: creating one needs
+`iam:CreateServiceLinkedRole`, which the boundary never allows, but any gate
+workload can delete an AWS service's service-linked recorder. Keep production
+Config recording out of the shared gate account. Recorded resource
+configuration (`config:Get*`, `config:Select*`) stays denied to workloads.
+
+A recorder a gate stack creates outlives the stack by design, and neither the
+lane role nor the reaper can remove it. Later gate stacks then take the
+existing-recorder path and deliver through the first stack's retained role and
+bucket. Keep those until the account administrator (main) stops and deletes
+the recorder and its delivery channel, which is part of the gate teardown
+after the Config rows; deleting the retained role or bucket first makes
+recording fail silently.
+
+The stack's drift rule is the service role's (below). Its evaluation role
+carries the boundary, which allows no CloudFormation drift calls, so gate
+stacks prove that the rule exists, not its drift verdict. Expect the rule to
+report an error or noncompliance in the gate, and the stack's operations topic
+to receive a daily drift message; that is gate noise, not a finding.
+
 The CloudFormation service role alone allows `backup-storage:MountCapsule`,
 which AWS Backup requires to create a vault and which has no resource-level
 permissions. It bypasses the ownership-tag deny for that exact action. Failed
@@ -217,6 +244,13 @@ roles; a full Launch Stack create needs both:
   conditions hold: only CloudFormation uses the role and third-party resource types
   stay deactivated. Keep production composite alarms out of the shared gate
   account. The workload boundary keeps the strict fence.
+- **AWS Config rules.** CloudFormation cannot tag a Config rule and its ARN
+  holds a random ID, so neither tag nor name can fence the stack's drift rule.
+  The service role may manage any Config rule in the account through
+  `config:*ConfigRule*`, exempt from the ownership deny. The organization and
+  aggregate rule APIs in that pattern need an organization or aggregator the
+  gate account does not have. Same conditions as above; keep production Config
+  rules out of the shared gate account.
 
 `HonuaGateLane` can inspect EC2 resources with `ec2:Describe*` and read KMS key
 ownership tags with `kms:ListResourceTags`. Both the lane policy and its permissions
@@ -413,11 +447,13 @@ is plaintext in its secret; the administrator secret is JSON with `username`
 and `password`. Do not print either value or copy it to logs, issues or PRs.
 
 This bootstrap provider remains managed by this root. Gate stacks may also
-create their own sign-in provider. The workload boundary and
-`HonuaGateCloudFormation` role allow explicit pool, client, domain, group and
-administrator-user lifecycle APIs, membership changes, MFA configuration and
-resource tagging. They grant no user-data reads or authentication APIs. The lane
-role still operates through CloudFormation.
+create their own sign-in provider. The `HonuaGateCloudFormation` role allows
+explicit pool, client, domain, group and administrator-user lifecycle APIs,
+membership changes, MFA configuration and resource tagging. The workload
+boundary allows only `DescribeUserPool*` (pool, client and domain description),
+because Launch Stack workloads only read their own pool client. Neither grants
+user-data reads or authentication APIs. The lane role still operates through
+CloudFormation.
 
 In shared-account mode, pool allocation is the only Cognito write exempt from
 ownership checks. Child creation, updates, deletion and tag changes require the
