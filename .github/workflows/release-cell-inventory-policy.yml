@@ -30,23 +30,48 @@ jobs:
           ref: trunk
           fetch-depth: 0
           persist-credentials: false
-      - name: Verify reviewed source and the existing approval policy
+      - name: Verify reviewed source
         env:
           ROOT_SHA: ${{ inputs.release_root_sha }}
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           [[ "$ROOT_SHA" =~ ^[0-9a-f]{40}$ ]]
           git merge-base --is-ancestor "$ROOT_SHA" origin/trunk
           git checkout --detach "$ROOT_SHA"
           test "$(git rev-parse HEAD)" = "$ROOT_SHA"
-          python3 tools/hosted_pilot/foundation_environment.py check
+      # The OIDC role trusts the environment, so the environment's rules are the
+      # gate: trunk only, no administrator bypass, and a human reviewer for deploy.
+      - name: Verify the policy job's environment protection
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ENVIRONMENT: ${{ inputs.mode == 'deploy' && 'cell-inventory-apply' || 'cell-inventory-plan' }}
+          NEEDS_REVIEWER: ${{ inputs.mode == 'deploy' }}
+        run: |
+          set -euo pipefail
+          base="repos/${GITHUB_REPOSITORY}/environments/${ENVIRONMENT}"
+          env_json="$(gh api "$base")"
+          jq -e '.can_admins_bypass == false and .deployment_branch_policy.custom_branch_policies == true' <<<"$env_json" >/dev/null \
+            || { echo "::error::${ENVIRONMENT} must be custom-branch (trunk) with administrator bypass off"; exit 1; }
+          branches="$(gh api "${base}/deployment-branch-policies" --jq '[.branch_policies[] | "\(.type):\(.name)"] | sort | join(",")')"
+          [[ "$branches" == "branch:trunk" ]] || { echo "::error::${ENVIRONMENT} admits ${branches:-nothing}, expected branch:trunk only"; exit 1; }
+          if [[ "$NEEDS_REVIEWER" == "true" ]]; then
+            jq -e '[.protection_rules[] | select(.type == "required_reviewers") | .reviewers[]] | length > 0' <<<"$env_json" >/dev/null \
+              || { echo "::error::${ENVIRONMENT} needs a required reviewer before deploy"; exit 1; }
+          fi
   policy:
     needs: approval-policy
     if: github.repository == 'honua-io/honua-iac' && github.ref == 'refs/heads/trunk'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: ${{ inputs.mode == 'deploy' && 'terraform-live-approval' || 'terraform-ephemeral' }}
+    # Each environment is used by this workflow alone and is trusted by exactly
+    # one OIDC role (honua-iac bootstrap/aws-ci-oidc-roles): plan reads the
+    # release role's inline policy, deploy (founder approval) may also write it.
+    environment: ${{ inputs.mode == 'deploy' && 'cell-inventory-apply' || 'cell-inventory-plan' }}
+    permissions:
+      contents: read
+      actions: read
+      deployments: read
+      id-token: write
     env:
       TF_IN_AUTOMATION: 'true'
       AWS_EC2_METADATA_DISABLED: 'true'
@@ -73,8 +98,7 @@ jobs:
         run: python3 -m pip install 'boto3>=1.35,<2'
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ inputs.mode == 'deploy' && 'arn:aws:iam::585192672263:role/honua-iac-gha-cell-inventory-apply' || 'arn:aws:iam::585192672263:role/honua-iac-gha-cell-inventory-plan' }}
           aws-region: us-east-1
       - name: Review and optionally apply the sole imported inline policy
         env:

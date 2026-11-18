@@ -41,12 +41,18 @@
       "operator": { "tfvars_parameter": "/honua/lane-host/tfvars", "region": "eu-north-1" }
     },
     "aws-ecr-publish": {
-      "applied": false,
-      "state_key": "bootstrap/aws-ecr-publish/terraform.tfstate"
+      "applied": true,
+      "state_key": "bootstrap/aws-ecr-publish/terraform.tfstate",
+      "vars": {
+        "oidc_provider_arn": "arn:aws:iam::{account_id}:oidc-provider/token.actions.githubusercontent.com"
+      }
     },
     "aws-ci-oidc-roles": {
-      "applied": false,
-      "state_key": "bootstrap/aws-ci-oidc-roles/terraform.tfstate"
+      "applied": true,
+      "state_key": "bootstrap/aws-ci-oidc-roles/terraform.tfstate",
+      "vars": {
+        "oidc_provider_arn": "arn:aws:iam::{account_id}:oidc-provider/token.actions.githubusercontent.com"
+      }
     },
     "aws-demo-deploy": {
       "applied": true,

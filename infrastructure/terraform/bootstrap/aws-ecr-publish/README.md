@@ -45,9 +45,9 @@ The component also sets a 3600-second maximum session and tags, and removes
 any description or permissions boundary the role has today.
 
 Apply only after the honua-server publish jobs run in the `publish-images`
-environment; earlier, every publish fails at credential setup. Set this root to
-`"applied": true` (with the `oidc_provider_arn` var) in `../drift-roots.json`
-in the change that records the apply.
+environment; earlier, every publish fails at credential setup. Applied and
+imported 18 November 2026; the root is `"applied": true` in
+`../drift-roots.json`, so the bootstrap drift plan reads it.
 
 ## State
 

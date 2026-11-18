@@ -54,8 +54,9 @@ release role's policy.
    `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`) and deactivate the IAM user keys
    behind them.
 
-Set this root to `"applied": true` (with the `oidc_provider_arn` var) in
-`../drift-roots.json` in the change that records the apply.
+Applied 18 November 2026 (environments trunk-only, admin bypass off;
+`cell-inventory-apply` has a required reviewer). The root is `"applied": true`
+in `../drift-roots.json`, so the bootstrap drift plan reads it.
 
 ## State
 
