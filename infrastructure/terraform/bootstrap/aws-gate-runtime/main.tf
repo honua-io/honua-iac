@@ -70,6 +70,11 @@ locals {
       }, {
       Sid = "SyncIdpCallbacks", Effect = "Allow", Action = "lambda:InvokeFunction", Resource = "arn:aws:lambda:us-east-1:${var.member_account_id}:function:honua-gate-reaper-callbacks"
       }, {
+      # Security proofs evaluate a gate role's deployed policies and boundary
+      # with request context, without assuming the role. Read-only.
+      Sid      = "SimulateGateRoles", Effect = "Allow", Action = ["iam:SimulatePrincipalPolicy", "iam:GetContextKeysForPrincipalPolicy"]
+      Resource = "arn:aws:iam::${var.member_account_id}:role/honua-gate-*"
+      }, {
       Sid = "InspectNetworkOwnership", Effect = "Allow", Action = "ec2:Describe*", Resource = "*"
       }, {
       Sid = "DenyInspectionContentReads", Effect = "Deny"
@@ -91,6 +96,7 @@ locals {
         "arn:aws:ecs:us-east-1:${var.member_account_id}:task/honua-gate-*-Cluster-*/*",
         "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/honua/honua-gate-*",
         "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:aws-waf-logs-honua-gate-*",
+        "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/aws/vendedlogs/honua/honua-gate-*",
         "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/aws/rds/instance/honua-gate-*"
       ]
       }, {
@@ -146,7 +152,7 @@ resource "aws_iam_role" "cloudformation" {
 # without the fences.
 resource "aws_iam_policy" "cloudformation_fences" {
   name   = "HonuaGateCloudFormationFences"
-  policy = jsonencode({ Version = "2012-10-17", Statement = concat(local.service_role_launch_name_denies, var.shared_account ? [local.creation_tag_deny] : [], var.shared_account ? [local.ec2_creation_tag_deny] : [], var.shared_account ? [local.rds_creation_tag_deny] : [], var.shared_account ? [local.rds_creation_name_deny] : [], [for statement in local.named_tag_denies : statement if var.shared_account], var.shared_account ? [local.named_teardown_deny] : [], [for statement in local.trail_teardown_denies : statement if var.shared_account], var.shared_account ? [local.alias_teardown_key_deny] : [], local.temporary_subnet_cleanup_denies) })
+  policy = jsonencode({ Version = "2012-10-17", Statement = concat(local.service_role_launch_name_denies, var.shared_account ? [local.creation_tag_deny] : [], var.shared_account ? [local.ec2_creation_tag_deny] : [], var.shared_account ? [local.rds_creation_tag_deny] : [], var.shared_account ? [local.rds_creation_name_deny] : [], [for statement in local.named_tag_denies : statement if var.shared_account], var.shared_account ? [local.named_teardown_deny] : [], [for statement in local.trail_teardown_denies : statement if var.shared_account], [for statement in local.delivery_denies : statement if var.shared_account], var.shared_account ? [local.alias_teardown_key_deny] : [], local.temporary_subnet_cleanup_denies) })
 }
 resource "aws_iam_role_policy_attachment" "cloudformation_fences" {
   role       = aws_iam_role.cloudformation.name

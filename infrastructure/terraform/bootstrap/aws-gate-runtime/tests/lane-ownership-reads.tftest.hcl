@@ -42,6 +42,7 @@ run "lane_runtime_inspection_is_read_only_and_gate_scoped" {
           "arn:aws:ecs:us-east-1:000000000002:task/honua-gate-*-Cluster-*/*",
           "arn:aws:logs:us-east-1:000000000002:log-group:/honua/honua-gate-*",
           "arn:aws:logs:us-east-1:000000000002:log-group:aws-waf-logs-honua-gate-*",
+          "arn:aws:logs:us-east-1:000000000002:log-group:/aws/vendedlogs/honua/honua-gate-*",
           "arn:aws:logs:us-east-1:000000000002:log-group:/aws/rds/instance/honua-gate-*"
         ]), false
         )]) == 1 && length([for statement in jsondecode(policy).Statement : statement if try(
@@ -73,5 +74,19 @@ run "lane_inspection_cannot_read_ec2_content" {
       ])
     ])
     error_message = "Both lane policies must deny EC2 content reads unconditionally, including resources with gate ownership tags."
+  }
+}
+
+run "lane_simulates_only_gate_roles" {
+  command = plan
+  assert {
+    condition = one([
+      for statement in jsondecode(aws_iam_policy.lane_boundary.policy).Statement : statement
+      if try(statement.Sid, "") == "SimulateGateRoles"
+      ]).Resource == "arn:aws:iam::${var.member_account_id}:role/honua-gate-*" && !anytrue([
+      for statement in jsondecode(aws_iam_policy.lane_boundary.policy).Statement :
+      statement.Effect == "Allow" && anytrue([for action in flatten([statement.Action]) : startswith(action, "iam:") && !contains(["iam:PassRole", "iam:SimulatePrincipalPolicy", "iam:GetContextKeysForPrincipalPolicy"], action)])
+    ])
+    error_message = "The lane may simulate gate roles only, and gains no other IAM action."
   }
 }

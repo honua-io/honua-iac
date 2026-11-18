@@ -259,6 +259,12 @@ account and `us-east-1`; the existing region deny also limits EC2 inspection.
 Both policies explicitly deny the EC2 Describe APIs classified as content reads
 in `content-reads.tf`, including reads of gate-owned resources.
 
+Security proofs evaluate a gate role without assuming it: `HonuaGateLane` may
+call `iam:SimulatePrincipalPolicy` and `iam:GetContextKeysForPrincipalPolicy` on
+`honua-gate-*` roles. The simulator returns a decision and the matching
+statement positions for the role's deployed policies and boundary. It returns
+no credentials and no policy text that `GetTemplate` does not already show.
+
 Qualification rows must observe a running install (sidecar image digest, WAF log
 redaction, the database role in use, Batch worker output). For that, both lane
 policies also allow these read-only calls, on gate resources only:
@@ -309,6 +315,27 @@ update and delete any delivery in the account. The account log resource policy
 WAF would otherwise write stays denied; this root owns `honua-gate-waf-logs`,
 which lets the log delivery service write only to `aws-waf-logs-honua-gate-*`
 log groups.
+
+CloudFront access logs (standard logging v2) follow the same shape, for the
+service role only. The stack's `/aws/vendedlogs/honua/<stack>/edge-access`
+group, its delivery source and destination (`honua-<stack GUID>-edge`) and the
+delivery are in the first-tag name fence. `PutDeliverySource`,
+`PutDeliveryDestination` and `CreateDelivery` are exempt from the ownership deny
+(a new resource has no tags) and fenced by `HonuaGateCloudFormationFences`
+instead: they need the `HonuaGate=true` request tag and may change only gate
+resources, a destination may target only a `/aws/vendedlogs/honua/honua-gate-*`
+group, and a delivery may link only a gate source and destination. A delivery
+resource tagged by a non-gate stack cannot be retagged or overwritten, and a
+delivery may not target another account's destination; an untagged foreign one
+can be claimed, which the gate account (no other delivery resources) accepts. This root
+owns `honua-gate-edge-access-logs`, which lets the delivery service write only to
+`/aws/vendedlogs/honua/honua-gate-*` groups, and lanes may read those groups.
+Three points rest on the first live create: the handlers must send the stack
+tags in the create request (a later `TagResource` alone fails the request-tag
+fence); `GetDelivery*` stays a content read,
+so they must also add the stack-name tag (the inline policy
+has no room for an exemption), and `CreateDelivery` must accept the owned
+resource policy without calling `logs:PutResourcePolicy`, as WAF logging does.
 
 Creation APIs cannot prove ownership of a resource that does not yet exist.
 They can allocate resources using existing dependencies (for example network

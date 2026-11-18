@@ -105,7 +105,13 @@ locals {
       "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/honua/honua-gate-*",
       "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/aws/lambda/honua-gate-*",
       # AWS WAF accepts only log groups named aws-waf-logs-*; waf-logs.tf fences delivery to the same prefix.
-      "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:aws-waf-logs-honua-gate-*"
+      "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:aws-waf-logs-honua-gate-*",
+      # CloudFront access logs (standard logging v2): a /aws/vendedlogs/ group named after the stack, and the
+      # delivery source, destination and delivery the stack tags on create (names use the stack GUID).
+      "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/aws/vendedlogs/honua/honua-gate-*",
+      "arn:aws:logs:us-east-1:${var.member_account_id}:delivery-source:honua-*-edge",
+      "arn:aws:logs:us-east-1:${var.member_account_id}:delivery-destination:honua-*-edge",
+      "arn:aws:logs:us-east-1:${var.member_account_id}:delivery:*"
     ]
   }
   named_tag_denies = concat([{
@@ -169,9 +175,41 @@ locals {
   # and the lookup Lambda's four network metadata calls, which have no resource tags.
   service_role_ownership_deny = {
     Sid       = "DenyNonGateChanges", Effect = "Deny", NotResource = local.service_role_unfenced
-    NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery", "backup-storage:MountCapsule"], local.shared_creation_actions, local.untaggable_creates, local.creation_tag_actions, local.named_teardown_actions, local.temporary_subnet_cleanup_actions)
+    NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery", "backup-storage:MountCapsule"], local.delivery_creation_actions, local.shared_creation_actions, local.untaggable_creates, local.creation_tag_actions, local.named_teardown_actions, local.temporary_subnet_cleanup_actions)
     Condition = local.ownership_condition
   }
+  # CloudFront access logs (standard logging v2). The three creates are exempt from the ownership deny because a new
+  # source, destination or delivery has no tags yet; these denies fence them instead. Creates must carry the stack's
+  # HonuaGate=true request tag (an existing resource must already be a gate one), a destination may only point at a
+  # gate vended-log group, and a delivery may only link a gate source and destination. A resource tagged by a
+  # non-gate stack cannot be retagged or overwritten, and a delivery may not target another account's destination
+  # (no ownership tags there); an untagged foreign delivery resource stays claimable (README).
+  delivery_creation_actions = ["logs:PutDeliverySource", "logs:PutDeliveryDestination", "logs:CreateDelivery"]
+  delivery_denies = [{
+    Sid = "DeliveryCreationTags", Effect = "Deny", Action = local.delivery_creation_actions, Resource = "*"
+    Condition = merge(local.ownership_condition, {
+      StringNotEqualsIfExists = merge(local.ownership_condition.StringNotEqualsIfExists, {
+        "aws:RequestTag/HonuaGate" = "true"
+      })
+    })
+    }, {
+    Sid = "DeliveryDestinationTargets", Effect = "Deny", Action = "logs:PutDeliveryDestination", Resource = "*"
+    Condition = { StringNotLike = {
+      "logs:DeliveryDestinationResourceArn" = "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/aws/vendedlogs/honua/honua-gate-*"
+    } }
+    }, {
+    Sid = "DeliveryLinksOwned", Effect = "Deny", Action = "logs:CreateDelivery"
+    Resource = ["arn:aws:logs:us-east-1:${var.member_account_id}:delivery-source:*",
+    "arn:aws:logs:*:*:delivery-destination:*"]
+    Condition = local.ownership_condition
+    }, {
+    Sid      = "DeliveryForeignTags", Effect = "Deny", Action = concat(["logs:TagResource"], local.delivery_creation_actions)
+    Resource = "arn:aws:logs:us-east-1:${var.member_account_id}:delivery*"
+    Condition = {
+      Null          = { "aws:ResourceTag/aws:cloudformation:stack-name" = "false" }
+      StringNotLike = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }
+    }
+  }]
   # Alias tags are unavailable; failed-create rules and log groups whose first tag failed may lack ownership
   # tags. Only the service role may remove these resources; name fences still reject foreign resources.
   # Log groups share the first-tag name fence, so every gate log group a stack creates stays deletable.
@@ -182,7 +220,7 @@ locals {
       "arn:aws:events:us-east-1:${var.member_account_id}:rule/honua-gate-*",
       "arn:aws:kms:us-east-1:${var.member_account_id}:alias/honua-gate-*",
       "arn:aws:kms:us-east-1:${var.member_account_id}:key/*"
-    ], local.named_tag_targets["logs:TagResource"])
+    ], [for arn in local.named_tag_targets["logs:TagResource"] : arn if strcontains(arn, ":log-group:")])
   }
   # A failed create rolls back a protection trail that was never created; it has no tags, so the
   # ownership deny would refuse the delete. DeleteTrail is therefore exempt from that deny and fenced here:
@@ -287,6 +325,8 @@ locals {
   # CloudFormation reads listeners, rules, ECS task definitions and Batch job definitions to create them;
   # none of these APIs accepts a resource or tag scope. Task and task-set reads stay denied.
   service_role_content_reads = ["elasticloadbalancing:DescribeListeners", "elasticloadbalancing:DescribeRules", "ecs:DescribeTask*", "batch:DescribeJobD*"]
+  # GetDelivery* (under logs:Get*) stays a content read: it relies on the CloudFormation handlers adding the stack-name
+  # tag to delivery resources. The inline policy has no room for an exemption; a gate create proves it (README).
   service_role_shared_controls = [for control in local.shared_controls : try(control.Sid, "") == "DenyNonGateContentReads" ? merge(control, {
     Action = concat([for action in control.Action : action if !contains(local.service_role_content_reads, action)], ["ecs:DescribeTasks", "ecs:DescribeTaskSets"])
   }) : control]
