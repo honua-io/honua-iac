@@ -37,20 +37,15 @@ locals {
     length(local.https_ingress_cidrs) > 0 ? local.https_ingress_cidrs : (!local.use_https ? local.default_ingress_cidrs : [])
   )
   http_ingress_cidrs    = local.use_https ? (var.alb_enable_http_redirect ? local.http_ingress_base : []) : local.http_ingress_base
-  redis_enabled         = var.redis_enabled || var.redis_connection_string != ""
-  redis_create          = var.redis_enabled && var.redis_connection_string == ""
-  redis_auth_token      = var.redis_auth_token != "" ? var.redis_auth_token : (local.redis_create ? random_password.redis_auth[0].result : "")
-  redis_connection      = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true${local.redis_client_options}" : "")
-  redis_egress_cidrs    = local.redis_create ? [local.vpc_cidr_block] : var.redis_connection_cidrs
   multi_replica_enabled = var.desired_count > 1 || var.max_capacity > 1 || (local.canary_enabled && var.canary_desired_count > 0)
   shared_file_storage_configured = (
     var.file_storage_provider == "AwsS3" &&
     (var.file_storage_aws_s3_create_bucket || trimspace(var.file_storage_aws_s3_bucket_name) != "")
   )
-  shared_state_ready = var.shared_state_backend == "postgres" || local.redis_enabled
+  # Shared jobs, leases and sessions live in PostgreSQL. MultiNode also needs
+  # the shared S3 bucket so every task sees the same files.
   multi_node_topology_ready = (
     var.deployment_mode == "MultiNode" &&
-    local.shared_state_ready &&
     local.shared_file_storage_configured
   )
   file_storage_aws_s3_region = trimspace(var.file_storage_aws_s3_region) != "" ? var.file_storage_aws_s3_region : data.aws_region.current.region
@@ -218,14 +213,11 @@ locals {
       name      = "Licensing__LicenseContent"
       valueFrom = trimspace(var.pro_license_secret_arn)
     }
-    ] : [], local.redis_enabled ? [
-    {
-      name      = "ConnectionStrings__redis"
-      valueFrom = aws_secretsmanager_secret.redis_connection[0].arn
-    },
+    ] : [], var.operation_key_ring_certificate_secret_arn != "" ? [
     {
       # ECS resolves the operator's bundle; Terraform never reads its value.
-      # The server materializes it privately and keeps key-ring protection on.
+      # Production persists the operation key ring in PostgreSQL and refuses
+      # to start without this certificate.
       name      = "Operations__SecretChannel__KeyRingCertificatePkcs12"
       valueFrom = var.operation_key_ring_certificate_secret_arn
     }
@@ -257,12 +249,6 @@ locals {
     retries     = 3
     startPeriod = 60
   }
-}
-
-# Client timeouts on the module-built Redis connection string (README: Redis
-# connections). A caller-supplied redis_connection_string is used unchanged.
-locals {
-  redis_client_options = ",connectTimeout=${var.redis_connect_timeout_ms},syncTimeout=${var.redis_sync_timeout_ms},keepAlive=${var.redis_keep_alive_seconds}"
 }
 
 #checkov:skip=CKV_TF_1: Registry modules are version-pinned.
@@ -359,18 +345,13 @@ resource "aws_security_group" "alb" {
     }
 
     precondition {
-      condition     = !local.redis_enabled || var.operation_key_ring_certificate_secret_arn != ""
-      error_message = "Redis-backed Production tasks require operation_key_ring_certificate_secret_arn: supply an existing operator-owned Secrets Manager PKCS#12 bundle with a private key and authorize the execution role to read/decrypt it. Terraform must not receive private-key material."
-    }
-
-    precondition {
-      condition     = var.redis_connection_string == "" || length(var.redis_connection_cidrs) > 0
-      error_message = "redis_connection_cidrs must include at least one trusted CIDR when redis_connection_string is set."
+      condition     = var.operation_key_ring_certificate_secret_arn != ""
+      error_message = "Production tasks require operation_key_ring_certificate_secret_arn: supply an existing operator-owned Secrets Manager PKCS#12 bundle with a private key. Terraform must not receive private-key material."
     }
 
     precondition {
       condition     = !local.safety_enabled || (local.canary_enabled && local.multi_node_topology_ready && var.desired_count >= 1)
-      error_message = "Native safety requires a running stable/canary MultiNode topology with shared state (Redis, or shared_state_backend=postgres) and shared S3."
+      error_message = "Native safety requires a running stable/canary MultiNode topology and shared S3."
     }
 
     precondition {
@@ -448,17 +429,6 @@ resource "aws_security_group" "ecs" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  dynamic "egress" {
-    for_each = local.redis_enabled ? [1] : []
-    content {
-      description = "Redis access"
-      from_port   = var.redis_port
-      to_port     = var.redis_port
-      protocol    = "tcp"
-      cidr_blocks = local.redis_egress_cidrs
-    }
-  }
-
   tags = local.tags
 }
 
@@ -506,65 +476,6 @@ resource "aws_security_group" "rds" {
   egress = []
 
   tags = local.tags
-}
-
-resource "aws_security_group" "redis" {
-  count       = local.redis_create ? 1 : 0
-  name_prefix = "${local.name}-redis-"
-  description = "Redis security group"
-  vpc_id      = local.vpc_id
-
-  ingress {
-    description     = "Redis from ECS"
-    from_port       = var.redis_port
-    to_port         = var.redis_port
-    protocol        = "tcp"
-    security_groups = [aws_security_group.ecs.id]
-  }
-
-  # ElastiCache only answers connections from ECS; replies need no egress rule.
-  egress = []
-
-  tags = local.tags
-}
-
-resource "aws_elasticache_subnet_group" "redis" {
-  count       = local.redis_create ? 1 : 0
-  name        = "${local.name}-redis"
-  subnet_ids  = local.private_subnets
-  description = "Redis subnet group"
-  tags        = local.tags
-}
-
-#checkov:skip=CKV2_AWS_50: Single-node Redis is allowed for smaller environments; Multi-AZ activates when cluster count is increased.
-resource "aws_elasticache_replication_group" "redis" {
-  #checkov:skip=CKV2_AWS_50: Single-node Redis is allowed for smaller environments; Multi-AZ activates when cluster count is increased.
-  count                      = local.redis_create ? 1 : 0
-  replication_group_id       = "${local.name}-redis"
-  description                = "Honua Redis"
-  node_type                  = var.redis_node_type
-  engine                     = "redis"
-  engine_version             = var.redis_engine_version
-  port                       = var.redis_port
-  parameter_group_name       = var.redis_parameter_group_name
-  automatic_failover_enabled = var.redis_num_cache_clusters > 1
-  multi_az_enabled           = var.redis_num_cache_clusters > 1
-  num_cache_clusters         = var.redis_num_cache_clusters
-  subnet_group_name          = aws_elasticache_subnet_group.redis[0].name
-  security_group_ids         = [aws_security_group.redis[0].id]
-  at_rest_encryption_enabled = true
-  transit_encryption_enabled = true
-  auth_token                 = local.redis_auth_token
-  kms_key_id                 = local.kms_key_arn
-  apply_immediately          = true
-  tags                       = local.tags
-
-  lifecycle {
-    precondition {
-      condition     = var.redis_num_cache_clusters >= 1
-      error_message = "redis_num_cache_clusters must be >= 1."
-    }
-  }
 }
 
 #checkov:skip=CKV2_AWS_28: WAF association is optional via waf_web_acl_arn.
@@ -1036,8 +947,7 @@ resource "aws_iam_policy" "secrets" {
           aws_secretsmanager_secret.master_key.arn,
           var.ai_provider_secret_arn != "" ? var.ai_provider_secret_arn : null,
           local.pro_license_enabled ? trimspace(var.pro_license_secret_arn) : null,
-          local.redis_enabled ? var.operation_key_ring_certificate_secret_arn : null,
-          local.redis_enabled ? aws_secretsmanager_secret.redis_connection[0].arn : null,
+          var.operation_key_ring_certificate_secret_arn != "" ? var.operation_key_ring_certificate_secret_arn : null,
           var.audit_chain_key_secret_arn != "" ? var.audit_chain_key_secret_arn : null,
           var.oidc_static_jwt == null ? null : var.oidc_static_jwt.signing_key_secret_arn,
           var.generic_oidc == null ? null : var.generic_oidc.client_secret_arn,
@@ -1057,7 +967,7 @@ resource "aws_iam_policy" "secrets" {
         Effect   = "Allow"
         Action   = ["kms:Decrypt", "kms:DescribeKey"]
         Resource = [trimspace(var.pro_license_secret_kms_key_arn)]
-        }] : [], local.redis_enabled && var.operation_key_ring_certificate_secret_kms_key_arn != "" ? [{
+        }] : [], var.operation_key_ring_certificate_secret_kms_key_arn != "" ? [{
         Effect   = "Allow"
         Action   = ["kms:Decrypt", "kms:DescribeKey"]
         Resource = [var.operation_key_ring_certificate_secret_kms_key_arn]
@@ -1127,15 +1037,6 @@ resource "random_password" "master_key" {
   length           = 32
   special          = true
   override_special = "#%*()-_=+[]{}:?"
-}
-
-resource "random_password" "redis_auth" {
-  count       = local.redis_create && var.redis_auth_token == "" ? 1 : 0
-  length      = 32
-  special     = false
-  min_upper   = 1
-  min_lower   = 1
-  min_numeric = 1
 }
 
 resource "random_id" "alb_logs_suffix" {
@@ -1314,22 +1215,6 @@ resource "aws_secretsmanager_secret_version" "master_key" {
   secret_string = local.master_key
 }
 
-#checkov:skip=CKV2_AWS_57: Secrets rotation is handled outside the module.
-resource "aws_secretsmanager_secret" "redis_connection" {
-  #checkov:skip=CKV2_AWS_57: Secrets rotation is handled outside the module.
-  count       = local.redis_enabled ? 1 : 0
-  name_prefix = "${local.name}-redis-"
-  description = "Honua Redis connection string"
-  kms_key_id  = local.kms_key_arn
-  tags        = local.tags
-}
-
-resource "aws_secretsmanager_secret_version" "redis_connection" {
-  count         = local.redis_enabled ? 1 : 0
-  secret_id     = aws_secretsmanager_secret.redis_connection[0].id
-  secret_string = local.redis_connection
-}
-
 resource "aws_ecs_task_definition" "this" {
   lifecycle {
     precondition {
@@ -1378,7 +1263,6 @@ resource "aws_ecs_task_definition" "this" {
     aws_secretsmanager_secret_version.postgis_password,
     aws_secretsmanager_secret_version.admin_password,
     aws_secretsmanager_secret_version.master_key,
-    aws_secretsmanager_secret_version.redis_connection,
     aws_iam_role_policy.transcript_signing,
     terraform_data.transcript_signing_validation
   ]
@@ -1427,7 +1311,6 @@ resource "aws_ecs_task_definition" "canary" {
     aws_secretsmanager_secret_version.postgis_password,
     aws_secretsmanager_secret_version.admin_password,
     aws_secretsmanager_secret_version.master_key,
-    aws_secretsmanager_secret_version.redis_connection,
     aws_iam_role_policy.transcript_signing,
     terraform_data.transcript_signing_validation
   ]
@@ -1471,12 +1354,12 @@ resource "aws_ecs_service" "this" {
 
     precondition {
       condition     = !local.multi_replica_enabled || local.multi_node_topology_ready
-      error_message = "ECS can run more than one Honua task only when deployment_mode is MultiNode, shared state is configured (Redis, or shared_state_backend=postgres), and file_storage_provider is AwsS3 with a bucket."
+      error_message = "ECS can run more than one Honua task only when deployment_mode is MultiNode and file_storage_provider is AwsS3 with a bucket."
     }
 
     precondition {
       condition     = var.deployment_mode != "MultiNode" || local.multi_node_topology_ready
-      error_message = "deployment_mode=MultiNode requires shared state (Redis, or shared_state_backend=postgres) and shared AwsS3 file storage."
+      error_message = "deployment_mode=MultiNode requires shared AwsS3 file storage."
     }
 
     precondition {
@@ -1526,7 +1409,7 @@ resource "aws_ecs_service" "canary" {
   lifecycle {
     precondition {
       condition     = local.multi_node_topology_ready
-      error_message = "The canary ECS service requires deployment_mode=MultiNode, shared state (Redis, or shared_state_backend=postgres), and shared AwsS3 file storage because it runs alongside the primary service."
+      error_message = "The canary ECS service requires deployment_mode=MultiNode and shared AwsS3 file storage because it runs alongside the primary service."
     }
   }
 
@@ -1548,7 +1431,7 @@ resource "aws_appautoscaling_target" "ecs" {
   lifecycle {
     precondition {
       condition     = var.max_capacity <= 1 || local.multi_node_topology_ready
-      error_message = "ECS auto-scaling above one task requires deployment_mode=MultiNode, shared state (Redis, or shared_state_backend=postgres), and shared AwsS3 file storage."
+      error_message = "ECS auto-scaling above one task requires deployment_mode=MultiNode and shared AwsS3 file storage."
     }
   }
 }

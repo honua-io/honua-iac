@@ -1675,6 +1675,10 @@ run_quota_preflight() {
   needs_data_stack=false
   if [[ "$STACK" == "data" ]]; then
     needs_data_stack=true
+  elif [[ "$STACK" == "ecs" ]]; then
+    if ! ecs_reuses_postgres_without_redis; then
+      needs_data_stack=true
+    fi
   elif [[ -z "$EXISTING_DB_CONNECTION_STRING" || -z "$EXISTING_REDIS_CONNECTION_STRING" || -z "$EXISTING_VPC_ID" ]]; then
     needs_data_stack=true
   fi
@@ -1717,14 +1721,38 @@ validate_existing_resource_inputs() {
   fi
 
   if [[ "$any_existing" == "true" ]]; then
-    if [[ -z "$EXISTING_DB_ENDPOINT" || -z "$EXISTING_DB_CONNECTION_STRING" || -z "$EXISTING_REDIS_CONNECTION_STRING" || -z "$EXISTING_VPC_ID" || -z "$EXISTING_VPC_CIDR" || -z "$EXISTING_PUBLIC_SUBNET_IDS" || -z "$EXISTING_PRIVATE_SUBNET_IDS" ]]; then
-      log_error "When reusing AWS data, all values are required: DB endpoint/connection, Redis connection, VPC ID/CIDR, and public/private subnet lists"
+    local require_redis=true
+    if [[ "$STACK" == "ecs" ]]; then
+      require_redis=false
+    fi
+    if [[ -z "$EXISTING_DB_ENDPOINT" || -z "$EXISTING_DB_CONNECTION_STRING" || -z "$EXISTING_VPC_ID" || -z "$EXISTING_VPC_CIDR" || -z "$EXISTING_PUBLIC_SUBNET_IDS" || -z "$EXISTING_PRIVATE_SUBNET_IDS" ]] ||
+      { [[ "$require_redis" == "true" ]] && [[ -z "$EXISTING_REDIS_CONNECTION_STRING" ]]; }; then
+      if [[ "$STACK" == "ecs" ]]; then
+        log_error "When reusing AWS data for ECS, all values are required: DB endpoint/connection, VPC ID/CIDR, and public/private subnet lists"
+      else
+        log_error "When reusing AWS data, all values are required: DB endpoint/connection, Redis connection, VPC ID/CIDR, and public/private subnet lists"
+      fi
       exit 1
     fi
   fi
 }
 
+# ECS shared state is PostgreSQL. A caller can reuse an existing database and VPC
+# without a Redis connection. Data and serverless stacks still require one.
+ecs_reuses_postgres_without_redis() {
+  [[ "$STACK" == "ecs" &&
+    -n "$EXISTING_DB_ENDPOINT" &&
+    -n "$EXISTING_DB_CONNECTION_STRING" &&
+    -n "$EXISTING_VPC_ID" &&
+    -n "$EXISTING_VPC_CIDR" &&
+    -n "$EXISTING_PUBLIC_SUBNET_IDS" &&
+    -n "$EXISTING_PRIVATE_SUBNET_IDS" ]]
+}
+
 has_existing_data_inputs() {
+  if ecs_reuses_postgres_without_redis; then
+    return 0
+  fi
   [[ -n "$EXISTING_DB_ENDPOINT" &&
     -n "$EXISTING_DB_CONNECTION_STRING" &&
     -n "$EXISTING_REDIS_CONNECTION_STRING" &&
@@ -2164,6 +2192,13 @@ set_ecs_tf_vars() {
 
   unset TF_VAR_honua_image_uri
   unset TF_VAR_skip_migrations
+  # The shared exporter sets Redis variables for the data and serverless stacks.
+  # The ECS root does not declare them, so clear them before its plan.
+  unset TF_VAR_redis_enabled
+  unset TF_VAR_redis_connection_string
+  unset TF_VAR_redis_connection_cidrs
+  unset TF_VAR_shared_state_backend
+  unset TF_VAR_redis_node_type
 }
 
 set_serverless_tf_vars() {
@@ -2328,7 +2363,6 @@ run_serverless_checks() {
 apply_ecs_stack() {
   local url
   local db_endpoint
-  local redis_endpoint
   local cluster_name
   local service_name
   local tf_output_json
@@ -2353,16 +2387,6 @@ apply_ecs_stack() {
     db_endpoint="$(run_tf -chdir=examples/aws output -raw db_endpoint)"
     cluster_name="$(run_tf -chdir=examples/aws output -raw ecs_cluster_name)"
     service_name="$(run_tf -chdir=examples/aws output -raw ecs_service_name)"
-
-    if [[ -n "$EXISTING_REDIS_CONNECTION_STRING" ]]; then
-      log_info "Using existing Redis connection string; skipping ECS Redis endpoint creation check"
-    else
-      redis_endpoint="$(run_tf -chdir=examples/aws output -raw redis_primary_endpoint)"
-      if [[ -z "$redis_endpoint" || "$redis_endpoint" == "null" ]]; then
-        log_error "Redis endpoint was empty for ECS stack"
-        return 1
-      fi
-    fi
 
     run_ecs_checks "$url" "$db_endpoint"
     verify_ecs_canary_route "$url" "$cluster_name"
@@ -2406,16 +2430,6 @@ apply_ecs_stack() {
     db_endpoint="$(run_tf -chdir=examples/aws output -raw db_endpoint)"
     cluster_name="$(run_tf -chdir=examples/aws output -raw ecs_cluster_name)"
     service_name="$(run_tf -chdir=examples/aws output -raw ecs_service_name)"
-
-    if [[ -n "$EXISTING_REDIS_CONNECTION_STRING" ]]; then
-      log_info "Using existing Redis connection string; skipping ECS Redis endpoint creation check"
-    else
-      redis_endpoint="$(run_tf -chdir=examples/aws output -raw redis_primary_endpoint)"
-      if [[ -z "$redis_endpoint" || "$redis_endpoint" == "null" ]]; then
-        log_error "Redis endpoint was empty for ECS stack"
-        return 1
-      fi
-    fi
 
     run_ecs_checks "$url" "$db_endpoint"
     verify_ecs_canary_route "$url" "$cluster_name"

@@ -268,7 +268,7 @@ variable "audit_chain_key_secret_arn" {
 }
 
 variable "operation_key_ring_certificate_secret_kms_key_arn" {
-  description = "Customer-managed KMS key ARN encrypting the operation key-ring certificate secret. Leave empty for the AWS-managed aws/secretsmanager key. Granted to the execution role only when Redis is configured."
+  description = "Customer-managed KMS key ARN encrypting the operation key-ring certificate secret. Leave empty for the AWS-managed aws/secretsmanager key. Granted to the execution role when the certificate secret ARN is set."
   type        = string
   default     = ""
   nullable    = false
@@ -280,7 +280,7 @@ variable "operation_key_ring_certificate_secret_kms_key_arn" {
 }
 
 variable "operation_key_ring_certificate_secret_arn" {
-  description = "ARN of an existing operator-owned Secrets Manager secret containing base64 PKCS#12 or a JSON {pkcs12,password} bundle with a private key. Required for Redis, including an existing Redis connection. Only the ARN enters Terraform; never pass certificate material in additional_env or tfvars. The module grants the execution role read access; supply operation_key_ring_certificate_secret_kms_key_arn for a customer-managed key."
+  description = "ARN of an existing operator-owned Secrets Manager secret containing base64 PKCS#12 or a JSON {pkcs12,password} bundle with a private key. Required. Production persists the operation key ring in PostgreSQL and refuses to start without this certificate. Only the ARN enters Terraform. The module grants the execution role read access."
   type        = string
   default     = ""
   nullable    = false
@@ -290,26 +290,6 @@ variable "operation_key_ring_certificate_secret_arn" {
     error_message = "operation_key_ring_certificate_secret_arn must be a complete Secrets Manager secret ARN (including its six-character suffix), not PKCS#12 material, a wildcard, or a JSON-key selector."
   }
 }
-
-variable "redis_enabled" {
-  description = "Provision ElastiCache Redis."
-  type        = bool
-  default     = true
-}
-
-variable "redis_connection_string" {
-  description = "Existing Redis connection string to reuse."
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-variable "redis_connection_cidrs" {
-  description = "Trusted CIDR ranges allowed for Redis egress when reusing an existing Redis endpoint."
-  type        = list(string)
-  default     = []
-}
-
 variable "desired_count" {
   description = "Minimum number of ECS tasks. Values greater than 1 require the safe MultiNode inputs."
   type        = number
@@ -323,7 +303,7 @@ variable "max_capacity" {
 }
 
 variable "deployment_mode" {
-  description = "Honua deployment mode. Use MultiNode only with Redis and shared S3 file storage."
+  description = "Honua deployment mode. Use MultiNode only with shared S3 file storage."
   type        = string
   default     = "SingleInstance"
 }

@@ -671,11 +671,10 @@ function checkProtectionProfile(envelope, findings) {
     report('Native execution must identify the same backend and target as the deployment contract.');
   }
   if (deployment?.rollout?.canary?.enabled !== true ||
-      deployment?.dependencies?.cache?.enabled !== true ||
+      !deployment?.dependencies?.database?.endpoint ||
       deployment?.dependencies?.object_storage?.enabled !== true ||
-      profile.durable_state?.cache_enabled !== true ||
       profile.durable_state?.object_storage_enabled !== true) {
-    report('Native execution requires an installed canary, Redis and shared object storage.');
+    report('Native execution requires an installed canary, PostgreSQL and shared object storage.');
   }
   if (parameters['aws.region'] !== deployment?.stack?.region ||
       parameters['aws.ecs.cluster'] !== deployment?.workload?.cluster_id ||

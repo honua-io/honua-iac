@@ -86,8 +86,3 @@ output "db_endpoint" {
   sensitive   = true
 }
 
-output "redis_primary_endpoint" {
-  description = "Non-authoritative legacy scalar. The operator contract exposes the Redis secret reference instead of the endpoint."
-  value       = module.honua.redis_primary_endpoint
-  sensitive   = true
-}

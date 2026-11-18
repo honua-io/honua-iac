@@ -21,7 +21,6 @@ environment = "dev"
 deployment_mode = "SingleInstance"
 desired_count   = 1
 max_capacity    = 1
-redis_enabled   = true
 canary_enabled  = false
 
 # Reachability. With both ingress lists empty and no certificate the ALB admits

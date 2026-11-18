@@ -55,7 +55,7 @@ Read this section before quoting any part of the runbook as evidence.
 |---|---|---|
 | Disposable environment from exact pinned revisions, secured remote state | both | 1–5 |
 | Default single-task ECS path; readiness, telemetry, no accidental second task | `examples/aws` | 8 |
-| MultiNode + Redis + pre-created S3; both tasks ready | `examples/aws` | 8 |
+| MultiNode + shared S3; both tasks ready | `examples/aws` | 8 |
 | Durable object survives task replacement | `examples/aws` | 8 |
 | Scale-out/in, image update + rollback, health-gated | `examples/aws` | 8 |
 | Task identity reaches only its bucket and secret; no secrets in plans/outputs | both | 9 |
@@ -86,7 +86,6 @@ verify against the AWS pricing calculator before committing to a budget.
 | ALB | aws; aws-cert only if `enable_ecs_alb_cert` | ~$0.0225/h + LCU | ~$0.60 | cutover cell is **off by default** |
 | Fargate task 0.25 vCPU / 512 MB | aws-cert cutover cell | ~$0.012/h | ~$0.30 | only while the cell is on |
 | Fargate tasks | aws | ~$0.04/h per 0.5vCPU/1GB | ~$1–3 | scales with the MultiNode phase |
-| ElastiCache Redis | aws MultiNode | node-class dependent | ~$0.30+ | `cache.t4g.micro` floor |
 | KMS key (approval MAC) | #164 | $1/month | ~$0.03 | plus per-request |
 | S3, CloudWatch Logs, API Gateway, Batch Fargate Spot | both | usage | <$0.20 | Batch is scale-to-zero |
 
@@ -382,9 +381,9 @@ plan → approve → apply cycle; a saved plan admits exactly one apply.
 1. **Single-task baseline.** Apply the default single-task path. Probe
    `/healthz/ready` and `/healthz/live`; confirm telemetry export; confirm the
    service never runs a second task during an update.
-2. **MultiNode + Redis + pre-created S3.** Re-plan with `deployment_mode`
-   MultiNode, `redis_enabled = true`, and a bucket you created outside the
-   module. Prove both tasks reach ready.
+2. **MultiNode + pre-created S3.** Re-plan with `deployment_mode` MultiNode
+   and a bucket you created outside the module. Shared jobs, leases and
+   sessions are PostgreSQL. Prove both tasks reach ready.
 3. **Durable object across replacement.** Write an artifact through one task,
    force replacement (`aws ecs stop-task`, or a task-definition revision), and
    prove a different task reads the same object.

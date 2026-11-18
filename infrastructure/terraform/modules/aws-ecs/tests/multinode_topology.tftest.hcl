@@ -82,7 +82,7 @@ variables {
   # Recommended in Production; unset only plans with a check warning.
   audit_chain_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
 
-  operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+  operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-multinode-topology.tftest-AbC123"
   image                                     = "ghcr.io/honua-io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   admin_password                            = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   connection_encryption_master_key          = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -95,7 +95,6 @@ variables {
   existing_db_endpoint          = "postgres.example.internal"
   existing_db_connection_string = "Host=postgres.example.internal;Database=honua;Username=honua;Password=test;SSL Mode=Require"
 
-  redis_enabled           = false
   kms_key_arn             = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000001"
   alb_access_logs_enabled = false
 }
@@ -180,16 +179,6 @@ run "reserved_runtime_env_cannot_bypass_typed_inputs" {
   expect_failures = [var.additional_env]
 }
 
-run "invalid_elasticache_auth_token_is_rejected" {
-  command = plan
-
-  variables {
-    redis_auth_token = "aaaaaaaaaaaaaaaa"
-  }
-
-  expect_failures = [var.redis_auth_token]
-}
-
 run "single_instance_scale_out_is_rejected" {
   command = plan
 
@@ -211,22 +200,20 @@ run "multinode_without_shared_dependencies_is_rejected" {
   expect_failures = [aws_ecs_service.this]
 }
 
-run "multinode_scale_out_with_redis_and_s3_is_safe" {
+run "multinode_scale_out_with_shared_s3_is_safe" {
   command = plan
 
   variables {
     desired_count                   = 2
     max_capacity                    = 4
     deployment_mode                 = "MultiNode"
-    redis_connection_string         = "redis.example.internal:6379,password=test,ssl=true"
-    redis_connection_cidrs          = ["10.0.0.0/16"]
     file_storage_provider           = "AwsS3"
     file_storage_aws_s3_bucket_name = "honua-test-files"
   }
 }
 
 # honua-iac#182: the protection profile must derive availability_class from
-# real topology, not from a caller assertion. SingleInstance with no Redis/S3
+# real topology, not from a caller assertion. SingleInstance with no shared S3
 # wiring must report not-ready and the single-task health/observation limits
 # ECS actually enforces on this module's target group and container.
 run "single_instance_reports_not_multi_node_ready_with_expected_limits" {
@@ -234,7 +221,7 @@ run "single_instance_reports_not_multi_node_ready_with_expected_limits" {
 
   assert {
     condition     = output.multi_node_topology_ready == false
-    error_message = "SingleInstance with no Redis/S3 wiring must not claim multi-node readiness."
+    error_message = "SingleInstance with no shared S3 wiring must not claim multi-node readiness."
   }
 
   assert {
@@ -283,8 +270,6 @@ run "canary_topology_reports_both_rollback_actuators_enabled" {
     desired_count                   = 2
     max_capacity                    = 4
     deployment_mode                 = "MultiNode"
-    redis_connection_string         = "redis.example.internal:6379,password=test,ssl=true"
-    redis_connection_cidrs          = ["10.0.0.0/16"]
     file_storage_provider           = "AwsS3"
     file_storage_aws_s3_bucket_name = "honua-test-files"
     canary_enabled                  = true
@@ -293,7 +278,7 @@ run "canary_topology_reports_both_rollback_actuators_enabled" {
 
   assert {
     condition     = output.multi_node_topology_ready == true
-    error_message = "MultiNode with Redis and shared S3 storage must report multi-node readiness."
+    error_message = "MultiNode with shared S3 storage must report multi-node readiness."
   }
 
   assert {

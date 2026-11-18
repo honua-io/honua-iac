@@ -10,10 +10,11 @@ mock_provider "random" {
 mock_provider "null" {}
 
 variables {
-  domain_name              = "maps.example.com"
-  alb_certificate_arn      = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
-  alb_enable_http_redirect = false
-  enable_postgis           = false
+  operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-cdn.tftest-AbC123"
+  domain_name                               = "maps.example.com"
+  alb_certificate_arn                       = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
+  alb_enable_http_redirect                  = false
+  enable_postgis                            = false
   cdn = {
     viewer_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
   }
@@ -33,7 +34,6 @@ variables {
   existing_db_endpoint          = "postgres.example.internal"
   existing_db_connection_string = "Host=postgres.example.internal;Database=honua;Username=honua;Password=test;SSL Mode=Require"
 
-  redis_enabled           = false
   kms_key_arn             = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000001"
   alb_access_logs_enabled = false
 }
@@ -176,7 +176,6 @@ run "canary_behind_cdn_keeps_weights_and_forced_route" {
   command = apply
   variables {
     deployment_mode                           = "MultiNode"
-    redis_enabled                             = true
     operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:key-ring-AbC123"
     file_storage_provider                     = "AwsS3"
     file_storage_aws_s3_create_bucket         = true
@@ -211,8 +210,6 @@ run "controller_owned_rollout_behind_cdn_stays_closed" {
     deployment_mode                           = "MultiNode"
     desired_count                             = 2
     max_capacity                              = 2
-    redis_connection_string                   = "redis.example.internal:6379,password=test,ssl=true"
-    redis_connection_cidrs                    = ["10.0.0.0/16"]
     operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:key-ring-AbC123"
     file_storage_provider                     = "AwsS3"
     file_storage_aws_s3_bucket_name           = "honua-test-files"
@@ -236,11 +233,10 @@ run "controller_owned_rollout_behind_cdn_stays_closed" {
   }
 }
 
-run "postgres_shared_state_runs_two_tasks_without_redis" {
+run "multinode_runs_two_tasks_without_a_cache" {
   command = plan
 
   variables {
-    shared_state_backend            = "postgres"
     deployment_mode                 = "MultiNode"
     desired_count                   = 2
     max_capacity                    = 6
@@ -252,11 +248,11 @@ run "postgres_shared_state_runs_two_tasks_without_redis" {
 
   assert {
     condition     = aws_appautoscaling_target.ecs.min_capacity == 2 && aws_appautoscaling_target.ecs.max_capacity == 6 && length(aws_ecs_service.canary) == 1
-    error_message = "PostgreSQL shared state must satisfy the multi-task, autoscaling and canary preconditions."
+    error_message = "MultiNode with shared S3 must satisfy the multi-task, autoscaling and canary preconditions."
   }
   assert {
-    condition     = length(aws_elasticache_replication_group.redis) == 0 && length(aws_secretsmanager_secret.redis_connection) == 0 && !strcontains(aws_ecs_task_definition.this.container_definitions, "ConnectionStrings__redis")
-    error_message = "PostgreSQL shared state must not provision or reference Redis."
+    condition     = !strcontains(aws_ecs_task_definition.this.container_definitions, "ConnectionStrings__redis")
+    error_message = "The task definition must not carry a cache connection."
   }
   assert {
     condition     = one(one(aws_appautoscaling_policy.requests[0].target_tracking_scaling_policy_configuration).predefined_metric_specification).predefined_metric_type == "ALBRequestCountPerTarget" && one(aws_appautoscaling_policy.requests[0].target_tracking_scaling_policy_configuration).target_value == 600
@@ -295,20 +291,6 @@ run "disposable_stack_may_destroy_its_file_bucket_with_data" {
     condition     = aws_s3_bucket.deployment["files"].force_destroy == true && aws_s3_bucket.deployment["console"].force_destroy == false
     error_message = "file_storage_aws_s3_force_destroy must apply to the file storage bucket only, never to the Console bucket."
   }
-}
-
-run "redis_shared_state_still_requires_redis_for_two_tasks" {
-  command = plan
-
-  variables {
-    deployment_mode                 = "MultiNode"
-    desired_count                   = 2
-    max_capacity                    = 2
-    file_storage_provider           = "AwsS3"
-    file_storage_aws_s3_bucket_name = "honua-test-files"
-  }
-
-  expect_failures = [aws_ecs_service.this]
 }
 
 run "reject_cdn_without_tls" {

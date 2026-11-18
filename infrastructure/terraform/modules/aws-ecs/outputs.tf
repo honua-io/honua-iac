@@ -150,24 +150,9 @@ output "certificate_arn" {
   value       = local.certificate_arn != "" ? local.certificate_arn : null
 }
 
-output "redis_connection_secret_arn" {
-  description = "Secrets Manager ARN for the Redis connection string (if set)."
-  value       = local.redis_connection != "" ? aws_secretsmanager_secret.redis_connection[0].arn : null
-  sensitive   = true
-}
-
-output "redis_primary_endpoint" {
-  description = "Redis primary endpoint address (if created)."
-  value       = local.redis_create ? aws_elasticache_replication_group.redis[0].primary_endpoint_address : null
-  sensitive   = true
-}
-
 output "multi_node_topology_ready" {
-  description = "True when deployment_mode=MultiNode, Redis, and shared AwsS3 file storage are all configured, i.e. more than one task is actually permitted to serve traffic concurrently."
-  # local.multi_node_topology_ready is tainted sensitive only because it
-  # compares the sensitive redis_connection_string to "", not because
-  # readiness itself is secret.
-  value = nonsensitive(local.multi_node_topology_ready)
+  description = "True when deployment_mode=MultiNode and shared AwsS3 file storage are both configured, so more than one task may serve traffic."
+  value       = local.multi_node_topology_ready
 }
 
 output "alb_health_check" {
@@ -198,11 +183,6 @@ output "deployment_rollback" {
 output "task_definition_revision_retention" {
   description = "Prior task definition revision retention policy. skip_destroy retains registered revisions across replacement and destroy. Images, secret versions and compatible data must also be retained externally; registration alone does not prove recoverability."
   value       = "unbounded-until-manually-deregistered"
-}
-
-output "cache_configured" {
-  description = "Whether managed or external Redis is configured (not a live readiness assertion)."
-  value       = nonsensitive(local.redis_enabled)
 }
 
 output "database_managed" {

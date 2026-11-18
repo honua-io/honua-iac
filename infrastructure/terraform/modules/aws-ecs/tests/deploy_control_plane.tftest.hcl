@@ -95,7 +95,7 @@ mock_provider "null" {}
 variables {
   audit_chain_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
 
-  operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+  operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-deploy-control-plane.tftest-AbC123"
   image                                     = "ghcr.io/honua-io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   canary_image                              = "ghcr.io/honua-io/honua-server@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   admin_password                            = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -109,15 +109,12 @@ variables {
   existing_db_endpoint          = "postgres.example.internal"
   existing_db_connection_string = "Host=postgres.example.internal;Database=honua;Username=honua;Password=test;SSL Mode=Require"
 
-  redis_enabled           = false
   kms_key_arn             = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000001"
   alb_access_logs_enabled = false
 
   deployment_mode                 = "MultiNode"
   desired_count                   = 2
   max_capacity                    = 2
-  redis_connection_string         = "redis.example.internal:6379,password=test,ssl=true"
-  redis_connection_cidrs          = ["10.0.0.0/16"]
   file_storage_provider           = "AwsS3"
   file_storage_aws_s3_bucket_name = "honua-test-files"
   canary_enabled                  = true

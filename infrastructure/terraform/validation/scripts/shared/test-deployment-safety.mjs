@@ -37,7 +37,7 @@ test('native handoff validates with an independent functional expectation', () =
 rejected('reject substituted target', execution => { execution.target_id = 'another-target'; });
 rejected('reject substituted AWS region', execution => { execution.parameters['aws.region'] = 'us-west-2'; });
 rejected('reject missing installed shared storage', (_, doc) => { doc.deployment_contract.dependencies.object_storage.enabled = false; });
-rejected('reject missing installed Redis', (_, doc) => { doc.deployment_contract.dependencies.cache.enabled = false; });
+rejected('reject missing database endpoint', (_, doc) => { doc.deployment_contract.dependencies.database.endpoint = null; });
 rejected('reject identical stable/candidate groups', execution => {
   execution.parameters['aws.alb.stable_target_group_arn'] = execution.parameters['aws.alb.canary_target_group_arn'];
 });

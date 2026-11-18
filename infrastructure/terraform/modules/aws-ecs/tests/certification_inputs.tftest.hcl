@@ -95,6 +95,7 @@ mock_provider "random" {}
 mock_provider "null" {}
 
 variables {
+  operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-certification-inputs.tftest-AbC123"
   # Recommended in Production; unset only plans with a check warning.
   audit_chain_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
 
@@ -110,7 +111,6 @@ variables {
   existing_db_endpoint          = "postgres.example.internal"
   existing_db_connection_string = "Host=postgres.example.internal;Database=honua;Username=honua;Password=test;SSL Mode=Require"
 
-  redis_enabled           = false
   kms_key_arn             = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000001"
   alb_access_logs_enabled = false
 }
@@ -293,28 +293,18 @@ run "bedrock_rejects_unpinned_model" {
   expect_failures = [var.bedrock_ai_model]
 }
 
-run "redis_on_requires_operation_certificate" {
+run "missing_key_ring_certificate_is_rejected" {
   command = plan
-  variables { redis_enabled = true }
+  variables { operation_key_ring_certificate_secret_arn = "" }
   expect_failures = [aws_security_group.alb]
 }
 
-run "redis_off_has_no_certificate_dependency" {
-  command = apply
-  assert {
-    condition     = !contains([for s in jsondecode(aws_ecs_task_definition.this.container_definitions)[0].secrets : s.name], "Operations__SecretChannel__KeyRingCertificatePkcs12")
-    error_message = "Redis-off must not request operation certificate material."
-  }
-}
-
-run "redis_on_injects_protected_certificate_for_both_slots" {
+run "key_ring_is_injected_for_both_slots" {
   command = apply
   variables {
-    redis_auth_token                          = "aA1aaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     deployment_mode                           = "MultiNode"
     file_storage_provider                     = "AwsS3"
     file_storage_aws_s3_bucket_name           = "honua-test-files"
-    redis_enabled                             = true
     canary_enabled                            = true
     operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
   }
@@ -324,18 +314,8 @@ run "redis_on_injects_protected_certificate_for_both_slots" {
       one([for s in jsondecode(definition)[0].secrets : s.valueFrom if s.name == "Operations__SecretChannel__KeyRingCertificatePkcs12"]) == "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123" &&
       !contains([for e in jsondecode(definition)[0].environment : e.name], "Operations__SecretChannel__KeyRingCertificatePkcs12")
     ])
-    error_message = "Every Redis-backed task must resolve the operator-owned PKCS#12 secret through ECS, never a plaintext environment value."
+    error_message = "Every task must resolve the operator-owned PKCS#12 secret through ECS, never a plaintext environment value."
   }
-}
-
-run "external_redis_also_requires_operation_certificate" {
-  command = plan
-  variables {
-    redis_enabled           = false
-    redis_connection_string = "redis.example.internal:6379,password=test,ssl=true"
-    redis_connection_cidrs  = ["10.0.0.0/16"]
-  }
-  expect_failures = [aws_security_group.alb]
 }
 
 run "reject_plain_certificate_input" {
@@ -375,11 +355,9 @@ run "audit_chain_key_unset_warns" {
 run "audit_chain_key_is_injected_for_both_slots" {
   command = apply
   variables {
-    redis_auth_token                          = "aA1aaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     deployment_mode                           = "MultiNode"
     file_storage_provider                     = "AwsS3"
     file_storage_aws_s3_bucket_name           = "honua-test-files"
-    redis_enabled                             = true
     canary_enabled                            = true
     operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
     audit_chain_key_secret_arn                = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"

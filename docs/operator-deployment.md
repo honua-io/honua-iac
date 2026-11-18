@@ -177,9 +177,13 @@ deployment if the configured scaling ceiling can exceed one without all of the
 MultiNode prerequisites:
 
 - `deployment_mode = "MultiNode"`;
-- a provisioned or existing Redis connection; and
 - shared cloud file storage: `AwsS3` with an existing bucket for ECS, or
   `AzureBlob` with an existing storage connection string and container for ACA.
+  The ECS module also requires an operator-owned operation key-ring certificate.
+
+Jobs, leases and sessions are rows in PostgreSQL. The ECS module does not
+provision a cache. The Azure Container Apps module may still take a Redis
+connection; that input is not part of `aws-ecs`.
 
 The modules wire these values into Honua's runtime configuration. The AWS module
 also grants its ECS task role least-privilege access to the named bucket. The

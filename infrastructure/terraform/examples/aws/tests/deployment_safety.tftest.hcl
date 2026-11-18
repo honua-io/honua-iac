@@ -121,14 +121,11 @@ variables {
   existing_db_endpoint          = "postgres.example.internal"
   existing_db_connection_string = "Host=postgres.example.internal;Database=honua;Username=honua;Password=test;SSL Mode=Require"
 
-  redis_enabled           = false
   alb_access_logs_enabled = false
 
   deployment_mode                 = "MultiNode"
   desired_count                   = 2
   max_capacity                    = 2
-  redis_connection_string         = "redis.example.internal:6379,password=test,ssl=true"
-  redis_connection_cidrs          = ["10.0.0.0/16"]
   file_storage_provider           = "AwsS3"
   file_storage_aws_s3_bucket_name = "honua-test-files"
   canary_enabled                  = true
@@ -169,13 +166,15 @@ run "native_profile_is_projected_without_live_claims" {
       output.deployment_contract.rollout.backend_name == "honua-aws-ecs-alb" &&
       output.deployment_contract.rollout.target_id == output.operations_contract.resilience.protection_profile.execution.target_id &&
       output.operations_contract.resilience.protection_profile.qualification == "unverified" &&
-      output.operations_contract.resilience.protection_profile.durable_state.cache_enabled &&
-      output.deployment_contract.dependencies.cache.enabled &&
+      !output.operations_contract.resilience.protection_profile.durable_state.cache_enabled &&
+      !output.deployment_contract.dependencies.cache.enabled &&
+      output.deployment_contract.dependencies.cache.kind == "none" &&
+      !contains(keys(output.deployment_contract.secret_refs), "redis_connection") &&
       !output.deployment_contract.dependencies.database.managed &&
       output.operations_contract.resilience.protection_profile.health_sources.functional_check_path == output.operations_contract.resilience.protection_profile.health_sources.readiness_check_path &&
       output.operations_contract.resilience.protection_profile.recovery.recovery_time_bound_seconds == null
     )
-    error_message = "The installed contract must match the native target and external Redis while keeping readiness, provider startup protection and live recovery qualification distinct."
+    error_message = "The installed contract must match the native target with no cache while keeping readiness, provider startup protection and live recovery qualification distinct."
   }
 }
 run "default_single_instance_has_no_bounded_outage_claim" {
@@ -221,22 +220,21 @@ override_resource {
   }
 }
 
-run "redis_off_omits_certificate_from_contracts" {
+run "key_ring_certificate_is_on_both_contracts" {
   command = apply
   variables {
-    redis_connection_string = ""
-    redis_connection_cidrs  = []
-    deployment_mode         = "SingleInstance"
-    deployment_safety       = null
-    desired_count           = 1
-    max_capacity            = 1
-    canary_enabled          = false
+    deployment_mode   = "SingleInstance"
+    deployment_safety = null
+    desired_count     = 1
+    max_capacity      = 1
+    canary_enabled    = false
   }
   assert {
     condition = (
-      !contains(keys(output.deployment_contract.secret_refs), "operation_key_ring_certificate") &&
-      !contains(keys(output.operations_contract.secrets.references), "operation_key_ring_certificate")
+      output.deployment_contract.secret_refs.operation_key_ring_certificate == var.operation_key_ring_certificate_secret_arn &&
+      output.operations_contract.secrets.references.operation_key_ring_certificate.id == var.operation_key_ring_certificate_secret_arn &&
+      !output.operations_contract.resilience.cache_enabled
     )
-    error_message = "Redis-off must omit the unused certificate from both operator contract surfaces."
+    error_message = "A single task still carries the operation key-ring certificate and reports no cache."
   }
 }

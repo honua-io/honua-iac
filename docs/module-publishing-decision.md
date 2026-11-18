@@ -94,7 +94,7 @@ each module's `README.md`, `versions.tf`, and `outputs.tf`.
 
 | Module             | What it deploys                                                  | Notes                                                                              |
 | ------------------ | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `aws-ecs`          | ECS/Fargate + ALB + RDS + optional Redis                          | Full README, canary support, `control_plane_*` outputs.                            |
+| `aws-ecs`          | ECS/Fargate + ALB + RDS                                           | Full README, canary support, `control_plane_*` outputs.                            |
 | `azure-aca`        | Azure Container Apps + PG Flexible + Key Vault + optional Redis  | Full README, `control_plane_*` outputs.                                            |
 | `aws-serverless`   | Lambda container image + API Gateway HTTP API + RDS              | Full README, documented Lambda alias semantics, `control_plane_*` outputs.        |
 | `azure-functions`  | Azure Functions custom container + PG Flexible + optional Redis  | Full README, slot-rollout semantics, `control_plane_*` outputs.                    |

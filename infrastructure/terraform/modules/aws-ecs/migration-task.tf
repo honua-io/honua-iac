@@ -133,7 +133,6 @@ resource "aws_ecs_task_definition" "migrate" {
     aws_secretsmanager_secret_version.postgis_password,
     aws_secretsmanager_secret_version.admin_password,
     aws_secretsmanager_secret_version.master_key,
-    aws_secretsmanager_secret_version.redis_connection,
     aws_iam_role_policy.transcript_signing,
     terraform_data.transcript_signing_validation,
     terraform_data.migration_task_validation

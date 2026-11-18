@@ -79,6 +79,7 @@ mock_provider "random" {}
 mock_provider "null" {}
 
 variables {
+  operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-database-controller-ingress.tftest-AbC123"
   # Recommended in Production; unset only plans with a check warning.
   audit_chain_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
 
@@ -95,7 +96,6 @@ variables {
   existing_db_connection_string = ""
   db_password                   = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
-  redis_enabled           = false
   kms_key_arn             = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000001"
   alb_access_logs_enabled = false
 }
@@ -112,17 +112,15 @@ run "default_database_ingress_stays_service_only" {
   }
 }
 
-run "redis_security_group_has_no_egress" {
+run "data_tier_security_groups_have_no_open_egress" {
   command = plan
   variables {
-    file_storage_provider                     = "AwsS3"
-    file_storage_aws_s3_bucket_name           = "honua-test-files"
-    redis_enabled                             = true
-    operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+    file_storage_provider           = "AwsS3"
+    file_storage_aws_s3_bucket_name = "honua-test-files"
   }
   assert {
-    condition     = length(aws_security_group.redis[0].egress) == 0 && length(aws_security_group.rds[0].egress) == 0
-    error_message = "The ElastiCache and RDS security groups answer connections only and must carry no egress rule."
+    condition     = length(aws_security_group.rds[0].egress) == 0
+    error_message = "The RDS security group answers connections only and must carry no egress rule."
   }
   assert {
     condition     = alltrue([for rule in aws_security_group.ecs.egress : rule.from_port != 443 ? !contains(coalesce(rule.cidr_blocks, []), "0.0.0.0/0") : true])
