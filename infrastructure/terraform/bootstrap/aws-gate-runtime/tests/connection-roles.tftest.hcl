@@ -56,12 +56,14 @@ run "service_role_creates_boundaried_connection_roles_only" {
     error_message = "The boundary ownership deny must keep covering sts:AssumeRole, so workloads assume only roles that carry gate ownership tags."
   }
   assert {
-    condition     = !anytrue([for statement in jsondecode(aws_iam_role_policy.cloudformation.policy).Statement : statement.Effect == "Allow" && contains(flatten([statement.Action]), "iam:DeleteRolePermissionsBoundary")])
-    error_message = "The service role must not remove a permissions boundary."
+    condition = !anytrue([for statement in jsondecode(aws_iam_role_policy.cloudformation.policy).Statement : statement.Effect == "Allow" && anytrue([
+      for pattern in flatten([try(statement.Action, [])]) : can(regex("(?i)^${replace(pattern, "*", ".*")}$", "iam:DeleteRolePermissionsBoundary")) || (can(regex("(?i)^${replace(pattern, "*", ".*")}$", "iam:PassRole")) && strcontains(jsonencode(statement.Resource), "honua-connection"))
+    ])])
+    error_message = "The service role must not remove a permissions boundary or pass a Connection role, through any action pattern."
   }
   assert {
     condition = length([for statement in jsondecode(aws_iam_role_policy.cloudformation.policy).Statement : statement if try(
-      contains(statement.Action, "iam:PutRolePolicy") && toset(statement.Resource) == toset(["arn:aws:iam::000000000002:role/honua-gate-*", "arn:aws:iam::000000000002:role/honua-connection-gate-*"]), false
+      contains(statement.Action, "iam:*RolePolic*") && toset(statement.Resource) == toset(["arn:aws:iam::000000000002:role/honua-gate-*", "arn:aws:iam::000000000002:role/honua-connection-gate-*"]), false
     )]) == 1
     error_message = "The service role manages gate and gate Connection roles only."
   }

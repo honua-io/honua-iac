@@ -20,7 +20,7 @@ variables {
 run "named_teardown_is_scoped_to_the_service_role" {
   command = plan
   assert {
-    condition = alltrue([for action in ["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "logs:DeleteLogGroup"] :
+    condition = alltrue([for action in ["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "logs:DeleteLogGroup", "cloudtrail:DeleteTrail"] :
       contains(local.service_role_ownership_deny.NotAction, action) &&
       !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))])
     ])
@@ -182,5 +182,43 @@ run "rds_tagging_authorization_scenarios" {
       ])
     ])
     error_message = "RDS tag-on-create requires the gate account, region, supported ARN kind, name and request tag together."
+  }
+}
+
+run "rollback_can_delete_an_uncreated_protection_trail_only" {
+  command = plan
+  assert {
+    condition = length([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : statement if try(
+      statement.Sid == "TrailTeardownFence" && statement.Effect == "Deny" && statement.Action == "cloudtrail:DeleteTrail" && statement.Resource == "*" &&
+      statement.Condition == {
+        Null          = { "aws:ResourceTag/aws:cloudformation:stack-name" = "false" }
+        StringNotLike = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }
+      }, false
+    )]) == 1
+    error_message = "The service role must refuse to delete any trail tagged by a non-gate stack, while an untagged (never-created) protection trail stays deletable."
+  }
+  assert {
+    condition = length([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : statement if try(
+      statement.Sid == "UntaggedTrailNames" && statement.Effect == "Deny" && statement.Action == "cloudtrail:DeleteTrail" &&
+      statement.NotResource == "arn:aws:cloudtrail:us-east-1:000000000002:trail/honua-protection-*" &&
+      statement.Condition == local.ownership_condition, false
+    )]) == 1 && contains(local.service_role_ownership_deny.NotAction, "cloudtrail:DeleteTrail")
+    error_message = "Only untagged trails with the protection-trail name escape the ownership tags; tagged gate trails of any name stay deletable."
+  }
+  assert {
+    condition     = !anytrue([for action in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(action, "*", ".*")}$", "cloudtrail:DeleteTrail"))]) && !strcontains(aws_iam_policy.workload_boundary.policy, "TrailTeardownFence")
+    error_message = "Workloads keep the full ownership fence on trail deletion."
+  }
+}
+
+run "managed_rule_groups_and_the_guardduty_agent_pass_their_untagged_fences" {
+  command = plan
+  assert {
+    condition     = contains(local.service_role_ownership_deny.NotResource, "arn:aws:wafv2:us-east-1:000000000002:global/managedruleset/*/*") && !anytrue([for arn in local.service_role_ownership_deny.NotResource : strcontains(arn, ":webacl/")])
+    error_message = "The service role may update a web ACL's references to AWS managed rule groups; web ACLs themselves stay fenced."
+  }
+  assert {
+    condition     = contains(local.boundary_ownership_deny.NotResource, "arn:aws:ecr:*:*:repository/aws-guardduty-agent-fargate") && !contains(local.service_role_ownership_deny.NotResource, "arn:aws:ecr:*:*:repository/aws-guardduty-agent-fargate")
+    error_message = "Only workloads (task execution roles) may pull the untagged GuardDuty runtime agent image."
   }
 }
