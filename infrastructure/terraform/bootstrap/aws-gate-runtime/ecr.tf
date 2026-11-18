@@ -14,6 +14,10 @@ locals {
   server_repository       = "honua-gate/server"
   server_repository_arn   = "arn:aws:ecr:us-east-1:${var.member_account_id}:repository/${local.server_repository}"
   boundary_repository_arn = "arn:aws:ecr:*:${var.member_account_id}:repository/${local.server_repository}"
+  # ECS adds the GuardDuty runtime agent to tasks in GuardDutyManaged clusters; the execution role pulls it from an
+  # AWS-owned repository with no gate ownership tags. The account is a wildcard to fit the boundary quota: the
+  # Launch Stack's execution role policy already pins the AWS account (its GuardDutyAgent mapping).
+  guardduty_agent_repository_arn = "arn:aws:ecr:*:*:repository/aws-guardduty-agent-fargate"
 
   # Covers the gate cohorts in flight: an expired digest breaks the next task
   # replacement of a live gate stack that still references it.

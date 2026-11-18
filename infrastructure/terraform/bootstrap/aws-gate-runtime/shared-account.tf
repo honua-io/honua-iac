@@ -149,7 +149,11 @@ locals {
   untaggable_arns = concat([
     for type in ["origin-access-control", "cache-policy", "origin-request-policy", "response-headers-policy"] :
     "arn:aws:cloudfront::${var.member_account_id}:${type}/*"
-  ], ["arn:aws:cloudfront::${var.member_account_id}:function/honua-gate-*", "arn:aws:route53:::healthcheck/*"])
+    ], ["arn:aws:cloudfront::${var.member_account_id}:function/honua-gate-*", "arn:aws:route53:::healthcheck/*",
+    # UpdateWebACL also authorizes against each AWS managed rule group it references, and those carry no tags;
+    # the web ACL itself stays fenced by its own ownership tags. The other managedruleset actions act only on
+    # rule sets this account sells as a vendor, which it does not.
+  "arn:aws:wafv2:us-east-1:${var.member_account_id}:global/managedruleset/*/*"])
   service_role_unfenced = concat([aws_secretsmanager_secret.idp_client.arn], local.untaggable_arns)
   # The service role keeps account-wide metadata reads. The workload boundary
   # cannot repeat that list and stay inside the managed-policy quota, so its
@@ -163,15 +167,31 @@ locals {
   # Alias tags are unavailable; failed-create rules and log groups whose first tag failed may lack ownership
   # tags. Only the service role may remove these resources; name fences still reject foreign resources.
   # Log groups share the first-tag name fence, so every gate log group a stack creates stays deletable.
-  named_teardown_actions = ["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "logs:DeleteLogGroup"]
+  named_teardown_actions = ["events:RemoveTargets", "events:DeleteRule", "kms:DeleteAlias", "logs:DeleteLogGroup", "cloudtrail:DeleteTrail"]
   named_teardown_deny = {
-    Sid = "NamedTeardownFence", Effect = "Deny", Action = local.named_teardown_actions
+    Sid = "NamedTeardownFence", Effect = "Deny", Action = [for action in local.named_teardown_actions : action if action != "cloudtrail:DeleteTrail"]
     NotResource = concat([
       "arn:aws:events:us-east-1:${var.member_account_id}:rule/honua-gate-*",
       "arn:aws:kms:us-east-1:${var.member_account_id}:alias/honua-gate-*",
       "arn:aws:kms:us-east-1:${var.member_account_id}:key/*"
     ], local.named_tag_targets["logs:TagResource"])
   }
+  # A failed create rolls back a protection trail that was never created; it has no tags, so the
+  # ownership deny would refuse the delete. DeleteTrail is therefore exempt from that deny and fenced here:
+  # a trail tagged by a non-gate stack is refused, and outside the Launch Stack's protection-trail name
+  # the usual ownership rule applies unchanged. Tagged gate trails of any name stay deletable. A hand-made untagged
+  # trail with the protection name is not protected (README).
+  trail_teardown_denies = [{
+    Sid = "TrailTeardownFence", Effect = "Deny", Action = "cloudtrail:DeleteTrail", Resource = "*"
+    Condition = {
+      Null          = { "aws:ResourceTag/aws:cloudformation:stack-name" = "false" }
+      StringNotLike = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }
+    }
+    }, {
+    Sid         = "UntaggedTrailNames", Effect = "Deny", Action = "cloudtrail:DeleteTrail"
+    NotResource = "arn:aws:cloudtrail:us-east-1:${var.member_account_id}:trail/honua-protection-*"
+    Condition   = local.ownership_condition
+  }]
   # DeleteAlias authorizes both alias and key. Alias names supply the name fence;
   # the backing key must independently carry the gate ownership tag.
   alias_teardown_key_deny = {
@@ -184,11 +204,14 @@ locals {
   # GetAuthorizationToken) has no resource. The region wildcard saves quota; the
   # region deny already confines ECR to us-east-1.
   boundary_ownership_deny = {
-    Sid = "DenyNonGateChanges", Effect = "Deny", NotResource = [aws_secretsmanager_secret.idp_client.arn, local.boundary_repository_arn]
+    Sid = "DenyNonGateChanges", Effect = "Deny", NotResource = [aws_secretsmanager_secret.idp_client.arn, local.boundary_repository_arn, local.guardduty_agent_repository_arn]
     # The boundary allows no IAM creates, so exempting iam:CreateRole/CreateServiceLinkedRole here would grant
     # nothing; leaving them out keeps the managed policy within its 6,144-character quota.
     # guardduty:ListD* is exactly ListDetectors (the Launch Stack detector lookup), shortened for that quota.
-    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*", "ec2:DescribeManagedPrefixLists", "ec2:DescribeAvailabilityZones", "ec2:DescribeSubnets", "ec2:DescribeVpcs", "guardduty:ListD*"], [for action in local.shared_creation_actions : action if !startswith(action, "iam:Create")])
+    # ec2:DescribeM*, DescribeAv* and DescribeSu* cover the lookup Lambda's DescribeManagedPrefixLists,
+    # DescribeAvailabilityZones and DescribeSubnets, shortened for the quota; they match only metadata reads,
+    # none of the EC2 content reads in content-reads.tf.
+    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*", "ec2:DescribeM*", "ec2:DescribeAv*", "ec2:DescribeSu*", "ec2:DescribeVpcs", "guardduty:ListD*"], [for action in local.shared_creation_actions : action if !startswith(action, "iam:Create")])
     # Secrets Manager decrypts with its AWS-managed key for callers already allowed to read the secret;
     # kms:ViaService only ever carries AWS service endpoints (secretsmanager.<region>.amazonaws.com).
     Condition = merge(local.ownership_condition, { StringNotLike = { "kms:ViaService" = "secretsmanager.*" } })
