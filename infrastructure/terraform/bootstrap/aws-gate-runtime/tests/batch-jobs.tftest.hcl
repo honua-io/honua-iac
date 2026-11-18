@@ -50,7 +50,7 @@ run "boundary_repeats_only_gate_prefixed_state_buckets" {
   assert {
     condition = anytrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(
       statement.Sid == "DenyState" && statement.Action == "s3:*" &&
-      toset(statement.Resource) == toset(["arn:aws:s3:::honua-gate-synthetic-state", "arn:aws:s3:::honua-gate-synthetic-state/*"]), false
+      toset(statement.Resource) == toset(["arn:aws:s3:::honua-gate-synthetic-state*"]), false
       )]) && anytrue([for statement in jsondecode(aws_iam_role_policy.cloudformation.policy).Statement : try(
       statement.Sid == "DenyState" && length(statement.Resource) == 4, false
     )])
