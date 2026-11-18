@@ -182,7 +182,8 @@ locals {
   # source, destination or delivery has no tags yet; these denies fence them instead. Creates must carry the stack's
   # HonuaGate=true request tag (an existing resource must already be a gate one), a destination may only point at a
   # gate vended-log group, and a delivery may only link a gate source and destination. A resource tagged by a
-  # non-gate stack cannot be retagged; an untagged foreign delivery resource stays claimable (README).
+  # non-gate stack cannot be retagged or overwritten, and a delivery may not target another account's destination
+  # (no ownership tags there); an untagged foreign delivery resource stays claimable (README).
   delivery_creation_actions = ["logs:PutDeliverySource", "logs:PutDeliveryDestination", "logs:CreateDelivery"]
   delivery_denies = [{
     Sid = "DeliveryCreationTags", Effect = "Deny", Action = local.delivery_creation_actions, Resource = "*"
@@ -199,10 +200,10 @@ locals {
     }, {
     Sid = "DeliveryLinksOwned", Effect = "Deny", Action = "logs:CreateDelivery"
     Resource = ["arn:aws:logs:us-east-1:${var.member_account_id}:delivery-source:*",
-    "arn:aws:logs:us-east-1:${var.member_account_id}:delivery-destination:*"]
+    "arn:aws:logs:*:*:delivery-destination:*"]
     Condition = local.ownership_condition
     }, {
-    Sid      = "DeliveryForeignTags", Effect = "Deny", Action = "logs:TagResource"
+    Sid      = "DeliveryForeignTags", Effect = "Deny", Action = concat(["logs:TagResource"], local.delivery_creation_actions)
     Resource = "arn:aws:logs:us-east-1:${var.member_account_id}:delivery*"
     Condition = {
       Null          = { "aws:ResourceTag/aws:cloudformation:stack-name" = "false" }

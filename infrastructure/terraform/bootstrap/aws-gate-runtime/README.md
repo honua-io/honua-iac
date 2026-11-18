@@ -319,12 +319,15 @@ delivery are in the first-tag name fence. `PutDeliverySource`,
 instead: they need the `HonuaGate=true` request tag and may change only gate
 resources, a destination may target only a `/aws/vendedlogs/honua/honua-gate-*`
 group, and a delivery may link only a gate source and destination. A delivery
-resource tagged by a non-gate stack cannot be retagged; an untagged foreign one
-can, which the gate account (no other delivery resources) accepts. This root
+resource tagged by a non-gate stack cannot be retagged or overwritten, and a
+delivery may not target another account's destination; an untagged foreign one
+can be claimed, which the gate account (no other delivery resources) accepts. This root
 owns `honua-gate-edge-access-logs`, which lets the delivery service write only to
 `/aws/vendedlogs/honua/honua-gate-*` groups, and lanes may read those groups.
-Two points rest on the first live create: `GetDelivery*` stays a content read,
-so the CloudFormation handlers must add the stack-name tag (the inline policy
+Three points rest on the first live create: the handlers must send the stack
+tags in the create request (a later `TagResource` alone fails the request-tag
+fence); `GetDelivery*` stays a content read,
+so they must also add the stack-name tag (the inline policy
 has no room for an exemption), and `CreateDelivery` must accept the owned
 resource policy without calling `logs:PutResourcePolicy`, as WAF logging does.
 

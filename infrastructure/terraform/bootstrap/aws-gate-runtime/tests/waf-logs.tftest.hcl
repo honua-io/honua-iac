@@ -111,7 +111,7 @@ run "service_role_creates_deliveries_only_under_the_delivery_fence" {
       statement.Condition.StringNotLike["logs:DeliveryDestinationResourceArn"] == "arn:aws:logs:us-east-1:000000000002:log-group:/aws/vendedlogs/honua/honua-gate-*", false
       )]) == 1 && length([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : statement if try(
       statement.Sid == "DeliveryLinksOwned" && statement.Action == "logs:CreateDelivery" &&
-      toset(statement.Resource) == toset(["arn:aws:logs:us-east-1:000000000002:delivery-source:*", "arn:aws:logs:us-east-1:000000000002:delivery-destination:*"]) &&
+      toset(statement.Resource) == toset(["arn:aws:logs:us-east-1:000000000002:delivery-source:*", "arn:aws:logs:*:*:delivery-destination:*"]) &&
       statement.Condition.StringNotEqualsIfExists["aws:ResourceTag/HonuaGate"] == "true", false
     )]) == 1
     error_message = "Destinations must target gate vended-log groups and deliveries must link gate-owned sources and destinations."
@@ -122,10 +122,11 @@ run "foreign_delivery_resources_cannot_be_claimed" {
   command = plan
   assert {
     condition = length([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : statement if try(
-      statement.Sid == "DeliveryForeignTags" && statement.Action == "logs:TagResource" &&
+      statement.Sid == "DeliveryForeignTags" &&
+      toset(statement.Action) == toset(["logs:TagResource", "logs:PutDeliverySource", "logs:PutDeliveryDestination", "logs:CreateDelivery"]) &&
       statement.Resource == "arn:aws:logs:us-east-1:000000000002:delivery*" &&
       statement.Condition.StringNotLike["aws:ResourceTag/aws:cloudformation:stack-name"] == "honua-gate-*", false
     )]) == 1
-    error_message = "A delivery resource tagged by a non-gate stack must not be retagged."
+    error_message = "A delivery resource tagged by a non-gate stack must not be retagged or overwritten."
   }
 }
