@@ -147,7 +147,7 @@ locals {
   operator_contract_object_storage_enabled = var.file_storage_provider == "AwsS3"
 
   # Count the configured baseline, not an autoscaling ceiling or readiness
-  # flag. The module independently rejects concurrent tasks without Redis/S3.
+  # flag. The module independently rejects concurrent tasks without shared S3.
   operator_contract_availability_class = var.desired_count + (var.canary_enabled ? var.canary_desired_count : 0) > 1 ? "multi-task" : "single-task"
   operator_contract_interruption_guarantee = module.honua.multi_node_topology_ready ? (
     "rolling-through-healthy-tasks"
@@ -185,7 +185,7 @@ locals {
     }
     durable_state = {
       database_managed       = module.honua.database_managed
-      cache_enabled          = module.honua.cache_configured
+      cache_enabled          = false
       object_storage_enabled = local.operator_contract_object_storage_enabled
     }
     prior_revision_retention = module.honua.task_definition_revision_retention
@@ -203,9 +203,8 @@ locals {
     admin_password                   = module.honua.admin_password_secret_arn
     connection_encryption_master_key = module.honua.connection_encryption_master_key_secret_arn
     db_connection                    = module.honua.db_connection_secret_arn
-    redis_connection                 = nonsensitive(module.honua.redis_connection_secret_arn)
     ai_provider_api_key              = var.ai_provider_secret_arn != "" ? var.ai_provider_secret_arn : null
-    operation_key_ring_certificate   = module.honua.cache_configured ? var.operation_key_ring_certificate_secret_arn : null
+    operation_key_ring_certificate   = var.operation_key_ring_certificate_secret_arn != "" ? var.operation_key_ring_certificate_secret_arn : null
     audit_chain_key                  = var.audit_chain_key_secret_arn != "" ? var.audit_chain_key_secret_arn : null
   } : name => arn if arn != null }
 
@@ -231,13 +230,6 @@ locals {
       kms_key_ref = null
       managed_by  = "honua-iac"
     }
-    redis_connection = nonsensitive(module.honua.redis_connection_secret_arn) == null ? null : {
-      kind        = "redis_connection"
-      provider    = "aws-secretsmanager"
-      id          = nonsensitive(module.honua.redis_connection_secret_arn)
-      kms_key_ref = null
-      managed_by  = "honua-iac"
-    }
     audit_chain_key = var.audit_chain_key_secret_arn == "" ? null : {
       kind        = "audit_chain_key"
       provider    = "aws-secretsmanager"
@@ -245,7 +237,7 @@ locals {
       kms_key_ref = var.audit_chain_key_secret_kms_key_arn != "" ? var.audit_chain_key_secret_kms_key_arn : null
       managed_by  = "operator"
     }
-    operation_key_ring_certificate = !module.honua.cache_configured ? null : {
+    operation_key_ring_certificate = var.operation_key_ring_certificate_secret_arn == "" ? null : {
       kind        = "operation_key_ring_certificate"
       provider    = "aws-secretsmanager"
       id          = var.operation_key_ring_certificate_secret_arn
@@ -321,9 +313,9 @@ locals {
         secret_ref = module.honua.db_connection_secret_arn
       }
       cache = {
-        kind       = "aws-elasticache-redis"
-        enabled    = module.honua.cache_configured
-        secret_ref = nonsensitive(module.honua.redis_connection_secret_arn)
+        kind       = "none"
+        enabled    = false
+        secret_ref = null
       }
       ingress = {
         kind            = "aws-alb"
@@ -422,7 +414,7 @@ locals {
       ingress_deletion_protection = var.alb_deletion_protection
       ingress_access_logs_enabled = var.alb_access_logs_enabled
       database_managed            = module.honua.database_managed
-      cache_enabled               = module.honua.cache_configured
+      cache_enabled               = false
       protection_profile          = local.operator_contract_protection_profile
     }
     grouping = {

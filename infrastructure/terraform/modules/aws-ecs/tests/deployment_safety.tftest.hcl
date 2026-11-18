@@ -108,15 +108,12 @@ variables {
   existing_db_endpoint          = "postgres.example.internal"
   existing_db_connection_string = "Host=postgres.example.internal;Database=honua;Username=honua;Password=test;SSL Mode=Require"
 
-  redis_enabled           = false
   kms_key_arn             = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000001"
   alb_access_logs_enabled = false
 
   deployment_mode                 = "MultiNode"
   desired_count                   = 2
   max_capacity                    = 2
-  redis_connection_string         = "redis.example.internal:6379,password=test,ssl=true"
-  redis_connection_cidrs          = ["10.0.0.0/16"]
   file_storage_provider           = "AwsS3"
   file_storage_aws_s3_bucket_name = "honua-test-files"
   canary_enabled                  = true
@@ -143,7 +140,7 @@ run "native_safety_wires_bounded_runtime_and_retained_actuator" {
       contains(jsondecode(aws_iam_policy.secrets.policy).Statement[0].Resource, var.operation_key_ring_certificate_secret_arn) &&
       length([for statement in jsondecode(aws_iam_policy.secrets.policy).Statement : statement if contains(statement.Action, "kms:Decrypt") && statement.Resource == [var.operation_key_ring_certificate_secret_kms_key_arn]]) == 1
     )
-    error_message = "External Redis must authorize the exact certificate secret and customer-managed KMS key on the execution role."
+    error_message = "The execution role must read the operation key-ring certificate and decrypt its customer-managed key."
   }
   assert {
     condition = (
@@ -182,7 +179,7 @@ run "native_safety_wires_bounded_runtime_and_retained_actuator" {
       aws_iam_role_policy.file_storage_s3[0].role == aws_iam_role.task.id &&
       jsondecode(aws_iam_role_policy.file_storage_s3[0].policy).Statement[1].Resource == ["arn:aws:s3:::honua-test-files/*"] &&
       aws_iam_role_policy_attachment.task_secrets.role == aws_iam_role.task_execution.name &&
-      output.cache_configured
+      !strcontains(aws_ecs_task_definition.this.container_definitions, "ConnectionStrings__redis")
     )
     error_message = "Mutation must be scoped to the canary/rule on a retained role; workload storage and execution secret permissions must remain separate."
   }
@@ -285,23 +282,10 @@ run "aws_managed_certificate_key_needs_no_extra_kms_grant" {
   }
 }
 
-run "redis_off_does_not_authorize_certificate_or_key" {
-  command = apply
+run "missing_key_ring_certificate_is_rejected" {
+  command = plan
   variables {
-    redis_connection_string  = ""
-    redis_connection_cidrs   = []
-    deployment_mode          = "SingleInstance"
-    deployment_safety        = null
-    desired_count            = 1
-    max_capacity             = 1
-    canary_enabled           = false
-    canary_weight_percentage = 0
+    operation_key_ring_certificate_secret_arn = ""
   }
-  assert {
-    condition = (
-      !contains(jsondecode(aws_iam_policy.secrets.policy).Statement[0].Resource, var.operation_key_ring_certificate_secret_arn) &&
-      length(jsondecode(aws_iam_policy.secrets.policy).Statement) == 2
-    )
-    error_message = "Redis-off must grant neither certificate-secret access nor its KMS key, even if inputs are supplied."
-  }
+  expect_failures = [aws_security_group.alb]
 }

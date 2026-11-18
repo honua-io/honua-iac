@@ -23,9 +23,6 @@ module input/output contracts may still change.
   may invalidate this distribution only and the server receives `SharedCache__CloudFront__DistributionId`.
   New `cdn` output.
 - `aws-ecs`: optional `autoscaling_requests_per_target` (request-count target tracking beside CPU).
-- `aws-ecs`: `shared_state_backend` (`redis` default, or `postgres`). `postgres` satisfies the multi-task,
-  autoscaling and canary preconditions with shared S3 and no Redis, for server releases that keep shared
-  state in PostgreSQL (honua-server#6809). The rc.2 preset uses it with `redis_enabled = false`.
 - `examples/aws`: `cdn`, `autoscaling_requests_per_target` and `db_instance_class` inputs; `cdn` and
   `db_connection_budget` outputs. The rc.2 preset runs two to six tasks on `db.t4g.medium`.
 - `examples/aws`: `additional_env` passes extra server environment variables to the module; the root's
@@ -35,6 +32,10 @@ module input/output contracts may still change.
 
 ### Changed
 
+- `aws-ecs` and `examples/aws` no longer accept Redis inputs or create ElastiCache, its security group,
+  subnet group, auth token or connection secret. PostgreSQL is the only shared state. MultiNode, autoscaling
+  above one task and a canary need shared S3 only. Every task requires `operation_key_ring_certificate_secret_arn`.
+  Applying this removes an existing ElastiCache replication group from state.
 - `aws-ecs`: `static_console` shares the `cdn` distribution. `aws_cloudfront_distribution.console` moved to
   `aws_cloudfront_distribution.cdn` (a `moved` block keeps existing stacks in place), and its default
   behavior now caches what the server marks public instead of nothing.

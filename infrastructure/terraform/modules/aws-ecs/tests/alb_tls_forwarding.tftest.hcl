@@ -9,7 +9,7 @@
 # With any ALB certificate (operator ACM ARN or the module-managed certificate)
 # both task definitions must carry SecurityHeaders__HstsHttpsOnly=false and
 # ASPNETCORE_FORWARDEDHEADERS_ENABLED=true. A plain-HTTP ALB must carry neither.
-# Canary runs use the MultiNode + Redis + AwsS3 topology the canary slot requires.
+# Canary runs use the MultiNode + shared AwsS3 topology the canary slot requires.
 
 mock_provider "aws" {
   mock_data "aws_availability_zones" {
@@ -92,6 +92,7 @@ mock_provider "random" {}
 mock_provider "null" {}
 
 variables {
+  operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
   # Recommended in Production; unset only plans with a check warning.
   audit_chain_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
 
@@ -107,7 +108,6 @@ variables {
   existing_db_endpoint          = "postgres.example.internal"
   existing_db_connection_string = "Host=postgres.example.internal;Database=honua;Username=honua;Password=test;SSL Mode=Require"
 
-  redis_enabled           = false
   kms_key_arn             = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000001"
   alb_access_logs_enabled = false
 }
@@ -117,11 +117,9 @@ run "operator_certificate_emits_hsts_and_trusts_alb_forwarding" {
   variables {
     alb_certificate_arn                       = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000010"
     canary_enabled                            = true
-    redis_auth_token                          = "aA1aaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     deployment_mode                           = "MultiNode"
     file_storage_provider                     = "AwsS3"
     file_storage_aws_s3_bucket_name           = "honua-test-files"
-    redis_enabled                             = true
     operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
   }
   assert {
@@ -180,11 +178,9 @@ run "plain_http_alb_keeps_default_behaviour" {
   command = plan
   variables {
     canary_enabled                            = true
-    redis_auth_token                          = "aA1aaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     deployment_mode                           = "MultiNode"
     file_storage_provider                     = "AwsS3"
     file_storage_aws_s3_bucket_name           = "honua-test-files"
-    redis_enabled                             = true
     operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
   }
   assert {

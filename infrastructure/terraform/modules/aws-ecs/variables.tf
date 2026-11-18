@@ -89,13 +89,13 @@ variable "container_memory" {
 }
 
 variable "desired_count" {
-  description = "Minimum number of ECS tasks. Values greater than 1 require deployment_mode=MultiNode with shared state (Redis, or shared_state_backend=postgres) and shared S3 file storage."
+  description = "Minimum number of ECS tasks. Values greater than 1 require deployment_mode=MultiNode and shared S3 file storage."
   type        = number
   default     = 1
 }
 
 variable "max_capacity" {
-  description = "Maximum number of ECS tasks for auto-scaling. Values greater than 1 require deployment_mode=MultiNode with shared state (Redis, or shared_state_backend=postgres) and shared S3 file storage."
+  description = "Maximum number of ECS tasks for auto-scaling. Values greater than 1 require deployment_mode=MultiNode and shared S3 file storage."
   type        = number
   default     = 1
 }
@@ -663,40 +663,6 @@ variable "canary_listener_rule_priority" {
     error_message = "canary_listener_rule_priority must be between 1 and 50000."
   }
 }
-
-variable "redis_connection_string" {
-  description = "Redis connection string for multi-node mode. Leave empty to create Redis."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "redis_connection_cidrs" {
-  description = "Trusted CIDR ranges allowed for Redis egress when reusing an existing Redis endpoint."
-  type        = list(string)
-  default     = []
-}
-
-variable "redis_auth_token" {
-  description = "Redis auth token (used when creating Redis). Leave empty to auto-generate. Must be 16-128 characters using letters, digits, or ElastiCache-supported special characters (!&#$^<>-)."
-  type        = string
-  default     = ""
-  sensitive   = true
-
-  validation {
-    condition = var.redis_auth_token == "" || (
-      length(var.redis_auth_token) >= 16 &&
-      length(var.redis_auth_token) <= 128 &&
-      can(regex("^[A-Za-z0-9!&#$^<>-]+$", var.redis_auth_token)) &&
-      length([
-        for pattern in ["[A-Z]", "[a-z]", "[0-9]", "[!&#$^<>-]"] : pattern
-        if can(regex(pattern, var.redis_auth_token))
-      ]) >= 3
-    )
-    error_message = "redis_auth_token must be 16-128 characters, contain only letters, digits, or !&#$^<>-, and use at least three character classes."
-  }
-}
-
 variable "audit_chain_key_secret_kms_key_arn" {
   description = "Customer-managed KMS key ARN encrypting the audit-chain key secret. Leave empty for the AWS-managed aws/secretsmanager key."
   type        = string
@@ -722,7 +688,7 @@ variable "audit_chain_key_secret_arn" {
 }
 
 variable "operation_key_ring_certificate_secret_kms_key_arn" {
-  description = "Customer-managed KMS key ARN encrypting the operation key-ring certificate secret. Leave empty for the AWS-managed aws/secretsmanager key. Granted to the execution role only when Redis is configured."
+  description = "Customer-managed KMS key ARN encrypting the operation key-ring certificate secret. Leave empty for the AWS-managed aws/secretsmanager key. Granted to the execution role when the certificate secret ARN is set."
   type        = string
   default     = ""
   nullable    = false
@@ -734,7 +700,7 @@ variable "operation_key_ring_certificate_secret_kms_key_arn" {
 }
 
 variable "operation_key_ring_certificate_secret_arn" {
-  description = "ARN of an existing operator-owned Secrets Manager secret containing base64 PKCS#12 or a JSON {pkcs12,password} bundle with a private key. Required for Redis, including an existing Redis connection. Only the ARN enters Terraform; never pass certificate material in additional_env or tfvars. The module grants the execution role read access; supply operation_key_ring_certificate_secret_kms_key_arn for a customer-managed key."
+  description = "ARN of an existing operator-owned Secrets Manager secret containing base64 PKCS#12 or a JSON {pkcs12,password} bundle with a private key. Required for every task: Production persists the operation key ring in PostgreSQL and refuses to start without this certificate. Only the ARN enters Terraform; never pass certificate material in additional_env or tfvars. The module grants the execution role read access; supply operation_key_ring_certificate_secret_kms_key_arn for a customer-managed key."
   type        = string
   default     = ""
   nullable    = false
@@ -744,54 +710,6 @@ variable "operation_key_ring_certificate_secret_arn" {
     error_message = "operation_key_ring_certificate_secret_arn must be a complete Secrets Manager secret ARN (including its six-character suffix), not PKCS#12 material, a wildcard, or a JSON-key selector."
   }
 }
-
-variable "shared_state_backend" {
-  description = "Where server tasks keep the state they share. redis (default) requires Redis before more than one task may run. postgres declares that the deployed server release keeps that state in PostgreSQL, so more than one task may run with shared S3 and no Redis; it sets no server configuration."
-  type        = string
-  default     = "redis"
-
-  validation {
-    condition     = contains(["redis", "postgres"], var.shared_state_backend)
-    error_message = "shared_state_backend must be redis or postgres."
-  }
-}
-
-variable "redis_enabled" {
-  description = "Provision Redis (ElastiCache) for multi-node mode."
-  type        = bool
-  default     = true
-}
-
-variable "redis_node_type" {
-  description = "ElastiCache node type."
-  type        = string
-  default     = "cache.t3.micro"
-}
-
-variable "redis_engine_version" {
-  description = "Redis engine version."
-  type        = string
-  default     = "7.0"
-}
-
-variable "redis_parameter_group_name" {
-  description = "Redis parameter group name."
-  type        = string
-  default     = "default.redis7"
-}
-
-variable "redis_num_cache_clusters" {
-  description = "Number of cache clusters in the replication group. Use 1 for lowest-cost validation; use >=2 for HA failover."
-  type        = number
-  default     = 1
-}
-
-variable "redis_port" {
-  description = "Redis port."
-  type        = number
-  default     = 6379
-}
-
 variable "health_check_command" {
   description = "Container health check command. Null retains the legacy Bash probe; shell-free images use [\"CMD\", \"/app/honua-healthcheck\", \"--ready\"]."
   type        = list(string)
@@ -1068,44 +986,6 @@ variable "db_connection_pooler_enabled" {
   type        = bool
   default     = false
   nullable    = false
-}
-
-# --- Redis client timeouts (README: Redis connections) ---
-
-variable "redis_connect_timeout_ms" {
-  description = "connectTimeout (milliseconds) appended to the Redis connection string this module builds. Default 5000 ms, the StackExchange.Redis default. Not applied to a caller-supplied redis_connection_string."
-  type        = number
-  default     = 5000
-  nullable    = false
-
-  validation {
-    condition     = var.redis_connect_timeout_ms >= 1000 && var.redis_connect_timeout_ms <= 60000 && floor(var.redis_connect_timeout_ms) == var.redis_connect_timeout_ms
-    error_message = "redis_connect_timeout_ms must be a whole number from 1000 to 60000."
-  }
-}
-
-variable "redis_sync_timeout_ms" {
-  description = "syncTimeout (milliseconds) appended to the Redis connection string this module builds. Default 10000, twice the StackExchange.Redis default of 5000, which has timed out under load (honua-server PR #4967). Not applied to a caller-supplied redis_connection_string."
-  type        = number
-  default     = 10000
-  nullable    = false
-
-  validation {
-    condition     = var.redis_sync_timeout_ms >= 1000 && var.redis_sync_timeout_ms <= 60000 && floor(var.redis_sync_timeout_ms) == var.redis_sync_timeout_ms
-    error_message = "redis_sync_timeout_ms must be a whole number from 1000 to 60000."
-  }
-}
-
-variable "redis_keep_alive_seconds" {
-  description = "keepAlive (seconds) appended to the Redis connection string this module builds, below the server-side idle timeout so idle connections are not dropped. Not applied to a caller-supplied redis_connection_string."
-  type        = number
-  default     = 60
-  nullable    = false
-
-  validation {
-    condition     = var.redis_keep_alive_seconds >= 1 && var.redis_keep_alive_seconds <= 300 && floor(var.redis_keep_alive_seconds) == var.redis_keep_alive_seconds
-    error_message = "redis_keep_alive_seconds must be a whole number from 1 to 300."
-  }
 }
 
 variable "bedrock_ai_data_classification" {

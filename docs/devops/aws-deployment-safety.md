@@ -21,7 +21,7 @@ of interruption is unbounded. It has no configured functional/metric recovery
 window.
 
 Native post-activation safety uses stable and candidate ECS services in
-MultiNode mode with Redis and shared S3. It adds an ALB weighted rule at priority
+MultiNode mode with shared S3. It adds an ALB weighted rule at priority
 50000 for the canonical `honua-aws-ecs-alb` backend. The existing higher-priority
 candidate header rule remains available for validation. The controller owns
 weights after installation; Terraform ignores subsequent changes to this
@@ -49,7 +49,7 @@ the module README's "Upgrade safety" section.
 
 ## Configure and register
 
-In `examples/aws`, set the existing typed MultiNode, Redis, S3 and canary inputs
+In `examples/aws`, set the existing typed MultiNode, S3 and canary inputs
 and supply digest-pinned `honua_image` and `canary_image`. Configure this optional
 object in your untracked tfvars:
 
@@ -113,9 +113,8 @@ honua-server#4617/#4618; an older runtime that ignores parameters is not qualifi
 
 Before advertising protection, #118 must demonstrate on the installed topology:
 
-1. Both tasks ready; managed **or external** Redis reachable; artifact written by
-   one task readable after replacement by another through the configured S3
-   bucket. Local file storage is not shared state.
+1. Both tasks ready; artifact written by one task readable after replacement by
+   another through the configured S3 bucket. Local file storage is not shared.
 2. Workload role positive access to the configured bucket and negative access to
    an unrelated bucket; execution-role positive reads of exact configured
    secrets/keys and negative access to unrelated ones. Include restrictive

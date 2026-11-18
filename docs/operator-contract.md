@@ -211,10 +211,12 @@ The admin-password secret ARN appears in both: as
 `operations_contract.secrets.references.admin_password`. Both are required by
 the schema.
 
-When Redis is configured, the operator-owned protected operation key-ring
-certificate appears in both surfaces as `operation_key_ring_certificate`
-(`kind = "operation_key_ring_certificate"`, `managed_by = "operator"`). It is
-omitted when Redis is off. Older v1 producers never emit this additive kind.
+When `operation_key_ring_certificate_secret_arn` is set, the operator-owned
+protected operation key-ring certificate appears in both surfaces as
+`operation_key_ring_certificate` (`kind = "operation_key_ring_certificate"`,
+`managed_by = "operator"`). The ECS module requires that ARN on every task and
+omits the reference only when the ARN is empty, which fails planning. Older v1
+producers never emit this additive kind.
 
 When `audit_chain_key_secret_arn` is set, the operator-owned audit hash-chain
 key appears in both surfaces as `audit_chain_key` (`kind = "audit_chain_key"`,
@@ -236,7 +238,7 @@ profile; Lambda qualification under honua-release#282 is unchanged.
 | `health_sources` | ALB health-check path and log group; `AWS/ApplicationELB` identifies provider metrics. `functional_check_path` carries the same ALB path for v1 compatibility; the additive `readiness_check_path` names it precisely as a readiness probe, not a functional assertion. Native execution supplies a separate golden query and dedicated canary Prometheus source. |
 | `warmup_seconds`, `observation` | Actual container startPeriod and ALB sampling settings. These are distinct from the canonical controller's post-activation observation/recovery deadlines. |
 | `recovery` | The ECS circuit breaker runs in AWS's provider control plane, independently of candidate startup. It only covers startup until ECS completes the deployment, requires a previous `COMPLETED` deployment, and supplies no wall-clock recovery guarantee (`recovery_time_bound_seconds = null`). It does not restore ALB weights or provide post-activation functional recovery. |
-| `durable_state` | Installed database/cache/storage configuration, including external Redis. Configured does not mean reachable, authorized or certified. |
+| `durable_state` | Installed database, cache and storage configuration. The ECS module reports cache kind `none` and enabled false; PostgreSQL is the shared state. Configured does not mean reachable, authorized or certified. |
 | `prior_revision_retention` | Both task definitions use `skip_destroy = true`. Registered revisions survive replacement and stack destroy until explicitly deregistered. Preserve corresponding immutable images, secret/config versions and compatible database state as well. Registration alone is insufficient. |
 | `execution` | Null by default. Opt-in `deployment_safety` emits a `configured-unverified` native `honua-aws-ecs-alb` target, independent controller role and canonical runtime parameters. See [the AWS safety runbook](devops/aws-deployment-safety.md). |
 

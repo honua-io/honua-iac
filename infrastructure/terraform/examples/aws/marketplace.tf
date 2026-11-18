@@ -134,9 +134,8 @@ locals {
     current_revision = null
     desired_revision = null
     secret_refs = { for k, v in {
-      db_connection    = module.honua.db_connection_secret_arn
-      admin_password   = module.honua.admin_password_secret_arn
-      redis_connection = nonsensitive(module.honua.redis_connection_secret_arn)
+      db_connection  = module.honua.db_connection_secret_arn
+      admin_password = module.honua.admin_password_secret_arn
     } : k => v if v != null }
     object_storage_refs = {
       enabled = local.install_storage_enabled

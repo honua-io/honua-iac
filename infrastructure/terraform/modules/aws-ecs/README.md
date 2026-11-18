@@ -1,9 +1,9 @@
 # AWS ECS/Fargate Module
 
-Provisions Honua Server on ECS/Fargate with an ALB, RDS PostgreSQL, optional ElastiCache Redis, and supporting infrastructure (VPC, secrets, logging). The module fails planning when ECS could run multiple Honua tasks without the required MultiNode, Redis, and shared S3 configuration.
+Provisions Honua Server on ECS/Fargate with an ALB, RDS PostgreSQL and supporting infrastructure (VPC, secrets, logging). Shared jobs, leases and sessions live in PostgreSQL. The module fails planning when ECS could run multiple Honua tasks without MultiNode and shared S3.
 
 For the customer-owned deployment candidate with private-network PostGIS bootstrap,
-required Redis, a CloudFront shared cache and a static Console on the same domain, use the
+a CloudFront shared cache and a static Console on the same domain, use the
 [rc.2 operator guide](../../examples/aws/RC2.md) and its non-secret preset.
 Live deployment certification is a separate release gate.
 
@@ -81,11 +81,6 @@ module "honua" {
   db_multi_az                      = true              # Failover replica
   db_require_ssl                   = true
   enable_postgis                   = true
-
-  # Redis (multi-node caching)
-  redis_enabled            = true
-  redis_node_type          = "cache.r6g.large"
-  redis_num_cache_clusters = 2
 
   # Shared file storage (existing bucket; the module grants task-role access)
   file_storage_provider           = "AwsS3"
@@ -201,7 +196,7 @@ allow_https_ingress_cidrs = ["0.0.0.0/0"]
 
 The module can provision an optional canary ECS service and ALB target group. This is intended for weighted rollouts on AWS without moving rollout logic into Honua itself.
 
-Because the canary and primary services run concurrently, canary rollouts require `deployment_mode = "MultiNode"`, Redis, and shared S3 file storage even when each service has only one task. The same contract applies when either `desired_count` or `max_capacity` is greater than one. A `SingleInstance` service uses ECS deployment percentages that stop the old task before starting its replacement so an ordinary update cannot temporarily create a second server task.
+Because the canary and primary services run concurrently, canary rollouts require `deployment_mode = "MultiNode"` and shared S3 file storage even when each service has only one task. The same contract applies when either `desired_count` or `max_capacity` is greater than one. A `SingleInstance` service uses ECS deployment percentages that stop the old task before starting its replacement so an ordinary update cannot temporarily create a second server task.
 
 ```hcl
 canary_enabled           = true
@@ -262,11 +257,9 @@ steps are in the [rc.2 operator guide](../../examples/aws/RC2.md#shared-cache).
 `autoscaling_requests_per_target` adds request-count target tracking beside the
 CPU policy.
 
-`shared_state_backend = "postgres"` lets more than one task, autoscaling and a
-canary run with shared S3 and no Redis. It declares that the deployed server
-release keeps its shared state in PostgreSQL (honua-server#6809); the module
-sets no server configuration for it and cannot check the release. The default,
-`redis`, keeps the Redis requirement.
+More than one task, autoscaling and a canary require `deployment_mode = "MultiNode"`
+and shared S3. Shared jobs, leases and sessions are PostgreSQL rows. The module
+does not provision a cache.
 
 ## Key variables
 
@@ -303,10 +296,6 @@ sets no server configuration for it and cannot check the release. The default,
 | `db_instance_class` | `db.t3.micro` | RDS instance class. Use `db.r6g.*` for production. |
 | `db_multi_az` | false | Enable Multi-AZ failover. Recommended for production. |
 | `db_require_ssl` | true | Append SSL requirements to the connection string. |
-| `redis_enabled` | true | Provision ElastiCache Redis. |
-| `redis_connection_string` | `""` | Reuse an existing Redis connection string instead of provisioning ElastiCache. |
-| `redis_connection_cidrs` | `[]` | Trusted CIDRs for Redis egress when `redis_connection_string` points to an existing endpoint. |
-| `redis_node_type` | `cache.t3.micro` | ElastiCache node type. |
 | `alb_certificate_arn` | `""` | ACM certificate ARN. Falls back to HTTP if empty. |
 | `waf_web_acl_arn` | `""` | WAFv2 Web ACL ARN for the ALB. |
 | `enable_nat_gateway` | true | NAT gateways for private subnets (required for outbound). |
@@ -541,24 +530,6 @@ changes. A `Limits__Connections__*` key in `additional_env` still wins, and a
 hand-set `MaxConnectionPoolSize` there is what the budget check counts; prefer
 `db_pool_size_override`.
 
-## Redis connections
-
-Redis needs no pool formula: each server process holds one StackExchange.Redis
-multiplexer for infrastructure (events, coordination) and a second one for the
-distributed cache when that is enabled, about two sockets each, so roughly
-**4 connections per process** whatever the request concurrency. Budget
-`max processes x 4` against the Redis server's client limit. ElastiCache for Redis allows 65,000 client connections per node (`maxclients`, not configurable). In a non-Development environment with Redis configured the server requires durable distributed events, so Redis is a hard startup dependency for every task.
-
-The server forces only `abortConnect=false`, `connectRetry>=3` and an
-exponential reconnect policy; timeouts come from the connection string. The
-string this module builds therefore ends with
-`,connectTimeout=5000,syncTimeout=10000,keepAlive=60`
-(`redis_connect_timeout_ms`, `redis_sync_timeout_ms`,
-`redis_keep_alive_seconds`); the 5000 ms `syncTimeout` default has timed out
-under load (honua-server PR #4967). It is stored in the connection secret, not
-in the process environment. A caller-supplied `redis_connection_string` is used
-unchanged. Existing deployments see an in-place update of that secret.
-
 ## Outputs
 
 See `outputs.tf` for ALB URL, ECS service names, canary routing headers, control-plane telemetry hints, RDS endpoint, secrets ARNs, and connection strings.
@@ -578,7 +549,7 @@ with `skip_destroy`; after teardown, explicitly deregister obsolete revisions
 only after their recovery window and evidence retention obligations end.
 
 Set `deployment_safety` to wire the native ECS/ALB backend to an existing,
-independently retained Honua controller. It requires MultiNode, Redis, shared S3,
+independently retained Honua controller. It requires MultiNode, shared S3,
 a running stable/canary pair, digest-pinned images, a dedicated canary Prometheus
 connection/job and an independently computed functional expectation. The module
 installs a weighted traffic rule and grants the retained controller narrowly
@@ -715,7 +686,7 @@ canary without a separate controller:
 
 ```hcl
 canary_enabled       = true
-deployment_mode      = "MultiNode"   # plus Redis and shared S3, as for any canary
+deployment_mode      = "MultiNode"   # plus shared S3, as for any canary
 deploy_control_plane = {
   canary_weight_percentage = 10      # null: direct cutover
 }
@@ -809,37 +780,33 @@ Bedrock uses the workload IAM role and configures `StudioAiProxy` as well as
 `WorkflowGeneration`. See [AWS certification inputs](../../../../docs/devops/aws-certification-inputs.md)
 for N-1/N pins, custom-code worker requirements, OIDC roles and live evidence limits.
 
-## Redis operation key-ring certificate
+## Operation key-ring certificate
 
-Every Redis-backed Production task, including a caller-owned Redis endpoint,
-requires `operation_key_ring_certificate_secret_arn`. Omission fails planning
-with an actionable error; Redis-off neither requires nor injects a certificate.
-The example stack forwards the same input and defaults to an empty ARN so a
-new disposable cell fails closed until protected material is supplied. It does
-not generate a private key in Terraform state or use a shared test key.
+Every task requires `operation_key_ring_certificate_secret_arn`. Omission fails
+planning. Production persists the operation key ring in PostgreSQL and refuses
+to start without this certificate. The example stack forwards the same input
+and defaults to an empty ARN so a new cell fails closed until protected material
+is supplied. It does not generate a private key in Terraform state.
 
 The ARN must identify an existing operator-owned Secrets Manager secret. Its
 value must be standard base64 PKCS#12 with a private key, or a JSON bundle
 `{"pkcs12":"<base64>","password":"<PKCS#12 password>"}`. Retain the same
-certificate for the lifetime of the Redis key ring and across task replacements
-and stable/canary slots; a new certificate cannot decrypt the old ring. Store
-and rotate it separately from Redis. Never put the bundle, its password, or a
-private key into tfvars, `additional_env`, or `canary_additional_env`.
+certificate for the lifetime of the key ring and across task replacements and
+stable/canary slots; a new certificate cannot decrypt the old ring. Never put
+the bundle, its password, or a private key into tfvars, `additional_env`, or
+`canary_additional_env`.
 
 ```hcl
-redis_enabled = true
 operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
 ```
 
 ECS resolves the bundle as the secret
 `Operations__SecretChannel__KeyRingCertificatePkcs12` in both task definitions.
-The existing server boundary writes a unique private temporary file (Unix mode
-0600) and loads its certificate; the Redis data-protection ring still requires
-certificate encryption. Use an image containing that materialization boundary.
-No secret value is read or written by this module.
+The server writes a unique private temporary file (Unix mode 0600) and loads
+its certificate. No secret value is read or written by this module.
 
-The module grants the execution role read access to exactly this secret while
-Redis is configured. For a customer-managed encryption key, supply
+The module grants the execution role read access to exactly this secret. For a
+customer-managed encryption key, supply
 `operation_key_ring_certificate_secret_kms_key_arn`; the module grants
 `kms:Decrypt` and `kms:DescribeKey` on that exact key. The operator must also
 ensure the secret resource policy and KMS key policy permit this role. A valid ARN alone
@@ -908,7 +875,7 @@ collector tests establish evidence retention under task exit and read failures.
 They do not prove an exact-candidate AWS cell healthy. The historical ALB 503s
 had no stopped-task logs, so their exact task exit cause remains unverified.
 Release runner wiring, protected disposable-cell material/authorization, and a
-live Redis-on cell with healthy targets, 200 live/ready and the full protocol
+live cell with healthy targets, 200 live/ready and the full protocol
 sweep remain required before closing #213.
 
 

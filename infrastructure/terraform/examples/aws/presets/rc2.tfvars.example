@@ -9,10 +9,8 @@ desired_count = 2
 max_capacity = 6
 autoscaling_requests_per_target = 600
 db_instance_class = "db.t4g.medium"
-# Needs a server release that keeps shared state in PostgreSQL; see ../RC2.md.
-# For an earlier release set shared_state_backend = "redis" and redis_enabled = true.
-shared_state_backend = "postgres"
-redis_enabled = false
+# Shared state is PostgreSQL. MultiNode also needs the S3 settings below.
+# Customer tfvars must set operation_key_ring_certificate_secret_arn.
 canary_enabled = false
 file_storage_provider = "AwsS3"
 file_storage_aws_s3_create_bucket = true

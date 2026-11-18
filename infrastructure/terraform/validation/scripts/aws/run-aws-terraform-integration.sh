@@ -2164,6 +2164,13 @@ set_ecs_tf_vars() {
 
   unset TF_VAR_honua_image_uri
   unset TF_VAR_skip_migrations
+  # examples/aws no longer declares Redis inputs. A TF_VAR_ for an undeclared
+  # variable fails the plan. The data and serverless stacks still use them.
+  unset TF_VAR_redis_enabled
+  unset TF_VAR_redis_connection_string
+  unset TF_VAR_redis_connection_cidrs
+  unset TF_VAR_shared_state_backend
+  unset TF_VAR_redis_node_type
 }
 
 set_serverless_tf_vars() {
@@ -2328,7 +2335,6 @@ run_serverless_checks() {
 apply_ecs_stack() {
   local url
   local db_endpoint
-  local redis_endpoint
   local cluster_name
   local service_name
   local tf_output_json
@@ -2353,16 +2359,6 @@ apply_ecs_stack() {
     db_endpoint="$(run_tf -chdir=examples/aws output -raw db_endpoint)"
     cluster_name="$(run_tf -chdir=examples/aws output -raw ecs_cluster_name)"
     service_name="$(run_tf -chdir=examples/aws output -raw ecs_service_name)"
-
-    if [[ -n "$EXISTING_REDIS_CONNECTION_STRING" ]]; then
-      log_info "Using existing Redis connection string; skipping ECS Redis endpoint creation check"
-    else
-      redis_endpoint="$(run_tf -chdir=examples/aws output -raw redis_primary_endpoint)"
-      if [[ -z "$redis_endpoint" || "$redis_endpoint" == "null" ]]; then
-        log_error "Redis endpoint was empty for ECS stack"
-        return 1
-      fi
-    fi
 
     run_ecs_checks "$url" "$db_endpoint"
     verify_ecs_canary_route "$url" "$cluster_name"
@@ -2406,16 +2402,6 @@ apply_ecs_stack() {
     db_endpoint="$(run_tf -chdir=examples/aws output -raw db_endpoint)"
     cluster_name="$(run_tf -chdir=examples/aws output -raw ecs_cluster_name)"
     service_name="$(run_tf -chdir=examples/aws output -raw ecs_service_name)"
-
-    if [[ -n "$EXISTING_REDIS_CONNECTION_STRING" ]]; then
-      log_info "Using existing Redis connection string; skipping ECS Redis endpoint creation check"
-    else
-      redis_endpoint="$(run_tf -chdir=examples/aws output -raw redis_primary_endpoint)"
-      if [[ -z "$redis_endpoint" || "$redis_endpoint" == "null" ]]; then
-        log_error "Redis endpoint was empty for ECS stack"
-        return 1
-      fi
-    fi
 
     run_ecs_checks "$url" "$db_endpoint"
     verify_ecs_canary_route "$url" "$cluster_name"

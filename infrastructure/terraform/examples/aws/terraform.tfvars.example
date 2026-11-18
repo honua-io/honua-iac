@@ -62,10 +62,7 @@ honua_connection_encryption_master_key = null
 # With HTTPS, redirect port 80 to HTTPS (default true); false closes port 80.
 # alb_enable_http_redirect = true
 
-# ElastiCache Redis (enabled by default; required for /healthz/ready in Production).
-# redis_enabled = true
-
-# Provision an operator-owned Secrets Manager secret separately containing base64
+# Required. Provision an operator-owned Secrets Manager secret separately containing base64
 # PKCS#12 with a private key, or JSON {pkcs12,password}. Retain the certificate
 # across replacements and stable/canary tasks; never put private material here.
 # Replace this illustrative complete ARN with the separately provisioned secret.
@@ -88,7 +85,6 @@ operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:12
 # deployment_mode                 = "MultiNode"
 # desired_count                   = 2
 # max_capacity                    = 4
-# redis_enabled                   = true
 # file_storage_provider           = "AwsS3"
 # file_storage_aws_s3_bucket_name = "honua-prod-files"
 # file_storage_aws_s3_region      = "us-east-1"

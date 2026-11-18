@@ -14,12 +14,13 @@ mock_provider "random" {
 mock_provider "null" {}
 
 variables {
-  audit_chain_key_secret_arn             = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
-  honua_image                            = "ghcr.io/honua-io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  postgis_bootstrap_image                = "docker.io/library/postgres@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-  honua_admin_password                   = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  honua_connection_encryption_master_key = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-  db_password                            = "cccccccccccccccccccccccccccccccc"
+  operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+  audit_chain_key_secret_arn                = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
+  honua_image                               = "ghcr.io/honua-io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  postgis_bootstrap_image                   = "docker.io/library/postgres@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  honua_admin_password                      = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  honua_connection_encryption_master_key    = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  db_password                               = "cccccccccccccccccccccccccccccccc"
 
   existing_vpc_id             = "vpc-0123456789abcdef0"
   existing_vpc_cidr           = "10.0.0.0/16"
@@ -45,8 +46,8 @@ run "rc2_preset_surge_capacity_fits_the_database" {
     error_message = "The rc.2 preset keeps at least two tasks and leaves room to scale out."
   }
   assert {
-    condition     = var.shared_state_backend == "postgres" && !var.redis_enabled && output.redis_primary_endpoint == null
-    error_message = "The rc.2 preset runs without Redis."
+    condition     = output.deployment_contract.dependencies.cache.kind == "none" && output.deployment_contract.dependencies.cache.enabled == false && output.operations_contract.resilience.cache_enabled == false
+    error_message = "The rc.2 preset runs without a cache."
   }
   assert {
     condition     = var.autoscaling_requests_per_target != null

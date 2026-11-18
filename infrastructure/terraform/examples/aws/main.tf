@@ -10,12 +10,10 @@ module "honua" {
   cdn                                               = var.cdn
   autoscaling_requests_per_target                   = var.autoscaling_requests_per_target
   db_instance_class                                 = var.db_instance_class
-  shared_state_backend                              = var.shared_state_backend
   static_console                                    = var.static_console
   postgis_bootstrap_image                           = var.postgis_bootstrap_image
   file_storage_aws_s3_create_bucket                 = var.file_storage_aws_s3_create_bucket
   file_storage_aws_s3_force_destroy                 = var.file_storage_aws_s3_force_destroy
-  redis_node_type                                   = var.redis_node_type
   db_engine_version                                 = var.db_engine_version
   transcript_signing                                = var.transcript_signing
   operation_key_ring_certificate_secret_arn         = var.operation_key_ring_certificate_secret_arn
@@ -78,9 +76,6 @@ module "honua" {
   enable_postgis                           = local.install_db_postgis
   postgis_readiness_max_attempts           = local.install_db_rdy_max
   postgis_readiness_sleep_seconds          = local.install_db_rdy_sleep
-  redis_enabled                            = var.redis_enabled
-  redis_connection_string                  = var.redis_connection_string
-  redis_connection_cidrs                   = var.redis_connection_cidrs
   desired_count                            = var.desired_count
   max_capacity                             = var.max_capacity
   deployment_mode                          = var.deployment_mode

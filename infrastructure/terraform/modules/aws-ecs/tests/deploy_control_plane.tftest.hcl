@@ -109,15 +109,12 @@ variables {
   existing_db_endpoint          = "postgres.example.internal"
   existing_db_connection_string = "Host=postgres.example.internal;Database=honua;Username=honua;Password=test;SSL Mode=Require"
 
-  redis_enabled           = false
   kms_key_arn             = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000001"
   alb_access_logs_enabled = false
 
   deployment_mode                 = "MultiNode"
   desired_count                   = 2
   max_capacity                    = 2
-  redis_connection_string         = "redis.example.internal:6379,password=test,ssl=true"
-  redis_connection_cidrs          = ["10.0.0.0/16"]
   file_storage_provider           = "AwsS3"
   file_storage_aws_s3_bucket_name = "honua-test-files"
   canary_enabled                  = true

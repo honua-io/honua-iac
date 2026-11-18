@@ -27,13 +27,6 @@ variable "autoscaling_requests_per_target" {
   type        = number
   default     = null
 }
-
-variable "shared_state_backend" {
-  description = "redis (default) requires Redis before more than one task may run. postgres declares that the deployed server release keeps shared state in PostgreSQL, so more than one task may run without Redis."
-  type        = string
-  default     = "redis"
-}
-
 variable "db_instance_class" {
   description = "RDS instance class. It bounds the per-task database pool at the maximum task count; see the db_connection_budget output."
   type        = string
@@ -63,12 +56,6 @@ variable "postgis_bootstrap_image" {
   description = "Optional immutable PostgreSQL client image (psql entrypoint) for in-VPC PostGIS initialization before every server/migrator start. Null preserves the runner-based enable_postgis behavior."
   type        = string
   default     = null
-}
-
-variable "redis_node_type" {
-  type        = string
-  default     = "cache.t3.micro"
-  description = "Managed ElastiCache node size."
 }
 variable "db_engine_version" {
   type        = string

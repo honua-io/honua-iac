@@ -6,8 +6,8 @@ and operates the AWS account. Support does not require account credentials,
 IAM access, or an inbound support connection. Marketplace listing work is separate.
 
 The existing module already provides new or existing VPC selection, private
-Fargate tasks, encrypted RDS PostgreSQL, backups, optional encrypted authenticated
-ElastiCache, Secrets Manager, CloudWatch logs, HTTPS ALB and guarded autoscaling.
+Fargate tasks, encrypted RDS PostgreSQL, backups, Secrets Manager, CloudWatch
+logs, HTTPS ALB and guarded autoscaling.
 This preset adds private-network PostGIS initialization, a CloudFront distribution
 that is the deployment's shared cache, and a static Console on that distribution.
 
@@ -81,13 +81,9 @@ separating a restricted runtime database role remains an operator hardening step
 RDS is private, encrypted, 20 GiB initially, PostgreSQL 15, `db.t4g.medium`, with
 production backups retained seven days. Each Fargate task uses 0.5 vCPU/1 GiB.
 Shared uploads use a private versioned S3 bucket. The preset runs
-`deployment_mode = "MultiNode"` with `shared_state_backend = "postgres"` and no
-Redis: the tasks share state through PostgreSQL and S3. This needs a server
-release that keeps its shared state in PostgreSQL (honua-server#6809); the
-module cannot check the release. For an earlier release set
-`shared_state_backend = "redis"`, `redis_enabled = true` and
-`topology.redis=true`, which adds an encrypted, authenticated ElastiCache node
-(about 12–18 USD a month) and requires the operation key-ring certificate.
+`deployment_mode = "MultiNode"`: the tasks share jobs, leases and sessions
+through PostgreSQL and files through S3. Every task requires
+`operation_key_ring_certificate_secret_arn`.
 
 ## Shared cache
 
@@ -250,7 +246,7 @@ A saved real-account plan needs customer credentials and read API calls; it is
 initializes its protected backend, selects verified release pins and customer
 inputs, and runs `terraform plan -input=false -out=<protected-plan>` with the
 rc.2 overlay. Review resource addresses, network reachability, certificate
-regions, quotas, encrypted backups/Redis, secret IAM, DNS cutover, replacement
+regions, quotas, encrypted backups, secret IAM, DNS cutover, replacement
 and deletion actions. Treat this as the Terraform equivalent of a dry-run change
 set; do not execute apply until its plan and spend are approved. Preserve the
 redacted plan summary and exact source/image/bundle identity as gate evidence.
@@ -274,11 +270,10 @@ This is an estimate, not a quote. Traffic, NAT processing, CloudFront requests a
 transfer, ALB capacity, snapshots, retained logs and taxes are extra. Recalculate
 for the actual region and workload using current [Fargate](https://aws.amazon.com/fargate/pricing/),
 [RDS](https://aws.amazon.com/rds/postgresql/pricing/),
-[ElastiCache](https://aws.amazon.com/elasticache/pricing/),
 [VPC](https://aws.amazon.com/vpc/pricing/) and
 [CloudFront](https://aws.amazon.com/cloudfront/pricing/) rates. An existing VPC
 can share already paid NAT capacity. Additional Fargate replicas add compute cost;
-RDS/Redis sizing and availability must be reviewed under load.
+RDS sizing and availability must be reviewed under load.
 
 Request a time-boxed three-hour live test only after static checks pass: allow
 about **$1 runtime plus retained storage/snapshot charges**, with a reviewed
@@ -296,6 +291,6 @@ apply `file_storage_aws_s3_force_destroy = true` before destroy, which lets Terr
 delete the file storage bucket with its contents; the Console bucket has no such
 switch. Retain/export any required
 RDS final snapshot; delete disposable snapshots only after approval. Check for
-remaining NAT/EIP, ALB, RDS, ElastiCache, CloudFront, buckets, logs and secrets;
+remaining NAT/EIP, ALB, RDS, CloudFront, buckets, logs and secrets;
 record every retained resource and its continuing charge. Never destroy a
 production stack as a test cleanup shortcut.

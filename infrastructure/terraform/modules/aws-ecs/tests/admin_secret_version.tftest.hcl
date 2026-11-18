@@ -10,6 +10,7 @@ mock_provider "random" {
 mock_provider "null" {}
 
 variables {
+  operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
   # Recommended in Production; unset only plans with a check warning.
   audit_chain_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
 
@@ -25,7 +26,6 @@ variables {
   existing_db_endpoint          = "postgres.example.internal"
   existing_db_connection_string = "Host=postgres.example.internal;Database=honua;Username=honua;Password=test;SSL Mode=Require"
 
-  redis_enabled           = false
   kms_key_arn             = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000001"
   alb_access_logs_enabled = false
 }
@@ -74,8 +74,6 @@ run "static_console_private_origins" {
     existing_db_endpoint                      = ""
     existing_db_connection_string             = ""
     migration_task                            = true
-    redis_enabled                             = true
-    redis_node_type                           = "cache.t4g.micro"
     operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:key-ring-AbC123"
     domain_name                               = "maps.example.com"
     route53_zone_id                           = "Z00000000000000000000"
@@ -146,10 +144,6 @@ run "static_console_private_origins" {
   assert {
     condition     = local.postgis_bootstrap_dependencies[0].containerName == "postgis" && local.postgis_bootstrap_dependencies[0].condition == "SUCCESS" && local.postgis_bootstrap_containers[0].entryPoint[0] == "psql" && local.postgis_bootstrap_containers[0].essential == false
     error_message = "Honua must wait for successful private-network PostGIS initialization."
-  }
-  assert {
-    condition     = aws_elasticache_replication_group.redis[0].at_rest_encryption_enabled && aws_elasticache_replication_group.redis[0].transit_encryption_enabled && aws_elasticache_replication_group.redis[0].node_type == "cache.t4g.micro" && length(aws_secretsmanager_secret.redis_connection) == 1 && length(aws_security_group.redis[0].ingress) == 1 && length(aws_security_group.redis[0].egress) == 0
-    error_message = "Managed Redis must use encrypted private ECS-only access and a connection secret."
   }
   assert {
     condition     = !var.db_publicly_accessible && length(module.rds) == 1 && length(null_resource.enable_postgis) == 0
