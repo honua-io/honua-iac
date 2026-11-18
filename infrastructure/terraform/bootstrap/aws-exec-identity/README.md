@@ -26,6 +26,12 @@ The deployment role is **explicitly denied**:
   credential that outlives its session;
 - `iam:PassRole` on itself and on the backend role, so it cannot run a task as
   the deployer or as the state reader.
+- `sts:AssumeRole` on every role except `backend_access_role_arn`, so a
+  deployment session can never use a trust it wrote to act as a workload role.
+  Upgrade step: set `backend_access_role_arn` (one exact role ARN; wildcards
+  are refused) when the backend block assumes that role. Without it, the
+  deployment session can assume no role at all and `terraform init` against
+  the state backend fails.
 
 It may pass the task execution and application runtime roles, by name prefix,
 and only to the services for the approved topology: `ecs-tasks.amazonaws.com`
@@ -233,7 +239,11 @@ owns: one naming another AWS account, and one naming a role ARN in this
 account (in the same account the trust alone admits that role, and the chained
 session no longer carries `aws:FederatedProvider`). Either session is still
 held to the boundary (no IAM, no role chaining, no state substrate, no deployer
-or backend identity).
+or backend identity). The deployment role itself cannot use such a trust: it is
+denied `sts:AssumeRole` on every role but the backend access role. Accounts in
+AWS Organizations close both with a resource control policy on `sts:AssumeRole`
+that requires `aws:PrincipalOrgID` or an AWS service principal for roles under
+the prefix.
 
 Terraform validation is the supported local check. A successful plan or validate
 implies no live AWS qualification; that gate is honua-iac#118.

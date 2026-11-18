@@ -364,6 +364,8 @@ run "ecs_all_features" {
   command = plan
   variables {
     topology = { compute = "ecs", static_console = true, redis = true, custom_domain = true, waf = true, gp_batch = true }
+    # The longest backend role ARN IAM allows, which the assumption deny names.
+    backend_access_role_arn = "arn:aws:iam::123456789012:role/honua-terraform-backend-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   }
   assert {
     condition = contains(output.deploy_identity_contract.actions_by_service["cloudfront"], "cloudfront:CreateDistributionWithTags") && alltrue([
@@ -394,6 +396,8 @@ run "eks_all_features" {
   command = plan
   variables {
     topology = { compute = "eks", redis = true, custom_domain = true, waf = true, gp_batch = true }
+    # The longest backend role ARN IAM allows, which the assumption deny names.
+    backend_access_role_arn = "arn:aws:iam::123456789012:role/honua-terraform-backend-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   }
   assert {
     condition = alltrue(concat(
@@ -408,6 +412,8 @@ run "lambda_all_features" {
   command = plan
   variables {
     topology = { compute = "lambda", redis = true, custom_domain = true, waf = true, gp_batch = true }
+    # The longest backend role ARN IAM allows, which the assumption deny names.
+    backend_access_role_arn = "arn:aws:iam::123456789012:role/honua-terraform-backend-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   }
   assert {
     condition = alltrue(concat(

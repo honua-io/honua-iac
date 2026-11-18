@@ -567,6 +567,29 @@ data "aws_iam_policy_document" "deployment_workload" {
     actions   = ["iam:DeleteRolePermissionsBoundary"]
     resources = ["*"]
   }
+
+  # The deployment session writes workload trust policies, so it must never be
+  # able to use one: it may assume the backend access role and nothing else.
+  # The variable's validation refuses wildcards, which would widen NotResource.
+  dynamic "statement" {
+    for_each = var.backend_access_role_arn == "" ? [] : [var.backend_access_role_arn]
+    content {
+      sid           = "DenyWorkloadRoleAssumption"
+      effect        = "Deny"
+      actions       = ["sts:AssumeRole"]
+      not_resources = [statement.value]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.backend_access_role_arn == "" ? ["*"] : []
+    content {
+      sid       = "DenyWorkloadRoleAssumption"
+      effect    = "Deny"
+      actions   = ["sts:AssumeRole"]
+      resources = [statement.value]
+    }
+  }
 }
 
 # Ceiling for every role this identity creates. The role's own policy still

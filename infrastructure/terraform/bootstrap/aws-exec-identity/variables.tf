@@ -141,9 +141,14 @@ variable "state_lock_table_arn" {
 }
 
 variable "backend_access_role_arn" {
-  description = "ARN of the separate backend access role (bootstrap/aws-terraform-oidc). Recorded in the identity contract and asserted distinct from the deployment role."
+  description = "ARN of the separate backend access role (bootstrap/aws-terraform-oidc). Recorded in the identity contract, asserted distinct from the deployment role, and the only role a deployment session may assume. Leave empty only when no backend block assumes a role."
   type        = string
   default     = ""
+
+  validation {
+    condition     = var.backend_access_role_arn == "" || can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]+$", var.backend_access_role_arn))
+    error_message = "backend_access_role_arn must be one exact IAM role ARN, with no wildcard."
+  }
 }
 
 variable "backend_access_policy_arn" {
