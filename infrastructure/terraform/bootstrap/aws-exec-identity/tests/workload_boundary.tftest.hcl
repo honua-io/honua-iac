@@ -146,10 +146,10 @@ run "workload_sessions_federate_only_through_eks" {
       for statement in jsondecode(data.aws_iam_policy_document.workload_boundary.json).Statement : statement
       if statement.Sid == "DenyForeignFederatedSessions"
       ]) == {
-      Sid      = "DenyForeignFederatedSessions"
-      Effect   = "Deny"
-      Action   = "*"
-      Resource = "*"
+      Sid       = "DenyForeignFederatedSessions"
+      Effect    = "Deny"
+      NotAction = "sts:GetCallerIdentity"
+      Resource  = "*"
       Condition = {
         Null          = { "aws:FederatedProvider" = "false" }
         StringNotLike = { "aws:FederatedProvider" = "arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/*" }

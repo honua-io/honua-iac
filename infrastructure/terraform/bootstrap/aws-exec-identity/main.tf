@@ -663,10 +663,11 @@ data "aws_iam_policy_document" "workload_boundary" {
   # account's EKS OIDC providers (IRSA), so a trust naming GitHub or any other
   # OIDC issuer yields a session that can do nothing.
   statement {
-    sid       = "DenyForeignFederatedSessions"
-    effect    = "Deny"
-    actions   = ["*"]
-    resources = ["*"]
+    sid    = "DenyForeignFederatedSessions"
+    effect = "Deny"
+    # Everything; GetCallerIdentity needs no permission and stays answerable.
+    not_actions = ["sts:GetCallerIdentity"]
+    resources   = ["*"]
 
     condition {
       test     = "Null"
