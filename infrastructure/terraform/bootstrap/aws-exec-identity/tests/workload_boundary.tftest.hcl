@@ -137,3 +137,64 @@ run "created_roles_require_the_boundary" {
     error_message = "The boundary ceiling must be NotAction, must not grant Action *, and must deny the state substrate."
   }
 }
+
+run "workload_sessions_federate_only_through_eks" {
+  command = plan
+
+  assert {
+    condition = one([
+      for statement in jsondecode(data.aws_iam_policy_document.workload_boundary.json).Statement : statement
+      if statement.Sid == "DenyForeignFederatedSessions"
+      ]) == {
+      Sid       = "DenyForeignFederatedSessions"
+      Effect    = "Deny"
+      NotAction = "sts:GetCallerIdentity"
+      Resource  = "*"
+      Condition = {
+        Null          = { "aws:FederatedProvider" = "false" }
+        StringNotLike = { "aws:FederatedProvider" = "arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/*" }
+      }
+    }
+    error_message = "A workload role session federated through any IdP other than this account's EKS OIDC providers must be denied, whatever trust the role was created with."
+  }
+}
+
+# A deployment session cannot assume a workload role; only the backend access
+# role stays assumable, and a wildcard cannot stand in for it.
+run "deployment_session_assumes_only_the_backend_role" {
+  command = plan
+
+  variables {
+    backend_access_role_arn = "arn:aws:iam::123456789012:role/honua-terraform-backend"
+  }
+
+  assert {
+    condition = one([
+      for statement in jsondecode(data.aws_iam_policy_document.deployment_workload.json).Statement : statement
+      if statement.Sid == "DenyWorkloadRoleAssumption"
+    ]).NotResource == "arn:aws:iam::123456789012:role/honua-terraform-backend"
+    error_message = "The deployment session may assume only the backend access role."
+  }
+}
+
+run "no_backend_role_means_no_assumable_role" {
+  command = plan
+
+  assert {
+    condition = one([
+      for statement in jsondecode(data.aws_iam_policy_document.deployment_workload.json).Statement : statement
+      if statement.Sid == "DenyWorkloadRoleAssumption"
+    ]).Resource == "*"
+    error_message = "Without a backend role, the deny must cover every role."
+  }
+}
+
+run "backend_role_wildcard_is_refused" {
+  command = plan
+
+  variables {
+    backend_access_role_arn = "arn:aws:iam::123456789012:role/honua-*"
+  }
+
+  expect_failures = [var.backend_access_role_arn]
+}

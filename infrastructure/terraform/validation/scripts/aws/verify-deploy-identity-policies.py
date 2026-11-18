@@ -176,6 +176,7 @@ def main() -> int:
             "allowed", {"iam:PermissionsBoundary": BOUNDARY})
         add(run, "deny-unbounded-trust-update", "iam:UpdateAssumeRolePolicy", WORKLOAD_ROLE,
             "implicitDeny", {})
+        add(run, "deny-assume-workload-role", "sts:AssumeRole", WORKLOAD_ROLE, "explicitDeny", {})
         for index in output["deployment_extra_policy_json"]:
             add(run, f"deny-mutate-extra-policy-{index}", "iam:CreatePolicyVersion",
                 f"arn:aws:iam::{ACCOUNT}:policy/honua-prod-deploy-{index}", "explicitDeny", {})

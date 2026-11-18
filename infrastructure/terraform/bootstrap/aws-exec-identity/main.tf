@@ -567,6 +567,29 @@ data "aws_iam_policy_document" "deployment_workload" {
     actions   = ["iam:DeleteRolePermissionsBoundary"]
     resources = ["*"]
   }
+
+  # The deployment session writes workload trust policies, so it must never be
+  # able to use one: it may assume the backend access role and nothing else.
+  # The variable's validation refuses wildcards, which would widen NotResource.
+  dynamic "statement" {
+    for_each = var.backend_access_role_arn == "" ? [] : [var.backend_access_role_arn]
+    content {
+      sid           = "DenyWorkloadRoleAssumption"
+      effect        = "Deny"
+      actions       = ["sts:AssumeRole"]
+      not_resources = [statement.value]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.backend_access_role_arn == "" ? ["*"] : []
+    content {
+      sid       = "DenyWorkloadRoleAssumption"
+      effect    = "Deny"
+      actions   = ["sts:AssumeRole"]
+      resources = [statement.value]
+    }
+  }
 }
 
 # Ceiling for every role this identity creates. The role's own policy still
@@ -631,6 +654,32 @@ data "aws_iam_policy_document" "workload_boundary" {
       "sts:GetFederationToken",
     ]
     resources = local.unpassable_role_arns
+  }
+
+  # The deployment role writes workload trust policies (CreateRole, and
+  # UpdateAssumeRolePolicy for in-place changes), and IAM has no condition key
+  # on trust content. The ceiling therefore refuses every session that a
+  # workload role obtains through web-identity federation other than this
+  # account's EKS OIDC providers (IRSA), so a trust naming GitHub or any other
+  # OIDC issuer yields a session that can do nothing.
+  statement {
+    sid    = "DenyForeignFederatedSessions"
+    effect = "Deny"
+    # Everything; GetCallerIdentity needs no permission and stays answerable.
+    not_actions = ["sts:GetCallerIdentity"]
+    resources   = ["*"]
+
+    condition {
+      test     = "Null"
+      variable = "aws:FederatedProvider"
+      values   = ["false"]
+    }
+
+    condition {
+      test     = "StringNotLike"
+      variable = "aws:FederatedProvider"
+      values   = [local.extra_iam_resources["eks-oidc-provider"]]
+    }
   }
 }
 
