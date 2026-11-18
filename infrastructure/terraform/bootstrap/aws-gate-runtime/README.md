@@ -319,23 +319,31 @@ log groups.
 CloudFront access logs (standard logging v2) follow the same shape, for the
 service role only. The stack's `/aws/vendedlogs/honua/<stack>/edge-access`
 group, its delivery source and destination (`honua-<stack GUID>-edge`) and the
-delivery are in the first-tag name fence. `PutDeliverySource`,
-`PutDeliveryDestination` and `CreateDelivery` are exempt from the ownership deny
-(a new resource has no tags) and fenced by `HonuaGateCloudFormationFences`
-instead: they need the `HonuaGate=true` request tag and may change only gate
-resources, a destination may target only a `/aws/vendedlogs/honua/honua-gate-*`
-group, and a delivery may link only a gate source and destination. A delivery
-resource tagged by a non-gate stack cannot be retagged or overwritten, and a
-delivery may not target another account's destination; an untagged foreign one
-can be claimed, which the gate account (no other delivery resources) accepts. This root
-owns `honua-gate-edge-access-logs`, which lets the delivery service write only to
+delivery are in the first-tag name fence. CloudWatch Logs does not evaluate
+resource tags on existing delivery resources: the first gate create was refused
+`GetDeliveryDestination`, and its rollback `DeleteDeliveryDestination`, on a
+destination created with `HonuaGate=true`. Delivery resources are therefore
+outside the service role's ownership deny and fenced by
+`HonuaGateCloudFormationFences` instead: creates and overwrites need the
+`HonuaGate=true` request tag, a destination may target only a
+`/aws/vendedlogs/honua/honua-gate-*` group, every call that names a source or
+destination (including `CreateDelivery` and `UpdateDeliveryConfiguration`, but not tag removal) must
+name a `honua-*-edge` one in this account, so a delivery cannot target another
+account's destination, and destination policies stay denied. A source may
+only name a gate distribution: CloudFront authorizes
+`cloudfront:AllowVendedLogDeliveryForResource` on the distribution, which keeps
+its ownership fence. Delivery IDs are random, so `GetDelivery` and
+`DeleteDelivery` reach any delivery in the account; `UntagResource` is not
+name-fenced on delivery resources; and a source or destination named like a
+Launch Stack's but owned by a non-gate stack is not protected. The gate account
+has no other delivery resources.
+Workload roles stay behind the ownership deny. This root owns
+`honua-gate-edge-access-logs`, which lets the delivery service write only to
 `/aws/vendedlogs/honua/honua-gate-*` groups, and lanes may read those groups.
-Three points rest on the first live create: the handlers must send the stack
-tags in the create request (a later `TagResource` alone fails the request-tag
-fence); `GetDelivery*` stays a content read,
-so they must also add the stack-name tag (the inline policy
-has no room for an exemption), and `CreateDelivery` must accept the owned
-resource policy without calling `logs:PutResourcePolicy`, as WAF logging does.
+Two points rest on the next live create: the handlers send the stack tags in
+the create request (a later `TagResource` alone fails the request-tag fence),
+and the destination create does not call `PutDeliveryDestinationPolicy` when
+the template sets no policy.
 
 Creation APIs cannot prove ownership of a resource that does not yet exist.
 They can allocate resources using existing dependencies (for example network

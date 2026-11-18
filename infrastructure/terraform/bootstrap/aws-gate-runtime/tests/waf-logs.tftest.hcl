@@ -86,47 +86,56 @@ run "edge_access_log_resources_can_be_tagged_on_create" {
   }
 }
 
-run "service_role_creates_deliveries_only_under_the_delivery_fence" {
+# Gate create 2220z: CloudWatch Logs refused GetDeliveryDestination and DeleteDeliveryDestination on a destination
+# created with HonuaGate=true, so delivery resources are fenced by account and name, not by resource tags.
+run "service_role_manages_this_accounts_delivery_resources_outside_the_tag_denies" {
   command = plan
   assert {
-    condition = alltrue([for action in ["logs:PutDeliverySource", "logs:PutDeliveryDestination", "logs:CreateDelivery"] :
-      contains(local.service_role_ownership_deny.NotAction, action) &&
-      !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))])
+    condition = contains(local.service_role_ownership_deny.NotResource, "arn:aws:logs:*:*:delivery*") && alltrue([for action in ["logs:GetDeliveryDestination", "logs:DeleteDeliveryDestination"] :
+      !anytrue([for pattern in local.service_role_ownership_deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))])
     ])
-    error_message = "Only the service role may create delivery resources; workload roles stay behind the ownership deny."
+    error_message = "The service role must read, update and delete its delivery resources, which carry no evaluable resource tags."
+  }
+  assert {
+    condition = !anytrue([for arn in local.boundary_ownership_deny.NotResource : strcontains(arn, ":delivery")]) && !anytrue([
+      for action in local.delivery_creation_actions : anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))])
+    ])
+    error_message = "Workload roles stay behind the ownership deny for delivery resources."
+  }
+}
+
+run "delivery_resources_are_fenced_by_account_and_launch_stack_name" {
+  command = plan
+  assert {
+    condition = length([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : statement if try(
+      statement.Sid == "DeliveryCreationTags" && statement.Resource == "*" &&
+      toset(statement.Action) == toset(["logs:PutDeliverySource", "logs:PutDeliveryDestination", "logs:CreateDelivery"]) &&
+      statement.Condition.StringNotEqualsIfExists["aws:RequestTag/HonuaGate"] == "true", false
+    )]) == 1
+    error_message = "Delivery creates and overwrites must carry HonuaGate=true."
   }
   assert {
     condition = length([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : statement if try(
-      statement.Sid == "DeliveryCreationTags" && statement.Effect == "Deny" && statement.Resource == "*" &&
-      toset(statement.Action) == toset(["logs:PutDeliverySource", "logs:PutDeliveryDestination", "logs:CreateDelivery"]) &&
-      statement.Condition.StringNotEqualsIfExists["aws:RequestTag/HonuaGate"] == "true" &&
-      statement.Condition.StringNotEqualsIfExists["aws:ResourceTag/HonuaGate"] == "true" &&
-      statement.Condition.StringNotLikeIfExists["aws:ResourceTag/aws:cloudformation:stack-name"] == "honua-gate-*", false
+      statement.Sid == "DeliveryNames" && statement.Effect == "Deny" &&
+      alltrue([for action in ["logs:GetDeliverySource", "logs:PutDeliverySource", "logs:DeleteDeliverySource", "logs:GetDeliveryDestination", "logs:PutDeliveryDestination", "logs:DeleteDeliveryDestination", "logs:CreateDelivery", "logs:UpdateDeliveryConfiguration"] :
+      anytrue([for pattern in statement.Action : can(regex("^${replace(pattern, "*", ".*")}$", action))])]) &&
+      !anytrue([for action in ["logs:DescribeDeliverySources", "logs:DescribeDeliveryDestinations", "logs:CreateLogDelivery"] :
+      anytrue([for pattern in statement.Action : can(regex("^${replace(pattern, "*", ".*")}$", action))])]) &&
+      toset(statement.NotResource) == toset([
+        "arn:aws:logs:us-east-1:000000000002:delivery-source:honua-*-edge",
+        "arn:aws:logs:us-east-1:000000000002:delivery-destination:honua-*-edge",
+        "arn:aws:logs:us-east-1:000000000002:delivery:*"
+      ]), false
     )]) == 1
-    error_message = "Delivery creates must carry HonuaGate=true and may change only gate-owned resources."
+    error_message = "Delivery calls must name a Launch Stack source or destination in this account; resource-less list and WAF delivery calls stay outside the fence."
   }
   assert {
     condition = length([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : statement if try(
       statement.Sid == "DeliveryDestinationTargets" && statement.Action == "logs:PutDeliveryDestination" &&
       statement.Condition.StringNotLike["logs:DeliveryDestinationResourceArn"] == "arn:aws:logs:us-east-1:000000000002:log-group:/aws/vendedlogs/honua/honua-gate-*", false
       )]) == 1 && length([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : statement if try(
-      statement.Sid == "DeliveryLinksOwned" && statement.Action == "logs:CreateDelivery" &&
-      toset(statement.Resource) == toset(["arn:aws:logs:us-east-1:000000000002:delivery-source:*", "arn:aws:logs:*:*:delivery-destination:*"]) &&
-      statement.Condition.StringNotEqualsIfExists["aws:ResourceTag/HonuaGate"] == "true", false
+      statement.Sid == "DeliveryDestinationPolicies" && statement.Action == "logs:PutDeliveryDestinationPolicy" && statement.Resource == "*", false
     )]) == 1
-    error_message = "Destinations must target gate vended-log groups and deliveries must link gate-owned sources and destinations."
-  }
-}
-
-run "foreign_delivery_resources_cannot_be_claimed" {
-  command = plan
-  assert {
-    condition = length([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : statement if try(
-      statement.Sid == "DeliveryForeignTags" &&
-      toset(statement.Action) == toset(["logs:TagResource", "logs:PutDeliverySource", "logs:PutDeliveryDestination", "logs:CreateDelivery"]) &&
-      statement.Resource == "arn:aws:logs:us-east-1:000000000002:delivery*" &&
-      statement.Condition.StringNotLike["aws:ResourceTag/aws:cloudformation:stack-name"] == "honua-gate-*", false
-    )]) == 1
-    error_message = "A delivery resource tagged by a non-gate stack must not be retagged or overwritten."
+    error_message = "Destinations must target gate vended-log groups and may not get a destination policy."
   }
 }
