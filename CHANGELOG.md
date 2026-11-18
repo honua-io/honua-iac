@@ -35,7 +35,8 @@ module input/output contracts may still change.
 - `aws-ecs` and `examples/aws` no longer accept Redis inputs or create ElastiCache, its security group,
   subnet group, auth token or connection secret. PostgreSQL is the only shared state. MultiNode, autoscaling
   above one task and a canary need shared S3 only. Every task requires `operation_key_ring_certificate_secret_arn`.
-  Applying this removes an existing ElastiCache replication group from state.
+  Applying this removes an existing ElastiCache replication group from state. A rollback to an
+  older task definition does not recreate that cluster.
 - `aws-ecs`: `static_console` shares the `cdn` distribution. `aws_cloudfront_distribution.console` moved to
   `aws_cloudfront_distribution.cdn` (a `moved` block keeps existing stacks in place), and its default
   behavior now caches what the server marks public instead of nothing.
