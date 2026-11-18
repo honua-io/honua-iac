@@ -259,6 +259,12 @@ account and `us-east-1`; the existing region deny also limits EC2 inspection.
 Both policies explicitly deny the EC2 Describe APIs classified as content reads
 in `content-reads.tf`, including reads of gate-owned resources.
 
+Security proofs evaluate a gate role without assuming it: `HonuaGateLane` may
+call `iam:SimulatePrincipalPolicy` and `iam:GetContextKeysForPrincipalPolicy` on
+`honua-gate-*` roles. The simulator returns a decision and the matching
+statement positions for the role's deployed policies and boundary. It returns
+no credentials and no policy text that `GetTemplate` does not already show.
+
 Qualification rows must observe a running install (sidecar image digest, WAF log
 redaction, the database role in use, Batch worker output). For that, both lane
 policies also allow these read-only calls, on gate resources only:

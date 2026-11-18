@@ -70,6 +70,11 @@ locals {
       }, {
       Sid = "SyncIdpCallbacks", Effect = "Allow", Action = "lambda:InvokeFunction", Resource = "arn:aws:lambda:us-east-1:${var.member_account_id}:function:honua-gate-reaper-callbacks"
       }, {
+      # Security proofs evaluate a gate role's deployed policies and boundary
+      # with request context, without assuming the role. Read-only.
+      Sid      = "SimulateGateRoles", Effect = "Allow", Action = ["iam:SimulatePrincipalPolicy", "iam:GetContextKeysForPrincipalPolicy"]
+      Resource = "arn:aws:iam::${var.member_account_id}:role/honua-gate-*"
+      }, {
       Sid = "InspectNetworkOwnership", Effect = "Allow", Action = "ec2:Describe*", Resource = "*"
       }, {
       Sid = "DenyInspectionContentReads", Effect = "Deny"
