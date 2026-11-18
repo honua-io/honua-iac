@@ -34,7 +34,8 @@ Job definitions and jobs can contain commands and environment values. DescribeJo
 
 Actions: `batch:DescribeJobs`, `batch:DescribeJobD*` (exactly DescribeJobDefinitions), `batch:DescribeServiceJob`.
 DescribeJobQueues returns queue metadata only and is not a content read; the job queue handler needs it.
-Exception (service role only): CloudFormation may call `batch:DescribeJobD*` to manage the job definitions it registers. The API has no resource scope, so this role can read every job definition in the account, as it already can for ECS task definitions. Workload roles and the lane keep the fence.
+Exception (service role only): CloudFormation may call `batch:DescribeJobD*` to manage the job definitions it registers. The API has no resource scope, so this role can read every job definition in the account, as it already can for ECS task definitions.
+Exception (workload boundary only): a gate server finds its Batch jobs with `batch:ListJobs`, polls them with `batch:DescribeJobs`, and stops them with `batch:CancelJob` (queued) or `batch:TerminateJob` (starting or running). ListJobs and DescribeJobs have no resource scope, so a gate workload can list every Batch job in the shared account and read each job's details, including command and environment overrides of other gate stacks' jobs; only gate stacks submit jobs there, and Honua passes secret references, not values. CancelJob and TerminateJob are limited to jobs tagged `honua:stack` with a gate stack name: the template requires that tag at submit, and the boundary denies `batch:TagResource` on every existing job. Any gate can stop another gate's job if it knows the job ID. The lane keeps the fence, and job definitions and service jobs stay fenced for workloads.
 
 ## cloudfront
 
