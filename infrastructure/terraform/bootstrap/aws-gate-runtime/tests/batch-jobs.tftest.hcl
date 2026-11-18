@@ -16,29 +16,29 @@ variables {
   budget_alert_email      = "gate@example.invalid"
 }
 
-run "workloads_poll_and_terminate_only_gate_jobs" {
+run "workloads_stop_only_gate_jobs" {
   command = plan
   assert {
     condition = alltrue([
-      for action in ["batch:DescribeJobs", "batch:TerminateJob"] : contains(local.boundary_ownership_deny.NotAction, action)
+      for action in ["batch:ListJobs", "batch:DescribeJobs", "batch:CancelJob", "batch:TerminateJob"] : contains(local.boundary_ownership_deny.NotAction, action)
       ]) && !anytrue([
-      for action in ["batch:CancelJob", "batch:ListJobs", "batch:DescribeJobDefinitions", "batch:DescribeServiceJob", "batch:TagResource"] :
+      for action in ["batch:DescribeJobDefinitions", "batch:DescribeServiceJob", "batch:TagResource"] :
       anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))])
     ])
-    error_message = "The workload boundary exempts exactly DescribeJobs and TerminateJob from the ownership deny."
+    error_message = "The workload boundary exempts exactly the job list, read, cancel and terminate calls from the ownership deny."
   }
   assert {
     condition = anytrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(
-      statement.Effect == "Deny" && statement.Action == "batch:TerminateJob" && statement.Resource == "*" &&
+      statement.Effect == "Deny" && toset(flatten([statement.Action])) == toset(["batch:CancelJob", "batch:TerminateJob"]) && statement.Resource == "*" &&
       statement.Condition.StringNotLike["aws:ResourceTag/honua:stack"] == "honua-gate-*", false
     )])
-    error_message = "Workloads may terminate only jobs tagged with a gate stack name."
+    error_message = "Workloads may cancel or terminate only jobs tagged with a gate stack name."
   }
   assert {
     condition = !anytrue([for statement in jsondecode(aws_iam_role_policy.lane.policy).Statement : try(
-      statement.Effect == "Allow" && anytrue([for pattern in flatten([statement.Action]) : can(regex("(?i)^${replace(pattern, "*", ".*")}$", "batch:DescribeJobs")) || can(regex("(?i)^${replace(pattern, "*", ".*")}$", "batch:TerminateJob"))]), false
+      statement.Effect == "Allow" && anytrue([for pattern in flatten([statement.Action]) : anytrue([for action in ["batch:DescribeJobs", "batch:CancelJob", "batch:TerminateJob"] : can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))])]), false
     )])
-    error_message = "The lane role gains neither job reads nor job termination."
+    error_message = "The lane role gains neither job reads nor job stops."
   }
 }
 
