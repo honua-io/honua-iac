@@ -145,7 +145,15 @@ locals {
   # cloudfront:Create*Policy is exactly the cache, origin-request, response-headers and (unattached until a
   # fenced UpdateDistribution) continuous-deployment policy creates; one pattern keeps the role within quota.
   # ecs:DeregisterTaskDefinition takes no resource or condition key, so stack teardown needs it here too.
-  untaggable_creates = ["cloudfront:Create*Policy", "cloudfront:*MonitoringSubscription", "route53:CreateHealthCheck", "ecs:DeregisterTaskDefinition"]
+  # AWS Config rules cannot carry tags from CloudFormation and their ARNs hold a random ID, so the drift rule follows
+  # the same service-role-only rule; organization and aggregate rule APIs need an organization or aggregator the
+  # gate account does not have (README).
+  untaggable_creates  = ["cloudfront:Create*Policy", "cloudfront:*MonitoringSubscription", "route53:CreateHealthCheck", "ecs:DeregisterTaskDefinition", local.config_rule_actions]
+  config_rule_actions = "config:*ConfigRule*"
+  # The stack's recorder function finds the account's recorder or creates, starts and (on a failed create) removes its
+  # own. Recorders and delivery channels are account singletons without tag context, so only the wildcards fence them:
+  # service-linked recorders also need iam:CreateServiceLinkedRole, which the boundary never allows (README).
+  workload_config_actions = ["config:*Recorder*", "config:*DeliveryChannel*"]
   untaggable_arns = concat([
     for type in ["origin-access-control", "cache-policy", "origin-request-policy", "response-headers-policy"] :
     "arn:aws:cloudfront::${var.member_account_id}:${type}/*"
@@ -215,7 +223,7 @@ locals {
     # and jobs carry only honua:stack, so all four are exempt; boundary_job_stop_deny fences the stops to gate jobs.
     # PutMetricData has no resource, so the ownership tags never match it; the operations and watchdog heartbeats
     # need it. The template's role policies fence it to their Honua/Operations and Honua/Watchdog namespaces.
-    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*", "ec2:DescribeM*", "ec2:DescribeAv*", "ec2:DescribeSu*", "ec2:DescribeVpcs", "guardduty:ListD*", "batch:ListJobs", "batch:DescribeJobs", "batch:CancelJob", "batch:TerminateJob", "cloudwatch:PutMetricData"], [for action in local.shared_creation_actions : action if !startswith(action, "iam:Create")])
+    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*", "ec2:DescribeM*", "ec2:DescribeAv*", "ec2:DescribeSu*", "ec2:DescribeVpcs", "guardduty:ListD*", "batch:ListJobs", "batch:DescribeJobs", "batch:CancelJob", "batch:TerminateJob", "cloudwatch:PutMetricData"], local.workload_config_actions, [for action in local.shared_creation_actions : action if !startswith(action, "iam:Create")])
     # Secrets Manager decrypts with its AWS-managed key for callers already allowed to read the secret;
     # kms:ViaService only ever carries AWS service endpoints (secretsmanager.<region>.amazonaws.com).
     Condition = merge(local.ownership_condition, { StringNotLike = { "kms:ViaService" = "secretsmanager.*" } })
