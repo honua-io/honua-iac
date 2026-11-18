@@ -201,7 +201,7 @@ run "rollback_can_delete_an_uncreated_protection_trail_only" {
     condition = length([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : statement if try(
       statement.Sid == "UntaggedTrailNames" && statement.Effect == "Deny" && statement.Action == "cloudtrail:DeleteTrail" &&
       statement.NotResource == "arn:aws:cloudtrail:us-east-1:000000000002:trail/honua-protection-*" &&
-      statement.Condition == { Null = { "aws:ResourceTag/HonuaGate" = "true" } }, false
+      statement.Condition == local.ownership_condition, false
     )]) == 1 && contains(local.service_role_ownership_deny.NotAction, "cloudtrail:DeleteTrail")
     error_message = "Only untagged trails with the protection-trail name escape the ownership tags; tagged gate trails of any name stay deletable."
   }

@@ -178,8 +178,8 @@ locals {
   }
   # A failed create rolls back a protection trail that was never created; it has no tags, so the
   # ownership deny would refuse the delete. DeleteTrail is therefore exempt from that deny and fenced here:
-  # a trail tagged by a non-gate stack is refused, and so is an untagged trail unless it has the Launch
-  # Stack's protection-trail name. Tagged gate trails of any name stay deletable. A hand-made untagged
+  # a trail tagged by a non-gate stack is refused, and outside the Launch Stack's protection-trail name
+  # the usual ownership rule applies unchanged. Tagged gate trails of any name stay deletable. A hand-made untagged
   # trail with the protection name is not protected (README).
   trail_teardown_denies = [{
     Sid = "TrailTeardownFence", Effect = "Deny", Action = "cloudtrail:DeleteTrail", Resource = "*"
@@ -190,7 +190,7 @@ locals {
     }, {
     Sid         = "UntaggedTrailNames", Effect = "Deny", Action = "cloudtrail:DeleteTrail"
     NotResource = "arn:aws:cloudtrail:us-east-1:${var.member_account_id}:trail/honua-protection-*"
-    Condition   = { Null = { "aws:ResourceTag/HonuaGate" = "true" } }
+    Condition   = local.ownership_condition
   }]
   # DeleteAlias authorizes both alias and key. Alias names supply the name fence;
   # the backing key must independently carry the gate ownership tag.
