@@ -121,13 +121,6 @@
   {
     "type": "AWS::Batch::JobDefinition",
     "handler": "create",
-    "action": "Batch:DescribeJobDefinitions",
-    "decision": "Deny",
-    "count": 1
-  },
-  {
-    "type": "AWS::Batch::JobDefinition",
-    "handler": "create",
     "action": "Batch:TagResource",
     "decision": "Deny",
     "count": 1
@@ -142,29 +135,8 @@
   {
     "type": "AWS::Batch::JobDefinition",
     "handler": "delete",
-    "action": "Batch:DescribeJobDefinitions",
-    "decision": "Deny",
-    "count": 1
-  },
-  {
-    "type": "AWS::Batch::JobDefinition",
-    "handler": "delete",
     "action": "Iam:PassRole",
     "decision": "Unresolved provider passed-role service identity: AWS::Batch::JobDefinition",
-    "count": 1
-  },
-  {
-    "type": "AWS::Batch::JobDefinition",
-    "handler": "read",
-    "action": "Batch:DescribeJobDefinitions",
-    "decision": "Deny",
-    "count": 1
-  },
-  {
-    "type": "AWS::Batch::JobDefinition",
-    "handler": "update",
-    "action": "Batch:DescribeJobDefinitions",
-    "decision": "Deny",
     "count": 1
   },
   {

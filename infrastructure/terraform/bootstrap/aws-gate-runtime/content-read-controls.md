@@ -34,6 +34,7 @@ Job definitions and jobs can contain commands and environment values. DescribeJo
 
 Actions: `batch:DescribeJobs`, `batch:DescribeJobD*` (exactly DescribeJobDefinitions), `batch:DescribeServiceJob`.
 DescribeJobQueues returns queue metadata only and is not a content read; the job queue handler needs it.
+Exception (service role only): CloudFormation may call `batch:DescribeJobD*` to manage the job definitions it registers. The API has no resource scope, so this role can read every job definition in the account, as it already can for ECS task definitions. Workload roles and the lane keep the fence.
 
 ## cloudfront
 

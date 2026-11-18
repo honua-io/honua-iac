@@ -40,11 +40,11 @@ changes while preserving the unresolved list. Matching that baseline is a
 regression check; it explicitly reports **authorization sweep NOT PASS**. Never
 use baseline success as evidence that installation or teardown is authorized.
 
-The captured inventory currently produces 4,876 checks: 3,984 Allow, 409
-NotApplicable and 483 unresolved. These include 197 calls whose complete
+The captured inventory currently produces 4,876 checks: 3,988 Allow, 409
+NotApplicable and 479 unresolved. These include 197 calls whose complete
 multi-resource mapping is unverified, 20 unresolved service-linked-role identities,
 87 unresolved PassRole identities, 31 custom runtime calls with unverified execution
-policies, seven unknown actions, and 141 explicit or implicit policy denies. The inventory includes
+policies, seven unknown actions, and 137 explicit or implicit policy denies. The inventory includes
 all template resources rather than selecting only one deployment's conditions.
 
 ## What the model covers
