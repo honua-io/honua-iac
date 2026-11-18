@@ -225,6 +225,10 @@ policies also allow these read-only calls, on gate resources only:
   `/aws/rds/instance/honua-gate-*`. CloudWatch Logs has no resource-tag condition
   for these calls, so the name is the fence. Reaper Lambda logs are not included.
 
+The lane may also call `cloudformation:DescribeStackResource` on gate stacks and
+`ecs:ListClusters`, which lists cluster ARNs only, so a deploy watcher can find the
+stack's cluster.
+
 These are content reads of gate installs, which hold synthetic qualification data
 only. The lane still cannot read task definitions: `ecs:DescribeTaskDefinition` has no
 resource scope and would expose every task definition in the account. To check the
@@ -351,7 +355,11 @@ This root creates the `honua-gate-idp` Cognito pool and hosted domain in
 `us-east-1`. Only administrators can create users. Its confidential app client
 uses the authorization-code flow with `openid`, `profile` and `email` scopes. The
 `honua-gate-admin` user has a generated permanent password and belongs to the
-`admin` group. Invitations are suppressed; credentials are written directly to
+`admin` group. A second user, `honua-gate-viewer`, belongs to no group: security
+checks sign in with it to prove that a role-less session is denied. Its secret
+(`honua-gate/idp/viewer`) is untagged on purpose, so the ownership fences keep
+every gate principal from reading it; main hands it to the verifier. Do not tag
+it. Invitations are suppressed; credentials are written directly to
 Secrets Manager under `honua-gate/idp/` and never exposed as Terraform outputs.
 Terraform state contains these credentials: keep the existing private encrypted
 backend and restrict access to state and saved plans.
