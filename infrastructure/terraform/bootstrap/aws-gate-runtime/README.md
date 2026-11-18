@@ -68,17 +68,19 @@ are the only global-service exceptions. The service and workload policies deny
 all S3 access outside `honua-gate-*` and deny the named state buckets even if
 they match that prefix (the workload boundary lists only state buckets inside the
 prefix, since the bucket deny already covers the rest, each as one `<name>*`
-pattern that also denies longer bucket names; a long one can push the
-boundary past its 6,144-character quota and fail the apply). Pre-existing buckets with the gate prefix are therefore a
+pattern that also denies longer bucket names, so a gate bucket whose name starts
+with a state bucket's name is refused; one such bucket fits the 6,144-character
+quota up to about 40 characters, and a longer one or a second one fails the apply). Pre-existing buckets with the gate prefix are therefore a
 name-collision risk: main must ensure the prefix is reserved exclusively for gate
 stacks before granting access.
 
 `cloudwatch:PutMetricData` takes no resource, so the workload boundary exempts it
 from the gate ownership deny; otherwise the server's operations heartbeat and the
 watchdog heartbeat are denied on every gate install. Any gate workload can
-therefore write metrics to any namespace in the shared account. The template's
-role policies limit each heartbeat to its own namespace (`Honua/Operations`,
-`Honua/Watchdog`); metric writes read no content and change no resource.
+therefore write metrics to any namespace in the shared account, which can move
+another stack's metric alarms (and their actions) into or out of alarm. The
+template's role policies limit each heartbeat to its own namespace
+(`Honua/Operations`, `Honua/Watchdog`); metric writes read no content.
 
 SSM is allowed only on gate stack watchdog parameters
 (`/honua/honua-gate-*/watchdog/*`), and the service policy denies SSM outside

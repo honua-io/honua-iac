@@ -23,7 +23,7 @@ run "workload_heartbeats_publish_metrics" {
       for action in ["cloudwatch:PutMetricStream", "cloudwatch:PutDashboard", "cloudwatch:DeleteAlarms", "cloudwatch:DeleteDashboards", "cloudwatch:GetMetricData", "cloudwatch:TagResource"] :
       anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))])
     ])
-    error_message = "Of the non-creation CloudWatch calls only PutMetricData is exempt from the ownership deny; streams, dashboards, deletes and tags stay fenced."
+    error_message = "PutMetricData is exempt from the ownership deny; metric streams, dashboards, alarm and dashboard deletes, tagging and metric reads stay fenced."
   }
   assert {
     condition     = length(jsonencode(jsondecode(aws_iam_policy.workload_boundary.policy))) <= 6144
