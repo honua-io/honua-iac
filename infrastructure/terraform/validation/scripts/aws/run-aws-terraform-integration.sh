@@ -2164,8 +2164,8 @@ set_ecs_tf_vars() {
 
   unset TF_VAR_honua_image_uri
   unset TF_VAR_skip_migrations
-  # examples/aws no longer declares Redis inputs. A TF_VAR_ for an undeclared
-  # variable fails the plan. The data and serverless stacks still use them.
+  # examples/aws declares no Redis variables. Terraform rejects TF_VAR_ for an
+  # undeclared variable. The data and serverless stacks still export these.
   unset TF_VAR_redis_enabled
   unset TF_VAR_redis_connection_string
   unset TF_VAR_redis_connection_cidrs

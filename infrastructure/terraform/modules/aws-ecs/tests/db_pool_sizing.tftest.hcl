@@ -83,7 +83,7 @@ mock_provider "null" {}
 
 variables {
   audit_chain_key_secret_arn                = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-audit-chain-AbC123"
-  operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+  operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-db-pool-sizing.tftest-AbC123"
   image                                     = "ghcr.io/honua-io/honua-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   admin_password                            = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   connection_encryption_master_key          = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"

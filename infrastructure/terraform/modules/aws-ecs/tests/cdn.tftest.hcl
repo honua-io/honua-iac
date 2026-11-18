@@ -10,7 +10,7 @@ mock_provider "random" {
 mock_provider "null" {}
 
 variables {
-  operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-ABC123"
+  operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:operator-keyring-cdn.tftest-AbC123"
   domain_name                               = "maps.example.com"
   alb_certificate_arn                       = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
   alb_enable_http_redirect                  = false
