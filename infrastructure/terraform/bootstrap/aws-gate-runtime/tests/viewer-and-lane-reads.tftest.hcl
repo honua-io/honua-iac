@@ -49,3 +49,14 @@ run "lane_reads_one_stack_resource_and_lists_clusters" {
     error_message = "The lane may describe a resource of a gate stack and list cluster ARNs, and no other ECS action account-wide."
   }
 }
+
+run "batch_queue_metadata_is_not_a_content_read" {
+  command = plan
+  assert {
+    condition = !anytrue([for action in local.shared_content_read_actions : can(regex("(?i)^${replace(action, "*", ".*")}$", "batch:DescribeJobQueues"))]) && alltrue([
+      for read in ["batch:DescribeJobs", "batch:DescribeJobDefinitions", "batch:DescribeServiceJob"] :
+      anytrue([for action in local.shared_content_read_actions : can(regex("(?i)^${replace(action, "*", ".*")}$", read))])
+    ])
+    error_message = "Job and job-definition reads stay content reads; the job queue handler's DescribeJobQueues must not be fenced as one."
+  }
+}

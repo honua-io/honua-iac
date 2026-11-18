@@ -32,7 +32,8 @@ Actions: `backup:GetRecoveryPoint*`, `backup:GetRestore*`, `backup:DescribeRecov
 
 Job definitions and jobs can contain commands and environment values. DescribeJobDefinitions, DescribeJobs and DescribeServiceJob have no resource-tag condition.
 
-Actions: `batch:DescribeJob*`, `batch:DescribeServiceJob`.
+Actions: `batch:DescribeJobs`, `batch:DescribeJobD*` (exactly DescribeJobDefinitions), `batch:DescribeServiceJob`.
+DescribeJobQueues returns queue metadata only and is not a content read; the job queue handler needs it.
 
 ## cloudfront
 
