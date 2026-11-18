@@ -28,3 +28,13 @@ variable "inventory_role_name" {
   type        = string
   default     = "honua-release-cicd"
 }
+
+variable "launch_stack_template_bucket" {
+  description = "Bucket created by honua-marketplace template-hosting.yaml (its BucketName output). Set, the launch-stack-publish role may create and read templates/* there; null, no publish role is created."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.launch_stack_template_bucket == null || can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", var.launch_stack_template_bucket))
+    error_message = "launch_stack_template_bucket must be an S3 bucket name."
+  }
+}

@@ -13,12 +13,22 @@ provider or any access key.
 | `bedrock-console` | honua-console `console-live-llm-nightly.yml` | `bedrock-live-llm` | `honua-console-gha-bedrock-live-llm` | invoke Anthropic models |
 | `inventory-plan` | honua-iac `release-cell-inventory-policy.yml` (plan) | `cell-inventory-plan` | `honua-iac-gha-cell-inventory-plan` | read the release role's inline policy |
 | `inventory-apply` | honua-iac `release-cell-inventory-policy.yml` (deploy) | `cell-inventory-apply` | `honua-iac-gha-cell-inventory-apply` | read and write the release role's inline policy |
+| `launch-stack-publish` | honua-marketplace `publish-launch-stack.yml` | `launch-stack-publish` | `honua-marketplace-gha-launch-stack-publish` | create (conditional write) and read `templates/*` in the Launch Stack hosting bucket |
 
 The Bedrock grant is `bedrock:InvokeModel` and
 `bedrock:InvokeModelWithResponseStream` on the role's model-ID prefixes
 (`anthropic.`, plus `amazon.nova-` for the sdk-js eval), as foundation models
 and as this account's `us.` inference profiles, in `bedrock_regions` (default
 us-east-1, us-east-2, us-west-1 and us-west-2, where the US profiles route).
+The publish role exists only when `launch_stack_template_bucket` names the
+bucket created by honua-marketplace `template-hosting.yaml`. It may create
+objects under `templates/` only with a conditional write, which the bucket policy
+also demands, and read them back to confirm a retried upload; it has no delete,
+Object Lock bypass or bucket policy rights, so a published version stays
+immutable. Its environment needs a required reviewer and trunk as the only
+deployment branch, plus the variables `LAUNCH_STACK_TEMPLATE_BUCKET`,
+`LAUNCH_STACK_TEMPLATE_REGION` and `LAUNCH_STACK_PUBLISH_ROLE_ARN` (the
+`role_arns` output).
 The inventory grants are limited to `inventory_role_name` (default
 `honua-release-cicd`). The inventory environments are used by
 `release-cell-inventory-policy.yml` alone: the shared `terraform-ephemeral`
