@@ -327,12 +327,16 @@ outside the service role's ownership deny and fenced by
 `HonuaGateCloudFormationFences` instead: creates and overwrites need the
 `HonuaGate=true` request tag, a destination may target only a
 `/aws/vendedlogs/honua/honua-gate-*` group, every call that names a source or
-destination (including `CreateDelivery` and `UpdateDeliveryConfiguration`) must
+destination (including `CreateDelivery` and `UpdateDeliveryConfiguration`, but not tag removal) must
 name a `honua-*-edge` one in this account, so a delivery cannot target another
-account's destination, and destination policies stay denied. Delivery IDs are
-random, so `GetDelivery` and `DeleteDelivery` reach any delivery in the account,
-and a source or destination named like a Launch Stack's but owned by a non-gate
-stack is not protected; the gate account has no other delivery resources.
+account's destination, and destination policies stay denied. A source may
+only name a gate distribution: CloudFront authorizes
+`cloudfront:AllowVendedLogDeliveryForResource` on the distribution, which keeps
+its ownership fence. Delivery IDs are random, so `GetDelivery` and
+`DeleteDelivery` reach any delivery in the account; `UntagResource` is not
+name-fenced on delivery resources; and a source or destination named like a
+Launch Stack's but owned by a non-gate stack is not protected. The gate account
+has no other delivery resources.
 Workload roles stay behind the ownership deny. This root owns
 `honua-gate-edge-access-logs`, which lets the delivery service write only to
 `/aws/vendedlogs/honua/honua-gate-*` groups, and lanes may read those groups.
