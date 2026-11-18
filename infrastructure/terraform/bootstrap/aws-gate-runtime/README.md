@@ -111,15 +111,26 @@ boundary allows `config:*Recorder*` and `config:*DeliveryChannel*` and exempts
 them from the ownership deny, and it may pass a gate role to
 `config.amazonaws.com`. Recorders and delivery channels are account and Region
 singletons with no tag context, so any gate workload can describe, replace,
-stop or delete the account's recorder and channel in `us-east-1`. Service-linked
-recorders also need `iam:CreateServiceLinkedRole`, which the boundary never
-allows. Keep production Config recording out of the shared gate account. A
-recorder a gate stack creates outlives the stack by design; stop and delete it
-and its delivery channel after the run. Recorded resource configuration
-(`config:Get*`, `config:Select*`) stays denied to workloads. The stack's drift
-rule is the service role's (below); its evaluation role carries the boundary,
-which allows no CloudFormation drift calls, so gate stacks prove that the rule
-exists, not its drift verdict.
+stop or delete the account's recorder and channel in `us-east-1`. The pattern
+also matches the service-linked recorder APIs: creating one needs
+`iam:CreateServiceLinkedRole`, which the boundary never allows, but any gate
+workload can delete an AWS service's service-linked recorder. Keep production
+Config recording out of the shared gate account. Recorded resource
+configuration (`config:Get*`, `config:Select*`) stays denied to workloads.
+
+A recorder a gate stack creates outlives the stack by design, and neither the
+lane role nor the reaper can remove it. Later gate stacks then take the
+existing-recorder path and deliver through the first stack's retained role and
+bucket. Keep those until the account administrator (main) stops and deletes
+the recorder and its delivery channel, which is part of the gate teardown
+after the Config rows; deleting the retained role or bucket first makes
+recording fail silently.
+
+The stack's drift rule is the service role's (below). Its evaluation role
+carries the boundary, which allows no CloudFormation drift calls, so gate
+stacks prove that the rule exists, not its drift verdict. Expect the rule to
+report an error or noncompliance in the gate, and the stack's operations topic
+to receive a daily drift message; that is gate noise, not a finding.
 
 The CloudFormation service role alone allows `backup-storage:MountCapsule`,
 which AWS Backup requires to create a vault and which has no resource-level

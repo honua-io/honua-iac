@@ -42,7 +42,10 @@ run "workloads_manage_only_recorders_and_channels" {
   }
   assert {
     condition = !anytrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement :
-      statement.Effect == "Allow" && anytrue([for action in flatten([statement.Action]) : contains(["config:*", "config:*ConfigRule*", "config:PutConfigRule", "config:SelectResourceConfig", "config:GetResourceConfigHistory"], action)])
+      statement.Effect == "Allow" && anytrue([for pattern in flatten([statement.Action]) : anytrue([
+        for action in ["config:PutConfigRule", "config:DeleteConfigRule", "config:SelectResourceConfig", "config:GetResourceConfigHistory", "config:BatchGetResourceConfig", "config:PutConformancePack", "config:PutAggregationAuthorization"] :
+        can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))
+      ])])
     ])
     error_message = "Workloads never manage Config rules or read recorded resource configuration."
   }
