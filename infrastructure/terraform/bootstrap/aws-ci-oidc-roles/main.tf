@@ -12,6 +12,7 @@
 #   bedrock-console honua-console console-live-llm-nightly   environment bedrock-live-llm
 #   inventory-plan  honua-iac release-cell-inventory-policy  environment cell-inventory-plan
 #   inventory-apply honua-iac release-cell-inventory-policy  environment cell-inventory-apply
+#   launch-stack-publish honua-marketplace publish-launch-stack environment launch-stack-publish
 #
 # The Bedrock roles may only invoke the model families their workflow selects
 # (Anthropic; the sdk-js eval also Amazon Nova), directly or through the US
@@ -19,13 +20,18 @@
 # read (plan) or read and write (apply) the inline policies of the one release
 # role, and each trusts an environment used by that workflow alone, so another
 # honua-iac job approved in a shared environment cannot assume them.
+# The Launch Stack publish role exists only once launch_stack_template_bucket
+# names the hosting bucket; it may only create objects under templates/ there
+# (conditional writes, which the bucket policy also demands) and read them back
+# to confirm a retried upload. It has no delete, retention bypass or policy
+# rights, so a published version stays immutable.
 
 data "aws_caller_identity" "current" {}
 
 locals {
   account_id = data.aws_caller_identity.current.account_id
 
-  roles = {
+  roles = merge({
     bedrock-smoke = {
       repository  = "honua-server"
       environment = "bedrock-smoke"
@@ -61,9 +67,18 @@ locals {
       kind        = "inventory-write"
       models      = []
     }
-  }
+    }, var.launch_stack_template_bucket == null ? {} : {
+    launch-stack-publish = {
+      repository  = "honua-marketplace"
+      environment = "launch-stack-publish"
+      role_name   = "honua-marketplace-gha-launch-stack-publish"
+      kind        = "template-publish"
+      models      = []
+    }
+  })
 
   inventory_role_arn = "arn:aws:iam::${local.account_id}:role/${var.inventory_role_name}"
+  template_objects   = "arn:aws:s3:::${coalesce(var.launch_stack_template_bucket, "unset")}/templates/*"
 
   # One statement per Bedrock role: the model-ID prefixes its workflow selects,
   # as foundation models and as this account's US inference profiles.
@@ -96,6 +111,18 @@ locals {
       Action   = ["iam:GetRolePolicy", "iam:PutRolePolicy"]
       Resource = [local.inventory_role_arn]
     }]
+    template-publish = [{
+      Sid       = "CreateTemplateObjectsOnly"
+      Effect    = "Allow"
+      Action    = ["s3:PutObject"]
+      Resource  = [local.template_objects]
+      Condition = { Null = { "s3:if-none-match" = "false" } }
+      }, {
+      Sid      = "ReadBackRetriedTemplateObjects"
+      Effect   = "Allow"
+      Action   = ["s3:GetObject"]
+      Resource = [local.template_objects]
+    }]
   }
 }
 
@@ -125,8 +152,12 @@ resource "aws_iam_role_policy" "grant" {
 
   name = each.key
   role = module.oidc[each.key].role_name
-  policy = jsonencode({
+  # Encoded per branch: the statement lists differ in length, which a conditional cannot unify.
+  policy = each.value.kind == "bedrock" ? jsonencode({
     Version   = "2012-10-17"
-    Statement = each.value.kind == "bedrock" ? [local.bedrock_statements[each.key]] : local.policies[each.value.kind]
+    Statement = [local.bedrock_statements[each.key]]
+    }) : jsonencode({
+    Version   = "2012-10-17"
+    Statement = local.policies[each.value.kind]
   })
 }

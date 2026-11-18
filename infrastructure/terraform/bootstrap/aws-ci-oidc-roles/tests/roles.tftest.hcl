@@ -192,3 +192,68 @@ run "reject_foreign_oidc_provider" {
   }
   expect_failures = [var.oidc_provider_arn]
 }
+
+run "no_publish_role_until_the_hosting_bucket_is_named" {
+  command = plan
+
+  assert {
+    condition     = !contains(keys(module.oidc), "launch-stack-publish")
+    error_message = "Without launch_stack_template_bucket there must be no Launch Stack publish role."
+  }
+}
+
+run "publish_role_only_creates_and_reads_template_objects" {
+  command = plan
+  variables {
+    launch_stack_template_bucket = "honua-template-hosting-bucket"
+  }
+
+  override_data {
+    target = module.oidc["launch-stack-publish"].data.aws_caller_identity.current
+    values = { account_id = "123456789012", arn = "arn:aws:iam::123456789012:user/t", user_id = "AIDATEST" }
+  }
+
+  override_data {
+    target = module.oidc["launch-stack-publish"].data.aws_region.current
+    values = { name = "us-east-1", id = "us-east-1" }
+  }
+
+  assert {
+    condition = jsondecode(module.oidc["launch-stack-publish"].trust_policy_json).Statement[0].Condition == {
+      StringEquals = {
+        "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+        "token.actions.githubusercontent.com:sub" = "repo:honua-io/honua-marketplace:environment:launch-stack-publish"
+      }
+    }
+    error_message = "The publish role must trust only the honua-marketplace launch-stack-publish environment."
+  }
+
+  assert {
+    condition = jsondecode(aws_iam_role_policy.grant["launch-stack-publish"].policy).Statement == [{
+      Sid       = "CreateTemplateObjectsOnly"
+      Effect    = "Allow"
+      Action    = ["s3:PutObject"]
+      Resource  = ["arn:aws:s3:::honua-template-hosting-bucket/templates/*"]
+      Condition = { Null = { "s3:if-none-match" = "false" } }
+      }, {
+      Sid      = "ReadBackRetriedTemplateObjects"
+      Effect   = "Allow"
+      Action   = ["s3:GetObject"]
+      Resource = ["arn:aws:s3:::honua-template-hosting-bucket/templates/*"]
+    }]
+    error_message = "The publish role may only create objects under templates/ with a conditional write and read them back."
+  }
+
+  assert {
+    condition     = length(module.oidc["launch-stack-publish"].cert_policy_names) == 0 && module.oidc["launch-stack-publish"].role_name == "honua-marketplace-gha-launch-stack-publish"
+    error_message = "The publish role carries no certification policy and has the documented name."
+  }
+}
+
+run "reject_invalid_template_bucket" {
+  command = plan
+  variables {
+    launch_stack_template_bucket = "Not_A_Bucket"
+  }
+  expect_failures = [var.launch_stack_template_bucket]
+}
