@@ -147,7 +147,7 @@ run "gate_runner_enabled" {
     error_message = "Gate runner parent slices must allow 16 GiB while retaining six-vCPU ceilings."
   }
   assert {
-    condition     = aws_launch_template.build.user_data == base64gzip(local.build_host_bootstrap) && startswith(aws_launch_template.build.user_data, "H4sI") && endswith(local.build_host_bootstrap, local.gated_build_bootstrap) && local.gated_build_bootstrap == join("\n", [file("install-idle-stop.sh"), file("../shared/install-docker.sh"), local.sdk_installer_bootstrap, file("install-build-tools.sh"), local.gate_runner_bootstrap]) && strcontains(local.gate_runner_bootstrap, jsonencode(local.gate_runner_host_config)) && endswith(local.gate_runner_bootstrap, file("install-gate-runner.sh"))
+    condition     = aws_launch_template.build.user_data == base64gzip(local.build_host_bootstrap) && startswith(aws_launch_template.build.user_data, "H4sI") && endswith(local.build_host_bootstrap, local.gated_build_bootstrap) && local.gated_build_bootstrap == join("\n", [file("install-idle-stop.sh"), file("../shared/install-docker.sh"), local.sdk_installer_bootstrap, file("install-build-tools.sh"), local.gate_runner_bootstrap, file("install-nuget-fallback.sh")]) && strcontains(local.gate_runner_bootstrap, jsonencode(local.gate_runner_host_config)) && endswith(local.gate_runner_bootstrap, file("install-gate-runner.sh"))
     error_message = "The enabled host must install the runner services with their configuration."
   }
   assert {

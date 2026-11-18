@@ -426,6 +426,8 @@ export DOTNET_INSTALL_DIR="${HOME}/.dotnet" DOTNET_ROOT="${HOME}/.dotnet"
 export RUNNER_TOOL_CACHE="${HOME}/.cache/toolcache" AGENT_TOOLSDIRECTORY="${HOME}/.cache/toolcache"
 export PATH="${HOME}/.venv/bin:${HOME}/.dotnet:${HOME}/.local/bin:${PATH}"
 export LANG=C.UTF-8 LC_ALL=C.UTF-8 TZ=UTC DOTNET_CLI_TELEMETRY_OPTOUT=1
+# Shared and read-only (install-nuget-fallback.sh); job setup resolves its current generation.
+export HONUA_NUGET_FALLBACK=/var/lib/honua-nuget-fallback/current
 ENVIRONMENT
 chmod 0644 /etc/honua-gate-runner-env
 

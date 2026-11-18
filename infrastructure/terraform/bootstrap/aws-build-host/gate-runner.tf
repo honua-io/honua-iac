@@ -50,7 +50,8 @@ locals {
     file("${path.module}/../shared/install-docker.sh"),
     local.sdk_installer_bootstrap,
     file("${path.module}/install-build-tools.sh"),
-    local.gate_runner_bootstrap
+    local.gate_runner_bootstrap,
+    file("${path.module}/install-nuget-fallback.sh")
   ])
   github_oidc_host = "token.actions.githubusercontent.com"
 }
