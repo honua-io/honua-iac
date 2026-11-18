@@ -377,6 +377,48 @@ run's job conclusions, `i-` runner names, execution and queue times. Compare bui
 10–14 minutes, fast tests 6–12 minutes and format 8–21 minutes before expanding
 the runner workload. Server test shards use the heavy runners above, not these.
 
+### Shared NuGet fallback folder
+
+Each job starts with an empty home, so without a host copy every job downloads
+the ~1.7 GB NuGet package archive from the Actions cache (measured 18 Nov 2026:
+Setup .NET 77-86 s on these runners against 31 s hosted, about 50 s of it the
+archive). `install-nuget-fallback.sh` adds `honua-nuget-fill`, a system account
+with no credentials. Its timer checks honua-server trunk every two hours. When
+the package inputs (`*.csproj`, `*.props`, `*.targets`, `NuGet.config`,
+`global.json`) change, it restores `Honua.sln` with the trunk-pinned SDK into
+`/var/lib/honua-nuget-fallback/staging`. A root `ExecStopPost` step runs after
+systemd has killed the unit's processes, and only for a successful fill. It
+moves the staged tree into a root-only directory and refuses it if it holds
+anything other than regular files and directories. It then publishes it as a
+root-owned, read-only `gen-<hash>` and repoints `current` (only ever to a
+root-owned generation).
+
+- Trust: the account cannot reach instance metadata (`IPAddressDeny`) and can
+  write only `staging/` (`ProtectSystem=strict`). It runs trunk's restore, which
+  is merged code, with a throwaway HOME and a per-run SDK. No run can change
+  an SDK, user config or package that a later run or job uses. Runners and the
+  fill account cannot write published generations.
+- Source mapping: the fill uses the repository's `NuGet.config`. GitHub
+  Packages refuses the account, so private packages are never fetched, and
+  every `honua.*` directory is deleted before publication. A job therefore
+  cannot get a Honua package from nuget.org through this folder.
+- Only complete packages (with `.nupkg.metadata`) are published. A restore with
+  fewer than 100 packages, or fewer than 90% of the current generation's count,
+  keeps the current generation. A missing or stale package costs the job a
+  normal download, never a different package.
+- The fill waits while free disk is below the runners' `min_free_disk_gib`
+  plus 20 GiB. `current` and the previous generation are kept. A job that pins
+  a generation can lose it only if trunk's package inputs change twice while
+  it runs.
+
+The runner environment exports `HONUA_NUGET_FALLBACK=/var/lib/honua-nuget-fallback/current`.
+The light runners share that environment file but have no folder. A consumer
+must treat a missing path as "no fallback". Pending honua-server change:
+`setup-dotnet-ci` will use the folder only for jobs that opt in and only when it
+resolves to a read-only generation, and will then skip the Actions cache
+archive. Until then nothing reads it. After apply and a bootstrap rerun, check
+`systemctl status honua-nuget-fallback-fill` and `readlink /var/lib/honua-nuget-fallback/current`.
+
 ### Spot drain and CPU budget
 
 On the two-minute spot warning, the notice service creates a root-owned volatile
