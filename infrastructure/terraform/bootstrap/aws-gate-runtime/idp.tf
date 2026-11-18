@@ -97,11 +97,25 @@ resource "aws_secretsmanager_secret_version" "idp_admin" {
   })
 }
 
-# Untagged on purpose: the shared-account ownership fences deny every gate principal access to a secret
-# without gate ownership tags, so this needs no entry in the boundary's protected list. Never tag it.
+# It carries no gate ownership tag (HonuaGate or a stack-name tag), on purpose: the service role's
+# DenyNonGateContentReads and the workload boundary's ownership deny then refuse every read, and the lane
+# role has no Secrets Manager access. The resource policy below denies gate roles as well, so a mistaken
+# HonuaGate tag would not open it. It needs no entry in the boundary's protected list (quota).
 resource "aws_secretsmanager_secret" "idp_viewer" {
   name                    = "honua-gate/idp/viewer"
   recovery_window_in_days = 7
+}
+
+resource "aws_secretsmanager_secret_policy" "idp_viewer" {
+  secret_arn          = aws_secretsmanager_secret.idp_viewer.arn
+  block_public_policy = true
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "NoGateRoles", Effect = "Deny", Principal = "*", Action = "secretsmanager:*", Resource = "*"
+      Condition = { ArnLike = { "aws:PrincipalArn" = ["arn:aws:iam::${var.member_account_id}:role/honua-gate-*", "arn:aws:iam::${var.member_account_id}:role/HonuaGate*"] } }
+    }]
+  })
 }
 
 resource "aws_secretsmanager_secret_version" "idp_viewer" {

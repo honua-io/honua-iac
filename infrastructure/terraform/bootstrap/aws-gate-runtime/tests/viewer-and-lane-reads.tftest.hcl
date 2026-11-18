@@ -28,11 +28,21 @@ run "viewer_signs_in_without_a_role_and_its_secret_stays_fenced" {
     error_message = "The viewer is a pool user outside the admin group."
   }
   assert {
-    condition = length(coalesce(aws_secretsmanager_secret.idp_viewer.tags, {})) == 0 && alltrue([
+    condition = !contains(keys(coalesce(aws_secretsmanager_secret.idp_viewer.tags, {})), "HonuaGate") && alltrue([
       for allowed in concat(local.boundary_ownership_deny.NotResource, local.service_role_ownership_deny.NotResource, local.idp_client_readers) :
       allowed != aws_secretsmanager_secret.idp_viewer.arn && !strcontains(allowed, "idp/viewer")
     ])
-    error_message = "The viewer secret must stay untagged and outside every ownership-fence exemption, so no gate principal can read it."
+    error_message = "The viewer secret must carry no gate ownership tag and stay outside every ownership-fence exemption, so no gate principal can read it."
+  }
+  assert {
+    condition = anytrue([for control in local.shared_controls : try(
+      control.Sid == "DenyNonGateContentReads" && contains(control.Action, "secretsmanager:GetSecretValue") && control.NotResource != aws_secretsmanager_secret.idp_viewer.arn, false
+    )])
+    error_message = "The service role's content-read fence must cover the viewer secret."
+  }
+  assert {
+    condition     = jsondecode(aws_secretsmanager_secret_policy.idp_viewer.policy).Statement[0].Effect == "Deny" && toset(jsondecode(aws_secretsmanager_secret_policy.idp_viewer.policy).Statement[0].Condition.ArnLike["aws:PrincipalArn"]) == toset(["arn:aws:iam::000000000002:role/honua-gate-*", "arn:aws:iam::000000000002:role/HonuaGate*"])
+    error_message = "The viewer secret's own policy denies every gate role, independent of tags."
   }
 }
 
