@@ -42,6 +42,7 @@ run "lane_runtime_inspection_is_read_only_and_gate_scoped" {
           "arn:aws:ecs:us-east-1:000000000002:task/honua-gate-*-Cluster-*/*",
           "arn:aws:logs:us-east-1:000000000002:log-group:/honua/honua-gate-*",
           "arn:aws:logs:us-east-1:000000000002:log-group:aws-waf-logs-honua-gate-*",
+          "arn:aws:logs:us-east-1:000000000002:log-group:/aws/vendedlogs/honua/honua-gate-*",
           "arn:aws:logs:us-east-1:000000000002:log-group:/aws/rds/instance/honua-gate-*"
         ]), false
         )]) == 1 && length([for statement in jsondecode(policy).Statement : statement if try(

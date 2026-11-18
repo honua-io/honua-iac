@@ -91,6 +91,7 @@ locals {
         "arn:aws:ecs:us-east-1:${var.member_account_id}:task/honua-gate-*-Cluster-*/*",
         "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/honua/honua-gate-*",
         "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:aws-waf-logs-honua-gate-*",
+        "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/aws/vendedlogs/honua/honua-gate-*",
         "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/aws/rds/instance/honua-gate-*"
       ]
       }, {

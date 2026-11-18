@@ -310,6 +310,13 @@ WAF would otherwise write stays denied; this root owns `honua-gate-waf-logs`,
 which lets the log delivery service write only to `aws-waf-logs-honua-gate-*`
 log groups.
 
+CloudFront access logs (standard logging v2) follow the same shape. The stack's
+`/aws/vendedlogs/honua/<stack>/edge-access` group, its delivery source and
+destination (`honua-<stack GUID>-edge`) and the delivery pass the first-tag name
+fence; this root owns `honua-gate-edge-access-logs`, which lets the delivery
+service write only to `/aws/vendedlogs/honua/honua-gate-*` groups; and lanes may
+read those groups like the other gate log groups.
+
 Creation APIs cannot prove ownership of a resource that does not yet exist.
 They can allocate resources using existing dependencies (for example network
 subnets, clusters or load balancer parents). Service-linked roles are account-wide

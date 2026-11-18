@@ -54,3 +54,34 @@ run "delivery_policy_reaches_only_gate_waf_log_groups_in_this_account" {
     error_message = "The delivery policy must name the delivery service, gate WAF log groups and this account only."
   }
 }
+
+run "edge_access_log_policy_reaches_only_gate_vended_log_groups_in_this_account" {
+  command = plan
+  assert {
+    condition = jsondecode(aws_cloudwatch_log_resource_policy.gate_edge_access_logs[0].policy_document).Statement == [{
+      Sid       = "GateEdgeAccessLogDelivery"
+      Effect    = "Allow"
+      Principal = { Service = "delivery.logs.amazonaws.com" }
+      Action    = ["logs:CreateLogStream", "logs:PutLogEvents"]
+      Resource  = "arn:aws:logs:us-east-1:000000000002:log-group:/aws/vendedlogs/honua/honua-gate-*:log-stream:*"
+      Condition = {
+        StringEquals = { "aws:SourceAccount" = "000000000002" }
+        ArnLike      = { "aws:SourceArn" = "arn:aws:logs:us-east-1:000000000002:*" }
+      }
+    }]
+    error_message = "The edge access-log delivery policy must name the delivery service, gate vended-log groups and this account only."
+  }
+}
+
+run "edge_access_log_resources_can_be_tagged_on_create" {
+  command = plan
+  assert {
+    condition = alltrue([for arn in [
+      "arn:aws:logs:us-east-1:000000000002:log-group:/aws/vendedlogs/honua/honua-gate-*",
+      "arn:aws:logs:us-east-1:000000000002:delivery-source:honua-*-edge",
+      "arn:aws:logs:us-east-1:000000000002:delivery-destination:honua-*-edge",
+      "arn:aws:logs:us-east-1:000000000002:delivery:*"
+    ] : contains(local.named_tag_targets["logs:TagResource"], arn)])
+    error_message = "CloudFront access-log resources must pass the first-tag name fence."
+  }
+}

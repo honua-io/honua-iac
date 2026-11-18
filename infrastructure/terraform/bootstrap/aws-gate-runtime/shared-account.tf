@@ -105,7 +105,13 @@ locals {
       "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/honua/honua-gate-*",
       "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/aws/lambda/honua-gate-*",
       # AWS WAF accepts only log groups named aws-waf-logs-*; waf-logs.tf fences delivery to the same prefix.
-      "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:aws-waf-logs-honua-gate-*"
+      "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:aws-waf-logs-honua-gate-*",
+      # CloudFront access logs (standard logging v2): a /aws/vendedlogs/ group named after the stack, and the
+      # delivery source, destination and delivery the stack tags on create (names use the stack GUID).
+      "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/aws/vendedlogs/honua/honua-gate-*",
+      "arn:aws:logs:us-east-1:${var.member_account_id}:delivery-source:honua-*-edge",
+      "arn:aws:logs:us-east-1:${var.member_account_id}:delivery-destination:honua-*-edge",
+      "arn:aws:logs:us-east-1:${var.member_account_id}:delivery:*"
     ]
   }
   named_tag_denies = concat([{
@@ -182,7 +188,7 @@ locals {
       "arn:aws:events:us-east-1:${var.member_account_id}:rule/honua-gate-*",
       "arn:aws:kms:us-east-1:${var.member_account_id}:alias/honua-gate-*",
       "arn:aws:kms:us-east-1:${var.member_account_id}:key/*"
-    ], local.named_tag_targets["logs:TagResource"])
+    ], [for arn in local.named_tag_targets["logs:TagResource"] : arn if strcontains(arn, ":log-group:")])
   }
   # A failed create rolls back a protection trail that was never created; it has no tags, so the
   # ownership deny would refuse the delete. DeleteTrail is therefore exempt from that deny and fenced here:

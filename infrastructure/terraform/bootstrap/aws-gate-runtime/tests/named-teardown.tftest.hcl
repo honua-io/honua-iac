@@ -36,7 +36,8 @@ run "named_teardown_is_scoped_to_the_service_role" {
         "arn:aws:kms:us-east-1:000000000002:key/*",
         "arn:aws:logs:us-east-1:000000000002:log-group:/honua/honua-gate-*",
         "arn:aws:logs:us-east-1:000000000002:log-group:/aws/lambda/honua-gate-*",
-        "arn:aws:logs:us-east-1:000000000002:log-group:aws-waf-logs-honua-gate-*"
+        "arn:aws:logs:us-east-1:000000000002:log-group:aws-waf-logs-honua-gate-*",
+        "arn:aws:logs:us-east-1:000000000002:log-group:/aws/vendedlogs/honua/honua-gate-*"
       ]), false)
     ]) && aws_iam_role_policy_attachment.cloudformation_fences.role == aws_iam_role.cloudformation.name
     error_message = "An attached unconditional deny must fence teardown by exact service, account, region and gate prefix."
