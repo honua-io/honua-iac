@@ -246,7 +246,7 @@ The ECS rollback boundary follows [AWS deployment failure detection](https://doc
 Revision retention uses the provider's [task definition `skip_destroy`](https://registry.terraform.io/providers/hashicorp/aws/5.99.1/docs/resources/ecs_task_definition.html).
 
 The contract validator rejects native execution with mismatched target identity,
-AWS selectors, missing installed canary/Redis/storage, missing health/functional/
+AWS selectors, missing installed canary/PostgreSQL endpoint/storage, missing health/functional/
 metric inputs, unknown parameters, and non-positive, fractional or out-of-range
 durations. It rejects a Terraform-only `protected` status. It cannot verify
 provider access or promote a profile to certified protection.
