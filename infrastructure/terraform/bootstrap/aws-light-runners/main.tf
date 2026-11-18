@@ -278,15 +278,14 @@ resource "aws_autoscaling_group" "runners" {
       }
     }
   }
-  dynamic "instance_refresh" {
-    for_each = var.pre_pr_overflow == null ? [] : [var.pre_pr_overflow]
-    content {
-      strategy = "Rolling"
-      preferences {
-        min_healthy_percentage = 0
-        max_healthy_percentage = 100
-        skip_matching          = true
-      }
+  # Any launch template change, such as the job admission hook, replaces the single host
+  # on apply; nothing waits for a manual refresh or a Spot interruption.
+  instance_refresh {
+    strategy = "Rolling"
+    preferences {
+      min_healthy_percentage = 0
+      max_healthy_percentage = 100
+      skip_matching          = true
     }
   }
   dynamic "tag" {

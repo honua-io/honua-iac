@@ -120,13 +120,15 @@ its admission channel alive until execution and copy-back have completed.
 
 ### Deployment and proof
 
-Opt-in adds a rolling instance refresh with zero minimum healthy percentage and
-100 percent maximum, so a replacement uses the same single-host allocation.
-Drain the existing light Actions pool before applying the opt-in: boot-time
-configuration and reduced runner count take effect on replacement, and the
-single-host pool is unavailable during that replacement. Removing the option
-updates the launch template; replace the host in a coordinated IaC maintenance
-change to remove an already-installed account and its SSH configuration.
+Every apply that changes the launch template starts a rolling instance refresh
+with zero minimum healthy percentage and 100 percent maximum, so the
+replacement uses the same single-host allocation and boot-time changes (the
+job admission hook included) go live without a manual refresh. The pool is
+unavailable during the replacement and a running job is cancelled, so drain
+the light Actions pool before such an apply. The opt-in's boot-time
+configuration and reduced runner count take effect the same way. Removing the option
+also replaces the host on apply, which removes the installed account and its
+SSH configuration.
 
 An apply and replacement by the infrastructure owner are required before any
 endpoint or live toolchain proof exists. Before enabling router selection:

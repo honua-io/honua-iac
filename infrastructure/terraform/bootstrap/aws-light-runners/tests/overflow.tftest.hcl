@@ -25,6 +25,19 @@ run "default_has_no_overflow_access" {
     error_message = "Default user data must fit the EC2 limit."
   }
 }
+run "launch_template_change_replaces_default_host" {
+  command = apply
+  assert {
+    condition = length(aws_autoscaling_group.runners.instance_refresh) == 1 && alltrue([
+      for refresh in aws_autoscaling_group.runners.instance_refresh :
+      refresh.strategy == "Rolling" &&
+      one(refresh.preferences).min_healthy_percentage == 0 &&
+      one(refresh.preferences).max_healthy_percentage == 100 &&
+      one(refresh.preferences).skip_matching
+    ])
+    error_message = "A launch template change (the runner admission hook included) must replace the single host without a manual refresh, inside the same one-host allocation."
+  }
+}
 run "shared_installer_receives_complete_light_runner_configuration" {
   command = apply
   assert {
