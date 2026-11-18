@@ -69,6 +69,27 @@ run "content_read_families_are_guarded_in_both_policies" {
   }
 }
 
+run "job_queue_metadata_is_not_a_content_read" {
+  command = plan
+  assert {
+    condition = alltrue([
+      for action in ["batch:DescribeJobs", "batch:DescribeJobDefinitions"] : anytrue([
+        for pattern in local.shared_content_read_actions : can(regex("^${replace(pattern, "*", ".*")}$", action))
+      ])
+      ]) && !anytrue([
+      for pattern in local.shared_content_read_actions : can(regex("^${replace(pattern, "*", ".*")}$", "batch:DescribeJobQueues"))
+      ]) && anytrue([
+      for statement in jsondecode(aws_iam_role_policy.cloudformation.policy).Statement : try(
+        statement.Sid == "DenyNonGateContentReads" && statement.Effect == "Deny" &&
+        anytrue([for pattern in flatten([statement.Action]) : can(regex("^${replace(pattern, "*", ".*")}$", "batch:DescribeJobs"))]) &&
+        anytrue([for pattern in flatten([statement.Action]) : can(regex("^${replace(pattern, "*", ".*")}$", "batch:DescribeJobDefinitions"))]) &&
+        !anytrue([for pattern in flatten([statement.Action]) : can(regex("^${replace(pattern, "*", ".*")}$", "batch:DescribeJobQueues"))]), false
+      )
+    ])
+    error_message = "Job and job-definition reads stay content reads. Queue metadata reads do not."
+  }
+}
+
 run "service_role_reads_task_definitions_but_not_tasks" {
   command = plan
   assert {

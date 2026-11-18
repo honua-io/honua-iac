@@ -11,7 +11,10 @@ locals {
     "backup:StartRestoreJob",
     "backup:StartCopyJob",
     "backup:Copy*",
-    "batch:DescribeJob*",
+    # DescribeJobD* is exactly DescribeJobDefinitions. DescribeJobQueues is queue
+    # metadata (CloudFormation calls it on *); it must not inherit this fence.
+    "batch:DescribeJobs",
+    "batch:DescribeJobD*",
     "batch:DescribeServiceJob",
     "cloudfront:Get*",
     "cloudfront:List*",

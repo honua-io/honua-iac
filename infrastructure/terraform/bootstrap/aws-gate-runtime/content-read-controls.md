@@ -30,9 +30,9 @@ Actions: `backup:GetRecoveryPoint*`, `backup:GetRestore*`, `backup:DescribeRecov
 
 [batch authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_batch.html)
 
-Job definitions and jobs can contain commands and environment values. DescribeJobDefinitions, DescribeJobs and DescribeServiceJob have no resource-tag condition.
+Job definitions and jobs can contain commands and environment values. DescribeJobDefinitions, DescribeJobs and DescribeServiceJob have no resource-tag condition. DescribeJobQueues returns queue metadata only, so it is not a content read; CloudFormation calls it on `*` when it creates a job queue.
 
-Actions: `batch:DescribeJob*`, `batch:DescribeServiceJob`.
+Actions: `batch:DescribeJobs`, `batch:DescribeJobD*` (exactly DescribeJobDefinitions), `batch:DescribeServiceJob`.
 
 ## cloudfront
 
