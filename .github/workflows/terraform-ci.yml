@@ -192,6 +192,7 @@ jobs:
             "infrastructure/terraform/bootstrap/aws-drift-plan"
             "infrastructure/terraform/bootstrap/aws-update-rollback-controller"
             "infrastructure/terraform/bootstrap/aws-demo-deploy"
+            "infrastructure/terraform/bootstrap/aws-ecr-publish"
             "infrastructure/terraform/bootstrap/aws-exec-identity"
             "infrastructure/terraform/bootstrap/aws-bedrock-quotas"
             "infrastructure/terraform/bootstrap/aws-serverless"
@@ -249,6 +250,7 @@ jobs:
             exit 1
           fi
           terraform -chdir=infrastructure/terraform/bootstrap/aws-light-runners test -no-color
+          terraform -chdir=infrastructure/terraform/bootstrap/aws-ecr-publish test -no-color
 
       - name: Install bounded registry audit dependency
         run: |

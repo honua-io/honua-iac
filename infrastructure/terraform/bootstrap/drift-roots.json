@@ -40,6 +40,10 @@
       "state_key": "bootstrap/aws-lane-host/terraform.tfstate",
       "operator": { "tfvars_parameter": "/honua/lane-host/tfvars", "region": "eu-north-1" }
     },
+    "aws-ecr-publish": {
+      "applied": false,
+      "state_key": "bootstrap/aws-ecr-publish/terraform.tfstate"
+    },
     "aws-demo-deploy": {
       "applied": true,
       "state_key": "bootstrap/aws-demo-deploy/terraform.tfstate",
