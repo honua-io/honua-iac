@@ -48,7 +48,7 @@ locals {
       # Such a name would make every generated role match the IdP secret-reader pattern.
       Effect = "Deny", Action = ["cloudformation:CreateStack"], Resource = "arn:aws:cloudformation:us-east-1:${var.member_account_id}:stack/*ExecutionRole*/*"
       }, {
-      Effect   = "Allow", Action = ["cloudformation:DescribeStacks", "cloudformation:DescribeStackEvents", "cloudformation:ListStackResources", "cloudformation:GetTemplate", "cloudformation:GetStackPolicy"]
+      Effect   = "Allow", Action = ["cloudformation:DescribeStacks", "cloudformation:DescribeStackEvents", "cloudformation:DescribeStackResource", "cloudformation:ListStackResources", "cloudformation:GetTemplate", "cloudformation:GetStackPolicy"]
       Resource = local.stack_arn
       }, {
       Effect   = "Allow", Action = ["cloudformation:ListStacks", "cloudformation:ValidateTemplate", "cloudformation:GetTemplateSummary"]
@@ -92,6 +92,10 @@ locals {
       }, {
       Sid       = "ListGateTasks", Effect = "Allow", Action = "ecs:ListTasks", Resource = "*"
       Condition = { ArnLike = { "ecs:cluster" = "arn:aws:ecs:us-east-1:${var.member_account_id}:cluster/honua-gate-*-Cluster-*" } }
+      }, {
+      # ListClusters has no resource scope. It returns cluster ARNs only, so the
+      # deploy watcher can find the stack's cluster before ListTasks.
+      Sid = "ListClusters", Effect = "Allow", Action = "ecs:ListClusters", Resource = "*"
     }], local.region_controls, local.stack_tag_controls, local.stack_tag_permissions, local.network_cleanup_permissions)
   })
 }

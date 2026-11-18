@@ -61,6 +61,23 @@ run "lane_runtime_inspection_is_read_only_and_gate_scoped" {
   }
 }
 
+run "lane_can_read_one_stack_resource_and_list_cluster_arns" {
+  command = plan
+  assert {
+    condition = alltrue([for policy in [aws_iam_role_policy.lane.policy, aws_iam_policy.lane_boundary.policy] :
+      length([for statement in jsondecode(policy).Statement : statement if try(
+        statement.Effect == "Allow" && !can(statement.Condition) &&
+        contains(flatten([statement.Action]), "cloudformation:DescribeStackResource") &&
+        statement.Resource == "arn:aws:cloudformation:us-east-1:000000000002:stack/honua-gate-*/*", false
+        )]) == 1 && length([for statement in jsondecode(policy).Statement : statement if try(
+        statement.Sid == "ListClusters" && statement.Effect == "Allow" && !can(statement.Condition) &&
+        statement.Action == "ecs:ListClusters" && statement.Resource == "*", false
+      )]) == 1
+    ])
+    error_message = "Both lane policies must allow DescribeStackResource only on gate stacks, and ListClusters with no resource scope."
+  }
+}
+
 run "lane_inspection_cannot_read_ec2_content" {
   command = plan
   assert {

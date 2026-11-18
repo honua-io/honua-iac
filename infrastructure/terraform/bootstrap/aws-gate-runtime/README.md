@@ -217,9 +217,12 @@ Qualification rows must observe a running install (sidecar image digest, WAF log
 redaction, the database role in use, Batch worker output). For that, both lane
 policies also allow these read-only calls, on gate resources only:
 
-- `ecs:ListTasks` where the cluster is named `honua-gate-*-Cluster-*`, and
-  `ecs:DescribeTasks` on tasks in those clusters. CloudFormation names each cluster
-  `<stack name>-Cluster-<random>`.
+- `cloudformation:DescribeStackResource` on `honua-gate-*` stacks, for one
+  resource's physical ID and status.
+- `ecs:ListClusters` with no resource. The API returns cluster ARNs only, so the
+  watcher can find the cluster named `<stack name>-Cluster-<random>` before
+  `ecs:ListTasks`. `ecs:ListTasks` still requires that cluster, and
+  `ecs:DescribeTasks` only tasks in those clusters.
 - `logs:DescribeLogStreams`, `logs:FilterLogEvents` and `logs:GetLogEvents` on the
   log groups `/honua/honua-gate-*`, `aws-waf-logs-honua-gate-*` and
   `/aws/rds/instance/honua-gate-*`. CloudWatch Logs has no resource-tag condition
