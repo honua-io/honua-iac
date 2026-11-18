@@ -19,11 +19,13 @@ locals {
     "cognito-idp:CreateUserPoolClient", "cognito-idp:DeleteUserPoolClient", "cognito-idp:UpdateUserPoolClient",
     "cognito-idp:CreateUserPoolDomain", "cognito-idp:DeleteUserPoolDomain", "cognito-idp:UpdateUserPoolDomain",
     "cognito-idp:CreateGroup", "cognito-idp:DeleteGroup", "cognito-idp:UpdateGroup",
-    "cognito-idp:AdminCreateUser", "cognito-idp:AdminDeleteUser",
-    "cognito-idp:AdminAddUserToGroup", "cognito-idp:AdminRemoveUserFromGroup",
+    # AdminCr*, AdminRem*, GetUserPoolM* and SetUserPoolM* are each exactly one action.
+    "cognito-idp:AdminCr*", "cognito-idp:AdminDeleteUser",
+    "cognito-idp:AdminAddUserToGroup", "cognito-idp:AdminRem*",
+    "cognito-idp:GetUserPoolM*", "cognito-idp:SetUserPoolM*",
     # DescribeUserPool* is exactly DescribeUserPool, DescribeUserPoolClient and DescribeUserPoolDomain.
     "cognito-idp:DescribeUserPool*",
-    "cognito-idp:GetGroup", "cognito-idp:GetUserPoolMfaConfig", "cognito-idp:SetUserPoolMfaConfig",
+    "cognito-idp:GetGroup",
     "cognito-idp:TagResource", "cognito-idp:UntagResource", "cognito-idp:ListTagsForResource"
   ]
   protected_controls = {

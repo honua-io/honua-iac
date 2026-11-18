@@ -179,16 +179,20 @@ locals {
     Resource  = "arn:aws:kms:us-east-1:${var.member_account_id}:key/*"
     Condition = { StringNotEqualsIfExists = { "aws:ResourceTag/HonuaGate" = "true" } }
   }
-  # The gate server repository is Terraform-owned, so it has no stack tag; the
-  # boundary allows only pulls on ECR, and registry login (ecr:GetAuth*, exactly
-  # GetAuthorizationToken) has no resource. The region wildcard saves quota; the
-  # region deny already confines ECR to us-east-1.
+  # The gate server repository is Terraform-owned, so it has no stack tag. The
+  # GuardDuty agent repository is AWS-owned and has none either; without that
+  # exemption the runtime sidecar cannot pull. The boundary allows only pulls
+  # on ECR, and registry login (ecr:GetAuth*, exactly GetAuthorizationToken)
+  # has no resource. The server ARN uses a region wildcard to save quota; the
+  # region deny already confines ECR to us-east-1. The agent ARN is exact.
   boundary_ownership_deny = {
-    Sid = "DenyNonGateChanges", Effect = "Deny", NotResource = [aws_secretsmanager_secret.idp_client.arn, local.boundary_repository_arn]
+    Sid = "DenyNonGateChanges", Effect = "Deny", NotResource = [aws_secretsmanager_secret.idp_client.arn, local.boundary_repository_arn, local.guardduty_agent_repository_arn]
     # The boundary allows no IAM creates, so exempting iam:CreateRole/CreateServiceLinkedRole here would grant
     # nothing; leaving them out keeps the managed policy within its 6,144-character quota.
     # guardduty:ListD* is exactly ListDetectors (the Launch Stack detector lookup), shortened for that quota.
-    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*", "ec2:DescribeManagedPrefixLists", "ec2:DescribeAvailabilityZones", "ec2:DescribeSubnets", "ec2:DescribeVpcs", "guardduty:ListD*"], [for action in local.shared_creation_actions : action if !startswith(action, "iam:Create")])
+    # DescribeMan*, DescribeAv* and DescribeSu* are exactly DescribeManagedPrefixLists,
+    # DescribeAvailabilityZones and DescribeSubnets. The shorter spellings keep the quota.
+    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*", "ec2:DescribeMan*", "ec2:DescribeAv*", "ec2:DescribeSu*", "ec2:DescribeVpcs", "guardduty:ListD*"], [for action in local.shared_creation_actions : action if !startswith(action, "iam:Create")])
     # Secrets Manager decrypts with its AWS-managed key for callers already allowed to read the secret;
     # kms:ViaService only ever carries AWS service endpoints (secretsmanager.<region>.amazonaws.com).
     Condition = merge(local.ownership_condition, { StringNotLike = { "kms:ViaService" = "secretsmanager.*" } })

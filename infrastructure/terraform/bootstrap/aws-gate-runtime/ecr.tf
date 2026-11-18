@@ -14,6 +14,9 @@ locals {
   server_repository       = "honua-gate/server"
   server_repository_arn   = "arn:aws:ecr:us-east-1:${var.member_account_id}:repository/${local.server_repository}"
   boundary_repository_arn = "arn:aws:ecr:*:${var.member_account_id}:repository/${local.server_repository}"
+  # AWS owns this repository, so it carries no gate stack tag. The account is the
+  # us-east-1 entry of the Launch Stack GuardDutyAgent map.
+  guardduty_agent_repository_arn = "arn:aws:ecr:us-east-1:593207742271:repository/aws-guardduty-agent-fargate"
 
   # Covers the gate cohorts in flight: an expired digest breaks the next task
   # replacement of a live gate stack that still references it.

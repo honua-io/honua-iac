@@ -319,10 +319,12 @@ digest: pass `ServerImageUri=<uri>@sha256:<digest>` and the repository ARN in
 the template's private repository parameter, which grants the stack's
 execution role the pull actions that the workload boundary already allows.
 Launch Stack roles cannot write images. In shared-account mode the ownership
-fence exempts only this Terraform-owned repository (it has no stack tag) and
-registry login; image reads from every other repository still require gate
-stack ownership. Whoever pushes must assume the lane role, so the pushing host's
-role must be in `lane_principal_arns`.
+fence exempts this Terraform-owned repository (it has no stack tag), registry
+login, and the exact us-east-1 GuardDuty agent repository from the Launch Stack
+GuardDutyAgent map, which is AWS-owned and so has no stack tag. Image reads
+from every other repository still require gate stack ownership. Whoever pushes
+must assume the lane role, so the pushing host's role must be in
+`lane_principal_arns`.
 
 ```bash
 aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin "${GATE_SERVER_REPOSITORY_URI%%/*}"

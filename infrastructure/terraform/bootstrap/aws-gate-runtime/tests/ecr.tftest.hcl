@@ -86,8 +86,8 @@ run "shared_account_exempts_only_the_gate_repository" {
     budget_alert_email      = "gate@example.invalid"
   }
   assert {
-    condition     = toset(local.boundary_ownership_deny.NotResource) == toset([aws_secretsmanager_secret.idp_client.arn, local.boundary_repository_arn]) && contains(local.boundary_ownership_deny.NotAction, "ecr:GetAuth*") && local.boundary_repository_arn == replace(local.server_repository_arn, ":us-east-1:", ":*:")
-    error_message = "Workloads may log in to the registry and pull from the Terraform-owned gate repository, which carries no stack tag."
+    condition     = toset(local.boundary_ownership_deny.NotResource) == toset([aws_secretsmanager_secret.idp_client.arn, local.boundary_repository_arn, local.guardduty_agent_repository_arn]) && contains(local.boundary_ownership_deny.NotAction, "ecr:GetAuth*") && local.boundary_repository_arn == replace(local.server_repository_arn, ":us-east-1:", ":*:") && local.guardduty_agent_repository_arn == "arn:aws:ecr:us-east-1:593207742271:repository/aws-guardduty-agent-fargate"
+    error_message = "Workloads may log in, pull the Terraform-owned gate repository, and pull the us-east-1 GuardDuty agent repository. Neither carries a stack tag."
   }
   assert {
     condition = alltrue([
@@ -98,14 +98,32 @@ run "shared_account_exempts_only_the_gate_repository" {
   }
   assert {
     condition = alltrue([
-      for request in [["ecr:GetAuthorizationToken", "*"], ["ecr:BatchGetImage", local.server_repository_arn], ["ecr:GetDownloadUrlForLayer", local.server_repository_arn], ["ecr:BatchCheckLayerAvailability", local.server_repository_arn]] : alltrue([
-        for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : statement.Effect != "Deny" || try(statement.Sid, "") == "DenyOtherRegions" || !(
-          try(anytrue([for pattern in flatten([statement.Action]) : can(regex("(?i)^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", request[0]))]), !anytrue([for pattern in flatten([statement.NotAction]) : can(regex("(?i)^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", request[0]))])) &&
-          try(anytrue([for pattern in flatten([statement.Resource]) : can(regex("^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", request[1]))]), !anytrue([for pattern in flatten([statement.NotResource]) : can(regex("^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", request[1]))]))
-        )
+      for request in concat(
+        [["ecr:GetAuthorizationToken", "*"]],
+        [for action in ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability"] : [action, local.server_repository_arn]],
+        [for action in ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:BatchCheckLayerAvailability"] : [action, local.guardduty_agent_repository_arn]]
+        ) : alltrue([
+          for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : statement.Effect != "Deny" || try(statement.Sid, "") == "DenyOtherRegions" || !(
+            try(anytrue([for pattern in flatten([statement.Action]) : can(regex("(?i)^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", request[0]))]), !anytrue([for pattern in flatten([statement.NotAction]) : can(regex("(?i)^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", request[0]))])) &&
+            try(anytrue([for pattern in flatten([statement.Resource]) : can(regex("^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", request[1]))]), !anytrue([for pattern in flatten([statement.NotResource]) : can(regex("^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", request[1]))]))
+          )
       ])
     ])
-    error_message = "No workload-boundary deny may block registry login or a pull from the gate repository in us-east-1, whatever its conditions."
+    error_message = "No workload-boundary deny may block registry login, a pull from the gate repository, or a pull from the us-east-1 GuardDuty agent repository."
+  }
+  assert {
+    condition = alltrue([
+      for repository in [
+        replace(local.guardduty_agent_repository_arn, "aws-guardduty-agent-fargate", "not-the-agent"),
+        replace(local.guardduty_agent_repository_arn, ":us-east-1:", ":us-west-2:"),
+        ] : anytrue([
+          for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement :
+          try(statement.Sid, "") == "DenyNonGateChanges" && statement.Effect == "Deny" && !anytrue([
+            for pattern in flatten([statement.NotResource]) : can(regex("^${replace(replace(replace(pattern, "/[.+()\\[\\]{}|^$\\\\]/", "\\$0"), "*", ".*"), "?", ".")}$", repository))
+          ])
+      ])
+    ])
+    error_message = "The GuardDuty exemption is that one us-east-1 repository. A sibling name or another region stays behind the ownership deny."
   }
   assert {
     condition = alltrue([
