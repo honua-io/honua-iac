@@ -48,6 +48,13 @@ for root in "${roots[@]}"; do
     cp "$dir/backend.tf.example" "$dir/backend.tf"
     activated_backends+=("$dir/backend.tf")
   fi
+  # The bucket and key come from -backend-config; a placeholder access role (aws-gate-runtime) does not.
+  if grep -Eq 'role_arn *= *"REPLACE_WITH_' "$dir/backend.tf"; then
+    echo "bootstrap/$root: needs the private backend.tf with its backend access role" >&2
+    printf '\n### bootstrap/%s: plan not run (needs the private backend.tf)\n' "$root" >> "$body"
+    result=1
+    continue
+  fi
 
   aws ssm get-parameter --region "$region" --name "$parameter" --with-decryption \
     --query Parameter.Value --output text > "$work/$root.raw"
