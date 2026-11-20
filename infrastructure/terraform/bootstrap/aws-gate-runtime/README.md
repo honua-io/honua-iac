@@ -664,6 +664,17 @@ Key cleanup schedules deletion with the seven-day minimum, skipping keys already
 pending deletion. Per-resource failures are logged and fail the invocation after
 other resources are checked. Offline tests do not prove live cleanup permission.
 
+The same pass deletes unused gate ACM certificates. Every name on the certificate
+must sit under `gate_test_domain` (empty skips the pass). ACM must report the
+certificate not in use, it must be older than 24 hours, and no live `honua-gate-*`
+stack may list it as a resource. The certificate must also carry the
+`HonuaGate=true` stack tag, which the delete permission requires too. Certificates
+that a denied rollback left untagged (20 Nov) need their exact IDs in
+`temporary_orphan_certificate_ids` (private SSM tfvars, at most four), which grants
+deletion of exactly those ARNs. Clear the list after the cleanup and apply again.
+A certificate deleted or attached since the listing is skipped. The pass follows
+`orphan_cleanup_dry_run`. Validation records in the test zone stay (see above).
+
 The same invocation also plans retained `honua-protection-<stack guid>` trails whose log bucket name starts with `honua-gate-`, whose home region is the gate region, and which no live stack still owns or references. It then empties and deletes that bucket, including a leftover `honua-gate-*-protectiontrailbucket-*` bucket after its stack is gone. `honua-audit` trails and buckets are denied. Trails in another region, with any other name, or logging to any other bucket are left alone. The ownership check reads only live `honua-gate-*` stacks, which is the set this role can list. More than 50 of those fails the invocation before any deletion. A bucket still used by a trail that is not deleted is left in place. This pass follows `protection_trail_cleanup_dry_run` (default true). Main sets it to false and applies before invoking the reaper. Lanes do not apply. The CloudFormation service-role rollback of a trail that was never created is a separate fence.
 
 ## Authenticated release producers
