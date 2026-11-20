@@ -108,7 +108,7 @@ locals {
       # Config recorder status, rule scope and compliance, log group retention
       # and log delivery wiring are metadata, and GetMetricStatistics returns
       # numbers (heartbeat rows); none of these APIs offers a resource scope.
-      # DescribeDeliver* is exactly DescribeDeliveries, DescribeDeliveryDestinations
+      # DescribeDeliver* is today exactly DescribeDeliveries, DescribeDeliveryDestinations
       # and DescribeDeliverySources; the wildcard keeps the boundary in quota.
       # Explicit families only: no resource configuration, remediation,
       # aggregator, metric listing or log content reads.

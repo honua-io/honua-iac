@@ -275,7 +275,11 @@ policies also allow these read-only calls, on gate resources only:
   Upgrade and rollback rows read the service's rollout and circuit-breaker state.
 - `cloudwatch:DescribeAlarms` and `cloudwatch:DescribeAlarmHistory` on alarms named
   `honua-gate-*` (a Launch Stack names its alarms `<stack name>-ops-*`), for
-  alerting rows. No alarm writes and no `SetAlarmState`.
+  alerting rows. No alarm writes and no `SetAlarmState`. Call them with explicit
+  `--alarm-names` (or `--alarm-name` for history), taken from `ListStackResources`:
+  a prefix or unfiltered call is authorized against `alarm:*` and is denied. The
+  target-tracking alarms that Application Auto Scaling creates
+  (`TargetTracking-service/<cluster>/...`) are outside the fence.
 - `iam:GetRole` on `honua-gate-*` roles, next to the policy simulator, so a
   security row can read a gate role's trust policy and boundary.
 - `logs:DescribeLogStreams`, `logs:FilterLogEvents` and `logs:GetLogEvents` on the
