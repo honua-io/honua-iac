@@ -100,6 +100,12 @@ locals {
         "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/aws/rds/instance/honua-gate-*"
       ]
       }, {
+      # Config recorder status, rule scope and compliance, and log group
+      # retention are metadata without a useful name scope. Explicit families
+      # only: no resource configuration, remediation or aggregator reads.
+      Sid    = "InspectGateMetadata", Effect = "Allow", Resource = "*"
+      Action = ["config:DescribeConfigurationRecorder*", "config:DescribeDeliveryChannel*", "config:DescribeConfigRule*", "config:DescribeComplianceByConfigRule", "logs:DescribeLogGroups"]
+      }, {
       Sid       = "ListGateTasks", Effect = "Allow", Action = "ecs:ListTasks", Resource = "*"
       Condition = { ArnLike = { "ecs:cluster" = "arn:aws:ecs:us-east-1:${var.member_account_id}:cluster/honua-gate-*-Cluster-*" } }
     }], local.region_controls, local.stack_tag_controls, local.stack_tag_permissions, local.network_cleanup_permissions)

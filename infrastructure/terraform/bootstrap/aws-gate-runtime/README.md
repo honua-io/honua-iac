@@ -288,6 +288,16 @@ revision; then this check does not apply. Batch job reads, WAF API reads, log
 queries and command execution are not granted either: Batch job APIs have no
 resource scope, and WAF redaction shows in the WAF log records.
 
+Rows that check Config recording and log retention need account-wide metadata
+reads, because these APIs have no useful name scope. Both lane policies allow
+`config:DescribeConfigurationRecorder*`, `config:DescribeDeliveryChannel*`,
+`config:DescribeConfigRule*` and `config:DescribeComplianceByConfigRule`
+(recorder and delivery status, rule scope, evaluation status and per-rule
+compliance), and `logs:DescribeLogGroups`, which lists every log group name and
+retention in the account, not only gate ones. No other Config action is granted:
+no resource configuration, compliance-by-resource, remediation or aggregator
+reads, and no rule evaluation.
+
 The lane may also call `cloudformation:DescribeStackResource` on gate stacks and
 `ecs:ListClusters`, so a deploy watcher can find the stack's cluster. ListClusters
 returns every cluster ARN in the account, including other workloads' cluster names,
