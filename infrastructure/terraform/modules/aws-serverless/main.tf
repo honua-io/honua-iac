@@ -32,9 +32,10 @@ locals {
   # Database egress shared by the Lambda and GP Batch groups. A reused database
   # inside the VPC is covered by the VPC rule; only a range the operator names
   # outside it gets a rule of its own, and never 0.0.0.0/0.
+  existing_db_outside_vpc_cidrs = local.db_use_existing ? sort(setsubtract(var.existing_db_egress_cidrs, [local.vpc_cidr_block])) : []
   database_egress_rules = concat(
     [{ description = "PostgreSQL access", cidr_blocks = [local.vpc_cidr_block] }],
-    local.db_use_existing && length(var.existing_db_egress_cidrs) > 0 ? [{ description = "Existing PostgreSQL access", cidr_blocks = var.existing_db_egress_cidrs }] : []
+    length(local.existing_db_outside_vpc_cidrs) > 0 ? [{ description = "Existing PostgreSQL access", cidr_blocks = local.existing_db_outside_vpc_cidrs }] : []
   )
 }
 

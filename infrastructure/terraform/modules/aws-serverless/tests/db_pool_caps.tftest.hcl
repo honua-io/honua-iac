@@ -237,7 +237,11 @@ run "existing_database_egress_uses_the_named_range" {
   variables {
     existing_db_endpoint          = "postgres.example.net"
     existing_db_connection_string = "Host=postgres.example.net;Database=honua;Username=honua;Password=test;SSL Mode=Require"
-    existing_db_egress_cidrs      = ["198.51.100.0/28"]
+    existing_db_egress_cidrs      = ["198.51.100.0/28", "10.0.0.0/16"]
+    existing_vpc_id               = "vpc-0123456789abcdef0"
+    existing_vpc_cidr             = "10.0.0.0/16"
+    existing_public_subnet_ids    = ["subnet-00000000000000001", "subnet-00000000000000002"]
+    existing_private_subnet_ids   = ["subnet-00000000000000003", "subnet-00000000000000004"]
   }
 
   assert {
