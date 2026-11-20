@@ -221,6 +221,46 @@ run "existing_connection_string_is_not_rewritten" {
     condition     = aws_lambda_function.this.environment[0].variables["Limits__Connections__MaxConnectionPoolSize"] == "8"
     error_message = "The environment cap must still apply with an existing database."
   }
+
+  assert {
+    condition = (
+      length([for rule in aws_security_group.lambda.egress : rule if rule.description == "Existing PostgreSQL access"]) == 0 &&
+      length(distinct([for rule in aws_security_group.lambda.egress : [rule.from_port, rule.protocol, nonsensitive(rule.cidr_blocks)]])) == length(aws_security_group.lambda.egress)
+    )
+    error_message = "An existing database must be reached on the VPC rule alone, never 0.0.0.0/0, and no two egress rules may repeat a port and range (honua-iac#540)."
+  }
+}
+
+run "existing_database_egress_uses_the_named_range" {
+  command = apply
+
+  variables {
+    existing_db_endpoint          = "postgres.example.net"
+    existing_db_connection_string = "Host=postgres.example.net;Database=honua;Username=honua;Password=test;SSL Mode=Require"
+    existing_db_egress_cidrs      = ["198.51.100.0/28", "10.0.0.0/16"]
+    existing_vpc_id               = "vpc-0123456789abcdef0"
+    existing_vpc_cidr             = "10.0.0.0/16"
+    existing_public_subnet_ids    = ["subnet-00000000000000001", "subnet-00000000000000002"]
+    existing_private_subnet_ids   = ["subnet-00000000000000003", "subnet-00000000000000004"]
+  }
+
+  assert {
+    condition = alltrue([
+      for group in [aws_security_group.lambda, aws_security_group.batch[0]] :
+      toset(nonsensitive(one([for rule in group.egress : rule.cidr_blocks if rule.description == "Existing PostgreSQL access"]))) == toset(["198.51.100.0/28"])
+    ])
+    error_message = "Functions and GP workers must reach a database outside the VPC only on the range the operator names."
+  }
+}
+
+run "world_existing_database_egress_is_rejected" {
+  command = plan
+
+  variables {
+    existing_db_egress_cidrs = ["0.0.0.0/0"]
+  }
+
+  expect_failures = [var.existing_db_egress_cidrs]
 }
 
 run "idle_lifetime_below_the_pruning_interval_is_rejected" {

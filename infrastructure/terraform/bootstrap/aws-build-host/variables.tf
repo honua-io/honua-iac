@@ -19,9 +19,9 @@ variable "allowed_ssh_cidrs" {
   type        = set(string)
   validation {
     condition = length(var.allowed_ssh_cidrs) > 0 && alltrue([
-      for cidr in var.allowed_ssh_cidrs : can(cidrnetmask(cidr)) && try(tonumber(split("/", cidr)[1]) > 0, false)
+      for cidr in var.allowed_ssh_cidrs : can(cidrnetmask(cidr)) && try(tonumber(split("/", cidr)[1]) >= 24, false)
     ])
-    error_message = "Supply valid IPv4 CIDRs with a prefix greater than zero."
+    error_message = "Supply valid IPv4 CIDRs of /24 or narrower (an operator address, ideally /32); broader SSH ranges are refused."
   }
 }
 

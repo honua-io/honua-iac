@@ -382,6 +382,18 @@ variable "existing_db_port" {
   }
 }
 
+variable "existing_db_egress_cidrs" {
+  description = "IPv4 CIDRs the functions and GP workers may reach on the database port when they use an existing database. Empty (the default) means the VPC CIDR; list the database's address range when it lives outside the VPC."
+  type        = list(string)
+  default     = []
+  validation {
+    condition = alltrue([
+      for cidr in var.existing_db_egress_cidrs : can(cidrnetmask(cidr)) && try(tonumber(split("/", cidr)[1]) >= 8, false)
+    ])
+    error_message = "existing_db_egress_cidrs must be valid IPv4 CIDRs of /8 or narrower; 0.0.0.0/0 is refused."
+  }
+}
+
 variable "existing_db_connection_string" {
   description = "Existing PostgreSQL connection string to reuse. Set with existing_db_endpoint."
   type        = string

@@ -265,9 +265,15 @@ variable "db_additional_ingress_security_group_ids" {
 }
 
 variable "db_additional_ingress_cidrs" {
-  description = "Additional CIDRs allowed to access PostgreSQL (for controlled migration/PostGIS operations)."
+  description = "Additional CIDRs allowed to access PostgreSQL (for controlled migration/PostGIS operations). IPv4, /8 or narrower."
   type        = list(string)
   default     = []
+  validation {
+    condition = alltrue([
+      for cidr in var.db_additional_ingress_cidrs : can(cidrnetmask(cidr)) && try(tonumber(split("/", cidr)[1]) >= 8, false)
+    ])
+    error_message = "db_additional_ingress_cidrs must be valid IPv4 CIDRs of /8 or narrower; 0.0.0.0/0 and other very broad ranges are refused."
+  }
 }
 
 variable "db_multi_az" {
@@ -286,6 +292,18 @@ variable "existing_db_endpoint" {
   description = "Existing PostgreSQL endpoint to reuse. Set with existing_db_connection_string."
   type        = string
   default     = ""
+}
+
+variable "existing_db_egress_cidrs" {
+  description = "IPv4 CIDRs the server may reach on TCP 5432 when it uses an existing database. Empty (the default) means the VPC CIDR; list the database's address range when it lives outside the VPC."
+  type        = list(string)
+  default     = []
+  validation {
+    condition = alltrue([
+      for cidr in var.existing_db_egress_cidrs : can(cidrnetmask(cidr)) && try(tonumber(split("/", cidr)[1]) >= 8, false)
+    ])
+    error_message = "existing_db_egress_cidrs must be valid IPv4 CIDRs of /8 or narrower; 0.0.0.0/0 is refused."
+  }
 }
 
 variable "existing_db_connection_string" {

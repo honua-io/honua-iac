@@ -131,3 +131,11 @@ run "infeasible_replica_ceiling_fails_plan" {
 
   expect_failures = [output.db_connection_budget]
 }
+
+run "broad_database_ingress_cidr_is_rejected" {
+  command = plan
+  variables {
+    db_additional_ingress_cidrs = ["203.0.113.7/32", "0.0.0.0/0"]
+  }
+  expect_failures = [var.db_additional_ingress_cidrs]
+}

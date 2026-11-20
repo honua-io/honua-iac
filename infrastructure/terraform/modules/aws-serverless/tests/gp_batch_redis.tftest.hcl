@@ -249,7 +249,7 @@ run "existing_custom_database_port_reaches_gp_batch" {
   assert {
     condition = (
       local.db_port == 5544 &&
-      length([for rule in aws_security_group.batch[0].egress : rule if contains(["PostgreSQL access", "Existing PostgreSQL access"], rule.description)]) == 2 &&
+      length([for rule in aws_security_group.batch[0].egress : rule if contains(["PostgreSQL access", "Existing PostgreSQL access"], rule.description)]) == 1 &&
       alltrue([for rule in aws_security_group.batch[0].egress : rule.from_port == 5544 && rule.to_port == 5544 if contains(["PostgreSQL access", "Existing PostgreSQL access"], rule.description)])
     )
     error_message = "GP Batch must reach a reused database only on its configured custom port."

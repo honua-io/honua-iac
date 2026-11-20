@@ -20,6 +20,12 @@ run "broad_ssh_source_is_rejected" {
   expect_failures = [var.allowed_ssh_cidrs]
 }
 
+run "very_broad_ssh_prefix_is_rejected" {
+  command = plan
+  variables { allowed_ssh_cidrs = ["192.0.2.1/32", "10.0.0.0/8"] }
+  expect_failures = [var.allowed_ssh_cidrs]
+}
+
 run "malformed_public_key_is_rejected" {
   command = plan
   variables {

@@ -34,6 +34,7 @@ module "honua" {
   existing_db_endpoint                = local.install_db_host
   existing_db_port                    = var.existing_db_port
   existing_db_connection_string       = var.existing_db_connection_string
+  existing_db_egress_cidrs            = var.existing_db_egress_cidrs
   db_publicly_accessible              = local.install_db_public
   db_additional_ingress_cidrs         = var.db_additional_ingress_cidrs
   enable_postgis                      = local.install_db_postgis

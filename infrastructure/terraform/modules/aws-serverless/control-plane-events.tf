@@ -199,6 +199,10 @@ resource "aws_iam_role_policy" "control_plane_events" {
           "kms:GenerateDataKey"
         ]
         Resource = ["*"]
+        # Only through Secrets Manager in this region: every
+        # secret the functions read, the master key included, is a Secrets
+        # Manager secret, so no direct KMS call needs this grant.
+        Condition = { StringEquals = { "kms:ViaService" = "secretsmanager.${data.aws_region.current.name}.amazonaws.com" } }
       }
     ]
   })

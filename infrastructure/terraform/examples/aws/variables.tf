@@ -66,6 +66,12 @@ variable "existing_db_endpoint" {
   default     = ""
 }
 
+variable "existing_db_egress_cidrs" {
+  description = "IPv4 CIDRs the server may reach on the database port when existing_db_endpoint is set. Empty (the default) means the VPC CIDR; list the database's range when it lives outside the VPC."
+  type        = list(string)
+  default     = []
+}
+
 variable "existing_db_connection_string" {
   description = "Existing PostgreSQL connection string to reuse."
   type        = string

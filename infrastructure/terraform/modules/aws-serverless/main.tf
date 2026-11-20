@@ -29,6 +29,14 @@ locals {
   redis_auth_token   = var.redis_auth_token != "" ? var.redis_auth_token : (local.redis_create ? random_password.redis_auth[0].result : "")
   redis_connection   = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true${local.redis_client_options}" : "")
   redis_egress_cidrs = local.redis_create ? [local.vpc_cidr_block] : var.redis_connection_cidrs
+  # Database egress shared by the Lambda and GP Batch groups. A reused database
+  # inside the VPC is covered by the VPC rule; only a range the operator names
+  # outside it gets a rule of its own, and never 0.0.0.0/0.
+  existing_db_outside_vpc_cidrs = local.db_use_existing ? sort(setsubtract(var.existing_db_egress_cidrs, [local.vpc_cidr_block])) : []
+  database_egress_rules = concat(
+    [{ description = "PostgreSQL access", cidr_blocks = [local.vpc_cidr_block] }],
+    length(local.existing_db_outside_vpc_cidrs) > 0 ? [{ description = "Existing PostgreSQL access", cidr_blocks = local.existing_db_outside_vpc_cidrs }] : []
+  )
 }
 
 # Client timeouts on the module-built Redis connection string (README: Redis
@@ -520,22 +528,14 @@ resource "aws_security_group" "lambda" {
   description = "Lambda security group"
   vpc_id      = local.vpc_id
 
-  egress {
-    description = "PostgreSQL access"
-    from_port   = local.db_port
-    to_port     = local.db_port
-    protocol    = "tcp"
-    cidr_blocks = [local.vpc_cidr_block]
-  }
-
   dynamic "egress" {
-    for_each = local.db_use_existing ? [1] : []
+    for_each = local.database_egress_rules
     content {
-      description = "Existing PostgreSQL access"
+      description = egress.value.description
       from_port   = local.db_port
       to_port     = local.db_port
       protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
+      cidr_blocks = egress.value.cidr_blocks
     }
   }
 
@@ -787,7 +787,9 @@ data "aws_iam_policy_document" "lambda_ecr_access" {
       test     = "StringLike"
       variable = "aws:sourceArn"
       values = [
-        "arn:aws:lambda:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:function:*"
+        # Only this deployment's functions (all named "<name>-*"), not every
+        # function in the account.
+        "arn:aws:lambda:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:function:${local.name}-*"
       ]
     }
   }

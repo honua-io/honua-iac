@@ -213,10 +213,10 @@ run "existing_custom_port_matches_database_egress_and_migration_locator" {
     condition = (
       local.db_port == 5544 &&
       aws_lambda_function.migration[0].environment[0].variables.HONUA_MIGRATION_TARGET_SHA256 == "577f46c898aead9358dfad2fbc56b2fd74ecde4e9866420c8732d53041be78f4" &&
-      length([for rule in aws_security_group.lambda.egress : rule if contains(["PostgreSQL access", "Existing PostgreSQL access"], rule.description)]) == 2 &&
+      length([for rule in aws_security_group.lambda.egress : rule if contains(["PostgreSQL access", "Existing PostgreSQL access"], rule.description)]) == 1 &&
       alltrue([for rule in aws_security_group.lambda.egress : rule.from_port == 5544 && rule.to_port == 5544 if contains(["PostgreSQL access", "Existing PostgreSQL access"], rule.description)])
     )
-    error_message = "An existing database's configured port must bind both narrow Lambda egress rules and the canonical migration locator."
+    error_message = "An existing database's configured port must bind the Lambda database egress rule and the canonical migration locator."
   }
 }
 

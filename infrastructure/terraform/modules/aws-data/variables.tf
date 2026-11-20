@@ -96,9 +96,15 @@ variable "db_publicly_accessible" {
 }
 
 variable "db_additional_ingress_cidrs" {
-  description = "Additional CIDRs allowed to access PostgreSQL."
+  description = "Additional CIDRs allowed to access PostgreSQL. IPv4, /8 or narrower."
   type        = list(string)
   default     = []
+  validation {
+    condition = alltrue([
+      for cidr in var.db_additional_ingress_cidrs : can(cidrnetmask(cidr)) && try(tonumber(split("/", cidr)[1]) >= 8, false)
+    ])
+    error_message = "db_additional_ingress_cidrs must be valid IPv4 CIDRs of /8 or narrower; 0.0.0.0/0 and other very broad ranges are refused."
+  }
 }
 
 variable "db_multi_az" {
