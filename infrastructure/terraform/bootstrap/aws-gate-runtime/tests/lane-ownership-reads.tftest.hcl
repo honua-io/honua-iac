@@ -90,3 +90,18 @@ run "lane_simulates_only_gate_roles" {
     error_message = "The lane may simulate gate roles only, and gains no other IAM action."
   }
 }
+
+run "lane_reads_config_and_log_group_metadata_only" {
+  command = plan
+  assert {
+    condition = alltrue([for policy in [aws_iam_role_policy.lane.policy, aws_iam_policy.lane_boundary.policy] :
+      length([for statement in jsondecode(policy).Statement : statement if try(
+        statement.Sid == "InspectGateMetadata" && statement.Effect == "Allow" && statement.Resource == "*" && !can(statement.Condition) &&
+        toset(statement.Action) == toset(["config:Describe*", "logs:DescribeLogGroups"]), false
+        )]) == 1 && !anytrue([for statement in jsondecode(policy).Statement : statement.Effect == "Allow" && anytrue([
+          for action in flatten([statement.Action]) : startswith(action, "config:") && action != "config:Describe*"
+      ])])
+    ])
+    error_message = "Both lane policies may read Config status and log group metadata, and no other Config action (no resource configuration reads or rule changes)."
+  }
+}

@@ -267,7 +267,7 @@ no credentials and no policy text that `GetTemplate` does not already show.
 
 Qualification rows must observe a running install (sidecar image digest, WAF log
 redaction, the database role in use, Batch worker output). For that, both lane
-policies also allow these read-only calls, on gate resources only:
+policies also allow these read-only calls, on gate resources unless noted:
 
 - `ecs:ListTasks` where the cluster is named `honua-gate-*-Cluster-*`, and
   `ecs:DescribeTasks` on tasks in those clusters. CloudFormation names each cluster
@@ -276,6 +276,11 @@ policies also allow these read-only calls, on gate resources only:
   log groups `/honua/honua-gate-*`, `aws-waf-logs-honua-gate-*` and
   `/aws/rds/instance/honua-gate-*`. CloudWatch Logs has no resource-tag condition
   for these calls, so the name is the fence. Reaper Lambda logs are not included.
+- `config:Describe*` and `logs:DescribeLogGroups` on any resource, so a row can
+  check the Config recorder status, the stack drift rule's scope and compliance,
+  and log group retention. These APIs have no name scope and return metadata
+  only. No other Config action is granted: resource configuration reads
+  (`Get*`, `Select*`, `BatchGet*`) and rule evaluation stay denied.
 
 These are content reads of gate installs, which hold synthetic qualification data
 only. The lane still cannot read task definitions: `ecs:DescribeTaskDefinition` has no
