@@ -172,8 +172,10 @@ locals {
   # create was refused GetDeliveryDestination and DeleteDeliveryDestination on its HonuaGate=true destination), so the
   # ownership deny, which also covers logs:Get*, cannot tell a gate one. The service role is exempt from it for delivery
   # resources; delivery_denies fences them by account and name instead (README), and the region deny fixes the region.
-  delivery_arns         = "arn:aws:logs:*:*:delivery*"
-  service_role_unfenced = concat([aws_secretsmanager_secret.idp_client.arn, local.delivery_arns], local.untaggable_arns)
+  delivery_arns = "arn:aws:logs:*:*:delivery*"
+  # Route 53 evaluates no resource tags, so hosted zones stay fenced except the gate test zone (test-domain.tf), whose
+  # records only the service role may change; workloads keep the full fence.
+  service_role_unfenced = concat([aws_secretsmanager_secret.idp_client.arn, local.delivery_arns], local.untaggable_arns, aws_route53_zone.gate_test[*].arn)
   # The service role keeps account-wide metadata reads. The workload boundary
   # cannot repeat that list and stay inside the managed-policy quota, so its
   # copy exempts allocation calls, named gate buckets, Cognito domain description

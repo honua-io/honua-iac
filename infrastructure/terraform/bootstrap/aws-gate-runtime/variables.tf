@@ -141,3 +141,27 @@ variable "temporary_cleanup_subnet_group_names" {
     error_message = "Temporary subnet cleanup is available only in the shared gate account."
   }
 }
+
+variable "gate_test_domain" {
+  description = "Delegated test subdomain for gate domain installs (for example gate.example.org); empty creates no zone."
+  type        = string
+  default     = ""
+  validation {
+    condition     = var.gate_test_domain == "" || can(regex("^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.){2,}[a-z]{2,63}$", var.gate_test_domain))
+    error_message = "Use a lowercase subdomain name with at least three labels and no trailing dot."
+  }
+  validation {
+    condition     = var.shared_account || var.gate_test_domain == ""
+    error_message = "The gate test zone is available only in the shared gate account."
+  }
+}
+
+variable "gate_test_parent_zone_id" {
+  description = "Optional same-account public zone that delegates gate_test_domain; empty leaves delegation manual."
+  type        = string
+  default     = ""
+  validation {
+    condition     = var.gate_test_parent_zone_id == "" || can(regex("^Z[A-Z0-9]{1,31}$", var.gate_test_parent_zone_id))
+    error_message = "Supply a bare Route 53 hosted zone ID."
+  }
+}
