@@ -574,8 +574,9 @@ CloudFront to the load balancer) need a real public zone. Set
 the private tfvars. Use a domain kept for tests, never one under a production
 domain: every gate stack controls every name in the zone, so a gate page could
 set cookies for the parent domain, and anything that trusts the parent's
-wildcard (CORS, CSP, OAuth redirect lists) would trust gate pages. The apply creates one public Route 53 zone (about USD 0.50
-a month) and outputs `gate_test_zone_id` and `gate_test_name_servers`. With
+wildcard (CORS, CSP, OAuth redirect lists) would trust gate pages. The apply
+creates one public Route 53 zone (about USD 0.50 a month) and outputs
+`gate_test_zone_id` and `gate_test_name_servers`. With
 `gate_test_parent_zone_id` naming a same-account parent zone, the apply also
 writes the NS delegation; otherwise delegate from the parent by hand with the
 name servers output. Empty `gate_test_domain` (the default) creates nothing.
