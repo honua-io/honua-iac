@@ -307,15 +307,23 @@ The name fences and the `CreationTags` deny sit in the attached managed policy
 `HonuaGateCloudFormationFences`, because the inline service policy is at its
 10,240-character quota. Apply changes to it while no gate stack is running.
 
-`CreationTags` covers the handlers that create a resource untagged and tag it in
-a second call: EC2 (`ec2:CreateTags`) and ACM certificates
-(`acm:AddTagsToCertificate`). That call is allowed on an unowned resource only
-when it carries CloudFormation's reserved `aws:cloudformation:stack-name` request
-tag for a `honua-gate-*` stack; a customer `HonuaGate=true` request tag alone does
-not claim a resource. The lane cannot create change sets, so a gate stack cannot
-import and tag a foreign certificate. Deleting a certificate stays behind the
-ownership deny, so a certificate requested before this change, or one whose
-create failed before CloudFormation tagged it, has to be deleted by an operator.
+`CreationTags` covers the EC2 handlers that create a resource untagged and tag it
+in a second call (`ec2:CreateTags`). That call is allowed on an unowned resource
+only when it carries CloudFormation's reserved `aws:cloudformation:stack-name`
+request tag for a `honua-gate-*` stack; a customer `HonuaGate=true` request tag
+alone does not claim a resource.
+
+The ACM certificate handler also requests an untagged certificate and tags it
+afterwards, but with the stack tags only: a live gate update on 20 Nov was
+denied because the reserved stack-name request tag was absent. Certificate ARNs
+carry no name to fence, so `NamedCreationTags` allows `acm:AddTagsToCertificate`
+on an unowned certificate when the request carries the stack's required
+`HonuaGate=true` tag. The fence is attached to the CloudFormation service role
+only, and a native certificate resource always requests a new certificate. The
+lane cannot create change sets, so a gate stack cannot import and tag a foreign
+certificate. Deleting a certificate stays behind the ownership deny, so a
+certificate whose create failed before CloudFormation tagged it has to be
+deleted by an operator.
 
 AWS does not expose this resource tag for every action. In particular, Route 53
 record changes, other untaggable CloudFront resources (origin access identities,

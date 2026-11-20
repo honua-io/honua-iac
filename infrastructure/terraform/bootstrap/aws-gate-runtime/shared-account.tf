@@ -61,12 +61,11 @@ locals {
     StringNotLikeIfExists   = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }
     StringNotEqualsIfExists = { "aws:ResourceTag/HonuaGate" = "true" }
   }
-  # EC2 and ACM accept the reserved stack-name tag on post-create tagging (the ACM
-  # handler requests an untagged certificate, then tags it). RDS instead needs the
-  # customer request tag plus a gate name, account and region fence.
+  # EC2 accepts the reserved stack-name tag on post-create tagging. RDS instead
+  # needs the customer request tag plus a gate name, account and region fence.
   creation_tag_actions = concat(["ec2:CreateTags", "acm:AddTagsToCertificate", "rds:AddTagsToResource"], keys(local.named_tag_targets))
   creation_tag_deny = {
-    Sid = "CreationTags", Effect = "Deny", Action = ["ec2:CreateTags", "acm:AddTagsToCertificate"], Resource = "*"
+    Sid = "CreationTags", Effect = "Deny", Action = ["ec2:CreateTags"], Resource = "*"
     Condition = {
       StringNotLikeIfExists = merge(local.ownership_condition.StringNotLikeIfExists, {
         "aws:RequestTag/aws:cloudformation:stack-name" = "honua-gate-*"
@@ -115,8 +114,11 @@ locals {
       "arn:aws:logs:us-east-1:${var.member_account_id}:delivery:*"
     ]
   }
+  # ACM requests a certificate untagged, then tags it with the stack tags only (no
+  # reserved stack-name tag, live 20 Nov). Its ARNs carry no name to fence; the
+  # service role reaches only certificates it requested (the lane makes no change sets).
   named_tag_denies = concat([{
-    Sid = "NamedCreationTags", Effect = "Deny", Action = keys(local.named_tag_targets), Resource = "*"
+    Sid = "NamedCreationTags", Effect = "Deny", Action = concat(keys(local.named_tag_targets), ["acm:AddTagsToCertificate"]), Resource = "*"
     Condition = merge(local.ownership_condition, {
       StringNotEqualsIfExists = merge(local.ownership_condition.StringNotEqualsIfExists, {
         "aws:RequestTag/HonuaGate" = "true"
