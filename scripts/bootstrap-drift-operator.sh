@@ -48,9 +48,20 @@ for root in "${roots[@]}"; do
     cp "$dir/backend.tf.example" "$dir/backend.tf"
     activated_backends+=("$dir/backend.tf")
   fi
+  # The bucket and key come from -backend-config; a placeholder access role (aws-gate-runtime) does not.
+  if grep -Eq 'role_arn *= *"REPLACE_WITH_' "$dir/backend.tf"; then
+    echo "bootstrap/$root: needs the private backend.tf with its backend access role" >&2
+    printf '\n### bootstrap/%s: plan not run (needs the private backend.tf)\n' "$root" >> "$body"
+    result=1
+    continue
+  fi
 
   aws ssm get-parameter --region "$region" --name "$parameter" --with-decryption \
-    --query Parameter.Value --output text > "$work/$root.tfvars"
+    --query Parameter.Value --output text > "$work/$root.raw"
+  # Terraform picks the tfvars syntax from the file name: a JSON object (aws-gate-runtime) needs .tfvars.json.
+  tfvars="$work/$root.tfvars"
+  if jq -e 'type == "object"' "$work/$root.raw" >/dev/null 2>&1; then tfvars="$tfvars.json"; fi
+  mv "$work/$root.raw" "$tfvars"
   export TF_DATA_DIR="$work/$root.terraform"
   if ! "$terraform" -chdir="$dir" init -input=false -no-color -reconfigure \
       -backend-config="bucket=$state_bucket" \
@@ -62,7 +73,7 @@ for root in "${roots[@]}"; do
   fi
   set +e
   "$terraform" -chdir="$dir" plan -input=false -no-color -lock=false -detailed-exitcode \
-    -var-file="$work/$root.tfvars" -out="$work/$root.tfplan" >"$work/$root.plan" 2>&1
+    -var-file="$tfvars" -out="$work/$root.tfplan" >"$work/$root.plan" 2>&1
   code=$?
   set -e
   case "$code" in
