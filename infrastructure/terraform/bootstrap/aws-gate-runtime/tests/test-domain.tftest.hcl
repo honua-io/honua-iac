@@ -24,8 +24,9 @@ run "no_test_domain_creates_no_zone_or_exemption" {
     error_message = "An empty gate_test_domain must create no zone and no delegation."
   }
   assert {
-    condition     = !anytrue([for arn in local.service_role_ownership_deny.NotResource : strcontains(arn, ":hostedzone/")])
-    error_message = "Without a test zone every hosted zone stays fenced."
+    condition = !anytrue([for arn in local.service_role_ownership_deny.NotResource : strcontains(arn, ":hostedzone/")]) && !anytrue([
+    for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : startswith(try(statement.Sid, ""), "GateTestZone")])
+    error_message = "Without a test zone every hosted zone stays fenced and no zone deny is added."
   }
 }
 
@@ -48,6 +49,29 @@ run "test_zone_records_are_service_role_only" {
   assert {
     condition     = contains(local.service_role_ownership_deny.NotResource, "arn:aws:route53:::hostedzone/ZSYNTHETICGATE")
     error_message = "The service role must be able to write validation and alias records in the test zone."
+  }
+  assert {
+    condition = anytrue([for statement in local.service_role_shared_denies : try(
+      statement.Sid == "DenyNonGateContentReads" && contains(statement.NotResource, "arn:aws:route53:::hostedzone/ZSYNTHETICGATE") &&
+    contains(statement.Action, "route53:ListResourceRecordSets"), false)])
+    error_message = "The service role must be able to list the test zone's records, and only that zone's."
+  }
+  assert {
+    condition = anytrue([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : try(
+      statement.Sid == "GateTestZoneRecordsOnly" && statement.Resource == "arn:aws:route53:::hostedzone/ZSYNTHETICGATE" &&
+      toset(statement.NotAction) == toset(["route53:ChangeResourceRecordSets", "route53:Get*", "route53:List*"]), false)]) && anytrue([
+      for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : try(
+        statement.Sid == "GateTestZoneRecordTypes" && statement.Action == "route53:ChangeResourceRecordSets" &&
+    toset(statement.Condition["ForAnyValue:StringEquals"]["route53:ChangeResourceRecordSetsRecordTypes"]) == toset(["NS", "SOA", "DS"]), false)])
+    error_message = "In the test zone the service role may change only ordinary records."
+  }
+  assert {
+    condition     = length(jsonencode(jsondecode(aws_iam_policy.cloudformation_fences.policy))) <= 6144
+    error_message = "The fences policy uses ${nonsensitive(length(jsonencode(jsondecode(aws_iam_policy.cloudformation_fences.policy))))} of 6144 characters."
+  }
+  assert {
+    condition     = aws_route53_zone.gate_test[0].force_destroy
+    error_message = "Clearing the test domain must delete the zone with leftover gate records."
   }
   assert {
     condition     = !anytrue([for arn in local.boundary_ownership_deny.NotResource : strcontains(arn, ":hostedzone/")])
@@ -76,4 +100,12 @@ run "test_domain_must_be_a_subdomain" {
     gate_test_domain = "example.org"
   }
   expect_failures = [var.gate_test_domain]
+}
+
+run "parent_zone_needs_a_test_domain" {
+  command = plan
+  variables {
+    gate_test_parent_zone_id = "ZPARENTSYNTHETIC"
+  }
+  expect_failures = [var.gate_test_parent_zone_id]
 }

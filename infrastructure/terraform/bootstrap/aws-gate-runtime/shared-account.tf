@@ -283,7 +283,7 @@ locals {
       NotResource = local.watchdog_parameters
     },
     {
-      Sid = "DenyNonGateContentReads", Effect = "Deny", NotResource = aws_secretsmanager_secret.idp_client.arn
+      Sid = "DenyNonGateContentReads", Effect = "Deny", NotResource = [aws_secretsmanager_secret.idp_client.arn]
       Action = [for action in local.shared_content_read_actions : action if anytrue([
         for pattern in local.metadata_read_actions : can(regex("^${replace(pattern, "*", ".*")}$", action))
       ])]
@@ -324,7 +324,8 @@ locals {
   # none of these APIs accepts a resource or tag scope. Task and task-set reads stay denied.
   service_role_content_reads = ["elasticloadbalancing:DescribeListeners", "elasticloadbalancing:DescribeRules", "ecs:DescribeTask*", "batch:DescribeJobD*"]
   service_role_shared_controls = [for control in local.shared_controls : try(control.Sid, "") == "DenyNonGateContentReads" ? merge(control, {
-    Action = concat([for action in control.Action : action if !contains(local.service_role_content_reads, action)], ["ecs:DescribeTasks", "ecs:DescribeTaskSets"])
+    Action      = concat([for action in control.Action : action if !contains(local.service_role_content_reads, action)], ["ecs:DescribeTasks", "ecs:DescribeTaskSets"])
+    NotResource = concat(control.NotResource, aws_route53_zone.gate_test[*].arn)
   }) : control]
   service_role_shared_denies = concat(local.service_role_shared_controls, local.idp_secret_controls, var.shared_account ? [local.service_role_ownership_deny] : [])
   # PutRule, PutTargets, PutMetricAlarm, PutCompositeAlarm and ModifyBudget are

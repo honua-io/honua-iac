@@ -5,7 +5,9 @@ resource "aws_route53_zone" "gate_test" {
   count   = var.gate_test_domain == "" ? 0 : 1
   name    = var.gate_test_domain
   comment = "Gate test stacks only; records are written by HonuaGateCloudFormation."
-  tags    = { HonuaGate = "true", Purpose = "gate-test-domain" }
+  # Only gate records live here, and stacks that fail to delete can leave some behind.
+  force_destroy = true
+  tags          = { HonuaGate = "true", Purpose = "gate-test-domain" }
 }
 
 # Delegation from a parent zone in this account, when main names one; otherwise delegate by hand from the
@@ -27,4 +29,17 @@ output "gate_test_zone_id" {
 output "gate_test_name_servers" {
   value       = one(aws_route53_zone.gate_test[*].name_servers)
   description = "Name servers to delegate gate_test_domain to when the parent zone is not in this account."
+}
+
+# The service role may only read the test zone and change its ordinary records: no zone deletion, tags, DNSSEC,
+# query logging or comment changes, and no NS, SOA or DS records (apex or sub-delegation). In the attached fences
+# policy, because the inline service policy is near its quota.
+locals {
+  gate_test_zone_denies = [for arn in aws_route53_zone.gate_test[*].arn : [{
+    Sid       = "GateTestZoneRecordsOnly", Effect = "Deny", Resource = arn
+    NotAction = ["route53:ChangeResourceRecordSets", "route53:Get*", "route53:List*"]
+    }, {
+    Sid       = "GateTestZoneRecordTypes", Effect = "Deny", Action = "route53:ChangeResourceRecordSets", Resource = arn
+    Condition = { "ForAnyValue:StringEquals" = { "route53:ChangeResourceRecordSetsRecordTypes" = ["NS", "SOA", "DS"] } }
+  }]]
 }

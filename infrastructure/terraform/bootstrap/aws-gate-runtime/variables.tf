@@ -143,7 +143,7 @@ variable "temporary_cleanup_subnet_group_names" {
 }
 
 variable "gate_test_domain" {
-  description = "Delegated test subdomain for gate domain installs (for example gate.example.org); empty creates no zone."
+  description = "Delegated test name (three or more labels) for gate domain installs, under a test-only domain; empty creates no zone."
   type        = string
   default     = ""
   validation {
@@ -163,5 +163,9 @@ variable "gate_test_parent_zone_id" {
   validation {
     condition     = var.gate_test_parent_zone_id == "" || can(regex("^Z[A-Z0-9]{1,31}$", var.gate_test_parent_zone_id))
     error_message = "Supply a bare Route 53 hosted zone ID."
+  }
+  validation {
+    condition     = var.gate_test_parent_zone_id == "" || var.gate_test_domain != ""
+    error_message = "A parent zone needs gate_test_domain."
   }
 }
