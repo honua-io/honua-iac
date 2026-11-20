@@ -71,8 +71,9 @@ locals {
       Sid = "SyncIdpCallbacks", Effect = "Allow", Action = "lambda:InvokeFunction", Resource = "arn:aws:lambda:us-east-1:${var.member_account_id}:function:honua-gate-reaper-callbacks"
       }, {
       # Security proofs evaluate a gate role's deployed policies and boundary
-      # with request context, without assuming the role. Read-only.
-      Sid      = "SimulateGateRoles", Effect = "Allow", Action = ["iam:SimulatePrincipalPolicy", "iam:GetContextKeysForPrincipalPolicy"]
+      # with request context, without assuming the role, and read its trust
+      # policy and boundary (GetRole). Read-only.
+      Sid      = "SimulateGateRoles", Effect = "Allow", Action = ["iam:SimulatePrincipalPolicy", "iam:GetContextKeysForPrincipalPolicy", "iam:GetRole"]
       Resource = "arn:aws:iam::${var.member_account_id}:role/honua-gate-*"
       }, {
       Sid = "InspectNetworkOwnership", Effect = "Allow", Action = "ec2:Describe*", Resource = "*"
@@ -90,21 +91,29 @@ locals {
       # its log groups. Log APIs have no tag condition, so names are the fence.
       # Task definitions stay unreadable (no resource scope): compare the task's
       # taskDefinitionArn with ListStackResources and read it from GetTemplate.
+      # Services give rollout and circuit-breaker state for upgrade rows; gate
+      # alarms are named after the stack.
       Sid    = "InspectGateRuntime", Effect = "Allow"
-      Action = ["ecs:DescribeTasks", "logs:DescribeLogStreams", "logs:FilterLogEvents", "logs:GetLogEvents"]
+      Action = ["ecs:DescribeTasks", "ecs:DescribeServices", "logs:DescribeLogStreams", "logs:FilterLogEvents", "logs:GetLogEvents", "cloudwatch:DescribeAlarms", "cloudwatch:DescribeAlarmHistory"]
       Resource = [
         "arn:aws:ecs:us-east-1:${var.member_account_id}:task/honua-gate-*-Cluster-*/*",
+        "arn:aws:ecs:us-east-1:${var.member_account_id}:service/honua-gate-*-Cluster-*/*",
+        "arn:aws:cloudwatch:us-east-1:${var.member_account_id}:alarm:honua-gate-*",
         "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/honua/honua-gate-*",
         "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:aws-waf-logs-honua-gate-*",
         "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/aws/vendedlogs/honua/honua-gate-*",
         "arn:aws:logs:us-east-1:${var.member_account_id}:log-group:/aws/rds/instance/honua-gate-*"
       ]
       }, {
-      # Config recorder status, rule scope and compliance, and log group
-      # retention are metadata without a useful name scope. Explicit families
-      # only: no resource configuration, remediation or aggregator reads.
+      # Config recorder status, rule scope and compliance, log group retention
+      # and log delivery wiring are metadata, and GetMetricStatistics returns
+      # numbers (heartbeat rows); none of these APIs offers a resource scope.
+      # DescribeDeliver* is today exactly DescribeDeliveries, DescribeDeliveryDestinations
+      # and DescribeDeliverySources; the wildcard keeps the boundary in quota.
+      # Explicit families only: no resource configuration, remediation,
+      # aggregator, metric listing or log content reads.
       Sid    = "InspectGateMetadata", Effect = "Allow", Resource = "*"
-      Action = ["config:DescribeConfigurationRecorder*", "config:DescribeDeliveryChannel*", "config:DescribeConfigRule*", "config:DescribeComplianceByConfigRule", "logs:DescribeLogGroups"]
+      Action = ["config:DescribeConfigurationRecorder*", "config:DescribeDeliveryChannel*", "config:DescribeConfigRule*", "config:DescribeComplianceByConfigRule", "logs:DescribeLogGroups", "logs:DescribeDeliver*", "cloudwatch:GetMetricStatistics"]
       }, {
       Sid       = "ListGateTasks", Effect = "Allow", Action = "ecs:ListTasks", Resource = "*"
       Condition = { ArnLike = { "ecs:cluster" = "arn:aws:ecs:us-east-1:${var.member_account_id}:cluster/honua-gate-*-Cluster-*" } }
