@@ -258,14 +258,17 @@ locals {
     # The boundary allows no IAM creates, so exempting iam:CreateRole/CreateServiceLinkedRole here would grant
     # nothing; leaving them out keeps the managed policy within its 6,144-character quota.
     # guardduty:ListD* is exactly ListDetectors (the Launch Stack detector lookup), shortened for that quota.
-    # ec2:DescribeM*, DescribeAv* and DescribeSu* cover the lookup Lambda's DescribeManagedPrefixLists,
-    # DescribeAvailabilityZones and DescribeSubnets, shortened for the quota; they match only metadata reads,
-    # none of the EC2 content reads in content-reads.tf.
+    # ec2:DescribeM*, DescribeAv*, DescribeSu*, DescribeR* and DescribeVpc* cover the lookup Lambda's
+    # DescribeManagedPrefixLists, DescribeAvailabilityZones, DescribeSubnets, DescribeRouteTables (the S3 gateway
+    # joins a reused VPC's task route tables), DescribeVpcs and DescribeVpcEndpoints, shortened for the quota;
+    # DescribeR* also matches Regions, ReservedInstances*, ReplaceRootVolumeTasks and RouteServer*, and DescribeVpc*
+    # the VPC attribute, peering and endpoint-service reads; all are metadata, none of the content reads in
+    # content-reads.tf.
     # The server finds, polls, cancels and terminates its Batch jobs. ListJobs and DescribeJobs have no resource,
     # and jobs carry only honua:stack, so all four are exempt; boundary_job_stop_deny fences the stops to gate jobs.
     # PutMetricData has no resource, so the ownership tags never match it; the operations and watchdog heartbeats
     # need it. The template's role policies fence it to their Honua/Operations and Honua/Watchdog namespaces.
-    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*", "ec2:DescribeM*", "ec2:DescribeAv*", "ec2:DescribeSu*", "ec2:DescribeVpcs", "guardduty:ListD*", "batch:ListJobs", "batch:DescribeJobs", "batch:CancelJob", "batch:TerminateJob", "cloudwatch:PutMetricData"], local.workload_config_actions, [for action in local.shared_creation_actions : action if !startswith(action, "iam:Create")])
+    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*", "ec2:DescribeM*", "ec2:DescribeAv*", "ec2:DescribeSu*", "ec2:DescribeR*", "ec2:DescribeVpc*", "guardduty:ListD*", "batch:ListJobs", "batch:DescribeJobs", "batch:CancelJob", "batch:TerminateJob", "cloudwatch:PutMetricData"], local.workload_config_actions, [for action in local.shared_creation_actions : action if !startswith(action, "iam:Create")])
     # Secrets Manager decrypts with its AWS-managed key for callers already allowed to read the secret;
     # kms:ViaService only ever carries AWS service endpoints (secretsmanager.<region>.amazonaws.com).
     Condition = merge(local.ownership_condition, { StringNotLike = { "kms:ViaService" = "secretsmanager.*" } })

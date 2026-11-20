@@ -20,7 +20,7 @@ run "lookup_role_can_discover_network_metadata" {
   command = plan
   assert {
     condition = alltrue([
-      for action in ["ec2:DescribeManagedPrefixLists", "ec2:DescribeAvailabilityZones", "ec2:DescribeSubnets", "ec2:DescribeVpcs", "guardduty:ListDetectors"] :
+      for action in ["ec2:DescribeManagedPrefixLists", "ec2:DescribeAvailabilityZones", "ec2:DescribeSubnets", "ec2:DescribeRouteTables", "ec2:DescribeVpcs", "ec2:DescribeVpcEndpoints", "guardduty:ListDetectors"] :
       anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))]) &&
       anytrue([for pattern in local.workload_services : can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))])
     ])
