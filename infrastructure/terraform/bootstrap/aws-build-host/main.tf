@@ -1,9 +1,13 @@
 provider "aws" { region = var.region }
 
 locals {
+  # Full-line "# " comments are dropped from user data to fit EC2's 16 KiB; the files keep them.
+  bootstrap_scripts = { for name in ["ensure-dotnet-sdk.sh", "install-idle-stop.sh", "../shared/install-docker.sh", "install-build-tools.sh", "install-gate-runner.sh", "install-nuget-fallback.sh"] :
+    name => replace(file("${path.module}/${name}"), "/(?m)^[ \t]*# .*\n/", "")
+  }
   sdk_installer_bootstrap = join("\n", [
     "cat > /usr/local/bin/ensure-dotnet-sdk <<'HONUA_SDK_INSTALLER'",
-    file("${path.module}/ensure-dotnet-sdk.sh"),
+    local.bootstrap_scripts["ensure-dotnet-sdk.sh"],
     "HONUA_SDK_INSTALLER",
     "chmod 755 /usr/local/bin/ensure-dotnet-sdk"
   ])
@@ -11,10 +15,10 @@ locals {
     "#!/bin/bash\nset -euo pipefail",
     "echo '${base64encode(jsonencode({ region = var.region, group = local.name, idle_seconds = var.idle_stop_minutes * 60 }))}' | base64 -d > /etc/honua-build-host.json"
     ], var.gate_runner_enabled ? [local.gated_build_bootstrap] : [
-    file("${path.module}/install-idle-stop.sh"),
-    file("${path.module}/../shared/install-docker.sh"),
+    local.bootstrap_scripts["install-idle-stop.sh"],
+    local.bootstrap_scripts["../shared/install-docker.sh"],
     local.sdk_installer_bootstrap,
-    file("${path.module}/install-build-tools.sh")
+    local.bootstrap_scripts["install-build-tools.sh"]
   ]))
   # cloud-init decompresses gzip user data before interpreting the shell script.
   build_host_user_data = var.gate_runner_enabled ? base64gzip(local.build_host_bootstrap) : base64encode(local.build_host_bootstrap)

@@ -16,7 +16,9 @@ Cost controls:
 - **Idle stop:** the installed timer checks every five minutes and scales the group
   to zero after `idle_stop_minutes` (default 30) without observed remote job markers
   or running .NET/Docker builds, provided no SSH session is younger than that
-  interval. Failed activity inspection leaves capacity unchanged. The instance
+  interval. A job marker counts while it is younger than that interval or while a
+  process still works inside its checkout, so a killed lane run cannot keep the
+  host up. Failed activity inspection leaves capacity unchanged. The instance
   role can only set desired capacity on this group. Scaling to zero terminates the
   instance; simply shutting down EC2 would cause an immediate replacement.
 - **Nightly stop (off by default):** `nightly_stop_enabled = true` scales the group
@@ -282,7 +284,8 @@ it skips prerequisites already installed for the pinned runner version, provisio
 only missing accounts and rewrites every runner's limits, so rerunning the applied
 launch template's runner bootstrap converges the running host without touching
 running jobs. Runner-enabled user data uses cloud-init’s native gzip decoding for Docker,
-build tools, and runner setup together to stay below EC2's 16 KiB limit. Extract only the runner section
+build tools, and runner setup together to stay below EC2's 16 KiB limit; full-line `# `
+comments are also dropped from the embedded scripts (the files keep them). Extract only the runner section
 for a live convergence; the idle timer still installs before network bootstrap:
 
 ```bash
@@ -299,12 +302,19 @@ ssh ubuntu@"$BUILD_HOST" 'sudo bash -c "apt_retry() { apt-get \"\$@\"; }; set -e
 
 ### Runner process cleanup and running-host convergence
 
-Each runner service uses `KillMode=control-group` for its job processes. The
-pre-job and post-job hooks stop only that account's `user@UID.service`, whose
-runner-specific drop-in also sets `KillMode=control-group`, to remove its
-rootless Docker processes. Cleanup must never signal processes by UID or stop
-`user-UID.slice`: rootful containers can share the numeric UID, and that slice
-also contains the active runner service.
+Each runner service uses `KillMode=control-group` for its job processes. Each
+account's systemd user manager, which runs its rootless Docker, is the system
+service `honua-gate-user@N.service` (same `KillMode`), not a lingering
+`user@UID.service`: stopping a lingering user's manager makes systemd-logind
+stall every new login for about 25 s (honua-iac#543). The unit mounts a private
+`/run/user/UID` tmpfs (10% of RAM, as logind would) and removes it on stop. The
+pre-job and post-job hooks stop only that unit. On a host bootstrapped before
+this change, the first hook after a job also disables the account's linger and
+stops its old `user@UID.service` and `user-runtime-dir@UID.service`, once.
+Do not open a login session as a runner account: logind would mount its own
+`/run/user/UID` over the job's and remove it at logout. Cleanup must never signal processes by
+UID or stop `user-UID.slice`: rootful containers can share the numeric UID, and
+that slice also contains the active runner service.
 
 This correction applies to the existing host through the live convergence above;
 no host replacement is required. Apply the versioned launch-template change and

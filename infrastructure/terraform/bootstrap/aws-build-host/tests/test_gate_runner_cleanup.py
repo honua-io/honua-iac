@@ -18,19 +18,35 @@ def cleanup_function():
     return re.search(r"^end_previous_job\(\) \{\n.*?^\}", source, re.M | re.S).group(0)
 
 
+def unit_body(source, unit):
+    return re.search(rf"cat > /etc/systemd/system/{re.escape(unit)} <<'SERVICE'\n(.*?)\nSERVICE", source, re.S).group(1)
+
+
 class CleanupContractTests(unittest.TestCase):
     def test_cleanup_stops_only_the_rootless_manager(self):
         body = cleanup_function()
-        self.assertIn('systemctl stop "user@${uid}.service"', body)
-        self.assertNotRegex(body, r"\b(?:pkill|killall|loginctl)\b")
+        self.assertIn('systemctl stop "honua-gate-user@${index}.service"', body)
+        self.assertNotRegex(body, r"\b(?:pkill|killall)\b")
         self.assertNotIn('systemctl stop "user-${uid}.slice"', body)
+
+    def test_user_manager_stays_outside_logind(self):
+        source = INSTALLER.read_text()
+        unit = unit_body(source, "honua-gate-user@.service")
+        self.assertIn("ExecStart=/usr/lib/systemd/systemd --user", unit)
+        self.assertNotIn("PAMName", unit)
+        self.assertNotIn("enable-linger", source)
+        self.assertNotIn('systemctl start "user@', source)
+        # Only the one-time migration of a lingering account may touch logind.
+        body = cleanup_function()
+        self.assertEqual(body.count("loginctl"), 1)
+        self.assertIn('loginctl disable-linger "$user"', body)
 
     def test_both_process_owners_have_control_group_cleanup(self):
         source = INSTALLER.read_text()
-        unit = re.search(r"cat > /etc/systemd/system/honua-gate-runner@.service <<'SERVICE'\n(.*?)\nSERVICE", source, re.S).group(1)
+        unit = unit_body(source, "honua-gate-runner@.service")
         self.assertIn("KillMode=control-group", unit)
-        self.assertIn('user@${uid}.service.d/50-gate-runner-cleanup.conf', source)
-        self.assertIn("printf '[Service]\\nKillMode=control-group\\n'", source)
+        manager = unit_body(source, "honua-gate-user@.service")
+        self.assertIn("KillMode=control-group", manager)
         self.assertIn("ExecStartPre=+/usr/local/sbin/honua-gate-runner-prepare %i", unit)
         self.assertIn("ExecStopPost=+/usr/local/sbin/honua-gate-runner-prepare %i --clean", unit)
 
@@ -61,10 +77,11 @@ class CleanupCgroupTests(unittest.TestCase):
         # and the service lifecycle use the real kernel/systemd and the real UID.
         self.script.write_text(f'''#!/bin/bash
 set -euo pipefail
+index=1
 uid={self.uid}
 user={self.uid}
 systemctl() {{
-  [[ "$*" == "stop user@${{uid}}.service" ]] || return 91
+  [[ "$*" == "stop honua-gate-user@${{index}}.service" ]] || return 91
   /usr/bin/systemctl stop {self.units['manager']}
 }}
 grep() {{ printf 'fixture:1000000:65536\\n'; }}

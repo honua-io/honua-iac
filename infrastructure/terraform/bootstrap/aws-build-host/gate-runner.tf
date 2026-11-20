@@ -43,15 +43,15 @@ locals {
     "(umask 077 && cat > /etc/honua-gate-runner.json) <<'CONFIG'",
     jsonencode(local.gate_runner_host_config),
     "CONFIG",
-    file("${path.module}/install-gate-runner.sh")
+    local.bootstrap_scripts["install-gate-runner.sh"]
   ])
   gated_build_bootstrap = join("\n", [
-    file("${path.module}/install-idle-stop.sh"),
-    file("${path.module}/../shared/install-docker.sh"),
+    local.bootstrap_scripts["install-idle-stop.sh"],
+    local.bootstrap_scripts["../shared/install-docker.sh"],
     local.sdk_installer_bootstrap,
-    file("${path.module}/install-build-tools.sh"),
+    local.bootstrap_scripts["install-build-tools.sh"],
     local.gate_runner_bootstrap,
-    file("${path.module}/install-nuget-fallback.sh")
+    local.bootstrap_scripts["install-nuget-fallback.sh"]
   ])
   github_oidc_host = "token.actions.githubusercontent.com"
 }

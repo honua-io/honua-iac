@@ -301,7 +301,13 @@ setting() { jq -r ".$1" "$config"; }
 end_previous_job() {
   local sub_start sub_count
   # The runner unit kills its job cgroup; this stops only its rootless Docker cgroup.
-  systemctl stop "user@${uid}.service"
+  systemctl stop "honua-gate-user@${index}.service"
+  # Hosts bootstrapped before honua-gate-user@ converge here, between jobs.
+  if [[ -e "/var/lib/systemd/linger/${user}" ]]; then
+    loginctl disable-linger "$user"
+    systemctl stop "user@${uid}.service" "user-runtime-dir@${uid}.service"
+    ! mountpoint -q "/run/user/${uid}"
+  fi
   IFS=: read -r _ sub_start sub_count < <(grep "^${user}:" /etc/subuid)
   find /tmp /var/tmp /dev/shm -xdev -mindepth 1 \( -user "$user" -o \
     \( -uid "+$((sub_start - 1))" -uid "-$((sub_start + sub_count))" \) \) -delete 2>/dev/null || true
@@ -313,7 +319,7 @@ restore_pristine_home() {
   install -d -o "$user" -g "$user" -m 0700 "${home}/.cache/tmp"
   cp -a /opt/actions-runner "${home}/runner"
   chown -R "${user}:${user}" "${home}/runner"
-  systemctl start "user@${uid}.service"
+  systemctl start "honua-gate-user@${index}.service"
   for _ in $(seq 1 60); do
     [[ -S "/run/user/${uid}/docker.sock" ]] && return 0
     sleep 1
@@ -610,6 +616,39 @@ AccuracySec=5s
 WantedBy=timers.target
 TIMER
 
+# A lingering user@ under logind stalls every new login for 25 s after each per-job stop,
+# so each runner's user manager is a plain system service instead.
+cat > /etc/systemd/system/honua-gate-user@.service <<'SERVICE'
+[Unit]
+Description=User manager for build-host runner %i, outside logind
+
+[Service]
+User=gate-runner-%i
+Type=notify-reload
+ExecStart=/usr/lib/systemd/systemd --user
+KillMode=control-group
+Delegate=pids memory cpu
+DelegateSubgroup=init.scope
+TasksMax=infinity
+TimeoutStopSec=120s
+KeyringMode=private
+OOMScoreAdjust=100
+SERVICE
+
+# Like logind's runtime directory: a private tmpfs, 10% of RAM, gone after each job.
+configure_user_manager() {
+  local uid gid
+  uid="$(id -u "gate-runner-$1")" gid="$(id -g "gate-runner-$1")"
+  install -d "/etc/systemd/system/honua-gate-user@$1.service.d"
+  cat > "/etc/systemd/system/honua-gate-user@$1.service.d/50-account.conf" <<MANAGER
+[Service]
+Slice=user-${uid}.slice
+Environment=XDG_RUNTIME_DIR=/run/user/${uid}
+ExecStartPre=+/bin/sh -c 'install -d -m 0700 /run/user/${uid} && mount -t tmpfs -o mode=0700,uid=${uid},gid=${gid},size=10%%,nosuid,nodev tmpfs /run/user/${uid}'
+ExecStopPost=+/bin/sh -c 'umount -l /run/user/${uid}; rmdir /run/user/${uid}'
+MANAGER
+}
+
 # Root-owned templates and a root-only parent prevent jobs from changing the next job's home.
 install -d -m 0700 /var/lib/honua-gate-runner
 provision_account() {
@@ -619,7 +658,9 @@ provision_account() {
   chmod 0700 "/home/${user}"
   configure_rootless_ports "/home/${user}" "$index"
   chown -R "${user}:${user}" "/home/${user}/.config"
-  loginctl enable-linger "$user"
+  configure_user_manager "$index"
+  systemctl daemon-reload
+  systemctl start "honua-gate-user@${index}.service"
   for _ in $(seq 1 30); do
     [[ -S "/run/user/${uid}/bus" ]] && break
     sleep 1
@@ -647,8 +688,7 @@ for index in $(seq 1 "$(gate runner_count)"); do
   id -u "$user" > /dev/null 2>&1 || provision_account "$index"
   configure_rootless_ports "/var/lib/honua-gate-runner/home-${index}" "$index"
   uid="$(id -u "$user")"
-  install -d "/etc/systemd/system/user@${uid}.service.d"
-  printf '[Service]\nKillMode=control-group\n' > "/etc/systemd/system/user@${uid}.service.d/50-gate-runner-cleanup.conf"
+  configure_user_manager "$index"
   # The runner and its rootless Docker share the account's slice, so one ceiling covers both.
   install -d "/etc/systemd/system/user-${uid}.slice.d" "/etc/systemd/system/honua-gate-runner@${index}.service.d"
   jq -r --argjson index "$index" '.runners[$index - 1] |

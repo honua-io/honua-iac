@@ -202,8 +202,9 @@ class NugetFallbackWiringTests(unittest.TestCase):
         runner = (MODULE / "install-gate-runner.sh").read_text()
         environment = re.search(r"<<'ENVIRONMENT'\n(.*?)\nENVIRONMENT\n", runner, re.S).group(1)
         self.assertIn("export HONUA_NUGET_FALLBACK=/var/lib/honua-nuget-fallback/current", environment)
-        self.assertIn('file("${path.module}/install-nuget-fallback.sh")',
+        self.assertIn('local.bootstrap_scripts["install-nuget-fallback.sh"]',
                       (MODULE / "gate-runner.tf").read_text())
+        self.assertIn('"install-nuget-fallback.sh"]', (MODULE / "main.tf").read_text())
 
 
 if __name__ == "__main__":
