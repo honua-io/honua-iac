@@ -305,7 +305,8 @@ end_previous_job() {
   # Hosts bootstrapped before honua-gate-user@ converge here, between jobs.
   if [[ -e "/var/lib/systemd/linger/${user}" ]]; then
     loginctl disable-linger "$user"
-    systemctl stop "user@${uid}.service"
+    systemctl stop "user@${uid}.service" "user-runtime-dir@${uid}.service"
+    ! mountpoint -q "/run/user/${uid}"
   fi
   IFS=: read -r _ sub_start sub_count < <(grep "^${user}:" /etc/subuid)
   find /tmp /var/tmp /dev/shm -xdev -mindepth 1 \( -user "$user" -o \
@@ -630,7 +631,7 @@ Delegate=pids memory cpu
 DelegateSubgroup=init.scope
 TasksMax=infinity
 TimeoutStopSec=120s
-KeyringMode=inherit
+KeyringMode=private
 OOMScoreAdjust=100
 SERVICE
 
@@ -644,7 +645,7 @@ configure_user_manager() {
 Slice=user-${uid}.slice
 Environment=XDG_RUNTIME_DIR=/run/user/${uid}
 ExecStartPre=+/bin/sh -c 'install -d -m 0700 /run/user/${uid} && mount -t tmpfs -o mode=0700,uid=${uid},gid=${gid},size=10%%,nosuid,nodev tmpfs /run/user/${uid}'
-ExecStopPost=+/bin/sh -c 'umount /run/user/${uid}; rmdir /run/user/${uid}'
+ExecStopPost=+/bin/sh -c 'umount -l /run/user/${uid}; rmdir /run/user/${uid}'
 MANAGER
 }
 

@@ -310,7 +310,9 @@ stall every new login for about 25 s (honua-iac#543). The unit mounts a private
 `/run/user/UID` tmpfs (10% of RAM, as logind would) and removes it on stop. The
 pre-job and post-job hooks stop only that unit. On a host bootstrapped before
 this change, the first hook after a job also disables the account's linger and
-stops its old `user@UID.service`, once. Cleanup must never signal processes by
+stops its old `user@UID.service` and `user-runtime-dir@UID.service`, once.
+Do not open a login session as a runner account: logind would mount its own
+`/run/user/UID` over the job's and remove it at logout. Cleanup must never signal processes by
 UID or stop `user-UID.slice`: rootful containers can share the numeric UID, and
 that slice also contains the active runner service.
 
