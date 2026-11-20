@@ -101,9 +101,10 @@ locals {
       ]
       }, {
       # Config recorder status, rule scope and compliance, and log group
-      # retention are metadata. These APIs have no name scope; no Get*/Select*
-      # Config action (resource configuration) and no log content is granted here.
-      Sid = "InspectGateMetadata", Effect = "Allow", Action = ["config:Describe*", "logs:DescribeLogGroups"], Resource = "*"
+      # retention are metadata without a useful name scope. Explicit families
+      # only: no resource configuration, remediation or aggregator reads.
+      Sid    = "InspectGateMetadata", Effect = "Allow", Resource = "*"
+      Action = ["config:DescribeConfigurationRecorder*", "config:DescribeDeliveryChannel*", "config:DescribeConfigRule*", "config:DescribeComplianceByConfigRule", "logs:DescribeLogGroups"]
       }, {
       Sid       = "ListGateTasks", Effect = "Allow", Action = "ecs:ListTasks", Resource = "*"
       Condition = { ArnLike = { "ecs:cluster" = "arn:aws:ecs:us-east-1:${var.member_account_id}:cluster/honua-gate-*-Cluster-*" } }

@@ -267,7 +267,7 @@ no credentials and no policy text that `GetTemplate` does not already show.
 
 Qualification rows must observe a running install (sidecar image digest, WAF log
 redaction, the database role in use, Batch worker output). For that, both lane
-policies also allow these read-only calls, on gate resources unless noted:
+policies also allow these read-only calls, on gate resources only:
 
 - `ecs:ListTasks` where the cluster is named `honua-gate-*-Cluster-*`, and
   `ecs:DescribeTasks` on tasks in those clusters. CloudFormation names each cluster
@@ -276,11 +276,6 @@ policies also allow these read-only calls, on gate resources unless noted:
   log groups `/honua/honua-gate-*`, `aws-waf-logs-honua-gate-*` and
   `/aws/rds/instance/honua-gate-*`. CloudWatch Logs has no resource-tag condition
   for these calls, so the name is the fence. Reaper Lambda logs are not included.
-- `config:Describe*` and `logs:DescribeLogGroups` on any resource, so a row can
-  check the Config recorder status, the stack drift rule's scope and compliance,
-  and log group retention. These APIs have no name scope and return metadata
-  only. No other Config action is granted: resource configuration reads
-  (`Get*`, `Select*`, `BatchGet*`) and rule evaluation stay denied.
 
 These are content reads of gate installs, which hold synthetic qualification data
 only. The lane still cannot read task definitions: `ecs:DescribeTaskDefinition` has no
@@ -292,6 +287,16 @@ matches, read that definition in `GetTemplate`, with parameter values from
 revision; then this check does not apply. Batch job reads, WAF API reads, log
 queries and command execution are not granted either: Batch job APIs have no
 resource scope, and WAF redaction shows in the WAF log records.
+
+Rows that check Config recording and log retention need account-wide metadata
+reads, because these APIs have no useful name scope. Both lane policies allow
+`config:DescribeConfigurationRecorder*`, `config:DescribeDeliveryChannel*`,
+`config:DescribeConfigRule*` and `config:DescribeComplianceByConfigRule`
+(recorder and delivery status, rule scope, evaluation status and per-rule
+compliance), and `logs:DescribeLogGroups`, which lists every log group name and
+retention in the account, not only gate ones. No other Config action is granted:
+no resource configuration, compliance-by-resource, remediation or aggregator
+reads, and no rule evaluation.
 
 The lane may also call `cloudformation:DescribeStackResource` on gate stacks and
 `ecs:ListClusters`, so a deploy watcher can find the stack's cluster. ListClusters
