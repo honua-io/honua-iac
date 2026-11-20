@@ -80,7 +80,7 @@ variable "idp_task_execution_role_arns" {
 }
 
 variable "orphan_cleanup_dry_run" {
-  description = "Log orphan gate IAM/KMS cleanup without mutating resources. Main opts in after reviewing the log."
+  description = "Log orphan gate IAM/KMS/ACM cleanup without mutating resources. Main opts in after reviewing the log."
   type        = bool
   default     = true
 }
@@ -122,6 +122,23 @@ variable "temporary_cleanup_gateway_ids" {
   validation {
     condition     = var.shared_account || length(var.temporary_cleanup_gateway_ids) == 0
     error_message = "Temporary cleanup is available only in the shared gate account."
+  }
+}
+
+variable "temporary_orphan_certificate_ids" {
+  description = "Exact IDs of untagged gate certificates the reaper may delete; private SSM tfvars only, clear after cleanup."
+  type        = set(string)
+  default     = []
+  sensitive   = true
+  validation {
+    condition = length(var.temporary_orphan_certificate_ids) <= 4 && alltrue([
+      for id in var.temporary_orphan_certificate_ids : can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", id))
+    ])
+    error_message = "Supply at most four exact certificate IDs; wildcards and ARNs are forbidden."
+  }
+  validation {
+    condition     = var.shared_account || length(var.temporary_orphan_certificate_ids) == 0
+    error_message = "Temporary certificate cleanup is available only in the shared gate account."
   }
 }
 

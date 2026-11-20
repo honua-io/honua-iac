@@ -56,6 +56,11 @@ def lambda_handler(event, context):
     result['protection'] = reap_protection_trails(
         cf, boto3.client('cloudtrail', region_name='us-east-1'),
         boto3.client('s3', region_name='us-east-1'))
+    result['certificates'] = reap_certificates(SimpleNamespace(
+        cf=cf, acm=boto3.client('acm', region_name='us-east-1'), now=dt.datetime.now(dt.timezone.utc),
+        domain=os.environ.get('GATE_TEST_DOMAIN', ''),
+        legacy=set(filter(None, os.environ.get('TEMPORARY_ORPHAN_CERTIFICATE_IDS', '').split(','))),
+        dry_run=env_dry_run('ORPHAN_DRY_RUN')))
     return result
 
 
@@ -374,4 +379,71 @@ def reap_protection_trails(cf, cloudtrail, s3):
         LOG.exception('Protection bucket cleanup failed')
     if failures:
         raise RuntimeError(f'Protection cleanup failed for {failures} resource(s)')
+    return result
+
+
+CERT_TYPE = 'AWS::CertificateManager::Certificate'
+# ListCertificates returns only RSA_2048 certificates unless key types are named.
+CERT_KEY_TYPES = ['RSA_1024', 'RSA_2048', 'RSA_3072', 'RSA_4096', 'EC_prime256v1', 'EC_secp384r1', 'EC_secp521r1']
+CERT_SKIP_ERRORS = ('ResourceNotFoundException', 'ResourceInUseException')
+
+
+def under_domain(name, domain):
+    name = (name or '').lower().removeprefix('*.')
+    return bool(domain) and (name == domain or name.endswith('.' + domain))
+
+
+def live_certificates(cf, stacks):
+    """Certificates that a live gate stack still lists as resources; their stack owns them."""
+    owned = set()
+    for stack in live_stacks(stacks):
+        pages = cf.get_paginator('list_stack_resources').paginate(StackName=stack['StackId'])
+        owned.update(item['PhysicalResourceId'] for page in pages for item in page['StackResourceSummaries']
+                     if item.get('ResourceType') == CERT_TYPE and item.get('PhysicalResourceId'))
+    return owned
+
+
+def gate_owned(work, arn):
+    if arn.rsplit('/', 1)[-1] in work.legacy:
+        return True
+    tags = work.acm.list_tags_for_certificate(CertificateArn=arn).get('Tags', [])
+    return any(tag['Key'] == GATE_TAG and tag.get('Value') == 'true' for tag in tags)
+
+
+def orphan_certificate(work, arn):
+    certificate = work.acm.describe_certificate(CertificateArn=arn)['Certificate']
+    names = [certificate['DomainName'], *certificate.get('SubjectAlternativeNames', [])]
+    created = certificate.get('CreatedAt')  # imported certificates carry ImportedAt instead; never gate-owned
+    if (certificate.get('InUseBy') or not created or work.now - created <= MAX_AGE
+            or not all(under_domain(name, work.domain) for name in names) or not gate_owned(work, arn)):
+        return 0
+    LOG.info('%s delete unused gate certificate %s (%s)', 'Would' if work.dry_run else 'Will', arn,
+             certificate['DomainName'])
+    if not work.dry_run:
+        work.acm.delete_certificate(CertificateArn=arn)
+    return 1
+
+
+def reap_certificates(work):
+    """Delete unused gate certificates under the gate test domain that no live gate stack owns."""
+    result = {'certificates': 0, 'dry_run': work.dry_run}
+    if not work.domain:
+        return result
+    owned = live_certificates(work.cf, listed_stacks(work.cf))
+    pages = work.acm.get_paginator('list_certificates').paginate(Includes={'keyTypes': CERT_KEY_TYPES})
+    chosen = [summary['CertificateArn'] for page in pages for summary in page['CertificateSummaryList']
+              if under_domain(summary.get('DomainName'), work.domain) and not summary.get('InUse')
+              and summary['CertificateArn'] not in owned]
+    failures = 0
+    for arn in chosen:
+        try:
+            result['certificates'] += orphan_certificate(work, arn)
+        except Exception as error:
+            # Already deleted, or attached since the listing: ACM refuses, nothing to clean.
+            if aws_error_code(error) in CERT_SKIP_ERRORS:
+                continue
+            failures += 1
+            LOG.exception('Gate certificate cleanup failed for %s', arn)
+    if failures:
+        raise RuntimeError(f'Certificate cleanup failed for {failures} certificate(s)')
     return result

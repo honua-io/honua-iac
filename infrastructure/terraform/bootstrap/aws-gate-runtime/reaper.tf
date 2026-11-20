@@ -19,7 +19,7 @@ resource "aws_iam_role_policy" "reaper" {
   role = aws_iam_role.reaper.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{ Effect = "Allow", Action = "cloudformation:ListStacks", Resource = "*" }, {
+    Statement = concat([{ Effect = "Allow", Action = "cloudformation:ListStacks", Resource = "*" }, {
       Effect = "Allow", Action = ["cloudformation:DescribeStacks", "cloudformation:ListStackResources"], Resource = local.stack_arn
       }, {
       Effect    = "Allow", Action = "cloudformation:DeleteStack", Resource = local.stack_arn
@@ -73,8 +73,24 @@ resource "aws_iam_role_policy" "reaper" {
       ]
       }, {
       Effect = "Allow", Action = ["logs:CreateLogStream", "logs:PutLogEvents"], Resource = "${aws_cloudwatch_log_group.reaper.arn}:*"
-    }]
+      }, {
+      Effect = "Allow", Action = "acm:ListCertificates", Resource = "*"
+      }, {
+      Effect   = "Allow", Action = ["acm:DescribeCertificate", "acm:ListTagsForCertificate"]
+      Resource = local.reaper_certificates
+      }, {
+      # Unused gate certificates: CloudFormation tags them with the stack's HonuaGate=true.
+      Effect    = "Allow", Action = "acm:DeleteCertificate", Resource = local.reaper_certificates
+      Condition = { StringEquals = { "aws:ResourceTag/HonuaGate" = "true" } }
+      }], nonsensitive(length(var.temporary_orphan_certificate_ids)) == 0 ? [] : [{
+      # Untagged certificates left by denied rollbacks (20 Nov); exact reviewed IDs only.
+      Effect   = "Allow", Action = "acm:DeleteCertificate"
+      Resource = [for id in sort(tolist(var.temporary_orphan_certificate_ids)) : "arn:aws:acm:us-east-1:${var.member_account_id}:certificate/${id}"]
+    }])
   })
+}
+locals {
+  reaper_certificates = "arn:aws:acm:us-east-1:${var.member_account_id}:certificate/*"
 }
 resource "aws_lambda_function" "reaper" {
   function_name                  = "honua-gate-reaper"
@@ -91,6 +107,9 @@ resource "aws_lambda_function" "reaper" {
       SERVICE_ROLE_ARN      = local.service_role_arn
       ORPHAN_DRY_RUN        = tostring(var.orphan_cleanup_dry_run)
       TRAIL_CLEANUP_DRY_RUN = tostring(var.protection_trail_cleanup_dry_run)
+      # Certificate cleanup reads nothing without a gate test domain.
+      GATE_TEST_DOMAIN                 = var.gate_test_domain
+      TEMPORARY_ORPHAN_CERTIFICATE_IDS = join(",", sort(tolist(var.temporary_orphan_certificate_ids)))
     }
   }
   depends_on = [aws_iam_role_policy.reaper]
