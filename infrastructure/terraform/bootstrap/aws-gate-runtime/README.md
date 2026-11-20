@@ -566,6 +566,35 @@ customer template does not change. The role is then named `honua-connection-gate
 The reaper's orphan role pass does not cover these roles; they are deleted with
 their stack.
 
+### Gate test domain
+
+Launch Stack installs with `DomainNames` (custom viewer names, HTTPS from
+CloudFront to the load balancer) need a real public zone. Set
+`gate_test_domain` to a delegated test name, such as `gate.example.org`, in
+the private tfvars. Use a domain kept for tests, never one under a production
+domain: every gate stack controls every name in the zone, so a gate page could
+set cookies for the parent domain, and anything that trusts the parent's
+wildcard (CORS, CSP, OAuth redirect lists) would trust gate pages. The apply
+creates one public Route 53 zone (about USD 0.50 a month) and outputs
+`gate_test_zone_id` and `gate_test_name_servers`. With
+`gate_test_parent_zone_id` naming a same-account parent zone, the apply also
+writes the NS delegation; otherwise delegate from the parent by hand with the
+name servers output. Empty `gate_test_domain` (the default) creates nothing.
+
+Gate stacks install with names under the test domain and `HostedZoneId` set to
+`gate_test_zone_id`, so CloudFormation writes the certificate validation and
+alias records itself. Route 53 evaluates no resource tags, so the ownership deny
+cannot tell a gate zone from any other one. The test zone's ARN is therefore
+exempt from the service role's ownership and content-read denies only. Every
+other hosted zone stays fenced, and workload roles stay fenced from the test
+zone too. In the test zone the service role may only read and change ordinary
+records: it cannot delete the zone, change its tags, comment, DNSSEC or query
+logging, or write NS, SOA or DS records. Any gate stack may change any other
+record in the zone, so keep nothing else in it. Stacks that fail to delete, and
+ACM validation records, can leave records behind; the reaper does not clean the
+zone. Clearing `gate_test_domain` deletes the zone with whatever records remain
+(`force_destroy`).
+
 ### Orphan gate roles and keys
 
 The nightly reaper also logs orphan IAM role and KMS key cleanup. This pass is

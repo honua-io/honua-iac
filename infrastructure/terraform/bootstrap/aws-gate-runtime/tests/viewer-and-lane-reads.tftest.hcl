@@ -36,7 +36,7 @@ run "viewer_signs_in_without_a_role_and_its_secret_stays_fenced" {
   }
   assert {
     condition = anytrue([for control in local.shared_controls : try(
-      control.Sid == "DenyNonGateContentReads" && contains(control.Action, "secretsmanager:GetSecretValue") && control.NotResource != aws_secretsmanager_secret.idp_viewer.arn, false
+      control.Sid == "DenyNonGateContentReads" && contains(control.Action, "secretsmanager:GetSecretValue") && !contains(control.NotResource, aws_secretsmanager_secret.idp_viewer.arn), false
     )])
     error_message = "The service role's content-read fence must cover the viewer secret."
   }
