@@ -7,8 +7,10 @@
       "state_key": "bootstrap/aws-gate-account/terraform.tfstate"
     },
     "aws-gate-runtime": {
-      "applied": false,
-      "state_key": "bootstrap/aws-gate-runtime/terraform.tfstate"
+      "applied": true,
+      "state_key": "bootstrap/aws-gate-runtime/terraform.tfstate",
+      "operator": { "tfvars_parameter": "/honua/gate-runtime/tfvars", "region": "us-east-1" },
+      "note": "Its backend assumes a separate backend access role: the operator run needs main's private backend.tf (gitignored) in the checkout, because backend.tf.example only holds placeholders."
     },
     "aws-bedrock-quotas": {
       "applied": true,

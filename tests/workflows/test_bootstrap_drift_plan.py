@@ -199,6 +199,17 @@ class RootCoverage(unittest.TestCase):
                 manifest['roots']['aws-a'] = {**entry, **broken}
                 self.assertTrue(roots.problems(manifest, base), broken)
 
+    def test_gate_runtime_is_an_applied_operator_root(self):
+        entry = roots.load_manifest()['roots']['aws-gate-runtime']
+        self.assertTrue(entry['applied'])
+        self.assertEqual(entry['operator'], {'tfvars_parameter': '/honua/gate-runtime/tfvars', 'region': 'us-east-1'})
+
+    def test_operator_plan_reads_json_inputs_as_tfvars_json(self):
+        script = (ROOT / 'scripts' / 'bootstrap-drift-operator.sh').read_text()
+        self.assertIn("jq -e 'type == \"object\"'", script)
+        self.assertIn('tfvars="$tfvars.json"', script)
+        self.assertIn('-var-file="$tfvars"', script)
+
     def test_operator_roots_are_never_planned_in_ci(self):
         for name in ('Setup Terraform', 'terraform init', 'terraform plan', 'Classify and report'):
             self.assertIn('!matrix.operator', step('plan', name)['if'])

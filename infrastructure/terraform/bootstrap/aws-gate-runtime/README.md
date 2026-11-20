@@ -43,7 +43,9 @@ terraform plan -out=gate.tfplan
 terraform apply gate.tfplan
 ```
 
-Mark this root applied/operator in the private drift inventory when applying.
+This root is recorded applied as an operator root in `../drift-roots.json`: the nightly drift plan
+only checks that its state exists, and `scripts/bootstrap-drift-operator.sh` plans it with operator
+credentials, the SSM input above and the private `backend.tf`.
 Use the sensitive outputs privately for the lane assume-role target,
 CloudFormation RoleARN and template permissions boundary, as described above.
 No apply is performed by this change.
