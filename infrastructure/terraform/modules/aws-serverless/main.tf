@@ -29,9 +29,13 @@ locals {
   redis_auth_token   = var.redis_auth_token != "" ? var.redis_auth_token : (local.redis_create ? random_password.redis_auth[0].result : "")
   redis_connection   = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true${local.redis_client_options}" : "")
   redis_egress_cidrs = local.redis_create ? [local.vpc_cidr_block] : var.redis_connection_cidrs
-  # An existing database is reached inside the VPC unless the operator names its
-  # address range; the module never opens it to 0.0.0.0/0.
-  existing_db_egress_cidrs = length(var.existing_db_egress_cidrs) > 0 ? var.existing_db_egress_cidrs : [local.vpc_cidr_block]
+  # Database egress shared by the Lambda and GP Batch groups. A reused database
+  # inside the VPC is covered by the VPC rule; only a range the operator names
+  # outside it gets a rule of its own, and never 0.0.0.0/0.
+  database_egress_rules = concat(
+    [{ description = "PostgreSQL access", cidr_blocks = [local.vpc_cidr_block] }],
+    local.db_use_existing && length(var.existing_db_egress_cidrs) > 0 ? [{ description = "Existing PostgreSQL access", cidr_blocks = var.existing_db_egress_cidrs }] : []
+  )
 }
 
 # Client timeouts on the module-built Redis connection string (README: Redis
@@ -523,22 +527,14 @@ resource "aws_security_group" "lambda" {
   description = "Lambda security group"
   vpc_id      = local.vpc_id
 
-  egress {
-    description = "PostgreSQL access"
-    from_port   = local.db_port
-    to_port     = local.db_port
-    protocol    = "tcp"
-    cidr_blocks = [local.vpc_cidr_block]
-  }
-
   dynamic "egress" {
-    for_each = local.db_use_existing ? [1] : []
+    for_each = local.database_egress_rules
     content {
-      description = "Existing PostgreSQL access"
+      description = egress.value.description
       from_port   = local.db_port
       to_port     = local.db_port
       protocol    = "tcp"
-      cidr_blocks = local.existing_db_egress_cidrs
+      cidr_blocks = egress.value.cidr_blocks
     }
   }
 

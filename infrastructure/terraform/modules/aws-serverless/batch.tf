@@ -235,22 +235,14 @@ resource "aws_security_group" "batch" {
   description = "Honua GP Batch task security group"
   vpc_id      = local.vpc_id
 
-  egress {
-    description = "PostgreSQL access"
-    from_port   = local.db_port
-    to_port     = local.db_port
-    protocol    = "tcp"
-    cidr_blocks = [local.vpc_cidr_block]
-  }
-
   dynamic "egress" {
-    for_each = local.db_use_existing ? [1] : []
+    for_each = local.database_egress_rules
     content {
-      description = "Existing PostgreSQL access"
+      description = egress.value.description
       from_port   = local.db_port
       to_port     = local.db_port
       protocol    = "tcp"
-      cidr_blocks = local.existing_db_egress_cidrs
+      cidr_blocks = egress.value.cidr_blocks
     }
   }
 

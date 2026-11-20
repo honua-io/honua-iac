@@ -223,8 +223,11 @@ run "existing_connection_string_is_not_rewritten" {
   }
 
   assert {
-    condition     = toset(nonsensitive(one([for rule in aws_security_group.lambda.egress : rule.cidr_blocks if rule.description == "Existing PostgreSQL access"]))) == toset([module.vpc[0].vpc_cidr_block])
-    error_message = "An existing database must be reached inside the VPC by default, never 0.0.0.0/0 (honua-iac#540)."
+    condition = (
+      length([for rule in aws_security_group.lambda.egress : rule if rule.description == "Existing PostgreSQL access"]) == 0 &&
+      length(distinct([for rule in aws_security_group.lambda.egress : [rule.from_port, rule.protocol, nonsensitive(rule.cidr_blocks)]])) == length(aws_security_group.lambda.egress)
+    )
+    error_message = "An existing database must be reached on the VPC rule alone, never 0.0.0.0/0, and no two egress rules may repeat a port and range (honua-iac#540)."
   }
 }
 

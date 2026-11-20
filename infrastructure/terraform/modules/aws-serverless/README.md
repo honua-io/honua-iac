@@ -312,8 +312,11 @@ names the owner:
 
 - `owned` (default): this stack owns the repository. The module installs a policy
   that grants `lambda.amazonaws.com` `ecr:BatchGetImage` and
-  `ecr:GetDownloadUrlForLayer` for this account's functions in this region, and
-  deletes it on destroy. A plan is refused when `image` is in another account's
+  `ecr:GetDownloadUrlForLayer` for this deployment's functions only
+  (`<name_prefix>-<environment>-*` in this account and region), and deletes it
+  on destroy. Another stack that pulls from the same repository in `reuse` mode
+  is not covered by that policy; give the repository its own policy that
+  authorizes it. A plan is refused when `image` is in another account's
   or region's registry, because that repository's policy is not this stack's to
   write.
 - `reuse`: the repository is shared, for example the standing `honua-server`
