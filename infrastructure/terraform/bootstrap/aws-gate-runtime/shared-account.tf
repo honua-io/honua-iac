@@ -116,7 +116,7 @@ locals {
   }
   # ACM requests a certificate untagged, then tags it with the stack tags only (no
   # reserved stack-name tag, live 20 Nov). Its ARNs carry no name to fence; the
-  # service role reaches only certificates it requested (the lane makes no change sets).
+  # service role reaches only certificates it requested (gate principals make no change sets).
   named_tag_denies = concat([{
     Sid = "NamedCreationTags", Effect = "Deny", Action = concat(keys(local.named_tag_targets), ["acm:AddTagsToCertificate"]), Resource = "*"
     Condition = merge(local.ownership_condition, {

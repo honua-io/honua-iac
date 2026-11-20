@@ -319,9 +319,11 @@ denied because the reserved stack-name request tag was absent. Certificate ARNs
 carry no name to fence, so `NamedCreationTags` allows `acm:AddTagsToCertificate`
 on an unowned certificate when the request carries the stack's required
 `HonuaGate=true` tag. The fence is attached to the CloudFormation service role
-only, and a native certificate resource always requests a new certificate. The
-lane cannot create change sets, so a gate stack cannot import and tag a foreign
-certificate. Deleting a certificate stays behind the ownership deny, so a
+only, and a native certificate resource always requests a new certificate. No
+gate principal (lane or reaper) can create change sets or import resources, so
+a gate stack cannot import and tag a foreign certificate. The residual risk is
+an account administrator who can pass the service role and create an import
+change set; that principal already has broader rights than the fence protects. Deleting a certificate stays behind the ownership deny, so a
 certificate whose create failed before CloudFormation tagged it has to be
 deleted by an operator.
 

@@ -66,10 +66,10 @@ run "only_cloudformation_creation_tags_spare_an_untagged_resource" {
     # Gate stacks are created with CreateStack only; a change set could import a foreign resource into one.
     condition = !anytrue([for statement in jsondecode(aws_iam_role_policy.lane.policy).Statement : try(
       statement.Effect == "Allow" && anytrue([for pattern in flatten([statement.Action]) : anytrue([
-        for action in ["cloudformation:CreateChangeSet", "cloudformation:ExecuteChangeSet"] : can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))
+        for action in ["cloudformation:CreateChangeSet", "cloudformation:ExecuteChangeSet", "cloudformation:ImportResourcesToStack", "cloudformation:CreateStackRefactor"] : can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))
       ])]), false
     )])
-    error_message = "The lane must not create change sets: an import would let CloudFormation tag a resource the stack did not create."
+    error_message = "The lane must not create change sets or import: an import would let CloudFormation tag a resource the stack did not create."
   }
   assert {
     condition     = aws_iam_role_policy_attachment.cloudformation_fences.role == aws_iam_role.cloudformation.name
@@ -135,6 +135,8 @@ run "ec2_and_acm_creation_and_post_creation_tagging_decisions" {
       { name = "certificate_post_create", action = "acm:AddTagsToCertificate", denied = false, context = { "aws:RequestTag/HonuaGate" = "true", "aws:RequestTag/honua:qualification" = "true" } },
       { name = "certificate_missing_tag", action = "acm:AddTagsToCertificate", denied = true, context = { "aws:RequestTag/honua:qualification" = "true" } },
       { name = "certificate_wrong_tag", action = "acm:AddTagsToCertificate", denied = true, context = { "aws:RequestTag/HonuaGate" = "false" } },
+      # Accepted claim: only reachable through an import, which no gate principal can start.
+      { name = "certificate_unowned_claim", action = "acm:AddTagsToCertificate", denied = false, context = { "aws:ResourceTag/HonuaGate" = "false", "aws:RequestTag/HonuaGate" = "true" } },
       { name = "certificate_stack_name_only", action = "acm:AddTagsToCertificate", denied = true, context = { "aws:RequestTag/aws:cloudformation:stack-name" = "honua-gate-m1-x" } },
       { name = "certificate_owned", action = "acm:AddTagsToCertificate", denied = false, context = { "aws:ResourceTag/HonuaGate" = "true" } }
       ] : scenario.denied == anytrue([
