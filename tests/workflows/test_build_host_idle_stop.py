@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -32,6 +33,8 @@ class BuildHostIdleStopTests(unittest.TestCase):
         spec.loader.exec_module(self.program)
         self.program.WORKTREES = root / "wt"
         self.program.WORKTREES.mkdir()
+        self.program.PROC = root / "proc"
+        self.program.PROC.mkdir()
         self.program.LAST_ACTIVE = root / "last_active"
         self.program.CONFIG = root / "config.json"
         self.program.CONFIG.write_text('{"region":"eu-north-1","group":"honua-lane-build-host","idle_seconds":1800}')
@@ -112,10 +115,37 @@ class BuildHostIdleStopTests(unittest.TestCase):
         self.program.main()
         self.assertEqual(self.scale_downs(), [])
 
-    def test_active_marker_resets_last_activity(self):
+    def marker(self, age_seconds):
         worktree = self.program.WORKTREES / "job"
-        worktree.mkdir()
-        (worktree / ".honua-active.123").touch()
+        worktree.mkdir(exist_ok=True)
+        marker = worktree / ".honua-active.123"
+        marker.touch()
+        stamp = marker.stat().st_mtime - age_seconds
+        os.utime(marker, (stamp, stamp))
+        return worktree
+
+    def process_in(self, directory):
+        process = self.program.PROC / "4242"
+        process.mkdir()
+        (process / "cwd").symlink_to(directory)
+
+    def test_active_marker_resets_last_activity(self):
+        self.marker(age_seconds=60)
+        self.program.main()
+        self.assertEqual(self.scale_downs(), [])
+        self.assertEqual(self.program.LAST_ACTIVE.read_text(), "1800")
+
+    def test_stale_marker_of_a_killed_run_does_not_hold_idle_host(self):
+        self.marker(age_seconds=1800)
+        self.process_in(self.program.WORKTREES)
+        self.program.main()
+        self.assertEqual(len(self.scale_downs()), 1)
+
+    def test_old_marker_holds_host_while_a_process_works_in_its_checkout(self):
+        worktree = self.marker(age_seconds=7200)
+        nested = worktree / "src" / "Honua.Server"
+        nested.mkdir(parents=True)
+        self.process_in(nested)
         self.program.main()
         self.assertEqual(self.scale_downs(), [])
         self.assertEqual(self.program.LAST_ACTIVE.read_text(), "1800")

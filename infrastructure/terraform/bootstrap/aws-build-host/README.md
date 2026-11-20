@@ -16,7 +16,9 @@ Cost controls:
 - **Idle stop:** the installed timer checks every five minutes and scales the group
   to zero after `idle_stop_minutes` (default 30) without observed remote job markers
   or running .NET/Docker builds, provided no SSH session is younger than that
-  interval. Failed activity inspection leaves capacity unchanged. The instance
+  interval. A job marker counts while it is younger than that interval or while a
+  process still works inside its checkout, so a killed lane run cannot keep the
+  host up. Failed activity inspection leaves capacity unchanged. The instance
   role can only set desired capacity on this group. Scaling to zero terminates the
   instance; simply shutting down EC2 would cause an immediate replacement.
 - **Nightly stop (off by default):** `nightly_stop_enabled = true` scales the group

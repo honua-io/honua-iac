@@ -12,6 +12,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from pathlib import Path
 
+PROC = Path("/proc")
 WORKTREES = Path("/home/ubuntu/wt")
 LAST_ACTIVE = Path("/run/honua-build-host-last-active")
 CONFIG = Path("/etc/honua-build-host.json")
@@ -31,6 +32,26 @@ def has_build(rows):
         if command == "dotnet" and re.search(r"\b(build|test|publish|pack|restore|msbuild|vstest)\b|MSBuild\.dll", args):
             return True
         if command in {"docker", "docker-buildx", "docker-compose", "buildctl"} and re.search(r"\b(build|bake)\b", args):
+            return True
+    return False
+
+
+def has_active_marker(idle_seconds):
+    # A killed run leaves its marker: count it while fresh or while a process works in its checkout.
+    stale = set()
+    for marker in WORKTREES.glob("*/.honua-active.*"):
+        try:
+            if time.time() - marker.stat().st_mtime < idle_seconds:
+                return True
+        except FileNotFoundError:
+            continue
+        stale.add(marker.parent.resolve())
+    for link in PROC.glob("[0-9]*/cwd") if stale else ():
+        try:
+            directory = link.resolve(strict=True)
+        except OSError:
+            continue
+        if any(directory == checkout or checkout in directory.parents for checkout in stale):
             return True
     return False
 
@@ -82,7 +103,7 @@ def main():
     idle_seconds = config["idle_seconds"]
     now = int(time.monotonic())
     rows = processes()
-    if any(WORKTREES.glob("*/.honua-active.*")) or has_build(rows):
+    if has_build(rows) or has_active_marker(idle_seconds):
         LAST_ACTIVE.write_text(str(now))
         return
     if any(int(age) < idle_seconds and command in {"sshd", "sshd-session"} and "@" in args
