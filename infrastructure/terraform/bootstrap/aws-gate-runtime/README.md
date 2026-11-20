@@ -270,8 +270,14 @@ redaction, the database role in use, Batch worker output). For that, both lane
 policies also allow these read-only calls, on gate resources only:
 
 - `ecs:ListTasks` where the cluster is named `honua-gate-*-Cluster-*`, and
-  `ecs:DescribeTasks` on tasks in those clusters. CloudFormation names each cluster
-  `<stack name>-Cluster-<random>`.
+  `ecs:DescribeTasks` and `ecs:DescribeServices` on tasks and services in those
+  clusters. CloudFormation names each cluster `<stack name>-Cluster-<random>`.
+  Upgrade and rollback rows read the service's rollout and circuit-breaker state.
+- `cloudwatch:DescribeAlarms` and `cloudwatch:DescribeAlarmHistory` on alarms named
+  `honua-gate-*` (a Launch Stack names its alarms `<stack name>-ops-*`), for
+  alerting rows. No alarm writes and no `SetAlarmState`.
+- `iam:GetRole` on `honua-gate-*` roles, next to the policy simulator, so a
+  security row can read a gate role's trust policy and boundary.
 - `logs:DescribeLogStreams`, `logs:FilterLogEvents` and `logs:GetLogEvents` on the
   log groups `/honua/honua-gate-*`, `aws-waf-logs-honua-gate-*` and
   `/aws/rds/instance/honua-gate-*`. CloudWatch Logs has no resource-tag condition
@@ -294,7 +300,15 @@ reads, because these APIs have no useful name scope. Both lane policies allow
 `config:DescribeConfigRule*` and `config:DescribeComplianceByConfigRule`
 (recorder and delivery status, rule scope, evaluation status and per-rule
 compliance), and `logs:DescribeLogGroups`, which lists every log group name and
-retention in the account, not only gate ones. No other Config action is granted:
+retention in the account, not only gate ones. They also allow
+`logs:DescribeDeliveries`, `logs:DescribeDeliveryDestinations` and
+`logs:DescribeDeliverySources` (one `logs:DescribeDeliver*` pattern), so a teardown row
+can check that a stack's CloudFront log delivery is gone, and
+`cloudwatch:GetMetricStatistics`, so a heartbeat row can read the `Honua/Operations`
+`Heartbeat` metric. Neither has a resource scope: the delivery calls list every
+delivery in the account, and the metric call returns datapoints for any metric
+it names. `cloudwatch:ListMetrics` and `cloudwatch:GetMetricData` are not
+granted. No other Config action is granted:
 no resource configuration, compliance-by-resource, remediation or aggregator
 reads, and no rule evaluation.
 
