@@ -280,6 +280,9 @@ policies also allow these read-only calls, on gate resources only:
   a prefix or unfiltered call is authorized against `alarm:*` and is denied. The
   target-tracking alarms that Application Auto Scaling creates
   (`TargetTracking-service/<cluster>/...`) are outside the fence.
+- `cloudfront:GetVpcOrigin` and `cloudfront:ListTagsForResource` on VPC origins,
+  for teardown (see Gate test domain). These have no tag scope: with one, a
+  deleted origin would also answer AccessDenied.
 - `iam:GetRole` on `honua-gate-*` roles, next to the policy simulator, so a
   security row can read a gate role's trust policy and boundary.
 - `logs:DescribeLogStreams`, `logs:FilterLogEvents` and `logs:GetLogEvents` on the
@@ -654,6 +657,20 @@ record in the zone, so keep nothing else in it. Stacks that fail to delete, and
 ACM validation records, can leave records behind; the reaper does not clean the
 zone. Clearing `gate_test_domain` deletes the zone with whatever records remain
 (`force_destroy`).
+
+A stack created without `DomainNames` and later updated to use them replaces
+its VPC origin (`VpcOrigin` becomes `TlsVpcOrigin`). On one such stack (20 Nov)
+the teardown deleted `TlsVpcOrigin` for its usual seven minutes and then failed
+with `Access denied for operation 'AWS::CloudFront::VpcOrigin'`. Retries failed
+the same way, and the origin was already gone. A call on a missing origin finds
+no `HonuaGate=true` tag, so the ownership deny refuses it instead of letting
+CloudFront answer not found. When a VPC origin fails to delete with AccessDenied,
+the lane runs `aws cloudfront get-vpc-origin --id <physical ID>`:
+
+- `NoSuchVpcOrigin` (the origin is gone): run `DeleteStack` again with
+  `--retain-resources <logical ID>`. Nothing is left behind.
+- The origin exists: read its tags with `aws cloudfront list-tags-for-resource`.
+  Without `HonuaGate=true` it is outside the fence, so main deletes it.
 
 ### Orphan gate roles and keys
 

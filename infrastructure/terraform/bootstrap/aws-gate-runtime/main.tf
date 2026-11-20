@@ -78,6 +78,13 @@ locals {
       }, {
       Sid = "InspectNetworkOwnership", Effect = "Allow", Action = "ec2:Describe*", Resource = "*"
       }, {
+      # A VPC origin holds its name, load balancer and ports, no secrets. A teardown
+      # that reports AccessDenied on one must first know whether it still exists
+      # and carries HonuaGate=true. A tag condition here would answer a deleted
+      # origin with AccessDenied too, so the scope is every origin in the account.
+      Sid      = "InspectVpcOrigins", Effect = "Allow", Action = ["cloudfront:GetVpcOrigin", "cloudfront:ListTagsForResource"]
+      Resource = "arn:aws:cloudfront::${var.member_account_id}:vpcorigin/*"
+      }, {
       Sid = "DenyInspectionContentReads", Effect = "Deny"
       # Metadata inspection must never expose content, even on gate-owned resources.
       Action   = [for action in local.shared_content_read_actions : action if startswith(action, "ec2:Describe")]
