@@ -77,6 +77,13 @@ class CertificateTests(unittest.TestCase):
                 self.assertEqual(self.run_cleanup(dry_run=False)['certificates'], 0)
         self.acm.delete_certificate.assert_not_called()
 
+    def test_imported_certificate_without_created_at_is_kept(self):
+        detail = certificate()
+        del detail['CreatedAt']
+        self.acm.describe_certificate.return_value = {'Certificate': detail | {'ImportedAt': NOW}}
+        self.assertEqual(self.run_cleanup(dry_run=False)['certificates'], 0)
+        self.acm.delete_certificate.assert_not_called()
+
     def test_listing_filters_skip_foreign_and_in_use_without_describing(self):
         self.summaries = [summary(name='api.example.com'), summary(name=f'x.not{DOMAIN}'), summary(InUse=True)]
         self.assertEqual(self.run_cleanup(dry_run=False)['certificates'], 0)
@@ -126,6 +133,12 @@ class CertificateTests(unittest.TestCase):
         boto.client.assert_any_call('acm', region_name='us-east-1')
         work = certs.call_args.args[0]
         self.assertEqual((work.domain, work.legacy, work.dry_run), (DOMAIN, {'a', 'b'}, False))
+        env['TEMPORARY_ORPHAN_CERTIFICATE_IDS'] = ''
+        with patch.dict(sys.modules, {'boto3': boto}), patch.dict(os.environ, env), \
+                patch.object(handler, 'reap'), patch.object(handler, 'reap_orphans'), \
+                patch.object(handler, 'reap_protection_trails'), patch.object(handler, 'reap_certificates') as certs:
+            handler.lambda_handler({}, None)
+        self.assertEqual(certs.call_args.args[0].legacy, set())
 
 
 if __name__ == '__main__':

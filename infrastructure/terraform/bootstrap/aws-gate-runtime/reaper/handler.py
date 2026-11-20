@@ -413,7 +413,8 @@ def gate_owned(work, arn):
 def orphan_certificate(work, arn):
     certificate = work.acm.describe_certificate(CertificateArn=arn)['Certificate']
     names = [certificate['DomainName'], *certificate.get('SubjectAlternativeNames', [])]
-    if (certificate.get('InUseBy') or work.now - certificate['CreatedAt'] <= MAX_AGE
+    created = certificate.get('CreatedAt')  # imported certificates carry ImportedAt instead; never gate-owned
+    if (certificate.get('InUseBy') or not created or work.now - created <= MAX_AGE
             or not all(under_domain(name, work.domain) for name in names) or not gate_owned(work, arn)):
         return 0
     LOG.info('%s delete unused gate certificate %s (%s)', 'Would' if work.dry_run else 'Will', arn,
