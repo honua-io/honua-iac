@@ -22,14 +22,14 @@ run "only_cloudformation_creation_tags_spare_an_untagged_resource" {
   assert {
     condition = anytrue([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : try(
       statement.Sid == "CreationTags" && statement.Effect == "Deny" && statement.Resource == "*" &&
-      toset(statement.Action) == toset(["ec2:CreateTags"]) &&
+      toset(statement.Action) == toset(["ec2:CreateTags", "acm:AddTagsToCertificate"]) &&
       jsonencode(statement.Condition) == jsonencode({
         StringNotLikeIfExists   = { "aws:RequestTag/aws:cloudformation:stack-name" = "honua-gate-*", "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }
         StringNotEqualsIfExists = { "aws:ResourceTag/HonuaGate" = "true" }
         Null                    = { "ec2:CreateAction" = "true" }
       }), false)
     ])
-    error_message = "EC2 post-create tagging needs a separate deny that spares the reserved CloudFormation stack-name request tag."
+    error_message = "EC2 and ACM post-create tagging need a separate deny that spares the reserved CloudFormation stack-name request tag."
   }
   assert {
     # A create or restore request carries the same request tag; only the tagging APIs may trust it.
@@ -41,12 +41,12 @@ run "only_cloudformation_creation_tags_spare_an_untagged_resource" {
   }
   assert {
     condition = !anytrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(statement.Sid == "CreationTags", false)]) && alltrue([
-      for action in ["ec2:CreateTags", "rds:AddTagsToResource", "cloudwatch:TagResource", "logs:TagResource", "lambda:TagResource"] : !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))])
+      for action in ["ec2:CreateTags", "acm:AddTagsToCertificate", "rds:AddTagsToResource", "cloudwatch:TagResource", "logs:TagResource", "lambda:TagResource"] : !anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))])
     ])
     error_message = "Workload roles keep the full ownership fence on tagging."
   }
   assert {
-    condition = alltrue([for action in ["ec2:DeleteVpc", "rds:DeleteDBParameterGroup", "rds:RestoreDBInstanceFromDBSnapshot", "rds:CreateDBInstanceReadReplica", "ec2:CreateVolume"] :
+    condition = alltrue([for action in ["ec2:DeleteVpc", "acm:DeleteCertificate", "acm:RemoveTagsFromCertificate", "rds:DeleteDBParameterGroup", "rds:RestoreDBInstanceFromDBSnapshot", "rds:CreateDBInstanceReadReplica", "ec2:CreateVolume"] :
       !anytrue([for pattern in local.service_role_ownership_deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))])
     ])
     error_message = "Deletion, restores and copies stay behind the ownership deny."
@@ -109,7 +109,7 @@ run "untaggable_types_are_managed_by_the_service_role_only" {
   }
 }
 
-run "ec2_creation_and_post_creation_tagging_decisions" {
+run "ec2_and_acm_creation_and_post_creation_tagging_decisions" {
   command = plan
   assert {
     condition = alltrue([for scenario in [
@@ -119,7 +119,12 @@ run "ec2_creation_and_post_creation_tagging_decisions" {
       { name = "create_wrong_tag", action = "ec2:CreateTags", denied = true, context = { "ec2:CreateAction" = "CreateVpc", "aws:RequestTag/HonuaGate" = "false" } },
       { name = "foreign_post_create", action = "ec2:CreateTags", denied = true, context = { "aws:RequestTag/HonuaGate" = "true" } },
       { name = "owned_post_create", action = "ec2:CreateTags", denied = false, context = { "aws:ResourceTag/HonuaGate" = "true" } },
-      { name = "foreign_stack_post_create", action = "ec2:CreateTags", denied = true, context = { "aws:RequestTag/aws:cloudformation:stack-name" = "foreign-stack", "aws:RequestTag/HonuaGate" = "true" } }
+      { name = "foreign_stack_post_create", action = "ec2:CreateTags", denied = true, context = { "aws:RequestTag/aws:cloudformation:stack-name" = "foreign-stack", "aws:RequestTag/HonuaGate" = "true" } },
+      # The ACM handler requests an untagged certificate, then tags it with the stack's system tags.
+      { name = "certificate_post_create", action = "acm:AddTagsToCertificate", denied = false, context = { "aws:RequestTag/aws:cloudformation:stack-name" = "honua-gate-m1-x", "aws:RequestTag/HonuaGate" = "true" } },
+      { name = "certificate_customer_tag_only", action = "acm:AddTagsToCertificate", denied = true, context = { "aws:RequestTag/HonuaGate" = "true" } },
+      { name = "certificate_foreign_stack", action = "acm:AddTagsToCertificate", denied = true, context = { "aws:RequestTag/aws:cloudformation:stack-name" = "foreign-stack" } },
+      { name = "certificate_owned", action = "acm:AddTagsToCertificate", denied = false, context = { "aws:ResourceTag/HonuaGate" = "true" } }
       ] : scenario.denied == anytrue([
         for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : try(
           statement.Effect == "Deny" && contains(flatten([statement.Action]), scenario.action) &&
@@ -131,7 +136,7 @@ run "ec2_creation_and_post_creation_tagging_decisions" {
         ])]), false)
       ])
     ])
-    error_message = "EC2 create-time tags require HonuaGate=true; post-create EC2 tagging cannot claim an unowned resource with a customer request tag."
+    error_message = "EC2 create-time tags require HonuaGate=true; post-create EC2 and ACM tagging cannot claim an unowned resource with a customer request tag."
   }
 }
 

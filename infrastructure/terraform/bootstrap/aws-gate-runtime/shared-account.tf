@@ -61,11 +61,12 @@ locals {
     StringNotLikeIfExists   = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }
     StringNotEqualsIfExists = { "aws:ResourceTag/HonuaGate" = "true" }
   }
-  # EC2 accepts the reserved stack-name tag on post-create tagging. RDS instead
-  # needs the customer request tag plus a gate name, account and region fence.
-  creation_tag_actions = concat(["ec2:CreateTags", "rds:AddTagsToResource"], keys(local.named_tag_targets))
+  # EC2 and ACM accept the reserved stack-name tag on post-create tagging (the ACM
+  # handler requests an untagged certificate, then tags it). RDS instead needs the
+  # customer request tag plus a gate name, account and region fence.
+  creation_tag_actions = concat(["ec2:CreateTags", "acm:AddTagsToCertificate", "rds:AddTagsToResource"], keys(local.named_tag_targets))
   creation_tag_deny = {
-    Sid = "CreationTags", Effect = "Deny", Action = ["ec2:CreateTags"], Resource = "*"
+    Sid = "CreationTags", Effect = "Deny", Action = ["ec2:CreateTags", "acm:AddTagsToCertificate"], Resource = "*"
     Condition = {
       StringNotLikeIfExists = merge(local.ownership_condition.StringNotLikeIfExists, {
         "aws:RequestTag/aws:cloudformation:stack-name" = "honua-gate-*"
