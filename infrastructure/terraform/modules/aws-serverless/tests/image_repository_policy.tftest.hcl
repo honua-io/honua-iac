@@ -188,8 +188,8 @@ run "owned_default_installs_lambda_retrieval_policy" {
     error_message = "The owned policy must grant only Lambda image retrieval to the Lambda service."
   }
   assert {
-    condition     = toset(tolist(data.aws_iam_policy_document.lambda_ecr_access[0].statement[0].condition)[0].values) == toset(["arn:aws:lambda:us-east-1:123456789012:function:*"])
-    error_message = "The owned policy must be scoped to this account's Lambda functions in this region."
+    condition     = toset(tolist(data.aws_iam_policy_document.lambda_ecr_access[0].statement[0].condition)[0].values) == toset(["arn:aws:lambda:us-east-1:123456789012:function:honua-dev-*"])
+    error_message = "The owned policy must be scoped to this deployment's Lambda functions (honua-iac#540), not every function in the account."
   }
 }
 

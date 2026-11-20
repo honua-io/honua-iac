@@ -414,7 +414,9 @@ resource "aws_security_group" "ecs" {
     from_port   = 5432
     to_port     = 5432
     protocol    = "tcp"
-    cidr_blocks = local.db_use_existing ? ["0.0.0.0/0"] : [local.vpc_cidr_block]
+    # An existing database is reached inside the VPC unless the operator names
+    # its address range; the module never opens 5432 to 0.0.0.0/0.
+    cidr_blocks = local.db_use_existing && length(var.existing_db_egress_cidrs) > 0 ? var.existing_db_egress_cidrs : [local.vpc_cidr_block]
   }
 
   # Accepted Trivy AWS-0104 exception (founder decision D1, 2026-10-26),
@@ -1056,19 +1058,44 @@ data "aws_iam_policy_document" "kms" {
     }
   }
 
+  # Service principals use the key only for this account's own log groups and
+  # secrets: CloudWatch Logs and Secrets Manager always send the
+  # resource ARN as encryption context, so the condition admits every call this
+  # module needs and refuses another account's log group or secret.
   statement {
     sid       = "AllowCloudWatchLogsUse"
-    actions   = ["kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:DescribeKey", "kms:CreateGrant"]
+    actions   = ["kms:Encrypt*", "kms:Decrypt*", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:Describe*"]
     resources = ["*"]
     principals {
       type        = "Service"
       identifiers = ["logs.${data.aws_region.current.region}.amazonaws.com"]
     }
+    condition {
+      test     = "ArnLike"
+      variable = "kms:EncryptionContext:aws:logs:arn"
+      values   = ["arn:${data.aws_partition.current.partition}:logs:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:log-group:*"]
+    }
   }
 
   statement {
     sid       = "AllowSecretsManagerUse"
-    actions   = ["kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:DescribeKey", "kms:CreateGrant"]
+    actions   = ["kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*"]
+    resources = ["*"]
+    principals {
+      type        = "Service"
+      identifiers = ["secretsmanager.${data.aws_region.current.region}.amazonaws.com"]
+    }
+    condition {
+      test     = "StringLike"
+      variable = "kms:EncryptionContext:SecretARN"
+      values   = ["arn:${data.aws_partition.current.partition}:secretsmanager:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:secret:*"]
+    }
+  }
+
+  # Key metadata only; it carries no encryption context to condition on.
+  statement {
+    sid       = "AllowSecretsManagerDescribeKey"
+    actions   = ["kms:DescribeKey"]
     resources = ["*"]
     principals {
       type        = "Service"

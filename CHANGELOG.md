@@ -14,6 +14,20 @@ module input/output contracts may still change.
 
 ## Unreleased
 
+### Security
+
+- Narrowed grants (honua-iac#540). `aws-ecs` and `aws-serverless` no longer open the database port to
+  `0.0.0.0/0` when they reuse a database: egress goes to the VPC CIDR unless the new
+  `existing_db_egress_cidrs` names the database's range. **Upgrade note:** a deployment whose reused
+  database lives outside its VPC must set `existing_db_egress_cidrs` before applying this version.
+  `db_additional_ingress_cidrs` (`aws-ecs`, `aws-data`) and `existing_db_egress_cidrs` refuse invalid
+  CIDRs and prefixes broader than /8. The `aws-ecs` key policy binds the CloudWatch Logs and Secrets
+  Manager service principals to this account's log groups and secrets by encryption context and no
+  longer lets them create grants. The `aws-serverless` image repository policy lets only this
+  deployment's functions (`<name_prefix>-<environment>-*`) pull, and the control-plane event functions'
+  KMS grant holds only through Secrets Manager. Operator SSH CIDRs (`aws-build-host`,
+  `aws-eval-docker-hosts`, `aws-lane-host`) must be /24 or narrower.
+
 ### Added
 
 - `aws-ecs`: optional `cdn` input. One CloudFront distribution on `domain_name` fronts the load balancer as

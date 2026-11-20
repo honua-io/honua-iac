@@ -250,7 +250,7 @@ resource "aws_security_group" "batch" {
       from_port   = local.db_port
       to_port     = local.db_port
       protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
+      cidr_blocks = local.existing_db_egress_cidrs
     }
   }
 

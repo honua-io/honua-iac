@@ -293,6 +293,7 @@ does not provision a cache.
 | `rds_deletion_protection` | **true** | Protect the managed RDS instance from deletion; disable in a separate apply before teardown. |
 | `existing_db_endpoint` | `""` | Reuse an existing PostgreSQL endpoint (must be paired with `existing_db_connection_string`). |
 | `existing_db_connection_string` | `""` | Reuse an existing PostgreSQL connection string (skips RDS provisioning and PostGIS local-exec). |
+| `existing_db_egress_cidrs` | `[]` | IPv4 CIDRs the server may reach on the database port when it reuses a database. Empty means the VPC CIDR; list the database's range when it lives outside the VPC. `0.0.0.0/0` and prefixes broader than /8 are refused. |
 | `db_instance_class` | `db.t3.micro` | RDS instance class. Use `db.r6g.*` for production. |
 | `db_multi_az` | false | Enable Multi-AZ failover. Recommended for production. |
 | `db_require_ssl` | true | Append SSL requirements to the connection string. |

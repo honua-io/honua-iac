@@ -152,6 +152,7 @@ module "honua" {
 | `existing_db_endpoint` | `""` | Reuse an existing PostgreSQL endpoint (must be paired with `existing_db_connection_string`). |
 | `existing_db_port` | `5432` | TCP port of the reused database. Set it to the port in the pinned `existing_db_connection_string`; Lambda database egress and the automatic migration locator hash use this port. The module-managed database remains on 5432. |
 | `existing_db_connection_string` | `""` | Reuse an existing PostgreSQL connection string (skips RDS provisioning and PostGIS local-exec). |
+| `existing_db_egress_cidrs` | `[]` | IPv4 CIDRs the server may reach on the database port when it reuses a database. Empty means the VPC CIDR; list the database's range when it lives outside the VPC. `0.0.0.0/0` and prefixes broader than /8 are refused. |
 | `skip_migrations` | true | Skip auto-migrations. Run them out-of-band for serverless. |
 | `serving_closed` | false | Reserved concurrency 0 on the API and control-plane event functions, so nothing can start an instance before the out-of-band migration has run (honua-server#6750). Apply with `true`, migrate, apply again with `false`; pool sizing and environments use the open values, so only reserved concurrency changes. |
 | `db_instance_class` | `db.t3.micro` | RDS instance class. |

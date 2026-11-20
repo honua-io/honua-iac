@@ -29,6 +29,9 @@ locals {
   redis_auth_token   = var.redis_auth_token != "" ? var.redis_auth_token : (local.redis_create ? random_password.redis_auth[0].result : "")
   redis_connection   = var.redis_connection_string != "" ? var.redis_connection_string : (local.redis_create ? "${aws_elasticache_replication_group.redis[0].primary_endpoint_address}:${var.redis_port},password=${local.redis_auth_token},ssl=true${local.redis_client_options}" : "")
   redis_egress_cidrs = local.redis_create ? [local.vpc_cidr_block] : var.redis_connection_cidrs
+  # An existing database is reached inside the VPC unless the operator names its
+  # address range; the module never opens it to 0.0.0.0/0.
+  existing_db_egress_cidrs = length(var.existing_db_egress_cidrs) > 0 ? var.existing_db_egress_cidrs : [local.vpc_cidr_block]
 }
 
 # Client timeouts on the module-built Redis connection string (README: Redis
@@ -535,7 +538,7 @@ resource "aws_security_group" "lambda" {
       from_port   = local.db_port
       to_port     = local.db_port
       protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
+      cidr_blocks = local.existing_db_egress_cidrs
     }
   }
 
@@ -787,7 +790,9 @@ data "aws_iam_policy_document" "lambda_ecr_access" {
       test     = "StringLike"
       variable = "aws:sourceArn"
       values = [
-        "arn:aws:lambda:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:function:*"
+        # Only this deployment's functions (all named "<name>-*"), not every
+        # function in the account.
+        "arn:aws:lambda:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:function:${local.name}-*"
       ]
     }
   }

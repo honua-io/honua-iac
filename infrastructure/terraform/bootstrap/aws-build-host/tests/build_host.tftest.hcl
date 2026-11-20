@@ -106,6 +106,12 @@ run "reject_world_ssh" {
   expect_failures = [var.allowed_ssh_cidrs]
 }
 
+run "very_broad_ssh_prefix_is_rejected" {
+  command = plan
+  variables { allowed_ssh_cidrs = ["192.0.2.1/32", "10.0.0.0/8"] }
+  expect_failures = [var.allowed_ssh_cidrs]
+}
+
 run "configured_idle_window" {
   command = apply
   variables { idle_stop_minutes = 10 }

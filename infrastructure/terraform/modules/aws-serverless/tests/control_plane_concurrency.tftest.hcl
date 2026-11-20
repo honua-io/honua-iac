@@ -199,6 +199,15 @@ run "defaults_bound_every_event_function" {
     )
     error_message = "Throttled tick and backstop invocations must be kept in Lambda's asynchronous queue (900 and 600 seconds)."
   }
+
+  assert {
+    condition = alltrue([
+      for statement in jsondecode(aws_iam_role_policy.control_plane_events[0].policy).Statement :
+      statement.Condition.StringEquals["kms:ViaService"] == "secretsmanager.us-east-1.amazonaws.com"
+      if statement.Sid == "DecryptSecrets"
+    ]) && length([for statement in jsondecode(aws_iam_role_policy.control_plane_events[0].policy).Statement : statement if statement.Sid == "DecryptSecrets"]) == 1
+    error_message = "The event functions' KMS grant must hold only through Secrets Manager (honua-iac#540)."
+  }
 }
 
 run "per_function_overrides" {

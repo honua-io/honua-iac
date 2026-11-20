@@ -163,3 +163,73 @@ run "reject_cidr_in_security_group_input" {
   }
   expect_failures = [var.db_additional_ingress_security_group_ids]
 }
+
+run "existing_database_egress_defaults_to_the_vpc" {
+  command = plan
+  variables {
+    existing_db_endpoint          = "postgres.example.internal"
+    existing_db_connection_string = "Host=postgres.example.internal;Database=honua;Username=honua;Password=test;SSL Mode=Require"
+  }
+  assert {
+    condition     = toset(nonsensitive(one([for rule in aws_security_group.ecs.egress : rule.cidr_blocks if rule.from_port == 5432]))) == toset(["10.0.0.0/16"])
+    error_message = "An existing database must be reached inside the VPC by default, never 0.0.0.0/0."
+  }
+}
+
+run "existing_database_egress_uses_the_named_range" {
+  command = plan
+  variables {
+    existing_db_endpoint          = "postgres.example.net"
+    existing_db_connection_string = "Host=postgres.example.net;Database=honua;Username=honua;Password=test;SSL Mode=Require"
+    existing_db_egress_cidrs      = ["198.51.100.0/28"]
+  }
+  assert {
+    condition     = toset(nonsensitive(one([for rule in aws_security_group.ecs.egress : rule.cidr_blocks if rule.from_port == 5432]))) == toset(["198.51.100.0/28"])
+    error_message = "A database outside the VPC must be reached only on the range the operator names."
+  }
+}
+
+run "reject_world_existing_database_egress" {
+  command = plan
+  variables {
+    existing_db_egress_cidrs = ["0.0.0.0/0"]
+  }
+  expect_failures = [var.existing_db_egress_cidrs]
+}
+
+run "reject_broad_or_malformed_database_ingress_cidrs" {
+  command = plan
+  variables {
+    db_additional_ingress_cidrs = ["10.0.0.0/16", "0.0.0.0/0", "not-a-cidr"]
+  }
+  expect_failures = [var.db_additional_ingress_cidrs]
+}
+
+run "key_policy_service_principals_are_bound_to_this_account" {
+  command = plan
+  assert {
+    condition = (
+      length(one([for s in data.aws_iam_policy_document.kms.statement : s if s.sid == "AllowCloudWatchLogsUse"]).condition) == 1 &&
+      one(one([for s in data.aws_iam_policy_document.kms.statement : s if s.sid == "AllowCloudWatchLogsUse"]).condition).test == "ArnLike" &&
+      one(one([for s in data.aws_iam_policy_document.kms.statement : s if s.sid == "AllowCloudWatchLogsUse"]).condition).variable == "kms:EncryptionContext:aws:logs:arn" &&
+      toset(one(one([for s in data.aws_iam_policy_document.kms.statement : s if s.sid == "AllowCloudWatchLogsUse"]).condition).values) == toset(["arn:aws:logs:us-east-1:123456789012:log-group:*"])
+    )
+    error_message = "CloudWatch Logs may use the key only for this account's log groups."
+  }
+  assert {
+    condition = (
+      length(one([for s in data.aws_iam_policy_document.kms.statement : s if s.sid == "AllowSecretsManagerUse"]).condition) == 1 &&
+      one(one([for s in data.aws_iam_policy_document.kms.statement : s if s.sid == "AllowSecretsManagerUse"]).condition).test == "StringLike" &&
+      one(one([for s in data.aws_iam_policy_document.kms.statement : s if s.sid == "AllowSecretsManagerUse"]).condition).variable == "kms:EncryptionContext:SecretARN" &&
+      toset(one(one([for s in data.aws_iam_policy_document.kms.statement : s if s.sid == "AllowSecretsManagerUse"]).condition).values) == toset(["arn:aws:secretsmanager:us-east-1:123456789012:secret:*"])
+    )
+    error_message = "Secrets Manager may use the key only for this account's secrets."
+  }
+  assert {
+    condition = alltrue([
+      for s in data.aws_iam_policy_document.kms.statement : !contains(s.actions, "kms:CreateGrant")
+      if length([for p in coalesce(s.principals, []) : p if p.type == "Service"]) > 0
+    ])
+    error_message = "No service principal may create grants on the key."
+  }
+}

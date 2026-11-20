@@ -2,6 +2,12 @@ The reviewed `foss4g-images.tfvars.json` is byte-identical to the counterpart in
 honua-release PR845. It prepares candidate-independent encrypted custody,
 scoped roles and immutable image repositories in the production account (us-east-1).
 It contains references and monetary reservations only; no secret values or state.
+Those references include the production account ID and the names of two
+certification secrets (honua-iac#540, reviewed and kept): an account ID and a
+secret ARN are identifiers, not credentials, and reading either secret still needs
+a role in that account. The file stays committed because the bootstrap workflow
+compares it byte for byte with its honua-release counterpart; it goes when the
+hosted-pilot bootstrap path is retired, not before.
 No main Server/Console/Cognito deployment or model invocation is enabled.
 
 The bootstrap workflow checks its exact configuration against the selected

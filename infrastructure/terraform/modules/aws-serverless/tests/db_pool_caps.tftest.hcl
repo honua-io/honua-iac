@@ -221,6 +221,39 @@ run "existing_connection_string_is_not_rewritten" {
     condition     = aws_lambda_function.this.environment[0].variables["Limits__Connections__MaxConnectionPoolSize"] == "8"
     error_message = "The environment cap must still apply with an existing database."
   }
+
+  assert {
+    condition     = toset(nonsensitive(one([for rule in aws_security_group.lambda.egress : rule.cidr_blocks if rule.description == "Existing PostgreSQL access"]))) == toset([module.vpc[0].vpc_cidr_block])
+    error_message = "An existing database must be reached inside the VPC by default, never 0.0.0.0/0 (honua-iac#540)."
+  }
+}
+
+run "existing_database_egress_uses_the_named_range" {
+  command = apply
+
+  variables {
+    existing_db_endpoint          = "postgres.example.net"
+    existing_db_connection_string = "Host=postgres.example.net;Database=honua;Username=honua;Password=test;SSL Mode=Require"
+    existing_db_egress_cidrs      = ["198.51.100.0/28"]
+  }
+
+  assert {
+    condition = alltrue([
+      for group in [aws_security_group.lambda, aws_security_group.batch[0]] :
+      toset(nonsensitive(one([for rule in group.egress : rule.cidr_blocks if rule.description == "Existing PostgreSQL access"]))) == toset(["198.51.100.0/28"])
+    ])
+    error_message = "Functions and GP workers must reach a database outside the VPC only on the range the operator names."
+  }
+}
+
+run "world_existing_database_egress_is_rejected" {
+  command = plan
+
+  variables {
+    existing_db_egress_cidrs = ["0.0.0.0/0"]
+  }
+
+  expect_failures = [var.existing_db_egress_cidrs]
 }
 
 run "idle_lifetime_below_the_pruning_interval_is_rejected" {
