@@ -122,10 +122,10 @@ run "lane_reads_vpc_origins_only" {
         statement.Sid == "InspectVpcOrigins" && statement.Effect == "Allow" && !can(statement.Condition) &&
         toset(statement.Action) == toset(["cloudfront:GetVpcOrigin", "cloudfront:ListTagsForResource"]) &&
         statement.Resource == "arn:aws:cloudfront::000000000002:vpcorigin/*", false
-        )]) == 1 && !anytrue([for statement in jsondecode(policy).Statement : statement.Effect == "Allow" && anytrue([
-          for action in flatten([try(statement.Action, [])]) : startswith(action, "cloudfront:") && !contains(["cloudfront:GetVpcOrigin", "cloudfront:ListTagsForResource"], action)
-      ])])
+        )]) == 1 && length([for statement in jsondecode(policy).Statement : statement if statement.Effect == "Allow" && (can(statement.NotAction) || anytrue([
+          for action in flatten([try(statement.Action, [])]) : startswith(action, "cloudfront:") || action == "*"
+      ]))]) == 1
     ])
-    error_message = "Both lane policies may read VPC origins and their tags only: no other CloudFront action, and no distribution, function or policy reads."
+    error_message = "Both lane policies may read VPC origins and their tags only: the pinned statement is the only allow that names CloudFront, all actions or NotAction."
   }
 }

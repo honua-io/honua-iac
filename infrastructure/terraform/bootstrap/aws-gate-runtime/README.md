@@ -662,15 +662,20 @@ A stack created without `DomainNames` and later updated to use them replaces
 its VPC origin (`VpcOrigin` becomes `TlsVpcOrigin`). On one such stack (20 Nov)
 the teardown deleted `TlsVpcOrigin` for its usual seven minutes and then failed
 with `Access denied for operation 'AWS::CloudFront::VpcOrigin'`. Retries failed
-the same way, and the origin was already gone. A call on a missing origin finds
-no `HonuaGate=true` tag, so the ownership deny refuses it instead of letting
-CloudFront answer not found. When a VPC origin fails to delete with AccessDenied,
+the same way, and the origin was already gone. The denied call is unconfirmed
+(#558; lanes cannot read CloudTrail). Two service-role denies can refuse it,
+because a VPC origin never carries the `aws:cloudformation:stack-name` tag:
+`DenyNonGateContentReads` covers `cloudfront:Get*`, and `DenyNonGateChanges`
+refuses any change to an origin it finds without `HonuaGate=true`, including
+one that no longer exists. When a VPC origin fails to delete with AccessDenied,
 the lane runs `aws cloudfront get-vpc-origin --id <physical ID>`:
 
-- `NoSuchVpcOrigin` (the origin is gone): run `DeleteStack` again with
-  `--retain-resources <logical ID>`. Nothing is left behind.
+- `EntityNotFound` (the origin is gone): run `DeleteStack` again with
+  `--retain-resources <logical ID>`. The origin was confirmed gone, so nothing
+  is left behind.
 - The origin exists: read its tags with `aws cloudfront list-tags-for-resource`.
-  Without `HonuaGate=true` it is outside the fence, so main deletes it.
+  Without `HonuaGate=true` it is outside the fence, so main deletes it. With
+  the tag, do not retry: send main the tags and the stack events.
 
 ### Orphan gate roles and keys
 

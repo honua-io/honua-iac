@@ -41,7 +41,7 @@ Exception (workload boundary only): a gate server finds its Batch jobs with `bat
 
 [cloudfront authorization reference](https://docs.aws.amazon.com/service-authorization/latest/reference/list_cloudfront.html)
 
-Function code, distribution origin headers, custom response headers, keys and field-level encryption. Get* and List* deliberately also restrict metadata to keep the managed policy within its size quota. Distribution/function reads support tags; key/FLE/policy reads and the listed account-wide list APIs do not.
+Function code, distribution origin headers, custom response headers, keys and field-level encryption. Get* and List* deliberately also restrict metadata to keep the managed policy within its size quota. Distribution/function reads support tags; key/FLE/policy reads and the listed account-wide list APIs do not. The lane role is outside these denies and may read only VPC origins and their tags (`cloudfront:GetVpcOrigin`, `cloudfront:ListTagsForResource` on `vpcorigin/*`): an origin holds a name, a load balancer ARN and ports, no content, and the lane needs it to settle a VPC origin teardown (README, Gate test domain).
 
 Actions: `cloudfront:Get*`, `cloudfront:List*`.
 
