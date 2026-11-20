@@ -35,7 +35,8 @@ locals {
     "elasticloadbalancing:CreateLoadBalancer", "elasticloadbalancing:CreateTargetGroup",
     "lambda:CreateFunction", "logs:CreateLogGroup",
     "rds:CreateDBInstance", "rds:CreateDBCluster", "rds:CreateDBSubnetGroup",
-    "rds:CreateDBParameterGroup", "rds:CreateDBClusterParameterGroup",
+    # Exactly CreateDBParameterGroup and CreateDBClusterParameterGroup, shortened for the service-role quota.
+    "rds:CreateDB*ParameterGroup",
     "route53:CreateHostedZone", "secretsmanager:CreateSecret", "wafv2:CreateWebACL",
     "wafv2:CreateIPSet", "wafv2:CreateRegexPatternSet",
     "budgets:ModifyBudget", "ce:CreateAnomalyMonitor", "ce:CreateAnomalySubscription",
@@ -186,7 +187,9 @@ locals {
   service_role_ownership_deny = {
     Sid       = "DenyNonGateChanges", Effect = "Deny", NotResource = local.service_role_unfenced
     NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery", "backup-storage:MountCapsule"], local.shared_creation_actions, local.untaggable_creates, local.creation_tag_actions, local.named_teardown_actions, local.temporary_subnet_cleanup_actions)
-    Condition = local.ownership_condition
+    # An HTTPS listener makes ACM grant ELB use of the AWS-managed aws/acm key as the caller; that key
+    # cannot carry HonuaGate=true. kms:ViaService only ever carries AWS service endpoints (acm.<region>.amazonaws.com).
+    Condition = merge(local.ownership_condition, { StringNotLike = { "kms:ViaService" = "acm.*" } })
   }
   # CloudFront access logs (standard logging v2). Delivery resources are outside the ownership deny (delivery_arns), so
   # these denies fence them. Creates must carry the stack's HonuaGate=true request tag, a destination may only point at
