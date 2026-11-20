@@ -334,6 +334,10 @@ listener with "Access denied to certificate". The service role's ownership deny
 therefore skips KMS calls that ACM makes for it (`kms:ViaService` matching
 `acm.*`), mirroring the boundary's Secrets Manager exemption. ACM acts only on
 certificates the role may already use, and workload roles keep the full fence.
+Residual risk: the exemption covers any KMS call ACM makes for the role, on any
+key. Today ACM uses only `aws/acm`, and the caller cannot choose the key; if ACM
+ever accepts customer-managed keys, pin this to `kms:GrantIsForAWSResource` or
+the `aws/acm` key ARN when the quota allows.
 
 AWS does not expose this resource tag for every action. In particular, Route 53
 record changes, other untaggable CloudFront resources (origin access identities,
