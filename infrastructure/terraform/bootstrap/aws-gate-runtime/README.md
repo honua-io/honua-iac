@@ -211,6 +211,14 @@ roles; a full Launch Stack create needs both:
   service role's credentials; keep such types deactivated in the shared account.
   CloudFront functions are fenced by name (`function/honua-gate-*`): set the Launch
   Stack `NamePrefix` to `honua-gate`, or the function is created and then orphaned.
+- **Stack customer-managed IAM policies.** `AWS::IAM::ManagedPolicy` takes no
+  tags, so a stack's own policy (the Launch Stack `BatchSubmitPolicy`) never
+  carries `HonuaGate=true`. The service role may create, version, read and delete
+  customer-managed policies named `policy/honua-gate-*` only
+  (`HonuaGateCloudFormationWorkloadPolicies`), and its ownership deny exempts those
+  lifecycle actions. It can attach a policy to gate workload roles only, and those
+  keep the workload boundary, so an attached policy cannot grant more than the
+  boundary. Workloads keep the full fence and cannot manage policies.
 - **AWS managed rule groups in a web ACL.** `wafv2:UpdateWebACL` is also
   authorized against each AWS managed rule group the ACL references, and those carry
   no tags. The service role is exempt from the ownership deny for this account's

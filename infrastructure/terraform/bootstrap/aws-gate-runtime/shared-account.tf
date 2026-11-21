@@ -185,8 +185,11 @@ locals {
   # copy exempts allocation calls, named gate buckets, Cognito domain description
   # and the lookup Lambda's four network metadata calls, which have no resource tags.
   service_role_ownership_deny = {
-    Sid       = "DenyNonGateChanges", Effect = "Deny", NotResource = local.service_role_unfenced
-    NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery", "backup-storage:MountCapsule"], local.shared_creation_actions, local.untaggable_creates, local.creation_tag_actions, local.named_teardown_actions, local.temporary_subnet_cleanup_actions)
+    Sid = "DenyNonGateChanges", Effect = "Deny", NotResource = local.service_role_unfenced
+    # A stack's customer-managed policy (BatchSubmitPolicy) takes no tags, so its lifecycle is fenced by name in
+    # main.tf workload_policies instead. iam:*tePolicy* is exactly Create/DeletePolicy and Create/DeletePolicyVersion
+    # (not PutRolePolicy or DeleteRolePolicy), shortened for the inline quota; the policy reads are metadata.
+    NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery", "backup-storage:MountCapsule", "iam:*tePolicy*"], local.shared_creation_actions, local.untaggable_creates, local.creation_tag_actions, local.named_teardown_actions, local.temporary_subnet_cleanup_actions)
     # An HTTPS listener makes ACM grant ELB use of the AWS-managed aws/acm key as the caller; that key
     # cannot carry HonuaGate=true. kms:ViaService only ever carries AWS service endpoints (acm.<region>.amazonaws.com).
     Condition = merge(local.ownership_condition, { StringNotLike = { "kms:ViaService" = "acm.*" } })
