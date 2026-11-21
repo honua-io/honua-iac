@@ -119,6 +119,10 @@ def main():
     case('reaper', 'unowned-endpoint-delete', 'ec2:DeleteVpcEndpoints', endpoint, 'implicitDeny')
     case('reaper', 'standing-endpoint-delete', 'ec2:DeleteVpcEndpoints', endpoint, 'explicitDeny', {**ec2_tags, 'ec2:ResourceTag/Environment': 'cert'})
     case('reaper', 'describe-secret', 'secretsmanager:DescribeSecret', f'arn:aws:secretsmanager:us-east-1:{account}:secret:honuarfixture-abc', 'allowed')
+    state_secret = f'arn:aws:secretsmanager:us-east-1:{account}:secret:honua-cloud-cell-state/208-1-aws-ecs-redis-on-AbCdEf'
+    case('reaper', 'cell-state-secret-recoverable', 'secretsmanager:DeleteSecret', state_secret, 'allowed', {'secretsmanager:RecoveryWindowInDays': 7})
+    case('reaper', 'cell-state-secret-without-window', 'secretsmanager:DeleteSecret', state_secret, 'implicitDeny')
+    case('reaper', 'untagged-foreign-secret', 'secretsmanager:DeleteSecret', f'arn:aws:secretsmanager:us-east-1:{account}:secret:customer-prod-AbCdEf', 'implicitDeny', {'secretsmanager:RecoveryWindowInDays': 7})
     case('reaper', 'no-secret-value', 'secretsmanager:GetSecretValue', f'arn:aws:secretsmanager:us-east-1:{account}:secret:honuarfixture-abc', 'implicitDeny', tags)
     case('reaper', 'batch-read', 'batch:DescribeJobQueues', '*', 'allowed')
     case('reaper', 'no-batch-delete', 'batch:DeleteJobQueue', f'arn:aws:batch:us-east-1:{account}:job-queue/honuarfixture-gp', 'implicitDeny', tags)
@@ -156,7 +160,9 @@ def main():
     assert not any(fnmatchcase(f'arn:aws:logs:us-east-1:{account}:log-group:/aws/lambda/customer-production:log-stream:fixture', pattern) for pattern in log_resources)
     def evaluate(fixture):
         lane, name, action, resource, expected, context = fixture
-        entries = [{'ContextKeyName': k, 'ContextKeyValues': v if isinstance(v, list) else [v], 'ContextKeyType': 'stringList' if isinstance(v, list) else 'string'} for k, v in context.items()]
+        entries = [{'ContextKeyName': k, 'ContextKeyValues': v if isinstance(v, list) else [str(v)],
+                    'ContextKeyType': 'stringList' if isinstance(v, list) else 'numeric' if isinstance(v, int) else 'string'}
+                   for k, v in context.items()]
         resources = [resource]
         # CreateNetworkInterface authorizes three resources. ec2:Vpc is available
         # on the subnet/security-group checks, not the new interface check.

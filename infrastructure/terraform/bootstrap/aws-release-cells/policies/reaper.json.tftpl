@@ -249,6 +249,17 @@
       }
     },
     {
+      "Sid": "RetireCellStateSecrets",
+      "Effect": "Allow",
+      "Action": "secretsmanager:DeleteSecret",
+      "Resource": "arn:aws:secretsmanager:${region}:${account_id}:secret:honua-cloud-cell-state/*",
+      "Condition": {
+        "NumericEquals": {
+          "secretsmanager:RecoveryWindowInDays": "7"
+        }
+      }
+    },
+    {
       "Sid": "RetireCellKey",
       "Effect": "Allow",
       "Action": [

@@ -82,6 +82,19 @@ resource "aws_iam_role_policy" "reaper" {
       # Unused gate certificates: CloudFormation tags them with the stack's HonuaGate=true.
       Effect    = "Allow", Action = "acm:DeleteCertificate", Resource = local.reaper_certificates
       Condition = { StringEquals = { "aws:ResourceTag/HonuaGate" = "true" } }
+      }, {
+      Effect = "Allow", Action = "secretsmanager:ListSecrets", Resource = "*"
+      }, {
+      # Secrets a deleted gate stack retained by design; CloudFormation tags them with the stack name.
+      Effect   = "Allow", Action = "secretsmanager:DeleteSecret"
+      Resource = "arn:aws:secretsmanager:us-east-1:${var.member_account_id}:secret:*"
+      Condition = {
+        StringLike    = { "aws:ResourceTag/aws:cloudformation:stack-name" = "honua-gate-*" }
+        NumericEquals = { "secretsmanager:RecoveryWindowInDays" = 7 }
+      }
+      }, {
+      Effect   = "Deny", Action = "secretsmanager:DeleteSecret"
+      Resource = "arn:aws:secretsmanager:us-east-1:${var.member_account_id}:secret:honua-gate/idp/*"
       }], nonsensitive(length(var.temporary_orphan_certificate_ids)) == 0 ? [] : [{
       # Untagged certificates left by denied rollbacks (20 Nov); exact reviewed IDs only.
       Effect   = "Allow", Action = "acm:DeleteCertificate"

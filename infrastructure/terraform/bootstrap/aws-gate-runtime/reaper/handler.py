@@ -61,6 +61,9 @@ def lambda_handler(event, context):
         domain=os.environ.get('GATE_TEST_DOMAIN', ''),
         legacy=set(filter(None, os.environ.get('TEMPORARY_ORPHAN_CERTIFICATE_IDS', '').split(','))),
         dry_run=env_dry_run('ORPHAN_DRY_RUN')))
+    result['secrets'] = reap_secrets(SimpleNamespace(
+        cf=cf, secrets=boto3.client('secretsmanager', region_name='us-east-1'),
+        dry_run=env_dry_run('ORPHAN_DRY_RUN')))
     return result
 
 
@@ -446,4 +449,59 @@ def reap_certificates(work):
             LOG.exception('Gate certificate cleanup failed for %s', arn)
     if failures:
         raise RuntimeError(f'Certificate cleanup failed for {failures} certificate(s)')
+    return result
+
+
+SECRET_STACK_ID_TAG = 'aws:cloudformation:stack-id'
+SECRET_STACK_NAME_TAG = 'aws:cloudformation:stack-name'
+IDP_SECRET_PREFIX = 'honua-gate/idp/'
+SECRET_RECOVERY_DAYS = 7
+SECRET_SKIP_ERRORS = ('ResourceNotFoundException', 'InvalidRequestException')
+
+
+def secret_stack(secret):
+    """The gate stack ARN a CloudFormation-created secret names in its own tags, or None."""
+    if secret['Name'].startswith(IDP_SECRET_PREFIX) or secret.get('DeletedDate'):
+        return None
+    tags = {tag['Key']: tag.get('Value', '') for tag in secret.get('Tags', [])}
+    name, stack_id = tags.get(SECRET_STACK_NAME_TAG, ''), tags.get(SECRET_STACK_ID_TAG, '')
+    account = secret['ARN'].split(':')[4]
+    if not (name.startswith('honua-gate-')
+            and stack_id.startswith(f'arn:aws:cloudformation:us-east-1:{account}:stack/{name}/')):
+        return None
+    return stack_id
+
+
+def orphan_secret(work, secret, gone):
+    stack_id = secret_stack(secret)
+    if stack_id is None:
+        return 0
+    if stack_id not in gone:
+        gone[stack_id] = stack_is_gone(work.cf, stack_id)
+    if not gone[stack_id]:
+        return 0
+    LOG.info('%s delete secret %s with a %d-day recovery window (stack %s)', 'Would' if work.dry_run else 'Will',
+             secret['Name'], SECRET_RECOVERY_DAYS, stack_id)
+    if not work.dry_run:
+        work.secrets.delete_secret(SecretId=secret['ARN'], RecoveryWindowInDays=SECRET_RECOVERY_DAYS)
+    return 1
+
+
+def reap_secrets(work):
+    """Delete secrets that deleted gate stacks retained (the template keeps them by design)."""
+    result = {'secrets': 0, 'dry_run': work.dry_run}
+    gone = {}
+    failures = 0
+    for page in work.secrets.get_paginator('list_secrets').paginate():
+        for secret in page['SecretList']:
+            try:
+                result['secrets'] += orphan_secret(work, secret, gone)
+            except Exception as error:
+                # Already deleted, or already scheduled for deletion: nothing to clean.
+                if aws_error_code(error) in SECRET_SKIP_ERRORS:
+                    continue
+                failures += 1
+                LOG.exception('Gate secret cleanup failed for %s', secret.get('Name'))
+    if failures:
+        raise RuntimeError(f'Secret cleanup failed for {failures} secret(s)')
     return result

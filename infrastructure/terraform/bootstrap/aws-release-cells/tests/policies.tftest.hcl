@@ -256,6 +256,14 @@ run "reaper_retires_every_cell_service_it_finds" {
     error_message = "Cell job definitions go with the tagged cell, certificates through the cert-demo grant; no S3 write: S3 evaluates no resource tag without bucket ABAC."
   }
   assert {
+    condition = (
+      one([for s in jsondecode(local.grant_policies.reaper).Statement : s.Resource if s.Sid == "RetireCellStateSecrets"]) == "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-cloud-cell-state/*" &&
+      one([for s in jsondecode(local.grant_policies.reaper).Statement : s.Condition if s.Sid == "RetireCellStateSecrets"]) == { NumericEquals = { "secretsmanager:RecoveryWindowInDays" = "7" } } &&
+      length([for s in jsondecode(local.grant_policies.reaper).Statement : s if contains(flatten([s.Action]), "secretsmanager:DeleteSecret") && s.Sid != "DeleteCells" && s.Sid != "RetireCellStateSecrets"]) == 0
+    )
+    error_message = "Untagged cell-state secrets are deletable only by name and only with a 7-day recovery window."
+  }
+  assert {
     condition     = !strcontains(local.grant_policies.reaper, "secretsmanager:GetSecretValue") && !strcontains(local.grant_policies.reaper, "secretsmanager:*")
     error_message = "The reaper may describe secrets but never read their values."
   }

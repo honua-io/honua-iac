@@ -745,6 +745,17 @@ deletion of exactly those ARNs. Clear the list after the cleanup and apply again
 A certificate deleted or attached since the listing is skipped. The pass follows
 `orphan_cleanup_dry_run`. Validation records in the test zone stay (see above).
 
+The same pass deletes Secrets Manager secrets that a deleted gate stack retained.
+The Launch Stack template keeps its admin, database and key secrets on stack delete
+(`DeletionPolicy: Retain`), so every deleted gate stack leaves several behind. A
+secret qualifies only when its `aws:cloudformation:stack-name` tag is a
+`honua-gate-*` stack, its `aws:cloudformation:stack-id` tag names that stack in
+this account, and a fresh lookup of that stack ID reports `DELETE_COMPLETE` or
+stack-not-found. Deletion keeps a seven-day recovery window (`restore-secret`
+undoes it), which the delete permission requires too. `honua-gate/idp/*` is
+denied. Secrets already scheduled for deletion are skipped. The pass follows
+`orphan_cleanup_dry_run`.
+
 The same invocation also plans retained `honua-protection-<stack guid>` trails whose log bucket name starts with `honua-gate-`, whose home region is the gate region, and which no live stack still owns or references. It then empties and deletes that bucket, including a leftover `honua-gate-*-protectiontrailbucket-*` bucket after its stack is gone. `honua-audit` trails and buckets are denied. Trails in another region, with any other name, or logging to any other bucket are left alone. The ownership check reads only live `honua-gate-*` stacks, which is the set this role can list. More than 50 of those fails the invocation before any deletion. A bucket still used by a trail that is not deleted is left in place. This pass follows `protection_trail_cleanup_dry_run` (default true). Main sets it to false and applies before invoking the reaper. Lanes do not apply. The CloudFormation service-role rollback of a trail that was never created is a separate fence.
 
 ## Authenticated release producers

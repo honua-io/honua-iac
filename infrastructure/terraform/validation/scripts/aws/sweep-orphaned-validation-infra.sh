@@ -95,6 +95,8 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/cleanup-read-verdict.sh"
 # shellcheck source=sweep-delete-retry.sh
 source "$(dirname "${BASH_SOURCE[0]}")/sweep-delete-retry.sh"
+# shellcheck source=sweep-cell-state-secrets.sh
+source "$(dirname "${BASH_SOURCE[0]}")/sweep-cell-state-secrets.sh"
 
 # Field separator for the internal records below. Deliberately NOT a tab: tab is
 # an IFS whitespace character, so `IFS=$'\t' read` collapses runs of tabs and
@@ -156,6 +158,13 @@ Options:
   --legacy-release-workflow <file>
                            Workflow that created the release cells
                            (default: e2e-cloud-aws.yml)
+  --cell-state-secrets     Also reap untagged honua-cloud-cell-state/ secrets
+                           of finished --repo runs, with a 7-day recovery
+                           window (see sweep-cell-state-secrets.sh). Not with
+                           --this-run.
+  --report-untagged-secrets
+                           List secrets with no stack or Owner tag in the
+                           summary; read-only
   -h, --help               Show this help
 USAGE
 }
@@ -178,6 +187,8 @@ DEFER_ON_ACTIVE=true
 LEGACY_RELEASE_VPCS=false
 LEGACY_REPO="honua-io/honua-release"
 LEGACY_WORKFLOW="e2e-cloud-aws.yml"
+CELL_STATE_SECRETS=false
+REPORT_UNTAGGED_SECRETS=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -191,6 +202,8 @@ while [[ $# -gt 0 ]]; do
     --legacy-release-cell-vpcs) LEGACY_RELEASE_VPCS=true; shift ;;
     --legacy-release-repo) LEGACY_REPO="$2"; shift 2 ;;
     --legacy-release-workflow) LEGACY_WORKFLOW="$2"; shift 2 ;;
+    --cell-state-secrets) CELL_STATE_SECRETS=true; shift ;;
+    --report-untagged-secrets) REPORT_UNTAGGED_SECRETS=true; shift ;;
     --stack) STACK_FILTERS+=("$2"); shift 2 ;;
     --protect-run-id) PROTECT_RUN_IDS+=("$2"); shift 2 ;;
     --exclude-type) EXCLUDED_TYPES+=("$2"); shift 2 ;;
@@ -226,8 +239,8 @@ if ! [[ "$MAX_DELETE" =~ ^[0-9]+$ ]] || (( MAX_DELETE < 1 )); then
   exit 1
 fi
 
-if [[ "$LEGACY_RELEASE_VPCS" == "true" && "$THIS_RUN" == "true" ]]; then
-  log_error "--legacy-release-cell-vpcs is a scheduled-sweep pass; it cannot be combined with --this-run"
+if [[ ( "$LEGACY_RELEASE_VPCS" == "true" || "$CELL_STATE_SECRETS" == "true" ) && "$THIS_RUN" == "true" ]]; then
+  log_error "--legacy-release-cell-vpcs and --cell-state-secrets are scheduled-sweep passes; they cannot be combined with --this-run"
   exit 1
 fi
 
@@ -758,6 +771,7 @@ delete_simple() {
   resource="$(arn_resource "$arn")"
   case "$service" in
     secretsmanager)
+      if is_cell_state_secret "$arn"; then delete_cell_state_secret "$region" "$arn" || return 1; return 0; fi
       aws_write secretsmanager delete-secret --region "$region" --secret-id "$arn" \
         --force-delete-without-recovery >/dev/null 2>&1 || return 1
       ;;
@@ -1155,6 +1169,7 @@ emit_summary() {
       echo
       echo "</details>"
     fi
+    emit_secret_summary
   } >> "$out"
 }
 
@@ -1217,6 +1232,11 @@ main() {
       done
     fi
   fi
+
+  for region in "${REGIONS[@]}"; do
+    if [[ "$CELL_STATE_SECRETS" == "true" ]]; then collect_secret_records "$region"; fi
+    if [[ "$REPORT_UNTAGGED_SECRETS" == "true" ]]; then report_untagged_secrets "$region"; fi
+  done
 
   # Print the refusals as well as the plan. "Why was this NOT reaped" is the
   # question anyone reading this log actually has.
