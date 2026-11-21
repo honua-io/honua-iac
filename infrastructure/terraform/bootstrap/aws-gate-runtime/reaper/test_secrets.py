@@ -30,8 +30,8 @@ class SecretTests(unittest.TestCase):
     def setUp(self):
         self.cf, self.sm = Mock(), Mock()
         self.secrets = [secret('AdminSecret-gone'), secret('AdminSecret-live', LIVE_ID)]
-        self.sm.get_paginator.return_value.paginate.side_effect = lambda: [
-            {'SecretList': self.secrets[:1]}, {'SecretList': self.secrets[1:]}]
+        self.sm.get_paginator.return_value.paginate.return_value.search.side_effect = (
+            lambda expression: iter(self.secrets) if expression == 'SecretList[]' else iter(()))
         self.statuses = {GONE_ID: 'DELETE_COMPLETE', LIVE_ID: 'UPDATE_COMPLETE'}
         self.parameters = {LIVE_ID: [{'ParameterKey': 'DomainName', 'ParameterValue': 'gate.example.test'}]}
         self.cf.describe_stacks.side_effect = self.describe

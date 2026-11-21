@@ -455,7 +455,7 @@ def reap_certificates(work):
 SECRET_STACK_ID_TAG = 'aws:cloudformation:stack-id'
 SECRET_STACK_NAME_TAG = 'aws:cloudformation:stack-name'
 IDP_SECRET_PREFIX = 'honua-gate/idp/'
-SECRET_RECOVERY_DAYS = 7
+RECOVERY_WINDOW_DAYS = 7
 SECRET_SKIP_ERRORS = ('ResourceNotFoundException', 'InvalidRequestException')
 
 
@@ -499,9 +499,9 @@ def orphan_secret(work, entry, gone):
     if not gone[stack_id]:
         return 0
     LOG.info('%s delete secret %s with a %d-day recovery window (stack %s)', 'Would' if work.dry_run else 'Will',
-             entry['Name'], SECRET_RECOVERY_DAYS, stack_id)
+             entry['Name'], RECOVERY_WINDOW_DAYS, stack_id)
     if not work.dry_run:
-        work.secrets.delete_secret(SecretId=entry['ARN'], RecoveryWindowInDays=SECRET_RECOVERY_DAYS)
+        work.secrets.delete_secret(SecretId=entry['ARN'], RecoveryWindowInDays=RECOVERY_WINDOW_DAYS)
     return 1
 
 
@@ -511,17 +511,17 @@ def reap_secrets(work):
     gone = {}
     failures = 0
     work.references = referenced_secrets(work.cf)
-    for page in work.secrets.get_paginator('list_secrets').paginate():
-        for entry in page['SecretList']:
-            try:
-                result['secrets'] += orphan_secret(work, entry, gone)
-            except Exception as error:
-                # Already deleted or scheduled; or refused (replicas, service-managed): logged, not retried.
-                if aws_error_code(error) in SECRET_SKIP_ERRORS:
-                    LOG.info('Skip secret %s: %s', entry.get('Name'), aws_error_code(error))
-                    continue
-                failures += 1
-                LOG.exception('Gate secret cleanup failed for %s', entry.get('Name'))
+    # PageIterator.search flattens the pages; listed entries are metadata (names, ARNs, tags), never values.
+    for entry in work.secrets.get_paginator('list_secrets').paginate().search('SecretList[]'):
+        try:
+            result['secrets'] += orphan_secret(work, entry, gone)
+        except Exception as error:
+            # Already deleted or scheduled; or refused (replicas, service-managed): logged, not retried.
+            if aws_error_code(error) in SECRET_SKIP_ERRORS:
+                LOG.info('Skip secret %s: %s', entry.get('Name'), aws_error_code(error))
+                continue
+            failures += 1
+            LOG.exception('Gate secret cleanup failed for %s', entry.get('Name'))
     if failures:
         raise RuntimeError(f'Secret cleanup failed for {failures} secret(s)')
     return result
