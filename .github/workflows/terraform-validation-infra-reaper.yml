@@ -151,7 +151,7 @@ jobs:
           ./infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-infra.sh "${args[@]}"
 
       # AWS Batch creates an untagged ECS cluster per compute environment; one
-      # whose compute environment is gone is invisible to the tag sweep above
+      # whose compute environment is gone is invisible to the tag sweep above.
       # Runs even when that sweep reported survivors.
       - name: Reap ECS clusters of deleted Batch compute environments
         if: ${{ !cancelled() }}
