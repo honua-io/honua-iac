@@ -33,12 +33,16 @@ class SecretTests(unittest.TestCase):
         self.sm.get_paginator.return_value.paginate.side_effect = lambda: [
             {'SecretList': self.secrets[:1]}, {'SecretList': self.secrets[1:]}]
         self.statuses = {GONE_ID: 'DELETE_COMPLETE', LIVE_ID: 'UPDATE_COMPLETE'}
+        self.parameters = {LIVE_ID: [{'ParameterKey': 'DomainName', 'ParameterValue': 'gate.example.test'}]}
         self.cf.describe_stacks.side_effect = self.describe
+        self.cf.get_paginator.return_value.paginate.side_effect = lambda: [{'StackSummaries': [
+            {'StackId': stack_id, 'StackName': stack_id.split('/')[1], 'StackStatus': status}
+            for stack_id, status in self.statuses.items()]}]
 
     def describe(self, StackName):
         if StackName not in self.statuses:
             raise AwsError('ValidationError', f'Stack with id {StackName} does not exist')
-        return {'Stacks': [{'StackStatus': self.statuses[StackName]}]}
+        return {'Stacks': [{'StackStatus': self.statuses[StackName], 'Parameters': self.parameters.get(StackName, [])}]}
 
     def run_cleanup(self, dry_run=True):
         return handler.reap_secrets(SimpleNamespace(cf=self.cf, secrets=self.sm, dry_run=dry_run))
@@ -66,7 +70,7 @@ class SecretTests(unittest.TestCase):
     def test_stack_is_described_once_for_all_of_its_secrets(self):
         self.secrets = [secret(f'Secret{n}-gone') for n in range(4)]
         self.assertEqual(self.run_cleanup(dry_run=False)['secrets'], 4)
-        self.cf.describe_stacks.assert_called_once_with(StackName=GONE_ID)
+        self.assertEqual([c.kwargs for c in self.cf.describe_stacks.call_args_list].count({'StackName': GONE_ID}), 1)
 
     def test_idp_untagged_foreign_and_mismatched_secrets_are_kept(self):
         foreign = GONE_ID.replace('honua-gate-2130z', 'honua-demo-demo')
@@ -76,7 +80,22 @@ class SecretTests(unittest.TestCase):
                         secret('wrong-account', GONE_ID.replace(ACCOUNT, '000000000009'))]
         self.assertEqual(self.run_cleanup(dry_run=False)['secrets'], 0)
         self.sm.delete_secret.assert_not_called()
-        self.cf.describe_stacks.assert_not_called()
+        self.assertNotIn({'StackName': GONE_ID}, [c.kwargs for c in self.cf.describe_stacks.call_args_list])
+
+    def test_a_secret_a_live_stack_still_passes_as_a_parameter_is_kept(self):
+        # Runtime reference: a new stack may reuse a retained key ring by ARN, partial ARN or name.
+        for value in (self.secrets[0]['ARN'], self.secrets[0]['ARN'][:-7], 'AdminSecret-gone'):
+            with self.subTest(value=value):
+                self.parameters[LIVE_ID] = [{'ParameterKey': 'OperationKeyRingSecretArn', 'ParameterValue': value}]
+                self.assertEqual(self.run_cleanup(dry_run=False)['secrets'], 0)
+        self.sm.delete_secret.assert_not_called()
+
+    def test_too_many_live_stacks_fails_closed(self):
+        self.statuses = {LIVE_ID.replace('honua-gate-live', f'honua-gate-{n}'): 'CREATE_COMPLETE'
+                         for n in range(handler.MAX_LIVE_STACKS + 1)} | {GONE_ID: 'DELETE_COMPLETE'}
+        with self.assertRaisesRegex(RuntimeError, 'live stacks'):
+            self.run_cleanup(dry_run=False)
+        self.sm.delete_secret.assert_not_called()
 
     def test_already_deleted_or_scheduled_secrets_are_idempotent(self):
         for code in handler.SECRET_SKIP_ERRORS:
@@ -92,6 +111,7 @@ class SecretTests(unittest.TestCase):
         self.assertEqual(self.sm.delete_secret.call_count, 2)
 
     def test_unreadable_stack_keeps_its_secrets(self):
+        self.statuses.pop(LIVE_ID)
         self.cf.describe_stacks.side_effect = AwsError('AccessDenied')
         with self.assertRaisesRegex(RuntimeError, '2 secret'):
             self.run_cleanup(dry_run=False)

@@ -4,12 +4,20 @@
 #
 # CELL-STATE SECRETS (--cell-state-secrets). honua-release e2e/run_cloud.py
 # stores each release cell's sealed state, app key and tenant key as UNTAGGED
-# secrets named honua-cloud-cell-state/<run id>-<attempt>-<cell>[-suffix], and
-# deletes them at teardown. A cancelled or failed cell leaves them behind, and
-# the Owner-tag sweep cannot see an untagged resource. This pass reaps one only
-# when all of these hold, each a test case in test-sweep-cell-state-secrets.sh:
+# secrets named honua-cloud-cell-state/<run id>-<attempt>-<cell>[-suffix]. The
+# Owner-tag sweep cannot see an untagged resource.
 #
-#   * its name is in that namespace and names a GitHub run id;
+# Only the -app-key and -tenant-signing-key secrets are reapable: teardown
+# deletes them unconditionally and only their own run reads them. The base key
+# and its -retirement-<run>-<attempt> copies are KEPT ON PURPOSE when a cell is
+# not destroyed: they hold the cell's sealed Terraform state, which
+# cloud-cell-retirement.yml needs at any later date. Deleting one can strand a
+# live cell, so this pass never plans them and the report lists them instead.
+#
+# A key secret is reaped only when all of these hold, each a test case in
+# test-sweep-cell-state-secrets.sh:
+#
+#   * its name is <prefix><run id>-<attempt>-aws-<cell>-(app-key|tenant-signing-key);
 #   * no protected tag (Environment or Lifecycle standing/cert/demo) is set;
 #   * no --protect-run-id names that run;
 #   * the run is `completed` and finished longer than --grace-hours ago;
@@ -20,14 +28,18 @@
 #
 # UNTAGGED SECRET REPORT (--report-untagged-secrets). Read-only: lists, in the
 # summary, every live secret that carries neither a CloudFormation stack tag nor
-# an Owner tag and is not a cell-state secret, so an operator can decide each by
-# name. No reaper can prove who owns those.
+# an Owner tag and is not a cell-state secret, and separately the retained cell
+# Terraform state keys, so an operator can decide each by name.
 
 CELL_STATE_PREFIX="honua-cloud-cell-state/"
 CELL_STATE_RECOVERY_DAYS=7
+CELL_KEY_SUFFIX='-(app-key|tenant-signing-key)'
 UNTAGGED_SECRET_LINES=()
+RETAINED_STATE_LINES=()
+SECRETS_LISTED=false
 
 is_cell_state_secret() { [[ "$(arn_resource "$1")" == "secret:$CELL_STATE_PREFIX"* ]]; }
+is_cell_key_name() { [[ "$1" =~ ^honua-cloud-cell-state/[0-9]+-[0-9]+-aws-[a-z0-9-]+$CELL_KEY_SUFFIX$ && "$1" != *-retirement-* ]]; }
 
 # True when a protected id names the same GitHub run (gha-<run>-<anything>).
 run_is_protected() {
@@ -54,6 +66,10 @@ select_cell_state_secrets() {
       continue
     fi
     gh_run_id="${BASH_REMATCH[1]}"
+    if ! is_cell_key_name "$name"; then
+      emit_skip "$arn" "sealed cell Terraform state; kept until its cell is retired (report only)"
+      continue
+    fi
     if run_is_protected "$gh_run_id"; then
       emit_skip "$arn" "protected run $gh_run_id"
       continue
@@ -107,6 +123,7 @@ report_untagged_secrets() {
     FAILURES=1
     return 0
   fi
+  SECRETS_LISTED=true
   while IFS= read -r name; do
     [[ -n "$name" ]] && UNTAGGED_SECRET_LINES+=("$region | $name")
   done < <(jq -r --arg p "$CELL_STATE_PREFIX" '
@@ -115,17 +132,33 @@ report_untagged_secrets() {
     | select(any((.Tags // [])[]; .Key == "aws:cloudformation:stack-name" or .Key == "Owner") | not)
     | .Name
   ' <<<"$payload" | sort)
+  while IFS= read -r name; do
+    [[ -n "$name" ]] && ! is_cell_key_name "$name" && RETAINED_STATE_LINES+=("$region | $name")
+  done < <(jq -r --arg p "$CELL_STATE_PREFIX" '.SecretList[] | select(.DeletedDate == null and (.Name | startswith($p))) | .Name' <<<"$payload" | sort)
   log_info "Untagged secrets in $region: ${#UNTAGGED_SECRET_LINES[@]} so far (names in the summary)"
 }
 
 emit_secret_summary() {
   [[ "$REPORT_UNTAGGED_SECRETS" == "true" ]] || return 0
+  if [[ "$SECRETS_LISTED" != "true" ]]; then
+    echo "#### Unattributed secrets: not checked (the sweep deferred or the listing failed)"
+    echo
+    return 0
+  fi
   echo "#### Unattributed secrets (${#UNTAGGED_SECRET_LINES[@]})"
   echo
   echo "No CloudFormation stack tag and no Owner tag, so no reaper deletes them. Report only."
   echo
   echo '```'
   printf '%s\n' ${UNTAGGED_SECRET_LINES[@]+"${UNTAGGED_SECRET_LINES[@]}"}
+  echo '```'
+  echo
+  echo "#### Retained cell state (${#RETAINED_STATE_LINES[@]})"
+  echo
+  echo "Sealed Terraform state of cells that were not destroyed. Retire the cell (honua-release cloud-cell-retirement.yml) before deleting one."
+  echo
+  echo '```'
+  printf '%s\n' ${RETAINED_STATE_LINES[@]+"${RETAINED_STATE_LINES[@]}"}
   echo '```'
   echo
 }

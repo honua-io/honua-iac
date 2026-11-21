@@ -137,9 +137,11 @@ The `honua-release-approval-mac-*` managed-policy attachments on the provision a
   relevant tag context fail closed. Do not remove those conditions to make an
   apply succeed. Capture the actual denied API and qualify a narrow alternative.
   One exception, `RetireCellStateSecrets`: honua-release stores each cell's
-  sealed state as an untagged `honua-cloud-cell-state/` secret, so the reaper
-  may delete that namespace by name, only with a 7-day recovery window, and
-  only for a finished run (`--cell-state-secrets`).
+  app and tenant keys as untagged `honua-cloud-cell-state/*-app-key` and
+  `*-tenant-signing-key` secrets, so the reaper may delete those by name, only
+  with a 7-day recovery window, and only for a finished run
+  (`--cell-state-secrets`). The base state key and its `-retirement-` copies
+  hold a cell's sealed Terraform state and are never granted: retire the cell.
 - This initial policy intentionally does not authorize EKS provisioning  . That path still requires a scoped
   service-specific policy and a live positive lifecycle receipt before replacing
   the existing six-cell workflow role. The runtime allowlist supports exact-model Bedrock inputs, namespaced Batch

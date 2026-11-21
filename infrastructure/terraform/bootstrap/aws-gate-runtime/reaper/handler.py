@@ -472,9 +472,27 @@ def secret_stack(secret):
     return stack_id
 
 
+def referenced_secrets(cf):
+    """Parameter values of live gate stacks: a new stack may reuse a retained secret (runtime reference)."""
+    values = set()
+    for stack in live_stacks(listed_stacks(cf)):
+        for described in cf.describe_stacks(StackName=stack['StackId'])['Stacks']:
+            values.update(item.get('ParameterValue', '') for item in described.get('Parameters', []))
+    return values - {''}
+
+
+def still_referenced(secret, references):
+    arn = secret['ARN']
+    return secret['Name'] in references or any(
+        value.startswith('arn:') and arn.startswith(value) for value in references)
+
+
 def orphan_secret(work, secret, gone):
     stack_id = secret_stack(secret)
     if stack_id is None:
+        return 0
+    if still_referenced(secret, work.references):
+        LOG.info('Keep secret %s: a live gate stack still passes it as a parameter', secret['Name'])
         return 0
     if stack_id not in gone:
         gone[stack_id] = stack_is_gone(work.cf, stack_id)
@@ -492,13 +510,15 @@ def reap_secrets(work):
     result = {'secrets': 0, 'dry_run': work.dry_run}
     gone = {}
     failures = 0
+    work.references = referenced_secrets(work.cf)
     for page in work.secrets.get_paginator('list_secrets').paginate():
         for secret in page['SecretList']:
             try:
                 result['secrets'] += orphan_secret(work, secret, gone)
             except Exception as error:
-                # Already deleted, or already scheduled for deletion: nothing to clean.
+                # Already deleted or scheduled; or refused (replicas, service-managed): logged, not retried.
                 if aws_error_code(error) in SECRET_SKIP_ERRORS:
+                    LOG.info('Skip secret %s: %s', secret.get('Name'), aws_error_code(error))
                     continue
                 failures += 1
                 LOG.exception('Gate secret cleanup failed for %s', secret.get('Name'))

@@ -119,7 +119,9 @@ def main():
     case('reaper', 'unowned-endpoint-delete', 'ec2:DeleteVpcEndpoints', endpoint, 'implicitDeny')
     case('reaper', 'standing-endpoint-delete', 'ec2:DeleteVpcEndpoints', endpoint, 'explicitDeny', {**ec2_tags, 'ec2:ResourceTag/Environment': 'cert'})
     case('reaper', 'describe-secret', 'secretsmanager:DescribeSecret', f'arn:aws:secretsmanager:us-east-1:{account}:secret:honuarfixture-abc', 'allowed')
-    state_secret = f'arn:aws:secretsmanager:us-east-1:{account}:secret:honua-cloud-cell-state/208-1-aws-ecs-redis-on-AbCdEf'
+    state_secret = f'arn:aws:secretsmanager:us-east-1:{account}:secret:honua-cloud-cell-state/208-1-aws-ecs-redis-on-app-key-AbCdEf'
+    sealed_state = f'arn:aws:secretsmanager:us-east-1:{account}:secret:honua-cloud-cell-state/208-1-aws-ecs-redis-on-AbCdEf'
+    case('reaper', 'sealed-cell-state-kept', 'secretsmanager:DeleteSecret', sealed_state, 'implicitDeny', {'secretsmanager:RecoveryWindowInDays': 7})
     case('reaper', 'cell-state-secret-recoverable', 'secretsmanager:DeleteSecret', state_secret, 'allowed', {'secretsmanager:RecoveryWindowInDays': 7})
     case('reaper', 'cell-state-secret-without-window', 'secretsmanager:DeleteSecret', state_secret, 'implicitDeny')
     case('reaper', 'untagged-foreign-secret', 'secretsmanager:DeleteSecret', f'arn:aws:secretsmanager:us-east-1:{account}:secret:customer-prod-AbCdEf', 'implicitDeny', {'secretsmanager:RecoveryWindowInDays': 7})
