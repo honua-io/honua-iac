@@ -45,11 +45,14 @@ locals {
     "kms:CreateKey", "kms:CreateAlias", "sns:CreateTopic", "sqs:CreateQueue",
     "iam:CreateRole", "iam:CreateServiceLinkedRole", "iam:PassRole"
   ]
+  # These patterns match no API (IAM, SNS, SQS and Route 53 have no Describe actions, Budgets no Get action), so
+  # leaving them out changes no permission and keeps the service role's inline policy inside its quota.
+  unmatched_read_patterns = ["iam:Describe*", "sns:Describe*", "sqs:Describe*", "route53:Describe*", "budgets:Get*"]
   metadata_read_actions = concat([for action in flatten([
     for service in ["acm", "application-autoscaling", "backup", "batch", "budgets", "ce", "cloudfront", "cloudtrail", "cloudwatch", "ec2", "ecs", "elasticloadbalancing", "events", "guardduty", "kms", "lambda", "logs", "rds", "route53", "secretsmanager", "sns", "sqs", "wafv2", "ecr", "iam"] : [
       "${service}:Get*", "${service}:List*", "${service}:Describe*"
     ]
-    ]) : action if !contains(local.shared_content_read_actions, action)], [
+    ]) : action if !contains(concat(local.shared_content_read_actions, local.unmatched_read_patterns), action)], [
     "cognito-idp:DescribeUserPool", "cognito-idp:DescribeUserPoolDomain",
     "cognito-idp:GetGroup", "cognito-idp:GetUserPoolMfaConfig", "cognito-idp:ListTagsForResource"
   ])
@@ -93,6 +96,14 @@ locals {
         "aws:RequestTag/HonuaGate" = "true"
       })
     })
+  }
+  snapshot_restore_action = "rds:RestoreDBInstanceFromDBSnapshot"
+  # Only a snapshot carrying the gate cost tag (a gate database copies its tags to its snapshots, including the
+  # AWS Backup ones) can be restored; an untagged or foreign snapshot is denied.
+  restored_snapshot_deny = {
+    Sid       = "RestoreGateSnapshots", Effect = "Deny", Action = local.snapshot_restore_action
+    Resource  = "arn:aws:rds:us-east-1:${var.member_account_id}:snapshot:*"
+    Condition = { StringNotEqualsIfExists = { "aws:ResourceTag/HonuaGate" = "true" } }
   }
   rds_creation_name_deny = {
     Sid         = "RDSCreationNames", Effect = "Deny", Action = "rds:AddTagsToResource"
@@ -189,7 +200,11 @@ locals {
     # A stack's customer-managed policy (BatchSubmitPolicy) takes no tags, so its lifecycle is fenced by name in
     # main.tf workload_policies instead. iam:*tePolicy* is exactly Create/DeletePolicy and Create/DeletePolicyVersion
     # (not PutRolePolicy or DeleteRolePolicy), shortened for the inline quota; the policy reads are metadata.
-    NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery", "backup-storage:MountCapsule", "iam:*tePolicy*"], local.shared_creation_actions, local.untaggable_creates, local.creation_tag_actions, local.named_teardown_actions, local.temporary_subnet_cleanup_actions)
+    # A restore drill stack creates its database from a gate AWS Backup snapshot. The new instance has no tags
+    # when RDS authorizes the restore, like rds:CreateDBInstance. restored_snapshot_deny (attached as
+    # HonuaGateCloudFormationRestores) fences the source snapshot; the RDS creation name and tag denies fence the
+    # new instance.
+    NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery", "backup-storage:MountCapsule", "iam:*tePolicy*", local.snapshot_restore_action], local.shared_creation_actions, local.untaggable_creates, local.creation_tag_actions, local.named_teardown_actions, local.temporary_subnet_cleanup_actions)
     # An HTTPS listener makes ACM grant ELB use of the AWS-managed aws/acm key as the caller; that key
     # cannot carry HonuaGate=true. kms:ViaService only ever carries AWS service endpoints (acm.<region>.amazonaws.com).
     Condition = merge(local.ownership_condition, { StringNotLike = { "kms:ViaService" = "acm.*" } })
@@ -260,6 +275,8 @@ locals {
     Sid = "DenyNonGateChanges", Effect = "Deny", NotResource = [aws_secretsmanager_secret.idp_client.arn, local.boundary_repository_arn, local.guardduty_agent_repository_arn]
     # The boundary allows no IAM creates, so exempting iam:CreateRole/CreateServiceLinkedRole here would grant
     # nothing; leaving them out keeps the managed policy within its 6,144-character quota.
+    # backup:Describe*Job is exactly DescribeBackupJob, DescribeCopyJob, DescribeReportJob, DescribeRestoreJob and
+    # DescribeScanJob: job status with no resource or tag scope, which a restore drill runner polls.
     # guardduty:ListD* is exactly ListDetectors (the Launch Stack detector lookup), shortened for that quota.
     # ec2:DescribeM*, DescribeAv*, DescribeSu*, DescribeR* and DescribeVpc* cover the lookup Lambda's
     # DescribeManagedPrefixLists, DescribeAvailabilityZones, DescribeSubnets, DescribeRouteTables (the S3 gateway
@@ -271,7 +288,7 @@ locals {
     # and jobs carry only honua:stack, so all four are exempt; boundary_job_stop_deny fences the stops to gate jobs.
     # PutMetricData has no resource, so the ownership tags never match it; the operations and watchdog heartbeats
     # need it. The template's role policies fence it to their Honua/Operations and Honua/Watchdog namespaces.
-    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*", "ec2:DescribeM*", "ec2:DescribeAv*", "ec2:DescribeSu*", "ec2:DescribeR*", "ec2:DescribeVpc*", "guardduty:ListD*", "batch:ListJobs", "batch:DescribeJobs", "batch:CancelJob", "batch:TerminateJob", "cloudwatch:PutMetricData"], local.workload_config_actions, [for action in local.shared_creation_actions : action if !startswith(action, "iam:Create")])
+    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*", "ec2:DescribeM*", "ec2:DescribeAv*", "ec2:DescribeSu*", "ec2:DescribeR*", "ec2:DescribeVpc*", "guardduty:ListD*", "backup:Describe*Job", "batch:ListJobs", "batch:DescribeJobs", "batch:CancelJob", "batch:TerminateJob", "cloudwatch:PutMetricData"], local.workload_config_actions, [for action in local.shared_creation_actions : action if !startswith(action, "iam:Create")])
     # Secrets Manager decrypts with its AWS-managed key for callers already allowed to read the secret;
     # kms:ViaService only ever carries AWS service endpoints (secretsmanager.<region>.amazonaws.com).
     Condition = merge(local.ownership_condition, { StringNotLike = { "kms:ViaService" = "secretsmanager.*" } })

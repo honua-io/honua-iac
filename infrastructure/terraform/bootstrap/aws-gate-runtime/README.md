@@ -201,7 +201,16 @@ roles; a full Launch Stack create needs both:
   An independent name deny applies even when the request carries the reserved
   stack tag; foreign names, accounts, regions and other RDS resource types stay
   denied. This narrowly permits the RDS create-then-tag sequence. Restore and
-  copy operations retain the ownership deny on their source resources.
+  copy operations retain the ownership deny on their source resources, with one
+  service-role exception: `rds:RestoreDBInstanceFromDBSnapshot`, which a
+  Launch Stack restore drill stack needs to create its database from a gate
+  AWS Backup snapshot. The new instance has no tags when RDS authorizes the
+  restore, so the action leaves the ownership deny; the attached
+  `HonuaGateCloudFormationRestores` policy instead denies it on every snapshot
+  without `HonuaGate=true` (gate databases copy their tags to snapshots), and
+  the name and tag denies above fence the new instance. Workload roles still
+  cannot restore. Their boundary only adds `backup:Describe*Job` (job status,
+  no resource scope), which a drill runner polls.
 - **Untaggable CloudFront types.** Cache, origin-request and response-headers
   policies and origin access controls cannot carry tags, their create calls take no
   resource and their other calls name a random ID. The service role may create,

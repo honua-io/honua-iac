@@ -197,6 +197,15 @@ resource "aws_iam_policy" "cloudformation_workload_policies" {
     Sid = "OnlyWorkloadPolicyLifecycle", Effect = "Deny", Action = "iam:*tePolicy*", NotResource = local.workload_policies
   }] })
 }
+# The snapshot fence for restore drill stacks; the fences policy has no room for it with a test domain.
+resource "aws_iam_policy" "cloudformation_restores" {
+  name   = "HonuaGateCloudFormationRestores"
+  policy = jsonencode({ Version = "2012-10-17", Statement = [local.restored_snapshot_deny] })
+}
+resource "aws_iam_role_policy_attachment" "cloudformation_restores" {
+  role       = aws_iam_role.cloudformation.name
+  policy_arn = aws_iam_policy.cloudformation_restores.arn
+}
 resource "aws_iam_role_policy_attachment" "cloudformation_workload_policies" {
   role       = aws_iam_role.cloudformation.name
   policy_arn = aws_iam_policy.cloudformation_workload_policies.arn
@@ -204,7 +213,7 @@ resource "aws_iam_role_policy_attachment" "cloudformation_workload_policies" {
 resource "aws_iam_role_policy" "cloudformation" {
   name       = "gate-launch-stack"
   role       = aws_iam_role.cloudformation.id
-  depends_on = [aws_iam_role_policy_attachment.cloudformation_fences]
+  depends_on = [aws_iam_role_policy_attachment.cloudformation_fences, aws_iam_role_policy_attachment.cloudformation_restores]
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = concat([local.protected_controls, { Effect = "Allow", Action = concat(local.workload_services, local.cognito_lifecycle_actions, local.handler_read_actions, ["backup-storage:MountCapsule", local.config_rule_actions]), Resource = "*" }, {
