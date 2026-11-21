@@ -128,7 +128,8 @@ class CertificateTests(unittest.TestCase):
                'ORPHAN_DRY_RUN': 'false'}
         with patch.dict(sys.modules, {'boto3': boto}), patch.dict(os.environ, env), \
                 patch.object(handler, 'reap'), patch.object(handler, 'reap_orphans'), \
-                patch.object(handler, 'reap_protection_trails'), patch.object(handler, 'reap_certificates') as certs:
+                patch.object(handler, 'reap_protection_trails'), patch.object(handler, 'reap_certificates') as certs, \
+                patch.object(handler, 'reap_secrets'):
             handler.lambda_handler({}, None)
         boto.client.assert_any_call('acm', region_name='us-east-1')
         work = certs.call_args.args[0]
@@ -136,7 +137,8 @@ class CertificateTests(unittest.TestCase):
         env['TEMPORARY_ORPHAN_CERTIFICATE_IDS'] = ''
         with patch.dict(sys.modules, {'boto3': boto}), patch.dict(os.environ, env), \
                 patch.object(handler, 'reap'), patch.object(handler, 'reap_orphans'), \
-                patch.object(handler, 'reap_protection_trails'), patch.object(handler, 'reap_certificates') as certs:
+                patch.object(handler, 'reap_protection_trails'), patch.object(handler, 'reap_certificates') as certs, \
+                patch.object(handler, 'reap_secrets'):
             handler.lambda_handler({}, None)
         self.assertEqual(certs.call_args.args[0].legacy, set())
 

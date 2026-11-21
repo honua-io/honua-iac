@@ -56,7 +56,7 @@ class ReaperTests(unittest.TestCase):
 
     def test_lambda_always_uses_regional_client(self):
         boto = Mock()
-        with patch.dict(sys.modules, {'boto3': boto}), patch.dict(os.environ, {'SERVICE_ROLE_ARN': 'service-role'}), patch.object(handler, 'reap') as reap, patch.object(handler, 'reap_orphans') as orphans, patch.object(handler, 'reap_protection_trails') as trails:
+        with patch.dict(sys.modules, {'boto3': boto}), patch.dict(os.environ, {'SERVICE_ROLE_ARN': 'service-role'}), patch.object(handler, 'reap') as reap, patch.object(handler, 'reap_orphans') as orphans, patch.object(handler, 'reap_protection_trails') as trails, patch.object(handler, 'reap_secrets'):
             handler.lambda_handler({}, None)
         boto.client.assert_any_call('cloudformation', region_name='us-east-1')
         boto.client.assert_any_call('kms', region_name='us-east-1')

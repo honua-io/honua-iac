@@ -61,6 +61,9 @@ def lambda_handler(event, context):
         domain=os.environ.get('GATE_TEST_DOMAIN', ''),
         legacy=set(filter(None, os.environ.get('TEMPORARY_ORPHAN_CERTIFICATE_IDS', '').split(','))),
         dry_run=env_dry_run('ORPHAN_DRY_RUN')))
+    result['secrets'] = reap_secrets(SimpleNamespace(
+        cf=cf, secrets=boto3.client('secretsmanager', region_name='us-east-1'),
+        dry_run=env_dry_run('ORPHAN_DRY_RUN')))
     return result
 
 
@@ -446,4 +449,79 @@ def reap_certificates(work):
             LOG.exception('Gate certificate cleanup failed for %s', arn)
     if failures:
         raise RuntimeError(f'Certificate cleanup failed for {failures} certificate(s)')
+    return result
+
+
+SECRET_STACK_ID_TAG = 'aws:cloudformation:stack-id'
+SECRET_STACK_NAME_TAG = 'aws:cloudformation:stack-name'
+IDP_SECRET_PREFIX = 'honua-gate/idp/'
+RECOVERY_WINDOW_DAYS = 7
+SECRET_SKIP_ERRORS = ('ResourceNotFoundException', 'InvalidRequestException')
+
+
+def owning_gate_stack(entry):
+    """The gate stack ARN a CloudFormation-created secret names in its own tags, or None."""
+    if entry['Name'].startswith(IDP_SECRET_PREFIX) or entry.get('DeletedDate'):
+        return None
+    tags = {tag['Key']: tag.get('Value', '') for tag in entry.get('Tags', [])}
+    name, stack_id = tags.get(SECRET_STACK_NAME_TAG, ''), tags.get(SECRET_STACK_ID_TAG, '')
+    account = entry['ARN'].split(':')[4]
+    if not (name.startswith('honua-gate-')
+            and stack_id.startswith(f'arn:aws:cloudformation:us-east-1:{account}:stack/{name}/')):
+        return None
+    return stack_id
+
+
+def referenced_secrets(cf):
+    """Parameter values of live gate stacks: a new stack may reuse a retained secret (runtime reference)."""
+    values = set()
+    for stack in live_stacks(listed_stacks(cf)):
+        for described in cf.describe_stacks(StackName=stack['StackId'])['Stacks']:
+            values.update(item.get('ParameterValue', '') for item in described.get('Parameters', []))
+    return values - {''}
+
+
+def still_referenced(entry, references):
+    arn = entry['ARN']
+    return entry['Name'] in references or any(
+        value.startswith('arn:') and arn.startswith(value) for value in references)
+
+
+def orphan_secret(work, entry, gone):
+    stack_id = owning_gate_stack(entry)
+    if stack_id is None:
+        return 0
+    if still_referenced(entry, work.references):
+        LOG.info('Keep secret %s: a live gate stack still passes it as a parameter', entry['Name'])
+        return 0
+    if stack_id not in gone:
+        gone[stack_id] = stack_is_gone(work.cf, stack_id)
+    if not gone[stack_id]:
+        return 0
+    LOG.info('%s delete secret %s with a %d-day recovery window (stack %s)', 'Would' if work.dry_run else 'Will',
+             entry['Name'], RECOVERY_WINDOW_DAYS, stack_id)
+    if not work.dry_run:
+        work.secrets.delete_secret(SecretId=entry['ARN'], RecoveryWindowInDays=RECOVERY_WINDOW_DAYS)
+    return 1
+
+
+def reap_secrets(work):
+    """Delete secrets that deleted gate stacks retained (the template keeps them by design)."""
+    result = {'secrets': 0, 'dry_run': work.dry_run}
+    gone = {}
+    failures = 0
+    work.references = referenced_secrets(work.cf)
+    # PageIterator.search flattens the pages; listed entries are metadata (names, ARNs, tags), never values.
+    for entry in work.secrets.get_paginator('list_secrets').paginate().search('SecretList[]'):
+        try:
+            result['secrets'] += orphan_secret(work, entry, gone)
+        except Exception as error:
+            # Already deleted or scheduled; or refused (replicas, service-managed): logged, not retried.
+            if aws_error_code(error) in SECRET_SKIP_ERRORS:
+                LOG.info('Skip secret %s: %s', entry.get('Name'), aws_error_code(error))
+                continue
+            failures += 1
+            LOG.exception('Gate secret cleanup failed for %s', entry.get('Name'))
+    if failures:
+        raise RuntimeError(f'Secret cleanup failed for {failures} secret(s)')
     return result

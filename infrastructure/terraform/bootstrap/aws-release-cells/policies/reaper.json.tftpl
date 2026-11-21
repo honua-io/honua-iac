@@ -249,6 +249,20 @@
       }
     },
     {
+      "Sid": "RetireCellStateSecrets",
+      "Effect": "Allow",
+      "Action": "secretsmanager:DeleteSecret",
+      "Resource": [
+        "arn:aws:secretsmanager:${region}:${account_id}:secret:honua-cloud-cell-state/*-app-key-*",
+        "arn:aws:secretsmanager:${region}:${account_id}:secret:honua-cloud-cell-state/*-tenant-signing-key-*"
+      ],
+      "Condition": {
+        "NumericEquals": {
+          "secretsmanager:RecoveryWindowInDays": "7"
+        }
+      }
+    },
+    {
       "Sid": "RetireCellKey",
       "Effect": "Allow",
       "Action": [
@@ -264,6 +278,21 @@
           "aws:ResourceTag/ValidationRunId": "false"
         }
       }
+    },
+    {
+      "Sid": "DeleteCellLogBuckets",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucketVersions",
+        "s3:DeleteObjectVersion",
+        "s3:DeleteBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::honuar*-alb-logs-*",
+        "arn:aws:s3:::honuar*-alb-logs-*/*",
+        "arn:aws:s3:::honuan*-alb-logs-*",
+        "arn:aws:s3:::honuan*-alb-logs-*/*"
+      ]
     }
   ]
 }
