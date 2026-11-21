@@ -51,7 +51,8 @@ locals {
     local.sdk_installer_bootstrap,
     local.bootstrap_scripts["install-build-tools.sh"],
     local.gate_runner_bootstrap,
-    local.bootstrap_scripts["install-nuget-fallback.sh"]
+    local.bootstrap_scripts["install-nuget-fallback.sh"],
+    local.bootstrap_scripts["install-quiet-window.sh"]
   ])
   github_oidc_host = "token.actions.githubusercontent.com"
 }

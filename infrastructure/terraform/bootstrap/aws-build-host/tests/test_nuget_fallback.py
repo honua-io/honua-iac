@@ -204,7 +204,8 @@ class NugetFallbackWiringTests(unittest.TestCase):
         self.assertIn("export HONUA_NUGET_FALLBACK=/var/lib/honua-nuget-fallback/current", environment)
         self.assertIn('local.bootstrap_scripts["install-nuget-fallback.sh"]',
                       (MODULE / "gate-runner.tf").read_text())
-        self.assertIn('"install-nuget-fallback.sh"]', (MODULE / "main.tf").read_text())
+        self.assertRegex((MODULE / "main.tf").read_text(),
+                         r'bootstrap_scripts = \{ for name in \[[^\]]*"install-nuget-fallback\.sh"')
 
 
 if __name__ == "__main__":
