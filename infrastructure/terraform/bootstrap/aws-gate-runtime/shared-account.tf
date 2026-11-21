@@ -295,7 +295,7 @@ locals {
     # and jobs carry only honua:stack, so all four are exempt; boundary_job_stop_deny fences the stops to gate jobs.
     # PutMetricData has no resource, so the ownership tags never match it; the operations and watchdog heartbeats
     # need it. The template's role policies fence it to their Honua/Operations and Honua/Watchdog namespaces.
-    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*", "ec2:DescribeM*", "ec2:DescribeAv*", "ec2:DescribeSu*", "ec2:DescribeR*", "ec2:DescribeVpc*", "guardduty:ListD*", "backup:Describe*Job", "batch:ListJobs", "batch:DescribeJobs", "batch:CancelJob", "batch:TerminateJob", "cloudwatch:PutMetricData"], local.workload_config_actions, [for action in local.shared_creation_actions : action if !startswith(action, "iam:Create")])
+    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*", "ec2:DescribeM*", "ec2:DescribeAv*", "ec2:DescribeSu*", "ec2:DescribeR*", "ec2:DescribeVpc*", "guardduty:ListD*", "backup:Describe*Job", "batch:ListJobs", "batch:DescribeJobs", "batch:CancelJob", "batch:TerminateJob", "cloudwatch:PutMetricData"], local.backup_snapshot_actions, local.workload_config_actions, [for action in local.shared_creation_actions : action if !startswith(action, "iam:Create")])
     # Secrets Manager decrypts with its AWS-managed key for callers already allowed to read the secret;
     # kms:ViaService only ever carries AWS service endpoints (secretsmanager.<region>.amazonaws.com).
     Condition = merge(local.ownership_condition, { StringNotLike = { "kms:ViaService" = "secretsmanager.*" } })
@@ -343,6 +343,21 @@ locals {
   # Jobs are tagged honua:stack=<stack name> at submit (the template requires it), and the boundary
   # denies batch:TagResource on every existing job, so only gate jobs can be stopped. The value matches
   # any gate stack: one gate's server can stop another gate's job if it knows the job ID.
+  # AWS Backup takes a stack database backup as the stack's backup role (a workload role): it looks up its
+  # snapshot:awsbackup:job-* ID before creating it, so neither call can name a tagged resource and the ownership
+  # deny refused both (live 21 Nov). DescribeDBSnapshots is metadata (identifiers, source instance, key ID, master
+  # user name, size). CreateDBSnapshot leaves the ownership deny like the other creates; boundary_snapshot_denies
+  # keep its source a gate database, so only gate data can ever carry HonuaGate=true, which the restore fence
+  # (restored_snapshot_denies) trusts, and allow only AWS Backup's awsbackup:job-* names, so workloads cannot
+  # fill the account's manual snapshot quota with snapshots of their own.
+  backup_snapshot_actions = ["rds:DescribeDBSnapshots", "rds:CreateDBSnapshot"]
+  boundary_snapshot_denies = [{
+    Effect    = "Deny", Action = "rds:CreateDBSnapshot", Resource = "arn:aws:rds:us-east-1:${var.member_account_id}:db:*"
+    Condition = local.ownership_condition
+    }, {
+    Effect      = "Deny", Action = "rds:CreateDBSnapshot"
+    NotResource = ["arn:aws:rds:us-east-1:${var.member_account_id}:db:*", "arn:aws:rds:us-east-1:${var.member_account_id}:snapshot:awsbackup:*"]
+  }]
   boundary_job_stop_deny = {
     Effect    = "Deny", Action = ["batch:CancelJob", "batch:TerminateJob"], Resource = "*"
     Condition = { StringNotLike = { "aws:ResourceTag/honua:stack" = "honua-gate-*" } }
@@ -355,7 +370,7 @@ locals {
     Sid      = "DenyState", Effect = "Deny", Action = "s3:*"
     Resource = [for name in bucket : "arn:aws:s3:::${name}*"]
   } if length(bucket) > 0]
-  boundary_shared_denies = concat([for control in local.shared_controls : control if !contains(["DenyNonGateContentReads", "DenyPrivateParameters", "DenyState"], control.Sid)], local.boundary_state_deny, local.idp_secret_controls, var.shared_account ? [local.boundary_ownership_deny] : [], var.shared_account ? [local.boundary_job_stop_deny] : [])
+  boundary_shared_denies = concat([for control in local.shared_controls : control if !contains(["DenyNonGateContentReads", "DenyPrivateParameters", "DenyState"], control.Sid)], local.boundary_state_deny, local.idp_secret_controls, var.shared_account ? [local.boundary_ownership_deny] : [], var.shared_account ? [local.boundary_job_stop_deny] : [], [for statement in local.boundary_snapshot_denies : statement if var.shared_account])
   # CloudFormation reads listeners, rules, ECS task definitions and Batch job definitions to create them;
   # none of these APIs accepts a resource or tag scope. Task and task-set reads stay denied.
   service_role_content_reads = ["elasticloadbalancing:DescribeListeners", "elasticloadbalancing:DescribeRules", "ecs:DescribeTask*", "batch:DescribeJobD*"]

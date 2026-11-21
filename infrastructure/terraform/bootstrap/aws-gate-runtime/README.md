@@ -217,6 +217,16 @@ roles; a full Launch Stack create needs both:
   add an account-level backup plan whose recovery point tags set it. Workload
   roles still cannot restore. Their boundary only adds `backup:Describe*Job`
   (job status, no resource scope), which a drill runner polls.
+- **AWS Backup database snapshots.** A stack's backup role is a workload
+  role. AWS Backup looks up its `snapshot:awsbackup:job-*` ID before creating
+  it, so the ownership deny refused every database backup in the gate. The
+  boundary now exempts `rds:DescribeDBSnapshots` (metadata) and
+  `rds:CreateDBSnapshot`. Two denies fence the create: the source must be a
+  gate database, and the snapshot must carry an AWS Backup `awsbackup:` name.
+  The source deny is what keeps foreign data out of a snapshot tagged
+  `HonuaGate=true`, which the restore fence trusts; tags on create are not
+  otherwise fenced. Copying, deleting and restoring snapshots stay behind the
+  ownership tags.
 - **Untaggable CloudFront types.** Cache, origin-request and response-headers
   policies and origin access controls cannot carry tags, their create calls take no
   resource and their other calls name a random ID. The service role may create,

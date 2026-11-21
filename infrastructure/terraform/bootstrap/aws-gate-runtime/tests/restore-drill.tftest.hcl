@@ -96,3 +96,37 @@ run "unmatched_read_patterns_change_no_permission" {
     error_message = "Only patterns that match no API, and no content read, may leave the metadata reads."
   }
 }
+
+# A stack backup role takes AWS Backup database backups of gate databases only and never tags a snapshot.
+run "backup_role_snapshots_gate_databases_only" {
+  command = plan
+  assert {
+    condition = anytrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(
+      statement.Sid == "DenyNonGateChanges" && contains(statement.NotAction, "rds:DescribeDBSnapshots") &&
+      contains(statement.NotAction, "rds:CreateDBSnapshot") && !contains(statement.NotAction, "rds:AddTagsToResource") &&
+      !anytrue([for action in statement.NotAction : startswith(action, "rds:Restore") || startswith(action, "rds:Copy") || startswith(action, "rds:Delete")]), false)
+    ])
+    error_message = "AWS Backup may look up and create its snapshot; tagging, copying, deleting and restoring stay behind the ownership tags."
+  }
+  assert {
+    condition = anytrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(
+      statement.Effect == "Deny" && statement.Action == "rds:CreateDBSnapshot" &&
+      statement.Resource == "arn:aws:rds:us-east-1:${var.member_account_id}:db:*" &&
+      statement.Condition.StringNotLikeIfExists["aws:ResourceTag/aws:cloudformation:stack-name"] == "honua-gate-*" &&
+      statement.Condition.StringNotEqualsIfExists["aws:ResourceTag/HonuaGate"] == "true", false)
+    ])
+    error_message = "A snapshot's source database must carry the gate ownership tags."
+  }
+  assert {
+    condition = anytrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(
+      statement.Effect == "Deny" && statement.Action == "rds:CreateDBSnapshot" && statement.NotResource == [
+        "arn:aws:rds:us-east-1:${var.member_account_id}:db:*", "arn:aws:rds:us-east-1:${var.member_account_id}:snapshot:awsbackup:*"
+      ], false)
+    ]) && alltrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : !contains(flatten([try(statement.NotAction, [])]), "rds:CreateDBClusterSnapshot")])
+    error_message = "Workloads create only AWS Backup-named instance snapshots; cluster snapshots stay behind the ownership tags."
+  }
+  assert {
+    condition     = length(jsonencode(jsondecode(aws_iam_policy.workload_boundary.policy))) <= 6144
+    error_message = "The workload boundary uses ${nonsensitive(length(jsonencode(jsondecode(aws_iam_policy.workload_boundary.policy))))} of 6144 characters."
+  }
+}
