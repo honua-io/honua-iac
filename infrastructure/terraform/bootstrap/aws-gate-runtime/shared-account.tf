@@ -345,15 +345,19 @@ locals {
   # any gate stack: one gate's server can stop another gate's job if it knows the job ID.
   # AWS Backup takes a stack database backup as the stack's backup role (a workload role): it looks up its
   # snapshot:awsbackup:job-* ID before creating it, so neither call can name a tagged resource and the ownership
-  # deny refused both (live 21 Nov). DescribeDBSnapshots is metadata. CreateDBSnapshot leaves the ownership deny
-  # like the other creates, and boundary_snapshot_source_deny keeps its source database fenced: a workload can
-  # snapshot only a gate database. Tagging a snapshot stays fenced, so no workload can mark a foreign snapshot
-  # HonuaGate=true, which the restore fence (restored_snapshot_denies) trusts.
+  # deny refused both (live 21 Nov). DescribeDBSnapshots is metadata (identifiers, source instance, key ID, master
+  # user name, size). CreateDBSnapshot leaves the ownership deny like the other creates; boundary_snapshot_denies
+  # keep its source a gate database, so only gate data can ever carry HonuaGate=true, which the restore fence
+  # (restored_snapshot_denies) trusts, and allow only AWS Backup's awsbackup:job-* names, so workloads cannot
+  # fill the account's manual snapshot quota with snapshots of their own.
   backup_snapshot_actions = ["rds:DescribeDBSnapshots", "rds:CreateDBSnapshot"]
-  boundary_snapshot_source_deny = {
+  boundary_snapshot_denies = [{
     Effect    = "Deny", Action = "rds:CreateDBSnapshot", Resource = "arn:aws:rds:us-east-1:${var.member_account_id}:db:*"
     Condition = local.ownership_condition
-  }
+    }, {
+    Effect      = "Deny", Action = "rds:CreateDBSnapshot"
+    NotResource = ["arn:aws:rds:us-east-1:${var.member_account_id}:db:*", "arn:aws:rds:us-east-1:${var.member_account_id}:snapshot:awsbackup:*"]
+  }]
   boundary_job_stop_deny = {
     Effect    = "Deny", Action = ["batch:CancelJob", "batch:TerminateJob"], Resource = "*"
     Condition = { StringNotLike = { "aws:ResourceTag/honua:stack" = "honua-gate-*" } }
@@ -366,7 +370,7 @@ locals {
     Sid      = "DenyState", Effect = "Deny", Action = "s3:*"
     Resource = [for name in bucket : "arn:aws:s3:::${name}*"]
   } if length(bucket) > 0]
-  boundary_shared_denies = concat([for control in local.shared_controls : control if !contains(["DenyNonGateContentReads", "DenyPrivateParameters", "DenyState"], control.Sid)], local.boundary_state_deny, local.idp_secret_controls, var.shared_account ? [local.boundary_ownership_deny] : [], var.shared_account ? [local.boundary_job_stop_deny] : [], var.shared_account ? [local.boundary_snapshot_source_deny] : [])
+  boundary_shared_denies = concat([for control in local.shared_controls : control if !contains(["DenyNonGateContentReads", "DenyPrivateParameters", "DenyState"], control.Sid)], local.boundary_state_deny, local.idp_secret_controls, var.shared_account ? [local.boundary_ownership_deny] : [], var.shared_account ? [local.boundary_job_stop_deny] : [], [for statement in local.boundary_snapshot_denies : statement if var.shared_account])
   # CloudFormation reads listeners, rules, ECS task definitions and Batch job definitions to create them;
   # none of these APIs accepts a resource or tag scope. Task and task-set reads stay denied.
   service_role_content_reads = ["elasticloadbalancing:DescribeListeners", "elasticloadbalancing:DescribeRules", "ecs:DescribeTask*", "batch:DescribeJobD*"]

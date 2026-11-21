@@ -112,12 +112,21 @@ run "backup_role_snapshots_gate_databases_only" {
     condition = anytrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(
       statement.Effect == "Deny" && statement.Action == "rds:CreateDBSnapshot" &&
       statement.Resource == "arn:aws:rds:us-east-1:${var.member_account_id}:db:*" &&
-      statement.Condition == local.ownership_condition, false)
+      statement.Condition.StringNotLikeIfExists["aws:ResourceTag/aws:cloudformation:stack-name"] == "honua-gate-*" &&
+      statement.Condition.StringNotEqualsIfExists["aws:ResourceTag/HonuaGate"] == "true", false)
     ])
     error_message = "A snapshot's source database must carry the gate ownership tags."
   }
   assert {
+    condition = anytrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(
+      statement.Effect == "Deny" && statement.Action == "rds:CreateDBSnapshot" && statement.NotResource == [
+        "arn:aws:rds:us-east-1:${var.member_account_id}:db:*", "arn:aws:rds:us-east-1:${var.member_account_id}:snapshot:awsbackup:*"
+      ], false)
+    ]) && alltrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : !contains(flatten([try(statement.NotAction, [])]), "rds:CreateDBClusterSnapshot")])
+    error_message = "Workloads create only AWS Backup-named instance snapshots; cluster snapshots stay behind the ownership tags."
+  }
+  assert {
     condition     = length(jsonencode(jsondecode(aws_iam_policy.workload_boundary.policy))) <= 6144
-    error_message = "The workload boundary must stay inside its managed-policy quota."
+    error_message = "The workload boundary uses ${nonsensitive(length(jsonencode(jsondecode(aws_iam_policy.workload_boundary.policy))))} of 6144 characters."
   }
 }
