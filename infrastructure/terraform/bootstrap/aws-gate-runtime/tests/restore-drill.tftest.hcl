@@ -111,7 +111,7 @@ run "backup_role_snapshots_gate_databases_only" {
   assert {
     condition = anytrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(
       statement.Effect == "Deny" && statement.Action == "rds:CreateDBSnapshot" &&
-      statement.Resource == "arn:aws:rds:us-east-1:${var.member_account_id}:db:*" &&
+      statement.Resource == "arn:aws:rds:*:*:db:*" &&
       statement.Condition.StringNotLikeIfExists["aws:ResourceTag/aws:cloudformation:stack-name"] == "honua-gate-*" &&
       statement.Condition.StringNotEqualsIfExists["aws:ResourceTag/HonuaGate"] == "true", false)
     ])
@@ -120,7 +120,7 @@ run "backup_role_snapshots_gate_databases_only" {
   assert {
     condition = anytrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(
       statement.Effect == "Deny" && statement.Action == "rds:CreateDBSnapshot" && statement.NotResource == [
-        "arn:aws:rds:us-east-1:${var.member_account_id}:db:*", "arn:aws:rds:us-east-1:${var.member_account_id}:snapshot:awsbackup:*"
+        "arn:aws:rds:*:*:db:*", "arn:aws:rds:us-east-1:${var.member_account_id}:snapshot:awsbackup:*"
       ], false)
     ]) && alltrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : !contains(flatten([try(statement.NotAction, [])]), "rds:CreateDBClusterSnapshot")])
     error_message = "Workloads create only AWS Backup-named instance snapshots; cluster snapshots stay behind the ownership tags."
@@ -128,5 +128,29 @@ run "backup_role_snapshots_gate_databases_only" {
   assert {
     condition     = length(jsonencode(jsondecode(aws_iam_policy.workload_boundary.policy))) <= 6144
     error_message = "The workload boundary uses ${nonsensitive(length(jsonencode(jsondecode(aws_iam_policy.workload_boundary.policy))))} of 6144 characters."
+  }
+}
+
+# A files-bucket backup job (the stack's backup role) lists rules and manages AWS Backup's own managed rule, which
+# carries no gate tags or name (CloudTrail AccessDenied, 21 Nov); every other rule keeps both fences.
+run "backup_jobs_manage_only_the_aws_backup_managed_rule" {
+  command = plan
+  assert {
+    condition = anytrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(
+      statement.Sid == "DenyNonGateChanges" && contains(statement.NotAction, "events:ListRules") &&
+      contains(statement.NotResource, "arn:aws:events:*:*:rule/AwsBackupManagedRule*") &&
+      !anytrue([for action in statement.NotAction : contains(["events:*", "events:DescribeRule", "events:DeleteRule", "events:RemoveTargets", "events:DisableRule", "events:TagResource"], action)]), false)
+      ]) && anytrue([for statement in jsondecode(aws_iam_policy.workload_boundary.policy).Statement : try(
+        statement.Sid == "NameFence" && contains(statement.Action, "events:PutRule") &&
+      contains(statement.NotResource, "arn:aws:events:*:*:rule/AwsBackupManagedRule*"), false)
+    ])
+    error_message = "Workloads may list rules and manage only AWS Backup's managed rule outside the gate tags and names."
+  }
+  assert {
+    # The service role already lists rules (events:List*); only the managed-rule ARN must stay fenced for it.
+    condition = !anytrue(flatten([for policy in [aws_iam_policy.cloudformation_fences.policy, aws_iam_role_policy.cloudformation.policy] : [
+      for statement in jsondecode(policy).Statement : contains(flatten([try(statement.NotResource, [])]), "arn:aws:events:*:*:rule/AwsBackupManagedRule*")
+    ]]))
+    error_message = "The CloudFormation service role keeps the plain rule name and ownership fences."
   }
 }

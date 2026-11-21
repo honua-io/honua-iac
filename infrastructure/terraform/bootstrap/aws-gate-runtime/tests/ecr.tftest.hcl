@@ -86,7 +86,7 @@ run "shared_account_exempts_only_the_gate_repository" {
     budget_alert_email      = "gate@example.invalid"
   }
   assert {
-    condition     = toset(local.boundary_ownership_deny.NotResource) == toset([aws_secretsmanager_secret.idp_client.arn, local.boundary_repository_arn, "arn:aws:ecr:*:*:repository/aws-guardduty-agent-fargate"]) && contains(local.boundary_ownership_deny.NotAction, "ecr:GetAuth*") && local.boundary_repository_arn == replace(local.server_repository_arn, ":us-east-1:", ":*:")
+    condition     = toset(local.boundary_ownership_deny.NotResource) == toset([aws_secretsmanager_secret.idp_client.arn, local.boundary_repository_arn, "arn:aws:ecr:*:*:repository/aws-guardduty-agent-fargate", "arn:aws:events:*:*:rule/AwsBackupManagedRule*"]) && contains(local.boundary_ownership_deny.NotAction, "ecr:GetAuth*") && local.boundary_repository_arn == replace(local.server_repository_arn, ":us-east-1:", ":*:")
     error_message = "Workloads may log in to the registry and pull from the Terraform-owned gate repository and the exact AWS GuardDuty agent repository, neither of which carries a stack tag."
   }
   assert {
