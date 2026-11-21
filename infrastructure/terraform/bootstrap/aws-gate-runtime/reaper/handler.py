@@ -459,13 +459,13 @@ SECRET_RECOVERY_DAYS = 7
 SECRET_SKIP_ERRORS = ('ResourceNotFoundException', 'InvalidRequestException')
 
 
-def secret_stack(secret):
+def owning_gate_stack(entry):
     """The gate stack ARN a CloudFormation-created secret names in its own tags, or None."""
-    if secret['Name'].startswith(IDP_SECRET_PREFIX) or secret.get('DeletedDate'):
+    if entry['Name'].startswith(IDP_SECRET_PREFIX) or entry.get('DeletedDate'):
         return None
-    tags = {tag['Key']: tag.get('Value', '') for tag in secret.get('Tags', [])}
+    tags = {tag['Key']: tag.get('Value', '') for tag in entry.get('Tags', [])}
     name, stack_id = tags.get(SECRET_STACK_NAME_TAG, ''), tags.get(SECRET_STACK_ID_TAG, '')
-    account = secret['ARN'].split(':')[4]
+    account = entry['ARN'].split(':')[4]
     if not (name.startswith('honua-gate-')
             and stack_id.startswith(f'arn:aws:cloudformation:us-east-1:{account}:stack/{name}/')):
         return None
@@ -481,27 +481,27 @@ def referenced_secrets(cf):
     return values - {''}
 
 
-def still_referenced(secret, references):
-    arn = secret['ARN']
-    return secret['Name'] in references or any(
+def still_referenced(entry, references):
+    arn = entry['ARN']
+    return entry['Name'] in references or any(
         value.startswith('arn:') and arn.startswith(value) for value in references)
 
 
-def orphan_secret(work, secret, gone):
-    stack_id = secret_stack(secret)
+def orphan_secret(work, entry, gone):
+    stack_id = owning_gate_stack(entry)
     if stack_id is None:
         return 0
-    if still_referenced(secret, work.references):
-        LOG.info('Keep secret %s: a live gate stack still passes it as a parameter', secret['Name'])
+    if still_referenced(entry, work.references):
+        LOG.info('Keep secret %s: a live gate stack still passes it as a parameter', entry['Name'])
         return 0
     if stack_id not in gone:
         gone[stack_id] = stack_is_gone(work.cf, stack_id)
     if not gone[stack_id]:
         return 0
     LOG.info('%s delete secret %s with a %d-day recovery window (stack %s)', 'Would' if work.dry_run else 'Will',
-             secret['Name'], SECRET_RECOVERY_DAYS, stack_id)
+             entry['Name'], SECRET_RECOVERY_DAYS, stack_id)
     if not work.dry_run:
-        work.secrets.delete_secret(SecretId=secret['ARN'], RecoveryWindowInDays=SECRET_RECOVERY_DAYS)
+        work.secrets.delete_secret(SecretId=entry['ARN'], RecoveryWindowInDays=SECRET_RECOVERY_DAYS)
     return 1
 
 
@@ -512,16 +512,16 @@ def reap_secrets(work):
     failures = 0
     work.references = referenced_secrets(work.cf)
     for page in work.secrets.get_paginator('list_secrets').paginate():
-        for secret in page['SecretList']:
+        for entry in page['SecretList']:
             try:
-                result['secrets'] += orphan_secret(work, secret, gone)
+                result['secrets'] += orphan_secret(work, entry, gone)
             except Exception as error:
                 # Already deleted or scheduled; or refused (replicas, service-managed): logged, not retried.
                 if aws_error_code(error) in SECRET_SKIP_ERRORS:
-                    LOG.info('Skip secret %s: %s', secret.get('Name'), aws_error_code(error))
+                    LOG.info('Skip secret %s: %s', entry.get('Name'), aws_error_code(error))
                     continue
                 failures += 1
-                LOG.exception('Gate secret cleanup failed for %s', secret.get('Name'))
+                LOG.exception('Gate secret cleanup failed for %s', entry.get('Name'))
     if failures:
         raise RuntimeError(f'Secret cleanup failed for {failures} secret(s)')
     return result
