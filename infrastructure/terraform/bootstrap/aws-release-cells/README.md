@@ -123,7 +123,11 @@ The `honua-release-approval-mac-*` managed-policy attachments on the provision a
   `enable_workload_role_passing` defaults to false and only the operator can
   activate it after that inventory.
 - Invoke the reaper with `--owner-tag release-cell`; it reads the same
-  `ValidationRunId` as the IAM contract.
+  `ValidationRunId` as the IAM contract. honua-release#1430 retired the
+  honua-release reaper, so the reaper lane trusts
+  `repo:honua-io/honua-iac:environment:aws-cell-reaper`: the
+  `reap-release-cells` job of `terraform-validation-infra-reaper.yml` sweeps the
+  leftovers once `HONUA_AWS_CELL_REAPER_ROLE_ARN` is set in honua-iac.
 - Read-only discovery is account-wide. Mutation grants require cell tags and,
   where a service exposes names, the cell namespace. APIs that cannot supply the
   relevant tag context fail closed. Do not remove those conditions to make an

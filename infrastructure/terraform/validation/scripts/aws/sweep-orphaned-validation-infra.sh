@@ -93,6 +93,8 @@ set -euo pipefail
 
 # shellcheck source=cleanup-read-verdict.sh
 source "$(dirname "${BASH_SOURCE[0]}")/cleanup-read-verdict.sh"
+# shellcheck source=sweep-delete-retry.sh
+source "$(dirname "${BASH_SOURCE[0]}")/sweep-delete-retry.sh"
 
 # Field separator for the internal records below. Deliberately NOT a tab: tab is
 # an IFS whitespace character, so `IFS=$'\t' read` collapses runs of tabs and
@@ -935,13 +937,6 @@ delete_vpc() {
   }
 }
 
-nat_gateway_present() {
-  local state
-  state="$(aws_read ec2 describe-nat-gateways --region "$1" --nat-gateway-ids "$2" \
-    --query 'NatGateways[0].State' --output text 2>/dev/null)" || return 1
-  [[ -n "$state" && "$state" != "None" && "$state" != "deleted" ]]
-}
-
 delete_ec2() {
   local region="$1" arn="$2" resource kind id
   resource="$(arn_resource "$arn")"
@@ -1033,78 +1028,6 @@ delete_arn() {
   # delete, or 2 for "no deletion path") abort the whole sweep, so every
   # resource ranked after it was left behind and no summary was written.
   return "$rc"
-}
-
-# A delete refused only because a dependent teardown is still finishing: a
-# cluster's tasks are stopping, a target group's load balancer or a member
-# cluster's replication group is deleting, a NAT gateway still holds its
-# address. These are retried after the pass; any other refusal is final.
-ordering_refusal() {
-  local arn="$1" code="$2"
-  case "$code" in
-    ClusterContainsTasksException|ClusterContainsServicesException|ResourceInUse|ResourceInUseException|\
-    InvalidCacheClusterState|InvalidReplicationGroupState|DependencyViolation|InvalidDBInstanceState|\
-    InvalidDBSubnetGroupStateFault|InvalidCacheSubnetGroupInUse|CacheSubnetGroupInUse) return 0 ;;
-    AuthFailure) [[ "$arn" == arn:aws:ec2:*:elastic-ip/* ]] ;;
-    *) return 1 ;;
-  esac
-}
-
-# attempt_delete <plan line> <may defer>: delete one planned resource and record
-# the outcome. With <may defer> true an ordering refusal is queued in
-# RETRY_LINES instead of being reported as left behind.
-attempt_delete() {
-  local line="$1" may_defer="$2" region arn run_id stack rc
-  IFS="$US" read -r region arn run_id stack <<<"$line"
-  LAST_WRITE_ERROR=""
-  set +e
-  delete_arn "$region" "$arn"
-  rc=$?
-  set -e
-  case "$rc" in
-    0) DELETED_ARNS+=("$arn"); log_info "Deleted $arn" ;;
-    2) skip "$arn" "no deletion path for this resource type; left for its VPC teardown or an operator" ;;
-    *)
-      if [[ "$may_defer" == "true" ]] && ordering_refusal "$arn" "$LAST_WRITE_ERROR"; then
-        RETRY_LINES+=("$line")
-        log_info "Delete of $arn refused while a dependent teardown finishes ($LAST_WRITE_ERROR); will retry"
-        return 0
-      fi
-      SURVIVOR_ARNS+=("$arn")
-      SURVIVOR_LINES+=("$arn (run=$run_id${LAST_WRITE_ERROR:+; last service error $LAST_WRITE_ERROR})")
-      FAILURES=1
-      log_warn "Failed to delete $arn${LAST_WRITE_ERROR:+ (last service error: $LAST_WRITE_ERROR)}"
-      ;;
-  esac
-}
-
-# Retry ordering refusals, in rank order, for a bounded number of rounds. A
-# resource that settled meanwhile (its replication group took it, say) is
-# credited as settled rather than deleted again.
-retry_ordering_refusals() {
-  local rounds="${SWEEP_RETRY_ROUNDS:-3}" delay="${SWEEP_RETRY_DELAY_SECONDS:-60}" round line settled may_defer
-  local region arn run_id stack
-  local -a pending
-  for (( round = 1; round <= rounds && ${#RETRY_LINES[@]} > 0; round++ )); do
-    pending=("${RETRY_LINES[@]}")
-    RETRY_LINES=()
-    log_info "Retry round $round of $rounds for ${#pending[@]} resource(s) after ${delay}s"
-    sleep "$delay"
-    for line in "${pending[@]}"; do
-      IFS="$US" read -r region arn run_id stack <<<"$line"
-      set +e
-      already_settled "$region" "$arn"
-      settled=$?
-      set -e
-      if (( settled == 0 )); then
-        SETTLED_ARNS+=("$arn")
-        log_info "Settled before retry: $arn"
-        continue
-      fi
-      may_defer="false"; (( round < rounds )) && may_defer="true"
-      attempt_delete "$line" "$may_defer"
-    done
-  done
 }
 
 # Rank an ARN for teardown order. Lower goes first: compute that holds ENIs,
