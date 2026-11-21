@@ -2,7 +2,7 @@ provider "aws" { region = var.region }
 
 locals {
   # Full-line "# " comments are dropped from user data to fit EC2's 16 KiB; the files keep them.
-  bootstrap_scripts = { for name in ["ensure-dotnet-sdk.sh", "install-idle-stop.sh", "../shared/install-docker.sh", "install-build-tools.sh", "install-gate-runner.sh", "install-nuget-fallback.sh"] :
+  bootstrap_scripts = { for name in ["ensure-dotnet-sdk.sh", "install-idle-stop.sh", "../shared/install-docker.sh", "install-build-tools.sh", "install-gate-runner.sh", "install-nuget-fallback.sh", "install-quiet-window.sh"] :
     name => replace(file("${path.module}/${name}"), "/(?m)^[ \t]*# .*\n/", "")
   }
   sdk_installer_bootstrap = join("\n", [

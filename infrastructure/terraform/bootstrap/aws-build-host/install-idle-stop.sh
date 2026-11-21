@@ -16,6 +16,7 @@ PROC = Path("/proc")
 WORKTREES = Path("/home/ubuntu/wt")
 LAST_ACTIVE = Path("/run/honua-build-host-last-active")
 CONFIG = Path("/etc/honua-build-host.json")
+QUIET_WINDOW = Path("/run/honua-quiet-window")
 
 
 def processes():
@@ -54,6 +55,16 @@ def has_active_marker(idle_seconds):
         if any(directory == checkout or checkout in directory.parents for checkout in stale):
             return True
     return False
+
+
+def in_quiet_window():
+    # The benchmark window keeps the host up until its recorded end, never past it.
+    try:
+        fields = QUIET_WINDOW.read_text().split()
+    except FileNotFoundError:
+        return False
+    until = next((field[6:] for field in fields if field.startswith("until=")), "")
+    return fields[:1] == ["open"] and until.isdigit() and time.time() < int(until)
 
 
 def scale_to_zero(config):
@@ -103,7 +114,7 @@ def main():
     idle_seconds = config["idle_seconds"]
     now = int(time.monotonic())
     rows = processes()
-    if has_build(rows) or has_active_marker(idle_seconds):
+    if has_build(rows) or has_active_marker(idle_seconds) or in_quiet_window():
         LAST_ACTIVE.write_text(str(now))
         return
     if any(int(age) < idle_seconds and command in {"sshd", "sshd-session"} and "@" in args

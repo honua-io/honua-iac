@@ -151,6 +151,29 @@ group `honua-server-gate`, which only `gate_runner_repository` can use.
 - **Idle stop.** A running job (`Runner.Worker`) counts as build activity. Idle
   runners waiting for work do not, so the host still stops after
   `idle_stop_minutes` without jobs.
+- **Benchmark quiet window (12:00-13:15 UTC, 02:00-03:15 HST).** The gate and heavy
+  runners take no jobs, so benchmarks measure the code and not the CI load.
+  - At 12:00 `honua-quiet-window-drain.timer` creates `/run/honua-quiet-window.hold`.
+    A runner unit does not start while the hold exists, so a runner whose job ends
+    stays down.
+  - Each idle runner is deregistered first, then stopped. GitHub refuses to delete
+    a runner that holds a job, so a job a listener has just accepted is never
+    killed. A busy runner is waited for. After 20 minutes the drain stops waiting,
+    and a runner still busy then finishes its job and stays down. `drained=` counts
+    the runners stopped at the drain's last check.
+  - Resume, or the end of the window, ends a drain that is still waiting, so it
+    never stops a restarted runner.
+  - At 13:15 `honua-quiet-window-resume.timer` removes the hold and starts every
+    runner.
+  - A host launched inside the window drains about a minute after boot.
+  - Pools other than `gate` and `heavy` are not touched. With no idle runner, the
+    heartbeat sends PR Gate to hosted runners, as it does for a stopped host.
+  - Status is one line in `/run/honua-quiet-window`, for example
+    `open until=<epoch> busy=0 drained=10/10 load=1.20 at=<UTC>` or
+    `closed drained=0/10 load=... at=...`.
+  - Until `until`, the idle stop treats the host as active and does not scale it
+    to zero. A stale `open` line expires at its own end.
+  - Run by hand as `sudo honua-quiet-window drain` and `sudo honua-quiet-window resume`.
 
 One-time setup before enabling:
 
