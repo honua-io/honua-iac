@@ -13,7 +13,7 @@ check() {
 # Finite fake provider: only the supported read operations/tag enumeration accepted.
 fake_read() {
   case "$1 $2" in
-    'ec2 describe-addresses'|'kms describe-key'|'secretsmanager describe-secret'|'ecs describe-clusters'|'ecs describe-services'|'ecs describe-task-definition')
+    'ec2 describe-addresses'|'kms describe-key'|'secretsmanager describe-secret'|'ecs describe-clusters'|'ecs describe-services'|'ecs describe-task-definition'|'batch describe-job-definitions'|'acm describe-certificate'|'s3api get-bucket-location')
       if [[ -n "${ERROR:-}" ]]; then printf '%s\n' "$ERROR" >&2; return 1; fi
       printf '%s\n' "$PAYLOAD" ;;
     'resourcegroupstaggingapi get-resources')
@@ -51,6 +51,27 @@ for error in AuthFailure UnauthorizedOperation Throttling 'connection reset'; do
 done
 for payload in '{}' 'null' '{"Addresses":null}' '{"Addresses":[null]}' '{"Addresses":[{"AllocationId":"eipalloc-foreign"}]}' '{"Addresses":[],"NextToken":"more"}'; do
   PAYLOAD="$payload" check 3 'malformed/mismatched address response' cleanup_resource_settled fake_read "$region" "$address"
+done
+jobdef=arn:aws:batch:$region:123456789012:job-definition/honuartest-it-gp-s:1
+PAYLOAD='{"jobDefinitions":[]}' check 0 'unknown job definition settled' cleanup_resource_settled fake_read "$region" "$jobdef"
+PAYLOAD="$(jq -cn --arg arn "$jobdef" '{jobDefinitions:[{jobDefinitionArn:$arn,status:"INACTIVE"}]}')" check 0 'deregistered job definition settled' cleanup_resource_settled fake_read "$region" "$jobdef"
+PAYLOAD="$(jq -cn --arg arn "$jobdef" '{jobDefinitions:[{jobDefinitionArn:$arn,status:"ACTIVE"}]}')" check 1 'active job definition live' cleanup_resource_settled fake_read "$region" "$jobdef"
+for payload in '{}' 'null' '{"jobDefinitions":null}' '{"jobDefinitions":[{"jobDefinitionArn":"foreign","status":"INACTIVE"}]}' '{"jobDefinitions":[],"nextToken":"more"}' "$(jq -cn --arg arn "$jobdef" '{jobDefinitions:[{jobDefinitionArn:$arn,status:"GONE"}]}')"; do
+  PAYLOAD="$payload" check 3 'malformed/mismatched job definition response' cleanup_resource_settled fake_read "$region" "$jobdef"
+done
+ERROR=AccessDeniedException check 3 'job definition read denied' cleanup_resource_settled fake_read "$region" "$jobdef"
+cert=arn:aws:acm:$region:123456789012:certificate/0123abcd
+PAYLOAD="$(jq -cn --arg arn "$cert" '{Certificate:{CertificateArn:$arn,Status:"ISSUED"}}')" check 1 'described certificate live' cleanup_resource_settled fake_read "$region" "$cert"
+ERROR='An error occurred (ResourceNotFoundException) when calling the DescribeCertificate operation: absent' check 0 'typed certificate absence' cleanup_resource_settled fake_read "$region" "$cert"
+ERROR='An error occurred (AccessDeniedException) when calling the DescribeCertificate operation: refused' check 3 'certificate read denied' cleanup_resource_settled fake_read "$region" "$cert"
+PAYLOAD='{"Certificate":{"CertificateArn":"foreign"}}' check 3 'foreign certificate refused' cleanup_resource_settled fake_read "$region" "$cert"
+bucket=arn:aws:s3:::honuartest-it-alb-logs-cf0d63a0
+PAYLOAD='{"LocationConstraint":null}' check 1 'us-east-1 bucket live' cleanup_resource_settled fake_read "$region" "$bucket"
+PAYLOAD='{"LocationConstraint":"us-west-2"}' check 1 'regional bucket live' cleanup_resource_settled fake_read "$region" "$bucket"
+ERROR='An error occurred (NoSuchBucket) when calling the GetBucketLocation operation: absent' check 0 'typed bucket absence' cleanup_resource_settled fake_read "$region" "$bucket"
+ERROR='An error occurred (AccessDenied) when calling the GetBucketLocation operation: refused' check 3 'bucket read denied' cleanup_resource_settled fake_read "$region" "$bucket"
+for payload in '{}' 'null' '{"LocationConstraint":5}'; do
+  PAYLOAD="$payload" check 3 'malformed bucket location' cleanup_resource_settled fake_read "$region" "$bucket"
 done
 key=arn:aws:kms:$region:123456789012:key/test
 secret=arn:aws:secretsmanager:$region:123456789012:secret:test

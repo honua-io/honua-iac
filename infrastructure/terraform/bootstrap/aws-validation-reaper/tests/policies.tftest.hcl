@@ -55,9 +55,18 @@ run "trust_and_policy" {
     condition = (
       contains(one([for s in jsondecode(local.policy).Statement : s if s.Sid == "ProveOrphaned"]).Action, "batch:DescribeComputeEnvironments") &&
       contains(one([for s in jsondecode(local.policy).Statement : s if s.Sid == "TearDownCells"]).Action, "ecs:DeleteCluster") &&
-      !anytrue([for s in jsondecode(local.policy).Statement : s.Effect == "Allow" && anytrue([for a in s.Action : startswith(a, "batch:") && a != "batch:DescribeComputeEnvironments"])])
+      !anytrue([for s in jsondecode(local.policy).Statement : s.Effect == "Allow" && anytrue([for a in flatten([s.Action]) : startswith(a, "batch:") && !contains(["batch:DescribeComputeEnvironments", "batch:DescribeJobDefinitions", "batch:DeregisterJobDefinition"], a)])])
     )
-    error_message = "The orphaned Batch cluster sweep needs to read compute environments and delete ECS clusters, and no other Batch grant."
+    error_message = "The Batch sweeps need compute-environment and job-definition reads, ECS cluster delete and job-definition deregister, and no other Batch grant."
+  }
+  assert {
+    condition = (
+      contains(one([for s in jsondecode(local.policy).Statement : s if s.Sid == "TearDownCells"]).Action, "batch:DeregisterJobDefinition") &&
+      contains(one([for s in jsondecode(local.policy).Statement : s if s.Sid == "TearDownCells"]).Action, "acm:DeleteCertificate") &&
+      one([for s in jsondecode(local.policy).Statement : s if s.Sid == "EmptyCellLogBuckets"]).Resource == "arn:aws:s3:::*-alb-logs-*" &&
+      !anytrue([for s in jsondecode(local.policy).Statement : s.Effect == "Allow" && s.Sid != "EmptyCellLogBuckets" && anytrue([for a in flatten([s.Action]) : startswith(a, "s3:") && a != "s3:GetBucketLocation"])])
+    )
+    error_message = "Job definitions and certificates are torn down with the cell; S3 deletes reach only ALB access-log buckets (honua-iac#573-#575)."
   }
 }
 

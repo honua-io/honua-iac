@@ -32,6 +32,10 @@ locals {
     "kms:DescribeKey",
     # Proves an AWSBatch-* ECS cluster has lost its compute environment.
     "batch:DescribeComputeEnvironments",
+    # Settled checks for a cell's job definitions, certificate and log bucket.
+    "batch:DescribeJobDefinitions",
+    "acm:DescribeCertificate",
+    "s3:GetBucketLocation",
   ]
 
   delete_actions = [
@@ -67,7 +71,12 @@ locals {
     "logs:DeleteLogGroup",
     "lambda:DeleteFunction",
     "kms:ScheduleKeyDeletion",
+    "batch:DeregisterJobDefinition",
+    "acm:DeleteCertificate",
   ]
+
+  # Only the aws-ecs ALB access-log bucket shape; any other bucket is reported.
+  log_bucket_actions = ["s3:ListBucketVersions", "s3:DeleteObjectVersion", "s3:DeleteBucket"]
 
   protected_names = [
     "arn:aws:lambda:*:${local.account_id}:function:honua-cert-*",
@@ -91,6 +100,7 @@ locals {
     Statement = [
       { Sid = "ProveOrphaned", Effect = "Allow", Action = local.read_actions, Resource = "*" },
       { Sid = "TearDownCells", Effect = "Allow", Action = local.delete_actions, Resource = "*" },
+      { Sid = "EmptyCellLogBuckets", Effect = "Allow", Action = local.log_bucket_actions, Resource = "arn:aws:s3:::*-alb-logs-*" },
       {
         Sid       = "SweepRegionsOnly"
         Effect    = "Deny"

@@ -11,6 +11,10 @@ cleanup_resource_settled() {
     arn:aws:ecs:*:cluster/*) service=ecs; operation=describe-clusters; args=(--clusters "$arn") ;;
     arn:aws:ecs:*:service/*/*) service=ecs; operation=describe-services; args=(--cluster "${arn%/*}"); args=(--cluster "${args[1]#*:service/}" --services "$arn") ;;
     arn:aws:ecs:*:task-definition/*) service=ecs; operation=describe-task-definition; args=(--task-definition "$arn") ;;
+    arn:aws:batch:*:job-definition/*) service=batch; operation=describe-job-definitions; args=(--job-definitions "$arn") ;;
+    arn:aws:acm:*:certificate/*) service=acm; operation=describe-certificate; args=(--certificate-arn "$arn") ;;
+    arn:aws:s3:::*/*) return 1 ;;
+    arn:aws:s3:::?*) service=s3api; operation=get-bucket-location; args=(--bucket "${arn#arn:aws:s3:::}") ;;
     *) return 1 ;;
   esac
   if ! payload="$("$reader" "$service" "$operation" --region "$region" "${args[@]}" --output json 2>&1)"; then
@@ -24,7 +28,9 @@ cleanup_resource_settled() {
     # absence. Denial, throttling, transport errors and arbitrary text are not.
     if [[ "$service" == kms && "$payload" =~ ^An\ error\ occurred\ \(NotFoundException\)\ when\ calling\ the\ DescribeKey\ operation: ]] ||
        [[ "$service" == secretsmanager && "$payload" =~ ^An\ error\ occurred\ \(ResourceNotFoundException\)\ when\ calling\ the\ DescribeSecret\ operation: ]] ||
-       [[ "$service" == ec2 && "$payload" =~ ^An\ error\ occurred\ \(InvalidAllocationID\.NotFound\)\ when\ calling\ the\ DescribeAddresses\ operation: ]]; then
+       [[ "$service" == ec2 && "$payload" =~ ^An\ error\ occurred\ \(InvalidAllocationID\.NotFound\)\ when\ calling\ the\ DescribeAddresses\ operation: ]] ||
+       [[ "$service" == acm && "$payload" =~ ^An\ error\ occurred\ \(ResourceNotFoundException\)\ when\ calling\ the\ DescribeCertificate\ operation: ]] ||
+       [[ "$service" == s3api && "$payload" =~ ^An\ error\ occurred\ \(NoSuchBucket\)\ when\ calling\ the\ GetBucketLocation\ operation: ]]; then
       return 0
     fi
     return 3
@@ -49,6 +55,19 @@ cleanup_resource_settled() {
       elif .DeletedDate==null then "live"
       elif ((.DeletedDate|type)=="number" and .DeletedDate>0) or
            ((.DeletedDate|type)=="string" and (.DeletedDate|test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"))) then "settled" else refuse end
+    elif $service=="batch" then
+      # A deregistered revision stays listed as INACTIVE; an unknown one is an empty list.
+      if (.jobDefinitions|type)!="array" or (has("nextToken") and .nextToken!=null and .nextToken!="") then refuse
+      elif (.jobDefinitions|length)==0 then "settled"
+      elif (.jobDefinitions|length)==1 and .jobDefinitions[0].jobDefinitionArn==$arn then
+        state(.jobDefinitions[0].status; ["ACTIVE","INACTIVE"]; ["INACTIVE"])
+      else refuse end
+    elif $service=="acm" then
+      # ACM has no deleted state: a described certificate exists.
+      if .Certificate.CertificateArn!=$arn then refuse else "live" end
+    elif $service=="s3api" then
+      # us-east-1 buckets answer a null LocationConstraint.
+      if has("LocationConstraint") and ((.LocationConstraint|type)=="null" or (.LocationConstraint|type)=="string") then "live" else refuse end
     elif $operation=="describe-task-definition" then
       if .taskDefinition.taskDefinitionArn!=$arn then refuse else
       state(.taskDefinition.status; ["ACTIVE","INACTIVE","DELETE_IN_PROGRESS"]; ["INACTIVE"]) end
