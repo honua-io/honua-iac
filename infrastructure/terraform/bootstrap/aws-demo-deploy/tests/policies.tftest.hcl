@@ -64,7 +64,7 @@ run "guardrail_denies_are_present" {
 
   assert {
     condition = alltrue([
-      for sid in ["DenyOtherRegions", "DenyDataDestruction", "DenyIdentityEscalation", "DenyIamWritesOutsideTheDemo", "DenyGhaRoles", "DenyOtherObjects", "DenyOperatorOwnedSecrets"] :
+      for sid in ["DenyOtherRegions", "DenyDataDestruction", "DenyIdentityEscalation", "DenyIamWritesOutsideTheDemo", "DenyGhaRoles", "DenyOtherObjects", "DenyOperatorOwnedSecrets", "DenySecretDeletesOutsideTheDemo", "DenyUnrecoverableSecretDeletes", "DenyShortRecoveryWindowSecretDeletes"] :
       length([for s in jsondecode(data.aws_iam_policy_document.apply.json).Statement : s if try(s.Sid, "") == sid && s.Effect == "Deny"]) == 1
     ])
     error_message = "Every guardrail deny must be present."
@@ -73,9 +73,44 @@ run "guardrail_denies_are_present" {
   assert {
     condition = toset(flatten([one([for s in jsondecode(data.aws_iam_policy_document.apply.json).Statement : s if try(s.Sid, "") == "DenyDataDestruction"]).Action])) == toset([
       "rds:DeleteDBInstance", "rds:DeleteDBCluster", "rds:DeleteDBSnapshot", "s3:DeleteBucket",
-      "secretsmanager:DeleteSecret", "ec2:DeleteVpc", "route53:DeleteHostedZone",
+      "ec2:DeleteVpc", "route53:DeleteHostedZone",
     ])
-    error_message = "The apply role must never delete the database, the data bucket, a secret, the VPC or the zone."
+    error_message = "The apply role must never delete the database, the data bucket, the VPC or the zone."
+  }
+
+  # A secret the demo stack removes (honua-demo-demo/redis-connection) is
+  # deleted by the apply; anything outside the demo prefixes is not.
+  assert {
+    condition = (
+      flatten([one([for s in jsondecode(data.aws_iam_policy_document.apply.json).Statement : s if try(s.Sid, "") == "DenySecretDeletesOutsideTheDemo"]).Action]) == ["secretsmanager:DeleteSecret"]
+      && toset(flatten([one([for s in jsondecode(data.aws_iam_policy_document.apply.json).Statement : s if try(s.Sid, "") == "DenySecretDeletesOutsideTheDemo"]).NotResource])) == toset([
+        "arn:aws:secretsmanager:us-west-2:123456789012:secret:honua-demo-demo/*",
+        "arn:aws:secretsmanager:us-west-2:123456789012:secret:honua-demo/demo/*",
+      ])
+    )
+    error_message = "Secret deletes must be limited to the Terraform-managed demo secret prefixes."
+  }
+
+  # Every allowed delete keeps a recovery window of at least seven days. IAM
+  # ANDs the operators inside one statement, so each refusal is its own deny.
+  assert {
+    condition = (
+      flatten([one([for s in jsondecode(data.aws_iam_policy_document.apply.json).Statement : s if try(s.Sid, "") == "DenyUnrecoverableSecretDeletes"]).Action]) == ["secretsmanager:DeleteSecret"]
+      && one([for s in jsondecode(data.aws_iam_policy_document.apply.json).Statement : s if try(s.Sid, "") == "DenyUnrecoverableSecretDeletes"]).Condition == {
+        Bool = { "secretsmanager:ForceDeleteWithoutRecovery" = "true" }
+      }
+      && flatten([one([for s in jsondecode(data.aws_iam_policy_document.apply.json).Statement : s if try(s.Sid, "") == "DenyShortRecoveryWindowSecretDeletes"]).Action]) == ["secretsmanager:DeleteSecret"]
+      && one([for s in jsondecode(data.aws_iam_policy_document.apply.json).Statement : s if try(s.Sid, "") == "DenyShortRecoveryWindowSecretDeletes"]).Condition == {
+        NumericLessThan = { "secretsmanager:RecoveryWindowInDays" = "7" }
+      }
+    )
+    error_message = "A secret delete without recovery, or with a window under seven days, must be denied."
+  }
+
+  # The operator-owned key ring stays outside every grant, deletes included.
+  assert {
+    condition     = contains(flatten([one([for s in jsondecode(data.aws_iam_policy_document.apply.json).Statement : s if try(s.Sid, "") == "DenyOperatorOwnedSecrets"]).Action]), "secretsmanager:*")
+    error_message = "The operator-owned secrets must stay fully denied."
   }
 
   assert {

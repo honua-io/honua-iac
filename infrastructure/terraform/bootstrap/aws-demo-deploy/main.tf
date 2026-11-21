@@ -79,7 +79,6 @@ locals {
     "rds:DeleteDBCluster",
     "rds:DeleteDBSnapshot",
     "s3:DeleteBucket",
-    "secretsmanager:DeleteSecret",
     "ec2:DeleteVpc",
     "route53:DeleteHostedZone",
   ]
@@ -327,6 +326,41 @@ data "aws_iam_policy_document" "apply" {
     effect        = "Deny"
     actions       = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
     not_resources = [local.state_arn, "${local.state_arn}.tflock", "arn:aws:s3:::${var.data_bucket_name_prefix}*/*"]
+  }
+
+  # A secret the demo stack drops is deleted by the apply, but only under the
+  # Terraform-managed prefixes and only into a recovery window of at least
+  # seven days (Terraform's default is 30). IAM ANDs operators inside one
+  # statement, so each refusal is a separate deny.
+  statement {
+    sid           = "DenySecretDeletesOutsideTheDemo"
+    effect        = "Deny"
+    actions       = ["secretsmanager:DeleteSecret"]
+    not_resources = local.secret_arns
+  }
+
+  statement {
+    sid       = "DenyUnrecoverableSecretDeletes"
+    effect    = "Deny"
+    actions   = ["secretsmanager:DeleteSecret"]
+    resources = ["*"]
+    condition {
+      test     = "Bool"
+      variable = "secretsmanager:ForceDeleteWithoutRecovery"
+      values   = ["true"]
+    }
+  }
+
+  statement {
+    sid       = "DenyShortRecoveryWindowSecretDeletes"
+    effect    = "Deny"
+    actions   = ["secretsmanager:DeleteSecret"]
+    resources = ["*"]
+    condition {
+      test     = "NumericLessThan"
+      variable = "secretsmanager:RecoveryWindowInDays"
+      values   = ["7"]
+    }
   }
 
   statement {
