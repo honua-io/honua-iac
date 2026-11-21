@@ -67,6 +67,19 @@ if [[ -n "${FAKE_WRITE_FAILURE:-}" && "$operation" == "${FAKE_WRITE_FAILURE%%:*}
   exit 254
 fi
 
+# FAKE_WRITE_FAIL_ONCE="<operation>:<message>[;<operation>:<message>...]" refuses
+# only the first call of each operation, like a delete that races a dependent
+# teardown still in progress.
+if [[ -n "${FAKE_WRITE_FAIL_ONCE:-}" ]]; then
+  IFS=';' read -ra once_rules <<<"$FAKE_WRITE_FAIL_ONCE"
+  for rule in "${once_rules[@]}"; do
+    if [[ "$operation" == "${rule%%:*}" && "$(grep -c "^$service $operation " "$AWS_CALL_LOG")" -eq 1 ]]; then
+      echo "${rule#*:}" >&2
+      exit 254
+    fi
+  done
+fi
+
 case "$service $operation" in
   "resourcegroupstaggingapi get-resources")
     # The Owner tag filter is the reaper's containment boundary. Anything not
@@ -94,7 +107,11 @@ case "$service $operation" in
     fi
     ;;
   "ecs describe-clusters")
-    jq -cn --arg arn "$(value_of --clusters)" --arg status "${FAKE_ECS_CLUSTER_STATUS:-ACTIVE}" '{clusters:[{clusterArn:$arn,status:$status}],failures:[]}'
+    cluster_status="${FAKE_ECS_CLUSTER_STATUS:-ACTIVE}"
+    if [[ -n "${FAKE_ECS_CLUSTER_STATUS_AFTER_DELETE:-}" ]] && grep -q '^ecs delete-cluster ' "$AWS_CALL_LOG"; then
+      cluster_status="$FAKE_ECS_CLUSTER_STATUS_AFTER_DELETE"
+    fi
+    jq -cn --arg arn "$(value_of --clusters)" --arg status "$cluster_status" '{clusters:[{clusterArn:$arn,status:$status}],failures:[]}'
     ;;
   "ecs describe-services")
     jq -cn --arg arn "$(value_of --services)" --arg status "${FAKE_ECS_SERVICE_STATUS:-ACTIVE}" '{services:[{serviceArn:$arn,status:$status}],failures:[]}'
@@ -137,6 +154,7 @@ case "$service $operation" in
     echo "${FAKE_ENIS:-{\"NetworkInterfaces\":[]}}"
     ;;
   "ec2 describe-nat-gateways")
+    if has_flag --nat-gateway-ids; then echo "${FAKE_NAT_STATE:-deleted}"; exit 0; fi
     if has_flag --query; then echo "${FAKE_LIVE_NATS:-0}"; else echo '{"NatGateways":[]}'; fi
     ;;
   "ec2 describe-subnets")
@@ -804,3 +822,4 @@ echo "passed: $PASS  failed: $FAIL"
 # The shared read-only verdict controls also exercise the integration consumer.
 bash "$SCRIPT_DIR/test-cleanup-read-verdict.sh"
 bash "$SCRIPT_DIR/test-sweep-failure-reason.sh"
+bash "$SCRIPT_DIR/test-sweep-retry-ordering.sh"
