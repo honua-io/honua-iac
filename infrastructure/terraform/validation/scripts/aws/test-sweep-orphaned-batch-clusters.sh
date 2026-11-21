@@ -21,7 +21,11 @@ printf '%s\n' "$*" >> "$AWS_CALL_LOG"
 case "$1 $2" in
   "batch describe-compute-environments")
     [[ -n "${FAKE_CE_ERROR:-}" ]] && { echo "An error occurred ($FAKE_CE_ERROR) when calling the DescribeComputeEnvironments operation: x" >&2; exit 254; }
-    echo "$FAKE_CES" ;;
+    if [[ -n "${FAKE_CES_AFTER_FIRST:-}" ]] && (( $(grep -c '^batch describe-compute-environments' "$AWS_CALL_LOG") > 1 )); then
+      echo "$FAKE_CES_AFTER_FIRST"
+    else
+      echo "$FAKE_CES"
+    fi ;;
   "ecs list-clusters") echo "$FAKE_CLUSTERS" ;;
   "ecs describe-clusters")
     arn=""; prev=""
@@ -91,6 +95,21 @@ defaults; export FAKE_CES='{}'; run
 if [[ "$RC" -ne 0 ]] && ! grep -q '^ecs delete-cluster' "$AWS_CALL_LOG"; then check "a malformed compute-environment list deletes nothing" ok; else check "a malformed compute-environment list deletes nothing" no; fi
 defaults; export FAKE_DESCRIBE_ERROR=ThrottlingException; run
 if [[ "$RC" -ne 0 ]] && ! grep -q '^ecs delete-cluster' "$AWS_CALL_LOG"; then check "an unreadable cluster is kept and fails the sweep" ok; else check "an unreadable cluster is kept and fails the sweep" no; fi
+
+echo "== a compute environment created mid-sweep keeps its cluster =="
+defaults
+export FAKE_CES_AFTER_FIRST="$(jq -cn --arg a "$OWNED" --arg b "$ORPHAN" '{computeEnvironments:[{computeEnvironmentName:"BatchCompute-live",ecsClusterArn:$a},{computeEnvironmentName:"BatchCompute-orphan",ecsClusterArn:$b}]}')"
+run
+if ! deleted "$ORPHAN"; then check "the compute environments are re-read before each delete" ok; else check "the compute environments are re-read before each delete" no; fi
+unset FAKE_CES_AFTER_FIRST
+defaults
+export FAKE_CES="$(jq -cn --arg a "$OWNED" '{computeEnvironments:[{computeEnvironmentName:"BatchCompute-live",ecsClusterArn:$a},{computeEnvironmentName:"BatchCompute-new",type:"MANAGED",status:"CREATING"}]}')"
+run
+if [[ "$RC" -ne 0 ]] && ! grep -q '^ecs delete-cluster' "$AWS_CALL_LOG"; then check "a compute environment with no cluster yet keeps the region" ok; else check "a compute environment with no cluster yet keeps the region" no; fi
+defaults
+export FAKE_CES="$(jq -cn --arg a "$OWNED" '{computeEnvironments:[{computeEnvironmentName:"BatchCompute-live",ecsClusterArn:$a},{computeEnvironmentName:"eks-ce",containerOrchestrationType:"EKS",eksConfiguration:{}}]}')"
+run
+if [[ "$RC" -eq 0 ]] && deleted "$ORPHAN"; then check "an EKS compute environment needs no ECS cluster" ok; else check "an EKS compute environment needs no ECS cluster" no; fi
 
 echo "== a dry run plans but does not delete =="
 defaults; run --dry-run

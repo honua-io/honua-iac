@@ -9,7 +9,9 @@
 # A cluster is deleted only when ALL hold:
 #   * its name starts with AWSBatch-;
 #   * the complete, unpaginated compute-environment list for the region (any
-#     state) does not reference its ARN;
+#     state), read after the cluster list and again just before the delete,
+#     does not reference its ARN, and every ECS-orchestrated compute
+#     environment in it already names its cluster;
 #   * it is ACTIVE with no running or pending tasks, no active services and no
 #     registered container instances.
 # Any read that fails or is malformed keeps the cluster and fails the sweep.
@@ -42,6 +44,7 @@ referenced_clusters() {
   local region="$1" payload
   payload="$(aws batch describe-compute-environments --region "$region" --output json)" || return 1
   jq -er 'if type=="object" and (.computeEnvironments|type)=="array" and ((has("nextToken")|not) or .nextToken==null or .nextToken=="")
+          and all(.computeEnvironments[]; .containerOrchestrationType=="EKS" or ((.ecsClusterArn|type)=="string" and .ecsClusterArn!=""))
           then [.computeEnvironments[] | .ecsClusterArn // empty] | join("\n") else error("unverified") end' <<<"$payload"
 }
 
@@ -68,11 +71,14 @@ cluster_state() {
 
 sweep_region() {
   local region="$1" referenced clusters arn state
-  if ! referenced="$(referenced_clusters "$region")"; then
-    keep "region $region" "compute environments could not be listed completely"; return
-  fi
+  # Clusters first: a compute environment created after this read cannot add
+  # a cluster to the list, and one created after the read below is caught by
+  # the re-read before each delete.
   if ! clusters="$(batch_clusters "$region")"; then
     keep "region $region" "ECS clusters could not be listed completely"; return
+  fi
+  if ! referenced="$(referenced_clusters "$region")"; then
+    keep "region $region" "compute environments could not be listed completely, or one has no cluster yet"; return
   fi
   while IFS= read -r arn; do
     [[ -z "$arn" ]] && continue
@@ -84,6 +90,12 @@ sweep_region() {
       idle)
         echo "PLAN delete $arn (no compute environment references it; idle)"
         [[ "$DRY_RUN" == "true" ]] && continue
+        if ! referenced="$(referenced_clusters "$region")"; then
+          keep "$arn" "compute environments could not be re-read before the delete"; continue
+        fi
+        if grep -Fxq -- "$arn" <<<"$referenced"; then
+          echo "[INFO] A compute environment now references $arn; kept"; continue
+        fi
         if aws ecs delete-cluster --region "$region" --cluster "$arn" >/dev/null; then
           DELETED+=("$arn"); echo "[INFO] Deleted $arn"
         else

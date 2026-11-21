@@ -98,7 +98,7 @@ jobs:
     # (bootstrap/aws-validation-reaper), not every trunk workflow.
     environment: aws-validation-reaper
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       AWS_DEFAULT_REGION: ${{ vars.HONUA_AWS_VALIDATION_REGION || 'us-east-1' }}
       HONUA_AWS_SWEEP_REGIONS: ${{ vars.HONUA_AWS_SWEEP_REGIONS || 'us-east-1,us-west-2' }}

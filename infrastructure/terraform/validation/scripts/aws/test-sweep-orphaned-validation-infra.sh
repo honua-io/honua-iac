@@ -62,11 +62,6 @@ if [[ -n "${FAKE_RESOURCE_READ_ERROR:-}" && "$operation" == describe-* && "$serv
   exit 1
 fi
 
-if [[ -n "${FAKE_WRITE_FAILURE:-}" && "$operation" == "${FAKE_WRITE_FAILURE%%:*}" ]]; then
-  echo "${FAKE_WRITE_FAILURE#*:}" >&2
-  exit 254
-fi
-
 # FAKE_WRITE_FAIL_ONCE holds semicolon-separated operation:message rules. Each
 # refuses only the first call of its operation, like a delete that races a
 # dependent teardown still in progress.
@@ -78,6 +73,11 @@ if [[ -n "${FAKE_WRITE_FAIL_ONCE:-}" ]]; then
       exit 254
     fi
   done
+fi
+
+if [[ -n "${FAKE_WRITE_FAILURE:-}" && "$operation" == "${FAKE_WRITE_FAILURE%%:*}" ]]; then
+  echo "${FAKE_WRITE_FAILURE#*:}" >&2
+  exit 254
 fi
 
 case "$service $operation" in

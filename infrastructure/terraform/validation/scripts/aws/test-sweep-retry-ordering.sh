@@ -44,6 +44,26 @@ else
   check "a resource gone by the retry is settled, not deleted again" no
 fi
 
+echo "== a retried delete that finds the resource gone is settled =="
+
+MEMBER_ARN='arn:aws:elasticache:us-west-2:1:cluster:honua-it-redis-001'
+MEMBER="$(tagged "$MEMBER_ARN" 'gha-111-aws-ecs' 'ecs' "$PAST")"
+FAKE_WRITE_FAIL_ONCE="delete-cache-cluster:$(err InvalidCacheClusterState DeleteCacheCluster)" \
+FAKE_WRITE_FAILURE="delete-cache-cluster:$(err CacheClusterNotFound DeleteCacheCluster)" \
+  run_sweeper "$(resources "$MEMBER")"
+if [[ "$RC" -eq 0 ]] && grep -q "Settled before retry: $MEMBER_ARN" <<<"$OUT"; then
+  check "a member cluster its replication group removed is settled on retry" ok
+else
+  check "a member cluster its replication group removed is settled on retry" no
+fi
+FAKE_WRITE_FAILURE="delete-cache-cluster:$(err CacheClusterNotFound DeleteCacheCluster)" run_sweeper "$(resources "$MEMBER")"
+if [[ "$RC" -ne 0 ]]; then check "not-found on the first attempt is not credited as settled" ok; else check "not-found on the first attempt is not credited as settled" no; fi
+
+echo "== a failed NAT gateway is not waited on =="
+
+FAKE_NAT_STATE=failed run_sweeper "$(resources "$NAT")"
+if (( $(grep -c '^ec2 describe-nat-gateways .*--nat-gateway-ids' "$AWS_CALL_LOG") == 1 )); then check "a failed NAT gateway counts as gone" ok; else check "a failed NAT gateway counts as gone" no; fi
+
 echo "== a refusal that is not about ordering is not retried =="
 
 FAKE_WRITE_FAILURE="delete-cluster:$(err AccessDeniedException DeleteCluster)" run_sweeper "$(resources "$CLUSTER")"
