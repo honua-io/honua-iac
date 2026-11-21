@@ -16,9 +16,10 @@
 # state object. Denies that hold whatever else is attached:
 #   - any region but the demo region and us-east-1 (IAM, CloudFront, ACM for
 #     CloudFront, the state bucket);
-#   - deleting the database, the data bucket, a secret, the VPC or the zone:
-#     a plan that needs one of those fails at apply and goes through
-#     break-glass instead;
+#   - deleting the database, the data bucket, the VPC or the zone (a plan
+#     that needs one of those fails at apply and goes through break-glass);
+#   - deleting a secret outside the demo prefixes, or without a recovery
+#     window of at least seven days;
 #   - any IAM user, access key or login profile, role chaining, and touching
 #     any *-gha role (this one, the drift roles, the cert role);
 #   - any state object other than the demo's;
