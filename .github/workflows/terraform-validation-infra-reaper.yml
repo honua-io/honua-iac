@@ -129,6 +129,7 @@ jobs:
           args=(
             --grace-hours "${{ inputs.grace_hours || '4' }}"
             --max-delete "${{ inputs.max_delete || '400' }}"
+            --delete-log-buckets
             --summary-file "$GITHUB_STEP_SUMMARY"
           )
 

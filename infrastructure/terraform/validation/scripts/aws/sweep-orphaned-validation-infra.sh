@@ -137,6 +137,9 @@ Options:
                            ecs:task-definition; repeatable. Network resources
                            torn down with their VPC still go, and the legacy
                            VPC pass ignores this option.
+  --delete-log-buckets     Empty and delete an owned <cell>-alb-logs-<hex>
+                           bucket; without it buckets are reported. Only for a
+                           role whose S3 grant is qualified for the owner.
   --max-delete <n>         Abandon the sweep if the plan exceeds n resources
                            (default: 400)
   --summary-file <path>    Append a markdown report here (job summary)
@@ -170,6 +173,7 @@ EXCLUDED_TYPES=()
 MAX_DELETE=400
 SUMMARY_FILE=""
 DRY_RUN=false
+DELETE_LOG_BUCKETS=false
 DEFER_ON_ACTIVE=true
 LEGACY_RELEASE_VPCS=false
 LEGACY_REPO="honua-io/honua-release"
@@ -193,6 +197,7 @@ while [[ $# -gt 0 ]]; do
     --max-delete) MAX_DELETE="$2"; shift 2 ;;
     --summary-file) SUMMARY_FILE="$2"; shift 2 ;;
     --dry-run) DRY_RUN=true; shift ;;
+    --delete-log-buckets) DELETE_LOG_BUCKETS=true; shift ;;
     --no-defer-on-active) DEFER_ON_ACTIVE=false; shift ;;
     -h|--help) usage; exit 0 ;;
     *) log_error "Unknown argument: $1"; usage; exit 1 ;;
@@ -779,6 +784,7 @@ delete_simple() {
       aws_write acm delete-certificate --region "$region" --certificate-arn "$arn" >/dev/null 2>&1 || return 1
       ;;
     s3)
+      [[ "$DELETE_LOG_BUCKETS" == "true" ]] || return 2
       delete_alb_log_bucket "$region" "$resource"
       ;;
     sqs|sns|dynamodb|iam)
@@ -800,7 +806,7 @@ delete_alb_log_bucket() {
   [[ "$bucket" =~ ^[a-z0-9][a-z0-9-]*-alb-logs-[a-f0-9]+$ ]] || return 2
   for (( round = 0; round < 200; round++ )); do
     page="$(aws_read s3api list-object-versions --region "$region" --bucket "$bucket" \
-      --max-items 1000 --output json 2>/dev/null)" || return 1
+      --max-keys 1000 --no-paginate --output json 2>/dev/null)" || return 1
     objects="$(jq -ce '[(.Versions // [])[], (.DeleteMarkers // [])[] | {Key, VersionId}]' <<<"$page" 2>/dev/null)" || return 1
     if [[ "$objects" == "[]" ]]; then
       aws_write s3api delete-bucket --region "$region" --bucket "$bucket" >/dev/null 2>&1 || return 1

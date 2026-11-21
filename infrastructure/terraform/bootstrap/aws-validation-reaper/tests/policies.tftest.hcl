@@ -64,7 +64,8 @@ run "trust_and_policy" {
       contains(one([for s in jsondecode(local.policy).Statement : s if s.Sid == "TearDownCells"]).Action, "batch:DeregisterJobDefinition") &&
       contains(one([for s in jsondecode(local.policy).Statement : s if s.Sid == "TearDownCells"]).Action, "acm:DeleteCertificate") &&
       one([for s in jsondecode(local.policy).Statement : s if s.Sid == "EmptyCellLogBuckets"]).Resource == "arn:aws:s3:::*-alb-logs-*" &&
-      !anytrue([for s in jsondecode(local.policy).Statement : s.Effect == "Allow" && s.Sid != "EmptyCellLogBuckets" && anytrue([for a in flatten([s.Action]) : startswith(a, "s3:") && a != "s3:GetBucketLocation"])])
+      !anytrue([for s in jsondecode(local.policy).Statement : s.Effect == "Allow" && s.Sid != "EmptyCellLogBuckets" && anytrue([for a in flatten([s.Action]) : startswith(a, "s3:") && a != "s3:GetBucketLocation"])]) &&
+      contains(one([for s in jsondecode(local.policy).Statement : s if s.Sid == "ProtectStandingNames"]).Resource, "arn:aws:s3:::honua-*")
     )
     error_message = "Job definitions and certificates are torn down with the cell; S3 deletes reach only ALB access-log buckets."
   }

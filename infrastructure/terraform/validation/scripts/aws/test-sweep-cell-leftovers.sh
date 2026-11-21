@@ -71,16 +71,18 @@ assert_deleted "the certificate is deleted on retry" "$CERT_ARN"
 
 echo "== ALB access-log buckets =="
 run_sweeper "$(resources "$BUCKET")"
+verdict "without --delete-log-buckets a bucket is only reported" '[[ $RC -eq 0 ]] && ! grep -Eq "^s3api (list-object-versions|delete-)" "$AWS_CALL_LOG"'
+run_sweeper "$(resources "$BUCKET")" --delete-log-buckets
 assert_deleted "an ALB log bucket is deleted" "$BUCKET_ARN"
 verdict "every version and delete marker goes before the bucket" \
   'grep -n "^s3api delete-objects .*AWSLogs/a.log.gz.*\"v1\".*AWSLogs/b.log.gz.*\"m1\"" "$AWS_CALL_LOG" | cut -d: -f1 | { read -r o; b=$(grep -n "^s3api delete-bucket " "$AWS_CALL_LOG" | cut -d: -f1); [[ -n "$o" && -n "$b" && $o -lt $b ]]; }'
-FAKE_S3_DELETE_ERRORS=1 run_sweeper "$(resources "$BUCKET")"
+FAKE_S3_DELETE_ERRORS=1 run_sweeper "$(resources "$BUCKET")" --delete-log-buckets
 verdict "a bucket whose objects cannot all be deleted is kept" '[[ $RC -ne 0 ]] && ! grep -q "^s3api delete-bucket " "$AWS_CALL_LOG"'
-run_sweeper "$(resources "$OTHER_BUCKET")"
+run_sweeper "$(resources "$OTHER_BUCKET")" --delete-log-buckets
 verdict "a bucket of any other shape is never emptied or deleted" '! grep -Eq "^s3api delete-(objects|bucket) " "$AWS_CALL_LOG"'
 
 echo "== dry run =="
-run_sweeper "$(resources "$JOBDEF" "$CERT" "$BUCKET")" --dry-run
+run_sweeper "$(resources "$JOBDEF" "$CERT" "$BUCKET")" --dry-run --delete-log-buckets
 assert_no_mutations "a dry run over all three types triggers no mutating call"
 verdict "a dry run plans all three" '[[ $(grep -c "^PLAN delete" <<<"$OUT") -eq 3 ]]'
 

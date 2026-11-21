@@ -93,6 +93,9 @@ locals {
     "arn:aws:logs:*:${local.account_id}:log-group:*honua-demo-*",
     "arn:aws:elasticache:*:${local.account_id}:replicationgroup:honua-cert-*",
     "arn:aws:elasticache:*:${local.account_id}:replicationgroup:honua-demo-*",
+    # S3 evaluates no resource tag without bucket ABAC, so the tag denies above
+    # do not reach the log-bucket grant; standing buckets are named honua-*.
+    "arn:aws:s3:::honua-*",
   ]
 
   policy = jsonencode({
