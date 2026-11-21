@@ -93,6 +93,8 @@ set -euo pipefail
 
 # shellcheck source=cleanup-read-verdict.sh
 source "$(dirname "${BASH_SOURCE[0]}")/cleanup-read-verdict.sh"
+# shellcheck source=sweep-delete-retry.sh
+source "$(dirname "${BASH_SOURCE[0]}")/sweep-delete-retry.sh"
 
 # Field separator for the internal records below. Deliberately NOT a tab: tab is
 # an IFS whitespace character, so `IFS=$'\t' read` collapses runs of tabs and
@@ -944,6 +946,10 @@ delete_ec2() {
     vpc) delete_vpc "$region" "$id" || return 1 ;;
     natgateway)
       aws_write ec2 delete-nat-gateway --region "$region" --nat-gateway-id "$id" >/dev/null 2>&1 || return 1
+      # The gateway holds its Elastic IP until it reaches "deleted"; releasing
+      # the address before then is refused with AuthFailure.
+      wait_gone 600 nat_gateway_present "$region" "$id" || \
+        log_warn "NAT gateway still deleting after waiting: $id"
       ;;
     elastic-ip)
       aws_write ec2 release-address --region "$region" --allocation-id "$id" >/dev/null 2>&1 || return 1
@@ -1208,25 +1214,11 @@ main() {
     exit "$FAILURES"
   fi
 
+  RETRY_LINES=()
   for line in ${PLAN_LINES[@]+"${PLAN_LINES[@]}"}; do
-    IFS="$US" read -r region arn run_id stack <<<"$line"
-
-    LAST_WRITE_ERROR=""
-    set +e
-    delete_arn "$region" "$arn"
-    rc=$?
-    set -e
-    case "$rc" in
-      0) DELETED_ARNS+=("$arn"); log_info "Deleted $arn" ;;
-      2) skip "$arn" "no deletion path for this resource type; left for its VPC teardown or an operator" ;;
-      *)
-        SURVIVOR_ARNS+=("$arn")
-        SURVIVOR_LINES+=("$arn (run=$run_id${LAST_WRITE_ERROR:+; last service error $LAST_WRITE_ERROR})")
-        FAILURES=1
-        log_warn "Failed to delete $arn${LAST_WRITE_ERROR:+ (last service error: $LAST_WRITE_ERROR)}"
-        ;;
-    esac
+    attempt_delete "$line" true
   done
+  retry_ordering_refusals
 
   # Whatever is still tagged after the pass is what was left behind.
   for region in "${REGIONS[@]}"; do

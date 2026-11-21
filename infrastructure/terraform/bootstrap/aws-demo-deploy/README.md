@@ -27,7 +27,8 @@ Branch, `pull_request` and wildcard subjects fail variable validation. Pull-requ
 
 **Denied, whatever else is attached:**
 - any region other than us-west-2 and us-east-1;
-- `rds:DeleteDBInstance`, `rds:DeleteDBCluster`, `rds:DeleteDBSnapshot`, `s3:DeleteBucket`, `secretsmanager:DeleteSecret`, `ec2:DeleteVpc` and `route53:DeleteHostedZone`. A plan that needs one of these fails at apply and goes through break-glass;
+- `rds:DeleteDBInstance`, `rds:DeleteDBCluster`, `rds:DeleteDBSnapshot`, `s3:DeleteBucket`, `ec2:DeleteVpc` and `route53:DeleteHostedZone`. A plan that needs one of these fails at apply and goes through break-glass;
+- `secretsmanager:DeleteSecret` outside `honua-demo-demo/*` and `honua-demo/demo/*`, and any secret delete that forces deletion without recovery or sets a recovery window under 7 days. A secret the demo stack drops (such as `honua-demo-demo/redis-connection`) is deleted by the apply and stays recoverable for its window;
 - IAM users, access keys, login profiles, OIDC providers, permissions boundaries and `sts:AssumeRole`;
 - any IAM write outside `honua-demo-demo-*`, and any action on a `*-gha` role (this one, the drift roles, the cert role);
 - any S3 object other than the demo state, its lock file and the data bucket;

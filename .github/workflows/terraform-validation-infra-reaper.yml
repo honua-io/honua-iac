@@ -98,7 +98,7 @@ jobs:
     # (bootstrap/aws-validation-reaper), not every trunk workflow.
     environment: aws-validation-reaper
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       AWS_DEFAULT_REGION: ${{ vars.HONUA_AWS_VALIDATION_REGION || 'us-east-1' }}
       HONUA_AWS_SWEEP_REGIONS: ${{ vars.HONUA_AWS_SWEEP_REGIONS || 'us-east-1,us-west-2' }}
@@ -132,12 +132,14 @@ jobs:
             --summary-file "$GITHUB_STEP_SUMMARY"
           )
 
+          region_args=()
           IFS=',' read -ra regions <<< "$HONUA_AWS_SWEEP_REGIONS"
           for region in "${regions[@]}"; do
             region="$(echo "$region" | xargs)"
             [[ -z "$region" ]] && continue
-            args+=(--region "$region")
+            region_args+=(--region "$region")
           done
+          args+=("${region_args[@]}")
 
           if [[ "${{ inputs.dry_run }}" == "true" ]]; then
             args+=(--dry-run)
@@ -148,4 +150,18 @@ jobs:
             args+=(--legacy-release-cell-vpcs)
           fi
 
-          ./infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-infra.sh "${args[@]}"
+          status=0
+          ./infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-infra.sh "${args[@]}" || status=$?
+
+          # AWS Batch creates an untagged ECS cluster per compute environment; one
+          # whose compute environment is gone is invisible to the tag sweep above.
+          # It runs even when that sweep reported survivors; the step then fails
+          # with the first non-zero status.
+          batch_args=(--summary-file "$GITHUB_STEP_SUMMARY" "${region_args[@]}")
+          if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+            batch_args+=(--dry-run)
+          fi
+          batch_status=0
+          ./infrastructure/terraform/validation/scripts/aws/sweep-orphaned-batch-clusters.sh "${batch_args[@]}" || batch_status=$?
+          (( status != 0 )) || status=$batch_status
+          exit "$status"

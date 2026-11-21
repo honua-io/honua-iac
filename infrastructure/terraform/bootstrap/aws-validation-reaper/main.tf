@@ -30,6 +30,8 @@ locals {
     "lambda:GetFunction",
     "lambda:ListFunctions",
     "kms:DescribeKey",
+    # Proves an AWSBatch-* ECS cluster has lost its compute environment.
+    "batch:DescribeComputeEnvironments",
   ]
 
   delete_actions = [

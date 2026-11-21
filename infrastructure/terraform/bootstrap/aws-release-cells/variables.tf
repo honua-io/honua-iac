@@ -21,8 +21,10 @@ variable "oidc_subjects" {
   type        = map(string)
   default = {
     provision = "repo:honua-io/honua-release:environment:aws-cell-provision"
-    reaper    = "repo:honua-io/honua-release:environment:aws-cell-reaper"
-    mirror    = "repo:honua-io/honua-release:environment:aws-cell-mirror"
+    # honua-release retired its release-cell reaper; honua-iac's validation
+    # infra reaper sweeps the leftovers from its own aws-cell-reaper environment.
+    reaper = "repo:honua-io/honua-iac:environment:aws-cell-reaper"
+    mirror = "repo:honua-io/honua-release:environment:aws-cell-mirror"
   }
   validation {
     condition     = alltrue([for lane in ["provision", "reaper", "mirror"] : can(regex("^repo:honua-io/[A-Za-z0-9_.-]+:environment:[A-Za-z0-9_-]+$", var.oidc_subjects[lane]))]) && length(distinct(values(var.oidc_subjects))) == 3

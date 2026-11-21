@@ -51,6 +51,14 @@ run "trust_and_policy" {
     condition     = contains(one([for s in jsondecode(local.policy).Statement : s if s.Sid == "ProveOrphaned"]).Action, "cloudtrail:LookupEvents")
     error_message = "The legacy release-cell VPC pass needs CloudTrail to attribute a VPC's creation."
   }
+  assert {
+    condition = (
+      contains(one([for s in jsondecode(local.policy).Statement : s if s.Sid == "ProveOrphaned"]).Action, "batch:DescribeComputeEnvironments") &&
+      contains(one([for s in jsondecode(local.policy).Statement : s if s.Sid == "TearDownCells"]).Action, "ecs:DeleteCluster") &&
+      !anytrue([for s in jsondecode(local.policy).Statement : s.Effect == "Allow" && anytrue([for a in s.Action : startswith(a, "batch:") && a != "batch:DescribeComputeEnvironments"])])
+    )
+    error_message = "The orphaned Batch cluster sweep needs to read compute environments and delete ECS clusters, and no other Batch grant."
+  }
 }
 
 run "rejects_wildcard_or_branch_subjects" {

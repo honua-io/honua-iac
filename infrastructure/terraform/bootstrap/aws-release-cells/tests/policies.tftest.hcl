@@ -40,6 +40,10 @@ run "policies" {
     error_message = "Lane trust must use exact distinct OIDC subjects."
   }
   assert {
+    condition     = jsondecode(aws_iam_role.cell["reaper"].assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:honua-io/honua-iac:environment:aws-cell-reaper"
+    error_message = "The reaper lane must trust honua-iac's aws-cell-reaper environment: honua-release#1430 retired the honua-release reaper."
+  }
+  assert {
     condition = (
       contains(one([for statement in jsondecode(local.grant_policies.provision).Statement : statement if statement.Sid == "TaggedCreation"]).Action, "rds:CreateDBProxy") &&
       contains(one([for statement in jsondecode(local.grant_policies.provision).Statement : statement if statement.Sid == "PassCellRoles"]).Condition.StringEquals["iam:PassedToService"], "rds.amazonaws.com") &&
