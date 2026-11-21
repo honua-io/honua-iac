@@ -279,7 +279,7 @@ locals {
   # GetAuthorizationToken) has no resource. The region wildcard saves quota; the
   # region deny already confines ECR to us-east-1.
   boundary_ownership_deny = {
-    Sid = "DenyNonGateChanges", Effect = "Deny", NotResource = [aws_secretsmanager_secret.idp_client.arn, local.boundary_repository_arn, local.guardduty_agent_repository_arn]
+    Sid = "DenyNonGateChanges", Effect = "Deny", NotResource = [aws_secretsmanager_secret.idp_client.arn, local.boundary_repository_arn, local.guardduty_agent_repository_arn, local.backup_managed_rule_arn]
     # The boundary allows no IAM creates, so exempting iam:CreateRole/CreateServiceLinkedRole here would grant
     # nothing; leaving them out keeps the managed policy within its 6,144-character quota.
     # backup:Describe*Job is exactly DescribeBackupJob, DescribeCopyJob, DescribeReportJob, DescribeRestoreJob and
@@ -295,7 +295,7 @@ locals {
     # and jobs carry only honua:stack, so all four are exempt; boundary_job_stop_deny fences the stops to gate jobs.
     # PutMetricData has no resource, so the ownership tags never match it; the operations and watchdog heartbeats
     # need it. The template's role policies fence it to their Honua/Operations and Honua/Watchdog namespaces.
-    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*", "ec2:DescribeM*", "ec2:DescribeAv*", "ec2:DescribeSu*", "ec2:DescribeR*", "ec2:DescribeVpc*", "guardduty:ListD*", "backup:Describe*Job", "batch:ListJobs", "batch:DescribeJobs", "batch:CancelJob", "batch:TerminateJob", "cloudwatch:PutMetricData"], local.backup_snapshot_actions, local.workload_config_actions, [for action in local.shared_creation_actions : action if !startswith(action, "iam:Create")])
+    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*", "ec2:DescribeM*", "ec2:DescribeAv*", "ec2:DescribeSu*", "ec2:DescribeR*", "ec2:DescribeVpc*", "guardduty:ListD*", "backup:Describe*Job", "batch:ListJobs", "batch:DescribeJobs", "batch:CancelJob", "batch:TerminateJob", "cloudwatch:PutMetricData", "events:ListRules"], local.backup_snapshot_actions, local.workload_config_actions, [for action in local.shared_creation_actions : action if !startswith(action, "iam:Create")])
     # Secrets Manager decrypts with its AWS-managed key for callers already allowed to read the secret;
     # kms:ViaService only ever carries AWS service endpoints (secretsmanager.<region>.amazonaws.com).
     Condition = merge(local.ownership_condition, { StringNotLike = { "kms:ViaService" = "secretsmanager.*" } })
@@ -351,13 +351,24 @@ locals {
   # (restored_snapshot_denies) trusts, and allow only AWS Backup's awsbackup:job-* names, so workloads cannot
   # fill the account's manual snapshot quota with snapshots of their own.
   backup_snapshot_actions = ["rds:DescribeDBSnapshots", "rds:CreateDBSnapshot"]
+  # The database ARN's region and account are wildcards for quota: a wider Resource only denies more, and in the
+  # NotResource the region deny keeps RDS in us-east-1 and no call snapshots another account's database.
   boundary_snapshot_denies = [{
-    Effect    = "Deny", Action = "rds:CreateDBSnapshot", Resource = "arn:aws:rds:us-east-1:${var.member_account_id}:db:*"
+    Effect    = "Deny", Action = "rds:CreateDBSnapshot", Resource = "arn:aws:rds:*:*:db:*"
     Condition = local.ownership_condition
     }, {
     Effect      = "Deny", Action = "rds:CreateDBSnapshot"
-    NotResource = ["arn:aws:rds:us-east-1:${var.member_account_id}:db:*", "arn:aws:rds:us-east-1:${var.member_account_id}:snapshot:awsbackup:*"]
+    NotResource = ["arn:aws:rds:*:*:db:*", "arn:aws:rds:us-east-1:${var.member_account_id}:snapshot:awsbackup:*"]
   }]
+  # A files-bucket (S3) backup job, run as the stack's backup role, lists rules account-wide and then creates
+  # AWS Backup's own managed EventBridge rule; CloudTrail showed the boundary refusing ListRules, DescribeRule and
+  # PutRule (21 Nov). That rule has neither gate tags nor a gate name, so its ARN leaves the ownership deny and the
+  # name fence, and ListRules (names and patterns, no resource) leaves the ownership deny. The backup role's AWS
+  # managed policy allows only rule calls on that ARN. No action deny narrows it further: PutRule and DeleteRule,
+  # which a job needs, already let a caller rewrite or remove the rule, and the boundary has no quota left.
+  # The region and account wildcards save quota, as for the GuardDuty agent repository: the region deny keeps
+  # EventBridge in us-east-1, and another account's rules stay behind that account's own policies.
+  backup_managed_rule_arn = "arn:aws:events:*:*:rule/AwsBackupManagedRule*"
   boundary_job_stop_deny = {
     Effect    = "Deny", Action = ["batch:CancelJob", "batch:TerminateJob"], Resource = "*"
     Condition = { StringNotLike = { "aws:ResourceTag/honua:stack" = "honua-gate-*" } }
@@ -406,6 +417,9 @@ locals {
   # live). The IAM variable $${*} matches only that asterisk. If CloudWatch evaluates PutCompositeAlarm only
   # against alarm:*, the service role can create or overwrite any composite alarm in the account (README).
   # Service role only: workloads create no composite alarms and the boundary has no room.
+  boundary_launch_name_denies = [for deny in local.launch_name_denies : deny.Sid == "NameFence" ? merge(deny, {
+    NotResource = concat(deny.NotResource, [local.backup_managed_rule_arn])
+  }) : deny]
   service_role_launch_name_denies = [for deny in local.launch_name_denies : deny.Sid == "NameFence" ? merge(deny, {
     NotResource = concat(deny.NotResource, ["arn:aws:cloudwatch:us-east-1:${var.member_account_id}:alarm:$${*}"])
   }) : deny]

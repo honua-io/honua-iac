@@ -162,7 +162,7 @@ resource "aws_iam_policy" "workload_boundary" {
       # so it stays denied without a separate statement inside the quota.
       Effect    = "Allow", Action = "iam:PassRole", Resource = local.workload_roles
       Condition = { StringEquals = { "iam:PassedToService" = ["ecs-tasks.amazonaws.com", "batch.amazonaws.com", "backup.amazonaws.com", "lambda.amazonaws.com", "vpc-flow-logs.amazonaws.com", "config.amazonaws.com"] } }
-    }], local.region_controls, local.boundary_shared_denies, local.launch_name_denies)
+    }], local.region_controls, local.boundary_shared_denies, local.boundary_launch_name_denies)
   })
 }
 resource "aws_iam_role" "cloudformation" {

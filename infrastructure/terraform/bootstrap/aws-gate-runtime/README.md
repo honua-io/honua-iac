@@ -227,6 +227,19 @@ roles; a full Launch Stack create needs both:
   `HonuaGate=true`, which the restore fence trusts; tags on create are not
   otherwise fenced. Copying, deleting and restoring snapshots stay behind the
   ownership tags.
+- **AWS Backup files-bucket backups.** An S3 backup job, also run as the
+  backup role, lists EventBridge rules and creates AWS Backup's own
+  `AwsBackupManagedRule*` rule, which has no gate tags or name; the boundary
+  refused `events:ListRules`, `DescribeRule` and `PutRule` (CloudTrail, 21 Nov).
+  The boundary now exempts `events:ListRules` (rule names and patterns, no
+  resource) from the ownership deny, and the `AwsBackupManagedRule*` ARN from
+  both the ownership deny and the name fence. Accepted: any workload role whose
+  own policy allows it may describe, rewrite or delete that rule and its
+  targets in the account, which could break AWS Backup S3 backups of anyone
+  else in the shared account. The backup role's AWS managed policy allows rule
+  calls only on that name (and `ListRules`); other rules keep both fences. The CloudFormation
+  service role is unchanged. The ARN's region and account, and the database
+  ARN in the snapshot denies, are wildcards to fit the 6,144-character quota.
 - **Untaggable CloudFront types.** Cache, origin-request and response-headers
   policies and origin access controls cannot carry tags, their create calls take no
   resource and their other calls name a random ID. The service role may create,
