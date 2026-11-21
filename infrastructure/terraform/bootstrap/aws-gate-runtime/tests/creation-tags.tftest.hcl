@@ -57,7 +57,7 @@ run "only_cloudformation_creation_tags_spare_an_untagged_resource" {
     error_message = "Workload roles keep the full ownership fence on tagging."
   }
   assert {
-    condition = alltrue([for action in ["ec2:DeleteVpc", "acm:DeleteCertificate", "acm:RemoveTagsFromCertificate", "rds:DeleteDBParameterGroup", "rds:RestoreDBInstanceFromDBSnapshot", "rds:CreateDBInstanceReadReplica", "ec2:CreateVolume"] :
+    condition = alltrue([for action in ["ec2:DeleteVpc", "acm:DeleteCertificate", "acm:RemoveTagsFromCertificate", "rds:DeleteDBParameterGroup", "rds:RestoreDBInstanceFromDBClusterSnapshot", "rds:RestoreDBInstanceToPointInTime", "rds:CreateDBInstanceReadReplica", "ec2:CreateVolume"] :
       !anytrue([for pattern in local.service_role_ownership_deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))])
     ])
     error_message = "Deletion, restores and copies stay behind the ownership deny."
