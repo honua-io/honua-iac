@@ -1,6 +1,9 @@
 locals {
   stack_arn      = "arn:aws:cloudformation:us-east-1:${var.member_account_id}:stack/honua-gate-*/*"
   workload_roles = "arn:aws:iam::${var.member_account_id}:role/honua-gate-*"
+  # Customer-managed policies a Launch Stack creates (BatchSubmitPolicy). CloudFormation names them
+  # <stack>-<logical id>-<suffix>, and the Terraform-owned policies here are all HonuaGate*, so none matches.
+  workload_policies = "arn:aws:iam::${var.member_account_id}:policy/honua-gate-*"
   # Gate test Connections (quick-create Connection role, Connection ID gate-*).
   connection_roles = "arn:aws:iam::${var.member_account_id}:role/honua-connection-gate-*"
   service_role_arn = "arn:aws:iam::${var.member_account_id}:role/HonuaGateCloudFormation"
@@ -179,6 +182,24 @@ resource "aws_iam_policy" "cloudformation_fences" {
 resource "aws_iam_role_policy_attachment" "cloudformation_fences" {
   role       = aws_iam_role.cloudformation.name
   policy_arn = aws_iam_policy.cloudformation_fences.arn
+}
+# AWS::IAM::ManagedPolicy takes no tags, so a stack's own policy never carries HonuaGate=true: the name fences it
+# instead, and the service role's ownership deny exempts the policy lifecycle actions (shared-account.tf). It can only be attached to gate workload roles, which keep the workload boundary.
+# A separate managed policy, because the inline policy is at its quota.
+resource "aws_iam_policy" "cloudformation_workload_policies" {
+  name = "HonuaGateCloudFormationWorkloadPolicies"
+  policy = jsonencode({ Version = "2012-10-17", Statement = [{
+    Sid    = "WorkloadManagedPolicies", Effect = "Allow", Resource = local.workload_policies
+    Action = ["iam:CreatePolicy", "iam:DeletePolicy", "iam:CreatePolicyVersion", "iam:DeletePolicyVersion", "iam:GetPolicy", "iam:GetPolicyVersion", "iam:ListPolicyVersions", "iam:ListEntitiesForPolicy"]
+    }, {
+    # The ownership-deny exemption (shared-account.tf) is account-wide, so this keeps the Terraform-owned
+    # HonuaGate* policies, including the workload boundary, out of reach even if a broader IAM allow is added.
+    Sid = "OnlyWorkloadPolicyLifecycle", Effect = "Deny", Action = "iam:*tePolicy*", NotResource = local.workload_policies
+  }] })
+}
+resource "aws_iam_role_policy_attachment" "cloudformation_workload_policies" {
+  role       = aws_iam_role.cloudformation.name
+  policy_arn = aws_iam_policy.cloudformation_workload_policies.arn
 }
 resource "aws_iam_role_policy" "cloudformation" {
   name       = "gate-launch-stack"

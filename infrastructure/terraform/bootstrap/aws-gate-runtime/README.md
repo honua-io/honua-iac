@@ -150,8 +150,8 @@ Still not grantable:
 - The watchdog health rule while the template names it `honua-health-*`, which
   the events name fence denies; it must be named under the stack's
   `honua-gate-*` name before a gate install can run the watchdog.
-- `AWS::Bedrock::*`, `AWS::BedrockAgentCore::*` and `AWS::IAM::ManagedPolicy`.
-  They exist only on the agents child template, which defaults to Off. This role
+- `AWS::Bedrock::*` and `AWS::BedrockAgentCore::*`. They exist only on the
+  agents child template, which defaults to Off. This role
   also has no `cloudformation:CreateStack`, so it cannot create that nested stack.
 - Security Hub and EventBridge Scheduler. The template has neither resource type.
   Schedules in the parent template are `AWS::Events::Rule`.
@@ -211,6 +211,19 @@ roles; a full Launch Stack create needs both:
   service role's credentials; keep such types deactivated in the shared account.
   CloudFront functions are fenced by name (`function/honua-gate-*`): set the Launch
   Stack `NamePrefix` to `honua-gate`, or the function is created and then orphaned.
+- **Stack customer-managed IAM policies.** `AWS::IAM::ManagedPolicy` takes no
+  tags, so a stack's own policy (the Launch Stack `BatchSubmitPolicy`) never
+  carries `HonuaGate=true`. The service role may create, version, read and delete
+  customer-managed policies named `policy/honua-gate-*` only
+  (`HonuaGateCloudFormationWorkloadPolicies`), and its ownership deny exempts those
+  lifecycle actions. It can attach a policy to gate workload roles only, and those
+  keep the workload boundary, so an attached policy cannot grant more than the
+  boundary. Workloads keep the full fence and cannot manage policies. A policy
+  with a `Path` other than `/` or a name outside `honua-gate-*` is refused, and a
+  separate deny keeps the policy create, version and delete actions off every
+  other policy, including the Terraform-owned `HonuaGate*` boundaries. The reaper
+  detaches but does not delete such policies, so a stack whose delete fails can
+  leave one behind until it is deleted by hand.
 - **AWS managed rule groups in a web ACL.** `wafv2:UpdateWebACL` is also
   authorized against each AWS managed rule group the ACL references, and those carry
   no tags. The service role is exempt from the ownership deny for this account's
