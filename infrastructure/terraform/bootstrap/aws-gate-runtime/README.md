@@ -84,6 +84,18 @@ another stack's metric alarms (and their actions) into or out of alarm. The
 template's role policies limit each heartbeat to its own namespace
 (`Honua/Operations`, `Honua/Watchdog`); metric writes read no content.
 
+`cloudwatch:GetMetricData` takes no resource either, and an AWS Backup job of a
+Launch Stack files bucket calls it as the stack's backup role (the job failed
+with `Unable to perform cloudwatch:GetMetricData`, 21 Nov), so the boundary
+exempts it as well; one `cloudwatch:??tMetricData` pattern covers both actions
+inside the quota. Accepted: the workload roles whose own policies allow it
+(watchdog, operations queue, backup) can read metric values for any resource
+in the shared account, as they can in a customer account, and its Metrics
+Insights queries can list namespaces and dimension values, such as other
+stacks' bucket, cluster and load balancer names. A backup-role-only exemption
+does not fit the quota. Metric streams, dashboards and alarm changes stay
+fenced.
+
 SSM is allowed only on gate stack watchdog parameters
 (`/honua/honua-gate-*/watchdog/*`), and the service policy denies SSM outside
 that path. `protected_ssm_paths` must stay outside it, and main must likewise
