@@ -278,6 +278,21 @@
           "aws:ResourceTag/ValidationRunId": "false"
         }
       }
+    },
+    {
+      "Sid": "DeleteCellLogBuckets",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucketVersions",
+        "s3:DeleteObjectVersion",
+        "s3:DeleteBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::honuar*-alb-logs-*",
+        "arn:aws:s3:::honuar*-alb-logs-*/*",
+        "arn:aws:s3:::honuan*-alb-logs-*",
+        "arn:aws:s3:::honuan*-alb-logs-*/*"
+      ]
     }
   ]
 }

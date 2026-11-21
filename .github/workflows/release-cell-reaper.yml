@@ -110,6 +110,7 @@ jobs:
             --exclude-type ecs:task-definition
             --cell-state-secrets
             --report-untagged-secrets
+            --delete-log-buckets
             --summary-file "$GITHUB_STEP_SUMMARY"
           )
           [[ "$DRY_RUN" == "true" ]] && args+=(--dry-run)

@@ -251,9 +251,19 @@ run "reaper_retires_every_cell_service_it_finds" {
   assert {
     condition = (
       contains(one([for s in jsondecode(local.grant_policies.reaper).Statement : s if s.Sid == "DeleteCells"]).Action, "batch:DeregisterJobDefinition") &&
-      !anytrue([for s in jsondecode(local.grant_policies.reaper).Statement : anytrue([for a in flatten([s.Action]) : startswith(a, "s3:") && a != "s3:GetBucketLocation"])])
+      !anytrue([for s in jsondecode(local.grant_policies.reaper).Statement : anytrue([for a in flatten([s.Action]) : startswith(a, "s3:") && a != "s3:GetBucketLocation"]) if s.Sid != "DeleteCellLogBuckets"])
     )
-    error_message = "Cell job definitions go with the tagged cell, certificates through the cert-demo grant; no S3 write: S3 evaluates no resource tag without bucket ABAC."
+    error_message = "Cell job definitions go with the tagged cell, certificates through the cert-demo grant; the only S3 write is the cell log-bucket grant."
+  }
+  assert {
+    condition = (
+      toset(one([for s in jsondecode(local.grant_policies.reaper).Statement : s if s.Sid == "DeleteCellLogBuckets"]).Action) == toset(["s3:ListBucketVersions", "s3:DeleteObjectVersion", "s3:DeleteBucket"]) &&
+      length(one([for s in jsondecode(local.grant_policies.reaper).Statement : s if s.Sid == "DeleteCellLogBuckets"]).Resource) == 4 &&
+      alltrue([for r in one([for s in jsondecode(local.grant_policies.reaper).Statement : s if s.Sid == "DeleteCellLogBuckets"]).Resource :
+      can(regex("^arn:aws:s3:::(honuar|honuan)\\*-alb-logs-\\*(/\\*)?$", r))]) &&
+      contains(one([for s in jsondecode(local.lane_policies.reaper).Statement : s if s.Sid == "ProtectStandingNames"]).Resource, "arn:aws:s3:::honua-*")
+    )
+    error_message = "S3 evaluates no resource tag without bucket ABAC, so the log-bucket grant is limited by name to cell ALB log buckets, and standing honua-* buckets stay denied."
   }
   assert {
     condition = (
