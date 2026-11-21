@@ -31,7 +31,8 @@
         "secretsmanager:DescribeSecret",
         "secretsmanager:ListSecrets",
         "batch:Describe*",
-        "batch:List*"
+        "batch:List*",
+        "s3:GetBucketLocation"
       ],
       "Resource": "*"
     },
@@ -55,7 +56,8 @@
         "elasticloadbalancing:DeleteLoadBalancer",
         "elasticloadbalancing:DeleteTargetGroup",
         "elasticloadbalancing:DeleteListener",
-        "elasticloadbalancing:DeleteRule"
+        "elasticloadbalancing:DeleteRule",
+        "batch:DeregisterJobDefinition"
       ],
       "Resource": [
         "arn:aws:ecs:${region}:${account_id}:cluster/honuar*",
@@ -71,6 +73,7 @@
         "arn:aws:elasticloadbalancing:${region}:${account_id}:targetgroup/honuar*",
         "arn:aws:elasticloadbalancing:${region}:${account_id}:listener/app/honuar*",
         "arn:aws:elasticloadbalancing:${region}:${account_id}:listener-rule/app/honuar*",
+        "arn:aws:batch:${region}:${account_id}:job-definition/honuar*",
         "arn:aws:ecs:${region}:${account_id}:cluster/honuan*",
         "arn:aws:ecs:${region}:${account_id}:service/honuan*",
         "arn:aws:ecs:${region}:${account_id}:task-definition/honuan*",
@@ -84,6 +87,7 @@
         "arn:aws:elasticloadbalancing:${region}:${account_id}:targetgroup/honuan*",
         "arn:aws:elasticloadbalancing:${region}:${account_id}:listener/app/honuan*",
         "arn:aws:elasticloadbalancing:${region}:${account_id}:listener-rule/app/honuan*",
+        "arn:aws:batch:${region}:${account_id}:job-definition/honuan*",
         "arn:aws:ecs:${region}:${account_id}:cluster/honuaeks*",
         "arn:aws:ecs:${region}:${account_id}:service/honuaeks*",
         "arn:aws:ecs:${region}:${account_id}:task-definition/honuaeks*",
@@ -96,7 +100,8 @@
         "arn:aws:elasticloadbalancing:${region}:${account_id}:loadbalancer/app/honuaeks*",
         "arn:aws:elasticloadbalancing:${region}:${account_id}:targetgroup/honuaeks*",
         "arn:aws:elasticloadbalancing:${region}:${account_id}:listener/app/honuaeks*",
-        "arn:aws:elasticloadbalancing:${region}:${account_id}:listener-rule/app/honuaeks*"
+        "arn:aws:elasticloadbalancing:${region}:${account_id}:listener-rule/app/honuaeks*",
+        "arn:aws:batch:${region}:${account_id}:job-definition/honuaeks*"
       ],
       "Condition": {
         "StringEquals": {

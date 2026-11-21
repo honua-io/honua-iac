@@ -244,9 +244,16 @@ run "reaper_retires_every_cell_service_it_finds" {
     error_message = "The reaper must be able to discover ElastiCache, Secrets Manager, Batch and RDS Proxy resources."
   }
   assert {
-    condition = alltrue([for a in flatten([for s in jsondecode(local.grant_policies.reaper).Statement : s.Action]) :
-    !startswith(a, "batch:") || startswith(a, "batch:Describe") || startswith(a, "batch:List")])
-    error_message = "The reaper's Batch access is read-only."
+    condition = alltrue([for s in jsondecode(local.grant_policies.reaper).Statement : alltrue([for a in flatten([s.Action]) :
+    !startswith(a, "batch:") || startswith(a, "batch:Describe") || startswith(a, "batch:List") || (a == "batch:DeregisterJobDefinition" && s.Sid == "DeleteCells")])])
+    error_message = "The reaper's only Batch write is deregistering an owned cell job definition."
+  }
+  assert {
+    condition = (
+      contains(one([for s in jsondecode(local.grant_policies.reaper).Statement : s if s.Sid == "DeleteCells"]).Action, "batch:DeregisterJobDefinition") &&
+      !anytrue([for s in jsondecode(local.grant_policies.reaper).Statement : anytrue([for a in flatten([s.Action]) : startswith(a, "s3:") && a != "s3:GetBucketLocation"])])
+    )
+    error_message = "Cell job definitions go with the tagged cell, certificates through the cert-demo grant; no S3 write: S3 evaluates no resource tag without bucket ABAC."
   }
   assert {
     condition     = !strcontains(local.grant_policies.reaper, "secretsmanager:GetSecretValue") && !strcontains(local.grant_policies.reaper, "secretsmanager:*")

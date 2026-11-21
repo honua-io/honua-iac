@@ -137,6 +137,9 @@ Options:
                            ecs:task-definition; repeatable. Network resources
                            torn down with their VPC still go, and the legacy
                            VPC pass ignores this option.
+  --delete-log-buckets     Empty and delete an owned <cell>-alb-logs-<hex>
+                           bucket; without it buckets are reported. Only for a
+                           role whose S3 grant is qualified for the owner.
   --max-delete <n>         Abandon the sweep if the plan exceeds n resources
                            (default: 400)
   --summary-file <path>    Append a markdown report here (job summary)
@@ -170,6 +173,7 @@ EXCLUDED_TYPES=()
 MAX_DELETE=400
 SUMMARY_FILE=""
 DRY_RUN=false
+DELETE_LOG_BUCKETS=false
 DEFER_ON_ACTIVE=true
 LEGACY_RELEASE_VPCS=false
 LEGACY_REPO="honua-io/honua-release"
@@ -193,6 +197,7 @@ while [[ $# -gt 0 ]]; do
     --max-delete) MAX_DELETE="$2"; shift 2 ;;
     --summary-file) SUMMARY_FILE="$2"; shift 2 ;;
     --dry-run) DRY_RUN=true; shift ;;
+    --delete-log-buckets) DELETE_LOG_BUCKETS=true; shift ;;
     --no-defer-on-active) DEFER_ON_ACTIVE=false; shift ;;
     -h|--help) usage; exit 0 ;;
     *) log_error "Unknown argument: $1"; usage; exit 1 ;;
@@ -769,13 +774,49 @@ delete_simple() {
       aws_write kms schedule-key-deletion --region "$region" --key-id "$arn" \
         --pending-window-in-days 7 >/dev/null 2>&1 || return 1
       ;;
-    sqs|sns|dynamodb|s3|iam)
+    batch)
+      [[ "$resource" == job-definition/* ]] || return 2
+      aws_write batch deregister-job-definition --region "$region" --job-definition "$arn" >/dev/null 2>&1 || return 1
+      ;;
+    acm)
+      # Still attached to a listener being deleted earlier in the pass, ACM
+      # answers ResourceInUseException, which the sweep retries.
+      aws_write acm delete-certificate --region "$region" --certificate-arn "$arn" >/dev/null 2>&1 || return 1
+      ;;
+    s3)
+      [[ "$DELETE_LOG_BUCKETS" == "true" ]] || return 2
+      delete_alb_log_bucket "$region" "$resource"
+      ;;
+    sqs|sns|dynamodb|iam)
       # IAM is sweep-orphaned-validation-iam.sh's job; the rest are not created
       # by the validation stacks and are reported rather than guessed at.
       return 2
       ;;
     *) return 2 ;;
   esac
+}
+
+# aws-ecs writes ALB access logs to a versioned <cell>-alb-logs-<hex> bucket;
+# a failed teardown leaves it. Only that bucket shape is deleted: any other
+# tagged bucket may be shared (release-cell file storage outlives every cell)
+# and is reported. Every version and delete marker goes first, a page at a
+# time; delete-objects reports per-key failures in a zero-exit response.
+delete_alb_log_bucket() {
+  local region="$1" bucket="$2" page objects result round
+  [[ "$bucket" =~ ^[a-z0-9][a-z0-9-]*-alb-logs-[a-f0-9]+$ ]] || return 2
+  for (( round = 0; round < 200; round++ )); do
+    page="$(aws_read s3api list-object-versions --region "$region" --bucket "$bucket" \
+      --max-keys 1000 --no-paginate --output json 2>/dev/null)" || return 1
+    objects="$(jq -ce '[(.Versions // [])[], (.DeleteMarkers // [])[] | {Key, VersionId}]' <<<"$page" 2>/dev/null)" || return 1
+    if [[ "$objects" == "[]" ]]; then
+      aws_write s3api delete-bucket --region "$region" --bucket "$bucket" >/dev/null 2>&1 || return 1
+      return 0
+    fi
+    result="$(aws_write s3api delete-objects --region "$region" --bucket "$bucket" \
+      --delete "$(jq -cn --argjson o "$objects" '{Objects: $o, Quiet: true}')" --output json 2>/dev/null)" || return 1
+    jq -e '(.Errors // []) | length == 0' <<<"${result:-{\}}" >/dev/null 2>&1 || return 1
+  done
+  return 1
 }
 
 # --- EC2 / VPC -------------------------------------------------------------
@@ -1052,6 +1093,9 @@ delete_rank() {
     elasticache:replicationgroup:*) echo 35 ;;
     elasticache:cluster:*) echo 35 ;;
     elasticache:subnetgroup:*) echo 36 ;;
+    acm:certificate/*) echo 40 ;;
+    s3:*) echo 45 ;;
+    batch:job-definition/*) echo 47 ;;
     secretsmanager:*) echo 50 ;;
     logs:*) echo 51 ;;
     kms:*) echo 52 ;;
