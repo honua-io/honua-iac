@@ -136,6 +136,14 @@ The `honua-release-approval-mac-*` managed-policy attachments on the provision a
   where a service exposes names, the cell namespace. APIs that cannot supply the
   relevant tag context fail closed. Do not remove those conditions to make an
   apply succeed. Capture the actual denied API and qualify a narrow alternative.
+- One such alternative: S3 evaluates no resource tag on a bucket without bucket
+  ABAC, and aws-ecs log buckets do not enable it, so `DeleteCellLogBuckets`
+  lets the reaper empty and delete only `honuar*-alb-logs-*` and
+  `honuan*-alb-logs-*` buckets, by name. The reaper finds them through the tag
+  API (`Owner=release-cell` and a `ValidationRunId` whose run has ended) and
+  deletes only that bucket shape (`--delete-log-buckets`). The script accepts
+  any `*-alb-logs-<hex>` name, so this IAM name pattern is the real limit;
+  standing `honua-*` buckets stay denied by `ProtectStandingNames`.
 - This initial policy intentionally does not authorize EKS provisioning  . That path still requires a scoped
   service-specific policy and a live positive lifecycle receipt before replacing
   the existing six-cell workflow role. The runtime allowlist supports exact-model Bedrock inputs, namespaced Batch

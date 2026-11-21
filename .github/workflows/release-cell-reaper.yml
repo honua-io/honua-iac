@@ -108,6 +108,7 @@ jobs:
             --grace-hours 48
             --max-delete "$MAX_DELETE"
             --exclude-type ecs:task-definition
+            --delete-log-buckets
             --summary-file "$GITHUB_STEP_SUMMARY"
           )
           [[ "$DRY_RUN" == "true" ]] && args+=(--dry-run)
