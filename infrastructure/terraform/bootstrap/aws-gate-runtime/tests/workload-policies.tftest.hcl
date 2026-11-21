@@ -28,7 +28,7 @@ run "stack_managed_policies_are_fenced_by_gate_name" {
   }
   assert {
     condition = alltrue([for statement in jsondecode(aws_iam_policy.cloudformation_workload_policies.policy).Statement :
-    statement.Effect == "Allow" && statement.Resource == "arn:aws:iam::000000000002:policy/honua-gate-*" && alltrue([for action in statement.Action : startswith(action, "iam:") && strcontains(action, "Polic")])])
+    statement.Effect == "Deny" || statement.Resource == "arn:aws:iam::000000000002:policy/honua-gate-*" && alltrue([for action in statement.Action : startswith(action, "iam:") && strcontains(action, "Polic")])])
     error_message = "The workload-policy grant must stay on gate-named policies and policy actions."
   }
   assert {
@@ -43,6 +43,13 @@ run "stack_managed_policies_are_fenced_by_gate_name" {
       !anytrue([for pattern in deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))])
     ])])
     error_message = "The policy-lifecycle exemption must not cover role or user policies, nor apply to workloads."
+  }
+  assert {
+    # The deny exemption is account-wide; this keeps the boundaries and other HonuaGate* policies unwritable.
+    condition = anytrue([for statement in jsondecode(aws_iam_policy.cloudformation_workload_policies.policy).Statement : try(
+      statement.Effect == "Deny" && statement.Action == "iam:*tePolicy*" && statement.NotResource == "arn:aws:iam::000000000002:policy/honua-gate-*", false
+    )])
+    error_message = "Policy create, version and delete must be denied on every policy outside policy/honua-gate-*."
   }
   assert {
     condition     = aws_iam_role_policy_attachment.cloudformation_workload_policies.role == aws_iam_role.cloudformation.name

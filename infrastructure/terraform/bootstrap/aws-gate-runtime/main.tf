@@ -191,6 +191,10 @@ resource "aws_iam_policy" "cloudformation_workload_policies" {
   policy = jsonencode({ Version = "2012-10-17", Statement = [{
     Sid    = "WorkloadManagedPolicies", Effect = "Allow", Resource = local.workload_policies
     Action = ["iam:CreatePolicy", "iam:DeletePolicy", "iam:CreatePolicyVersion", "iam:DeletePolicyVersion", "iam:GetPolicy", "iam:GetPolicyVersion", "iam:ListPolicyVersions", "iam:ListEntitiesForPolicy"]
+    }, {
+    # The ownership-deny exemption (shared-account.tf) is account-wide, so this keeps the Terraform-owned
+    # HonuaGate* policies, including the workload boundary, out of reach even if a broader IAM allow is added.
+    Sid = "OnlyWorkloadPolicyLifecycle", Effect = "Deny", Action = "iam:*tePolicy*", NotResource = local.workload_policies
   }] })
 }
 resource "aws_iam_role_policy_attachment" "cloudformation_workload_policies" {
