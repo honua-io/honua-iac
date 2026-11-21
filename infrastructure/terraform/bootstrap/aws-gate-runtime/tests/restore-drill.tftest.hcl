@@ -37,13 +37,41 @@ run "service_role_restores_only_gate_snapshots" {
     error_message = "A restore must be denied on any snapshot without the gate cost tag."
   }
   assert {
-    condition     = aws_iam_role_policy_attachment.cloudformation_restores.role == aws_iam_role.cloudformation.name
-    error_message = "The snapshot fence must be attached to the service role."
+    # Resources a restore names that must fall outside RestoreGateTargets' NotResource, so the deny applies.
+    condition = alltrue([for arn in [
+      "arn:aws:rds:us-east-1:${var.member_account_id}:cluster-snapshot:honua-gate-source",
+      "arn:aws:rds:us-east-1:${format("%012d", 9)}:snapshot:shared-from-elsewhere",
+      "arn:aws:rds:us-west-2:${var.member_account_id}:snapshot:awsbackup:job-1",
+      "arn:aws:rds:us-east-1:${var.member_account_id}:db:customer-database",
+      "arn:aws:rds:us-east-1:${var.member_account_id}:subgrp:default",
+      "arn:aws:rds:us-east-1:${var.member_account_id}:db-capacity-reservation:any"
+      ] : anytrue([for statement in jsondecode(aws_iam_policy.cloudformation_restores.policy).Statement : try(
+        statement.Sid == "RestoreGateTargets" && statement.Effect == "Deny" && statement.Action == "rds:RestoreDBInstanceFromDBSnapshot" &&
+        !anytrue([for pattern in statement.NotResource : can(regex("^${replace(pattern, "*", ".*")}$", arn))]), false)
+    ])])
+    error_message = "Cluster, foreign-account and other-region snapshots and non-gate instances and subnet groups must stay denied."
   }
   assert {
-    # The new instance stays fenced by name and request tag.
-    condition     = contains(flatten([local.rds_creation_name_deny.Action]), "rds:AddTagsToResource") && contains(local.rds_creation_name_deny.NotResource, "arn:aws:rds:us-east-1:${var.member_account_id}:db:honua-gate-*")
-    error_message = "Restored instances must keep the gate name and tag fences."
+    condition = alltrue([for arn in [
+      "arn:aws:rds:us-east-1:${var.member_account_id}:snapshot:awsbackup:job-1",
+      "arn:aws:rds:us-east-1:${var.member_account_id}:db:honua-gate-drill-database-abc",
+      "arn:aws:rds:us-east-1:${var.member_account_id}:subgrp:honua-gate-drill-databasesubnets-abc",
+      "arn:aws:rds:us-east-1:${var.member_account_id}:og:default:postgres-16",
+      "arn:aws:rds:us-east-1:${var.member_account_id}:pg:default.postgres16"
+      ] : anytrue([for statement in jsondecode(aws_iam_policy.cloudformation_restores.policy).Statement : try(
+        statement.Sid == "RestoreGateTargets" && anytrue([for pattern in statement.NotResource : can(regex("^${replace(pattern, "*", ".*")}$", arn))]), false)
+    ])])
+    error_message = "A gate snapshot restore into a gate-named instance and subnet group with default groups must remain possible."
+  }
+  assert {
+    condition     = aws_iam_role_policy_attachment.cloudformation_restores.role == aws_iam_role.cloudformation.name
+    error_message = "The restore fences must be attached to the service role."
+  }
+  assert {
+    # The new instance keeps the RDS creation tag fence in the attached fences policy.
+    condition = anytrue([for statement in jsondecode(aws_iam_policy.cloudformation_fences.policy).Statement : try(
+    statement.Sid == "RDSCreationTags" && statement.Action == "rds:AddTagsToResource", false)])
+    error_message = "Restored instances must keep the gate tag fence."
   }
 }
 
@@ -61,8 +89,10 @@ run "workloads_poll_backup_jobs_but_restore_nothing_new" {
 run "unmatched_read_patterns_change_no_permission" {
   command = plan
   assert {
-    condition = alltrue([for pattern in ["iam:Describe*", "sns:Describe*", "sqs:Describe*", "route53:Describe*", "budgets:Get*"] :
-    !contains(local.metadata_read_actions, pattern)]) && alltrue([for pattern in ["iam:Get*", "sns:Get*", "sqs:List*", "route53:Get*", "budgets:Describe*", "rds:Describe*"] : contains(local.metadata_read_actions, pattern)])
-    error_message = "Only the patterns that match no API leave the metadata reads."
+    # No content-read action matches a removed pattern, so the content-read deny is unchanged without them.
+    condition = alltrue([for action in local.shared_content_read_actions : !anytrue([
+      for pattern in local.unmatched_read_patterns : can(regex("^${replace(pattern, "*", ".*")}$", action))
+    ])]) && alltrue([for pattern in local.unmatched_read_patterns : !contains(local.metadata_read_actions, pattern)])
+    error_message = "Only patterns that match no API, and no content read, may leave the metadata reads."
   }
 }

@@ -200,7 +200,7 @@ resource "aws_iam_policy" "cloudformation_workload_policies" {
 # The snapshot fence for restore drill stacks; the fences policy has no room for it with a test domain.
 resource "aws_iam_policy" "cloudformation_restores" {
   name   = "HonuaGateCloudFormationRestores"
-  policy = jsonencode({ Version = "2012-10-17", Statement = [local.restored_snapshot_deny] })
+  policy = jsonencode({ Version = "2012-10-17", Statement = local.restored_snapshot_denies })
 }
 resource "aws_iam_role_policy_attachment" "cloudformation_restores" {
   role       = aws_iam_role.cloudformation.name

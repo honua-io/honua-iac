@@ -98,13 +98,20 @@ locals {
     })
   }
   snapshot_restore_action = "rds:RestoreDBInstanceFromDBSnapshot"
-  # Only a snapshot carrying the gate cost tag (a gate database copies its tags to its snapshots, including the
-  # AWS Backup ones) can be restored; an untagged or foreign snapshot is denied.
-  restored_snapshot_deny = {
+  # Only an instance snapshot in this account carrying the gate cost tag (a gate database copies its tags to its
+  # snapshots, including the AWS Backup ones) can be restored, and only into a gate-named instance and subnet group.
+  # The NotResource list also refuses Multi-AZ cluster snapshots, snapshots shared from other accounts and capacity
+  # reservations. Option and parameter groups stay open, as for rds:CreateDBInstance: the defaults carry no tags.
+  restored_snapshot_denies = [{
     Sid       = "RestoreGateSnapshots", Effect = "Deny", Action = local.snapshot_restore_action
     Resource  = "arn:aws:rds:us-east-1:${var.member_account_id}:snapshot:*"
     Condition = { StringNotEqualsIfExists = { "aws:ResourceTag/HonuaGate" = "true" } }
-  }
+    }, {
+    Sid = "RestoreGateTargets", Effect = "Deny", Action = local.snapshot_restore_action
+    NotResource = concat(["arn:aws:rds:us-east-1:${var.member_account_id}:snapshot:*"],
+      [for kind in ["db", "subgrp"] : "arn:aws:rds:us-east-1:${var.member_account_id}:${kind}:honua-gate-*"],
+    [for kind in ["og", "pg"] : "arn:aws:rds:us-east-1:${var.member_account_id}:${kind}:*"])
+  }]
   rds_creation_name_deny = {
     Sid         = "RDSCreationNames", Effect = "Deny", Action = "rds:AddTagsToResource"
     NotResource = local.rds_gate_arns
@@ -201,9 +208,9 @@ locals {
     # main.tf workload_policies instead. iam:*tePolicy* is exactly Create/DeletePolicy and Create/DeletePolicyVersion
     # (not PutRolePolicy or DeleteRolePolicy), shortened for the inline quota; the policy reads are metadata.
     # A restore drill stack creates its database from a gate AWS Backup snapshot. The new instance has no tags
-    # when RDS authorizes the restore, like rds:CreateDBInstance. restored_snapshot_deny (attached as
-    # HonuaGateCloudFormationRestores) fences the source snapshot; the RDS creation name and tag denies fence the
-    # new instance.
+    # when RDS authorizes the restore, like rds:CreateDBInstance. restored_snapshot_denies (attached as
+    # HonuaGateCloudFormationRestores) fence the source snapshot and the new instance's name and subnet group; the
+    # RDS creation tag deny fences its tags.
     NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery", "backup-storage:MountCapsule", "iam:*tePolicy*", local.snapshot_restore_action], local.shared_creation_actions, local.untaggable_creates, local.creation_tag_actions, local.named_teardown_actions, local.temporary_subnet_cleanup_actions)
     # An HTTPS listener makes ACM grant ELB use of the AWS-managed aws/acm key as the caller; that key
     # cannot carry HonuaGate=true. kms:ViaService only ever carries AWS service endpoints (acm.<region>.amazonaws.com).
