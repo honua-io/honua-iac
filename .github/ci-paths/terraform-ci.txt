@@ -50,6 +50,7 @@ docs/operator-state.md
 .github/workflows/cloud-demo-smoke.yml
 .github/workflows/terraform-ci.yml
 .github/workflows/terraform-manual-validation.yml
+.github/workflows/release-cell-reaper.yml
 .github/workflows/terraform-validation-infra-reaper.yml
 .github/workflows/terraform-validation-iam-sweeper.yml
 .github/workflows/release-cell-inventory-policy.yml

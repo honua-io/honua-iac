@@ -30,7 +30,7 @@ class OidcContract(unittest.TestCase):
                 self.assertNotIn('aws-access-key-id', session['with'])
 
     def test_scheduled_cleanup_authenticates_before_sweep(self):
-        for name, key in [('terraform-validation-iam-sweeper.yml', 'sweep'), ('terraform-validation-infra-reaper.yml', 'reap')]:
+        for name, key in [('terraform-validation-iam-sweeper.yml', 'sweep'), ('terraform-validation-infra-reaper.yml', 'reap'), ('release-cell-reaper.yml', 'reap')]:
             document = yaml.safe_load((ROOT / '.github/workflows' / name).read_text())
             self.assertEqual('write', document['permissions']['id-token'])
             job = document['jobs'][key]

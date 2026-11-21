@@ -19,7 +19,18 @@ WORKFLOWS = ROOT / '.github' / 'workflows'
 CASES = {
     'terraform-validation-infra-reaper.yml': ('reap', 'HONUA_AWS_VALIDATION_REAPER_ROLE_ARN'),
     'terraform-validation-iam-sweeper.yml': ('sweep', 'HONUA_AWS_VALIDATION_IAM_SWEEPER_ROLE_ARN'),
+    'release-cell-reaper.yml': ('reap', 'HONUA_AWS_CELL_REAPER_ROLE_ARN'),
 }
+# The operator action each skip notice must name.
+SKIP_ACTIONS = {
+    'release-cell-reaper.yml': ('bootstrap/aws-release-cells', 'environment:aws-cell-reaper'),
+}
+DEFAULT_SKIP_ACTION = ('#208', 'teardown deny')
+# A role ARN each precondition accepts.
+PRESENT_ROLES = {
+    'release-cell-reaper.yml': 'arn:aws:iam::123456789012:role/honua-release-cell-reaper',
+}
+DEFAULT_PRESENT_ROLE = 'arn:aws:iam::123456789012:role/cleanup'
 
 
 def load(name):
@@ -59,19 +70,26 @@ class CleanupRolePrecondition(unittest.TestCase):
                 for text in (notices[0], summary):
                     self.assertIn('SKIPPED', text)
                     self.assertIn(variable, text)
-                    self.assertIn('#208', text)
-                    self.assertIn('teardown deny', text)
+                    for phrase in SKIP_ACTIONS.get(name, DEFAULT_SKIP_ACTION):
+                        self.assertIn(phrase, text)
                 self.assertEqual(1, len(summary.strip().splitlines()))
 
     def test_present_role_runs_the_cleanup(self):
         for name in CASES:
             with self.subTest(workflow=name):
                 result, output, summary = run_step(
-                    precondition_step(load(name)), 'arn:aws:iam::123456789012:role/cleanup')
+                    precondition_step(load(name)), PRESENT_ROLES.get(name, DEFAULT_PRESENT_ROLE))
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertEqual('configured=true\n', output)
                 self.assertNotIn('::notice', result.stdout)
                 self.assertEqual('', summary)
+
+    def test_release_cell_precondition_rejects_other_roles(self):
+        step = precondition_step(load('release-cell-reaper.yml'))
+        result, output, _ = run_step(step, 'arn:aws:iam::123456789012:role/cleanup')
+        self.assertNotEqual(0, result.returncode)
+        self.assertEqual('', output)
+        self.assertIn('honua-release-cell-reaper', result.stdout)
 
     def test_missing_role_is_the_only_skip_path(self):
         for name, (job_name, variable) in CASES.items():

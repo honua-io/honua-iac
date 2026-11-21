@@ -126,7 +126,7 @@ The `honua-release-approval-mac-*` managed-policy attachments on the provision a
   `ValidationRunId` as the IAM contract. honua-release#1430 retired the
   honua-release reaper, so the reaper lane trusts
   `repo:honua-io/honua-iac:environment:aws-cell-reaper`: the
-  `reap-release-cells` job of `terraform-validation-infra-reaper.yml` sweeps the
+  `release-cell-reaper.yml` workflow sweeps the
   leftovers once `HONUA_AWS_CELL_REAPER_ROLE_ARN` is set in honua-iac. Create
   the honua-iac `aws-cell-reaper` environment with a trunk-only deployment
   branch policy BEFORE setting that variable: GitHub creates a missing

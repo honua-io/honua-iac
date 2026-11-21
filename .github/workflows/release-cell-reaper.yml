@@ -1,0 +1,114 @@
+name: Release Cell Reaper
+
+# honua-release retired the release-cell producer and its scheduled
+# reaper. Resources that reaper's last sweeps left behind still carry
+# Owner=release-cell and are swept here, by the same script, under the
+# release-cell reaper role (bootstrap/aws-release-cells, lane "reaper"), whose
+# trust names this repository's aws-cell-reaper environment. Run state is read
+# from honua-release, where the cells' ValidationRunIds point.
+#
+# Note on dispatch: `dry_run` defaults to true for a human poking at it. The
+# schedule supplies no inputs, so the nightly run is a REAL sweep.
+
+on:
+  schedule:
+    - cron: "47 7 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Enumerate and print the plan without deleting anything"
+        required: true
+        type: boolean
+        default: true
+      max_delete:
+        description: "Abandon the sweep if the plan exceeds this many resources"
+        required: false
+        type: string
+        default: "400"
+
+permissions:
+  contents: read
+  id-token: write
+  actions: read
+
+concurrency:
+  group: release-cell-reaper
+  cancel-in-progress: false
+
+jobs:
+  # An unprovisioned role is an absent environment, not a failed cleanup: the
+  # reap job concludes `skipped` (honua-release#376 R18/R21). This is the ONLY
+  # condition that skips it.
+  precondition:
+    name: Require release-cell reaper role
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      configured: ${{ steps.role.outputs.configured }}
+    steps:
+      - name: Check HONUA_AWS_CELL_REAPER_ROLE_ARN
+        id: role
+        env:
+          ROLE_ARN: ${{ vars.HONUA_AWS_CELL_REAPER_ROLE_ARN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${ROLE_ARN}" ]]; then
+            [[ "${ROLE_ARN}" =~ ^arn:aws:iam::[0-9]{12}:role/honua-release-cell-reaper$ ]] || {
+              echo "::error::HONUA_AWS_CELL_REAPER_ROLE_ARN must name the dedicated honua-release-cell-reaper role"; exit 1; }
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          reason="SKIPPED: HONUA_AWS_CELL_REAPER_ROLE_ARN is not set; apply infrastructure/terraform/bootstrap/aws-release-cells (reaper lane trusting repo:honua-io/honua-iac:environment:aws-cell-reaper) and set the repository variable to its role_arns.reaper output to sweep release-cell leftovers."
+          echo "configured=false" >> "$GITHUB_OUTPUT"
+          echo "::notice title=release-cell reaper skipped::${reason}"
+          echo "${reason}" >> "$GITHUB_STEP_SUMMARY"
+
+  reap:
+    name: Reap orphaned release cells
+    needs: precondition
+    if: ${{ needs.precondition.outputs.configured == 'true' }}
+    environment: aws-cell-reaper
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      AWS_DEFAULT_REGION: us-east-1
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Require OIDC role
+        env:
+          ROLE_ARN: ${{ vars.HONUA_AWS_CELL_REAPER_ROLE_ARN }}
+        run: ': "${ROLE_ARN:?Configure the release-cell reaper role ARN}"'
+
+      - name: Configure AWS OIDC session
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.HONUA_AWS_CELL_REAPER_ROLE_ARN }}
+          aws-region: us-east-1
+          role-duration-seconds: 7200
+          unset-current-credentials: true
+
+      - name: Reap orphaned release cells
+        shell: bash
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          MAX_DELETE: ${{ inputs.max_delete || '400' }}
+        run: |
+          set -euo pipefail
+          [[ "$MAX_DELETE" =~ ^[0-9]+$ ]] || { echo "::error::max_delete must be an integer"; exit 1; }
+          # A 48-hour floor: the producer is retired, so nothing here is young.
+          args=(
+            --owner-tag release-cell
+            --repo honua-io/honua-release
+            --workflow e2e-cloud-aws.yml
+            --region us-east-1
+            --grace-hours 48
+            --max-delete "$MAX_DELETE"
+            --exclude-type ecs:task-definition
+            --summary-file "$GITHUB_STEP_SUMMARY"
+          )
+          [[ "$DRY_RUN" == "true" ]] && args+=(--dry-run)
+          ./infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-infra.sh "${args[@]}"
