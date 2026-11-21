@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # A torn-down cell also leaves Batch job definitions, an ACM certificate and a
-# versioned ALB access-log bucket (honua-iac#573, #574, #575). Each needs a
+# versioned ALB access-log bucket. Each needs a
 # settled check and a deletion path, or every sweep plans it and reports it
 # left behind forever.
 

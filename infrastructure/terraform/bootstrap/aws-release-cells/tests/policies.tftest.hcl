@@ -257,7 +257,7 @@ run "reaper_retires_every_cell_service_it_finds" {
       one([for s in jsondecode(local.grant_policies.reaper).Statement : s if s.Sid == "DeleteCellLogBuckets"]).Condition.Null["aws:ResourceTag/ValidationRunId"] == "false" &&
       !anytrue([for s in jsondecode(local.grant_policies.reaper).Statement : s.Sid != "DeleteCellLogBuckets" && anytrue([for a in flatten([s.Action]) : startswith(a, "s3:") && a != "s3:GetBucketLocation"])])
     )
-    error_message = "Cell job definitions go with the tagged cell, certificates through the cert-demo grant; S3 deletes reach only cell ALB access-log buckets (honua-iac#573-#575)."
+    error_message = "Cell job definitions go with the tagged cell, certificates through the cert-demo grant; S3 deletes reach only cell ALB access-log buckets."
   }
   assert {
     condition     = !strcontains(local.grant_policies.reaper, "secretsmanager:GetSecretValue") && !strcontains(local.grant_policies.reaper, "secretsmanager:*")

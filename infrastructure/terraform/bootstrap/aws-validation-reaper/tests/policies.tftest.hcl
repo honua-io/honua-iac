@@ -66,7 +66,7 @@ run "trust_and_policy" {
       one([for s in jsondecode(local.policy).Statement : s if s.Sid == "EmptyCellLogBuckets"]).Resource == "arn:aws:s3:::*-alb-logs-*" &&
       !anytrue([for s in jsondecode(local.policy).Statement : s.Effect == "Allow" && s.Sid != "EmptyCellLogBuckets" && anytrue([for a in flatten([s.Action]) : startswith(a, "s3:") && a != "s3:GetBucketLocation"])])
     )
-    error_message = "Job definitions and certificates are torn down with the cell; S3 deletes reach only ALB access-log buckets (honua-iac#573-#575)."
+    error_message = "Job definitions and certificates are torn down with the cell; S3 deletes reach only ALB access-log buckets."
   }
 }
 
