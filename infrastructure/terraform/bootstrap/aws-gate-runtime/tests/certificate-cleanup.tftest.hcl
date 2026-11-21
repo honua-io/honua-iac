@@ -1,4 +1,4 @@
-# Synthetic fixtures only. Gate certificate cleanup: tag-fenced by default, exact temporary IDs for untagged ones.
+# Synthetic fixtures only. Gate reaper cleanup: certificates tag-fenced by default (exact temporary IDs for untagged ones); secrets stack-tag fenced with a recovery window.
 mock_provider "aws" {
   override_during = plan
   mock_resource "aws_secretsmanager_secret" { defaults = { arn = "arn:aws:secretsmanager:us-east-1:000000000002:secret:honua-gate/idp/client-secret-abcdef" } }
@@ -63,4 +63,27 @@ run "certificate_cleanup_rejects_wildcard_ids" {
     temporary_orphan_certificate_ids = ["*"]
   }
   expect_failures = [var.temporary_orphan_certificate_ids]
+}
+
+run "secret_cleanup_is_stack_tag_fenced_with_a_recovery_window" {
+  command = plan
+  assert {
+    condition = length([for statement in jsondecode(aws_iam_role_policy.reaper.policy).Statement : statement
+      if statement.Effect == "Allow" && contains(flatten([statement.Action]), "secretsmanager:DeleteSecret")]) == 1 && alltrue([
+      for statement in jsondecode(aws_iam_role_policy.reaper.policy).Statement : try(
+        statement.Effect != "Allow" || !contains(flatten([statement.Action]), "secretsmanager:DeleteSecret") || (
+          statement.Condition.StringLike["aws:ResourceTag/aws:cloudformation:stack-name"] == "honua-gate-*" &&
+    statement.Condition.NumericEquals["secretsmanager:RecoveryWindowInDays"] == 7), false)])
+    error_message = "Secret deletion must require a honua-gate-* CloudFormation stack tag and a 7-day recovery window."
+  }
+  assert {
+    condition = anytrue([for statement in jsondecode(aws_iam_role_policy.reaper.policy).Statement : try(
+      statement.Effect == "Deny" && statement.Action == "secretsmanager:DeleteSecret" &&
+    statement.Resource == "arn:aws:secretsmanager:us-east-1:${var.member_account_id}:secret:honua-gate/idp/*", false)])
+    error_message = "The reaper must never delete the gate IdP secrets."
+  }
+  assert {
+    condition     = !anytrue([for statement in jsondecode(aws_iam_role_policy.reaper.policy).Statement : can(regex("^secretsmanager:\\*$|^secretsmanager:Get|^secretsmanager:Put", try(one(flatten([statement.Action])), "")))])
+    error_message = "The reaper must not read or write secret values."
+  }
 }
