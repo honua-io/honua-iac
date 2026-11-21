@@ -295,7 +295,9 @@ locals {
     # and jobs carry only honua:stack, so all four are exempt; boundary_job_stop_deny fences the stops to gate jobs.
     # PutMetricData has no resource, so the ownership tags never match it; the operations and watchdog heartbeats
     # need it. The template's role policies fence it to their Honua/Operations and Honua/Watchdog namespaces.
-    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*", "ec2:DescribeM*", "ec2:DescribeAv*", "ec2:DescribeSu*", "ec2:DescribeR*", "ec2:DescribeVpc*", "guardduty:ListD*", "backup:Describe*Job", "batch:ListJobs", "batch:DescribeJobs", "batch:CancelJob", "batch:TerminateJob", "cloudwatch:PutMetricData", "events:ListRules"], local.backup_snapshot_actions, local.workload_config_actions, [for action in local.shared_creation_actions : action if !startswith(action, "iam:Create")])
+    # GetMetricData has no resource either; an S3 backup job, run as the backup role, failed with "Unable to perform
+    # cloudwatch:GetMetricData" (21 Nov). cloudwatch:??tMetricData matches only these two (README accepts the reads).
+    NotAction = concat(["s3:*", "ssm:*", "cognito-idp:DescribeUserPoolDomain", "cognito-idp:TagResource", "ecr:GetAuth*", "ec2:DescribeM*", "ec2:DescribeAv*", "ec2:DescribeSu*", "ec2:DescribeR*", "ec2:DescribeVpc*", "guardduty:ListD*", "backup:Describe*Job", "batch:ListJobs", "batch:DescribeJobs", "batch:CancelJob", "batch:TerminateJob", "cloudwatch:??tMetricData", "events:ListRules"], local.backup_snapshot_actions, local.workload_config_actions, [for action in local.shared_creation_actions : action if !startswith(action, "iam:Create")])
     # Secrets Manager decrypts with its AWS-managed key for callers already allowed to read the secret;
     # kms:ViaService only ever carries AWS service endpoints (secretsmanager.<region>.amazonaws.com).
     Condition = merge(local.ownership_condition, { StringNotLike = { "kms:ViaService" = "secretsmanager.*" } })

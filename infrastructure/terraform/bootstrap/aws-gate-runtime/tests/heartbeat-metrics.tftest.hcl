@@ -19,11 +19,11 @@ variables {
 run "workload_heartbeats_publish_metrics" {
   command = plan
   assert {
-    condition = contains(local.boundary_ownership_deny.NotAction, "cloudwatch:PutMetricData") && !anytrue([
-      for action in ["cloudwatch:PutMetricStream", "cloudwatch:PutDashboard", "cloudwatch:DeleteAlarms", "cloudwatch:DeleteDashboards", "cloudwatch:GetMetricData", "cloudwatch:TagResource"] :
-      anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(pattern, "*", ".*")}$", action))])
+    condition = alltrue([for action in ["cloudwatch:PutMetricData", "cloudwatch:GetMetricData"] : anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(replace(pattern, "*", ".*"), "?", ".")}$", action))])]) && !anytrue([
+      for action in ["cloudwatch:PutMetricStream", "cloudwatch:PutDashboard", "cloudwatch:DeleteAlarms", "cloudwatch:DeleteDashboards", "cloudwatch:GetMetricStatistics", "cloudwatch:GetMetricWidgetImage", "cloudwatch:GetMetricStream", "cloudwatch:TagResource"] :
+      anytrue([for pattern in local.boundary_ownership_deny.NotAction : can(regex("(?i)^${replace(replace(pattern, "*", ".*"), "?", ".")}$", action))])
     ])
-    error_message = "PutMetricData is exempt from the ownership deny; metric streams, dashboards, alarm and dashboard deletes, tagging and metric reads stay fenced."
+    error_message = "PutMetricData and GetMetricData are exempt from the ownership deny; metric streams, dashboards, alarm and dashboard deletes, tagging and other metric reads stay fenced."
   }
   assert {
     condition     = length(jsonencode(jsondecode(aws_iam_policy.workload_boundary.policy))) <= 6144
