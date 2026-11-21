@@ -150,6 +150,26 @@ jobs:
 
           ./infrastructure/terraform/validation/scripts/aws/sweep-orphaned-validation-infra.sh "${args[@]}"
 
+      # AWS Batch creates an untagged ECS cluster per compute environment; one
+      # whose compute environment is gone is invisible to the tag sweep above
+      # (honua-iac#568). Runs even when that sweep reported survivors.
+      - name: Reap ECS clusters of deleted Batch compute environments
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--summary-file "$GITHUB_STEP_SUMMARY")
+          IFS=',' read -ra regions <<< "$HONUA_AWS_SWEEP_REGIONS"
+          for region in "${regions[@]}"; do
+            region="$(echo "$region" | xargs)"
+            [[ -z "$region" ]] && continue
+            args+=(--region "$region")
+          done
+          if [[ "${{ inputs.dry_run }}" == "true" ]]; then
+            args+=(--dry-run)
+          fi
+          ./infrastructure/terraform/validation/scripts/aws/sweep-orphaned-batch-clusters.sh "${args[@]}"
+
   # honua-release#1430 retired the release-cell producer and its scheduled
   # reaper. Resources that reaper's last sweeps left behind still carry
   # Owner=release-cell and are swept here, by the same script, under the
