@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Delete ECS clusters that AWS Batch created for a compute environment that no
-# longer exists (honua-iac#568). Batch names them AWSBatch-<compute
+# longer exists. Batch names them AWSBatch-<compute
 # environment>[-<suffix>] and gives them no Owner tag, so the tag-driven sweep
 # never sees them; when the stack around a compute environment is torn down
 # the cluster can be left behind.

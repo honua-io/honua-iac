@@ -67,9 +67,9 @@ if [[ -n "${FAKE_WRITE_FAILURE:-}" && "$operation" == "${FAKE_WRITE_FAILURE%%:*}
   exit 254
 fi
 
-# FAKE_WRITE_FAIL_ONCE="<operation>:<message>[;<operation>:<message>...]" refuses
-# only the first call of each operation, like a delete that races a dependent
-# teardown still in progress.
+# FAKE_WRITE_FAIL_ONCE holds semicolon-separated operation:message rules. Each
+# refuses only the first call of its operation, like a delete that races a
+# dependent teardown still in progress.
 if [[ -n "${FAKE_WRITE_FAIL_ONCE:-}" ]]; then
   IFS=';' read -ra once_rules <<<"$FAKE_WRITE_FAIL_ONCE"
   for rule in "${once_rules[@]}"; do

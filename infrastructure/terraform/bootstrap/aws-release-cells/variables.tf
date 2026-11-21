@@ -21,7 +21,7 @@ variable "oidc_subjects" {
   type        = map(string)
   default = {
     provision = "repo:honua-io/honua-release:environment:aws-cell-provision"
-    # honua-release#1430 retired the release-cell reaper; honua-iac's validation
+    # honua-release retired its release-cell reaper; honua-iac's validation
     # infra reaper sweeps the leftovers from its own aws-cell-reaper environment.
     reaper = "repo:honua-io/honua-iac:environment:aws-cell-reaper"
     mirror = "repo:honua-io/honua-release:environment:aws-cell-mirror"
