@@ -31,7 +31,9 @@ deployment branch, plus the variables `LAUNCH_STACK_TEMPLATE_BUCKET`,
 `role_arns` output).
 The inventory grants are limited to `inventory_role_name` (default
 `honua-release-cicd`). The inventory environments are used by
-`release-cell-inventory-policy.yml` alone: the shared `terraform-ephemeral`
+`release-cell-inventory-policy.yml` alone (configured via
+`HONUA_AWS_CELL_INVENTORY_PLAN_ROLE_ARN` and
+`HONUA_AWS_CELL_INVENTORY_APPLY_ROLE_ARN`): the shared `terraform-ephemeral`
 and `terraform-live-approval` environments also run manual validation and the
 hosted-pilot bootstrap, whose approved jobs must not be able to rewrite the
 release role's policy.

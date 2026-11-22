@@ -31,8 +31,8 @@ mock_provider "aws" {
   }
   mock_data "aws_caller_identity" {
     defaults = {
-      account_id = "585192672263"
-      arn        = "arn:aws:iam::585192672263:user/terraform-test"
+      account_id = "123456789012"
+      arn        = "arn:aws:iam::123456789012:user/terraform-test"
       user_id    = "AIDATEST"
     }
   }
@@ -46,9 +46,9 @@ mock_provider "aws" {
   }
   mock_data "aws_ecr_repository" {
     defaults = {
-      arn            = "arn:aws:ecr:us-east-1:585192672263:repository/honua-server"
-      registry_id    = "585192672263"
-      repository_url = "585192672263.dkr.ecr.us-east-1.amazonaws.com/honua-server"
+      arn            = "arn:aws:ecr:us-east-1:123456789012:repository/honua-server"
+      registry_id    = "123456789012"
+      repository_url = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server"
     }
   }
   mock_data "aws_iam_policy_document" {
@@ -59,54 +59,54 @@ mock_provider "aws" {
   }
   mock_resource "aws_iam_policy" {
     defaults = {
-      arn = "arn:aws:iam::585192672263:policy/honua-test"
+      arn = "arn:aws:iam::123456789012:policy/honua-test"
     }
   }
   mock_resource "aws_iam_role" {
     defaults = {
-      arn = "arn:aws:iam::585192672263:role/honua-test"
+      arn = "arn:aws:iam::123456789012:role/honua-test"
     }
   }
   mock_resource "aws_batch_compute_environment" {
     defaults = {
-      arn = "arn:aws:batch:us-east-1:585192672263:compute-environment/honua-mock"
+      arn = "arn:aws:batch:us-east-1:123456789012:compute-environment/honua-mock"
     }
   }
   mock_resource "aws_batch_job_queue" {
     defaults = {
-      arn = "arn:aws:batch:us-east-1:585192672263:job-queue/honua-mock"
+      arn = "arn:aws:batch:us-east-1:123456789012:job-queue/honua-mock"
     }
   }
   mock_resource "aws_batch_job_definition" {
     defaults = {
-      arn      = "arn:aws:batch:us-east-1:585192672263:job-definition/honua-mock:1"
+      arn      = "arn:aws:batch:us-east-1:123456789012:job-definition/honua-mock:1"
       revision = 1
     }
   }
   mock_resource "aws_cloudwatch_log_group" {
     defaults = {
-      arn = "arn:aws:logs:us-east-1:585192672263:log-group:honua-mock:*"
+      arn = "arn:aws:logs:us-east-1:123456789012:log-group:honua-mock:*"
     }
   }
   mock_resource "aws_apigatewayv2_api" {
     defaults = {
       arn           = "arn:aws:apigateway:us-east-1::/apis/abcdefghij"
-      execution_arn = "arn:aws:execute-api:us-east-1:585192672263:abcdefghij"
+      execution_arn = "arn:aws:execute-api:us-east-1:123456789012:abcdefghij"
     }
   }
   mock_resource "aws_lambda_function" {
     defaults = {
-      arn = "arn:aws:lambda:us-east-1:585192672263:function:honua-mock"
+      arn = "arn:aws:lambda:us-east-1:123456789012:function:honua-mock"
     }
   }
   mock_resource "aws_cloudwatch_event_rule" {
     defaults = {
-      arn = "arn:aws:events:us-east-1:585192672263:rule/honua-mock"
+      arn = "arn:aws:events:us-east-1:123456789012:rule/honua-mock"
     }
   }
   mock_resource "aws_secretsmanager_secret" {
     defaults = {
-      arn = "arn:aws:secretsmanager:us-east-1:585192672263:secret:honua-mock-AbCdEf"
+      arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-mock-AbCdEf"
     }
   }
 }
@@ -117,7 +117,7 @@ mock_provider "null" {}
 variables {
   name_prefix                 = "honuarawsse380460"
   environment                 = "it"
-  image                       = "585192672263.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:acae8755a327933e11718de3b0317b6a420a2444ec21135debcb6087adf3f12b"
+  image                       = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:acae8755a327933e11718de3b0317b6a420a2444ec21135debcb6087adf3f12b"
   gp_batch_image              = "ghcr.io/honua-io/honua-server@sha256:961b983de43ede21d315770dd2e4e1f3bf41dc358ce8ed156ddcb3101a3b6bcc"
   admin_password              = "Synthetic-Terraform-Test-Admin-4721!aA1"
   redis_auth_token            = "aaaaAAAA1111&&&&aaaaAAAA1111&&&&"
@@ -126,8 +126,8 @@ variables {
   enable_control_plane_events = true
   licensing_mode              = "Disabled"
 
-  operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:585192672263:secret:honua-release/cert/operation-key-ring-zDn618"
-  audit_chain_key_secret_arn                = "arn:aws:secretsmanager:us-east-1:585192672263:secret:honua-release/cert/audit-chain-key-RLtpME"
+  operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-release/cert/operation-key-ring-zDn618"
+  audit_chain_key_secret_arn                = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-release/cert/audit-chain-key-RLtpME"
 
   additional_env = {
     HONUA_SERVE_ADMIN_UI = "true"
@@ -178,7 +178,7 @@ run "aws_s3_renders_on_every_server_process_and_grants_each_role" {
 
   variables {
     file_storage_provider           = "AwsS3"
-    file_storage_aws_s3_bucket_name = "release-cells-file-storage-585192672263"
+    file_storage_aws_s3_bucket_name = "release-cells-file-storage-123456789012"
     file_storage_aws_s3_key_prefix  = "release-cells/honuarawsse380460"
   }
 
@@ -191,7 +191,7 @@ run "aws_s3_renders_on_every_server_process_and_grants_each_role" {
         aws_lambda_function.control_plane_tick[0].environment[0].variables,
         ] : nonsensitive(sensitive({ for k, v in env : k => v if startswith(k, "FileStorage__") })) == {
         FileStorage__Provider          = "AwsS3"
-        FileStorage__AwsS3__BucketName = "release-cells-file-storage-585192672263"
+        FileStorage__AwsS3__BucketName = "release-cells-file-storage-123456789012"
         FileStorage__AwsS3__Region     = "us-east-1"
         FileStorage__AwsS3__KeyPrefix  = "release-cells/honuarawsse380460"
       }
@@ -204,7 +204,7 @@ run "aws_s3_renders_on_every_server_process_and_grants_each_role" {
       for tier in ["s", "m", "l", "xl"] :
       { for e in jsondecode(aws_batch_job_definition.gp[tier].container_properties).environment : e.name => e.value if startswith(e.name, "FileStorage__") } == {
         FileStorage__Provider          = "AwsS3"
-        FileStorage__AwsS3__BucketName = "release-cells-file-storage-585192672263"
+        FileStorage__AwsS3__BucketName = "release-cells-file-storage-123456789012"
         FileStorage__AwsS3__Region     = "us-east-1"
         FileStorage__AwsS3__KeyPrefix  = "release-cells/honuarawsse380460"
       }
@@ -223,13 +223,13 @@ run "aws_s3_renders_on_every_server_process_and_grants_each_role" {
           Sid      = "FileStorageBucket"
           Effect   = "Allow"
           Action   = ["s3:GetBucketLocation", "s3:ListBucket", "s3:ListBucketMultipartUploads"]
-          Resource = ["arn:aws:s3:::release-cells-file-storage-585192672263"]
+          Resource = ["arn:aws:s3:::release-cells-file-storage-123456789012"]
         },
         {
           Sid      = "FileStorageObjects"
           Effect   = "Allow"
           Action   = ["s3:AbortMultipartUpload", "s3:DeleteObject", "s3:GetObject", "s3:ListMultipartUploadParts", "s3:PutObject"]
-          Resource = ["arn:aws:s3:::release-cells-file-storage-585192672263/release-cells/honuarawsse380460/*"]
+          Resource = ["arn:aws:s3:::release-cells-file-storage-123456789012/release-cells/honuarawsse380460/*"]
         },
       ]
     ])

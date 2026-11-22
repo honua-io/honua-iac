@@ -16,6 +16,7 @@ data "aws_caller_identity" "current" {}
 
 locals {
   account_id           = data.aws_caller_identity.current.account_id
+  assuming_role_arn    = coalesce(var.assuming_role_arn, "arn:aws:iam::${local.account_id}:role/honua-release-cicd")
   has_restore          = length(var.restore_name_prefixes) > 0
   lambda_name_prefixes = distinct(concat(var.lambda_function_prefixes, var.restore_name_prefixes))
   lambda_function_arns = flatten([for prefix in local.lambda_name_prefixes : [
@@ -260,7 +261,7 @@ resource "aws_iam_role" "controller" {
     Statement = [{
       Sid       = "ProducerRunnerOnly"
       Effect    = "Allow"
-      Principal = { AWS = var.assuming_role_arn }
+      Principal = { AWS = local.assuming_role_arn }
       Action    = "sts:AssumeRole"
       Condition = { StringEquals = { "sts:RoleSessionName" = var.session_name } }
     }]

@@ -492,6 +492,10 @@ jobs:
         shell: bash
         run: python3 tests/workflows/test_cleanup_role_precondition.py
 
+      - name: Workflow OIDC role variable contract
+        shell: bash
+        run: python3 tests/workflows/test_oidc_role_variables.py
+
       - name: Bootstrap drift plan contract (root coverage, redacted report)
         shell: bash
         run: |

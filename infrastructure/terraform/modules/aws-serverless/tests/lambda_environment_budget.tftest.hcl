@@ -30,8 +30,8 @@ mock_provider "aws" {
   }
   mock_data "aws_caller_identity" {
     defaults = {
-      account_id = "585192672263"
-      arn        = "arn:aws:iam::585192672263:user/terraform-test"
+      account_id = "123456789012"
+      arn        = "arn:aws:iam::123456789012:user/terraform-test"
       user_id    = "AIDATEST"
     }
   }
@@ -45,9 +45,9 @@ mock_provider "aws" {
   }
   mock_data "aws_ecr_repository" {
     defaults = {
-      arn            = "arn:aws:ecr:us-east-1:585192672263:repository/honua-server"
-      registry_id    = "585192672263"
-      repository_url = "585192672263.dkr.ecr.us-east-1.amazonaws.com/honua-server"
+      arn            = "arn:aws:ecr:us-east-1:123456789012:repository/honua-server"
+      registry_id    = "123456789012"
+      repository_url = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server"
     }
   }
   mock_data "aws_iam_policy_document" {
@@ -58,43 +58,43 @@ mock_provider "aws" {
   }
   mock_resource "aws_iam_policy" {
     defaults = {
-      arn = "arn:aws:iam::585192672263:policy/honua-test"
+      arn = "arn:aws:iam::123456789012:policy/honua-test"
     }
   }
   mock_resource "aws_iam_role" {
     defaults = {
-      arn = "arn:aws:iam::585192672263:role/honua-test"
+      arn = "arn:aws:iam::123456789012:role/honua-test"
     }
   }
   mock_resource "aws_batch_compute_environment" {
     defaults = {
-      arn = "arn:aws:batch:us-east-1:585192672263:compute-environment/honua-mock"
+      arn = "arn:aws:batch:us-east-1:123456789012:compute-environment/honua-mock"
     }
   }
   mock_resource "aws_cloudwatch_log_group" {
     defaults = {
-      arn = "arn:aws:logs:us-east-1:585192672263:log-group:honua-mock:*"
+      arn = "arn:aws:logs:us-east-1:123456789012:log-group:honua-mock:*"
     }
   }
   mock_resource "aws_apigatewayv2_api" {
     defaults = {
       arn           = "arn:aws:apigateway:us-east-1::/apis/abcdefghij"
-      execution_arn = "arn:aws:execute-api:us-east-1:585192672263:abcdefghij"
+      execution_arn = "arn:aws:execute-api:us-east-1:123456789012:abcdefghij"
     }
   }
   mock_resource "aws_lambda_function" {
     defaults = {
-      arn = "arn:aws:lambda:us-east-1:585192672263:function:honua-mock"
+      arn = "arn:aws:lambda:us-east-1:123456789012:function:honua-mock"
     }
   }
   mock_resource "aws_cloudwatch_event_rule" {
     defaults = {
-      arn = "arn:aws:events:us-east-1:585192672263:rule/honua-mock"
+      arn = "arn:aws:events:us-east-1:123456789012:rule/honua-mock"
     }
   }
   mock_resource "aws_secretsmanager_secret" {
     defaults = {
-      arn = "arn:aws:secretsmanager:us-east-1:585192672263:secret:honua-mock-AbCdEf"
+      arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-mock-AbCdEf"
     }
   }
 }
@@ -104,39 +104,39 @@ mock_provider "null" {}
 
 override_resource {
   target = aws_secretsmanager_secret.connection_string
-  values = { arn = "arn:aws:secretsmanager:us-east-1:585192672263:secret:honuarawsse380460-it/connection-string-Ab12Cd" }
+  values = { arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honuarawsse380460-it/connection-string-Ab12Cd" }
 }
 override_resource {
   target = aws_secretsmanager_secret.admin_password
-  values = { arn = "arn:aws:secretsmanager:us-east-1:585192672263:secret:honuarawsse380460-it/admin-password-Ab12Cd" }
+  values = { arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honuarawsse380460-it/admin-password-Ab12Cd" }
 }
 override_resource {
   target = aws_secretsmanager_secret.master_key
-  values = { arn = "arn:aws:secretsmanager:us-east-1:585192672263:secret:honuarawsse380460-it/connection-encryption-master-key-Ab12Cd" }
+  values = { arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honuarawsse380460-it/connection-encryption-master-key-Ab12Cd" }
 }
 override_resource {
   target = aws_secretsmanager_secret.redis_connection
-  values = { arn = "arn:aws:secretsmanager:us-east-1:585192672263:secret:honuarawsse380460-it/redis-connection-Ab12Cd" }
+  values = { arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honuarawsse380460-it/redis-connection-Ab12Cd" }
 }
 override_resource {
   target = aws_batch_job_queue.gp
-  values = { arn = "arn:aws:batch:us-east-1:585192672263:job-queue/honuarawsse380460-it-gp-queue" }
+  values = { arn = "arn:aws:batch:us-east-1:123456789012:job-queue/honuarawsse380460-it-gp-queue" }
 }
 override_resource {
   target = aws_batch_job_definition.gp["s"]
-  values = { arn = "arn:aws:batch:us-east-1:585192672263:job-definition/honuarawsse380460-it-gp-s:1", revision = 1 }
+  values = { arn = "arn:aws:batch:us-east-1:123456789012:job-definition/honuarawsse380460-it-gp-s:1", revision = 1 }
 }
 override_resource {
   target = aws_batch_job_definition.gp["m"]
-  values = { arn = "arn:aws:batch:us-east-1:585192672263:job-definition/honuarawsse380460-it-gp-m:1", revision = 1 }
+  values = { arn = "arn:aws:batch:us-east-1:123456789012:job-definition/honuarawsse380460-it-gp-m:1", revision = 1 }
 }
 override_resource {
   target = aws_batch_job_definition.gp["l"]
-  values = { arn = "arn:aws:batch:us-east-1:585192672263:job-definition/honuarawsse380460-it-gp-l:1", revision = 1 }
+  values = { arn = "arn:aws:batch:us-east-1:123456789012:job-definition/honuarawsse380460-it-gp-l:1", revision = 1 }
 }
 override_resource {
   target = aws_batch_job_definition.gp["xl"]
-  values = { arn = "arn:aws:batch:us-east-1:585192672263:job-definition/honuarawsse380460-it-gp-xl:1", revision = 1 }
+  values = { arn = "arn:aws:batch:us-east-1:123456789012:job-definition/honuarawsse380460-it-gp-xl:1", revision = 1 }
 }
 
 
@@ -144,7 +144,7 @@ variables {
   # The failing cell's inputs (run 38046060497).
   name_prefix      = "honuarawsse380460"
   environment      = "it"
-  image            = "585192672263.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:acae8755a327933e11718de3b0317b6a420a2444ec21135debcb6087adf3f12b"
+  image            = "123456789012.dkr.ecr.us-east-1.amazonaws.com/honua-server@sha256:acae8755a327933e11718de3b0317b6a420a2444ec21135debcb6087adf3f12b"
   gp_batch_image   = "ghcr.io/honua-io/honua-server@sha256:961b983de43ede21d315770dd2e4e1f3bf41dc358ce8ed156ddcb3101a3b6bcc"
   admin_password   = "Synthetic-Terraform-Test-Admin-4721!aA1"
   redis_auth_token = "aaaaAAAA1111&&&&aaaaAAAA1111&&&&"
@@ -152,8 +152,8 @@ variables {
   enable_gp_batch  = true
   licensing_mode   = "Disabled"
 
-  operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:585192672263:secret:honua-release/cert/operation-key-ring-zDn618"
-  audit_chain_key_secret_arn                = "arn:aws:secretsmanager:us-east-1:585192672263:secret:honua-release/cert/audit-chain-key-RLtpME"
+  operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-release/cert/operation-key-ring-zDn618"
+  audit_chain_key_secret_arn                = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-release/cert/audit-chain-key-RLtpME"
 
   # examples/aws-serverless passes these through additional_env.
   additional_env = {
@@ -190,7 +190,7 @@ run "release_redis_on_cell_fits_with_margin" {
       aws_lambda_function.this.environment[0].variables["HONUA_ADMIN_PASSWORD"] == "aws:secretsmanager:honuarawsse380460-it/admin-password",
       aws_lambda_function.this.environment[0].variables["Security__ConnectionEncryption__MasterKey"] == "aws:secretsmanager:honuarawsse380460-it/connection-encryption-master-key",
       aws_lambda_function.this.environment[0].variables["ConnectionStrings__redis"] == "aws:secretsmanager:honuarawsse380460-it/redis-connection",
-      aws_lambda_function.this.environment[0].variables["ConnectionStrings__DefaultConnection"] == "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:585192672263:secret:honuarawsse380460-it/connection-string-Ab12Cd",
+      aws_lambda_function.this.environment[0].variables["ConnectionStrings__DefaultConnection"] == "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:honuarawsse380460-it/connection-string-Ab12Cd",
     ])
     error_message = "Module secrets must be referenced by name unless the name ends in '-' plus six characters (ambiguous with an ARN suffix)."
   }
@@ -211,7 +211,7 @@ run "release_redis_on_cell_fits_with_margin" {
 
   # The GP job keeps full ARNs: it has no 4 KB cap.
   assert {
-    condition     = one([for e in jsondecode(aws_batch_job_definition.gp["s"].container_properties).environment : e.value if e.name == "AuditLog__ChainVerification__Key"]) == "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:585192672263:secret:honua-release/cert/audit-chain-key-RLtpME"
+    condition     = one([for e in jsondecode(aws_batch_job_definition.gp["s"].container_properties).environment : e.value if e.name == "AuditLog__ChainVerification__Key"]) == "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-release/cert/audit-chain-key-RLtpME"
     error_message = "The GP job definition must keep the full audit-chain key ARN."
   }
 }
@@ -295,8 +295,8 @@ run "every_optional_feature_fits" {
   command = apply
 
   variables {
-    operation_key_ring_certificate_secret_kms_key_arn              = "arn:aws:kms:us-east-1:585192672263:key/00000000-0000-0000-0000-000000000002"
-    audit_chain_key_secret_kms_key_arn                             = "arn:aws:kms:us-east-1:585192672263:key/00000000-0000-0000-0000-000000000003"
+    operation_key_ring_certificate_secret_kms_key_arn              = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000002"
+    audit_chain_key_secret_kms_key_arn                             = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000003"
     enable_bedrock_ai                                              = true
     enable_xray_tracing                                            = true
     enable_amazon_location_geocoding                               = true
@@ -339,8 +339,8 @@ run "every_optional_feature_with_rds_proxy_fits" {
 
   variables {
     enable_rds_proxy                                               = true
-    operation_key_ring_certificate_secret_kms_key_arn              = "arn:aws:kms:us-east-1:585192672263:key/00000000-0000-0000-0000-000000000002"
-    audit_chain_key_secret_kms_key_arn                             = "arn:aws:kms:us-east-1:585192672263:key/00000000-0000-0000-0000-000000000003"
+    operation_key_ring_certificate_secret_kms_key_arn              = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000002"
+    audit_chain_key_secret_kms_key_arn                             = "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000003"
     enable_bedrock_ai                                              = true
     enable_xray_tracing                                            = true
     enable_amazon_location_geocoding                               = true
@@ -380,7 +380,7 @@ run "pro_license_on_top_of_every_feature_fits" {
     request_secret_reference_allowed_environment_variable_prefixes = ["HONUA_IMPORT_"]
     request_secret_reference_allowed_secret_reference_prefixes     = ["aws:secretsmanager:honua/imports/"]
     enable_pro_license                                             = true
-    pro_license_secret_arn                                         = "arn:aws:secretsmanager:us-east-1:585192672263:secret:honua-release/cert/license-pro-Q1w2E3"
+    pro_license_secret_arn                                         = "arn:aws:secretsmanager:us-east-1:123456789012:secret:honua-release/cert/license-pro-Q1w2E3"
     pro_license_trusted_public_key                                 = "base64url:Y2XgDBncW5w6n7L3YG-T6HxX51DGybWazt0_gubk30k"
   }
 
@@ -433,7 +433,7 @@ run "release_cell_with_shared_file_storage_fits" {
     domain_name                     = "honuarawsse380460-aws-serverless-redis-on.cert.demo.honua.io"
     route53_zone_id                 = "Z089181827C9GKIKHXUTT"
     file_storage_provider           = "AwsS3"
-    file_storage_aws_s3_bucket_name = "release-cells-file-storage-585192672263"
+    file_storage_aws_s3_bucket_name = "release-cells-file-storage-123456789012"
     file_storage_aws_s3_key_prefix  = "release-cells/honuarawsse380460"
   }
 
@@ -477,13 +477,13 @@ run "foreign_or_ambiguous_operator_secrets_keep_their_arn" {
     # Another account: a name would resolve in the function's own account.
     audit_chain_key_secret_arn = "arn:aws:secretsmanager:us-east-1:111122223333:secret:shared/audit-chain-key-RLtpME"
     # A name ending in "-" plus six characters is ambiguous with an ARN suffix.
-    operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:585192672263:secret:ops/keyring-ABC123-zDn618"
+    operation_key_ring_certificate_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:ops/keyring-ABC123-zDn618"
   }
 
   assert {
     condition = alltrue([
       local.lambda_environment["AuditLog__ChainVerification__Key"] == "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:111122223333:secret:shared/audit-chain-key-RLtpME",
-      local.lambda_environment["Operations__SecretChannel__KeyRingCertificatePkcs12"] == "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:585192672263:secret:ops/keyring-ABC123-zDn618",
+      local.lambda_environment["Operations__SecretChannel__KeyRingCertificatePkcs12"] == "aws:secretsmanager:arn:aws:secretsmanager:us-east-1:123456789012:secret:ops/keyring-ABC123-zDn618",
     ])
     error_message = "Cross-account or ambiguous operator secrets must keep the full ARN."
   }
@@ -559,7 +559,7 @@ run "release_redis_on_bedrock_canary_limits_fit" {
     domain_name                     = "honuarawsse380460-aws-serverless-redis-on.cert.demo.honua.io"
     route53_zone_id                 = "Z089181827C9GKIKHXUTT"
     file_storage_provider           = "AwsS3"
-    file_storage_aws_s3_bucket_name = "release-cells-file-storage-585192672263"
+    file_storage_aws_s3_bucket_name = "release-cells-file-storage-123456789012"
     file_storage_aws_s3_key_prefix  = "release-cells/honuarawsse380460"
   }
 
