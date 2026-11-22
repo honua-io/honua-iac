@@ -58,7 +58,7 @@ terraform -chdir=bootstrap/aws-exec-identity apply \
   -var='oidc_subjects=["repo:honua-io/honua-iac:environment:prod"]' \
   -var='state_bucket_arn=arn:aws:s3:::honua-tfstate-prod' \
   -var='backend_access_role_arn=arn:aws:iam::123456789012:role/honua-terraform-backend' \
-  -var='topology={compute="ecs",redis=true,custom_domain=false,waf=false,gp_batch=false}'
+  -var='topology={compute="ecs",redis=false,custom_domain=false,waf=false,gp_batch=false}'
 
 terraform -chdir=bootstrap/aws-exec-identity output -json execution_identity_contract
 terraform -chdir=bootstrap/aws-exec-identity output -json deploy_identity_contract
