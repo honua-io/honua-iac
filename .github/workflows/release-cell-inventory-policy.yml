@@ -96,9 +96,20 @@ jobs:
           terraform_wrapper: false
       - name: Install the read-only observation client
         run: python3 -m pip install 'boto3>=1.35,<2'
+      - name: Require OIDC role
+        env:
+          MODE: ${{ inputs.mode }}
+          ROLE_ARN: ${{ inputs.mode == 'deploy' && vars.HONUA_AWS_CELL_INVENTORY_APPLY_ROLE_ARN || vars.HONUA_AWS_CELL_INVENTORY_PLAN_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          expected_role="honua-iac-gha-cell-inventory-$([[ "$MODE" == "deploy" ]] && echo apply || echo plan)"
+          [[ "${ROLE_ARN}" =~ ^arn:aws:iam::[0-9]{12}:role/${expected_role}$ ]] || {
+            echo "::error::Configure the cell inventory OIDC role ARN variable for mode=${MODE} (expected role ${expected_role})"
+            exit 1
+          }
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          role-to-assume: ${{ inputs.mode == 'deploy' && 'arn:aws:iam::585192672263:role/honua-iac-gha-cell-inventory-apply' || 'arn:aws:iam::585192672263:role/honua-iac-gha-cell-inventory-plan' }}
+          role-to-assume: ${{ inputs.mode == 'deploy' && vars.HONUA_AWS_CELL_INVENTORY_APPLY_ROLE_ARN || vars.HONUA_AWS_CELL_INVENTORY_PLAN_ROLE_ARN }}
           aws-region: us-east-1
       - name: Review and optionally apply the sole imported inline policy
         env:

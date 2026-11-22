@@ -9,7 +9,7 @@ run on an operator workstation. Heavy .NET work still goes to the Spot build hos
 - A separate encrypted gp3 data volume (default 500 GiB) mounted at `/home/ubuntu/lanes`. It has
   `prevent_destroy` and survives instance replacement. `/home/mike` links to `lanes/home`, so lane
   scripts written with workstation paths run unchanged under the `ubuntu` account.
-- Bootstrap installs Docker, Node 22, a pinned Claude Code, gh, the AWS CLI, the .NET 10 SDK (for
+- Bootstrap installs Docker, Node 22, a pinned Claude Code, gh, the AWS CLI, the .NET 11 SDK (for
   read-only MSBuild queries) and rtk, checksum-verified.
 - A monthly budget alert on the instance's on-demand compute.
 

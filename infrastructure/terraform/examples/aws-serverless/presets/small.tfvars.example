@@ -18,7 +18,7 @@
 
 environment = "dev"
 
-redis_enabled          = true
+redis_enabled          = false
 enable_dashboard       = false
 enable_xray_tracing    = false
 enable_lambda_insights = false

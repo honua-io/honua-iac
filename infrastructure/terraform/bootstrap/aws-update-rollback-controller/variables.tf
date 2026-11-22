@@ -15,11 +15,11 @@ variable "name" {
 }
 
 variable "assuming_role_arn" {
-  description = "The provisioning identity whose job assumes this role (e2e update_rollback_aws.controller_credentials)."
+  description = "The provisioning identity whose job assumes this role (e2e update_rollback_aws.controller_credentials). Defaults to arn:aws:iam::<caller-account-id>:role/honua-release-cicd."
   type        = string
-  default     = "arn:aws:iam::585192672263:role/honua-release-cicd"
+  default     = null
   validation {
-    condition     = can(regex("^arn:aws:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]+$", var.assuming_role_arn))
+    condition     = var.assuming_role_arn == null || can(regex("^arn:aws:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]+$", var.assuming_role_arn))
     error_message = "assuming_role_arn must be an IAM role ARN."
   }
 }

@@ -7,7 +7,7 @@
       "Sid": "DenyIamOutsideCellNamespace",
       "Note": "existing statement; the controller role ARN is appended to NotResource",
       "NotResourceAdded": [
-        "arn:aws:iam::585192672263:role/honua-release-update-rollback-controller"
+        "arn:aws:iam::<AWS_ACCOUNT_ID>:role/honua-release-update-rollback-controller"
       ]
     },
     {
@@ -27,7 +27,7 @@
         "sts:AssumeRole"
       ],
       "NotResource": [
-        "arn:aws:iam::585192672263:role/honua-release-update-rollback-controller"
+        "arn:aws:iam::<AWS_ACCOUNT_ID>:role/honua-release-update-rollback-controller"
       ]
     },
     {
@@ -44,7 +44,7 @@
         "sts:AssumeRole"
       ],
       "Resource": [
-        "arn:aws:iam::585192672263:role/honua-release-update-rollback-controller"
+        "arn:aws:iam::<AWS_ACCOUNT_ID>:role/honua-release-update-rollback-controller"
       ]
     }
   ]

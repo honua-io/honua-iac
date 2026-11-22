@@ -41,8 +41,8 @@ The workflow and scripts cover:
 
 - Static validation: `terraform fmt`, `terraform init -backend=false`, `terraform validate`
 - Policy/security gates: `tflint`, `checkov`, and custom guard checks in `infrastructure/terraform/validation/scripts/shared/terraform-policy-gate.sh`. `tfsec` is an **optional, opt-in** scanner: it is disabled by default (it cannot parse this repository's Terraform `check` blocks) and is not installed or run in CI. Enable it locally with `HONUA_TERRAFORM_ENABLE_TFSEC=true` once a tfsec build that supports `check` blocks is available.
-- Azure live integration: `examples/azure-data` bootstrap (Postgres + Redis) by default, then ACA + Functions using those existing connections; includes Redis wiring, PostGIS + raster checks, protocol/admin smoke checks, admin CRUD/query smoke (`create connection -> publish layer -> query`), idempotency, quick scale check, DB resilience drill, plan artifacts, compute auto-destroy, and reusable data-stack retention by default
-- AWS live integration: `examples/aws-data` bootstrap (RDS + Redis) by default, then ECS + serverless using those existing connections/VPC; includes Redis wiring, PostGIS + raster checks, protocol/admin smoke checks, admin CRUD/query smoke (`create connection -> publish layer -> query`), idempotency, quick scale check, DB resilience drill, plan artifacts, and compute auto-destroy with reusable data-stack retention
+- Azure live integration: `examples/azure-data` bootstrap (Postgres; Azure validation harness still provisions/reuses legacy Redis inputs until migrated, though `honua-server` 2026.1-rc.2 itself retired Redis) by default, then ACA + Functions using those existing connections; includes PostGIS + raster checks, protocol/admin smoke checks, admin CRUD/query smoke (`create connection -> publish layer -> query`), idempotency, quick scale check, DB resilience drill, plan artifacts, compute auto-destroy, and reusable data-stack retention by default
+- AWS live integration: `examples/aws-data` bootstrap (RDS; ECS reuses PostgreSQL + VPC without Redis because `honua-server` 2026.1-rc.2 retired Redis, while `serverless`/`both` data-reuse runs still require the legacy Redis input until migrated) by default, then ECS + serverless using those existing connections/VPC; includes PostGIS + raster checks, protocol/admin smoke checks, admin CRUD/query smoke (`create connection -> publish layer -> query`), idempotency, quick scale check, DB resilience drill, plan artifacts, and compute auto-destroy with reusable data-stack retention
 - Kubernetes live integration: k3d + Helm + observability Terraform module, Helm static validation (`lint` + `template` + `kubeconform`), PostGIS + raster checks, protocol/admin smoke checks, admin CRUD/query smoke (`create connection -> publish layer -> query`), idempotency, quick scale check, and optional DB resilience drill
 - Managed Kubernetes integration: AKS and EKS Terraform cluster provisioning, then Kubernetes validation flow, then auto-destroy + leak check
 - Cross-repo platform validation: Azure, AWS, AKS, and EKS live jobs also check out `honua-server` and run its post-apply platform suite against the deployed environment before cleanup; this exercises deploy preflight, migration observability, admin OpenAPI, and optional cloud-staged import checks against real cloud infrastructure
@@ -60,7 +60,7 @@ Dispatch inputs (11 total, within GitHub's 25-input `workflow_dispatch` limit):
 - `deployment_profile`: `ephemeral|persistent`
 - `apply_confirmation`: must be `APPROVED` when `deployment_profile=persistent`
 - `run_live`: enable/disable live apply tests
-- `reuse_data_stack`: reuse shared PostGIS/Redis data stacks across runs (default `true`)
+- `reuse_data_stack`: reuse shared PostGIS data stacks across runs (default `true`; `honua-server` 2026.1-rc.2 retired Redis, though Azure and AWS `serverless`/`both` reuse harnesses still carry legacy Redis inputs until migrated)
 - `run_k8s`: include local k3d Kubernetes validation
 - `run_aks`: include AKS validation
 - `run_eks`: include EKS validation
@@ -239,13 +239,13 @@ az account show
 - Optional existing dependency reuse (faster/cheaper validation runs):
   - `HONUA_AZURE_EXISTING_DB_FQDN`
   - `HONUA_AZURE_EXISTING_DB_CONNECTION_STRING`
-  - `HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING`
+  - `HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING` (still required by the Azure validation harness when reusing existing data until migrated; `honua-server` 2026.1-rc.2 itself retired Redis)
   - `HONUA_AZURE_DATA_CACHE_FILE` (defaults to `/tmp/honua-azure-data-reuse.env`)
   - `HONUA_AZURE_DESTROY_DATA` (`true|false`, default `false`)
   - `HONUA_AZURE_LOGIN_MAX_ATTEMPTS` / `HONUA_AZURE_LOGIN_RETRY_SECONDS` (bootstrap SP propagation retry budget)
   - `HONUA_AWS_EXISTING_DB_ENDPOINT`
   - `HONUA_AWS_EXISTING_DB_CONNECTION_STRING`
-  - `HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING`
+  - `HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING` (not required for `--stack ecs`, which reuses PostgreSQL + VPC without Redis; still required by `--stack serverless`/`both` data-reuse runs until migrated)
   - `HONUA_AWS_ECS_CANARY_ENABLED`
   - `HONUA_AWS_ECS_CANARY_DESIRED_COUNT`
   - `HONUA_AWS_ECS_CANARY_WEIGHT_PERCENTAGE`
@@ -305,7 +305,7 @@ Local script entry points:
   --stack aca \
   --existing-db-fqdn mypg.postgres.database.azure.com \
   --existing-db-connection "Host=mypg.postgres.database.azure.com;Port=5432;Database=honua;Username=honua;Password=***;SSL Mode=Require;Trust Server Certificate=false" \
-  --existing-redis-connection "myredis.redis.cache.windows.net:6380,password=***,ssl=True,abortConnect=False"
+  --existing-redis-connection "myredis.redis.cache.windows.net:6380,password=***,ssl=True,abortConnect=False" # still required by Azure harness until migrated
 ./scripts/run-azure-terraform-integration.sh --stack both
 ./infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh --stack both
 ./infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh --stack data --no-destroy
@@ -321,8 +321,7 @@ Local script entry points:
 ./infrastructure/terraform/validation/scripts/aws/run-aws-terraform-integration.sh \
   --stack ecs \
   --existing-db-endpoint mydb.xxxxxxxxxxxx.us-east-1.rds.amazonaws.com \
-  --existing-db-connection "Host=mydb.xxxxxxxxxxxx.us-east-1.rds.amazonaws.com;Port=5432;Database=honua;Username=honua;Password=***;SSL Mode=Require;Trust Server Certificate=false" \
-  --existing-redis-connection "mycache.xxxxxx.use1.cache.amazonaws.com:6379,password=***,ssl=true"
+  --existing-db-connection "Host=mydb.xxxxxxxxxxxx.us-east-1.rds.amazonaws.com;Port=5432;Database=honua;Username=honua;Password=***;SSL Mode=Require;Trust Server Certificate=false"
 ./infrastructure/terraform/validation/scripts/k8s/run-k8s-terraform-integration.sh
 ./infrastructure/terraform/validation/scripts/k8s/run-k8s-terraform-integration.sh --aot
 ./infrastructure/terraform/validation/scripts/azure/run-aks-terraform-integration.sh
@@ -415,10 +414,10 @@ falling back silently to fixtures.
 - Registry strategy: web runtime tags (`latest`, `latest-aot`, versioned base tags) are published to GHCR/Docker Hub, while cloud-targeted platform tags (`*-ecs`, `*-ecs-aot`, `*-lambda`, `*-lambda-aot`, `*-functions`, `*-functions-aot`) are published by CI directly to cloud registries (ECR/ACR).
 - `.terraform` directories are already ignored in `.gitignore`.
 - Live scripts auto-destroy compute resources by default unless `--no-destroy` / `no_destroy=true` is set. Azure still retains the data stack by default for reuse and only tears it down when `--destroy-data` (or `HONUA_AZURE_DESTROY_DATA=true`) is set. AWS now does the opposite: it destroys auto-created data by default, and only keeps/reuses it when `--keep-data` / `HONUA_AWS_KEEP_DATA=true` is set. GitHub manual validation still passes `--destroy-data` automatically for `deployment_profile=ephemeral` when `no_destroy=false`.
-- GitHub-hosted runners do not preserve `/tmp` between runs. In CI, true data-stack reuse can come from either repository vars or secrets. Use vars for nonsecret topology like `HONUA_AZURE_EXISTING_DB_FQDN`, `HONUA_AWS_EXISTING_DB_ENDPOINT`, and `HONUA_AWS_EXISTING_VPC_*`. Use secrets for connection strings such as `HONUA_AZURE_EXISTING_DB_CONNECTION_STRING`, `HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING`, `HONUA_AWS_EXISTING_DB_CONNECTION_STRING`, and `HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING`.
-- The manual validation workflow now has `reuse_data_stack=true` by default. For GitHub-hosted runs it restores/saves the Azure and AWS data-cache files with GitHub Actions cache, so the first successful reusable run creates the shared PostGIS/Redis stack and subsequent runs on the same ref/region can skip rebuilding it.
+- GitHub-hosted runners do not preserve `/tmp` between runs. In CI, true data-stack reuse can come from either repository vars or secrets. Use vars for nonsecret topology like `HONUA_AZURE_EXISTING_DB_FQDN`, `HONUA_AWS_EXISTING_DB_ENDPOINT`, and `HONUA_AWS_EXISTING_VPC_*`. Use secrets for connection strings such as `HONUA_AZURE_EXISTING_DB_CONNECTION_STRING` and `HONUA_AWS_EXISTING_DB_CONNECTION_STRING` (plus `HONUA_AZURE_EXISTING_REDIS_CONNECTION_STRING` / `HONUA_AWS_EXISTING_REDIS_CONNECTION_STRING` where the Azure or AWS `serverless`/`both` reuse harnesses still require them until migrated; AWS ECS reuse does not require Redis).
+- The manual validation workflow now has `reuse_data_stack=true` by default. For GitHub-hosted runs it restores/saves the Azure and AWS data-cache files with GitHub Actions cache, so the first successful reusable run creates the shared data stack and subsequent runs on the same ref/region can skip rebuilding it.
 - Azure ephemeral CI reuse works by omitting `--destroy-data` and restoring `${GITHUB_WORKSPACE}/.gha-cache/azure-data-reuse.env`. AWS ephemeral CI reuse works by passing `--keep-data` and restoring `${GITHUB_WORKSPACE}/.gha-cache/aws-data-reuse.env`.
-- Azure reuse is now resilient to compute-stage failures: if the Azure data stack was created successfully and `destroy-data` is disabled, the workflow keeps that PostGIS/Redis stack for the next run even when ACA/Functions verification fails later.
+- Azure reuse is now resilient to compute-stage failures: if the Azure data stack was created successfully and `destroy-data` is disabled, the workflow keeps that data stack for the next run even when ACA/Functions verification fails later.
 - The manual validation workflow concurrency key now includes `inputs.cloud`, so separate `cloud=aws` and `cloud=azure` dispatches can run concurrently on the same ref without blocking each other.
 - To run the cross-repo platform suite locally after apply, point the live validation scripts at the `honua-server` runner: `export HONUA_PLATFORM_VALIDATION_SCRIPT=/path/to/honua-server/scripts/run-cloud-post-apply-validation.sh`.
 

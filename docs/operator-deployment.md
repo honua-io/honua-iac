@@ -44,7 +44,7 @@ cp infrastructure/terraform/examples/<stack>/terraform.tfvars.example \
 - Set `honua_admin_password`
 - Set DB password (`db_password` or `db_admin_password`)
 - Set container image (`honua_image` or `honua_image_uri`)
-- Optionally wire existing DB/Redis/VPC if reusing infra
+- Optionally wire existing DB/VPC if reusing infra (Redis is retired for 2026.1-rc.2 deployments)
 
 For a disposable, single-node development cell, keep secrets in
 `terraform.tfvars` and add the committed non-secret preset to both plan and
@@ -224,7 +224,7 @@ distribution policy.
 ## Existing infrastructure reuse
 
 All main stacks support reusing existing data/network resources via `existing_*` variables.
-Use this when your platform team provides shared VPCs, databases, or caches.
+Use this when your platform team provides shared VPCs or databases (Redis is retired for 2026.1-rc.2 deployments).
 
 ## Related docs
 

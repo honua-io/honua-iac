@@ -86,6 +86,11 @@ run "default_prefix_can_restore_its_own_cell" {
     ])
     error_message = "The floor Lambda grant must include the restore prefix so a cert-cell alias switch is not only a boundary exception."
   }
+
+  assert {
+    condition     = jsondecode(aws_iam_role.controller.assume_role_policy).Statement[0].Principal.AWS == "arn:aws:iam::123456789012:role/honua-release-cicd"
+    error_message = "assuming_role_arn must default to honua-release-cicd in the caller's AWS account rather than a hardcoded account ID."
+  }
 }
 
 run "empty_prefixes_grant_no_restore" {

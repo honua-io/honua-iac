@@ -15,9 +15,9 @@ not qualified.
 | Target | Terraform root | Preset behavior | Serving units |
 | --- | --- | --- | --- |
 | AWS ECS/Fargate (`aws-ecs`) | `infrastructure/terraform/examples/aws` | One ECS task, one-task scaling ceiling, no canary, development ALB retention settings | 1 |
-| Azure Container Apps (`azure-aca`) | `infrastructure/terraform/examples/azure` | One replica, one-replica scaling ceiling, Redis on, locally redundant development backup posture | 1 |
-| AWS Lambda (`aws-serverless`) | `infrastructure/terraform/examples/aws-serverless` | Core Lambda cell, Redis on, optional dashboards/tracing/event worker off | 1 |
-| Azure Functions (`azure-functions`) | `infrastructure/terraform/examples/azure-functions` | One EP1 container plan, Redis on, deployment slot off, locally redundant development backup posture | 1 |
+| Azure Container Apps (`azure-aca`) | `infrastructure/terraform/examples/azure` | One replica, one-replica scaling ceiling, Redis off, locally redundant development backup posture | 1 |
+| AWS Lambda (`aws-serverless`) | `infrastructure/terraform/examples/aws-serverless` | Core Lambda cell, Redis off, optional dashboards/tracing/event worker off | 1 |
+| Azure Functions (`azure-functions`) | `infrastructure/terraform/examples/azure-functions` | One EP1 container plan, Redis off, deployment slot off, locally redundant development backup posture | 1 |
 
 The target names in parentheses are module or operator names. The paths in the
 second column are the actual deployable roots; for example, `aws-ecs` maps to
