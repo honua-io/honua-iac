@@ -57,7 +57,7 @@ chown -R ubuntu:ubuntu "$home/.local/opt/rtk-$rtk_version"
 
 # Lane dotnet shims run read-only MSBuild queries locally; builds go to the build host.
 curl -fsSL --retry 5 --retry-all-errors https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
-sudo -u ubuntu bash /tmp/dotnet-install.sh --channel 10.0 --install-dir "$home/.dotnet" >/dev/null
+sudo -u ubuntu bash /tmp/dotnet-install.sh --channel 11.0 --install-dir "$home/.dotnet" >/dev/null
 sudo -u ubuntu ln -sfn "$home/.dotnet/dotnet" "$home/.local/bin/dotnet"
 echo "export PATH=$home/.local/bin:$home/.dotnet:\$PATH DOTNET_ROOT=$home/.dotnet DOTNET_CLI_TELEMETRY_OPTOUT=1" > /etc/profile.d/honua-lane.sh
 

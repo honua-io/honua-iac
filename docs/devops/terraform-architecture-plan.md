@@ -7,7 +7,7 @@ This plan turns [ADR 0001](../adr/0001-terraform-architecture-refactor.md) into 
 - Phase 0 completed on 2026-03-15.
 - Phase 1 completed with contract outputs on the canonical customer stacks and compatibility wrappers.
 - Phase 2 completed with AWS, Azure, and Kubernetes shell entrypoints split into smaller library-oriented adapters.
-- Phase 3 completed with the `.NET 10` validation runner and YAML scenario catalog under `validation/runner` and `validation/scenarios`.
+- Phase 3 completed with the `.NET 11` validation runner and YAML scenario catalog under `validation/runner` and `validation/scenarios` (note: `validation/runner` is no longer present in the repository).
 - Phase 4 completed with canonical `platforms/`, `components/`, `stacks/customer/`, and `stacks/test/` directories, plus compatibility wrappers for `examples/*` and `modules/*`.
 - Phase 5 completed for validation orchestration: live validation now targets `stacks/test/*` and contract-driven rollout metadata instead of depending on the legacy example-root layout.
 
