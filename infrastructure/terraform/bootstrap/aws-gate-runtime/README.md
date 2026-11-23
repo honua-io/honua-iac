@@ -569,8 +569,11 @@ uses the authorization-code flow with `openid`, `profile` and `email` scopes. Th
 checks sign in with it to prove that a role-less session is denied. Its secret
 (`honua-gate/idp/viewer`) carries no gate ownership tag, so the service role's
 content-read fence and the workload boundary refuse it; its own resource policy
-also denies every gate role, and the lane role has no Secrets Manager access.
-Main hands it to the verifier. Never add `HonuaGate=true` to it. Invitations are suppressed; credentials are written directly to
+also denies every gate role except the lane role. The lane role may read exactly
+the two test-user secrets, `honua-gate/idp/admin` and `honua-gate/idp/viewer`
+(`secretsmanager:GetSecretValue` only), so verification lanes can sign in to a
+shared gate stack; it is denied every other secret read, including
+`honua-gate/idp/client-secret`, which stays CloudFormation's. Never add `HonuaGate=true` to it. Invitations are suppressed; credentials are written directly to
 Secrets Manager under `honua-gate/idp/` and never exposed as Terraform outputs.
 Terraform state contains these credentials: keep the existing private encrypted
 backend and restrict access to state and saved plans.

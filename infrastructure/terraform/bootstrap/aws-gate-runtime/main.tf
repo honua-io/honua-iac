@@ -7,6 +7,9 @@ locals {
   # Gate test Connections (quick-create Connection role, Connection ID gate-*).
   connection_roles = "arn:aws:iam::${var.member_account_id}:role/honua-connection-gate-*"
   service_role_arn = "arn:aws:iam::${var.member_account_id}:role/HonuaGateCloudFormation"
+  lane_role_arn    = "arn:aws:iam::${var.member_account_id}:role/HonuaGateLane"
+  # Verification lanes sign in to the shared gate stack as these test users. The client secret stays CloudFormation's.
+  idp_test_user_secrets = [aws_secretsmanager_secret.idp_admin.arn, aws_secretsmanager_secret.idp_viewer.arn]
   # A Launch Stack watchdog keeps its state and mode in two String parameters.
   watchdog_parameters = "arn:aws:ssm:us-east-1:${var.member_account_id}:parameter/honua/honua-gate-*/watchdog/*"
   workload_services = [
@@ -127,6 +130,10 @@ locals {
       }, {
       Sid       = "ListGateTasks", Effect = "Allow", Action = "ecs:ListTasks", Resource = "*"
       Condition = { ArnLike = { "ecs:cluster" = "arn:aws:ecs:us-east-1:${var.member_account_id}:cluster/honua-gate-*-Cluster-*" } }
+      }, {
+      Sid = "ReadGateTestUsers", Effect = "Allow", Action = "secretsmanager:GetSecretValue", Resource = local.idp_test_user_secrets
+      }, {
+      Sid = "DenyOtherSecretReads", Effect = "Deny", Action = ["secretsmanager:GetSecretValue", "secretsmanager:BatchGetSecretValue"], NotResource = local.idp_test_user_secrets
     }], local.region_controls, local.stack_tag_controls, local.stack_tag_permissions, local.network_cleanup_permissions)
   })
 }
