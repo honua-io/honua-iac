@@ -98,9 +98,9 @@ resource "aws_secretsmanager_secret_version" "idp_admin" {
 }
 
 # It carries no gate ownership tag (HonuaGate or a stack-name tag), on purpose: the service role's
-# DenyNonGateContentReads and the workload boundary's ownership deny then refuse every read, and the lane
-# role has no Secrets Manager access. The resource policy below denies gate roles as well, so a mistaken
-# HonuaGate tag would not open it. It needs no entry in the boundary's protected list (quota).
+# DenyNonGateContentReads and the workload boundary's ownership deny then refuse every read. Only the lane
+# role may read it (ReadGateTestUsers). The resource policy below denies every other gate role as well, so a
+# mistaken HonuaGate tag would not open it. It needs no entry in the boundary's protected list (quota).
 resource "aws_secretsmanager_secret" "idp_viewer" {
   name                    = "honua-gate/idp/viewer"
   recovery_window_in_days = 7
@@ -112,8 +112,11 @@ resource "aws_secretsmanager_secret_policy" "idp_viewer" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Sid       = "NoGateRoles", Effect = "Deny", Principal = "*", Action = "secretsmanager:*", Resource = "*"
-      Condition = { ArnLike = { "aws:PrincipalArn" = ["arn:aws:iam::${var.member_account_id}:role/honua-gate-*", "arn:aws:iam::${var.member_account_id}:role/HonuaGate*"] } }
+      Sid = "NoGateRoles", Effect = "Deny", Principal = "*", Action = "secretsmanager:*", Resource = "*"
+      Condition = {
+        ArnLike      = { "aws:PrincipalArn" = ["arn:aws:iam::${var.member_account_id}:role/honua-gate-*", "arn:aws:iam::${var.member_account_id}:role/HonuaGate*"] }
+        ArnNotEquals = { "aws:PrincipalArn" = local.lane_role_arn }
+      }
     }]
   })
 }

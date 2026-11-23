@@ -56,7 +56,8 @@ run "lane_runtime_inspection_is_read_only_and_gate_scoped" {
   }
   assert {
     condition = alltrue([for policy in [aws_iam_role_policy.lane.policy, aws_iam_policy.lane_boundary.policy] :
-      !anytrue([for statement in jsondecode(policy).Statement : statement.Effect == "Allow" && anytrue([
+      # ReadGateTestUsers is the one secret read; lane-test-user-reads.tftest.hcl pins it to the two test users.
+      !anytrue([for statement in jsondecode(policy).Statement : statement.Effect == "Allow" && !(try(statement.Sid, "") == "ReadGateTestUsers" && statement.Action == "secretsmanager:GetSecretValue") && anytrue([
         for action in flatten([statement.Action]) : contains(["ecs:DescribeTaskDefinition", "ecs:ExecuteCommand", "logs:StartQuery", "secretsmanager:GetSecretValue", "wafv2:GetLoggingConfiguration", "cloudwatch:GetMetricData", "cloudwatch:ListMetrics", "cloudwatch:PutMetricAlarm", "cloudwatch:SetAlarmState", "cloudwatch:DeleteAlarms", "ecs:UpdateService"], action) || endswith(action, ":*")
       ])])
     ])
