@@ -212,9 +212,10 @@ locals {
     # HonuaGateCloudFormationRestores) fence the source snapshot and the new instance's name and subnet group; the
     # RDS creation tag deny fences its tags.
     NotAction = concat(local.metadata_read_actions, ["s3:*", "ssm:*", "cognito-idp:TagResource", "logs:*LogDelivery", "backup-storage:MountCapsule", "iam:*tePolicy*", local.snapshot_restore_action], local.shared_creation_actions, local.untaggable_creates, local.creation_tag_actions, local.named_teardown_actions, local.temporary_subnet_cleanup_actions)
-    # An HTTPS listener makes ACM grant ELB use of the AWS-managed aws/acm key as the caller; that key
-    # cannot carry HonuaGate=true. kms:ViaService only ever carries AWS service endpoints (acm.<region>.amazonaws.com).
-    Condition = merge(local.ownership_condition, { StringNotLike = { "kms:ViaService" = "acm.*" } })
+    # An HTTPS listener makes ACM grant ELB use of the AWS-managed aws/acm key as the caller, and a function with
+    # environment variables makes Lambda encrypt them with aws/lambda as the caller; neither key can carry
+    # HonuaGate=true. kms:ViaService only ever carries AWS service endpoints (acm.<region>.amazonaws.com).
+    Condition = merge(local.ownership_condition, { StringNotLike = { "kms:ViaService" = ["acm.*", "lambda.*"] } })
   }
   # CloudFront access logs (standard logging v2). Delivery resources are outside the ownership deny (delivery_arns), so
   # these denies fence them. Creates must carry the stack's HonuaGate=true request tag, a destination may only point at

@@ -204,26 +204,27 @@ run "reject_more_than_two_cleanup_gateways" {
   expect_failures = [var.temporary_cleanup_gateway_ids]
 }
 
-run "acm_may_use_its_managed_key_for_the_service_role_only" {
+run "acm_and_lambda_may_use_their_managed_keys_for_the_service_role_only" {
   command = plan
   assert {
     condition = {
       for key, value in local.service_role_ownership_deny.Condition : key => value if key != "StringNotLike"
-      } == local.ownership_condition && local.service_role_ownership_deny.Condition.StringNotLike == { "kms:ViaService" = "acm.*" } && alltrue([
+      } == local.ownership_condition && local.service_role_ownership_deny.Condition.StringNotLike == { "kms:ViaService" = ["acm.*", "lambda.*"] } && alltrue([
         for scenario in [
           { name = "acm_grant_on_managed_key", denied = false, context = { "kms:ViaService" = "acm.us-east-1.amazonaws.com" } },
+          { name = "lambda_environment_encrypt_on_managed_key", denied = false, context = { "kms:ViaService" = "lambda.us-east-1.amazonaws.com" } },
           { name = "direct_grant_on_managed_key", denied = true, context = {} },
           { name = "other_service_on_managed_key", denied = true, context = { "kms:ViaService" = "ec2.us-east-1.amazonaws.com" } },
           { name = "owned_key", denied = false, context = { "aws:ResourceTag/HonuaGate" = "true" } }
           ] : scenario.denied == alltrue([
             for operator, entries in local.service_role_ownership_deny.Condition : alltrue([
               for key, value in entries :
-              operator == "StringNotLike" ? !can(regex("^${replace(value, "*", ".*")}$", scenario.context[key])) :
+              operator == "StringNotLike" ? !anytrue([for pattern in flatten([value]) : can(regex("^${replace(pattern, "*", ".*")}$", scenario.context[key]))]) :
               operator == "StringNotEqualsIfExists" ? try(scenario.context[key] != value, true) :
               operator == "StringNotLikeIfExists" ? !can(regex("^${replace(value, "*", ".*")}$", scenario.context[key])) : false
             ])
         ])
     ]) && local.boundary_ownership_deny.Condition.StringNotLike == { "kms:ViaService" = "secretsmanager.*" }
-    error_message = "Only KMS calls ACM makes for the service role may skip the ownership tag on a key; workload roles keep the Secrets Manager exemption alone."
+    error_message = "Only KMS calls ACM or Lambda make for the service role may skip the ownership tag on a key; workload roles keep the Secrets Manager exemption alone."
   }
 }

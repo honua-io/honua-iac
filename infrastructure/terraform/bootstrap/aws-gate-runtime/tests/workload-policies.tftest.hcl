@@ -39,8 +39,8 @@ run "stack_managed_policies_are_fenced_by_gate_name" {
   assert {
     # Role policies and other principals' policies keep the ownership fence; workloads never manage policies.
     condition = alltrue([for action in ["iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:PutUserPolicy", "iam:AttachRolePolicy", "iam:CreatePolicy"] : alltrue([
-      for deny in action == "iam:CreatePolicy" ? [local.boundary_ownership_deny] : [local.service_role_ownership_deny, local.boundary_ownership_deny] :
-      !anytrue([for pattern in deny.NotAction : can(regex("^${replace(pattern, "*", ".*")}$", action))])
+      for not_actions in action == "iam:CreatePolicy" ? [local.boundary_ownership_deny.NotAction] : [local.service_role_ownership_deny.NotAction, local.boundary_ownership_deny.NotAction] :
+      !anytrue([for pattern in not_actions : can(regex("^${replace(pattern, "*", ".*")}$", action))])
     ])])
     error_message = "The policy-lifecycle exemption must not cover role or user policies, nor apply to workloads."
   }

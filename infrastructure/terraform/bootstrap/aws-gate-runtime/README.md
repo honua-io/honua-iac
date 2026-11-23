@@ -425,6 +425,16 @@ key. Today ACM uses only `aws/acm`, and the caller cannot choose the key; if ACM
 ever accepts customer-managed keys, pin this to `kms:GrantIsForAWSResource` or
 the `aws/acm` key ARN when the quota allows.
 
+Lambda does the same for a function with environment variables and no
+`KmsKeyArn`: it encrypts them with the AWS-managed `aws/lambda` key, authorized
+as the caller. The Launch Stack watchdog function is the only one with
+environment variables, so the first gate stack with the watchdog installed
+(honua-gate-1, 23 Nov) rolled back on `kms:Encrypt`. The exemption therefore also
+matches `lambda.*`. Residual risk: a stack function that names a
+customer-managed key through `KmsKeyArn` can have Lambda encrypt with, and grant
+itself decryption of, an untagged key. Lambda acts only for functions the role
+creates, and workload roles keep the full fence.
+
 AWS does not expose this resource tag for every action. In particular, Route 53
 record changes, other untaggable CloudFront resources (origin access identities,
 key groups, public keys, KeyValueStores, real-time log configurations),
