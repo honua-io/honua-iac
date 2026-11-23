@@ -458,8 +458,8 @@ resource "aws_budgets_budget" "shared" {
   }
 }
 
-# The account's AWS-managed Lambda key (see lambda_key_deny). Lambda creates it with the first function that has
-# environment variables, so a new shared account must create one before this module applies.
+# The account's AWS-managed Lambda key (see lambda_key_deny), read at plan time. KMS creates the key on this read if
+# Lambda has not yet.
 data "aws_kms_alias" "lambda" {
   count = var.shared_account ? 1 : 0
   name  = "alias/aws/lambda"
