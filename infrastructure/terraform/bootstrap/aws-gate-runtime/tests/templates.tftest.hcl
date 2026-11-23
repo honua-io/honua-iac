@@ -94,9 +94,9 @@ run "cloudformation_reads_templates_and_workloads_cannot_touch_them" {
   assert {
     condition = anytrue([
       for statement in jsondecode(aws_s3_bucket_policy.templates.policy).Statement :
-      try(statement.Sid == "WorkloadsReadOnlyConsoleBundles" && statement.Effect == "Deny" && statement.Action == "s3:GetObject" && statement.Condition.ArnLike["aws:PrincipalArn"] == local.workload_roles && statement.NotResource == [format("arn:aws:s3:::honua-gate-templates-%s/templates/*/console.zip", var.member_account_id)], false)
+      try(statement.Sid == "WorkloadsReadOnlyInstallArchives" && statement.Effect == "Deny" && statement.Action == "s3:GetObject" && statement.Condition.ArnLike["aws:PrincipalArn"] == local.workload_roles && statement.NotResource == [format("arn:aws:s3:::honua-gate-templates-%s/templates/*/console.zip", var.member_account_id), format("arn:aws:s3:::honua-gate-templates-%s/templates/*/watchdog.zip", var.member_account_id)], false)
     ])
-    error_message = "Launch Stack workload roles may read published Console bundles and no other template object."
+    error_message = "Launch Stack workload roles may read published Console bundles and watchdog archives and no other template object."
   }
   assert {
     condition = anytrue([

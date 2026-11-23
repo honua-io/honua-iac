@@ -1,7 +1,8 @@
 # Launch Stack templates exceed the 51,200-byte inline TemplateBody limit, so
 # the lane uploads them here and passes an S3 TemplateURL. The name matches the
 # honua-gate-* bucket namespace the service role may manage; the bucket policy
-# fences that role to object reads and lets workload roles read only Console bundles.
+# fences that role to object reads and lets workload roles read only the Console
+# bundle and watchdog archive.
 # SSE-S3 (Amazon S3 managed keys), not the aws/s3 KMS key: the lane boundary
 # allows no kms:*, and shared-account mode denies kms:Decrypt on keys no gate
 # stack owns.
@@ -9,7 +10,7 @@ locals {
   template_bucket     = "honua-gate-templates-${var.member_account_id}"
   template_bucket_arn = "arn:aws:s3:::${local.template_bucket}"
   template_objects    = "${local.template_bucket_arn}/templates/*"
-  console_objects     = "${local.template_bucket_arn}/templates/*/console.zip"
+  install_archives    = ["${local.template_bucket_arn}/templates/*/console.zip", "${local.template_bucket_arn}/templates/*/watchdog.zip"]
 }
 resource "aws_s3_bucket" "templates" {
   bucket = local.template_bucket
@@ -65,10 +66,10 @@ resource "aws_s3_bucket_policy" "templates" {
       Resource  = [local.template_bucket_arn, "${local.template_bucket_arn}/*"]
       Condition = { ArnLike = { "aws:PrincipalArn" = local.workload_roles } }
       }, {
-      # A gate stack's Console installer reads the published bundle with its own role when the
-      # anonymous read is refused; it gets that archive and nothing else in the bucket.
-      Sid         = "WorkloadsReadOnlyConsoleBundles", Effect = "Deny", Principal = "*", Action = "s3:GetObject"
-      NotResource = [local.console_objects]
+      # A gate stack's Console installer and watchdog copier read the published archive with their own
+      # role when the anonymous read is refused; they get those archives and nothing else in the bucket.
+      Sid         = "WorkloadsReadOnlyInstallArchives", Effect = "Deny", Principal = "*", Action = "s3:GetObject"
+      NotResource = local.install_archives
       Condition   = { ArnLike = { "aws:PrincipalArn" = local.workload_roles } }
     }]
   })

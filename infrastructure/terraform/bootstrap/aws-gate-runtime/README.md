@@ -504,10 +504,11 @@ versioning on, TLS required, and current and noncurrent versions expiring after
 CloudFormation service role may only get them. The bucket name falls inside the
 `honua-gate-*` namespace the service role manages, so the bucket policy denies
 that role every action except `s3:GetObject` and denies workload roles
-everything except `s3:GetObject` on `templates/*/console.zip`: a template cannot
-rewrite, delete or re-policy the bucket it was launched from. That one read lets a
-gate stack's Console installer fetch a bundle published with `--private-bucket`
-(it retries with its own role when the anonymous read is refused). Objects use
+everything except `s3:GetObject` on `templates/*/console.zip` and
+`templates/*/watchdog.zip`: a template cannot rewrite, delete or re-policy the
+bucket it was launched from. Those reads let a gate stack's Console installer and
+watchdog copier fetch archives published with `--private-bucket` (each retries
+with its own role when the anonymous read is refused). Objects use
 S3-managed encryption (SSE-S3) rather than the
 `aws/s3` KMS key, because shared-account mode denies `kms:Decrypt` on keys no
 gate stack owns and the service role would be unable to read the template.
