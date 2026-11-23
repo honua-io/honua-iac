@@ -1,7 +1,8 @@
 # Launch Stack templates exceed the 51,200-byte inline TemplateBody limit, so
 # the lane uploads them here and passes an S3 TemplateURL. The name matches the
 # honua-gate-* bucket namespace the service role may manage; the bucket policy
-# fences that role to object reads and lets workload roles read only Console bundles.
+# fences that role to object reads and lets workload roles read only the Console
+# bundle and watchdog archive.
 # SSE-S3 (Amazon S3 managed keys), not the aws/s3 KMS key: the lane boundary
 # allows no kms:*, and shared-account mode denies kms:Decrypt on keys no gate
 # stack owns.
