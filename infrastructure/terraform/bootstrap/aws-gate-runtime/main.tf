@@ -74,7 +74,8 @@ locals {
       # The gate lane signs in to its gate stacks as the IdP admin user to seed scenes
       # and issue scoped keys for verification lanes. Read only, this one secret; the
       # viewer secret stays fenced (its own policy denies HonuaGate* roles). The six
-      # wildcards are Secrets Manager's random ARN suffix, so no longer secret name matches.
+      # wildcards match only Secrets Manager's random ARN suffix, not other names
+      # that start with "admin".
       Sid      = "ReadIdpAdminSecret", Effect = "Allow", Action = "secretsmanager:GetSecretValue"
       Resource = "arn:aws:secretsmanager:us-east-1:${var.member_account_id}:secret:honua-gate/idp/admin-??????"
       }, {
