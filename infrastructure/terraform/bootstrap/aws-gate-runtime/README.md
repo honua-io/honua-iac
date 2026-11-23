@@ -429,11 +429,15 @@ Lambda does the same for a function with environment variables and no
 `KmsKeyArn`: it encrypts them with the AWS-managed `aws/lambda` key, authorized
 as the caller. The Launch Stack watchdog function is the only one with
 environment variables, so the first gate stack with the watchdog installed
-(honua-gate-1, 23 Nov) rolled back on `kms:Encrypt`. The exemption therefore also
-matches `lambda.*`. Residual risk: a stack function that names a
-customer-managed key through `KmsKeyArn` can have Lambda encrypt with, and grant
-itself decryption of, an untagged key. Lambda acts only for functions the role
-creates, and workload roles keep the full fence.
+rolled back on `kms:Encrypt` (23 Nov). The exemption therefore also matches
+`lambda.*`. Unlike ACM, Lambda lets a template choose the key, so a separate
+deny in `HonuaGateCloudFormationRestores` (`LambdaManagedOrGateKeys`) refuses
+any KMS call made through Lambda unless the key's alias is `alias/aws/lambda`
+or the key carries `HonuaGate=true`. A key with no alias stays denied. Without
+that pin the role could have Lambda encrypt with, and create grants on, an
+untagged customer-managed key, and read plaintext environment variables of
+non-gate functions through `lambda:Get*`, which the ownership deny treats as
+metadata. Workload roles keep the full fence.
 
 AWS does not expose this resource tag for every action. In particular, Route 53
 record changes, other untaggable CloudFront resources (origin access identities,

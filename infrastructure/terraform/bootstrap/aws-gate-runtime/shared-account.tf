@@ -217,6 +217,17 @@ locals {
     # HonuaGate=true. kms:ViaService only ever carries AWS service endpoints (acm.<region>.amazonaws.com).
     Condition = merge(local.ownership_condition, { StringNotLike = { "kms:ViaService" = ["acm.*", "lambda.*"] } })
   }
+  # Lambda, unlike ACM, lets a template choose the key (KmsKeyArn), so the lambda.* exemption above is pinned
+  # here: through Lambda the service role may use only the AWS-managed aws/lambda key or a gate-owned key. A key
+  # with no alias lacks kms:ResourceAliases, and ForAllValues on a missing key is true, so it stays denied.
+  lambda_key_deny = {
+    Sid = "LambdaManagedOrGateKeys", Effect = "Deny", Action = "kms:*", Resource = "*"
+    Condition = {
+      StringLike                   = { "kms:ViaService" = "lambda.*" }
+      "ForAllValues:StringNotLike" = { "kms:ResourceAliases" = "alias/aws/lambda" }
+      StringNotEqualsIfExists      = { "aws:ResourceTag/HonuaGate" = "true" }
+    }
+  }
   # CloudFront access logs (standard logging v2). Delivery resources are outside the ownership deny (delivery_arns), so
   # these denies fence them. Creates must carry the stack's HonuaGate=true request tag, a destination may only point at
   # a gate vended-log group, and every call that names a source or destination must name a Launch Stack one

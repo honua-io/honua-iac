@@ -212,7 +212,7 @@ run "acm_and_lambda_may_use_their_managed_keys_for_the_service_role_only" {
       } == local.ownership_condition && local.service_role_ownership_deny.Condition.StringNotLike == { "kms:ViaService" = ["acm.*", "lambda.*"] } && alltrue([
         for scenario in [
           { name = "acm_grant_on_managed_key", denied = false, context = { "kms:ViaService" = "acm.us-east-1.amazonaws.com" } },
-          { name = "lambda_environment_encrypt_on_managed_key", denied = false, context = { "kms:ViaService" = "lambda.us-east-1.amazonaws.com" } },
+          { name = "lambda_call_skips_ownership_deny_pinned_separately", denied = false, context = { "kms:ViaService" = "lambda.us-east-1.amazonaws.com" } },
           { name = "direct_grant_on_managed_key", denied = true, context = {} },
           { name = "other_service_on_managed_key", denied = true, context = { "kms:ViaService" = "ec2.us-east-1.amazonaws.com" } },
           { name = "owned_key", denied = false, context = { "aws:ResourceTag/HonuaGate" = "true" } }
@@ -226,5 +226,32 @@ run "acm_and_lambda_may_use_their_managed_keys_for_the_service_role_only" {
         ])
     ]) && local.boundary_ownership_deny.Condition.StringNotLike == { "kms:ViaService" = "secretsmanager.*" }
     error_message = "Only KMS calls ACM or Lambda make for the service role may skip the ownership tag on a key; workload roles keep the Secrets Manager exemption alone."
+  }
+}
+
+run "lambda_kms_calls_are_pinned_to_aws_lambda_or_gate_keys" {
+  command = plan
+  assert {
+    condition = alltrue([
+      for scenario in [
+        { name = "aws_lambda_key", denied = false, context = { "kms:ViaService" = "lambda.us-east-1.amazonaws.com", "kms:ResourceAliases" = ["alias/aws/lambda"] } },
+        { name = "gate_key_via_lambda", denied = false, context = { "kms:ViaService" = "lambda.us-east-1.amazonaws.com", "kms:ResourceAliases" = ["alias/honua-gate-1"], "aws:ResourceTag/HonuaGate" = "true" } },
+        { name = "untagged_customer_key_via_lambda", denied = true, context = { "kms:ViaService" = "lambda.us-east-1.amazonaws.com", "kms:ResourceAliases" = ["alias/payroll"] } },
+        { name = "unaliased_untagged_key_via_lambda", denied = true, context = { "kms:ViaService" = "lambda.us-east-1.amazonaws.com" } },
+        { name = "aws_acm_key_via_acm", denied = false, context = { "kms:ViaService" = "acm.us-east-1.amazonaws.com", "kms:ResourceAliases" = ["alias/aws/acm"] } },
+        ] : scenario.denied == (
+        can(regex("^lambda\\.", scenario.context["kms:ViaService"])) &&
+        alltrue([for alias in try(scenario.context["kms:ResourceAliases"], []) : alias != "alias/aws/lambda"]) &&
+        try(scenario.context["aws:ResourceTag/HonuaGate"] != "true", true)
+      )
+      ]) && anytrue([for statement in jsondecode(aws_iam_policy.cloudformation_restores.policy).Statement : try(statement == {
+        Sid = "LambdaManagedOrGateKeys", Effect = "Deny", Action = "kms:*", Resource = "*"
+        Condition = {
+          StringLike                   = { "kms:ViaService" = "lambda.*" }
+          "ForAllValues:StringNotLike" = { "kms:ResourceAliases" = "alias/aws/lambda" }
+          StringNotEqualsIfExists      = { "aws:ResourceTag/HonuaGate" = "true" }
+        }
+    }, false)])
+    error_message = "Through Lambda the service role may use only aws/lambda or a HonuaGate=true key; an untagged customer key, with or without an alias, must stay denied."
   }
 }
