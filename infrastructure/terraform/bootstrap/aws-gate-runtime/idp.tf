@@ -99,7 +99,7 @@ resource "aws_secretsmanager_secret_version" "idp_admin" {
 
 # It carries no gate ownership tag (HonuaGate or a stack-name tag), on purpose: the service role's
 # DenyNonGateContentReads and the workload boundary's ownership deny then refuse every read, and the lane
-# role has no Secrets Manager access. The resource policy below denies gate roles as well, so a mistaken
+# role may read only the admin secret. The resource policy below denies gate roles as well, so a mistaken
 # HonuaGate tag would not open it. It needs no entry in the boundary's protected list (quota).
 resource "aws_secretsmanager_secret" "idp_viewer" {
   name                    = "honua-gate/idp/viewer"

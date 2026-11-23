@@ -70,3 +70,17 @@ run "batch_queue_metadata_is_not_a_content_read" {
     error_message = "Job and job-definition reads stay content reads; the job queue handler's DescribeJobQueues must not be fenced as one."
   }
 }
+
+run "lane_reads_only_the_idp_admin_secret" {
+  command = plan
+  assert {
+    condition = alltrue([for policy in [aws_iam_role_policy.lane.policy, aws_iam_policy.lane_boundary.policy] :
+      length([for statement in jsondecode(policy).Statement : statement if try(statement.Effect == "Allow" && anytrue([
+        for action in flatten([statement.Action]) : startswith(action, "secretsmanager:")
+        ]), false)]) == 1 && anytrue([for statement in jsondecode(policy).Statement : try(
+        statement.Sid == "ReadIdpAdminSecret" && statement.Action == "secretsmanager:GetSecretValue" && statement.Resource == "arn:aws:secretsmanager:us-east-1:000000000002:secret:honua-gate/idp/admin-??????", false
+      )])
+    ])
+    error_message = "The lane may read the IdP admin secret's value and no other Secrets Manager action or secret."
+  }
+}

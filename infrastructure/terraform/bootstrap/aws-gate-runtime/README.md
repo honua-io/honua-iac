@@ -569,8 +569,10 @@ uses the authorization-code flow with `openid`, `profile` and `email` scopes. Th
 checks sign in with it to prove that a role-less session is denied. Its secret
 (`honua-gate/idp/viewer`) carries no gate ownership tag, so the service role's
 content-read fence and the workload boundary refuse it; its own resource policy
-also denies every gate role, and the lane role has no Secrets Manager access.
-Main hands it to the verifier. Never add `HonuaGate=true` to it. Invitations are suppressed; credentials are written directly to
+also denies every gate role, and the lane role can read no secret but the admin one.
+Main hands it to the verifier. The gate lane reads `honua-gate/idp/admin`
+(`secretsmanager:GetSecretValue` on that secret only) to sign in to its gate stacks,
+seed scenes and issue scoped keys to verification lanes. Never add `HonuaGate=true` to it. Invitations are suppressed; credentials are written directly to
 Secrets Manager under `honua-gate/idp/` and never exposed as Terraform outputs.
 Terraform state contains these credentials: keep the existing private encrypted
 backend and restrict access to state and saved plans.

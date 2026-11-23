@@ -56,11 +56,11 @@ run "lane_runtime_inspection_is_read_only_and_gate_scoped" {
   }
   assert {
     condition = alltrue([for policy in [aws_iam_role_policy.lane.policy, aws_iam_policy.lane_boundary.policy] :
-      !anytrue([for statement in jsondecode(policy).Statement : statement.Effect == "Allow" && anytrue([
+      !anytrue([for statement in jsondecode(policy).Statement : statement.Effect == "Allow" && try(statement.Sid, "") != "ReadIdpAdminSecret" && anytrue([
         for action in flatten([statement.Action]) : contains(["ecs:DescribeTaskDefinition", "ecs:ExecuteCommand", "logs:StartQuery", "secretsmanager:GetSecretValue", "wafv2:GetLoggingConfiguration", "cloudwatch:GetMetricData", "cloudwatch:ListMetrics", "cloudwatch:PutMetricAlarm", "cloudwatch:SetAlarmState", "cloudwatch:DeleteAlarms", "ecs:UpdateService"], action) || endswith(action, ":*")
       ])])
     ])
-    error_message = "Lane runtime inspection must not grant unscoped task-definition reads, command execution, account-wide log queries, secret reads, metric listing, alarm or service writes, or service wildcards."
+    error_message = "Lane runtime inspection must not grant unscoped task-definition reads, command execution, account-wide log queries, secret reads, metric listing, alarm or service writes, or service wildcards (the IdP admin secret read is pinned in viewer-and-lane-reads)."
   }
 }
 

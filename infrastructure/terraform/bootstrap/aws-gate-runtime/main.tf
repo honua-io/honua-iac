@@ -71,6 +71,13 @@ locals {
       }, {
       Sid = "RegistryLogin", Effect = "Allow", Action = "ecr:GetAuthorizationToken", Resource = "*"
       }, {
+      # The gate lane signs in to its gate stacks as the IdP admin user to seed scenes
+      # and issue scoped keys for verification lanes. Read only, this one secret; the
+      # viewer secret stays fenced (its own policy denies HonuaGate* roles). The six
+      # wildcards are Secrets Manager's random ARN suffix, so no longer secret name matches.
+      Sid      = "ReadIdpAdminSecret", Effect = "Allow", Action = "secretsmanager:GetSecretValue"
+      Resource = "arn:aws:secretsmanager:us-east-1:${var.member_account_id}:secret:honua-gate/idp/admin-??????"
+      }, {
       Sid = "SyncIdpCallbacks", Effect = "Allow", Action = "lambda:InvokeFunction", Resource = "arn:aws:lambda:us-east-1:${var.member_account_id}:function:honua-gate-reaper-callbacks"
       }, {
       # Security proofs evaluate a gate role's deployed policies and boundary
