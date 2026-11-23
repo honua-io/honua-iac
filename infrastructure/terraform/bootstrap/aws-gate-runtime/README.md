@@ -432,12 +432,12 @@ environment variables, so the first gate stack with the watchdog installed
 rolled back on `kms:Encrypt` (23 Nov). The exemption therefore also matches
 `lambda.*`. Unlike ACM, Lambda lets a template choose the key, so a separate
 deny in `HonuaGateCloudFormationRestores` (`LambdaManagedOrGateKeys`) refuses
-any KMS call made through Lambda unless the key's alias is `alias/aws/lambda`
-or the key carries `HonuaGate=true`. A key with no alias stays denied. Without
-that pin the role could have Lambda encrypt with, and create grants on, an
-untagged customer-managed key, and read plaintext environment variables of
-non-gate functions through `lambda:Get*`, which the ownership deny treats as
-metadata. Workload roles keep the full fence.
+any KMS call made through Lambda unless the key is the account's `aws/lambda`
+key (by ARN, read from the `alias/aws/lambda` alias at apply time) or carries
+`HonuaGate=true`. Without that pin the role could have Lambda encrypt with,
+and create grants on, an untagged customer-managed key. Lambda creates the
+`aws/lambda` key with the first function that has environment variables, so a
+new shared account needs one before this module applies. Workload roles keep the full fence.
 
 AWS does not expose this resource tag for every action. In particular, Route 53
 record changes, other untaggable CloudFront resources (origin access identities,

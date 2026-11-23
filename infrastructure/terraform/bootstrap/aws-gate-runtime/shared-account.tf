@@ -218,14 +218,13 @@ locals {
     Condition = merge(local.ownership_condition, { StringNotLike = { "kms:ViaService" = ["acm.*", "lambda.*"] } })
   }
   # Lambda, unlike ACM, lets a template choose the key (KmsKeyArn), so the lambda.* exemption above is pinned
-  # here: through Lambda the service role may use only the AWS-managed aws/lambda key or a gate-owned key. A key
-  # with no alias lacks kms:ResourceAliases, and ForAllValues on a missing key is true, so it stays denied.
+  # here: through Lambda the service role may use only the account's AWS-managed aws/lambda key, named by ARN
+  # because the request always carries the resource, or a key tagged HonuaGate=true.
   lambda_key_deny = {
-    Sid = "LambdaManagedOrGateKeys", Effect = "Deny", Action = "kms:*", Resource = "*"
+    Sid = "LambdaManagedOrGateKeys", Effect = "Deny", Action = "kms:*", NotResource = one(data.aws_kms_alias.lambda[*].target_key_arn)
     Condition = {
-      StringLike                   = { "kms:ViaService" = "lambda.*" }
-      "ForAllValues:StringNotLike" = { "kms:ResourceAliases" = "alias/aws/lambda" }
-      StringNotEqualsIfExists      = { "aws:ResourceTag/HonuaGate" = "true" }
+      StringLike              = { "kms:ViaService" = "lambda.*" }
+      StringNotEqualsIfExists = { "aws:ResourceTag/HonuaGate" = "true" }
     }
   }
   # CloudFront access logs (standard logging v2). Delivery resources are outside the ownership deny (delivery_arns), so
@@ -457,4 +456,11 @@ resource "aws_budgets_budget" "shared" {
     threshold_type             = "PERCENTAGE"
     subscriber_email_addresses = [var.budget_alert_email]
   }
+}
+
+# The account's AWS-managed Lambda key (see lambda_key_deny). Lambda creates it with the first function that has
+# environment variables, so a new shared account must create one before this module applies.
+data "aws_kms_alias" "lambda" {
+  count = var.shared_account ? 1 : 0
+  name  = "alias/aws/lambda"
 }

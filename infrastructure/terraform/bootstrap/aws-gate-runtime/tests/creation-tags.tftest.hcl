@@ -231,27 +231,28 @@ run "acm_and_lambda_may_use_their_managed_keys_for_the_service_role_only" {
 
 run "lambda_kms_calls_are_pinned_to_aws_lambda_or_gate_keys" {
   command = plan
+  override_data {
+    target = data.aws_kms_alias.lambda[0]
+    values = { target_key_arn = "arn:aws:kms:us-east-1:000000000002:key/aws-lambda-managed" }
+  }
   assert {
+    # Evaluates the attached statement itself: Deny when the resource is outside NotResource and every condition holds.
     condition = alltrue([
       for scenario in [
-        { name = "aws_lambda_key", denied = false, context = { "kms:ViaService" = "lambda.us-east-1.amazonaws.com", "kms:ResourceAliases" = ["alias/aws/lambda"] } },
-        { name = "gate_key_via_lambda", denied = false, context = { "kms:ViaService" = "lambda.us-east-1.amazonaws.com", "kms:ResourceAliases" = ["alias/honua-gate-1"], "aws:ResourceTag/HonuaGate" = "true" } },
-        { name = "untagged_customer_key_via_lambda", denied = true, context = { "kms:ViaService" = "lambda.us-east-1.amazonaws.com", "kms:ResourceAliases" = ["alias/payroll"] } },
-        { name = "unaliased_untagged_key_via_lambda", denied = true, context = { "kms:ViaService" = "lambda.us-east-1.amazonaws.com" } },
-        { name = "aws_acm_key_via_acm", denied = false, context = { "kms:ViaService" = "acm.us-east-1.amazonaws.com", "kms:ResourceAliases" = ["alias/aws/acm"] } },
-        ] : scenario.denied == (
-        can(regex("^lambda\\.", scenario.context["kms:ViaService"])) &&
-        alltrue([for alias in try(scenario.context["kms:ResourceAliases"], []) : alias != "alias/aws/lambda"]) &&
-        try(scenario.context["aws:ResourceTag/HonuaGate"] != "true", true)
-      )
-      ]) && anytrue([for statement in jsondecode(aws_iam_policy.cloudformation_restores.policy).Statement : try(statement == {
-        Sid = "LambdaManagedOrGateKeys", Effect = "Deny", Action = "kms:*", Resource = "*"
-        Condition = {
-          StringLike                   = { "kms:ViaService" = "lambda.*" }
-          "ForAllValues:StringNotLike" = { "kms:ResourceAliases" = "alias/aws/lambda" }
-          StringNotEqualsIfExists      = { "aws:ResourceTag/HonuaGate" = "true" }
-        }
-    }, false)])
-    error_message = "Through Lambda the service role may use only aws/lambda or a HonuaGate=true key; an untagged customer key, with or without an alias, must stay denied."
+        { name = "aws_lambda_key", denied = false, key = "key/aws-lambda-managed", context = { "kms:ViaService" = "lambda.us-east-1.amazonaws.com" } },
+        { name = "gate_key_via_lambda", denied = false, key = "key/gate", context = { "kms:ViaService" = "lambda.us-east-1.amazonaws.com", "aws:ResourceTag/HonuaGate" = "true" } },
+        { name = "untagged_customer_key_via_lambda", denied = true, key = "key/payroll", context = { "kms:ViaService" = "lambda.us-east-1.amazonaws.com" } },
+        { name = "acm_on_untagged_key", denied = false, key = "key/aws-acm-managed", context = { "kms:ViaService" = "acm.us-east-1.amazonaws.com" } },
+        ] : scenario.denied == anytrue([for statement in jsondecode(aws_iam_policy.cloudformation_restores.policy).Statement : try(
+          statement.Sid == "LambdaManagedOrGateKeys" && statement.Effect == "Deny" && statement.Action == "kms:*" &&
+          !contains(flatten([statement.NotResource]), "arn:aws:kms:us-east-1:000000000002:${scenario.key}") && alltrue([
+            for operator, entries in statement.Condition : alltrue([
+              for key, value in entries :
+              operator == "StringLike" ? can(regex("^${replace(value, "*", ".*")}$", scenario.context[key])) :
+              operator == "StringNotEqualsIfExists" ? try(scenario.context[key] != value, true) : false
+            ])
+      ]), false)])
+    ]) && length(jsonencode(jsondecode(aws_iam_policy.cloudformation_restores.policy))) <= 6144
+    error_message = "Through Lambda the service role may use only the aws/lambda key or a HonuaGate=true key, and the restores policy must fit 6144 characters."
   }
 }
