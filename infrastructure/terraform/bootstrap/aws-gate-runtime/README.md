@@ -425,6 +425,20 @@ key. Today ACM uses only `aws/acm`, and the caller cannot choose the key; if ACM
 ever accepts customer-managed keys, pin this to `kms:GrantIsForAWSResource` or
 the `aws/acm` key ARN when the quota allows.
 
+Lambda does the same for a function with environment variables and no
+`KmsKeyArn`: it encrypts them with the AWS-managed `aws/lambda` key, authorized
+as the caller. The Launch Stack watchdog function is the only one with
+environment variables, so the first gate stack with the watchdog installed
+rolled back on `kms:Encrypt` (23 Nov). The exemption therefore also matches
+`lambda.*`. Unlike ACM, Lambda lets a template choose the key, so a separate
+deny in `HonuaGateCloudFormationRestores` (`LambdaManagedOrGateKeys`) refuses
+any KMS call made through Lambda unless the key is the account's `aws/lambda`
+key (by ARN, read from the `alias/aws/lambda` alias at plan time) or carries
+`HonuaGate=true`. Without that pin the role could have Lambda encrypt with,
+and create grants on, an untagged customer-managed key. Reading the alias
+creates the AWS-managed key if Lambda has not yet, so a new shared account
+needs no extra step. Workload roles keep the full fence.
+
 AWS does not expose this resource tag for every action. In particular, Route 53
 record changes, other untaggable CloudFront resources (origin access identities,
 key groups, public keys, KeyValueStores, real-time log configurations),

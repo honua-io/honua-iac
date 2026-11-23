@@ -204,10 +204,11 @@ resource "aws_iam_policy" "cloudformation_workload_policies" {
     Sid = "OnlyWorkloadPolicyLifecycle", Effect = "Deny", Action = "iam:*tePolicy*", NotResource = local.workload_policies
   }] })
 }
-# The snapshot fence for restore drill stacks; the fences policy has no room for it with a test domain.
+# The snapshot fence for restore drill stacks and the Lambda key pin; the fences policy has no room for them with a
+# test domain.
 resource "aws_iam_policy" "cloudformation_restores" {
   name   = "HonuaGateCloudFormationRestores"
-  policy = jsonencode({ Version = "2012-10-17", Statement = local.restored_snapshot_denies })
+  policy = jsonencode({ Version = "2012-10-17", Statement = concat(local.restored_snapshot_denies, var.shared_account ? [local.lambda_key_deny] : []) })
 }
 resource "aws_iam_role_policy_attachment" "cloudformation_restores" {
   role       = aws_iam_role.cloudformation.name

@@ -204,26 +204,55 @@ run "reject_more_than_two_cleanup_gateways" {
   expect_failures = [var.temporary_cleanup_gateway_ids]
 }
 
-run "acm_may_use_its_managed_key_for_the_service_role_only" {
+run "acm_and_lambda_may_use_their_managed_keys_for_the_service_role_only" {
   command = plan
   assert {
     condition = {
       for key, value in local.service_role_ownership_deny.Condition : key => value if key != "StringNotLike"
-      } == local.ownership_condition && local.service_role_ownership_deny.Condition.StringNotLike == { "kms:ViaService" = "acm.*" } && alltrue([
+      } == local.ownership_condition && local.service_role_ownership_deny.Condition.StringNotLike == { "kms:ViaService" = ["acm.*", "lambda.*"] } && alltrue([
         for scenario in [
           { name = "acm_grant_on_managed_key", denied = false, context = { "kms:ViaService" = "acm.us-east-1.amazonaws.com" } },
+          { name = "lambda_call_skips_ownership_deny_pinned_separately", denied = false, context = { "kms:ViaService" = "lambda.us-east-1.amazonaws.com" } },
           { name = "direct_grant_on_managed_key", denied = true, context = {} },
           { name = "other_service_on_managed_key", denied = true, context = { "kms:ViaService" = "ec2.us-east-1.amazonaws.com" } },
           { name = "owned_key", denied = false, context = { "aws:ResourceTag/HonuaGate" = "true" } }
           ] : scenario.denied == alltrue([
             for operator, entries in local.service_role_ownership_deny.Condition : alltrue([
               for key, value in entries :
-              operator == "StringNotLike" ? !can(regex("^${replace(value, "*", ".*")}$", scenario.context[key])) :
+              operator == "StringNotLike" ? !anytrue([for pattern in flatten([value]) : can(regex("^${replace(pattern, "*", ".*")}$", scenario.context[key]))]) :
               operator == "StringNotEqualsIfExists" ? try(scenario.context[key] != value, true) :
               operator == "StringNotLikeIfExists" ? !can(regex("^${replace(value, "*", ".*")}$", scenario.context[key])) : false
             ])
         ])
     ]) && local.boundary_ownership_deny.Condition.StringNotLike == { "kms:ViaService" = "secretsmanager.*" }
-    error_message = "Only KMS calls ACM makes for the service role may skip the ownership tag on a key; workload roles keep the Secrets Manager exemption alone."
+    error_message = "Only KMS calls ACM or Lambda make for the service role may skip the ownership tag on a key; workload roles keep the Secrets Manager exemption alone."
+  }
+}
+
+run "lambda_kms_calls_are_pinned_to_aws_lambda_or_gate_keys" {
+  command = plan
+  override_data {
+    target = data.aws_kms_alias.lambda[0]
+    values = { target_key_arn = "arn:aws:kms:us-east-1:000000000002:key/aws-lambda-managed" }
+  }
+  assert {
+    # Evaluates the attached statement itself: Deny when the resource is outside NotResource and every condition holds.
+    condition = alltrue([
+      for scenario in [
+        { name = "aws_lambda_key", denied = false, key = "key/aws-lambda-managed", context = { "kms:ViaService" = "lambda.us-east-1.amazonaws.com" } },
+        { name = "gate_key_via_lambda", denied = false, key = "key/gate", context = { "kms:ViaService" = "lambda.us-east-1.amazonaws.com", "aws:ResourceTag/HonuaGate" = "true" } },
+        { name = "untagged_customer_key_via_lambda", denied = true, key = "key/payroll", context = { "kms:ViaService" = "lambda.us-east-1.amazonaws.com" } },
+        { name = "acm_on_untagged_key", denied = false, key = "key/aws-acm-managed", context = { "kms:ViaService" = "acm.us-east-1.amazonaws.com" } },
+        ] : scenario.denied == anytrue([for statement in jsondecode(aws_iam_policy.cloudformation_restores.policy).Statement : try(
+          statement.Sid == "LambdaManagedOrGateKeys" && statement.Effect == "Deny" && statement.Action == "kms:*" &&
+          !contains(flatten([statement.NotResource]), "arn:aws:kms:us-east-1:000000000002:${scenario.key}") && alltrue([
+            for operator, entries in statement.Condition : alltrue([
+              for key, value in entries :
+              operator == "StringLike" ? can(regex("^${replace(value, "*", ".*")}$", scenario.context[key])) :
+              operator == "StringNotEqualsIfExists" ? try(scenario.context[key] != value, true) : false
+            ])
+      ]), false)])
+    ]) && length(jsonencode(jsondecode(aws_iam_policy.cloudformation_restores.policy))) <= 6144
+    error_message = "Through Lambda the service role may use only the aws/lambda key or a HonuaGate=true key, and the restores policy must fit 6144 characters."
   }
 }
