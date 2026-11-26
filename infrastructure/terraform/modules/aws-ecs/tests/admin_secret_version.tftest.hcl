@@ -130,7 +130,7 @@ run "static_console_private_origins" {
     error_message = "API requests go to ALB, and CloudFront stores a response only when the origin's Cache-Control allows it."
   }
   assert {
-    condition     = toset([for behavior in aws_cloudfront_distribution.cdn[0].ordered_cache_behavior : behavior.path_pattern if behavior.target_origin_id == "console"]) == toset(["/console", "/console/*", "/console/_framework/*"]) && alltrue([for behavior in aws_cloudfront_distribution.cdn[0].ordered_cache_behavior : behavior.cache_policy_id == "4135ea2d-6df8-44a3-9df3-4b5a84be39ad" if behavior.target_origin_id == "api"])
+    condition     = toset([for behavior in aws_cloudfront_distribution.cdn[0].ordered_cache_behavior : behavior.path_pattern if behavior.target_origin_id == "console"]) == toset(["/console", "/console/config.json", "/console/*", "/console/_framework/*"]) && alltrue([for behavior in aws_cloudfront_distribution.cdn[0].ordered_cache_behavior : behavior.cache_policy_id == "4135ea2d-6df8-44a3-9df3-4b5a84be39ad" if behavior.target_origin_id == "api"])
     error_message = "Only Console paths may select the private S3 origin, and every other ordered path is uncached."
   }
   assert {

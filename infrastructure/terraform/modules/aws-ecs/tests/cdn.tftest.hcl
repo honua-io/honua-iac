@@ -156,11 +156,11 @@ run "cdn_with_console_and_access_logs" {
   }
   assert {
     condition = (
-      [for behavior in aws_cloudfront_distribution.cdn[0].ordered_cache_behavior : behavior.path_pattern if behavior.target_origin_id == "console"] == ["/console/_framework/*", "/console", "/console/*"] &&
-      alltrue([for behavior in aws_cloudfront_distribution.cdn[0].ordered_cache_behavior : behavior.cache_policy_id == aws_cloudfront_cache_policy.console_assets[0].id && behavior.compress if behavior.path_pattern == "/console/_framework/*"]) &&
-      alltrue([for behavior in aws_cloudfront_distribution.cdn[0].ordered_cache_behavior : behavior.cache_policy_id == "4135ea2d-6df8-44a3-9df3-4b5a84be39ad" if contains(["/console", "/console/*"], behavior.path_pattern)])
+      [for behavior in aws_cloudfront_distribution.cdn[0].ordered_cache_behavior : behavior.path_pattern if behavior.target_origin_id == "console"] == ["/console/_framework/*", "/console/config.json", "/console", "/console/*"] &&
+      alltrue([for behavior in aws_cloudfront_distribution.cdn[0].ordered_cache_behavior : behavior.cache_policy_id == aws_cloudfront_cache_policy.console_assets[0].id && behavior.compress if contains(["/console/_framework/*", "/console/*"], behavior.path_pattern)]) &&
+      alltrue([for behavior in aws_cloudfront_distribution.cdn[0].ordered_cache_behavior : behavior.cache_policy_id == "4135ea2d-6df8-44a3-9df3-4b5a84be39ad" if contains(["/console/config.json", "/console"], behavior.path_pattern)])
     )
-    error_message = "Framework files precede the Console catch-all; the entry document and runtime configuration are never cached."
+    error_message = "Console static paths respect origin Cache-Control while /console and /console/config.json remain uncached."
   }
   assert {
     condition     = one(aws_cloudfront_distribution.cdn[0].logging_config).bucket == "edge-logs.s3.amazonaws.com" && one(aws_cloudfront_distribution.cdn[0].logging_config).prefix == "maps/" && !one(aws_cloudfront_distribution.cdn[0].logging_config).include_cookies
