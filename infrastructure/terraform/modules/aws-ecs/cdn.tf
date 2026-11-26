@@ -110,7 +110,7 @@ resource "aws_cloudfront_cache_policy" "api" {
 resource "aws_cloudfront_cache_policy" "console_assets" {
   count   = var.static_console == null ? 0 : 1
   name    = "${local.name}-console-assets"
-  comment = "Console framework files are stored only for as long as their S3 Cache-Control metadata says."
+  comment = "Console static files are stored only for as long as their S3 Cache-Control metadata says."
 
   min_ttl     = 0
   default_ttl = 0
@@ -222,7 +222,21 @@ resource "aws_cloudfront_distribution" "cdn" {
   }
 
   dynamic "ordered_cache_behavior" {
-    for_each = var.static_console == null ? [] : ["/console", "/console/*"]
+    for_each = var.static_console == null ? [] : ["/console/config.json"]
+    content {
+      path_pattern               = ordered_cache_behavior.value
+      target_origin_id           = "console"
+      viewer_protocol_policy     = "redirect-to-https"
+      allowed_methods            = ["GET", "HEAD", "OPTIONS"]
+      cached_methods             = ["GET", "HEAD"]
+      compress                   = true
+      cache_policy_id            = local.cdn_managed_caching_disabled_policy_id
+      response_headers_policy_id = local.cdn_managed_security_headers_policy_id
+    }
+  }
+
+  dynamic "ordered_cache_behavior" {
+    for_each = var.static_console == null ? [] : ["/console"]
     content {
       path_pattern               = ordered_cache_behavior.value
       target_origin_id           = "console"
@@ -230,6 +244,24 @@ resource "aws_cloudfront_distribution" "cdn" {
       allowed_methods            = ["GET", "HEAD", "OPTIONS"]
       cached_methods             = ["GET", "HEAD"]
       cache_policy_id            = local.cdn_managed_caching_disabled_policy_id
+      response_headers_policy_id = local.cdn_managed_security_headers_policy_id
+      function_association {
+        event_type   = "viewer-request"
+        function_arn = aws_cloudfront_function.console_router[0].arn
+      }
+    }
+  }
+
+  dynamic "ordered_cache_behavior" {
+    for_each = var.static_console == null ? [] : ["/console/*"]
+    content {
+      path_pattern               = ordered_cache_behavior.value
+      target_origin_id           = "console"
+      viewer_protocol_policy     = "redirect-to-https"
+      allowed_methods            = ["GET", "HEAD", "OPTIONS"]
+      cached_methods             = ["GET", "HEAD"]
+      compress                   = true
+      cache_policy_id            = aws_cloudfront_cache_policy.console_assets[0].id
       response_headers_policy_id = local.cdn_managed_security_headers_policy_id
       function_association {
         event_type   = "viewer-request"

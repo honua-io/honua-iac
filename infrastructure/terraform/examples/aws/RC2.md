@@ -95,8 +95,8 @@ no-store` unless a response is provably public, including on errors.
 | Paths | Origin | Caching |
 | --- | --- | --- |
 | `*/admin`, `*/admin/*`, `/sharing/rest/generateToken*`, `/sharing/rest/oauth2/*`, `/oauth/*`, `/signin-oidc*`, `/saml/*`, `/scim/*`, `/mcp*`, `/hubs/*` | ALB | Disabled |
-| `/console/_framework/*` | Console bucket | Object `Cache-Control` decides |
-| `/console`, `/console/*` | Console bucket | Disabled |
+| `/console/_framework/*`, `/console/*` | Console bucket | Object `Cache-Control` decides |
+| `/console/config.json`, `/console` | Console bucket | Disabled |
 | Everything else | ALB | Server `Cache-Control` decides, GET and HEAD only |
 
 The cache key of the last row holds every query parameter, the credential headers
