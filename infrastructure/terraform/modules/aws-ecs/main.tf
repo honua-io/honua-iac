@@ -164,8 +164,9 @@ locals {
     HONUA_HEALTH_PORT = tostring(coalesce(var.health_check_port, var.container_port))
   }
   runtime_environment = merge({
-    Deployment__Mode      = var.deployment_mode
-    FileStorage__Provider = var.file_storage_provider
+    Deployment__Mode             = var.deployment_mode
+    FileStorage__Provider        = var.file_storage_provider
+    HostOptions__ShutdownTimeout = "00:01:30"
     }, var.file_storage_provider == "AwsS3" ? {
     FileStorage__AwsS3__BucketName = local.file_storage_bucket_name
     FileStorage__AwsS3__Region     = local.file_storage_aws_s3_region
@@ -609,42 +610,15 @@ resource "aws_s3_bucket_ownership_controls" "alb_logs" {
   }
 }
 
-resource "aws_s3_bucket_policy" "alb_logs" {
-  count  = var.alb_access_logs_enabled && var.alb_access_logs_bucket_name == "" ? 1 : 0
-  bucket = aws_s3_bucket.alb_logs[0].id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Principal = {
-          AWS     = data.aws_elb_service_account.current.arn
-          Service = "logdelivery.elasticloadbalancing.amazonaws.com"
-        }
-        Action   = "s3:PutObject"
-        Resource = "${aws_s3_bucket.alb_logs[0].arn}/${var.alb_access_logs_prefix != "" ? "${var.alb_access_logs_prefix}/" : ""}AWSLogs/${data.aws_caller_identity.current.account_id}/*"
-      },
-      {
-        Effect = "Allow"
-        Principal = {
-          AWS     = data.aws_elb_service_account.current.arn
-          Service = "logdelivery.elasticloadbalancing.amazonaws.com"
-        }
-        Action   = "s3:GetBucketAcl"
-        Resource = aws_s3_bucket.alb_logs[0].arn
-      }
-    ]
-  })
-}
 #checkov:skip=CKV_AWS_378: Target group uses HTTP for in-VPC traffic.
 resource "aws_lb_target_group" "this" {
   #checkov:skip=CKV_AWS_378: Target group uses HTTP for in-VPC traffic.
-  name        = "${local.name}-tg"
-  port        = var.container_port
-  protocol    = "HTTP"
-  vpc_id      = local.vpc_id
-  target_type = "ip"
+  name                 = "${local.name}-tg"
+  port                 = var.container_port
+  protocol             = "HTTP"
+  vpc_id               = local.vpc_id
+  target_type          = "ip"
+  deregistration_delay = 30
 
   health_check {
     path                = var.health_check_path
@@ -661,12 +635,13 @@ resource "aws_lb_target_group" "this" {
 #checkov:skip=CKV_AWS_378: Target group uses HTTP for in-VPC traffic, matching the primary service target group.
 resource "aws_lb_target_group" "canary" {
   #checkov:skip=CKV_AWS_378: Target group uses HTTP for in-VPC traffic, matching the primary service target group.
-  count       = local.canary_enabled ? 1 : 0
-  name        = substr("${local.name}-canary-tg", 0, 32)
-  port        = var.container_port
-  protocol    = "HTTP"
-  vpc_id      = local.vpc_id
-  target_type = "ip"
+  count                = local.canary_enabled ? 1 : 0
+  name                 = substr("${local.name}-canary-tg", 0, 32)
+  port                 = var.container_port
+  protocol             = "HTTP"
+  vpc_id               = local.vpc_id
+  target_type          = "ip"
+  deregistration_delay = 30
 
   health_check {
     path                = var.health_check_path
@@ -1281,8 +1256,7 @@ resource "aws_ecs_task_definition" "this" {
       secrets          = local.container_secrets
       logConfiguration = local.container_log_configuration
       healthCheck      = local.container_health_check
-
-    }, local.postgis_bootstrap_container_options)
+    }, local.container_security_hardening, local.postgis_bootstrap_container_options)
   ]))
 
   depends_on = [
@@ -1329,8 +1303,7 @@ resource "aws_ecs_task_definition" "canary" {
       secrets          = local.container_secrets
       logConfiguration = local.container_log_configuration
       healthCheck      = local.container_health_check
-
-    }, local.postgis_bootstrap_container_options)
+    }, local.container_security_hardening, local.postgis_bootstrap_container_options)
   ]))
 
   depends_on = [
@@ -1348,11 +1321,12 @@ resource "aws_ecs_task_definition" "canary" {
 }
 
 resource "aws_ecs_service" "this" {
-  name            = "${local.name}-service"
-  cluster         = aws_ecs_cluster.this.id
-  task_definition = aws_ecs_task_definition.this.arn
-  desired_count   = var.desired_count
-  launch_type     = "FARGATE"
+  name                              = "${local.name}-service"
+  cluster                           = aws_ecs_cluster.this.id
+  task_definition                   = aws_ecs_task_definition.this.arn
+  desired_count                     = var.desired_count
+  launch_type                       = "FARGATE"
+  health_check_grace_period_seconds = 180
 
   deployment_minimum_healthy_percent = var.deployment_mode == "SingleInstance" ? 0 : 100
   deployment_maximum_percent         = var.deployment_mode == "SingleInstance" ? 100 : 200
@@ -1409,12 +1383,13 @@ resource "aws_ecs_service" "this" {
 }
 
 resource "aws_ecs_service" "canary" {
-  count           = local.canary_enabled ? 1 : 0
-  name            = "${local.name}-canary-service"
-  cluster         = aws_ecs_cluster.this.id
-  task_definition = aws_ecs_task_definition.canary[0].arn
-  desired_count   = var.canary_desired_count
-  launch_type     = "FARGATE"
+  count                             = local.canary_enabled ? 1 : 0
+  name                              = "${local.name}-canary-service"
+  cluster                           = aws_ecs_cluster.this.id
+  task_definition                   = aws_ecs_task_definition.canary[0].arn
+  desired_count                     = var.canary_desired_count
+  launch_type                       = "FARGATE"
+  health_check_grace_period_seconds = 180
 
   deployment_circuit_breaker {
     enable   = true
@@ -1505,6 +1480,11 @@ data "aws_iam_policy_document" "ecs_task_assume" {
     principals {
       type        = "Service"
       identifiers = ["ecs-tasks.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
     }
   }
 }

@@ -25,7 +25,7 @@ variable "api_limit_per_5m" {
 }
 
 variable "admin_limit_per_5m" {
-  description = "Per-IP request limit per 5 minutes for /admin."
+  description = "Per-IP request limit per 5 minutes for /api/v1/admin/."
   type        = number
   default     = 300
 }
@@ -92,7 +92,12 @@ resource "aws_wafv2_web_acl" "honua_rate_limit" {
 
             text_transformation {
               priority = 0
-              type     = "NONE"
+              type     = "URL_DECODE"
+            }
+
+            text_transformation {
+              priority = 1
+              type     = "LOWERCASE"
             }
           }
         }
@@ -102,7 +107,7 @@ resource "aws_wafv2_web_acl" "honua_rate_limit" {
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "${var.name_prefix}-api-rate-limit"
-      sampled_requests_enabled   = true
+      sampled_requests_enabled   = false
     }
   }
 
@@ -131,7 +136,7 @@ resource "aws_wafv2_web_acl" "honua_rate_limit" {
         scope_down_statement {
           byte_match_statement {
             positional_constraint = "STARTS_WITH"
-            search_string         = "/admin/"
+            search_string         = "/api/v1/admin/"
 
             field_to_match {
               uri_path {}
@@ -139,7 +144,12 @@ resource "aws_wafv2_web_acl" "honua_rate_limit" {
 
             text_transformation {
               priority = 0
-              type     = "NONE"
+              type     = "URL_DECODE"
+            }
+
+            text_transformation {
+              priority = 1
+              type     = "LOWERCASE"
             }
           }
         }
@@ -149,14 +159,14 @@ resource "aws_wafv2_web_acl" "honua_rate_limit" {
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "${var.name_prefix}-admin-rate-limit"
-      sampled_requests_enabled   = true
+      sampled_requests_enabled   = false
     }
   }
 
   visibility_config {
     cloudwatch_metrics_enabled = true
     metric_name                = "${var.name_prefix}-rate-limit"
-    sampled_requests_enabled   = true
+    sampled_requests_enabled   = false
   }
 
   tags = var.tags

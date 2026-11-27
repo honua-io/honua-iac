@@ -127,8 +127,8 @@ run "no_domain_creates_nothing_and_keeps_execute_api" {
   }
 
   assert {
-    condition     = output.service_url == "https://abcdefghij.execute-api.us-east-1.amazonaws.com" && output.service_url == output.api_endpoint
-    error_message = "Without a custom domain service_url must be the execute-api endpoint."
+    condition     = output.service_url == "https://abcdefghij.execute-api.us-east-1.amazonaws.com" && output.service_url == output.api_endpoint && !aws_apigatewayv2_api.this.disable_execute_api_endpoint
+    error_message = "Without a custom domain service_url must be the execute-api endpoint and execute-api must stay enabled."
   }
 
   assert {
@@ -226,8 +226,8 @@ run "domain_creates_certificate_custom_domain_mapping_and_alias" {
   }
 
   assert {
-    condition     = output.api_endpoint == "https://abcdefghij.execute-api.us-east-1.amazonaws.com"
-    error_message = "api_endpoint must stay the execute-api endpoint, which remains enabled."
+    condition     = output.api_endpoint == "https://abcdefghij.execute-api.us-east-1.amazonaws.com" && aws_apigatewayv2_api.this.disable_execute_api_endpoint
+    error_message = "With a custom domain the default execute-api endpoint must be disabled while api_endpoint still exposes the resource attribute."
   }
 
   assert {
