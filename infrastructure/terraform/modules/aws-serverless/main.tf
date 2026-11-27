@@ -741,17 +741,14 @@ module "rds" {
   tags = local.tags
 }
 
+# Lambda does not supply aws:SourceAccount when assuming its execution role;
+# requiring it prevents Lambda from obtaining execution credentials.
 data "aws_iam_policy_document" "lambda_assume" {
   statement {
     actions = ["sts:AssumeRole"]
     principals {
       type        = "Service"
       identifiers = ["lambda.amazonaws.com"]
-    }
-    condition {
-      test     = "StringEquals"
-      variable = "aws:SourceAccount"
-      values   = [data.aws_caller_identity.current.account_id]
     }
   }
 }
