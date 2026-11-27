@@ -87,12 +87,13 @@ resource "aws_iam_role_policy" "console_secrets" {
 }
 resource "aws_lb_target_group" "console" {
   #checkov:skip=CKV_AWS_378: TLS terminates at the ALB; the edge target uses HTTP within the VPC, matching the server target.
-  count       = local.console_enabled ? 1 : 0
-  name        = substr("${local.name}-console", 0, 32)
-  port        = 4180
-  protocol    = "HTTP"
-  vpc_id      = local.vpc_id
-  target_type = "ip"
+  count                = local.console_enabled ? 1 : 0
+  name                 = substr("${local.name}-console", 0, 32)
+  port                 = 4180
+  protocol             = "HTTP"
+  vpc_id               = local.vpc_id
+  target_type          = "ip"
+  deregistration_delay = 30
   health_check { path = "/ping" }
   tags = local.tags
 }
@@ -120,11 +121,8 @@ resource "aws_iam_role" "console" {
   count                = local.console_enabled ? 1 : 0
   name                 = "${local.name}-console-task"
   permissions_boundary = var.permissions_boundary_arn != "" ? var.permissions_boundary_arn : null
-  assume_role_policy = jsonencode({
-    Version   = "2012-10-17"
-    Statement = [{ Effect = "Allow", Principal = { Service = "ecs-tasks.amazonaws.com" }, Action = "sts:AssumeRole" }]
-  })
-  tags = local.tags
+  assume_role_policy   = data.aws_iam_policy_document.ecs_task_assume.json
+  tags                 = local.tags
 }
 resource "aws_ecs_task_definition" "console" {
   count                    = local.console_enabled ? 1 : 0
@@ -186,12 +184,13 @@ resource "aws_ecs_task_definition" "console" {
   tags       = local.tags
 }
 resource "aws_ecs_service" "console" {
-  count           = local.console_enabled ? 1 : 0
-  name            = "${local.name}-console"
-  cluster         = aws_ecs_cluster.this.id
-  task_definition = aws_ecs_task_definition.console[0].arn
-  desired_count   = 1
-  launch_type     = "FARGATE"
+  count                             = local.console_enabled ? 1 : 0
+  name                              = "${local.name}-console"
+  cluster                           = aws_ecs_cluster.this.id
+  task_definition                   = aws_ecs_task_definition.console[0].arn
+  desired_count                     = 1
+  launch_type                       = "FARGATE"
+  health_check_grace_period_seconds = 180
   network_configuration {
     subnets          = local.private_subnets
     security_groups  = [aws_security_group.ecs.id]

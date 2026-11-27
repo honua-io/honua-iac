@@ -72,6 +72,11 @@ data "aws_iam_policy_document" "batch_service_assume" {
       type        = "Service"
       identifiers = ["batch.amazonaws.com"]
     }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
   }
 }
 
@@ -98,6 +103,11 @@ data "aws_iam_policy_document" "batch_execution_assume" {
     principals {
       type        = "Service"
       identifiers = ["ecs-tasks.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
     }
   }
 }

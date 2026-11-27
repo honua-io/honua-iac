@@ -123,7 +123,14 @@ resource "aws_ecs_task_definition" "migrate" {
       }
       # On SIGTERM the run stops before its next database step (exit 11); give
       # it the Fargate maximum to get there.
+      user        = "1001:1001"
       stopTimeout = 120
+      linuxParameters = {
+        capabilities = {
+          drop = ["ALL"]
+        }
+        initProcessEnabled = true
+      }
 
     }, local.postgis_bootstrap_container_options)
   ]))

@@ -748,6 +748,11 @@ data "aws_iam_policy_document" "lambda_assume" {
       type        = "Service"
       identifiers = ["lambda.amazonaws.com"]
     }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
   }
 }
 
@@ -1173,8 +1178,9 @@ resource "aws_cloudwatch_log_group" "api_gateway" {
 # OPTIONS, and the routes have no authorizer), reach the Lambda, and the
 # server's CORS middleware answers them from Cors__AllowedOrigins__<n>.
 resource "aws_apigatewayv2_api" "this" {
-  name          = "${local.name}-honua"
-  protocol_type = "HTTP"
+  name                         = "${local.name}-honua"
+  protocol_type                = "HTTP"
+  disable_execute_api_endpoint = local.use_custom_domain
 
   tags = local.tags
 }
